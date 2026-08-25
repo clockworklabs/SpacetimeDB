@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.promotion-checkout", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Promotion checkout", "description": "Server-calculated discounts recorded on orders.",
+  "requiresPacks": ["ecommerce.progression.promotion-rules@1.0.0", "ecommerce.feature.cart-checkout@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 55000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.promotion-checkout", "path": "prompts/modular/business-features-1.0.0.md", "order": 3200, "from": "## Promotion checkout", "until": "## Promotion reporting", "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.promotion-hooks", "path": "contracts/business-hooks-1.0.md", "order": 3950, "from": "## Promotion hooks", "until": "## Notification hooks", "modes": ["upgrade"] }]
+  },
+  "checks": [{ "id": "checkout", "stableId": "promotion-checkout", "source": "scenarios/progression-promotions-notifications-1.0.0.json", "feature": 621, "role": "feature" }]
+}

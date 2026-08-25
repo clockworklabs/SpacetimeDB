@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Cart recovery",
+  "features": [
+    {
+      "id": 503,
+      "name": "An expired cart can be restored safely",
+      "actors": ["shopper"],
+      "setup": [
+        { "do": "signUp", "actor": "shopper", "name": "cart-recovery" },
+        { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "wait", "actor": "shopper", "ms": 310000 }
+      ],
+      "criteria": [
+        {
+          "id": "503a",
+          "desc": "restoring an expired cart reserves available items again",
+          "points": 3,
+          "statedBy": "A customer can restore the available items from an expired cart.",
+          "steps": [
+            { "do": "click", "actor": "shopper", "testid": "restore-cart", "in": { "testid": "expired-cart" } },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" }
+          ]
+        },
+        {
+          "id": "503b",
+          "desc": "a successful restore does not show an availability warning",
+          "points": 1,
+          "statedBy": "Cart recovery clearly reports items that cannot be restored.",
+          "steps": [
+            { "do": "expect", "actor": "shopper", "testid": "cart-restore-warning", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

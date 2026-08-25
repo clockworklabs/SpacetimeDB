@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Recommendation feedback",
+  "features": [
+    {
+      "id": 504,
+      "name": "Dismissal is durable and private",
+      "actors": ["customer", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "feedback-owner" },
+        { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
+        { "do": "signUp", "actor": "other", "name": "feedback-other" },
+        { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } }
+      ],
+      "criteria": [
+        {
+          "id": "504a",
+          "desc": "a dismissed recommendation stays absent after reload",
+          "points": 2,
+          "statedBy": "A dismissed recommendation stays dismissed for that customer.",
+          "steps": [
+            { "do": "click", "actor": "customer", "testid": "dismiss-recommendation", "in": { "testid": "recommendation-item", "contains": "Headphones" } },
+            { "do": "reload", "actor": "customer", "settleMs": 3000 },
+            { "do": "expect", "actor": "customer", "testid": "recommendation-item", "contains": "Headphones", "absent": true }
+          ]
+        },
+        {
+          "id": "504b",
+          "desc": "one customer's dismissal does not hide another customer's result",
+          "points": 2,
+          "statedBy": "Recommendation feedback belongs to one customer.",
+          "steps": [
+            { "do": "expect", "actor": "other", "testid": "recommendation-item", "contains": "Headphones" }
+          ]
+        }
+      ]
+    }
+  ]
+}

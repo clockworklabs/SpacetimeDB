@@ -98,7 +98,7 @@
 
   .graph-canvas {
     position: relative;
-    min-width: 1120px;
+    min-width: 1160px;
     min-height: 680px;
     padding: 22px;
   }
@@ -116,7 +116,7 @@
   .edge {
     fill: none;
     stroke-width: 1.75;
-    opacity: .38;
+    opacity: .2;
     transition: opacity 120ms ease, stroke-width 120ms ease;
   }
 
@@ -129,8 +129,8 @@
     position: relative;
     z-index: 1;
     display: grid;
-    grid-template-columns: repeat(3, minmax(220px, 1fr));
-    gap: 112px;
+    grid-template-columns: repeat(var(--level-count, 4), minmax(190px, 1fr));
+    gap: 44px;
   }
 
   .level-head {
@@ -192,7 +192,7 @@
   <header>
     <div>
       <h1>Ecommerce dependency graph</h1>
-      <p class="subtitle">Select a feature to trace its prerequisites and the features it unlocks.</p>
+      <p class="subtitle">Levels show dependency depth. Select a feature to trace what it needs and what it unlocks.</p>
     </div>
   </header>
 
@@ -218,36 +218,699 @@
       <div class="levels" id="levels"></div>
     </div>
   </section>
-  <p class="footnote">L4 and L5 do not have defined feature modules or dependency links yet.</p>
 </main>
 
 <script>
-  const features = [
-    { id: 'accounts', name: 'Accounts', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.accounts@1.1.0', scope: 'Account creation, sign-in, sign-out, and durable account state.' },
-    { id: 'catalog', name: 'Catalog', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.catalog@1.1.0', scope: 'Public products, stock, ratings, and sales ranking.' },
-    { id: 'purchasing', name: 'Purchasing and orders', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.purchasing@1.1.0', scope: 'Authenticated purchases, order totals, and order history.' },
-    { id: 'cart-checkout', name: 'Cart and checkout', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.cart-checkout@1.2.0', scope: 'Shared carts, quantities, checkout, and purchase creation.' },
-    { id: 'reviews', name: 'Reviews', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.reviews@1.1.0', scope: 'Verified-purchase reviews and live rating updates.' },
-    { id: 'warehouse-admin', name: 'Warehouse administration', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.warehouse-admin@1.1.0', scope: 'Warehouse stock, administrator access, and live inventory updates.' },
-
-    { id: 'fulfilment-queue', name: 'Fulfilment queue', level: 2, state: 'qualified', parents: ['purchasing', 'warehouse-admin'], pack: 'ecommerce.operations-access-features@1.0.0', scope: 'Staff queues, shipping, and operator workflows.' },
-    { id: 'warehouse-transfer', name: 'Stock transfers', level: 2, state: 'qualified', parents: ['warehouse-admin'], pack: 'ecommerce.inventory-operations-features@1.2.0', scope: 'Move stock between warehouses without changing the total.' },
-    { id: 'cancellation-return', name: 'Cancellation and returns', level: 2, state: 'qualified', parents: ['purchasing', 'cart-checkout'], pack: 'ecommerce.returns-pricing-features@1.1.0', scope: 'Cancel orders, return shipped orders, and restore stock.' },
-    { id: 'price-history', name: 'Price history', level: 2, state: 'qualified', parents: ['catalog', 'purchasing'], pack: 'ecommerce.returns-pricing-features@1.1.0', scope: 'Live catalog prices and immutable paid prices.' },
-    { id: 'operational-views', name: 'Operational views', level: 2, state: 'qualified', parents: ['catalog', 'purchasing', 'warehouse-admin'], pack: 'ecommerce.inventory-operations-features@1.2.0', scope: 'Low stock, sales, recommendations, and best sellers.' },
-
-    { id: 'reservations', name: 'Reservations', level: 3, state: 'draft', parents: ['warehouse-transfer', 'price-history'], pack: 'ecommerce.l3.reservations-features@1.0.0', scope: 'Timed stock reservations, renewal, expiry, and checkout conversion.' },
-    { id: 'scheduled-restocks', name: 'Scheduled restocks', level: 3, state: 'draft', parents: ['fulfilment-queue', 'warehouse-transfer'], pack: 'ecommerce.l3.scheduled-restocks-features@1.0.0', scope: 'Schedule, cancel, and complete durable restocks.' },
-    { id: 'order-delivery', name: 'Order delivery', level: 3, state: 'draft', parents: ['fulfilment-queue', 'cancellation-return'], pack: 'ecommerce.l3.order-delivery-features@1.0.0', scope: 'Automatic delivery after shipping, with cancellation protection.' },
-    { id: 'cart-expiration', name: 'Cart expiration', level: 3, state: 'draft', parents: ['cancellation-return'], pack: 'ecommerce.l3.cart-expiration-features@1.0.0', scope: 'Abandoned-cart expiry and reservation release.' }
-  ];
+  /* STACK_BENCH_GRAPH_START */
+  const graph = {
+  "schemaVersion": 1,
+  "definition": {
+    "id": "ecommerce.questlines",
+    "version": "1.0.0",
+    "state": "draft"
+  },
+  "levels": 5,
+  "questlines": [
+    {
+      "id": "catalog-pricing",
+      "title": "Catalog and pricing"
+    },
+    {
+      "id": "identity",
+      "title": "Identity"
+    },
+    {
+      "id": "insights",
+      "title": "Insights"
+    },
+    {
+      "id": "inventory",
+      "title": "Inventory"
+    },
+    {
+      "id": "notifications",
+      "title": "Notifications"
+    },
+    {
+      "id": "operations",
+      "title": "Operations access"
+    },
+    {
+      "id": "orders",
+      "title": "Orders"
+    },
+    {
+      "id": "promotions",
+      "title": "Promotions"
+    },
+    {
+      "id": "reviews",
+      "title": "Engagement"
+    },
+    {
+      "id": "shopping",
+      "title": "Shopping"
+    },
+    {
+      "id": "support",
+      "title": "Customer support"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "accounts",
+      "name": "Accounts",
+      "level": 1,
+      "state": "qualified",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "identity",
+      "featureRefs": [
+        "ecommerce.feature.accounts@1.1.0"
+      ],
+      "checks": 5,
+      "points": 5
+    },
+    {
+      "id": "catalog",
+      "name": "Catalog",
+      "level": 1,
+      "state": "qualified",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.feature.catalog@1.1.0"
+      ],
+      "checks": 3,
+      "points": 3
+    },
+    {
+      "id": "staff-access",
+      "name": "Staff access",
+      "level": 1,
+      "state": "draft",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "operations",
+      "featureRefs": [
+        "ecommerce.progression.staff-access@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "support-intake",
+      "name": "Support intake",
+      "level": 1,
+      "state": "draft",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-intake@1.0.0"
+      ],
+      "checks": 1,
+      "points": 2
+    },
+    {
+      "id": "cart-checkout",
+      "name": "Cart and checkout",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "accounts",
+        "catalog"
+      ],
+      "dependencyReasons": {
+        "accounts": "An account cart needs a buyer.",
+        "catalog": "A cart needs catalog items."
+      },
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.feature.cart-checkout@1.2.0"
+      ],
+      "checks": 11,
+      "points": 15
+    },
+    {
+      "id": "notification-preferences",
+      "name": "Notification preferences",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "accounts"
+      ],
+      "dependencyReasons": {
+        "accounts": "Preferences belong to an account."
+      },
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.notification-preferences@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "promotion-rules",
+      "name": "Promotion rules",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "catalog",
+        "staff-access"
+      ],
+      "dependencyReasons": {
+        "catalog": "Promotions apply to catalog sales.",
+        "staff-access": "Promotion rules require staff access."
+      },
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-rules@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "purchasing",
+      "name": "Purchasing and orders",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "accounts",
+        "catalog"
+      ],
+      "dependencyReasons": {
+        "accounts": "A purchase needs a buyer.",
+        "catalog": "A purchase needs an item."
+      },
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.feature.purchasing@1.1.0"
+      ],
+      "checks": 10,
+      "points": 14
+    },
+    {
+      "id": "support-history",
+      "name": "Customer support history",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "accounts",
+        "support-intake"
+      ],
+      "dependencyReasons": {
+        "accounts": "Owned ticket history requires an account.",
+        "support-intake": "History contains submitted tickets."
+      },
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-history@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "support-triage",
+      "name": "Support triage",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "staff-access",
+        "support-intake"
+      ],
+      "dependencyReasons": {
+        "staff-access": "Triage requires a staff member.",
+        "support-intake": "Triage operates on submitted tickets."
+      },
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-triage@1.0.0"
+      ],
+      "checks": 1,
+      "points": 3
+    },
+    {
+      "id": "warehouse-admin",
+      "name": "Warehouse administration",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "catalog",
+        "staff-access"
+      ],
+      "dependencyReasons": {
+        "catalog": "Warehouse stock belongs to catalog items.",
+        "staff-access": "Warehouse changes require staff access."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.feature.warehouse-admin@1.1.0"
+      ],
+      "checks": 11,
+      "points": 13
+    },
+    {
+      "id": "cancellation-returns",
+      "name": "Cancellation and returns",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Cancellation and returns need an order.",
+        "warehouse-admin": "Returned stock needs a warehouse destination."
+      },
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.l2.cancellation-returns-features@1.0.0"
+      ],
+      "checks": 6,
+      "points": 14
+    },
+    {
+      "id": "faceted-search",
+      "name": "Faceted search",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "catalog",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "catalog": "Search filters catalog items.",
+        "warehouse-admin": "Availability filters use warehouse stock."
+      },
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.progression.faceted-search@1.0.0"
+      ],
+      "checks": 2,
+      "points": 6
+    },
+    {
+      "id": "fulfilment-queue",
+      "name": "Fulfilment queue",
+      "level": 3,
+      "state": "qualified",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Fulfilment needs orders.",
+        "warehouse-admin": "Fulfilment needs warehouse stock."
+      },
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.operations-access-features@1.0.0"
+      ],
+      "checks": 7,
+      "points": 12
+    },
+    {
+      "id": "managed-support",
+      "name": "Managed support cases",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "support-history",
+        "support-triage"
+      ],
+      "dependencyReasons": {
+        "support-history": "Customers need an owned case history.",
+        "support-triage": "Staff need an assigned ticket queue."
+      },
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.managed-support@1.0.0"
+      ],
+      "checks": 1,
+      "points": 3
+    },
+    {
+      "id": "operational-views",
+      "name": "Operational views",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Sales views need order activity.",
+        "warehouse-admin": "Stock views need warehouse activity."
+      },
+      "questline": "insights",
+      "featureRefs": [
+        "ecommerce.l2.operational-views-features@1.0.0"
+      ],
+      "checks": 4,
+      "points": 9
+    },
+    {
+      "id": "price-history",
+      "name": "Price history",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Paid order prices must remain fixed.",
+        "warehouse-admin": "Price changes are an administrative operation."
+      },
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.l2.price-history-features@1.0.0"
+      ],
+      "checks": 3,
+      "points": 8
+    },
+    {
+      "id": "promotion-checkout",
+      "name": "Promotion checkout",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "cart-checkout",
+        "promotion-rules"
+      ],
+      "dependencyReasons": {
+        "cart-checkout": "A promotion is applied to a cart checkout.",
+        "promotion-rules": "Checkout needs an active promotion rule."
+      },
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-checkout@1.0.0"
+      ],
+      "checks": 1,
+      "points": 3
+    },
+    {
+      "id": "reservations",
+      "name": "Reservations",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "cart-checkout",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "cart-checkout": "Reservations belong to cart lines.",
+        "warehouse-admin": "Reservations hold warehouse stock."
+      },
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.l3.reservations-features@1.0.0"
+      ],
+      "checks": 9,
+      "points": 23
+    },
+    {
+      "id": "reviews",
+      "name": "Reviews",
+      "level": 3,
+      "state": "qualified",
+      "parents": [
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "purchasing": "A verified review needs a purchase."
+      },
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.feature.reviews@1.1.0"
+      ],
+      "checks": 6,
+      "points": 8
+    },
+    {
+      "id": "stock-alerts",
+      "name": "Stock alerts",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "notification-preferences",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "notification-preferences": "The customer chooses whether to receive alerts.",
+        "warehouse-admin": "Alerts respond to warehouse stock changes."
+      },
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.stock-alerts@1.0.0"
+      ],
+      "checks": 1,
+      "points": 3
+    },
+    {
+      "id": "stock-transfers",
+      "name": "Stock transfers",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "warehouse-admin": "Transfers operate on warehouse stock."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l2.stock-transfers-features@1.0.0"
+      ],
+      "checks": 8,
+      "points": 16
+    },
+    {
+      "id": "cart-expiration",
+      "name": "Cart expiration",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "reservations"
+      ],
+      "dependencyReasons": {
+        "reservations": "Expiration releases existing reservations."
+      },
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.l3.cart-expiration-features@1.0.0"
+      ],
+      "checks": 2,
+      "points": 8
+    },
+    {
+      "id": "order-delivery",
+      "name": "Order delivery",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "cancellation-returns",
+        "fulfilment-queue"
+      ],
+      "dependencyReasons": {
+        "cancellation-returns": "Delivery must respect final cancellation state.",
+        "fulfilment-queue": "Delivery follows fulfilment."
+      },
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.l3.order-delivery-features@1.0.0"
+      ],
+      "checks": 4,
+      "points": 12
+    },
+    {
+      "id": "order-support",
+      "name": "Order-linked support",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "managed-support",
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "managed-support": "The order is attached to an existing managed case.",
+        "purchasing": "The linked order must exist."
+      },
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.order-support@1.0.0"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "personalized-recommendations",
+      "name": "Personalized recommendations",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "operational-views",
+        "reviews"
+      ],
+      "dependencyReasons": {
+        "operational-views": "Recommendations use aggregate product activity.",
+        "reviews": "Recommendations use customer review activity."
+      },
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.progression.personalized-recommendations@1.0.0"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "promotion-reporting",
+      "name": "Promotion reporting",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "operational-views",
+        "promotion-checkout"
+      ],
+      "dependencyReasons": {
+        "operational-views": "Reports use authoritative sales totals.",
+        "promotion-checkout": "Reports count promotion redemptions."
+      },
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-reporting@1.0.0"
+      ],
+      "checks": 1,
+      "points": 3
+    },
+    {
+      "id": "scheduled-restocks",
+      "name": "Scheduled restocks",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "stock-transfers"
+      ],
+      "dependencyReasons": {
+        "stock-transfers": "Scheduled restocking uses established stock operations."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l3.scheduled-restocks-features@1.0.0"
+      ],
+      "checks": 7,
+      "points": 20
+    },
+    {
+      "id": "automatic-reorder",
+      "name": "Automatic reorder rules",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "operational-views",
+        "scheduled-restocks"
+      ],
+      "dependencyReasons": {
+        "operational-views": "Reorder decisions use current stock views.",
+        "scheduled-restocks": "Rules create scheduled restocks."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.progression.automatic-reorder@1.0.0"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "cart-recovery",
+      "name": "Cart recovery",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "cart-expiration"
+      ],
+      "dependencyReasons": {
+        "cart-expiration": "Recovery restores an expired cart."
+      },
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.progression.cart-recovery@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "delivery-notifications",
+      "name": "Delivery notifications",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "notification-preferences",
+        "order-delivery"
+      ],
+      "dependencyReasons": {
+        "notification-preferences": "The customer chooses whether to receive delivery notices.",
+        "order-delivery": "A notice follows a delivered order."
+      },
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.delivery-notifications@1.0.0"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "recommendation-feedback",
+      "name": "Recommendation feedback",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "personalized-recommendations"
+      ],
+      "dependencyReasons": {
+        "personalized-recommendations": "Feedback applies to personal recommendations."
+      },
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.progression.recommendation-feedback@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "support-refunds",
+      "name": "Support refunds",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "cancellation-returns",
+        "order-support"
+      ],
+      "dependencyReasons": {
+        "cancellation-returns": "A support refund uses the established refund path.",
+        "order-support": "The refund resolves an order-linked case."
+      },
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-refunds@1.0.0"
+      ],
+      "checks": 1,
+      "points": 4
+    }
+  ]
+};
+  /* STACK_BENCH_GRAPH_END */
+  const features = graph.nodes;
 
   const byId = new Map(features.map(feature => [feature.id, feature]));
   const levels = document.getElementById('levels');
   const canvas = document.getElementById('graph-canvas');
   const edges = document.getElementById('edges');
 
-  for (let level = 1; level <= 3; level += 1) {
+  levels.style.setProperty('--level-count', graph.levels);
+  for (let level = 1; level <= graph.levels; level += 1) {
     const column = document.createElement('div');
     const items = features.filter(feature => feature.level === level);
     column.innerHTML = `<div class="level-head"><span>Level ${level}</span><b>${items.length} features</b></div>`;

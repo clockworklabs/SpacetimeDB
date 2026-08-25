@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 
-export const DEPENDENCY_MODE_SCHEMA_VERSION = 1;
+export const DEPENDENCY_MODE_SCHEMA_VERSION = 2;
 export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
@@ -10,6 +10,7 @@ const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed']);
 const INCONCLUSIVE_CATEGORIES = new Set([
   'provider_failure', 'harness_failure', 'interrupted', 'inconclusive_evidence',
 ]);
+const RELEASE_STATES = new Set(['draft', 'qualified']);
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at, message) => { throw new Error(`invalid dependency mode at ${at}: ${message}`); };
@@ -95,7 +96,8 @@ function assertAcyclic(nodesById) {
 export function compileDependencyMode(input, { source = '<dependency-mode>' } = {}) {
   const definition = structuredClone(input);
   strictObject(definition, source, new Set([
-    'schemaVersion', 'kind', 'id', 'version', 'policy', 'strikes', 'nodes', 'questlines',
+    'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'policy', 'strikes', 'nodes',
+    'questlines',
   ]));
   if (definition.schemaVersion !== DEPENDENCY_MODE_SCHEMA_VERSION) {
     fail(`${source}.schemaVersion`, `must be ${DEPENDENCY_MODE_SCHEMA_VERSION}`);
@@ -103,6 +105,10 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
   if (definition.kind !== 'progression-mode') fail(`${source}.kind`, 'must be "progression-mode"');
   identifier(definition.id, `${source}.id`);
   semanticVersion(definition.version, `${source}.version`);
+  if (!RELEASE_STATES.has(definition.state)) {
+    fail(`${source}.state`, 'must be "draft" or "qualified"');
+  }
+  nonEmptyString(definition.title, `${source}.title`);
   if (definition.policy !== DEPENDENCY_MODE_POLICY) {
     fail(`${source}.policy`, `must be ${JSON.stringify(DEPENDENCY_MODE_POLICY)}`);
   }
@@ -115,14 +121,17 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
   definition.nodes.forEach((node, index) => {
     const at = `${source}.nodes[${index}]`;
     strictObject(node, at, new Set([
-      'id', 'level', 'featureRefs', 'promptModules', 'gradingChecks', 'dependencies',
+      'id', 'title', 'questline', 'level', 'featureRefs', 'promptModules', 'gradingChecks',
+      'dependencies', 'dependencyReasons',
     ]));
     identifier(node.id, `${at}.id`);
     if (nodeIds.has(node.id)) fail(`${at}.id`, `duplicates ${JSON.stringify(node.id)}`);
     nodeIds.add(node.id);
-    positiveInteger(node.level, `${at}.level`);
+    nonEmptyString(node.title, `${at}.title`);
+    identifier(node.questline, `${at}.questline`);
     node.featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`, { exactRefs: true }).sort();
-    node.promptModules = uniqueStrings(node.promptModules, `${at}.promptModules`).sort();
+    node.promptModules = uniqueStrings(node.promptModules, `${at}.promptModules`,
+      { exactRefs: true }).sort();
     if (!Array.isArray(node.gradingChecks) || node.gradingChecks.length === 0) {
       fail(`${at}.gradingChecks`, 'must be a non-empty array');
     }
@@ -139,22 +148,44 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
     });
     node.gradingChecks.sort((left, right) => left.id.localeCompare(right.id));
     if (!Array.isArray(node.dependencies)) fail(`${at}.dependencies`, 'must be an array');
+    const compiledNode = node.level !== undefined || node.dependencyReasons !== undefined;
+    if (compiledNode && (node.level === undefined || node.dependencyReasons === undefined)) {
+      fail(at, 'compiled level and dependency reasons must appear together');
+    }
+    if (compiledNode) positiveInteger(node.level, `${at}.level`);
     const dependencies = new Set();
     node.dependencies.forEach((dependency, dependencyIndex) => {
-      identifier(dependency, `${at}.dependencies[${dependencyIndex}]`);
-      if (dependencies.has(dependency)) {
-        fail(`${at}.dependencies[${dependencyIndex}]`, `duplicates ${JSON.stringify(dependency)}`);
+      const dependencyAt = `${at}.dependencies[${dependencyIndex}]`;
+      const dependencyId = compiledNode ? dependency : dependency?.id;
+      if (compiledNode) identifier(dependencyId, dependencyAt);
+      else {
+        strictObject(dependency, dependencyAt, new Set(['id', 'reason']));
+        identifier(dependencyId, `${dependencyAt}.id`);
+        nonEmptyString(dependency.reason, `${dependencyAt}.reason`);
       }
-      dependencies.add(dependency);
+      if (dependencies.has(dependencyId)) {
+        fail(compiledNode ? dependencyAt : `${dependencyAt}.id`,
+          `duplicates ${JSON.stringify(dependencyId)}`);
+      }
+      dependencies.add(dependencyId);
     });
     node.dependencies = [...dependencies].sort();
+    if (compiledNode) {
+      strictObject(node.dependencyReasons, `${at}.dependencyReasons`, new Set(node.dependencies));
+      for (const dependencyId of node.dependencies) {
+        nonEmptyString(node.dependencyReasons[dependencyId],
+          `${at}.dependencyReasons.${dependencyId}`);
+        node.dependencyReasons[dependencyId] = node.dependencyReasons[dependencyId].trim();
+      }
+    } else {
+      const authoredDependencies = input.nodes[index].dependencies;
+      node.dependencyReasons = Object.fromEntries(node.dependencies.map(dependencyId => [
+        dependencyId,
+        authoredDependencies.find(dependency => dependency.id === dependencyId).reason.trim(),
+      ]));
+    }
   });
 
-  definition.nodes.sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
-  const levels = [...new Set(definition.nodes.map(node => node.level))].sort((a, b) => a - b);
-  if (levels[0] !== 1 || levels.some((level, index) => level !== index + 1)) {
-    fail(`${source}.nodes`, 'levels must start at 1 and be contiguous');
-  }
   const nodesById = new Map(definition.nodes.map(node => [node.id, node]));
   for (const node of definition.nodes) {
     const at = `${source}.nodes.${node.id}.dependencies`;
@@ -163,24 +194,30 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
     }
   }
   assertAcyclic(nodesById);
-  for (const node of definition.nodes) {
-    const at = `${source}.nodes.${node.id}.dependencies`;
-    if (node.level === 1 && node.dependencies.length !== 0) fail(at, 'level 1 nodes cannot have dependencies');
-    if (node.level > 1 && node.dependencies.length === 0) fail(at, 'nodes after level 1 require a parent');
-    for (const dependency of node.dependencies) {
-      const parent = nodesById.get(dependency);
-      if (parent.level !== node.level - 1) {
-        fail(at, `parent ${JSON.stringify(dependency)} must be in level ${node.level - 1}`);
-      }
+  const declaredLevels = new Map(definition.nodes
+    .filter(node => node.level !== undefined).map(node => [node.id, node.level]));
+  definition.nodes.forEach(node => { delete node.level; });
+  const levelFor = node => {
+    if (node.level !== undefined) return node.level;
+    node.level = node.dependencies.length === 0
+      ? 1
+      : 1 + Math.max(...node.dependencies.map(parentId => levelFor(nodesById.get(parentId))));
+    return node.level;
+  };
+  definition.nodes.forEach(levelFor);
+  for (const [nodeId, declaredLevel] of declaredLevels) {
+    if (nodesById.get(nodeId).level !== declaredLevel) {
+      fail(`${source}.nodes.${nodeId}.level`, 'does not match calculated dependency depth');
     }
   }
+  definition.nodes.sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
+  const levels = [...new Set(definition.nodes.map(node => node.level))].sort((a, b) => a - b);
   definition.strikes = { levels: compileStrikeBudgets(definition.strikes, levels) };
 
   if (!Array.isArray(definition.questlines) || definition.questlines.length === 0) {
     fail(`${source}.questlines`, 'must be a non-empty array');
   }
   const questlineIds = new Set();
-  const coveredNodes = new Set();
   definition.questlines.forEach((questline, index) => {
     const at = `${source}.questlines[${index}]`;
     strictObject(questline, at, new Set(['id', 'title', 'nodes']));
@@ -188,24 +225,26 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
     if (questlineIds.has(questline.id)) fail(`${at}.id`, `duplicates ${JSON.stringify(questline.id)}`);
     questlineIds.add(questline.id);
     nonEmptyString(questline.title, `${at}.title`);
-    questline.nodes = uniqueStrings(questline.nodes, `${at}.nodes`);
-    const path = questline.nodes.map((nodeId, nodeIndex) => {
-      const node = nodesById.get(nodeId);
-      if (!node) fail(`${at}.nodes[${nodeIndex}]`, `unknown node ${JSON.stringify(nodeId)}`);
-      coveredNodes.add(nodeId);
-      return node;
-    });
-    if (path[0].level !== 1) fail(`${at}.nodes[0]`, 'questlines must start at level 1');
-    for (let nodeIndex = 1; nodeIndex < path.length; nodeIndex += 1) {
-      const parent = path[nodeIndex - 1];
-      const child = path[nodeIndex];
-      if (child.level !== parent.level + 1 || !child.dependencies.includes(parent.id)) {
-        fail(`${at}.nodes[${nodeIndex}]`, `does not directly depend on ${JSON.stringify(parent.id)}`);
+  });
+  for (const node of definition.nodes) {
+    if (!questlineIds.has(node.questline)) {
+      fail(`${source}.nodes.${node.id}.questline`, `unknown questline ${JSON.stringify(node.questline)}`);
+    }
+  }
+  definition.questlines.forEach(questline => {
+    const owned = definition.nodes.filter(node => node.questline === questline.id)
+      .map(node => node.id);
+    if (owned.length === 0) {
+      fail(`${source}.questlines.${questline.id}`, 'owns no nodes');
+    }
+    if (questline.nodes !== undefined) {
+      const declared = uniqueStrings(questline.nodes, `${source}.questlines.${questline.id}.nodes`);
+      if (!isDeepStrictEqual(declared, owned)) {
+        fail(`${source}.questlines.${questline.id}.nodes`, 'does not match node ownership');
       }
     }
+    questline.nodes = owned;
   });
-  const orphaned = definition.nodes.map(node => node.id).filter(nodeId => !coveredNodes.has(nodeId));
-  if (orphaned.length) fail(`${source}.questlines`, `do not cover nodes: ${orphaned.join(', ')}`);
   definition.questlines.sort((left, right) => left.id.localeCompare(right.id));
   return definition;
 }

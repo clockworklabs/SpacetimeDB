@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Delivery notifications",
+  "features": [
+    {
+      "id": 501,
+      "name": "Delivery creates one private notification",
+      "actors": ["owner", "other", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "delivery-owner" },
+        { "do": "signUp", "actor": "other", "name": "delivery-other" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+        { "do": "click", "actor": "staff", "testid": "staff-link" },
+        { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Desk Lamp" } },
+        { "do": "wait", "actor": "owner", "ms": 70000 }
+      ],
+      "criteria": [
+        {
+          "id": "501a",
+          "desc": "the order owner receives one delivery notification",
+          "points": 3,
+          "statedBy": "A delivered order creates one notification for its owner.",
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "notifications-toggle" },
+            { "do": "expectElementCount", "actor": "owner", "testid": "notification-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
+          ]
+        },
+        {
+          "id": "501b",
+          "desc": "another customer cannot see the delivery notification",
+          "points": 2,
+          "statedBy": "Delivery notifications are private to the order owner.",
+          "steps": [
+            { "do": "click", "actor": "other", "testid": "notifications-toggle" },
+            { "do": "expect", "actor": "other", "testid": "notification-item", "contains": "Desk Lamp", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

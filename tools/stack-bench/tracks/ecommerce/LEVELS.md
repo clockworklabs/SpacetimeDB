@@ -12,8 +12,8 @@ base release.
 | L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.5.0` is promoted and qualified |
 | L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.5.0` is promoted and qualified |
 | L3 | reservations and scheduled work | modular checks exist; no qualified release |
-| L4 | customer-specific ranking and catalogue search | design target only |
-| L5 | correctness and efficiency under load | design target only |
+| L4 | not yet defined as a cumulative release | design target only |
+| L5 | not yet defined as a cumulative release | design target only |
 
 The promotion and candidate catalogs, not this document, are authoritative for
 which exact release can launch. Qualification status is computed with
@@ -68,18 +68,27 @@ execute exactly once. Its modular check definitions are draft inputs. L3 has no
 candidate recipe, reference evidence, mutation evidence, or qualified release.
 It must not be reported as benchmark data yet.
 
-## L4 — Per-customer derivation
+## Later cumulative releases
 
-The L4 target adds deterministic customer-specific ranking, faceted catalogue
-search, tie-breaking, pagination, and isolation between viewers. Its contract,
-reference fixtures, defect definitions, and calibration are not yet frozen.
+The next cumulative recipe has not been selected. The dependency progression
+does not force all work into one fixed release sequence.
 
-## L5 — Volume
+## Dependency progression
 
-The L5 target applies versioned ecommerce workloads at larger catalogue,
-history, and concurrency sizes. Correctness remains scored. Latency and resource
-measurements remain diagnostic until workload generation and accounting are
-qualified.
+The draft dependency model is defined in
+`progression/ecommerce-1.0.0.json`. Its levels are calculated from feature
+prerequisites. They are separate from the cumulative recipe labels above.
+
+Dependency Level 4 currently contains cart expiration, order delivery,
+order-linked support, personalized recommendations, promotion reporting, and
+scheduled restocks.
+
+Dependency Level 5 currently contains automatic reorder rules, cart recovery,
+delivery notifications, recommendation feedback, and support refunds.
+
+Large-data, long-history, and high-concurrency workloads are test profiles.
+They measure any applicable feature path. They are not feature nodes added only
+to create another level.
 
 ## Composition and scoring
 

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l2.operational-views-features",
+  "stableId": "ecommerce.inventory-operations",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Operational views",
+  "description": "Live stock, sales, queue, and recommendation views.",
+  "requiresPacks": ["ecommerce.feature.purchasing@1.1.0", "ecommerce.feature.warehouse-admin@1.1.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 86000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.l2.operational-views", "path": "prompts/modular/l2-operational-views-1.0.0.md", "order": 50, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.l2.operational-view-hooks", "path": "contracts/appendix-02.md", "order": 2050, "from": "| `low-stock-list`", "until": "| `order-status`", "modes": ["upgrade"] }]
+  },
+  "checks": [
+    { "id": "operational-views-low-stock", "stableId": "operational-views", "source": "scenarios/02-low-stock-1.4.0.json", "feature": 5, "criteria": ["5a"], "role": "feature" },
+    { "id": "operational-views-core", "stableId": "operational-views", "source": "scenarios/02-features.json", "feature": 5, "criteria": ["5b", "5c"], "role": "feature" },
+    { "id": "operational-views-kept-purchases", "stableId": "operational-views", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 5, "criteria": ["5d"], "role": "feature" }
+  ]
+}

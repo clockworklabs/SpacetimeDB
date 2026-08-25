@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.cart-recovery",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Cart recovery",
+  "description": "Safe restoration of available items from an expired cart.",
+  "requiresPacks": ["ecommerce.l3.cart-expiration-features@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 350000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.progression.cart-recovery", "path": "prompts/modular/progression-features-1.0.0.md", "order": 5020, "from": "## Cart recovery", "until": "## Recommendation feedback", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.progression.cart-recovery-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 5920, "from": "## Cart recovery hooks", "until": "## Recommendation feedback hooks", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "restore", "stableId": "cart-recovery", "source": "scenarios/progression-cart-recovery-1.0.0.json", "feature": 503, "role": "feature" }
+  ]
+}

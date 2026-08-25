@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.support-intake", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Support intake", "description": "Public support ticket creation and references.",
+  "requiresPacks": [], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.support-intake", "path": "prompts/modular/business-features-1.0.0.md", "order": 1200, "from": "## Support intake", "until": "## Support triage", "modes": ["fresh", "upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.support-hooks", "path": "contracts/business-hooks-1.0.md", "order": 2900, "from": "## Support hooks", "until": "## Promotion hooks", "modes": ["fresh", "upgrade"] }]
+  },
+  "checks": [{ "id": "ticket-create", "stableId": "support-intake", "source": "scenarios/progression-staff-support-1.0.0.json", "feature": 610, "role": "feature" }]
+}

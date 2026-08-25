@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Automatic reorder rules",
+  "features": [
+    {
+      "id": 502,
+      "name": "A threshold schedules one restock",
+      "actors": ["admin", "buyer-a", "buyer-b", "buyer-c"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "admin", "testid": "reorder-item", "text": "Mirrorless Camera" },
+        { "do": "fill", "actor": "admin", "testid": "reorder-threshold", "text": "2" },
+        { "do": "fill", "actor": "admin", "testid": "reorder-quantity", "text": "5" },
+        { "do": "click", "actor": "admin", "testid": "reorder-submit" },
+        { "do": "signUp", "actor": "buyer-a", "name": "reorder-a" },
+        { "do": "signUp", "actor": "buyer-b", "name": "reorder-b" },
+        { "do": "signUp", "actor": "buyer-c", "name": "reorder-c" }
+      ],
+      "criteria": [
+        {
+          "id": "502a",
+          "desc": "crossing the threshold creates one pending restock",
+          "points": 3,
+          "statedBy": "Crossing a reorder threshold schedules a restock.",
+          "steps": [
+            { "do": "click", "actor": "buyer-a", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "click", "actor": "buyer-b", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
+          ]
+        },
+        {
+          "id": "502b",
+          "desc": "more sales do not duplicate a pending restock",
+          "points": 2,
+          "statedBy": "A pending automatic restock is not scheduled twice.",
+          "steps": [
+            { "do": "click", "actor": "buyer-c", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

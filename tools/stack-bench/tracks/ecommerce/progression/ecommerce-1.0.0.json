@@ -1,0 +1,758 @@
+{
+  "schemaVersion": 1,
+  "kind": "progression-definition",
+  "id": "ecommerce.questlines",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce progression",
+  "policy": "dependency-gated",
+  "strikes": {
+    "default": 3,
+    "levels": {}
+  },
+  "nodes": [
+    {
+      "id": "accounts",
+      "title": "Accounts",
+      "questline": "identity",
+      "featureRefs": [
+        "ecommerce.feature.accounts@1.1.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.accounts@1.1.0#account-create",
+        "ecommerce.feature.accounts@1.1.0#account-duplicate",
+        "ecommerce.feature.accounts@1.1.0#account-password",
+        "ecommerce.feature.accounts@1.1.0#account-signout",
+        "ecommerce.spec.state-durability@1.1.0#session-reload"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "catalog",
+      "title": "Catalog",
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.feature.catalog@1.1.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.catalog@1.1.0#catalog"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "purchasing",
+      "title": "Purchasing and orders",
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.feature.purchasing@1.1.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.purchasing@1.1.0#purchase-order",
+        "ecommerce.spec.access-control@1.2.0#order-ownership",
+        "ecommerce.spec.access-control@1.2.0#purchase-attribution",
+        "ecommerce.spec.access-control@1.2.0#purchase-session",
+        "ecommerce.spec.access-control@1.2.0#signed-out-purchase",
+        "ecommerce.spec.live-state@1.2.0#purchase-stock",
+        "ecommerce.spec.live-state@1.2.0#ranking",
+        "ecommerce.spec.transactional-integrity@1.3.0#books-balance",
+        "ecommerce.spec.transactional-integrity@1.3.0#server-price"
+      ],
+      "dependencies": [
+        {
+          "id": "accounts",
+          "reason": "A purchase needs a buyer."
+        },
+        {
+          "id": "catalog",
+          "reason": "A purchase needs an item."
+        }
+      ]
+    },
+    {
+      "id": "cart-checkout",
+      "title": "Cart and checkout",
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.feature.cart-checkout@1.2.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.cart-checkout@1.2.0#cart",
+        "ecommerce.spec.access-control@1.2.0#cart-boundary",
+        "ecommerce.spec.concurrency-safety@1.3.0#duplicate-checkout",
+        "ecommerce.spec.concurrency-safety@1.3.0#stock-limit",
+        "ecommerce.spec.live-state@1.2.0#shared-cart",
+        "ecommerce.spec.state-durability@1.1.0#account-state-reconnect",
+        "ecommerce.spec.state-durability@1.1.0#account-state-reload",
+        "ecommerce.spec.state-durability@1.1.0#cart-reload"
+      ],
+      "dependencies": [
+        {
+          "id": "accounts",
+          "reason": "An account cart needs a buyer."
+        },
+        {
+          "id": "catalog",
+          "reason": "A cart needs catalog items."
+        }
+      ]
+    },
+    {
+      "id": "warehouse-admin",
+      "title": "Warehouse administration",
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.feature.warehouse-admin@1.1.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.warehouse-admin@1.1.0#warehouse-view",
+        "ecommerce.spec.access-control@1.2.0#admin-ui",
+        "ecommerce.spec.access-control@1.2.0#admin-write",
+        "ecommerce.spec.concurrency-safety@1.3.0#last-unit",
+        "ecommerce.spec.concurrency-safety@1.3.0#restock-race",
+        "ecommerce.spec.external-data-sync@1.1.0#external-live",
+        "ecommerce.spec.external-data-sync@1.1.0#external-reconnect",
+        "ecommerce.spec.external-data-sync@1.1.0#external-server-restart",
+        "ecommerce.spec.live-state@1.2.0#warehouse-stock"
+      ],
+      "dependencies": [
+        {
+          "id": "catalog",
+          "reason": "Warehouse stock belongs to catalog items."
+        },
+        {
+          "id": "staff-access",
+          "reason": "Warehouse changes require staff access."
+        }
+      ]
+    },
+    {
+      "id": "reviews",
+      "title": "Reviews",
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.feature.reviews@1.1.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.feature.reviews@1.1.0#reviews",
+        "ecommerce.spec.access-control@1.2.0#review-eligibility",
+        "ecommerce.spec.live-state@1.2.0#open-list",
+        "ecommerce.spec.live-state@1.2.0#rating",
+        "ecommerce.spec.transactional-integrity@1.3.0#unique-review"
+      ],
+      "dependencies": [
+        {
+          "id": "purchasing",
+          "reason": "A verified review needs a purchase."
+        }
+      ]
+    },
+    {
+      "id": "fulfilment-queue",
+      "title": "Fulfilment queue",
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.operations-access-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.operations-access-features@1.0.0#fulfilment-core",
+        "ecommerce.operations-access-features@1.0.0#fulfilment-independent",
+        "ecommerce.operations-access-features@1.0.0#fulfilment-warehouse",
+        "ecommerce.operations-access-specifications@1.0.0#operator-authorization-direct",
+        "ecommerce.operations-access-specifications@1.0.0#order-owner-direct"
+      ],
+      "dependencies": [
+        {
+          "id": "purchasing",
+          "reason": "Fulfilment needs orders."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Fulfilment needs warehouse stock."
+        }
+      ]
+    },
+    {
+      "id": "stock-transfers",
+      "title": "Stock transfers",
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l2.stock-transfers-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l2.stock-transfers-features@1.0.0#warehouse-transfer-corrected",
+        "ecommerce.l2.stock-transfers-features@1.0.0#warehouse-transfer-independent",
+        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-cancel",
+        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-contention",
+        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-directional",
+        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-fresh-client",
+        "ecommerce.operations-access-specifications@1.0.0#operator-transfer-authorization"
+      ],
+      "dependencies": [
+        {
+          "id": "warehouse-admin",
+          "reason": "Transfers operate on warehouse stock."
+        }
+      ]
+    },
+    {
+      "id": "cancellation-returns",
+      "title": "Cancellation and returns",
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.l2.cancellation-returns-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.operations-access-specifications@1.0.0#operator-price-authorization",
+        "ecommerce.l2.cancellation-returns-features@1.0.0#cancellation-core",
+        "ecommerce.l2.cancellation-returns-features@1.0.0#cancellation-history",
+        "ecommerce.l2.cancellation-returns-features@1.0.0#return-complete",
+        "ecommerce.returns-pricing-specifications@1.0.0#refund-accounting"
+      ],
+      "dependencies": [
+        {
+          "id": "purchasing",
+          "reason": "Cancellation and returns need an order."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Returned stock needs a warehouse destination."
+        }
+      ]
+    },
+    {
+      "id": "price-history",
+      "title": "Price history",
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.l2.price-history-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l2.price-history-features@1.0.0#price-cart-checkout",
+        "ecommerce.l2.price-history-features@1.0.0#price-history-exact",
+        "ecommerce.l2.price-history-features@1.0.0#price-live-independent"
+      ],
+      "dependencies": [
+        {
+          "id": "purchasing",
+          "reason": "Paid order prices must remain fixed."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Price changes are an administrative operation."
+        }
+      ]
+    },
+    {
+      "id": "operational-views",
+      "title": "Operational views",
+      "questline": "insights",
+      "featureRefs": [
+        "ecommerce.l2.operational-views-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-core",
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-kept-purchases",
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-low-stock"
+      ],
+      "dependencies": [
+        {
+          "id": "purchasing",
+          "reason": "Sales views need order activity."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Stock views need warehouse activity."
+        }
+      ]
+    },
+    {
+      "id": "reservations",
+      "title": "Reservations",
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.l3.reservations-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l3.deferred-durability-specifications@1.0.0#reservation-restart",
+        "ecommerce.l3.deferred-integrity-specifications@1.0.0#reservation-stock",
+        "ecommerce.l3.deferred-integrity-specifications@1.0.0#reserved-checkout",
+        "ecommerce.l3.reservations-features@1.0.0#checkout",
+        "ecommerce.l3.reservations-features@1.0.0#countdown",
+        "ecommerce.l3.reservations-features@1.0.0#expiry",
+        "ecommerce.l3.reservations-features@1.0.0#renewal",
+        "ecommerce.l3.reservations-features@1.0.0#stock-hold",
+        "ecommerce.l3.server-time-specifications@1.0.0#no-browser"
+      ],
+      "dependencies": [
+        {
+          "id": "cart-checkout",
+          "reason": "Reservations belong to cart lines."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Reservations hold warehouse stock."
+        }
+      ]
+    },
+    {
+      "id": "order-delivery",
+      "title": "Order delivery",
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.l3.order-delivery-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l3.deferred-durability-specifications@1.0.0#delivery-restart",
+        "ecommerce.l3.deferred-integrity-specifications@1.0.0#delivery-once",
+        "ecommerce.l3.order-delivery-features@1.0.0#automatic-delivery",
+        "ecommerce.l3.order-delivery-features@1.0.0#cancel-final"
+      ],
+      "dependencies": [
+        {
+          "id": "fulfilment-queue",
+          "reason": "Delivery follows fulfilment."
+        },
+        {
+          "id": "cancellation-returns",
+          "reason": "Delivery must respect final cancellation state."
+        }
+      ]
+    },
+    {
+      "id": "scheduled-restocks",
+      "title": "Scheduled restocks",
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l3.scheduled-restocks-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l3.deferred-access-specifications@1.0.0#customer-refused",
+        "ecommerce.l3.deferred-durability-specifications@1.0.0#restock-restart",
+        "ecommerce.l3.deferred-integrity-specifications@1.0.0#restock-once",
+        "ecommerce.l3.scheduled-restocks-features@1.0.0#applies",
+        "ecommerce.l3.scheduled-restocks-features@1.0.0#cancels",
+        "ecommerce.l3.scheduled-restocks-features@1.0.0#pending",
+        "ecommerce.l3.server-time-specifications@1.0.0#not-early"
+      ],
+      "dependencies": [
+        {
+          "id": "stock-transfers",
+          "reason": "Scheduled restocking uses established stock operations."
+        }
+      ]
+    },
+    {
+      "id": "cart-expiration",
+      "title": "Cart expiration",
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.l3.cart-expiration-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l3.cart-expiration-features@1.0.0#inactive-cart",
+        "ecommerce.l3.deferred-durability-specifications@1.0.0#cart-restart"
+      ],
+      "dependencies": [
+        {
+          "id": "reservations",
+          "reason": "Expiration releases existing reservations."
+        }
+      ]
+    },
+    {
+      "id": "staff-access",
+      "title": "Staff access",
+      "questline": "operations",
+      "featureRefs": [
+        "ecommerce.progression.staff-access@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.staff-access@1.0.0#staff-boundary"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "support-intake",
+      "title": "Support intake",
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-intake@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.support-intake@1.0.0#ticket-create"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "support-triage",
+      "title": "Support triage",
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-triage@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.support-triage@1.0.0#triage"
+      ],
+      "dependencies": [
+        {
+          "id": "staff-access",
+          "reason": "Triage requires a staff member."
+        },
+        {
+          "id": "support-intake",
+          "reason": "Triage operates on submitted tickets."
+        }
+      ]
+    },
+    {
+      "id": "support-history",
+      "title": "Customer support history",
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-history@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.support-history@1.0.0#history"
+      ],
+      "dependencies": [
+        {
+          "id": "accounts",
+          "reason": "Owned ticket history requires an account."
+        },
+        {
+          "id": "support-intake",
+          "reason": "History contains submitted tickets."
+        }
+      ]
+    },
+    {
+      "id": "promotion-rules",
+      "title": "Promotion rules",
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-rules@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.promotion-rules@1.0.0#rules"
+      ],
+      "dependencies": [
+        {
+          "id": "catalog",
+          "reason": "Promotions apply to catalog sales."
+        },
+        {
+          "id": "staff-access",
+          "reason": "Promotion rules require staff access."
+        }
+      ]
+    },
+    {
+      "id": "notification-preferences",
+      "title": "Notification preferences",
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.notification-preferences@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.notification-preferences@1.0.0#preferences"
+      ],
+      "dependencies": [
+        {
+          "id": "accounts",
+          "reason": "Preferences belong to an account."
+        }
+      ]
+    },
+    {
+      "id": "faceted-search",
+      "title": "Faceted search",
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.progression.faceted-search@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.faceted-search@1.0.0#filters",
+        "ecommerce.progression.faceted-search@1.0.0#pagination"
+      ],
+      "dependencies": [
+        {
+          "id": "catalog",
+          "reason": "Search filters catalog items."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Availability filters use warehouse stock."
+        }
+      ]
+    },
+    {
+      "id": "managed-support",
+      "title": "Managed support cases",
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.managed-support@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.managed-support@1.0.0#shared-case"
+      ],
+      "dependencies": [
+        {
+          "id": "support-history",
+          "reason": "Customers need an owned case history."
+        },
+        {
+          "id": "support-triage",
+          "reason": "Staff need an assigned ticket queue."
+        }
+      ]
+    },
+    {
+      "id": "promotion-checkout",
+      "title": "Promotion checkout",
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-checkout@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.promotion-checkout@1.0.0#checkout"
+      ],
+      "dependencies": [
+        {
+          "id": "cart-checkout",
+          "reason": "A promotion is applied to a cart checkout."
+        },
+        {
+          "id": "promotion-rules",
+          "reason": "Checkout needs an active promotion rule."
+        }
+      ]
+    },
+    {
+      "id": "stock-alerts",
+      "title": "Stock alerts",
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.stock-alerts@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.stock-alerts@1.0.0#stock-alert"
+      ],
+      "dependencies": [
+        {
+          "id": "notification-preferences",
+          "reason": "The customer chooses whether to receive alerts."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Alerts respond to warehouse stock changes."
+        }
+      ]
+    },
+    {
+      "id": "personalized-recommendations",
+      "title": "Personalized recommendations",
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.progression.personalized-recommendations@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.personalized-recommendations@1.0.0#customer-results"
+      ],
+      "dependencies": [
+        {
+          "id": "operational-views",
+          "reason": "Recommendations use aggregate product activity."
+        },
+        {
+          "id": "reviews",
+          "reason": "Recommendations use customer review activity."
+        }
+      ]
+    },
+    {
+      "id": "order-support",
+      "title": "Order-linked support",
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.order-support@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.order-support@1.0.0#order-link"
+      ],
+      "dependencies": [
+        {
+          "id": "managed-support",
+          "reason": "The order is attached to an existing managed case."
+        },
+        {
+          "id": "purchasing",
+          "reason": "The linked order must exist."
+        }
+      ]
+    },
+    {
+      "id": "promotion-reporting",
+      "title": "Promotion reporting",
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-reporting@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.promotion-reporting@1.0.0#reporting"
+      ],
+      "dependencies": [
+        {
+          "id": "operational-views",
+          "reason": "Reports use authoritative sales totals."
+        },
+        {
+          "id": "promotion-checkout",
+          "reason": "Reports count promotion redemptions."
+        }
+      ]
+    },
+    {
+      "id": "automatic-reorder",
+      "title": "Automatic reorder rules",
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.progression.automatic-reorder@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.automatic-reorder@1.0.0#threshold"
+      ],
+      "dependencies": [
+        {
+          "id": "operational-views",
+          "reason": "Reorder decisions use current stock views."
+        },
+        {
+          "id": "scheduled-restocks",
+          "reason": "Rules create scheduled restocks."
+        }
+      ]
+    },
+    {
+      "id": "cart-recovery",
+      "title": "Cart recovery",
+      "questline": "shopping",
+      "featureRefs": [
+        "ecommerce.progression.cart-recovery@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.cart-recovery@1.0.0#restore"
+      ],
+      "dependencies": [
+        {
+          "id": "cart-expiration",
+          "reason": "Recovery restores an expired cart."
+        }
+      ]
+    },
+    {
+      "id": "delivery-notifications",
+      "title": "Delivery notifications",
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.delivery-notifications@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.delivery-notifications@1.0.0#delivery-notification"
+      ],
+      "dependencies": [
+        {
+          "id": "notification-preferences",
+          "reason": "The customer chooses whether to receive delivery notices."
+        },
+        {
+          "id": "order-delivery",
+          "reason": "A notice follows a delivered order."
+        }
+      ]
+    },
+    {
+      "id": "recommendation-feedback",
+      "title": "Recommendation feedback",
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.progression.recommendation-feedback@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.recommendation-feedback@1.0.0#dismissal"
+      ],
+      "dependencies": [
+        {
+          "id": "personalized-recommendations",
+          "reason": "Feedback applies to personal recommendations."
+        }
+      ]
+    },
+    {
+      "id": "support-refunds",
+      "title": "Support refunds",
+      "questline": "support",
+      "featureRefs": [
+        "ecommerce.progression.support-refunds@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.support-refunds@1.0.0#case-refund"
+      ],
+      "dependencies": [
+        {
+          "id": "cancellation-returns",
+          "reason": "A support refund uses the established refund path."
+        },
+        {
+          "id": "order-support",
+          "reason": "The refund resolves an order-linked case."
+        }
+      ]
+    }
+  ],
+  "questlines": [
+    {
+      "id": "identity",
+      "title": "Identity"
+    },
+    {
+      "id": "catalog-pricing",
+      "title": "Catalog and pricing"
+    },
+    {
+      "id": "shopping",
+      "title": "Shopping"
+    },
+    {
+      "id": "orders",
+      "title": "Orders"
+    },
+    {
+      "id": "inventory",
+      "title": "Inventory"
+    },
+    {
+      "id": "reviews",
+      "title": "Engagement"
+    },
+    {
+      "id": "insights",
+      "title": "Insights"
+    },
+    {
+      "id": "notifications",
+      "title": "Notifications"
+    },
+    {
+      "id": "operations",
+      "title": "Operations access"
+    },
+    {
+      "id": "promotions",
+      "title": "Promotions"
+    },
+    {
+      "id": "support",
+      "title": "Customer support"
+    }
+  ]
+}

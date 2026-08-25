@@ -5,21 +5,24 @@ import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { runProgressionMode } from '../src/progression/progression-runner.mjs';
 
 const definition = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   kind: 'progression-mode',
   id: 'runner-fixture',
   version: '1.0.0',
+  state: 'draft',
+  title: 'Runner fixture',
   policy: 'dependency-gated',
   strikes: { default: 1, levels: {} },
   nodes: [
-    { id: 'account', level: 1, dependencies: [],
-      featureRefs: ['feature.account@1.0.0'], promptModules: ['prompt.account'],
+    { id: 'account', title: 'Account', questline: 'identity', dependencies: [],
+      featureRefs: ['feature.account@1.0.0'], promptModules: ['prompt.account@1.0.0'],
       gradingChecks: [{ id: 'check.account', points: 1 }] },
-    { id: 'recovery', level: 2, dependencies: ['account'],
-      featureRefs: ['feature.recovery@1.0.0'], promptModules: ['prompt.recovery'],
+    { id: 'recovery', title: 'Recovery', questline: 'identity',
+      dependencies: [{ id: 'account', reason: 'Recovery requires an account.' }],
+      featureRefs: ['feature.recovery@1.0.0'], promptModules: ['prompt.recovery@1.0.0'],
       gradingChecks: [{ id: 'check.recovery', points: 1 }] },
   ],
-  questlines: [{ id: 'identity', title: 'Identity', nodes: ['account', 'recovery'] }],
+  questlines: [{ id: 'identity', title: 'Identity' }],
 });
 
 const passSelected = (action, attemptId) => ({

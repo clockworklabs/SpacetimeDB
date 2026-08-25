@@ -4,33 +4,39 @@ import test from 'node:test';
 import { compileDependencyMode } from '../src/progression/dependency-mode.mjs';
 import { createProgressionEngine, progressionEngine } from '../src/progression/progression-engine.mjs';
 
-const node = (id, level, dependencies, points = [1]) => ({
+const node = (id, dependencies, questline, points = [1]) => ({
   id,
-  level,
-  dependencies,
+  title: id,
+  questline,
+  dependencies: dependencies.map(dependency => ({
+    id: dependency,
+    reason: `${id} requires ${dependency}`,
+  })),
   featureRefs: [`features.${id}@1.0.0`],
-  promptModules: [`prompt.${id}`],
+  promptModules: [`prompt.${id}@1.0.0`],
   gradingChecks: points.map((value, index) => ({ id: `check.${id}.${index + 1}`, points: value })),
 });
 
 const fixture = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   kind: 'progression-mode',
   id: 'storefront-paths',
   version: '1.0.0',
+  state: 'draft',
+  title: 'Storefront paths',
   policy: 'dependency-gated',
   strikes: { default: 2, levels: { 2: 1 } },
   nodes: [
-    node('accounts', 1, [], [2, 1]),
-    node('catalog', 1, []),
-    node('ownership', 2, ['accounts']),
-    node('search', 2, ['catalog']),
-    node('recovery', 3, ['ownership']),
-    node('recommendations', 3, ['search']),
+    node('accounts', [], 'identity', [2, 1]),
+    node('catalog', [], 'discovery'),
+    node('ownership', ['accounts'], 'identity'),
+    node('search', ['catalog'], 'discovery'),
+    node('recovery', ['ownership'], 'identity'),
+    node('recommendations', ['search'], 'discovery'),
   ],
   questlines: [
-    { id: 'identity', title: 'Identity', nodes: ['accounts', 'ownership', 'recovery'] },
-    { id: 'discovery', title: 'Discovery', nodes: ['catalog', 'search', 'recommendations'] },
+    { id: 'identity', title: 'Identity' },
+    { id: 'discovery', title: 'Discovery' },
   ],
 });
 
@@ -59,20 +65,20 @@ test('a valid graph compiles in deterministic level and id order', () => {
     'accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery',
   ]);
   assert.deepEqual(compiled.questlines.map(item => item.id), ['discovery', 'identity']);
+  assert.deepEqual(compiled.questlines.find(item => item.id === 'identity').nodes,
+    ['accounts', 'ownership', 'recovery']);
   assert.deepEqual(compiled.strikes, { levels: { 1: 2, 2: 1, 3: 2 } });
 });
 
 test('invalid graphs, questlines, and strike budgets fail before execution', async t => {
   const cases = [
     ['duplicate node', value => value.nodes.push(structuredClone(value.nodes[0])), /duplicates/],
-    ['missing parent', value => { value.nodes[2].dependencies = ['missing']; }, /unknown parent/],
+    ['missing parent', value => { value.nodes[2].dependencies[0].id = 'missing'; }, /unknown parent/],
     ['dependency cycle', value => {
-      value.nodes[0].dependencies = ['ownership'];
-      value.nodes[2].dependencies = ['accounts'];
+      value.nodes[0].dependencies = [{ id: 'ownership', reason: 'cycle' }];
     }, /dependency cycle/],
-    ['same level parent', value => { value.nodes[2].dependencies = ['catalog', 'search']; }, /must be in level 1/],
-    ['skipped level parent', value => { value.nodes[4].dependencies = ['accounts']; }, /must be in level 2/],
-    ['missing level', value => { value.nodes.filter(item => item.level === 3).forEach(item => { item.level = 4; }); }, /contiguous/],
+    ['missing dependency reason', value => { value.nodes[2].dependencies[0].reason = ''; }, /non-empty string/],
+    ['authored level', value => { value.nodes[0].level = 1; }, /compiled level and dependency reasons/],
     ['invalid default strikes', value => { value.strikes.default = 0; }, /positive integer/],
     ['invalid level strikes', value => { value.strikes.levels[2] = -1; }, /positive integer/],
     ['negative check points', value => { value.nodes[0].gradingChecks[0].points = -1; }, /positive integer/],
@@ -80,9 +86,8 @@ test('invalid graphs, questlines, and strike budgets fail before execution', asy
       value.nodes[0].gradingChecks[0].points = 0;
     }, /positive integer/],
     ['missing budget', value => { value.strikes = { levels: { 1: 1 } }; }, /is required/],
-    ['unknown quest node', value => { value.questlines[0].nodes[1] = 'missing'; }, /unknown node/],
-    ['contradictory questline', value => { value.questlines[0].nodes = ['accounts', 'search']; }, /does not directly depend/],
-    ['orphaned node', value => { value.questlines[0].nodes.pop(); }, /do not cover nodes/],
+    ['unknown questline', value => { value.nodes[0].questline = 'missing'; }, /unknown questline/],
+    ['empty questline', value => { value.nodes.forEach(item => { item.questline = 'identity'; }); }, /owns no nodes/],
   ];
   for (const [name, mutate, expected] of cases) {
     await t.test(name, () => {
@@ -119,7 +124,7 @@ test('prompt work contains only unlocked nodes while grading also contains their
   let state = progressionEngine.initialize(fixture());
   assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts', 'catalog']);
   assert.deepEqual(progressionEngine.promptSelection(state).promptModules,
-    ['prompt.accounts', 'prompt.catalog']);
+    ['prompt.accounts@1.0.0', 'prompt.catalog@1.0.0']);
   assert.doesNotMatch(JSON.stringify(progressionEngine.promptSelection(state)), /ownership|recovery|search/);
 
   state = progressionEngine.recordResult(state, conclusive(state, 'level-1', {
@@ -287,17 +292,19 @@ test('state resumes by replay and rejects contradictory snapshots or event seque
 
 test('a child with multiple parents opens only when every parent passes', () => {
   const value = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'progression-mode',
     id: 'multi-parent',
     version: '1.0.0',
+    state: 'draft',
+    title: 'Multi-parent graph',
     policy: 'dependency-gated',
     strikes: { default: 1, levels: {} },
-    nodes: [node('account', 1, []), node('cart', 1, []),
-      node('checkout', 2, ['account', 'cart'])],
+    nodes: [node('account', [], 'orders'), node('cart', [], 'shopping'),
+      node('checkout', ['account', 'cart'], 'orders')],
     questlines: [
-      { id: 'account-checkout', title: 'Account checkout', nodes: ['account', 'checkout'] },
-      { id: 'cart-checkout', title: 'Cart checkout', nodes: ['cart', 'checkout'] },
+      { id: 'orders', title: 'Orders' },
+      { id: 'shopping', title: 'Shopping' },
     ],
   };
   let state = progressionEngine.initialize(value);
@@ -401,7 +408,7 @@ test('a continuation grant reopens a regressed ancestor and its affected child',
   assert.equal(state.nodes.recommendations.status, 'passed');
 });
 
-test('questline percentages use partial check points and the overall score weights paths equally', () => {
+test('questline percentages use partial check points and the overall score weights groups equally', () => {
   const value = fixture();
   value.strikes.default = 1;
   let state = progressionEngine.initialize(value);

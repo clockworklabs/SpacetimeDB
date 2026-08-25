@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.order-support", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Order-linked support", "description": "Ownership-safe links between cases and orders.",
+  "requiresPacks": ["ecommerce.progression.managed-support@1.0.0", "ecommerce.feature.purchasing@1.1.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 65000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.order-support", "path": "prompts/modular/business-features-1.0.0.md", "order": 4100, "from": "## Order-linked support", "until": "## Support refunds", "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.support-hooks", "path": "contracts/business-hooks-1.0.md", "order": 4900, "from": "## Support hooks", "until": "## Promotion hooks", "modes": ["upgrade"] }]
+  },
+  "checks": [{ "id": "order-link", "stableId": "order-support", "source": "scenarios/progression-staff-support-1.0.0.json", "feature": 614, "role": "feature" }]
+}

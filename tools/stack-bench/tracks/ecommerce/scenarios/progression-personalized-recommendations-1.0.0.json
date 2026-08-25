@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 4,
+  "name": "Personalized recommendations",
+  "features": [
+    {
+      "id": 403,
+      "name": "Recommendations use customer activity",
+      "actors": ["audio-customer", "home-customer"],
+      "setup": [
+        { "do": "signUp", "actor": "audio-customer", "name": "recommend-audio" },
+        { "do": "click", "actor": "audio-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
+        { "do": "signUp", "actor": "home-customer", "name": "recommend-home" },
+        { "do": "click", "actor": "home-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } }
+      ],
+      "criteria": [
+        {
+          "id": "403a",
+          "desc": "customers with different activity receive different relevant results",
+          "points": 3,
+          "statedBy": "Recommendations use the signed-in customer's own activity.",
+          "steps": [
+            { "do": "expect", "actor": "audio-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Headphones" },
+            { "do": "expect", "actor": "home-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Desk Lamp" }
+          ]
+        },
+        {
+          "id": "403b",
+          "desc": "one customer's activity does not replace another customer's recommendations",
+          "points": 2,
+          "statedBy": "Customer recommendation profiles are isolated.",
+          "steps": [
+            { "do": "click", "actor": "audio-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "expect", "actor": "home-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Desk Lamp" }
+          ]
+        }
+      ]
+    }
+  ]
+}

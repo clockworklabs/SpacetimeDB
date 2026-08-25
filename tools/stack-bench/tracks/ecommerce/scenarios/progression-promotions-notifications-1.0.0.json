@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Promotions and notifications",
+  "features": [
+    {
+      "id": 620,
+      "name": "Promotion rules",
+      "actors": ["staff", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "promotion-customer" }
+      ],
+      "criteria": [
+        { "id": "620a", "desc": "staff can create a bounded promotion", "points": 2, "statedBy": "Staff can create promotion rules.", "steps": [
+          { "do": "click", "actor": "staff", "testid": "promotions-link" },
+          { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "SAVE10" },
+          { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
+          { "do": "fill", "actor": "staff", "testid": "promotion-limit", "text": "2" },
+          { "do": "click", "actor": "staff", "testid": "promotion-submit" },
+          { "do": "expect", "actor": "staff", "testid": "promotion-report", "contains": "SAVE10" }
+        ] },
+        { "id": "620b", "desc": "customers cannot create promotions", "points": 2, "statedBy": "Promotion management is limited to staff.", "steps": [
+          { "do": "expect", "actor": "customer", "testid": "promotions-link", "absent": true }
+        ] }
+      ]
+    },
+    {
+      "id": 621,
+      "name": "Promotion checkout",
+      "actors": ["staff", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "promotions-link" },
+        { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "CHECK10" },
+        { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
+        { "do": "fill", "actor": "staff", "testid": "promotion-limit", "text": "1" },
+        { "do": "click", "actor": "staff", "testid": "promotion-submit" },
+        { "do": "signUp", "actor": "customer", "name": "promotion-checkout" },
+        { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "click", "actor": "customer", "testid": "cart-toggle" },
+        { "do": "fill", "actor": "customer", "testid": "cart-promotion", "text": "CHECK10" },
+        { "do": "click", "actor": "customer", "testid": "apply-promotion" }
+      ],
+      "criteria": [
+        { "id": "621a", "desc": "checkout records the server-calculated discount", "points": 3, "statedBy": "The server applies an active promotion and records its discount on the order.", "steps": [
+          { "do": "click", "actor": "customer", "testid": "checkout-submit" },
+          { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+          { "do": "expectNumber", "actor": "customer", "testid": "order-discount", "in": { "testid": "order-item", "contains": "Keyboard" }, "equals": 8.9 }
+        ] }
+      ]
+    },
+    {
+      "id": 622,
+      "name": "Promotion reporting",
+      "actors": ["staff", "buyer"],
+      "setup": [
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "promotions-link" },
+        { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "REPORT10" },
+        { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
+        { "do": "fill", "actor": "staff", "testid": "promotion-limit", "text": "2" },
+        { "do": "click", "actor": "staff", "testid": "promotion-submit" },
+        { "do": "signUp", "actor": "buyer", "name": "promotion-report-buyer" },
+        { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "click", "actor": "buyer", "testid": "cart-toggle" },
+        { "do": "fill", "actor": "buyer", "testid": "cart-promotion", "text": "REPORT10" },
+        { "do": "click", "actor": "buyer", "testid": "apply-promotion" },
+        { "do": "click", "actor": "buyer", "testid": "checkout-submit" }
+      ],
+      "criteria": [
+        { "id": "622a", "desc": "the promotion report has exact redemption and revenue totals", "points": 3, "statedBy": "Promotion reporting uses exact order data.", "steps": [
+          { "do": "expectNumber", "actor": "staff", "testid": "promotion-redemptions", "in": { "testid": "promotion-report", "contains": "REPORT10" }, "equals": 1 },
+          { "do": "expectNumber", "actor": "staff", "testid": "promotion-revenue", "in": { "testid": "promotion-report", "contains": "REPORT10" }, "equals": 80.1 }
+        ] }
+      ]
+    },
+    {
+      "id": 630,
+      "name": "Notification preferences",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "notification-owner" },
+        { "do": "signUp", "actor": "other", "name": "notification-other" }
+      ],
+      "criteria": [
+        { "id": "630a", "desc": "notification choices persist for the account", "points": 2, "statedBy": "Notification preferences persist for each customer.", "steps": [
+          { "do": "click", "actor": "owner", "testid": "notification-settings" },
+          { "do": "click", "actor": "owner", "testid": "notification-order" },
+          { "do": "click", "actor": "owner", "testid": "notification-save" },
+          { "do": "reload", "actor": "owner", "settleMs": 3000 },
+          { "do": "expect", "actor": "owner", "testid": "notification-order", "contains": "on" }
+        ] },
+        { "id": "630b", "desc": "one customer's choice does not change another's", "points": 2, "statedBy": "Notification preferences are private to one account.", "steps": [
+          { "do": "click", "actor": "other", "testid": "notification-settings" },
+          { "do": "expect", "actor": "other", "testid": "notification-order", "contains": "off" }
+        ] }
+      ]
+    },
+    {
+      "id": 631,
+      "name": "Stock alerts",
+      "actors": ["subscriber", "other", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "subscriber", "name": "stock-subscriber" },
+        { "do": "signUp", "actor": "other", "name": "stock-other" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "East", "quantity": 0, "settleMs": 1000 },
+        { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "West", "quantity": 0, "settleMs": 1000 },
+        { "do": "click", "actor": "subscriber", "testid": "stock-alert", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } }
+      ],
+      "criteria": [
+        { "id": "631a", "desc": "restored stock sends one alert only to the subscriber", "points": 3, "statedBy": "A stock alert is sent once to customers who requested it.", "steps": [
+          { "do": "click", "actor": "admin", "testid": "admin-link" },
+          { "do": "fill", "actor": "admin", "testid": "restock-item", "text": "Mirrorless Camera" },
+          { "do": "fill", "actor": "admin", "testid": "restock-warehouse", "text": "East" },
+          { "do": "fill", "actor": "admin", "testid": "restock-quantity", "text": "5" },
+          { "do": "click", "actor": "admin", "testid": "restock-submit" },
+          { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" },
+          { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 },
+          { "do": "click", "actor": "other", "testid": "notifications-toggle" },
+          { "do": "expect", "actor": "other", "testid": "notification-item", "contains": "Mirrorless Camera", "absent": true }
+        ] }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.personalized-recommendations",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Personalized recommendations",
+  "description": "Deterministic recommendations isolated by customer.",
+  "requiresPacks": [
+    "ecommerce.feature.reviews@1.1.0",
+    "ecommerce.l2.operational-views-features@1.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 70000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.progression.personalized-recommendations", "path": "prompts/modular/progression-features-1.0.0.md", "order": 4010, "from": "## Personalized recommendations", "until": "## Delivery notifications", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.progression.personalized-recommendation-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 4910, "from": "## Personalized recommendation hooks", "until": "## Delivery notification hooks", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "customer-results", "stableId": "personalized-recommendations", "source": "scenarios/progression-personalized-recommendations-1.0.0.json", "feature": 403, "role": "feature" }
+  ]
+}
