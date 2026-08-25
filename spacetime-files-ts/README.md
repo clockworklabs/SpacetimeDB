@@ -9,7 +9,7 @@ that streams cached responses through the module's route.
 ## Install
 
 ```bash
-npm install @spacetimedb/files @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/files spacetimedb@^2.8.3
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.

@@ -60,8 +60,8 @@ Package entrypoints:
 ## Testing
 
 ```bash
-npm test --workspace @spacetimedb/crypto
-npm run lint --workspace @spacetimedb/crypto
+pnpm test
+pnpm run lint
 ```
 
 Tests use published vendor vectors and local fixtures; no network is required.

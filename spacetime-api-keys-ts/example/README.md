@@ -59,7 +59,7 @@ local rows.
 This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
-npm install @spacetimedb/api-keys @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/api-keys spacetimedb@^2.8.3
 ```
 
 Follow the package's

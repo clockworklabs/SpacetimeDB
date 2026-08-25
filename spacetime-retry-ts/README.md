@@ -112,9 +112,9 @@ factory is available from `./submodule`.
 ## Testing
 
 ```bash
-npm test --workspace @spacetimedb/retry
-npm run lint --workspace @spacetimedb/retry
-npm run build
+pnpm test
+pnpm run lint
+pnpm run build
 ```
 
 The repository build compiles the local fixture module that mounts the factory.

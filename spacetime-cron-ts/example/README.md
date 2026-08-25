@@ -24,7 +24,7 @@ This is a local development example. Its scheduling reducers accept any connecte
 
 - Node.js 20 or later
 - pnpm 10
-- SpacetimeDB CLI 2.8.3 or later
+- SpacetimeDB CLI 2.8.3 with `spacetime:sys@2.0` volatile procedure support
 - A local SpacetimeDB server
 
 Select the supported CLI release:

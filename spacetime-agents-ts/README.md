@@ -129,8 +129,8 @@ Package entrypoints:
 ## Testing
 
 ```bash
-npm test --workspace @spacetimedb/agents
-npm run lint --workspace @spacetimedb/agents
+pnpm test
+pnpm run lint
 ```
 
 The unit suite uses mocked HTTP with deterministic provider fixtures. See the

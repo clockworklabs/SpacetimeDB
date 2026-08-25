@@ -58,7 +58,7 @@ database. Use `pnpm run build:module` when existing local files must be preserve
 This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
-npm install @spacetimedb/files @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/files spacetimedb@^2.8.3
 ```
 
 Follow the package's

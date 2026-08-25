@@ -66,7 +66,7 @@ database. Use `pnpm run build:module` to preserve existing data.
 This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
-npm install @spacetimedb/resend @spacetimedb/rate-limit @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/resend @spacetimedb/rate-limit spacetimedb@^2.8.3
 ```
 
 Follow the package's
@@ -169,7 +169,7 @@ or unsigned webhook fixtures must return a non-success status.
   secret matches `RESEND_WEBHOOK_SECRET`.
 - **Connection targets disagree:** make `STDB_URI`, `STDB_HTTP`, and the publish
   target refer to the same SpacetimeDB instance.
-- **Changing the server identity intentionally:** stop the server, remove
+- **Replace the server identity:** stop the server, remove
   `.stdb-server-token`, and restart while logged in as a database administrator.
 
 ## Important files

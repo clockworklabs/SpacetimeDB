@@ -10,8 +10,10 @@ transactions are available.
 
 ## Requirements
 
-- SpacetimeDB CLI 2.8.3 or later
-- `spacetimedb` npm package 2.8.3 or later within the 2.x release line
+- SpacetimeDB CLI 2.8.3
+- `spacetimedb` npm package 2.8.3
+- Host support for the `spacetime:sys@2.0` volatile procedure used by failure
+  recovery
 - Node.js 20 or later for package tooling
 
 ## Install

@@ -69,7 +69,7 @@ database. Use `pnpm run build:module` to preserve existing data.
 This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
-npm install @spacetimedb/stripe @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/stripe spacetimedb@^2.8.3
 ```
 
 Follow the package's

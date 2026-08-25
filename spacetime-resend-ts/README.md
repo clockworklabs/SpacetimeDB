@@ -9,7 +9,7 @@ state, synchronous procedures, and valibot-validated webhook payloads.
 ## Install
 
 ```bash
-npm install @spacetimedb/resend @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/resend spacetimedb@^2.8.3
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -221,8 +221,8 @@ To exercise inbound webhooks end-to-end, expose your local relay via ngrok, regi
 ## Testing
 
 ```bash
-npm test --workspace @spacetimedb/resend
-npm run lint --workspace @spacetimedb/resend
+pnpm test
+pnpm run lint
 ```
 
 Credentialed smoke coverage is described in **Integration testing** above.

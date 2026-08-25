@@ -9,7 +9,7 @@ admin-gated views. Host apps own what scopes mean.
 ## Install
 
 ```bash
-npm install @spacetimedb/api-keys @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/api-keys spacetimedb@^2.8.3
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.

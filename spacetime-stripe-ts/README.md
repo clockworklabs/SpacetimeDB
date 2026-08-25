@@ -10,7 +10,7 @@ synchronous and webhook payloads use valibot validation.
 ## Install
 
 ```bash
-npm install @spacetimedb/stripe @spacetimedb/crypto spacetimedb@^2.8.3
+npm install @spacetimedb/stripe spacetimedb@^2.8.3
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -228,8 +228,8 @@ ephemeral listener secret.
 ## Testing
 
 ```bash
-npm test --workspace @spacetimedb/stripe
-npm run lint --workspace @spacetimedb/stripe
+pnpm test
+pnpm run lint
 ```
 
 Credentialed sandbox coverage is described in **Integration testing** above.
