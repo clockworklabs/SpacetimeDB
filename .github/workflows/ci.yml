@@ -1360,7 +1360,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2-staging
     permissions:
       contents: read
     env:
