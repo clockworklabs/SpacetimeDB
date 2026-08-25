@@ -139,7 +139,7 @@ jobs:
           cargo run -vv --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
-          precompiled_modules=(${CARGET_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+          precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
           if (( ${#precompiled_modules[@]} == 0 )); then
             echo "No precompiled smoketest modules were produced."
             exit 1
