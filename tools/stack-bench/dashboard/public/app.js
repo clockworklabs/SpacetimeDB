@@ -21,7 +21,8 @@ const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 })[character]);
-const title = value => ({ postgres: 'PostgreSQL', mongodb: 'MongoDB', spacetime: 'SpacetimeDB' }[value] ?? value);
+const title = value => ({ postgres: 'PostgreSQL', mongodb: 'MongoDB', spacetime: 'SpacetimeDB',
+  sequential: 'Sequential', dependency: 'Dependency' }[value] ?? value);
 const statusLabel = value => ({ running: 'Running', completed: 'Completed', prepared: 'Ready',
   pending: 'Queued', 'attention-required': 'Needs attention', interrupted: 'Interrupted',
   invalid: 'Excluded', unreadable: 'Cannot read' }[value] ?? value);
@@ -604,6 +605,33 @@ function levelTable(attempt) {
   </table></div>`;
 }
 
+function dependencyWork(attempt) {
+  const progress = attempt.dependency;
+  if (!progress) return '';
+  if (progress.unreadable) {
+    return `<p class="package-notice">Dependency progress cannot be read: ${escapeHtml(progress.unreadable)}</p>`;
+  }
+  const section = (label, nodes) => `<div class="dependency-group"><h4>${label}</h4>${nodes.length
+    ? `<ul>${nodes.map(node => `<li><strong>${escapeHtml(node.title)}</strong><span>L${node.level} · ${node.checks.passed}/${node.checks.total} checks passed</span></li>`).join('')}</ul>`
+    : '<p>None</p>'}</div>`;
+  const score = progress.score?.averagePercentage ?? progress.score?.uniqueChecks?.percentage;
+  return `<section class="dependency-progress">
+    <div class="dependency-summary">
+      <p><span class="tag">Current level</span><strong>L${escapeHtml(progress.level)}</strong></p>
+      <p><span class="tag">Attempts</span><strong>${escapeHtml(progress.attempts.level)} at this level</strong></p>
+      <p><span class="tag">Strikes</span><strong>${escapeHtml(progress.attempts.used)} of ${escapeHtml(progress.attempts.budget)}</strong></p>
+      <p><span class="tag">Score</span><strong>${score == null ? 'In progress' : `${Math.round(score)}%`}</strong></p>
+      <p><span class="tag">Evidence</span><strong>${plural(progress.evidence.length, 'graded attempt')}</strong></p>
+    </div>
+    <div class="dependency-groups">
+      ${section('Current work', progress.work.current)}
+      ${section('Passed', progress.work.passed)}
+      ${section('Needs work', progress.work.failed)}
+      ${section('Waiting', progress.work.locked)}
+    </div>
+  </section>`;
+}
+
 // The identity an operator otherwise opens plan.json for. Only facts the plan
 // actually carries are shown; a schema-1 campaign shows what it has.
 function factsBlock(campaign) {
@@ -614,6 +642,7 @@ function factsBlock(campaign) {
     return match ? `sha256:${match[1]}…` : reference ?? null;
   };
   const entries = [
+    facts.mode ? ['Mode', title(facts.mode)] : null,
     ...facts.agents.map(agent => ['Agent', [agent.adapter, agent.version ? `@${agent.version}` : '',
       agent.model ? ` · ${agent.model}` : ''].join('')]),
     ...facts.recipes.filter(recipe => recipe.id).map(recipe =>
@@ -675,6 +704,9 @@ async function showDetail(key) {
     const graded = compareCampaign(campaign).usable.length;
     const summary = (campaign.statusReason
         ? `<p class="package-notice">${escapeHtml(campaign.statusReason)}</p>` : '')
+      + (campaign.mode === 'dependency' && campaign.status === 'prepared'
+        && (campaign.summary?.executions ?? 0) > 0
+        ? `<p class="detail-actions"><button class="primary" type="button" data-resume="${escapeHtml(campaign.key)}">Resume campaign</button></p>` : '')
       + factsBlock(campaign)
       + (graded ? `<section class="detail-block"><h3>Comparison</h3>${comparisonTable(campaign)}</section>` : '');
     const files = campaign.package?.campaign ?? [];
@@ -691,6 +723,7 @@ async function showDetail(key) {
         ${attemptSummaryLine(attempt)}
         <div class="attempt-body">
           ${reason ? `<p class="package-notice">Excluded from the comparison — ${escapeHtml(reason)}</p>` : ''}
+          ${dependencyWork(attempt)}
           ${levelTable(attempt)}
           ${evidence.map(item => renderExecutionPackage(campaign, item)).join('')
             || '<p class="package-empty">This attempt has not produced an execution package yet.</p>'}
@@ -721,7 +754,13 @@ function openFromHash() {
 // ------------------------------------------------------------------- plumbing
 
 function populatePlans() {
-  const plans = state.overview.plans.filter(plan => plan.state === 'frozen');
+  let mode = $('#mode-select').value;
+  const frozen = state.overview.plans.filter(plan => plan.state === 'frozen');
+  if (!frozen.some(plan => plan.mode === mode) && frozen[0]?.mode) {
+    mode = frozen[0].mode;
+    $('#mode-select').value = mode;
+  }
+  const plans = frozen.filter(plan => plan.mode === mode);
   $('#plan-select').innerHTML = plans.map(plan => `<option value="${escapeHtml(plan.id)}">${escapeHtml(plan.title)}</option>`).join('');
   state.selectedPlan = plans[0] ?? null;
   renderPlanSummary();
@@ -739,6 +778,7 @@ function renderPlanSummary() {
     return;
   }
   const facts = [
+    ['Mode', title(plan.mode)],
     ['Stacks', plan.stacks.map(title).join(', ')],
     ['Levels', plan.levels.map(level => `L${level}`).join('–')],
     ['Attempts', plan.attempts],
@@ -776,6 +816,16 @@ function renderTick() {
 }
 
 document.addEventListener('click', event => {
+  const resume = event.target.closest('[data-resume]');
+  if (resume?.dataset.resume) {
+    resume.disabled = true;
+    request(`/api/campaigns/${encodeURIComponent(resume.dataset.resume)}/resume`, {
+      method: 'POST', headers: { 'content-type': 'application/json',
+        'x-stack-bench-token': state.csrfToken }, body: '{}' },
+    ).then(() => { closeDetail(); return refresh(); })
+      .catch(error => { resume.disabled = false; resume.title = error.message; });
+    return;
+  }
   const detail = event.target.closest('[data-campaign]');
   if (detail?.dataset.campaign) { showDetail(detail.dataset.campaign); return; }
   const toggle = event.target.closest('[data-toggles]');
@@ -801,6 +851,7 @@ $('#toggle-archived').addEventListener('click', () => {
 });
 window.addEventListener('hashchange', openFromHash);
 $('#open-run').addEventListener('click', () => { populatePlans(); $('#run-message').textContent = ''; $('#run-dialog').showModal(); });
+$('#mode-select').addEventListener('change', populatePlans);
 $('#plan-select').addEventListener('change', event => {
   state.selectedPlan = state.overview.plans.find(plan => plan.id === event.target.value) ?? null;
   renderPlanSummary();

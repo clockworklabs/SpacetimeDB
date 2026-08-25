@@ -1,0 +1,103 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { readCampaignState } from './campaign-scheduler.mjs';
+import { progressionEngine } from '../progression/progression-engine.mjs';
+import { readProgressionState } from '../progression/progression-state.mjs';
+
+function progressionOwner(plan, attempt) {
+  return {
+    schemaVersion: 1,
+    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+    attempt: {
+      id: attempt.id,
+      track: plan.definition.track,
+      stack: attempt.stack,
+      agentAdapter: attempt.agentAdapter,
+      model: attempt.model,
+      conditionSha256: attempt.condition.sha256,
+    },
+    workspace: { appDirectory: 'source' },
+  };
+}
+
+export function dependencyProgress(plan, attempt, executionDirectory) {
+  if (attempt.mode?.id !== 'dependency' || !plan.progression || !executionDirectory) return null;
+  const statePath = join(executionDirectory, 'progression-state.json');
+  if (!existsSync(statePath)) return null;
+  try {
+    const stored = readProgressionState(statePath, {
+      progression: plan.progression,
+      owner: progressionOwner(plan, attempt),
+    });
+    const state = stored.state;
+    const definitions = new Map(state.definition.nodes.map(node => [node.id, node]));
+    const nodes = Object.entries(state.nodes).map(([id, node]) => {
+      const definition = definitions.get(id);
+      const checks = Object.values(node.checks);
+      return {
+        id,
+        title: definition.title,
+        level: definition.level,
+        status: node.status,
+        checks: {
+          passed: checks.filter(value => value === 'pass').length,
+          failed: checks.filter(value => value === 'fail').length,
+          total: checks.length,
+        },
+      };
+    });
+    const strike = state.strikes[String(state.level)] ?? null;
+    return {
+      phase: state.phase,
+      level: state.level,
+      attempts: {
+        total: state.attempts.length,
+        level: state.attempts.filter(item => item.level === state.level).length,
+        used: strike?.used ?? 0,
+        budget: strike?.budget ?? 0,
+        remaining: strike ? strike.budget - strike.used : 0,
+      },
+      work: {
+        current: nodes.filter(node => node.status === 'active'),
+        passed: nodes.filter(node => node.status === 'passed'),
+        failed: nodes.filter(node => ['exhausted', 'regressed'].includes(node.status)
+          || node.checks.failed > 0),
+        locked: nodes.filter(node => ['locked', 'blocked'].includes(node.status)),
+      },
+      score: progressionEngine.score(state),
+      evidence: state.attempts.map((item, index) => ({
+        attempt: index + 1,
+        level: item.level,
+        outcome: item.outcome,
+        runId: item.runId ?? null,
+        sourceSha256: item.sourceSha256 ?? null,
+        selectionSha256: item.selectionSha256 ?? null,
+      })),
+      snapshotSha256: stored.snapshotSha256,
+    };
+  } catch (error) {
+    return { unreadable: error.message };
+  }
+}
+
+export function inspectCampaignSummary(directory) {
+  const { plan, state } = readCampaignState(directory);
+  return {
+    id: plan.id,
+    version: plan.version,
+    sha256: plan.contentSha256,
+    mode: plan.definition.mode?.id ?? 'sequential',
+    status: state.status,
+    attempts: state.attempts.map(attempt => {
+      const execution = attempt.executions.at(-1) ?? null;
+      const executionDirectory = execution ? join(directory, execution.output) : null;
+      return {
+        id: attempt.plan.id,
+        status: attempt.status,
+        executions: attempt.executions.length,
+        dependency: dependencyProgress(plan, attempt.plan, executionDirectory),
+      };
+    }),
+  };
+}

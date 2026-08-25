@@ -398,6 +398,20 @@ input { font-family: var(--font-source); }
 .plan-summary p:last-child:nth-child(even) { grid-column: 1 / -1; }
 .plan-summary .tag { display: block; margin-bottom: 7px; }
 .plan-summary strong { display: block; color: var(--ink); font-size: 14px; font-weight: 500; }
+.dependency-progress { margin-bottom: 18px; border: 1px solid var(--line); background: var(--panel); }
+.dependency-summary { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--line); }
+.dependency-summary p { padding: 12px; border-right: 1px solid var(--line); }
+.dependency-summary p:last-child { border-right: 0; }
+.dependency-summary .tag, .dependency-summary strong { display: block; }
+.dependency-summary strong { margin-top: 5px; color: var(--ink); font-size: 14px; }
+.dependency-groups { display: grid; grid-template-columns: repeat(2, 1fr); }
+.dependency-group { padding: 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.dependency-group:nth-child(even) { border-right: 0; }
+.dependency-group:nth-last-child(-n + 2) { border-bottom: 0; }
+.dependency-group h4 { margin: 0 0 8px; color: var(--ink); font-size: 13px; }
+.dependency-group ul { margin: 0; padding: 0; list-style: none; }
+.dependency-group li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.dependency-group li span, .dependency-group p { color: var(--muted); font-size: 12px; }
 .form-message { min-height: 18px; margin-top: 12px; color: var(--yellow); font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
@@ -521,6 +535,9 @@ pre {
   .attempt > summary { grid-template-columns: minmax(0, 1fr) 100px auto; }
   .attempt-phase-inline { display: none; }
   .plan-summary { grid-template-columns: 1fr; }
+  .dependency-summary, .dependency-groups { grid-template-columns: 1fr; }
+  .dependency-summary p, .dependency-group { border-right: 0; border-bottom: 1px solid var(--line); }
+  .dependency-group:nth-last-child(2) { border-bottom: 1px solid var(--line); }
 }
 
 @media (max-width: 640px) {

@@ -59,7 +59,11 @@
           <h2>Start a frozen plan</h2>
           <button class="icon-button" value="cancel" aria-label="Close">×</button>
         </div>
-        <p class="dialog-copy">The plan already defines the stacks, levels, checks, model, repair budget, and parallelism. Starting it does not change those choices.</p>
+        <p class="dialog-copy">Choose how work advances. The selected frozen plan keeps all other run settings unchanged.</p>
+        <label>Run mode<select id="mode-select" required>
+          <option value="sequential">Sequential</option>
+          <option value="dependency">Dependency</option>
+        </select></label>
         <label>Test plan<select id="plan-select" required></select></label>
         <div id="plan-summary" class="plan-summary"></div>
         <label>Run name<input id="output-name" required minlength="3" maxlength="120" pattern="[a-z0-9][a-z0-9.-]+" autocomplete="off"></label>

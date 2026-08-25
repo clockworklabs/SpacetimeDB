@@ -127,6 +127,7 @@ export function createDashboardServer(options) {
   const feed = options.feed ?? createOperationFeed(resultsRoot);
   const launch = options.launch ?? launchCampaign;
   const plans = options.plans ?? (() => discoverPlans(plansRoot));
+  const launchReservations = new Set();
   const server = createServer(async (request, response) => {
     securityHeaders(response);
     try {
@@ -151,6 +152,53 @@ export function createDashboardServer(options) {
         const overview = readDashboardOverview({ resultsRoot, plansRoot, operations: feed.list() });
         return json(response, 200, { ...overview, plans: plans(),
           canStart: allowLaunch, csrfToken: token });
+      }
+      const resumeRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/resume$/);
+      if (request.method === 'POST' && resumeRoute) {
+        if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the StackBench appliance.' });
+        const expectedOrigin = `http://${request.headers.host}`;
+        if (request.headers.origin !== expectedOrigin || request.headers['x-stack-bench-token'] !== token) {
+          return json(response, 403, { error: 'The run request did not come from this dashboard session.' });
+        }
+        const key = decodeURIComponent(resumeRoute[1]);
+        if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
+        const campaign = campaignDetail(resultsRoot, key);
+        const priorExecutions = campaign.summary?.executions ?? 0;
+        if (campaign.mode !== 'dependency' || campaign.status !== 'prepared' || priorExecutions < 1) {
+          return json(response, 409, { error: 'Only an interrupted campaign that is ready can resume.' });
+        }
+        const plan = plans().find(item => item.id === campaign.id && item.sha256 === campaign.sha256);
+        if (!plan || plan.state !== 'frozen') {
+          return json(response, 409, { error: 'The exact frozen plan is unavailable.' });
+        }
+        const reservation = `${campaign.id}:${campaign.sha256}:${key}`;
+        if (launchReservations.has(reservation)) {
+          return json(response, 409, { error: 'This campaign already has an active controller.' });
+        }
+        launchReservations.add(reservation);
+        const now = new Date().toISOString();
+        const operation = { schemaVersion: 1, id: randomUUID(), type: 'campaign.resume',
+          status: 'running', createdAt: now, updatedAt: now, actor: 'local-operator',
+          campaignId: campaign.id, campaignSha256: campaign.sha256, outputName: key };
+        feed.append(operation);
+        const output = join(resultsRoot, 'campaigns', key);
+        try {
+          const child = launch({ plan: { ...plan, path: join(plansRoot, plan.file) }, output,
+            operationId: operation.id, resultsRoot, feed, env: process.env });
+          if (typeof child?.once === 'function') {
+            child.once('error', () => launchReservations.delete(reservation));
+            child.once('exit', () => launchReservations.delete(reservation));
+          } else {
+            launchReservations.delete(reservation);
+          }
+          feed.append({ ...operation, pid: child?.pid ?? null });
+        } catch (error) {
+          launchReservations.delete(reservation);
+          feed.append({ schemaVersion: 1, id: operation.id, status: 'failed',
+            updatedAt: new Date().toISOString(), error: error.message });
+          throw error;
+        }
+        return json(response, 202, operation);
       }
       const artifactRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/artifacts\/([^/]+)$/);
       if (request.method === 'GET' && artifactRoute) {

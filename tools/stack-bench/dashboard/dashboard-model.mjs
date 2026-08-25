@@ -8,6 +8,7 @@ import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campai
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { readCampaignState, validateCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+import { dependencyProgress } from '../src/campaigns/campaign-inspection.mjs';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
 
 const MAX_LOG_BYTES = 96 * 1024;
@@ -17,7 +18,7 @@ const IMAGE_TYPES = new Map([
   ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'],
 ]);
 const CAMPAIGN_ARTIFACT = /^(?:plan\.json|state\.json|report\/report\.(?:html|json))$/;
-const EXECUTION_ARTIFACT = /^(?:run\.json|preflight\.json|recovery\.json|process\.(?:stdout|stderr)\.log|backend\.log|level-l\d+-checkpoint\.json|(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)\/(?:bundle\.json|contract-lint\.json|actions\.json|grading-[^/]+\.json|failure-media\/[^/]+\.(?:png|jpe?g|webp)))$/i;
+const EXECUTION_ARTIFACT = /^(?:run\.json|preflight\.json|recovery\.json|progression-state\.json|process\.(?:stdout|stderr)\.log|backend\.log|level-l\d+-checkpoint\.json|progression\/attempt-\d+\/(?:bundle\.json|contract-lint\.json|actions\.json|grading-[^/]+\.json|failure-media\/[^/]+\.(?:png|jpe?g|webp))|(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)\/(?:bundle\.json|contract-lint\.json|actions\.json|grading-[^/]+\.json|failure-media\/[^/]+\.(?:png|jpe?g|webp)))$/i;
 
 function contained(root, path, label) {
   const absoluteRoot = resolve(root);
@@ -56,6 +57,7 @@ function artifactLabel(path) {
   if (name === 'run.json') return 'Run result';
   if (name === 'preflight.json') return 'Preflight result';
   if (name === 'recovery.json') return 'Recovery record';
+  if (name === 'progression-state.json') return 'Dependency progress';
   if (name === 'process.stdout.log') return 'Run output';
   if (name === 'process.stderr.log') return 'Run errors';
   if (name === 'backend.log') return 'Backend output';
@@ -102,9 +104,11 @@ function walkPublicExecutionArtifacts(campaignDirectory, executionDirectory) {
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) {
         const allowed = directoryRelative === ''
-          ? /^(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)$/i.test(entry.name)
-          : /(?:^|\/)(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)$/i.test(directoryRelative)
-            && entry.name === 'failure-media';
+          ? /^(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading|progression)$/i.test(entry.name)
+          : directoryRelative === 'progression'
+            ? /^attempt-\d+$/i.test(entry.name)
+          : (/^(?:progression\/attempt-\d+|(?:.*\/)?(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading))$/i
+            .test(directoryRelative) && entry.name === 'failure-media');
         if (allowed) visit(absolute);
         if (truncated) return;
       }
@@ -271,6 +275,7 @@ function readRun(path) {
 export function campaignFacts(plan) {
   const requested = plan.attempts?.[0]?.condition?.requested?.levels;
   return {
+    mode: plan.definition?.mode?.id ?? 'sequential',
     agents: (plan.agents ?? []).map(agent => ({
       adapter: agent.adapter ?? agent.identity?.id ?? null,
       version: agent.adapterVersion ?? agent.identity?.version ?? null,
@@ -326,7 +331,7 @@ function readDashboardCampaignState(directory) {
   return { plan, state: { ...rawState, maxParallel: plan.summary?.parallelism ?? 1 } };
 }
 
-function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = false } = {}) {
+function summarizeAttempt(plan, attempt, campaignDirectory, fixRounds, { includeLog = false } = {}) {
   const execution = attempt.executions.at(-1) ?? null;
   let executionDirectory = null;
   let log = '';
@@ -365,6 +370,7 @@ function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = 
     progress,
     logUpdatedAt,
     result: run,
+    dependency: dependencyProgress(plan, attempt.plan, executionDirectory),
     ...(includeLog ? { log: log.split(/\r?\n/).slice(-160).join('\n') } : {}),
   };
 }
@@ -375,7 +381,7 @@ export function summarizeCampaign(directory, {
   controllerActive = null,
 } = {}) {
   const { plan, state } = readDashboardCampaignState(directory);
-  let attempts = state.attempts.map(attempt => summarizeAttempt(attempt, directory,
+  let attempts = state.attempts.map(attempt => summarizeAttempt(plan, attempt, directory,
     plan.definition.budgets.fixRounds, { includeLog: includeLogs }));
   const interrupted = state.status === 'running' && controllerActive !== null
     && !controllerActive(directory, plan);
@@ -391,8 +397,10 @@ export function summarizeCampaign(directory, {
     key: basename(resolve(directory)),
     id: plan.id,
     version: plan.version,
+    sha256: plan.contentSha256,
     title: plan.title,
     state: plan.state,
+    mode: plan.definition.mode?.id ?? 'sequential',
     status: interrupted ? 'attention-required' : state.status,
     track: plan.definition.track,
     levels: plan.definition.levels,
@@ -442,6 +450,7 @@ export function discoverPlans(plansRoot) {
     try {
       const plan = compileCampaignFile(path);
       plans.push({ id: plan.id, version: plan.version, title: plan.title, state: plan.state,
+        mode: plan.definition.mode?.id ?? 'sequential',
         track: plan.definition.track, levels: plan.definition.levels,
         stacks: plan.stacks.map(stack => stack.id), attempts: plan.summary.attempts,
         parallelism: plan.summary.parallelism, budgets: plan.definition.budgets,
