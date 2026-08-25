@@ -7,6 +7,7 @@ use spacetimedb_sats::ArrayValue;
 
 use super::model::Model;
 use crate::schema::{SchemaPlan, TablePlan, Type};
+use crate::traits::InteractionGen;
 
 pub type Row = ProductValue;
 
@@ -257,6 +258,14 @@ impl WorkloadGen {
     fn deletable_table_idx(&self) -> Option<usize> {
         self.non_auto_inc_table_idx()
             .filter(|&table_idx| self.model.row_count(table_idx) > 0)
+    }
+}
+
+impl InteractionGen<Observation> for WorkloadGen {
+    type Interaction = Interaction;
+
+    fn next_interaction(&mut self) -> Self::Interaction {
+        self.next_interaction()
     }
 }
 

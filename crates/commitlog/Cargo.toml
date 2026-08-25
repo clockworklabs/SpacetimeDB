@@ -41,6 +41,7 @@ zstd-framed.workspace = true
 # For the 'test' feature
 env_logger = { workspace = true, optional = true }
 pretty_assertions.workspace = true
+spacetimedb-runtime.workspace = true
 
 [dev-dependencies]
 # Enable streaming in tests

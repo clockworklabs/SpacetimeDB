@@ -18,9 +18,9 @@ use super::TaskMeta;
 /// - The executor holds the `Runnable` (not visible here).
 pub struct JoinHandle<T> {
     // async_task::FallibleTask owns a shared heap-allocated cell that holds the
-    // future, output, task metadata, and waker. `None` means the executor
-    // intentionally dropped the runnable before polling it.
-    pub(crate) task: async_task::FallibleTask<Result<T, JoinError>, TaskMeta>,
+    // future, output, task metadata, and waker. `None` means this handle was
+    // detached and can no longer be awaited.
+    pub(crate) task: Option<async_task::FallibleTask<Result<T, JoinError>, TaskMeta>>,
     // Clone of the same AbortHandle that Abortable holds inside the task.
     pub(crate) abort: AbortHandle,
 }
@@ -32,9 +32,10 @@ impl<T> JoinHandle<T> {
     }
 
     /// Drop the join handle without cancelling the task.
-    pub fn detach(self) {
-        // async_task::Task::detach makes Drop a no-op; the future keeps running.
-        self.task.detach();
+    pub fn detach(mut self) {
+        if let Some(task) = self.task.take() {
+            task.detach();
+        }
     }
 
     /// Poll the underlying async_task::Task for its output.
@@ -42,7 +43,8 @@ impl<T> JoinHandle<T> {
     pub fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
         // FallibleTask lets node crash discard stale runnables without panicking
         // when their JoinHandle is awaited.
-        match Pin::new(&mut self.task).poll(cx) {
+        let task = self.task.as_mut().expect("detached JoinHandle cannot be polled");
+        match Pin::new(task).poll(cx) {
             Poll::Ready(Some(result)) => Poll::Ready(result),
             Poll::Ready(None) => Poll::Ready(Err(JoinError)),
             Poll::Pending => Poll::Pending,
@@ -55,6 +57,14 @@ impl<T> Future for JoinHandle<T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.as_mut().poll_join(cx)
+    }
+}
+
+impl<T> Drop for JoinHandle<T> {
+    fn drop(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.detach();
+        }
     }
 }
 
