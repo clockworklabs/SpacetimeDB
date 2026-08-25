@@ -116,10 +116,12 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   const referenceEntry = plan.qualification.evidence.find(entry =>
     entry.kind === 'reference' && entry.stack === 'mongodb' && entry.repetition === 1);
   const reference = readArtifact(join(ROOT, referenceEntry.path));
-  assert.throws(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context),
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context));
+  const legacyReference = structuredClone(reference);
+  delete legacyReference.payload.qualificationScope;
+  assert.throws(() => validateQualificationEvidenceArtifact(legacyReference, referenceEntry, context),
     /legacy broad-hash evidence has no scoped qualification identity/);
-  const scopedReference = withCurrentScope(reference, referenceEntry, context);
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(scopedReference, referenceEntry, context));
+  const scopedReference = reference;
 
   const wrongStack = structuredClone(scopedReference);
   wrongStack.identities.stackAdapter.id = 'postgres';

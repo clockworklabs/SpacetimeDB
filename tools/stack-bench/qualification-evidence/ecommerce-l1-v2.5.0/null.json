@@ -1,34 +1,34 @@
 {
   "artifactSchemaVersion": 2,
   "kind": "null_control",
-  "id": "null-control-2026-08-24T13-53-32-298Z",
+  "id": "null-control-2026-08-25T03-08-49-836Z",
   "attempt": {
-    "id": "null-control-2026-08-24T13-53-32-298Z",
+    "id": "null-control-2026-08-25T03-08-49-836Z",
     "parentId": null
   },
   "timestamps": {
-    "startedAt": "2026-08-24T13:53:32.299Z",
-    "completedAt": "2026-08-24T13:59:30.016Z"
+    "startedAt": "2026-08-25T03:08:49.837Z",
+    "completedAt": "2026-08-25T03:21:20.784Z"
   },
   "identities": {
     "engine": {
       "id": "stack-bench",
       "version": null,
-      "sha256": "24291a78c9565f88a047af38a584cb421343fc411c61306eec86b0f31b61127a",
+      "sha256": "926f60e3b5397c1d0dcef98050094693a109a97810e954d74292bce1edf60cab",
       "state": null
     },
     "recipe": {
       "id": "ecommerce.l1-modular",
       "version": "2.5.0",
       "sha256": "7e28daeaa5a60e9cfbd5ee40e8d2ed2fd121b1ab24fb3d259976b82cb806767d",
-      "state": "draft"
+      "state": "qualified"
     },
     "fixture": null,
     "calibration": {
       "id": "ecommerce.l1-modular-calibration",
       "version": "2.5.0",
       "sha256": "e69dc4bbd3066ae60317a8f8bc0050ae43e09791722a7002d05c729b1800db9f",
-      "state": "draft"
+      "state": "qualified"
     },
     "experiment": null,
     "agentAdapter": null,
@@ -36,7 +36,7 @@
     "packs": []
   },
   "payload": {
-    "durationMs": 357717,
+    "durationMs": 750947,
     "runner": {
       "schemaVersion": 1,
       "mode": "appliance",
@@ -48,6 +48,20 @@
       "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
       "cpuCount": 32,
       "memoryBytes": 49232842752
+    },
+    "qualificationScope": {
+      "checksSha256": "69cea6aa3b4e508bac1161ade9a58d432238e409b87ad0047327a9eec2836ebd",
+      "executableSha256": "a96ef687b211a452cfc74f9532764d1e02cf529c5b869d1d916df088df6eb0b3",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "7e28daeaa5a60e9cfbd5ee40e8d2ed2fd121b1ab24fb3d259976b82cb806767d",
+        "id": "ecommerce.l1-modular",
+        "version": "2.5.0"
+      },
+      "schemaVersion": 1,
+      "stack": null,
+      "sha256": "ab91a3ca97c7e7306dae5fcbfd3db12fdea6af5b013a45fb9668ef89b9ab8dfc"
     },
     "tracks": [
       "ecommerce"
@@ -112,7 +126,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -126,7 +140,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -140,7 +154,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -154,7 +168,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -168,7 +182,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -182,7 +196,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -196,7 +210,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -210,7 +224,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -224,7 +238,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -238,7 +252,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -252,7 +266,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -266,7 +280,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -280,7 +294,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -294,7 +308,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -308,7 +322,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -322,7 +336,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -336,7 +350,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -350,7 +364,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -364,7 +378,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -378,7 +392,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -392,7 +406,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -406,7 +420,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
+        "detail": "setup failed: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
       },
       {
         "track": "ecommerce",
@@ -420,7 +434,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -434,7 +448,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -448,7 +462,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
+        "detail": "setup failed: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
       },
       {
         "track": "ecommerce",
@@ -462,7 +476,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -476,7 +490,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -490,7 +504,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -504,7 +518,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -518,7 +532,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -532,7 +546,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -546,7 +560,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -560,7 +574,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -574,7 +588,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -588,7 +602,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -602,7 +616,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
+        "detail": "setup failed: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
       },
       {
         "track": "ecommerce",
@@ -616,7 +630,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
+        "detail": "setup failed: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
       },
       {
         "track": "ecommerce",
@@ -630,7 +644,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
+        "detail": "setup failed: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
       },
       {
         "track": "ecommerce",
@@ -644,7 +658,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.waitFor: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
+        "detail": "setup failed: locator.waitFor: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signin-toggle\"]').filter({ visible: true }).first() to be visible"
       },
       {
         "track": "ecommerce",
@@ -658,7 +672,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -672,7 +686,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       },
       {
         "track": "ecommerce",
@@ -728,7 +742,7 @@
         "status": "expected_fail",
         "evidenceStatus": "failed",
         "failureStage": "setup",
-        "detail": "setup failed: locator.fill: Timeout 5000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
+        "detail": "setup failed: locator.fill: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"signup-username\"]').first()"
       }
     ]
   }
