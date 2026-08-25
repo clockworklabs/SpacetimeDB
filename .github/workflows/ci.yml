@@ -254,7 +254,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -380,7 +380,7 @@ jobs:
           if [ -f ~/emsdk/emsdk_env.sh ]; then
             source ~/emsdk/emsdk_env.sh
           fi
-          ./target/debug/ci-smoketests run-archive \
+          cargo ci smoketests run-archive \
             --archive-file smoketest-nextest.tar.zst \
             -- \
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
@@ -393,7 +393,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          .\target\debug\ci-smoketests.exe run-archive `
+          cargo ci smoketests run-archive `
             --archive-file smoketest-nextest.tar.zst `
             -- `
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
@@ -447,7 +447,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -612,7 +612,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -663,7 +663,7 @@ jobs:
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     permissions:
       contents: read
       pull-requests: read
@@ -698,7 +698,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -740,7 +740,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     permissions: read-all
     env:
       RUST_BACKTRACE: full
@@ -826,7 +826,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -920,7 +920,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -1125,7 +1125,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       UseLocalBsatnRuntime: true
@@ -1237,7 +1237,7 @@ jobs:
   csharp-testsuite:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -1432,14 +1432,13 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Verify smoketest module lists and suite constraints
-        run: |
-          cargo run -p ci-smoketest-checks
+        run: cargo ci smoketests check-mod-list
 
   docs-build:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1474,7 +1473,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
