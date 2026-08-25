@@ -1,11 +1,64 @@
 {
-  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.support-refunds", "version": "1.0.0", "state": "draft", "moduleType": "feature",
-  "title": "Support refunds", "description": "Consistent case resolution and order refunds.",
-  "requiresPacks": ["ecommerce.progression.order-support@1.0.0", "ecommerce.l2.order-cancellation-features@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.support-refunds",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Support refunds",
+  "description": "Authorized, exact, and single-application support refunds.",
+  "requiresPacks": [
+    "ecommerce.progression.order-support@1.0.0",
+    "ecommerce.l2.order-cancellation-features@1.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 70000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.support-refunds", "path": "prompts/modular/business-features-1.0.0.md", "order": 5100, "from": "## Support refunds", "until": "## Promotion rules", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.support-hooks", "path": "contracts/business-hooks-1.0.md", "order": 5900, "from": "## Support hooks", "until": "## Promotion hooks", "modes": ["upgrade"] }]
+    "requirements": [
+      {
+        "id": "ecommerce.progression.support-refunds",
+        "path": "prompts/modular/support-refunds-1.0.0.md",
+        "order": 5100,
+        "from": "## Support refunds",
+        "modes": ["upgrade"]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.support-refund-hooks",
+        "path": "contracts/support-refunds-1.0.md",
+        "order": 5900,
+        "from": "## Support refund hooks",
+        "modes": ["upgrade"]
+      }
+    ]
   },
-  "checks": [{ "id": "case-refund", "stableId": "support-refunds", "source": "scenarios/progression-staff-support-1.0.0.json", "feature": 615, "role": "feature" }]
+  "checks": [
+    {
+      "id": "resolution",
+      "stableId": "support-refunds-resolution",
+      "source": "scenarios/progression-support-refunds-resolution-1.0.0.json",
+      "feature": 615,
+      "criteria": ["615a"],
+      "role": "feature"
+    },
+    {
+      "id": "accounting",
+      "stableId": "support-refunds-accounting",
+      "source": "scenarios/progression-support-refunds-accounting-1.0.0.json",
+      "feature": 615,
+      "criteria": ["615b"],
+      "role": "feature"
+    },
+    {
+      "id": "access",
+      "stableId": "support-refunds-access",
+      "source": "scenarios/progression-support-refunds-access-1.0.0.json",
+      "feature": 615,
+      "criteria": ["615c"],
+      "role": "feature"
+    }
+  ]
 }

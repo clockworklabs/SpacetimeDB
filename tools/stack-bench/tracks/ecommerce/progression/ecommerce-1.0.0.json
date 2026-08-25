@@ -605,7 +605,8 @@
         "ecommerce.progression.managed-support@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.managed-support@1.0.0#shared-case"
+        "ecommerce.progression.managed-support@1.0.0#shared-state",
+        "ecommerce.progression.managed-support@1.0.0#privacy"
       ],
       "dependencies": [
         {
@@ -714,7 +715,8 @@
         "ecommerce.progression.order-support@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.order-support@1.0.0#order-link"
+        "ecommerce.progression.order-support@1.0.0#owned-order",
+        "ecommerce.progression.order-support@1.0.0#ownership-boundary"
       ],
       "dependencies": [
         {
@@ -840,7 +842,9 @@
         "ecommerce.progression.support-refunds@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.support-refunds@1.0.0#case-refund"
+        "ecommerce.progression.support-refunds@1.0.0#resolution",
+        "ecommerce.progression.support-refunds@1.0.0#accounting",
+        "ecommerce.progression.support-refunds@1.0.0#access"
       ],
       "dependencies": [
         {

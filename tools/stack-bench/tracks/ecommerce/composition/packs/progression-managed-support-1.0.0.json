@@ -1,11 +1,56 @@
 {
-  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.managed-support", "version": "1.0.0", "state": "draft", "moduleType": "feature",
-  "title": "Managed support cases", "description": "Shared live cases for staff and customers.",
-  "requiresPacks": ["ecommerce.progression.support-history@1.0.0", "ecommerce.progression.support-triage@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.managed-support",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Managed support cases",
+  "description": "Shared support cases with live updates and account privacy.",
+  "requiresPacks": [
+    "ecommerce.progression.support-history@1.0.0",
+    "ecommerce.progression.support-triage@1.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 55000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.managed-support", "path": "prompts/modular/business-features-1.0.0.md", "order": 3100, "from": "## Managed support cases", "until": "## Order-linked support", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.support-hooks", "path": "contracts/business-hooks-1.0.md", "order": 3900, "from": "## Support hooks", "until": "## Promotion hooks", "modes": ["upgrade"] }]
+    "requirements": [
+      {
+        "id": "ecommerce.progression.managed-support",
+        "path": "prompts/modular/managed-support-1.0.0.md",
+        "order": 3100,
+        "from": "## Managed support cases",
+        "modes": ["upgrade"]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.managed-support-hooks",
+        "path": "contracts/managed-support-1.0.md",
+        "order": 3900,
+        "from": "## Managed support hooks",
+        "modes": ["upgrade"]
+      }
+    ]
   },
-  "checks": [{ "id": "shared-case", "stableId": "managed-support", "source": "scenarios/progression-staff-support-1.0.0.json", "feature": 613, "role": "feature" }]
+  "checks": [
+    {
+      "id": "shared-state",
+      "stableId": "managed-support-shared",
+      "source": "scenarios/progression-managed-support-shared-1.0.0.json",
+      "feature": 613,
+      "criteria": ["613a"],
+      "role": "feature"
+    },
+    {
+      "id": "privacy",
+      "stableId": "managed-support-privacy",
+      "source": "scenarios/progression-managed-support-privacy-1.0.0.json",
+      "feature": 613,
+      "criteria": ["613b"],
+      "role": "feature"
+    }
+  ]
 }

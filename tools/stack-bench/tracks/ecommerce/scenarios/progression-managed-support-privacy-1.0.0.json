@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Managed support privacy",
+  "features": [
+    {
+      "id": 613,
+      "name": "Managed support privacy",
+      "actors": ["owner", "other", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "managed-private-owner" },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Private managed case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private case details." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "signUp", "actor": "other", "name": "managed-private-other" },
+        { "do": "click", "actor": "other", "testid": "support-link" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" }
+      ],
+      "criteria": [
+        {
+          "id": "613b",
+          "desc": "another customer cannot read or reply to the managed case",
+          "points": 1,
+          "statedBy": "A customer can access only cases that belong to their account.",
+          "steps": [
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Private managed case", "absent": true },
+            { "do": "fill", "actor": "owner", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Private managed case" }, "text": "Owner-only update" },
+            { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Private managed case" } },
+            { "do": "replayAs", "actor": "other", "from": "owner", "match": "Owner-only update", "settleMs": 1500 },
+            { "do": "expectReplayRejected", "actor": "other" },
+            { "do": "expectElementCount", "actor": "staff", "testid": "support-reply-item", "contains": "Owner-only update", "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

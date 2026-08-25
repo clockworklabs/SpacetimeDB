@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Support refund access",
+  "features": [
+    {
+      "id": 615,
+      "name": "Support refund access",
+      "actors": ["owner", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "refund-access-owner" },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Access refund case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "This refund requires staff approval." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Keyboard", "in": { "testid": "support-ticket", "contains": "Access refund case" } },
+        { "do": "click", "actor": "owner", "testid": "support-link-order", "in": { "testid": "support-ticket", "contains": "Access refund case" } },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" }
+      ],
+      "criteria": [
+        {
+          "id": "615c",
+          "desc": "a customer cannot issue a refund or change its records",
+          "points": 1,
+          "statedBy": "Only authorized staff can refund an order from a support case.",
+          "steps": [
+            { "do": "expect", "actor": "owner", "testid": "support-refund", "absent": true },
+            {
+              "do": "callAction",
+              "actor": "owner",
+              "from": "staff",
+              "action": "supportRefund",
+              "authentication": "actor",
+              "input": { "testid": "support-refund", "attribute": "data-action-input" },
+              "namedAction": {
+                "id": "supportRefund",
+                "path": "/api/support/cases/{caseId}/refund",
+                "method": "POST",
+                "reducer": "supportRefund",
+                "args": [0],
+                "params": [{ "name": "caseId", "in": "path", "placeholder": "{caseId}", "wireType": "u64" }]
+              },
+              "settleMs": 1500
+            },
+            { "do": "expectActionOutcome", "actor": "owner", "outcome": "refused" },
+            { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Access refund case" }, "notContains": "resolved" },
+            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "notContains": "refunded" },
+            { "do": "expect", "actor": "owner", "testid": "refund-entry", "contains": "Keyboard", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}
