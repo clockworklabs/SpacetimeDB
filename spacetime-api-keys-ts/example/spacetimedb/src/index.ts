@@ -2,17 +2,10 @@ import {
   Router,
   Range,
   SenderError,
-  SyncResponse,
-  schema,
-  table,
   t,
-  type HandlerContext,
   type Infer,
-  type InferSchema,
   type Request,
-  type ReducerCtx,
-  type TransactionCtx,
-  type ViewCtx,
+  type SyncResponse,
 } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 import * as apiKeys from '@spacetimedb/api-keys/submodule';
@@ -28,6 +21,25 @@ import {
   runPresenceSweep,
   upsertPresence,
 } from '@spacetimedb/presence';
+import {
+  accessKeySummary,
+  colonySweepTick,
+  setColonySweepReducer,
+  spacetimedb,
+  type HttpCtx,
+  type ReadCtx,
+  type Tx,
+} from './schema';
+import {
+  asI32,
+  asObject,
+  asOptionalString,
+  asString,
+  errorResponse,
+  jsonResponse,
+  readBearer,
+  safeJson,
+} from './http';
 
 // A small colony you build (terraform / build / plant) and share by handing
 // out scoped API keys. The api-keys submodule grants
@@ -61,102 +73,8 @@ const SCOPE_TERRAFORM = 'colony:terraform';
 const SCOPE_BUILD = 'colony:build';
 const SCOPE_PLANT = 'colony:plant';
 
-const world = table(
-  { name: 'world', public: true },
-  {
-    ownerSubject: t.string().primaryKey(),
-    gridId: t.u64().index(),
-    name: t.string(),
-    createdAt: t.timestamp(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const worldEvent = table(
-  { name: 'world_event', public: true },
-  {
-    eventId: t.u64().primaryKey().autoInc(),
-    ownerSubject: t.string().index(),
-    keyPrefix: t.string(),
-    action: t.string().index(),
-    allowed: t.bool().index(),
-    reason: t.string(),
-    message: t.string(),
-    createdAt: t.timestamp().index(),
-  }
-);
-
-const accessKeySummary = table(
-  { name: 'access_key_summary', public: false },
-  {
-    keyId: t.string().primaryKey(),
-    prefix: t.string(),
-    ownerSubject: t.string().index(),
-    name: t.string(),
-    scopesJson: t.string(),
-    metadataJson: t.option(t.string()),
-    status: apiKeys.apiKeyStatus.index(),
-    createdAt: t.timestamp().index(),
-    expiresAt: t.option(t.timestamp()),
-    lastUsedAt: t.option(t.timestamp()),
-    revokedAt: t.option(t.timestamp()),
-  }
-);
-
-// Presence-ts tables, declared locally so the submodule helpers can read
-// and write them. presence_entry is public so anyone in a colony can see the
-// live roster and cursors (scope === colony id).
-const presenceEntry = table(
-  { name: 'presence_entry', public: true },
-  {
-    key: t.string().primaryKey(),
-    scope: t.string().index(),
-    subject: t.string().index(),
-    status: t.string().index(),
-    activity: t.option(t.string()),
-    payloadJson: t.option(t.string()),
-    joinedAt: t.timestamp().index(),
-    lastSeenAt: t.timestamp().index(),
-    expiresAt: t.timestamp().index(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const presenceConfig = table(
-  { name: 'presence_config', public: false },
-  {
-    singleton: t.bool().primaryKey(),
-    defaultTtlSeconds: t.u32(),
-    sweepBatch: t.u32(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const colonySweepTick = table(
-  { name: 'colony_sweep_tick', scheduled: (): any => colony_sweep },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
-);
-
-const spacetimedb = schema({
-  apiKeys,
-  grid: gridSubmodule,
-  world,
-  worldEvent,
-  accessKeySummary,
-  presenceEntry,
-  presenceConfig,
-  colonySweepTick,
-});
-
 export default spacetimedb;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type Tx = ReducerCtx<Schema> | TransactionCtx<Schema>;
-type ReadCtx = Tx | ViewCtx<Schema>;
-type HttpCtx = HandlerContext<Schema>;
 type ApiKeyCreateResult = Infer<typeof apiKeys.apiKeyCreateResult>;
 
 // Surface terrain. regolith is the default (no row); the rest are stored.
@@ -192,65 +110,6 @@ function senderSubject(ctx: { sender: unknown }): string {
   return typeof sender?.toHexString === 'function'
     ? sender.toHexString()
     : String(ctx.sender);
-}
-
-function jsonResponse(body: unknown, status = 200): SyncResponse {
-  return new SyncResponse(
-    JSON.stringify(body, (_key, value) =>
-      typeof value === 'bigint' ? value.toString() : value
-    ),
-    {
-      status,
-      headers: { 'content-type': 'application/json' },
-    }
-  );
-}
-
-function errorResponse(
-  error: string,
-  status: number,
-  extra: Record<string, unknown> = {}
-): SyncResponse {
-  return jsonResponse({ ok: false, error, ...extra }, status);
-}
-
-function readBearer(req: Request): string | undefined {
-  const header = req.headers.get('authorization') ?? '';
-  if (!header.toLowerCase().startsWith('bearer ')) return undefined;
-  const token = header.slice(7).trim();
-  return token.length > 0 ? token : undefined;
-}
-
-function safeJson(req: Request): unknown {
-  try {
-    return req.json();
-  } catch {
-    throw new SenderError('world.invalid_json');
-  }
-}
-
-function asObject(value: unknown): Record<string, unknown> {
-  if (value === null || Array.isArray(value) || typeof value !== 'object') {
-    throw new SenderError('world.invalid_json');
-  }
-  return value as Record<string, unknown>;
-}
-
-function asI32(value: unknown, field: string): number {
-  if (!Number.isInteger(value)) throw new SenderError(`world.invalid_${field}`);
-  return value as number;
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
-
-function asString(value: unknown, field: string): string {
-  if (typeof value !== 'string')
-    throw new SenderError(`world.invalid_${field}`);
-  const out = value.trim();
-  if (!out) throw new SenderError(`world.invalid_${field}`);
-  return out;
 }
 
 function assertInBounds(x: number, y: number): void {
@@ -848,6 +707,8 @@ export const colony_sweep = spacetimedb.reducer(
     );
   }
 );
+
+setColonySweepReducer(colony_sweep);
 
 // Reads. world, world_event, and presence_entry are public tables the
 // client subscribes to with a WHERE on the colony id. The grid submodule's
