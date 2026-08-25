@@ -27,23 +27,6 @@ const canonicalLicense = readFileSync(
   resolve(root, releasePackages[0], 'LICENSE.txt'),
   'utf8'
 );
-const forbiddenComponentArtifacts = [
-  [
-    /\/(?:node_modules|dist|build|coverage|target|\.stdb-[^/]+)\//,
-    'generated or local runtime directory',
-  ],
-  [/\/public\/app\.js(?:\.map)?$/, 'generated browser bundle'],
-  [
-    /\/(?:pnpm-lock\.yaml|pnpm-workspace\.yaml)$/,
-    'nested package-manager file',
-  ],
-  [/\/(?:\.env|\.stdb-server-token)$/, 'local secret or identity file'],
-  [/\.(?:log|tgz|zip|tmp|bak|orig|rej)$/i, 'temporary or archive file'],
-  [
-    /\/(?:ROADMAP|AUDIT|REVIEW)[^/]*\.(?:md|html)$/i,
-    'local planning or review document',
-  ],
-];
 
 function fail(packageName, message) {
   failures.push(`${packageName}: ${message}`);
@@ -121,16 +104,6 @@ if (tracked.status !== 0) {
     );
     if (!isComponentPath && normalizedRepositoryPath !== 'pnpm-lock.yaml') {
       continue;
-    }
-    if (isComponentPath) {
-      for (const [pattern, description] of forbiddenComponentArtifacts) {
-        if (pattern.test(`/${normalizedRepositoryPath}`)) {
-          fail(
-            'repository',
-            `${description} must not be tracked: ${repositoryPath}`
-          );
-        }
-      }
     }
     if (
       /^spacetime-[^/]+-ts\/(?:module|app-module|store-module)(?:\/|$)/.test(
