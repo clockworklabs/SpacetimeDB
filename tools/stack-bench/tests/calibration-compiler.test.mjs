@@ -11,6 +11,7 @@ import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { checkCalibrations } from '../commands/check-calibration.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
+import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');
@@ -20,6 +21,19 @@ function current() {
   const binding = resolveRecipeRelease(TRACK, 1);
   return { binding, plan: compileCalibrationFile(CALIBRATION,
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
+}
+
+function withCurrentScope(artifact, entry, context) {
+  const scoped = structuredClone(artifact);
+  const reference = entry.kind === 'null' ? null
+    : context.references.find(candidate => candidate.backend === entry.stack);
+  const mutation = entry.kind === 'mutation'
+    ? context.calibration.mutations.find(candidate => candidate.backend === entry.stack) : null;
+  scoped.payload.qualificationScope = qualificationScopeIdentity({
+    kind: entry.kind, release: context.release, stack: entry.stack ?? null,
+    reference, mutation, stackBenchRoot: ROOT,
+  });
+  return scoped;
 }
 
 test('runtime calibration resolution binds the qualified L1 and L2 releases', () => {
@@ -97,18 +111,22 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     release: binding.release,
     references: plan.references.entries,
     execution: binding.execution,
+    stackBenchRoot: ROOT,
   };
   const referenceEntry = plan.qualification.evidence.find(entry =>
     entry.kind === 'reference' && entry.stack === 'mongodb' && entry.repetition === 1);
   const reference = readArtifact(join(ROOT, referenceEntry.path));
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context));
+  assert.throws(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context),
+    /legacy broad-hash evidence has no scoped qualification identity/);
+  const scopedReference = withCurrentScope(reference, referenceEntry, context);
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(scopedReference, referenceEntry, context));
 
-  const wrongStack = structuredClone(reference);
+  const wrongStack = structuredClone(scopedReference);
   wrongStack.identities.stackAdapter.id = 'postgres';
   assert.throws(() => validateQualificationEvidenceArtifact(wrongStack, referenceEntry, context),
     /wrong stack adapter/);
 
-  const hiddenFailure = structuredClone(reference);
+  const hiddenFailure = structuredClone(scopedReference);
   hiddenFailure.payload.runs[0].ok = false;
   assert.throws(() => validateQualificationEvidenceArtifact(hiddenFailure, referenceEntry, context),
     /failed or incomplete repetition/);
@@ -118,7 +136,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   };
   const runnerIdentity = calibrationQualificationIdentity(runnerBound);
-  const runnerReference = structuredClone(reference);
+  const runnerReference = structuredClone(scopedReference);
   runnerReference.identities.calibration = { ...runnerIdentity, state: runnerBound.state };
   runnerReference.payload.runner = { ...runnerBound.qualification.runner,
     dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
@@ -137,7 +155,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
 
   const nullEntry = plan.qualification.evidence.find(entry => entry.kind === 'null');
   const nullArtifact = readArtifact(join(ROOT, nullEntry.path));
-  const vacuous = structuredClone(nullArtifact);
+  const vacuous = withCurrentScope(nullArtifact, nullEntry, context);
   vacuous.payload.summary.vacuousPasses.criteria = 1;
   assert.throws(() => validateQualificationEvidenceArtifact(vacuous, nullEntry, context),
     /complete null policy/);
@@ -159,8 +177,10 @@ test('the qualified L2 release keeps its score contract and binds fresh qualific
     && evidence.stack === 'mongodb' && evidence.repetition === 1);
   const artifact = readArtifact(join(ROOT, entry.path));
   const context = { calibration: plan, qualificationIdentity: calibrationQualificationIdentity(plan),
-    release: binding.release, references: plan.references.entries, execution: binding.execution };
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, context));
+    release: binding.release, references: plan.references.entries, execution: binding.execution,
+    stackBenchRoot: ROOT };
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(
+    withCurrentScope(artifact, entry, context), entry, context));
 });
 
 test('qualification uses typed ownership when inherited execution ids are renamed', () => {
@@ -179,13 +199,16 @@ test('qualification uses typed ownership when inherited execution ids are rename
   const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'
     && evidence.stack === 'mongodb' && evidence.repetition === 1);
   const artifact = readArtifact(join(ROOT, entry.path));
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, {
+  const context = {
     calibration: plan,
     qualificationIdentity: calibrationQualificationIdentity(plan),
     release,
     references: plan.references.entries,
     execution,
-  }));
+    stackBenchRoot: ROOT,
+  };
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(
+    withCurrentScope(artifact, entry, context), entry, context));
 });
 
 test('qualification identity excludes governance transitions but binds executable controls', () => {

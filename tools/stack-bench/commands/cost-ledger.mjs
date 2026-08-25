@@ -11,13 +11,14 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
+import { priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
+
 const argv = process.argv.slice(2);
 const opt = k => { const i = argv.indexOf(k); return i === -1 ? null : argv[i + 1]; };
 const workdir = opt('--workdir');
 const reported = opt('--reported') ? Number(opt('--reported')) : null;
 if (!workdir) { console.error('Usage: node commands/cost-ledger.mjs --workdir <run work dir> [--reported usd]'); process.exit(2); }
 
-const PRICE = { input: 3.00, output: 15.00, cacheWrite5m: 3.75, cacheWrite1h: 6.00, cacheRead: 0.30 };
 const STORE = join(homedir(), '.claude', 'projects');
 const enc = p => p.replace(/[\\/:]/g, '-').toLowerCase();
 
@@ -44,12 +45,7 @@ function priceDir(dir) {
       billed.add(rid);
       msgs++;
       if (rec.effort) efforts.add(rec.effort);
-      const cw = u.cache_creation ?? {};
-      usd += (u.input_tokens ?? 0) * PRICE.input / 1e6
-        + (u.output_tokens ?? 0) * PRICE.output / 1e6
-        + (u.cache_read_input_tokens ?? 0) * PRICE.cacheRead / 1e6
-        + (cw.ephemeral_5m_input_tokens ?? u.cache_creation_input_tokens ?? 0) * PRICE.cacheWrite5m / 1e6
-        + (cw.ephemeral_1h_input_tokens ?? 0) * PRICE.cacheWrite1h / 1e6;
+      usd += priceClaudeUsage(u);
     }
   }
   return { usd, msgs, files: files.length, efforts: [...efforts] };
@@ -118,12 +114,7 @@ for (const d of readdirSync(STORE)) {
       if (billed.has(rid)) continue;
       billed.add(rid);
       msgs++;
-      const cw = u.cache_creation ?? {};
-      usd += (u.input_tokens ?? 0) * PRICE.input / 1e6
-        + (u.output_tokens ?? 0) * PRICE.output / 1e6
-        + (u.cache_read_input_tokens ?? 0) * PRICE.cacheRead / 1e6
-        + (cw.ephemeral_5m_input_tokens ?? u.cache_creation_input_tokens ?? 0) * PRICE.cacheWrite5m / 1e6
-        + (cw.ephemeral_1h_input_tokens ?? 0) * PRICE.cacheWrite1h / 1e6;
+      usd += priceClaudeUsage(u);
     }
   }
   rows.push({ what: isProbe ? 'sandbox probe (harness)' : 'behavioural review / harness sessions', usd, msgs, files: inWindow.length, efforts: [] });

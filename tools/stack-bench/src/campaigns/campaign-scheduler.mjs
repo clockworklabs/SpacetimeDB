@@ -77,7 +77,7 @@ export function validateCampaignState(input) {
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
       const executionFields = new Set(['id', 'ordinal', 'status', 'output', 'startedAt',
-        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId', 'runIndex']);
+        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId', 'runIndex', 'retry']);
       if (!object(execution)) fail(`${executionAt} must be an object`);
       for (const key of Object.keys(execution)) if (!executionFields.has(key)) fail(`${executionAt}.${key} is unknown`);
       string(execution.id, `${executionAt}.id`);
@@ -108,7 +108,10 @@ export function validateCampaignState(input) {
         if (runningSlots.has(execution.runIndex)) fail(`${executionAt}.runIndex is already in use`);
         runningSlots.add(execution.runIndex);
         if (execution.completedAt !== null || execution.exitCode !== null
-          || execution.outcome !== null || execution.reason !== null) fail(`${executionAt} running fields are inconsistent`);
+          || execution.outcome !== null || execution.reason !== null
+          || (execution.retry !== undefined && execution.retry !== null)) {
+          fail(`${executionAt} running fields are inconsistent`);
+        }
       } else {
         timestamp(execution.completedAt, `${executionAt}.completedAt`);
         if (Date.parse(execution.completedAt) < Date.parse(execution.startedAt)) {
@@ -125,6 +128,24 @@ export function validateCampaignState(input) {
         if (execution.status === 'invalid') {
           string(execution.reason, `${executionAt}.reason`);
           if (!INVALID_OUTCOMES.has(execution.outcome)) fail(`${executionAt}.outcome is not invalid`);
+          if (execution.retry !== undefined) {
+            if (!object(execution.retry)) fail(`${executionAt}.retry must be an object`);
+            const retryFields = new Set(['requested', 'transient', 'recoveryClean', 'scheduled',
+              'cause', 'reason']);
+            for (const key of Object.keys(execution.retry)) {
+              if (!retryFields.has(key)) fail(`${executionAt}.retry.${key} is unknown`);
+            }
+            for (const key of ['requested', 'transient', 'recoveryClean', 'scheduled']) {
+              if (typeof execution.retry[key] !== 'boolean') fail(`${executionAt}.retry.${key} must be boolean`);
+            }
+            if (execution.retry.cause !== null) string(execution.retry.cause, `${executionAt}.retry.cause`);
+            string(execution.retry.reason, `${executionAt}.retry.reason`);
+            if (execution.retry.scheduled
+              && (!execution.retry.requested || !execution.retry.transient
+                || !execution.retry.recoveryClean)) {
+              fail(`${executionAt}.retry is scheduled without transient clean-recovery authority`);
+            }
+          }
         }
       }
       const eventAt = execution.completedAt ?? execution.startedAt;
@@ -180,7 +201,8 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
   const output = `attempts/${attempt.plan.id}/execution-${ordinal}`;
   attempt.status = 'running';
   attempt.executions.push({ id, ordinal, status: 'running', output, startedAt: now,
-    completedAt: null, exitCode: null, outcome: null, reason: null, admissionId, runIndex });
+    completedAt: null, exitCode: null, outcome: null, reason: null, retry: null,
+    admissionId, runIndex });
   return { state: validateCampaignState(recalculate(state, now)),
     claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex },
     capacityFull: false };
@@ -222,14 +244,29 @@ export function finishCampaignExecution(input, executionId, result,
   execution.outcome = classified.outcome;
   execution.reason = classified.reason;
   if (classified.status === 'completed') attempt.status = 'completed';
-  else if (retryOn.includes(classified.outcome) && attempt.executions.length <= retries) attempt.status = 'pending';
-  else attempt.status = 'invalid';
+  else {
+    const authority = result.retryAuthority ?? {};
+    const requested = retryOn.includes(classified.outcome);
+    const transient = authority.transient === true;
+    const recoveryClean = authority.recoveryClean === true;
+    const budgetAvailable = attempt.executions.length <= retries;
+    const scheduled = requested && transient && recoveryClean && budgetAvailable;
+    execution.retry = {
+      requested, transient, recoveryClean, scheduled,
+      cause: typeof authority.cause === 'string' && authority.cause ? authority.cause : null,
+      reason: !requested ? 'outcome is not configured for retry'
+        : !transient ? 'failure is not explicitly transient'
+          : !recoveryClean ? 'clean recovery was not proven'
+            : !budgetAvailable ? 'retry budget is exhausted' : 'transient failure has clean recovery proof',
+    };
+    attempt.status = scheduled ? 'pending' : 'invalid';
+  }
   return validateCampaignState(recalculate(state, now));
 }
 
 export function markInterruptedExecution(input, executionId,
   { now = new Date().toISOString(), reason = 'scheduler process ended before recording completion',
-    retryOn = [], retries = 0 } = {}) {
+    retryOn = [] } = {}) {
   const state = validateCampaignState(input);
   const attempt = state.attempts.find(candidate => candidate.executions.at(-1)?.id === executionId);
   if (!attempt || attempt.status !== 'running') throw new Error(`execution ${executionId} is not running`);
@@ -239,8 +276,10 @@ export function markInterruptedExecution(input, executionId,
   execution.exitCode = null;
   execution.outcome = 'scheduler_interrupted';
   execution.reason = string(reason, 'interruption reason');
-  if (retryOn.includes(execution.outcome) && attempt.executions.length <= retries) attempt.status = 'pending';
-  else attempt.status = 'invalid';
+  execution.retry = { requested: retryOn.includes(execution.outcome), transient: false,
+    recoveryClean: false, scheduled: false, cause: null,
+    reason: 'operator reconciliation is required after scheduler interruption' };
+  attempt.status = 'invalid';
   return validateCampaignState(recalculate(state, now));
 }
 

@@ -298,7 +298,27 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   return run;
 }
 
+const TRANSIENT_PROVIDER_STATUSES = new Set([500, 502, 503, 504, 529]);
+
+export function campaignRetryAuthority(run, { recoveryClean = false } = {}) {
+  const outcome = run?.outcome;
+  const providerStatus = outcome?.provider?.providerStatus;
+  const transient = outcome?.kind === 'harness_failure'
+    && outcome.phase === 'coding-session'
+    && outcome.reason !== 'provider-throttle-exhausted'
+    && TRANSIENT_PROVIDER_STATUSES.has(providerStatus);
+  return {
+    transient,
+    recoveryClean: recoveryClean === true,
+    cause: transient ? `provider-http-${providerStatus}` : null,
+  };
+}
+
 function readAttemptResult(plan, attempt, output, processResult) {
+  const withRetryAuthority = result => ({ ...result,
+    retryAuthority: campaignRetryAuthority(result.run, {
+      recoveryClean: publicRecoveryProvesCleanup(output, attempt.stack),
+    }) });
   const runPath = join(output, 'run.json');
   let run = null;
   let artifactError = null;
@@ -309,16 +329,16 @@ function readAttemptResult(plan, attempt, output, processResult) {
     }
     catch (error) { artifactError = error; }
   }
-  if (artifactError) return { exitCode: processResult.code, timedOut: processResult.timedOut,
+  if (artifactError) return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
     run: { outcome: { kind: 'harness_failure',
-      reason: `run.json is invalid: ${artifactError.message}` } } };
+      reason: `run.json is invalid: ${artifactError.message}` } } });
   if (!run && processResult.code !== 0 && !processResult.timedOut) {
     const detail = (processResult.stderrTail || processResult.stdoutTail || processResult.error?.message || '')
       .split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(-4).join(' | ').slice(0, 800);
-    return { exitCode: processResult.code, timedOut: false, run: { outcome: {
-      kind: 'harness_failure', reason: detail || 'attempt ended before producing run.json' } } };
+    return withRetryAuthority({ exitCode: processResult.code, timedOut: false, run: { outcome: {
+      kind: 'harness_failure', reason: detail || 'attempt ended before producing run.json' } } });
   }
-  return { exitCode: processResult.code, timedOut: processResult.timedOut, run };
+  return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut, run });
 }
 
 export function verifyCampaignRuntime(plan, env = process.env) {

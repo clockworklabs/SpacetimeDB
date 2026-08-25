@@ -72,7 +72,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'actions', 'selection', 'packRuntime', 'observation', 'source']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'shard', 'ok', 'outcome', 'baseline', 'summary', 'results']),
-  null_control: new Set(['durationMs', 'runner', 'tracks', 'ok', 'summary', 'criteria']),
+  null_control: new Set(['durationMs', 'runner', 'qualificationScope', 'tracks', 'ok', 'summary', 'criteria']),
   pack_budget_measurement: new Set(['schemaVersion', 'track', 'level', 'policy', 'evidence',
     'runner', 'samples', 'recommendations']),
   performance_run: new Set(['label', 'backend', 'url', 'clients', 'rounds', 'warmupDiscarded',
@@ -84,7 +84,8 @@ const PAYLOAD_FIELDS = Object.freeze({
     'exitCode', 'signal', 'timedOut', 'streams']),
   reference_build: new Set(['isolation', 'image', 'fixtures', 'ok']),
   reference_qualification: new Set(['fixture', 'fixtureSha256', 'requiredRepetitions', 'isolation',
-    'runner', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness', 'harnessSha256', 'ok']),
+    'runner', 'qualificationScope', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness',
+    'harnessSha256', 'ok']),
   recovery: new Set(['schemaVersion', 'status', 'runId', 'backend', 'reason', 'cleanup',
     'resources', 'instructions']),
   source_checkpoint: new Set(['schemaVersion', 'track', 'backend', 'level', 'source',
@@ -453,7 +454,9 @@ function validatePayload(kind, payload) {
       }
     }
   }
-  if (kind === 'null_control') { arrayWhenPresent('criteria'); runnerWhenPresent(); }
+  if (kind === 'null_control') {
+    arrayWhenPresent('criteria'); objectWhenPresent('qualificationScope'); runnerWhenPresent();
+  }
   if (kind === 'pack_budget_measurement') {
     objectWhenPresent('policy'); arrayWhenPresent('evidence'); arrayWhenPresent('samples');
     arrayWhenPresent('recommendations'); runnerWhenPresent();
@@ -461,7 +464,7 @@ function validatePayload(kind, payload) {
   if (kind === 'performance_run') { objectWhenPresent('deliveryLatencyMs'); objectWhenPresent('server'); }
   if (kind === 'reference_build') arrayWhenPresent('fixtures');
   if (kind === 'reference_qualification') {
-    arrayWhenPresent('runs'); runnerWhenPresent();
+    arrayWhenPresent('runs'); objectWhenPresent('qualificationScope'); runnerWhenPresent();
   }
   if (kind === 'recovery') { objectWhenPresent('cleanup'); objectWhenPresent('resources');
     arrayWhenPresent('instructions'); }

@@ -268,7 +268,12 @@ function identityForStack(adapter) {
 }
 
 function calibrationIdentity(value) {
-  return value ? { id: value.id, version: value.version, sha256: value.contentSha256, state: value.state } : null;
+  return value ? { id: value.id, version: value.version, sha256: value.contentSha256,
+    state: value.state, buildImage: value.qualification?.buildImage ?? null } : null;
+}
+
+function imageContentDigest(value) {
+  return value?.slice(value.lastIndexOf('@') + 1) ?? null;
 }
 
 function campaignIdentityDocument(definition, engine, bindings, stacks, agents, conditions) {
@@ -345,7 +350,8 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
         contractIds: selectedTask.task.contractIds,
       } : null,
     };
-    return { level, modular, binding, publicBinding };
+    return { level, modular, binding, publicBinding,
+      qualificationStaleness: calibration?.qualificationStaleness ?? [] };
   });
   const bindings = bindingRecords.map(record => record.publicBinding);
   if (definition.state === 'frozen') {
@@ -360,6 +366,18 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
           fail('state', `cannot freeze L${binding.level} for unqualified stack ${stack.id}`);
         }
       }
+    }
+    for (const record of bindingRecords) {
+      const qualifiedImage = record.publicBinding.calibration?.buildImage;
+      if (!qualifiedImage || imageContentDigest(definition.runtime.buildImage) !== qualifiedImage) {
+        fail('state', `cannot freeze L${record.level}: runtime buildImage does not match the qualified build image`);
+      }
+    }
+    const staleLevels = bindingRecords.filter(record => record.qualificationStaleness.length > 0);
+    if (staleLevels.length > 0) {
+      const summary = staleLevels.map(record =>
+        `L${record.level} (${record.qualificationStaleness.length} artifacts)`).join(', ');
+      fail('state', `cannot freeze with stale qualification evidence for ${summary}; regenerate the qualification evidence`);
     }
   }
 

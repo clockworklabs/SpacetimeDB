@@ -121,6 +121,11 @@ export function qualificationReadiness(trackName, level, recipe = null) {
     if (!recorded.has(key)) promotionBlockers.push(blocker('evidence_missing', `evidence.${key}`,
       `${key} has no hash-bound qualification artifact`));
   }
+  for (const stale of calibration.qualificationStaleness ?? []) {
+    const key = `${stale.kind}:${stale.stack ?? ''}:${stale.repetition}`;
+    promotionBlockers.push(blocker('qualification_evidence_stale', `evidence.${key}`,
+      `${key} must be regenerated: ${stale.reason}`));
+  }
   const sourceStates = [
     ['recipe.state', binding.release.state],
     ['fixture.state', binding.release.components.fixture.state],

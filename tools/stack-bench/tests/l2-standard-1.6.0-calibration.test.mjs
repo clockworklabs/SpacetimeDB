@@ -59,7 +59,7 @@ test('L2 1.6 is qualified and promoted by its exact evidence set', () => {
   assert.deepEqual([exact.release.version, exact.status], ['1.6.0', 'promoted']);
 });
 
-test('L2 1.6 is promotion ready with complete defect and qualification evidence', () => {
+test('L2 1.6 has complete defect coverage but requires one scoped evidence migration', () => {
   const readiness = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.6.0');
   assert.equal(readiness.launch.ok, true);
   assert.deepEqual(readiness.defectChecks.stacks.map(stack => ({
@@ -71,8 +71,9 @@ test('L2 1.6 is promotion ready with complete defect and qualification evidence'
     { stack: 'postgres', coveredChecks: 74, missingChecks: [] },
     { stack: 'spacetime', coveredChecks: 74, missingChecks: [] },
   ]);
-  assert.equal(readiness.promotion.ready, true);
-  assert.deepEqual(readiness.promotion.blockers, []);
+  assert.equal(readiness.promotion.ready, false);
+  assert.equal(readiness.promotion.blockers
+    .filter(blocker => blocker.code === 'qualification_evidence_stale').length, 7);
 });
 
 test('the catalogs and registry promote L2 1.6 and retain its exact reference inputs', () => {

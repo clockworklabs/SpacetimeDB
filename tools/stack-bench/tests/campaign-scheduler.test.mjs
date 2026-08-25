@@ -69,10 +69,15 @@ test('invalid executions remain visible and retries append rather than overwrite
     { now: '2026-08-12T00:01:00.000Z', admissionId: 'admission-1' }).state;
   const executionId = first.attempts[0].executions[0].id;
   const retryable = finishCampaignExecution(first, executionId, {
-    exitCode: 1, run: { outcome: { kind: 'harness_failure', reason: 'browser crashed' } },
+    exitCode: 1, run: { outcome: { kind: 'harness_failure', reason: 'provider overloaded' } },
+    retryAuthority: { transient: true, recoveryClean: true, cause: 'provider-http-503' },
   }, { retries: 1, retryOn: ['harness_failure'], now: '2026-08-12T00:02:00.000Z' });
   assert.equal(retryable.attempts[0].status, 'pending');
   assert.equal(retryable.attempts[0].executions[0].status, 'invalid');
+  assert.deepEqual(retryable.attempts[0].executions[0].retry, {
+    requested: true, transient: true, recoveryClean: true, scheduled: true,
+    cause: 'provider-http-503', reason: 'transient failure has clean recovery proof',
+  });
   const second = claimNextAttempt(retryable, { now: '2026-08-12T00:03:00.000Z',
     admissionId: 'admission-1' });
   assert.equal(second.claim.executionId, `${campaign.attempts[0].id}-execution2`);
@@ -84,16 +89,40 @@ test('invalid executions remain visible and retries append rather than overwrite
   assert.equal(complete.summary.executions, 2);
 });
 
-test('an inconclusive measurement is retried and never becomes comparison data', () => {
+test('an inconclusive measurement requires operator review instead of spending another attempt', () => {
   const active = claimed();
   const state = finishCampaignExecution(active.state, active.claim.executionId, {
     exitCode: 0, run: { outcome: { kind: 'inconclusive',
       inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] } },
   }, { retries: 1, retryOn: ['inconclusive'], now: '2026-08-12T00:04:00.000Z' });
-  assert.equal(state.attempts[0].status, 'pending');
+  assert.equal(state.attempts[0].status, 'invalid');
   assert.equal(state.attempts[0].executions[0].status, 'invalid');
   assert.equal(state.attempts[0].executions[0].outcome, 'inconclusive');
   assert.match(state.attempts[0].executions[0].reason, /pass-or-fail/);
+  assert.equal(state.attempts[0].executions[0].retry.scheduled, false);
+  assert.match(state.attempts[0].executions[0].retry.reason, /not explicitly transient/);
+});
+
+test('deterministic harness failures and unproven cleanup never retry', () => {
+  const deterministic = claimed();
+  const stopped = finishCampaignExecution(deterministic.state, deterministic.claim.executionId, {
+    exitCode: 2, run: { outcome: { kind: 'harness_failure',
+      reason: 'invalid campaign configuration' } },
+  }, { retries: 3, retryOn: ['harness_failure'], now: '2026-08-12T00:04:00.000Z' });
+  assert.equal(stopped.attempts[0].status, 'invalid');
+  assert.deepEqual(stopped.attempts[0].executions[0].retry, {
+    requested: true, transient: false, recoveryClean: false, scheduled: false,
+    cause: null, reason: 'failure is not explicitly transient',
+  });
+
+  const dirty = claimed();
+  const unproven = finishCampaignExecution(dirty.state, dirty.claim.executionId, {
+    exitCode: 1, run: { outcome: { kind: 'harness_failure', reason: 'provider overloaded' } },
+    retryAuthority: { transient: true, recoveryClean: false, cause: 'provider-http-503' },
+  }, { retries: 3, retryOn: ['harness_failure'], now: '2026-08-12T00:04:00.000Z' });
+  assert.equal(unproven.attempts[0].status, 'invalid');
+  assert.equal(unproven.attempts[0].executions[0].retry.scheduled, false);
+  assert.equal(unproven.attempts[0].executions[0].retry.reason, 'clean recovery was not proven');
 });
 
 test('a plausible run artifact cannot hide a failed attempt process', () => {

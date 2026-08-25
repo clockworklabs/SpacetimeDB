@@ -744,6 +744,9 @@ async function main() {
           '--image', imageIdentity.id,
           '--effort', EFFORT,
           '--model', args.model,
+          '--completion-marker', args.mode === 'fix' ? 'FIX_COMPLETE'
+            : args.mode === 'upgrade' ? 'UPGRADE_COMPLETE'
+              : args.mode === 'resume' ? 'RESUME_COMPLETE' : 'DEPLOY_COMPLETE',
           ...(maxBudgetUsd != null ? ['--max-budget-usd', String(maxBudgetUsd)] : []),
           '--settings', `/app/${basename(settings)}`,
           '--ports', [p.vite, p.express].filter(Boolean).join(','),
@@ -866,6 +869,7 @@ async function main() {
         waits: throttle?.waits ?? 0,
       } : null,
       interruptions, invocations: sessionResults.length,
+      terminalRecovery: result.terminal_recovery ?? null,
       sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))] },
   };
   writeFileSync(join(args.app, `.session-${args.mode}-l${args.level}.json`), JSON.stringify({ ...out, text: result.result }, null, 2));

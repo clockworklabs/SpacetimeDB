@@ -24,6 +24,7 @@ import { killTree } from '../runtime/platform.mjs';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
+import { qualificationScopeIdentity } from '../composition/qualification-scope.mjs';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mjs';
@@ -635,6 +636,19 @@ async function main() {
   }
   args.artifactDirectory = paths.artifactDirectory;
   args.runsRoot = paths.runsRoot;
+  const selectedReference = context.calibration.references.entries.find(entry =>
+    entry.backend === fixture.backend && entry.id === fixture.id);
+  const selectedMutation = args.mutations
+    ? context.calibration.mutations.find(entry => entry.backend === fixture.backend)
+    : null;
+  const qualificationScope = qualificationScopeIdentity({
+    kind: args.mutations ? 'mutation' : 'reference',
+    release: context.binding.release,
+    stack: fixture.backend,
+    reference: selectedReference,
+    mutation: selectedMutation,
+    stackBenchRoot: ROOT,
+  });
   const artifact = { id, kind: 'reference_qualification', fixture: fixture.id,
     identities: emptyArtifactIdentities({
       fixture: { id: fixture.id, sha256: fixture.imported.sourceSha256, state: fixture.status },
@@ -645,7 +659,7 @@ async function main() {
     }),
     fixtureSha256: fixture.imported.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
-    runner: controllerRunner(), mutationControl: args.mutations, runs: [] };
+    runner: controllerRunner(), qualificationScope, mutationControl: args.mutations, runs: [] };
   const artifactIdentities = artifact.identities;
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);

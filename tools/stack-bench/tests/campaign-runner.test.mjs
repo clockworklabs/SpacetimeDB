@@ -7,8 +7,9 @@ import test from 'node:test';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../src/evidence/artifacts.mjs';
-import { attemptArgv, campaignExecutionEnvironment, campaignSlotEnvironment, executeCampaign,
-  reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
+import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
+  campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
+  validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
@@ -361,7 +362,7 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
     }), /admission failed/);
 
     const paid = JSON.parse(readFileSync(example, 'utf8'));
-    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.13.0', model: 'claude-sonnet-5' }];
+    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.14.0', model: 'claude-sonnet-5' }];
     paid.pricing.models = { 'claude-sonnet-5': {
       inputPerMillion: 0, outputPerMillion: 0,
       cacheWritePerMillion: 0, cacheReadPerMillion: 0,
@@ -436,7 +437,25 @@ test('a frozen campaign proves its release and both runtime images before admiss
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('model-free campaign execution checkpoints a retry and every completed attempt', async () => {
+test('only explicit transient provider failures receive campaign retry authority', () => {
+  const clean = { recoveryClean: true };
+  assert.deepEqual(campaignRetryAuthority({ outcome: { kind: 'harness_failure',
+    phase: 'coding-session', reason: 'coding-session-failed',
+    provider: { providerStatus: 503 } } }, clean), {
+    transient: true, recoveryClean: true, cause: 'provider-http-503',
+  });
+  for (const outcome of [
+    { kind: 'harness_failure', phase: 'coding-session', reason: 'coding-process-killed',
+      provider: { providerStatus: null } },
+    { kind: 'harness_failure', phase: 'preflight', reason: 'configuration invalid' },
+    { kind: 'harness_failure', phase: 'coding-session', reason: 'provider-throttle-exhausted',
+      provider: { providerStatus: 529 } },
+  ]) {
+    assert.equal(campaignRetryAuthority({ outcome }, clean).transient, false);
+  }
+});
+
+test('model-free campaign execution checkpoints an authorized retry and every completed attempt', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-'));
   const calls = [];
   const planned = compileCampaignFile(example);
@@ -453,11 +472,33 @@ test('model-free campaign execution checkpoints a retry and every completed atte
         });
         const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
         const { emptyArtifactIdentities, writeRunJson } = await import('../src/evidence/artifacts.mjs');
-        if (calls.length === 1) return { code: 1, timedOut: false };
         const completedAt = new Date().toISOString();
         const attempt = planned.attempts.find(item => item.id === parent);
         const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
         const stack = planned.stacks.find(item => item.id === attempt.stack);
+        if (calls.length === 1) {
+          writeRunJson(join(output, 'run.json'), { id: 'fake-provider-failure',
+            parentAttemptId: parent, startedAt: completedAt, completedAt,
+            identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
+              stackAdapter: stack }),
+            track: planned.definition.track, backend: attempt.stack, model: attempt.model,
+            guidance: attempt.guidance, condition: attempt.condition,
+            selectionRequest: planned.definition.selection,
+            skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
+            levels: [], outcome: { kind: 'harness_failure', phase: 'coding-session',
+              reason: 'coding-session-failed', provider: { providerStatus: 503 } } });
+          writeArtifact(join(output, 'recovery.json'), { kind: 'recovery',
+            id: 'fake-provider-failure-recovery',
+            attempt: { id: 'fake-provider-failure-recovery', parentId: 'fake-provider-failure' },
+            identities: emptyArtifactIdentities({ stackAdapter: { id: attempt.stack } }),
+            payload: { schemaVersion: 1, status: 'clean', runId: 'fake-provider-failure',
+              backend: attempt.stack, reason: null,
+              cleanup: { succeeded: true, retained: false },
+              resources: { backendState: 'released', buildContainer: { running: false },
+                listenerPids: [], locks: [{ key: 'slot:test', released: true }] },
+              instructions: ['No recovery action is required.'] } });
+          return { code: 3, timedOut: false };
+        }
         writeRunJson(join(output, 'run.json'), { id: `fake-${calls.length}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
           identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
@@ -487,7 +528,7 @@ test('model-free campaign execution checkpoints a retry and every completed atte
     const processArtifact = readArtifact(join(root, state.attempts[0].executions[0].output, 'process.json'),
       { expectedKind: 'campaign_process' });
     assert.equal(processArtifact.payload.executionId, state.attempts[0].executions[0].id);
-    assert.equal(processArtifact.payload.exitCode, 1);
+    assert.equal(processArtifact.payload.exitCode, 3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

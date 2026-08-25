@@ -3,6 +3,13 @@ import test from 'node:test';
 
 import { parseQualificationArgs, qualificationReadiness } from '../commands/qualification-cli.mjs';
 
+function assertLegacyEvidenceIsStale(status) {
+  assert.equal(status.promotion.ready, false);
+  const stale = status.promotion.blockers.filter(item => item.code === 'qualification_evidence_stale');
+  assert.equal(stale.length, 7);
+  assert(stale.every(item => /legacy broad-hash evidence/.test(item.summary)));
+}
+
 test('qualification status lists exact evidence and launch readiness without writing', () => {
   const status = qualificationReadiness('ecommerce', 1);
   assert.match(status.scope.calibration.sha256, /^[a-f0-9]{64}$/);
@@ -12,8 +19,7 @@ test('qualification status lists exact evidence and launch readiness without wri
   assert.deepEqual(status.budgetPreparation.commands, []);
   assert.equal(status.launch.ok, true);
   assert.deepEqual(status.launch.blockers, []);
-  assert.equal(status.promotion.ready, true);
-  assert.deepEqual(status.promotion.blockers, []);
+  assertLegacyEvidenceIsStale(status);
   assert(status.promotion.governance.some(item => item.path === 'recipe.state'
     && item.state === 'qualified' && item.target === 'qualified'));
   assert.equal(status.promotion.blockers.some(item => item.code === 'source_not_promoted'), false);
@@ -35,8 +41,7 @@ test('qualification status reports complete L2 defect coverage', () => {
   });
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
-  assert.equal(status.promotion.ready, true);
-  assert.deepEqual(status.promotion.blockers, []);
+  assertLegacyEvidenceIsStale(status);
   assert.equal(status.launch.ok, true);
 });
 
@@ -49,10 +54,9 @@ test('the promoted L1 release discloses complete defect coverage and exact evide
   ]);
   assert(status.defectChecks.stacks.every(item => item.coveredPoints === 58
     && item.missingChecks.length === 0));
-  assert.equal(status.promotion.ready, true);
+  assertLegacyEvidenceIsStale(status);
   assert.equal(status.promotion.blockers
     .filter(item => item.code === 'defect_check_coverage_incomplete').length, 0);
-  assert.deepEqual(status.promotion.blockers, []);
   assert.equal(status.requiredEvidence.length, 7);
 });
 
@@ -65,8 +69,7 @@ test('qualification resolves the promoted modular L1 release exactly and by defa
   assert.equal(status.scope.calibration.version, '2.5.0');
   assert.equal(status.launch.ok, true);
   assert.equal(status.requiredEvidence.length, 7);
-  assert.equal(status.promotion.ready, true);
-  assert.deepEqual(status.promotion.blockers, []);
+  assertLegacyEvidenceIsStale(status);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.5.0')));
@@ -83,8 +86,7 @@ test('qualification resolves the promoted modular L2 release exactly and by defa
   assert.equal(status.scope.calibration.version, '1.6.0');
   assert.equal(status.launch.ok, true);
   assert.equal(status.requiredEvidence.length, 7);
-  assert.equal(status.promotion.ready, true);
-  assert.deepEqual(status.promotion.blockers, []);
+  assertLegacyEvidenceIsStale(status);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l2-standard@1.6.0')));

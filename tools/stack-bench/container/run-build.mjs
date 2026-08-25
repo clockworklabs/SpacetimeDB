@@ -19,6 +19,7 @@
 // rewrites `/app/...` arguments into `C:/Program Files/Git/app/...` before this
 // script ever sees them. agent.mjs spawns it without a shell and is unaffected.
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -33,6 +34,8 @@ import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-aut
 import { startCredentialBroker, stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
+import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
+  from '../src/agents/claude-terminal-recovery.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -71,6 +74,11 @@ if (resumeSession !== null
   process.exit(2);
 }
 const recoverStoppedContainer = argv.includes('--recover-stopped-container');
+const completionMarker = opt('--completion-marker');
+if (!prepareOnly && !/^[A-Z][A-Z0-9_]*$/.test(completionMarker ?? '')) {
+  console.error('run-build.mjs: --completion-marker must be an uppercase marker');
+  process.exit(2);
+}
 const ports = (opt('--ports', '') || '').split(',').filter(Boolean);
 
 const containerPlan = executeStackCapability(adapter, 'build-container', 'plan', {
@@ -345,6 +353,13 @@ const claudeArgs = [
 // so it arrives through the /app mount at a known container path.
 if (opt('--settings')) claudeArgs.push('--settings', opt('--settings'));
 
+// Record the exact remote PID. Killing the local `docker exec` client does not
+// guarantee that Claude stops inside the long-lived build container.
+const invocationToken = randomBytes(16).toString('hex');
+const processRecord = `/tmp/stack-bench-claude-${invocationToken}.pid`;
+const claudeWrapper = 'record="$1"; shift; start="$(awk \'{print $22}\' /proc/$$/stat)" || exit 1; '
+  + 'printf \'%s %s\\n\' "$$" "$start" > "$record"; exec "$@"';
+
 let credentialBroker = null;
 try {
   credentialBroker = startCredentialBroker(auth,
@@ -355,22 +370,53 @@ try {
 }
 dockerExecEnv.ANTHROPIC_AUTH_TOKEN = credentialBroker.sessionToken;
 args.push('-e', 'ANTHROPIC_AUTH_TOKEN', '-e', `ANTHROPIC_BASE_URL=${credentialBroker.baseUrl}`,
-  containerName, 'claude', ...claudeArgs);
+  containerName, 'sh', '-c', claudeWrapper, 'stack-bench-claude', processRecord,
+  'claude', ...claudeArgs);
 
 // MSYS_NO_PATHCONV: Git Bash rewrites container-side paths like /app into
 // Windows paths (C:/Program Files/Git/app) and every mount silently lands
 // somewhere wrong.
+const transcriptSnapshot = snapshotClaudeTranscripts(projects);
+const promptInput = process.stdin.isTTY ? '' : readFileSync(0, 'utf8');
+function signalClaude(signal) {
+  const script = 'record="$1"; signal="$2"; test -r "$record" || exit 4; '
+    + 'read -r pid expected < "$record"; '
+    + 'current="$(awk \'{print $22}\' "/proc/$pid/stat" 2>/dev/null)" || exit 5; '
+    + 'test "$current" = "$expected" || exit 3; kill "-$signal" "$pid"';
+  return spawnSync('docker', ['exec', containerName, 'sh', '-c', script,
+    'stack-bench-stop', processRecord, signal], {
+    encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
+}
+function terminateClaude(child) {
+  const term = signalClaude('TERM');
+  if (term.status !== 0) child.kill('SIGTERM');
+  const force = setTimeout(() => {
+    signalClaude('KILL');
+    child.kill('SIGKILL');
+  }, 5_000);
+  force.unref();
+}
+
 let res;
 try {
-  res = spawnSync('docker', args, {
-    input: process.stdin.isTTY ? '' : readFileSync(0, 'utf8'),
-    encoding: 'utf8',
+  res = await runTranscriptAwareProcess({ command: 'docker', args,
+    input: promptInput,
     maxBuffer: 256 * 1024 * 1024,
     env: dockerExecEnv,
-    timeout: CODING_SESSION_TIMEOUT_MS,
+    timeoutMs: CODING_SESSION_TIMEOUT_MS,
+    transcriptDirectory: projects,
+    transcriptSnapshot,
+    marker: completionMarker,
+    model,
+    resumeSession,
+    terminate: terminateClaude,
   });
 } finally {
   stopCredentialBroker(credentialBroker);
+  spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {
+    stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
 }
 
 if ((res.status ?? 1) !== 0) {

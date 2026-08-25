@@ -10,6 +10,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.mjs';
@@ -182,6 +183,9 @@ async function main() {
       } : undefined,
       durationMs: Date.now() - started,
       runner: controllerRunner(),
+      ...(qualification ? { qualificationScope: qualificationScopeIdentity({
+        kind: 'null', release: qualification.binding.release, stackBenchRoot: ROOT,
+      }) } : {}),
       tracks: args.tracks,
       ...analysis,
     };

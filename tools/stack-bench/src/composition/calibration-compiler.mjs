@@ -9,6 +9,7 @@ import { loadReferenceRegistry, validateReferenceRegistry } from '../references/
 import { readArtifact } from '../evidence/artifacts.mjs';
 import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
+import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
 
@@ -284,6 +285,16 @@ function evidenceFailure(at, message) {
   fail(at, `qualification artifact ${message}`);
 }
 
+export class QualificationEvidenceStaleError extends Error {
+  constructor(at, reason) {
+    super(`${at} qualification artifact is stale: ${reason}`);
+    this.name = 'QualificationEvidenceStaleError';
+    this.code = 'qualification_evidence_stale';
+    this.at = at;
+    this.reason = reason;
+  }
+}
+
 function exactEvidenceIdentity(actual, expected, at) {
   if (!actual || actual.id !== expected.id || actual.version !== expected.version
     || actual.sha256 !== expected.sha256) {
@@ -317,7 +328,8 @@ export function currentLevelPoints(release, execution) {
 }
 
 export function validateQualificationEvidenceArtifact(artifact, entry,
-  { calibration, qualificationIdentity, release, references, execution }) {
+  { calibration, qualificationIdentity, release, references, execution, stackBenchRoot,
+    enforceQualificationScope = true }) {
   const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
   if (!artifact || typeof artifact !== 'object') evidenceFailure(at, 'is not an artifact');
   exactEvidenceIdentity(artifact.identities?.recipe,
@@ -372,6 +384,8 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
       expected.delete(key);
     }
     if (expected.size !== 0) evidenceFailure(at, 'does not cover every selected check exactly once');
+    if (enforceQualificationScope) validateCurrentQualificationScope(artifact, entry,
+      { calibration, release, references, stackBenchRoot }, at);
     return;
   }
 
@@ -422,15 +436,49 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     evidenceFailure(at, 'does not contain the exact repetition set');
   }
   if (!repetitions.has(entry.repetition)) evidenceFailure(at, 'does not contain its declared repetition');
+  if (enforceQualificationScope) validateCurrentQualificationScope(artifact, entry,
+    { calibration, release, references, stackBenchRoot }, at);
+}
+
+function validateCurrentQualificationScope(artifact, entry,
+  { calibration, release, references, stackBenchRoot }, at) {
+  const actual = artifact.payload?.qualificationScope;
+  if (!actual) throw new QualificationEvidenceStaleError(at,
+    'legacy broad-hash evidence has no scoped qualification identity');
+  try { validateQualificationScopeIdentity(actual, `${at}.qualificationScope`); }
+  catch (error) { evidenceFailure(at, `has an invalid scoped identity: ${error.message}`); }
+  const reference = entry.kind === 'null' ? null
+    : references.find(candidate => candidate.backend === entry.stack);
+  const mutation = entry.kind === 'mutation'
+    ? calibration.mutations.find(candidate => candidate.backend === entry.stack) : null;
+  const expected = qualificationScopeIdentity({
+    kind: entry.kind,
+    release,
+    stack: entry.stack ?? null,
+    reference,
+    mutation,
+    stackBenchRoot,
+  });
+  if (actual.sha256 !== expected.sha256) {
+    const changed = ['executableSha256', 'checksSha256', 'mutationSha256']
+      .filter(field => actual[field] !== expected[field]);
+    if (canonicalDefinitionJson(actual.recipe) !== canonicalDefinitionJson(expected.recipe)) {
+      changed.push('recipe');
+    }
+    if (canonicalDefinitionJson(actual.stack) !== canonicalDefinitionJson(expected.stack)) {
+      changed.push('stack');
+    }
+    throw new QualificationEvidenceStaleError(at,
+      `scoped inputs changed (${changed.length ? changed.join(', ') : 'identity'})`);
+  }
 }
 
 function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
   const artifacts = new Map();
   const normalized = verifyEvidence(entries, stackBenchRoot, at);
-  const engines = new Set();
-  const harnesses = new Set();
   const images = new Set();
   const runners = new Set();
+  const staleness = [];
   normalized.forEach((entry, index) => {
     let artifact = artifacts.get(entry.path);
     if (!artifact) {
@@ -438,21 +486,26 @@ function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
       catch (error) { fail(`${at}[${index}].path`, `is not a valid artifact: ${error.message}`); }
       artifacts.set(entry.path, artifact);
     }
-    validateQualificationEvidenceArtifact(artifact, entry, context);
-    engines.add(artifact.identities.engine.sha256);
+    validateQualificationEvidenceArtifact(artifact, entry,
+      { ...context, stackBenchRoot, enforceQualificationScope: false });
+    try {
+      validateCurrentQualificationScope(artifact, entry,
+        { ...context, stackBenchRoot }, `${at}[${index}]`);
+    } catch (error) {
+      if (!(error instanceof QualificationEvidenceStaleError)) throw error;
+      staleness.push({ kind: entry.kind, stack: entry.stack ?? null,
+        repetition: entry.repetition, path: entry.path, reason: error.reason });
+    }
     if (context.calibration.qualification.runner !== undefined) {
       runners.add(canonicalDefinitionJson(artifact.payload.runner));
     }
     if (entry.kind !== 'null') {
-      harnesses.add(artifact.payload.harnessSha256);
       for (const run of artifact.payload.runs) images.add(run.imageId);
     }
   });
-  if (engines.size > 1) fail(at, 'qualification artifacts were produced by different engines');
-  if (harnesses.size > 1) fail(at, 'qualification artifacts use different harnesses');
   if (images.size > 1) fail(at, 'qualification artifacts use different build images');
   if (runners.size > 1) fail(at, 'qualification artifacts use different appliance runner environments');
-  return normalized;
+  return { entries: normalized, staleness, buildImage: [...images][0] ?? null };
 }
 
 function mutationExecutionSha256(manifest) {
@@ -609,14 +662,15 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     references: { ...calibration.references, entries: references },
     mutations,
   });
-  const evidence = verifyQualificationEvidence(calibration.qualification.evidence, benchRoot,
+  const verifiedEvidence = verifyQualificationEvidence(calibration.qualification.evidence, benchRoot,
     `${source}.qualification.evidence`, {
-      calibration,
+      calibration: { ...calibration, references: { ...calibration.references, entries: references }, mutations },
       qualificationIdentity,
       release,
       references,
       execution,
     });
+  const evidence = verifiedEvidence.entries;
   const equivalenceDecisions = calibration.equivalenceDecisions.map((decision, index) => ({
     ...decision,
     evidence: verifyEvidence(decision.evidence, benchRoot, `${source}.equivalenceDecisions[${index}].evidence`),
@@ -699,7 +753,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     controls: controls.map(control => ({ ...control,
       mutationTargets: [...control.mutationTargets].sort() }))
       .sort((a, b) => a.stableKey.localeCompare(b.stableKey)),
-    qualification: { ...calibration.qualification,
+    qualification: { ...calibration.qualification, buildImage: verifiedEvidence.buildImage,
       stacks: [...calibration.qualification.stacks].sort((a, b) => a.id.localeCompare(b.id)),
       evidence: evidence.sort((a, b) => `${a.kind}:${a.stack ?? ''}:${a.repetition}`
         .localeCompare(`${b.kind}:${b.stack ?? ''}:${b.repetition}`)) },
@@ -710,7 +764,8 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
   });
   const qualificationSha256 = calibrationQualificationIdentity(plan).sha256;
   return { ...plan, qualificationSha256,
-    contentSha256: sha256(canonicalDefinitionJson({ ...plan, qualificationSha256 })) };
+    contentSha256: sha256(canonicalDefinitionJson({ ...plan, qualificationSha256 })),
+    qualificationStaleness: verifiedEvidence.staleness };
 }
 
 export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoot } = {}) {

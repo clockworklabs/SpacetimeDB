@@ -235,43 +235,75 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   } })), /exact image digest/);
 });
 
-test('frozen campaigns require exact runtime images and accept qualified levels', () => {
+test('frozen campaigns require exact runtime images', () => {
   assert.throws(() => compile(definition({ state: 'frozen' })), /maxCostUsdPerAttempt.*required/);
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.13.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.14.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {
       inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
     } } };
-  const frozen = compile(definition({ state: 'frozen', levels: [1], runtime, agents: claudeAgent,
-    pricing: claudePricing,
+  const frozen = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
+    agents: claudeAgent, pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(frozen.state, 'frozen');
-  const internal = compile(definition({ state: 'frozen', levels: [1], runtime: {
+  const internal = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime: {
     ...runtime, releaseManifestSha256: null,
   }, agents: claudeAgent, pricing: claudePricing,
   budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
-  assert.equal(internal.definition.runtime.releaseManifestSha256, null);
-  const l1l2 = compile(definition({ state: 'frozen', levels: [1, 2], runtime,
-    agents: claudeAgent, pricing: claudePricing,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
-  assert.deepEqual(l1l2.bindings.map(binding => binding.level), [1, 2]);
-  assert(l1l2.bindings.every(binding => binding.promotion.status === 'promoted'));
+  assert.equal(internal.runtime.releaseManifestSha256, null);
 });
 
-test('frozen manifest validation does not hard-code an agent provider', () => {
+test('frozen campaigns reject stale qualification evidence for every selected level', () => {
+  const qualifiedBuildImages = new Set(compile(definition({ levels: [1, 2] })).bindings
+    .map(binding => binding.calibration.buildImage));
+  assert.equal(qualifiedBuildImages.size, 1);
+  const [qualifiedBuildImage] = qualifiedBuildImages;
+  const runtime = { releaseManifestSha256: 'a'.repeat(64),
+    controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
+    buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
+    platform: 'linux/amd64' };
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.14.0',
+    model: 'claude-sonnet-5' }];
+  const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
+    source: 'test snapshot', models: { 'claude-sonnet-5': {
+      inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
+    } } };
+  const l1l2 = definition({ state: 'frozen', levels: [1, 2], runtime,
+    agents: claudeAgent, pricing: claudePricing,
+    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
+  assert.throws(() => compile(l1l2), error => {
+    assert.match(error.message, /cannot freeze with stale qualification evidence/);
+    assert.match(error.message, /L1 \(7 artifacts\)/);
+    assert.match(error.message, /L2 \(7 artifacts\)/);
+    return true;
+  });
+});
+
+test('frozen campaigns require the build image used for qualification', () => {
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
+  const frozen = definition({ state: 'frozen', levels: [1], runtime,
+    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
+  assert.throws(() => compile(frozen), /buildImage does not match the qualified build image/);
+});
+
+test('frozen manifest validation does not hard-code an agent provider', () => {
+  const qualifiedBuildImage = compile(definition()).bindings[0].calibration.buildImage;
+  const runtime = { releaseManifestSha256: 'a'.repeat(64),
+    controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
+    buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
+    platform: 'linux/amd64' };
   const validated = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(validated.agents[0].adapter, 'deterministic');
-  assert.equal(compile(validated).state, 'frozen');
+  assert.throws(() => compile(validated), /stale qualification evidence/);
 });
 
 test('the packaged model-free campaign example compiles without starting work', () => {
