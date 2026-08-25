@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -323,7 +322,7 @@ namespace SpacetimeDB
         };
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-        internal IEnumerator ParseMessages()
+        internal System.Collections.IEnumerator ParseMessages()
 #else
         internal void ParseMessages()
 #endif
