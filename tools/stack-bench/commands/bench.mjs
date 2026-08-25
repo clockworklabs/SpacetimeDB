@@ -666,6 +666,7 @@ async function main() {
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
     recipe: args.recipe,
     requestedScopes: args.condition?.requested ? [args.condition.requested] : null,
+    progression: args.progression ?? null,
     agentSkills: args.skills ?? null,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
