@@ -47,7 +47,7 @@ Run `npm run test:references` from `tools/stack-bench` for the model-free Docker
 compile matrix. It copies each fixture to a temporary workspace and leaves the
 canonical source untouched. The resulting artifact records exactly which
 reference hashes compiled. Compile success is not live grading or promotion
-evidence.
+evidence. Use `-- --fixture <fixture-id>` to compile one changed fixture.
 
 Run `npm run qualify:reference -- --backend <mongodb|postgres|spacetime>` for
 the live gate. It runs the repetition count declared by the exact calibration,

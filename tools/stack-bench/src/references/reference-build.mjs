@@ -29,9 +29,10 @@ const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 
 function parseArgs(argv) {
-  const args = { backend: null, out: null };
+  const args = { backend: null, fixture: null, out: null };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
+    else if (argv[i] === '--fixture') args.fixture = argv[++i];
     else if (argv[i] === '--out') args.out = resolve(argv[++i]);
     else throw new Error(`unknown argument ${argv[i]}`);
   }
@@ -192,7 +193,8 @@ async function main() {
   const validation = validateReferenceRegistry(registry);
   if (!validation.ok) throw new Error(`reference registry is invalid:\n${validation.issues.join('\n')}`);
   const fixtures = registry.fixtures.filter(fixture => fixture.status !== 'blocked')
-    .filter(fixture => !args.backend || fixture.backend === args.backend);
+    .filter(fixture => !args.backend || fixture.backend === args.backend)
+    .filter(fixture => !args.fixture || fixture.id === args.fixture);
   if (!fixtures.length) throw new Error('no imported fixtures matched');
   for (const fixture of fixtures) {
     const inspection = inspectImportedReference(fixture);
