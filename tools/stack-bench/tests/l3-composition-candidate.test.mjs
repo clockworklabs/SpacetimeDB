@@ -5,6 +5,8 @@ import test from 'node:test';
 
 import { compilePackDefinition } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
@@ -91,14 +93,25 @@ test('L3 dependencies close over real exact pack releases', () => {
 });
 
 test('L3 prompt and contract fragments resolve to non-empty text', () => {
-  const ids = new Set();
+  const fragments = new Map();
   for (const pack of packs) {
     for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
-      assert(!ids.has(fragment.id), `duplicate fragment id ${fragment.id}`);
-      ids.add(fragment.id);
-      assert(resolveFragment(fragment).length > 20, `${fragment.id} is too small to be useful`);
+      const text = resolveFragment(fragment);
+      assert(text.length > 20, `${fragment.id} is too small to be useful`);
+      const previous = fragments.get(fragment.id);
+      if (previous) {
+        assert.equal(text, previous, `${fragment.id} must resolve identically for every owner`);
+      } else {
+        fragments.set(fragment.id, text);
+      }
     }
   }
+  assert.equal(
+    packs.flatMap(pack => pack.task.contracts)
+      .filter(fragment => fragment.id === 'ecommerce.l3.reservation-hooks').length,
+    2,
+    'reservations and cart expiration must share one testing-interface fragment',
+  );
   const scheduled = packs.find(pack => pack.id === 'ecommerce.l3.scheduled-restocks-features');
   const calls = scheduled.task.contracts.find(fragment =>
     fragment.id === 'ecommerce.l3.scheduled-restock-testing-calls');
@@ -245,4 +258,40 @@ test('L3 covers each declared product area and production behavior', () => {
     'ecommerce.l3.server-time-specifications',
     'ecommerce.l3.deferred-access-specifications',
   ]));
+});
+
+test('the L3 candidate carries the promoted L2 release and adds every L3 check', () => {
+  const binding = resolveRecipeRelease(
+    loadTrack('ecommerce'),
+    3,
+    'ecommerce.l3-standard@1.0.0',
+  );
+  assert.equal(binding.status, 'candidate');
+  assert.equal(binding.plan.checks.length, 98);
+  assert.equal(binding.plan.scoring.points, 180);
+  assert.equal(binding.plan.execution.length, 49);
+
+  const current = binding.execution.filter(entry => entry.ownership.kind === 'current');
+  const inherited = binding.execution.filter(entry => entry.ownership.kind === 'inherited');
+  assert.equal(current.length, 8);
+  assert.equal(inherited.length, 41);
+
+  const plannedKeys = new Set(binding.plan.checks.map(check => check.stableKey));
+  const expectedL3Keys = selected.flatMap(({ pack, check }) => {
+    const feature = featureFor(check);
+    const criteria = check.criteria === undefined
+      ? feature.criteria
+      : check.criteria.map(id => feature.criteria.find(criterion => criterion.id === id));
+    return criteria.map(criterion =>
+      `${pack.stableId ?? pack.id}.${check.stableId ?? check.id}.${criterion.id}`);
+  });
+  assert.equal(expectedL3Keys.length, 22);
+  assert(expectedL3Keys.every(key => plannedKeys.has(key)));
+
+  const reservationHooks = binding.plan.recipe.task.contracts.find(fragment =>
+    fragment.id === 'ecommerce.l3.reservation-hooks');
+  assert.deepEqual(reservationHooks.owners, [
+    'ecommerce.l3.cart-expiration-features',
+    'ecommerce.l3.reservations-features',
+  ]);
 });

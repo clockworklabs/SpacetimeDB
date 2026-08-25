@@ -2,8 +2,18 @@
   "schemaVersion": 1,
   "kind": "promotion-catalog",
   "id": "ecommerce.recipe-candidates",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "state": "draft",
   "title": "Ecommerce recipe candidates",
-  "entries": []
+  "entries": [
+    {
+      "alias": "L3",
+      "status": "candidate",
+      "recipe": {
+        "path": "recipes/l3-standard-1.0.0.json",
+        "id": "ecommerce.l3-standard",
+        "version": "1.0.0"
+      }
+    }
+  ]
 }

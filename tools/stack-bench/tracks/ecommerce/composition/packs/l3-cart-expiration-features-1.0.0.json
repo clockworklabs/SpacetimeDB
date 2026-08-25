@@ -15,7 +15,7 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 360000 },
   "task": {
     "requirements": [{ "id": "ecommerce.l3.cart-expiration", "path": "prompts/modular/l3-features-1.0.0.md", "order": 3030, "from": "## Cart expiration", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.l3.cart-expiration-hooks", "path": "contracts/l3-hooks-1.0.md", "order": 3930, "from": "## Reservation hooks", "until": "## Scheduled restock hooks", "modes": ["upgrade"] }]
+    "contracts": [{ "id": "ecommerce.l3.reservation-hooks", "path": "contracts/l3-hooks-1.0.md", "order": 3900, "from": "## Reservation hooks", "until": "## Scheduled restock hooks", "modes": ["upgrade"] }]
   },
   "checks": [
     { "id": "inactive-cart", "stableId": "cart-expiration", "source": "scenarios/03-cart-expiration-1.0.0.json", "feature": 304, "role": "feature" }
