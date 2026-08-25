@@ -30,18 +30,33 @@ function packChecks(pack) {
 
 test('the ecommerce progression definition is complete and calculated from its dependencies', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
-  assert.equal(definition.nodes.length, 33);
+  assert.equal(definition.nodes.length, 39);
   assert.deepEqual(Object.fromEntries([1, 2, 3, 4, 5].map(level => [
     level,
     definition.nodes.filter(node => node.level === level).length,
-  ])), { 1: 4, 2: 7, 3: 11, 4: 6, 5: 5 });
-  assert.equal(definition.questlines.length, 11);
+  ])), { 1: 4, 2: 10, 3: 12, 4: 8, 5: 5 });
+  assert.equal(definition.questlines.length, 10);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    125);
+    135);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 251);
+    .reduce((total, check) => total + check.points, 0), 273);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
+  assert(definition.questlines.every(questline =>
+    definition.nodes.filter(node => node.questline === questline.id).length >= 2));
+
+  const byId = new Map(definition.nodes.map(node => [node.id, node]));
+  assert.deepEqual(byId.get('faceted-search').dependencies, ['catalog']);
+  assert.deepEqual(byId.get('scheduled-restocks').dependencies, ['warehouse-admin']);
+  assert.deepEqual(byId.get('price-history').dependencies, ['catalog-management', 'purchasing']);
+  assert.deepEqual(byId.get('personalized-recommendations').dependencies,
+    ['operational-views', 'purchasing']);
+  assert.deepEqual(byId.get('order-delivery').dependencies,
+    ['fulfilment-queue', 'order-cancellation']);
+  assert.deepEqual(byId.get('order-returns').dependencies,
+    ['order-delivery', 'warehouse-admin']);
+  assert.deepEqual(byId.get('support-refunds').dependencies,
+    ['order-cancellation', 'order-support']);
 });
 
 test('every progression feature reference and scored check binds to repository data', () => {
@@ -80,7 +95,7 @@ test('the dependency graph page is generated from the ecommerce definition', () 
   const htmlPath = join(import.meta.dirname, '..', 'docs', 'dependency-graph.html');
   const html = readFileSync(htmlPath, 'utf8');
   const graph = compileProgressionGraph(definitionPath, { trackRoot });
-  assert.equal(graph.nodes.length, 33);
+  assert.equal(graph.nodes.length, 39);
   assert.equal(graph.levels, 5);
   assert.deepEqual(graph.nodes.filter(node => node.level === 1).map(node => node.id),
     ['accounts', 'catalog', 'staff-access', 'support-intake']);

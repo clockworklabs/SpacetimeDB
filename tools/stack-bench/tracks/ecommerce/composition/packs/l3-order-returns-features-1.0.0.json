@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.l3.order-returns-features", "stableId": "ecommerce.returns-pricing", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Returns", "description": "Return shipped items without losing stock or accounting accuracy.",
+  "requiresPacks": ["ecommerce.l3.order-delivery-features@1.0.0", "ecommerce.feature.warehouse-admin@1.1.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.l3.order-returns", "path": "prompts/fragments/order-returns-1.0.0.md", "order": 4040, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.l3.order-return-hooks", "path": "contracts/l2-order-hooks-1.4.md", "order": 4060, "modes": ["upgrade"] }]
+  },
+  "checks": [
+    { "id": "return-complete", "stableId": "cancellation-and-return", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 3, "criteria": ["3c"], "role": "feature" }
+  ]
+}

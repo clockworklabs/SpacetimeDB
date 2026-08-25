@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.l2.order-cancellation-features", "stableId": "ecommerce.returns-pricing", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Order cancellation", "description": "Cancel pending orders without losing stock or accounting accuracy.",
+  "requiresPacks": ["ecommerce.feature.purchasing@1.1.0", "ecommerce.operations-access-features@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.l2.order-cancellation", "path": "prompts/fragments/order-cancellation-1.0.0.md", "order": 2040, "modes": ["upgrade"] }],
+    "contracts": [
+      { "id": "ecommerce.l2.order-cancellation-hooks", "path": "contracts/l2-order-hooks-1.4.md", "order": 2060, "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.order-cancellation-actions", "path": "prompts/fragments/named-actions-cancellation-1.0.0.md", "order": 2087, "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "cancellation-core", "stableId": "cancellation-and-return", "source": "scenarios/02-features.json", "feature": 3, "criteria": ["3a"], "role": "feature" },
+    { "id": "cancellation-history", "stableId": "cancellation-and-return", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 3, "criteria": ["3b"], "role": "feature" }
+  ]
+}

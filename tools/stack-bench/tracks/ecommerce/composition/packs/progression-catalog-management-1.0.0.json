@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.catalog-management", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Catalog management", "description": "Staff-managed products and named variants.",
+  "requiresPacks": ["ecommerce.feature.catalog@1.1.0", "ecommerce.progression.staff-access@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.catalog-management", "path": "prompts/modular/core-business-features-1.0.0.md", "order": 1300, "from": "## Catalog management", "until": "## Payment records", "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.catalog-management-hooks", "path": "contracts/core-business-hooks-1.0.md", "order": 1970, "from": "## Catalog management hooks", "until": "## Payment record hooks", "modes": ["upgrade"] }]
+  },
+  "checks": [{ "id": "products", "stableId": "catalog-management", "source": "scenarios/progression-core-business-1.0.0.json", "feature": 622, "role": "feature" }]
+}

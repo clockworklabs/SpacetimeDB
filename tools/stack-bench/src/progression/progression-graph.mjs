@@ -17,12 +17,37 @@ function packCatalog(trackRoot) {
   }));
 }
 
+function orderForDisplay(nodes) {
+  const ordered = [];
+  const position = new Map();
+  const levels = Math.max(...nodes.map(node => node.level));
+
+  for (let level = 1; level <= levels; level += 1) {
+    const atLevel = nodes.filter(node => node.level === level);
+    atLevel.sort((left, right) => {
+      if (level === 1) return left.name.localeCompare(right.name);
+      const parentPosition = node => node.parents.length === 0
+        ? Number.POSITIVE_INFINITY
+        : node.parents.reduce((total, parent) => total + position.get(parent), 0)
+          / node.parents.length;
+      return parentPosition(left) - parentPosition(right)
+        || left.questline.localeCompare(right.questline)
+        || left.name.localeCompare(right.name);
+    });
+    for (const node of atLevel) {
+      position.set(node.id, ordered.length);
+      ordered.push(node);
+    }
+  }
+  return ordered;
+}
+
 export function compileProgressionGraph(definitionPath, { trackRoot } = {}) {
   const absoluteDefinition = resolve(definitionPath);
   const root = resolve(trackRoot ?? join(dirname(absoluteDefinition), '..'));
   const definition = compileProgressionDefinitionFile(absoluteDefinition, { trackRoot: root });
   const packs = packCatalog(root);
-  const nodes = definition.nodes.map(node => {
+  const nodes = orderForDisplay(definition.nodes.map(node => {
     const selected = node.featureRefs.map(reference => {
       const pack = packs.get(reference);
       if (!pack) throw new Error(`${node.id} references missing feature pack ${reference}`);
@@ -40,7 +65,7 @@ export function compileProgressionGraph(definitionPath, { trackRoot } = {}) {
       checks: node.gradingChecks.length,
       points: node.gradingChecks.reduce((total, check) => total + check.points, 0),
     };
-  });
+  }));
   return {
     schemaVersion: 1,
     definition: { id: definition.id, version: definition.version, state: definition.state },

@@ -40,6 +40,23 @@
       "dependencies": []
     },
     {
+      "id": "customer-profile",
+      "title": "Customer profile",
+      "questline": "identity",
+      "featureRefs": [
+        "ecommerce.progression.customer-profile@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.customer-profile@1.0.0#profile"
+      ],
+      "dependencies": [
+        {
+          "id": "accounts",
+          "reason": "A profile belongs to a customer account."
+        }
+      ]
+    },
+    {
       "id": "purchasing",
       "title": "Purchasing and orders",
       "questline": "orders",
@@ -195,27 +212,25 @@
       ]
     },
     {
-      "id": "cancellation-returns",
-      "title": "Cancellation and returns",
+      "id": "order-cancellation",
+      "title": "Order cancellation",
       "questline": "orders",
       "featureRefs": [
-        "ecommerce.l2.cancellation-returns-features@1.0.0"
+        "ecommerce.l2.order-cancellation-features@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.operations-access-specifications@1.0.0#operator-price-authorization",
-        "ecommerce.l2.cancellation-returns-features@1.0.0#cancellation-core",
-        "ecommerce.l2.cancellation-returns-features@1.0.0#cancellation-history",
-        "ecommerce.l2.cancellation-returns-features@1.0.0#return-complete",
-        "ecommerce.returns-pricing-specifications@1.0.0#refund-accounting"
+        "ecommerce.l2.order-cancellation-features@1.0.0#cancellation-core",
+        "ecommerce.l2.order-cancellation-features@1.0.0#cancellation-history",
+        "ecommerce.progression.cancellation-accounting-specifications@1.0.0#cancellation-accounting"
       ],
       "dependencies": [
         {
           "id": "purchasing",
-          "reason": "Cancellation and returns need an order."
+          "reason": "Cancellation needs an order."
         },
         {
           "id": "warehouse-admin",
-          "reason": "Returned stock needs a warehouse destination."
+          "reason": "Cancelled stock returns to its original warehouse."
         }
       ]
     },
@@ -227,9 +242,11 @@
         "ecommerce.l2.price-history-features@1.0.0"
       ],
       "gradingGroups": [
+        "ecommerce.operations-access-specifications@1.0.0#operator-price-authorization",
         "ecommerce.l2.price-history-features@1.0.0#price-cart-checkout",
         "ecommerce.l2.price-history-features@1.0.0#price-history-exact",
-        "ecommerce.l2.price-history-features@1.0.0#price-live-independent"
+        "ecommerce.l2.price-history-features@1.0.0#price-live-independent",
+        "ecommerce.progression.price-accounting-specifications@1.0.0#price-accounting"
       ],
       "dependencies": [
         {
@@ -237,15 +254,15 @@
           "reason": "Paid order prices must remain fixed."
         },
         {
-          "id": "warehouse-admin",
-          "reason": "Price changes are an administrative operation."
+          "id": "catalog-management",
+          "reason": "Price changes are a catalog operation."
         }
       ]
     },
     {
       "id": "operational-views",
       "title": "Operational views",
-      "questline": "insights",
+      "questline": "operations",
       "featureRefs": [
         "ecommerce.l2.operational-views-features@1.0.0"
       ],
@@ -313,8 +330,29 @@
           "reason": "Delivery follows fulfilment."
         },
         {
-          "id": "cancellation-returns",
+          "id": "order-cancellation",
           "reason": "Delivery must respect final cancellation state."
+        }
+      ]
+    },
+    {
+      "id": "order-returns",
+      "title": "Returns",
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.l3.order-returns-features@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.l3.order-returns-features@1.0.0#return-complete"
+      ],
+      "dependencies": [
+        {
+          "id": "order-delivery",
+          "reason": "Only a shipped or delivered item can be returned."
+        },
+        {
+          "id": "warehouse-admin",
+          "reason": "Returned stock needs a warehouse destination."
         }
       ]
     },
@@ -336,8 +374,8 @@
       ],
       "dependencies": [
         {
-          "id": "stock-transfers",
-          "reason": "Scheduled restocking uses established stock operations."
+          "id": "warehouse-admin",
+          "reason": "Scheduled restocking changes warehouse stock."
         }
       ]
     },
@@ -370,6 +408,44 @@
         "ecommerce.progression.staff-access@1.0.0#staff-boundary"
       ],
       "dependencies": []
+    },
+    {
+      "id": "staff-roles",
+      "title": "Staff roles",
+      "questline": "operations",
+      "featureRefs": [
+        "ecommerce.progression.staff-roles@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.staff-roles@1.0.0#roles"
+      ],
+      "dependencies": [
+        {
+          "id": "staff-access",
+          "reason": "Roles apply to staff identities."
+        }
+      ]
+    },
+    {
+      "id": "catalog-management",
+      "title": "Catalog management",
+      "questline": "catalog-pricing",
+      "featureRefs": [
+        "ecommerce.progression.catalog-management@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.catalog-management@1.0.0#products"
+      ],
+      "dependencies": [
+        {
+          "id": "catalog",
+          "reason": "Staff manage the public catalog."
+        },
+        {
+          "id": "staff-roles",
+          "reason": "Catalog changes require an authorized staff role."
+        }
+      ]
     },
     {
       "id": "support-intake",
@@ -478,10 +554,27 @@
         {
           "id": "catalog",
           "reason": "Search filters catalog items."
+        }
+      ]
+    },
+    {
+      "id": "payment-records",
+      "title": "Payment records",
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.progression.payment-records@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.payment-records@1.0.0#payment"
+      ],
+      "dependencies": [
+        {
+          "id": "cart-checkout",
+          "reason": "A cart checkout creates a payment record."
         },
         {
-          "id": "warehouse-admin",
-          "reason": "Availability filters use warehouse stock."
+          "id": "purchasing",
+          "reason": "The payment belongs to an order."
         }
       ]
     },
@@ -564,8 +657,29 @@
           "reason": "Recommendations use aggregate product activity."
         },
         {
-          "id": "reviews",
-          "reason": "Recommendations use customer review activity."
+          "id": "purchasing",
+          "reason": "Recommendations use the customer's purchase history."
+        }
+      ]
+    },
+    {
+      "id": "staff-activity",
+      "title": "Staff activity history",
+      "questline": "operations",
+      "featureRefs": [
+        "ecommerce.progression.staff-activity@1.0.0"
+      ],
+      "gradingGroups": [
+        "ecommerce.progression.staff-activity@1.0.0#activity"
+      ],
+      "dependencies": [
+        {
+          "id": "staff-roles",
+          "reason": "The history is visible only to authorized staff."
+        },
+        {
+          "id": "catalog-management",
+          "reason": "Catalog changes provide attributable staff activity."
         }
       ]
     },
@@ -699,8 +813,8 @@
       ],
       "dependencies": [
         {
-          "id": "cancellation-returns",
-          "reason": "A support refund uses the established refund path."
+          "id": "order-cancellation",
+          "reason": "A support refund uses the established order refund path."
         },
         {
           "id": "order-support",
@@ -735,16 +849,12 @@
       "title": "Engagement"
     },
     {
-      "id": "insights",
-      "title": "Insights"
-    },
-    {
       "id": "notifications",
       "title": "Notifications"
     },
     {
       "id": "operations",
-      "title": "Operations access"
+      "title": "Staff operations and insights"
     },
     {
       "id": "promotions",

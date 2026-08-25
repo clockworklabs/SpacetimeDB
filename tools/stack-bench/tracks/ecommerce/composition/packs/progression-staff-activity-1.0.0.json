@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-activity", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Staff activity history", "description": "Attributable and private history of administrative changes.",
+  "requiresPacks": ["ecommerce.progression.staff-roles@1.0.0", "ecommerce.progression.catalog-management@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.staff-activity", "path": "prompts/modular/core-business-features-1.0.0.md", "order": 1400, "from": "## Staff activity history", "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.staff-activity-hooks", "path": "contracts/core-business-hooks-1.0.md", "order": 1990, "from": "## Staff activity history hooks", "modes": ["upgrade"] }]
+  },
+  "checks": [{ "id": "activity", "stableId": "staff-activity", "source": "scenarios/progression-core-business-1.0.0.json", "feature": 624, "role": "feature" }]
+}

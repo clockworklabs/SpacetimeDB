@@ -11,8 +11,8 @@ const definition = () => JSON.parse(readFileSync(source, 'utf8'));
 
 test('authored progression groups compile into exact scored checks', () => {
   const compiled = compileProgressionDefinition(definition(), { trackRoot, source });
-  assert.equal(compiled.nodes.length, 33);
-  assert.equal(compiled.nodes.flatMap(node => node.gradingChecks).length, 125);
+  assert.equal(compiled.nodes.length, 39);
+  assert.equal(compiled.nodes.flatMap(node => node.gradingChecks).length, 135);
   assert(compiled.nodes.every(node => node.promptModules.length === node.featureRefs.length));
 });
 

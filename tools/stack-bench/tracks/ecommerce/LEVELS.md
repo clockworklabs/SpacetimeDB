@@ -80,11 +80,16 @@ The draft dependency model is defined in
 prerequisites. They are separate from the cumulative recipe labels above.
 
 Dependency Level 4 currently contains cart expiration, order delivery,
-order-linked support, personalized recommendations, promotion reporting, and
-scheduled restocks.
+order-linked support, personalized recommendations, price history, promotion
+reporting, automatic reorder rules, and staff activity history.
 
-Dependency Level 5 currently contains automatic reorder rules, cart recovery,
-delivery notifications, recommendation feedback, and support refunds.
+Dependency Level 5 currently contains cart recovery, delivery notifications,
+returns, recommendation feedback, and support refunds.
+
+The current draft has 39 feature nodes across ten product areas. Its four
+independent roots are accounts, catalogue, staff access, and support intake.
+Cancellation and returns are separate nodes because they occur at different
+stages of the order lifecycle.
 
 Large-data, long-history, and high-concurrency workloads are test profiles.
 They measure any applicable feature path. They are not feature nodes added only
