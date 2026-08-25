@@ -38,6 +38,7 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
     let out = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
+        .stderr(Stdio::inherit())
         .output()
         .with_context(|| format!("Failed to start {cmd}"))?;
     if !out.status.success() {
@@ -58,7 +59,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     // 1) Build prerequisite
-    run_inherit("cargo", &["build"], Some(workspace_dir))?;
+    run_inherit("cargo", &["build", "-vv"], Some(workspace_dir))?;
 
     // 2) Get schema to a temp file (auto-cleaned)
     let mut tmp_schema = NamedTempFile::new().context("create temp schema file")?;
@@ -66,6 +67,7 @@ fn main() -> Result<()> {
         "cargo",
         &[
             "run",
+            "-vv",
             "-p",
             "spacetimedb-client-api-messages",
             "--example",

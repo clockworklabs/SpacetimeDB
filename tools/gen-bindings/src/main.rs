@@ -61,7 +61,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     // 1) Build prerequisite
-    run_inherit("cargo", &["build"], Some(workspace_dir))?;
+    run_inherit("cargo", &["build", "-vv"], Some(workspace_dir))?;
 
     // 2) Ensure output directory exists
     if !Path::new(&args.out_dir).exists() {
