@@ -5,3 +5,5 @@ Use `cart-count` for the total units, `cart-item` for each line, `cart-quantity`
 quantity, and `cart-total` for the numeric total. Use `cart-remove` to remove a line and
 `checkout-submit` to check out. Use `empty-cart` for an empty cart and `buy-error` for a failed
 checkout.
+
+Use `orders-toggle` to open order history and `order-item` for each order created by checkout.

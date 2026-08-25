@@ -7,5 +7,6 @@
 | `item-name` | Shows the item name inside its `item-card`. |
 | `item-price` | Shows the numeric item price inside its `item-card`. |
 | `item-stock` | Shows total stock inside its `item-card`. |
+| `item-detail` | Contains the selected item's details. |
 | `search-input` | Searches the full catalog. |
 | `search-results` | Contains matching `item-card` results. |

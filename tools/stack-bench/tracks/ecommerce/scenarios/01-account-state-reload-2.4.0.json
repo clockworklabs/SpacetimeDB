@@ -12,13 +12,7 @@
       "name": "An account keeps what belongs to it",
       "actors": ["shopper"],
       "setup": [
-        {"do":"signUp","actor":"shopper","name":"pat"},
-        {
-          "do": "click",
-          "actor": "shopper",
-          "testid": "add-to-cart",
-          "in": {"testid":"item-card","contains":"Keyboard"}
-        }
+        {"do":"signUp","actor":"shopper","name":"pat"}
       ],
       "criteria": [
         {
@@ -26,12 +20,10 @@
           "desc": "cart and order history survive a reload as the same account",
           "points": 1,
           "steps": [
-            {
-              "do": "click",
-              "actor": "shopper",
-              "testid": "buy-now",
-              "in": {"testid":"item-card","contains":"Headphones"}
-            },
+            { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "click", "actor": "shopper", "testid": "checkout-submit" },
+            { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
             {"do":"reload","actor":"shopper","settleMs":4000},
             {"do":"expect","actor":"shopper","testid":"current-user","contains":"pat"},
             {"do":"click","actor":"shopper","testid":"cart-toggle"},

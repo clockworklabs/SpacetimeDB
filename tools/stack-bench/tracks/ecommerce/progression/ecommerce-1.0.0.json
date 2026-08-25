@@ -200,10 +200,8 @@
       "gradingGroups": [
         "ecommerce.l2.stock-transfers-features@1.0.0#warehouse-transfer-corrected",
         "ecommerce.l2.stock-transfers-features@1.0.0#warehouse-transfer-independent",
-        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-cancel",
-        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-contention",
-        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-directional",
-        "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-fresh-client",
+        "ecommerce.progression.inventory-conservation-specifications@1.0.0#stock-conservation-contention",
+        "ecommerce.progression.inventory-conservation-specifications@1.0.0#stock-conservation-directional",
         "ecommerce.progression.operations-access-specifications@1.0.0#operator-transfer-authorization"
       ],
       "dependencies": [
@@ -223,6 +221,8 @@
       "gradingGroups": [
         "ecommerce.l2.order-cancellation-features@1.0.0#cancellation-core",
         "ecommerce.l2.order-cancellation-features@1.0.0#cancellation-history",
+        "ecommerce.progression.inventory-conservation-specifications@1.0.0#stock-conservation-cancel",
+        "ecommerce.progression.inventory-conservation-specifications@1.0.0#stock-conservation-fresh-client",
         "ecommerce.progression.cancellation-accounting-specifications@1.0.0#cancellation-accounting",
         "ecommerce.progression.operations-access-specifications@1.0.0#order-owner-direct"
       ],

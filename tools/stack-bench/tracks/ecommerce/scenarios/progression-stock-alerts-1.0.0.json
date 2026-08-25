@@ -17,10 +17,8 @@
         { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "West", "quantity": 0, "settleMs": 1000 },
         { "do": "click", "actor": "subscriber", "testid": "stock-alert", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "fill", "actor": "admin", "testid": "restock-item", "text": "Mirrorless Camera" },
-        { "do": "fill", "actor": "admin", "testid": "restock-warehouse", "text": "East" },
-        { "do": "fill", "actor": "admin", "testid": "restock-quantity", "text": "5" },
-        { "do": "click", "actor": "admin", "testid": "restock-submit" }
+        { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },
+        { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } }
       ],
       "criteria": [
         {
@@ -31,10 +29,8 @@
           "steps": [
             { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" },
             { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 },
-            { "do": "fill", "actor": "admin", "testid": "restock-item", "text": "Mirrorless Camera" },
-            { "do": "fill", "actor": "admin", "testid": "restock-warehouse", "text": "East" },
-            { "do": "fill", "actor": "admin", "testid": "restock-quantity", "text": "5" },
-            { "do": "click", "actor": "admin", "testid": "restock-submit" },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },
             { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
           ]
         },

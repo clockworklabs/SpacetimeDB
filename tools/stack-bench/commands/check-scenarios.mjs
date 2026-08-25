@@ -4,12 +4,13 @@
 // every testid it touches is a hook the contract actually requires, and every
 // actor it names is declared. None of this needs an app.
 //
-// Usage: node commands/check-scenarios.mjs
+// Usage: node commands/check-scenarios.mjs [--track NAME] [--recipe FILE]
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, listTracks, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
+import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
 
@@ -18,7 +19,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const trackArg = process.argv.includes('--track')
   ? process.argv[process.argv.indexOf('--track') + 1]
   : null;
+const recipeArg = process.argv.includes('--recipe')
+  ? process.argv[process.argv.indexOf('--recipe') + 1]
+  : null;
 const trackNames = trackArg ? [trackArg] : (listTracks().length ? listTracks() : [DEFAULT_TRACK]);
+if (recipeArg && trackNames.length !== 1) {
+  throw new Error('--recipe requires one --track');
+}
 
 const known = new Set(ACTION_REGISTRY.ids);
 
@@ -40,6 +47,60 @@ function hooksByLevel(track) {
       Object.entries(perFile).filter(([l]) => l <= lvl).flatMap(([, ids]) => ids));
   }
   return byLevel;
+}
+
+const packId = reference => reference.slice(0, reference.lastIndexOf('@'));
+
+function recipeScenarioScopes(track, recipeFile) {
+  const recipe = compileRecipeFile(join(track.dir, 'composition', 'recipes', recipeFile), {
+    trackRoot: track.dir,
+  });
+  const packs = new Map(recipe.packs.map(pack => [pack.id, pack]));
+  const contracts = recipe.recipe.task.contracts;
+  const requirements = recipe.recipe.task.requirements;
+  const scopes = new Map();
+
+  const ownersFor = check => {
+    const found = new Set([check.packId, ...(check.requiresFeatures ?? [])]);
+    const visit = id => {
+      const pack = packs.get(id);
+      if (!pack) return;
+      for (const reference of pack.requiresPacks) {
+        const dependency = packId(reference);
+        if (found.has(dependency)) continue;
+        found.add(dependency);
+        visit(dependency);
+      }
+    };
+    [...found].forEach(visit);
+    return found;
+  };
+
+  for (const check of recipe.checks) {
+    const source = check.source.replace(/^scenarios\//, '');
+    const scope = scopes.get(source) ?? {
+      features: new Map(),
+      contractOwners: new Set(),
+      requirementOwners: new Set(),
+    };
+    const criteria = scope.features.get(check.featureId) ?? new Set();
+    criteria.add(check.criterionId);
+    scope.features.set(check.featureId, criteria);
+    for (const owner of ownersFor(check)) {
+      scope.contractOwners.add(owner);
+      scope.requirementOwners.add(owner);
+    }
+    scopes.set(source, scope);
+  }
+
+  for (const scope of scopes.values()) {
+    const owned = (fragment, owners) => fragment.owners.some(owner => owners.has(owner));
+    scope.contractText = contracts.filter(fragment => owned(fragment, scope.contractOwners))
+      .map(fragment => fragment.text).join('\n');
+    scope.requirementText = requirements.filter(fragment => owned(fragment, scope.requirementOwners))
+      .map(fragment => fragment.text).join('\n');
+  }
+  return scopes;
 }
 
 // `statedBy` predates modular prompt treatments. It remains useful provenance,
@@ -65,7 +126,10 @@ for (const name of trackNames) {
  const track = loadTrack(name);
  console.log(`# track: ${name}`);
  const contracts = hooksByLevel(track);
+ const recipeScopes = recipeArg ? recipeScenarioScopes(track, recipeArg) : null;
  for (const file of readdirSync(track.scenarios).filter(f => f.endsWith('.json'))) {
+  const recipeScope = recipeScopes?.get(file);
+  if (recipeScopes && !recipeScope) continue;
   const scenarioPath = join(track.scenarios, file);
   let spec;
   try {
@@ -76,24 +140,29 @@ for (const name of trackNames) {
     continue;
   }
   const level = String(spec.level).padStart(2, '0');
-  const hooks = contracts[level] ?? null;
+  const hooks = recipeScope ? null : contracts[level] ?? null;
 
   console.log(`${file}`);
-  const prompt = promptFor(track, level);
+  const prompt = recipeScope ? norm(recipeScope.requirementText) : promptFor(track, level);
   for (const f of spec.features ?? []) {
-    for (const c of f.criteria ?? []) {
+    const selectedCriteria = recipeScope?.features.get(f.id);
+    if (recipeScope && !selectedCriteria) continue;
+    const criteria = recipeScope
+      ? (f.criteria ?? []).filter(criterion => selectedCriteria.has(criterion.id))
+      : f.criteria ?? [];
+    for (const c of criteria) {
       if (c.statedBy) {
-        if (prompt && !prompt.includes(norm(c.statedBy))) {
+        if (!recipeScope && prompt && !prompt.includes(norm(c.statedBy))) {
           staleStatementWarnings++;
-          console.log(`  warn F${f.id} ${c.id}: statedBy text is not in the legacy level ${level} prompt - the criterion may use modular prompt treatment`);
+          console.log(`  warn F${f.id} ${c.id}: statedBy text is not in the ${recipeScope ? 'selected recipe' : `legacy level ${level}`} prompt`);
         }
-      } else if ((c.points ?? 0) > 0) {
+      } else if (!recipeScope && (c.points ?? 0) > 0) {
         unstatedWarnings++;
         console.log(`  warn F${f.id} ${c.id}: carries ${c.points} point(s) with no statedBy - the requirement may be unstated`);
       }
     }
     const actors = new Set(f.actors ?? []);
-    const steps = [...(f.setup ?? []), ...(f.criteria ?? []).flatMap(c => c.steps ?? [])];
+    const steps = [...(f.setup ?? []), ...criteria.flatMap(c => c.steps ?? [])];
     for (const s of steps) {
       const at = `F${f.id} ${s.do}`;
       if (!known.has(s.do)) fail(at, `unknown step type "${s.do}"`);
@@ -109,9 +178,18 @@ for (const name of trackNames) {
           if (id && !hooks.has(id)) fail(at, `testid "${id}" is not in the contract`);
         }
       }
+      if (recipeScope) {
+        for (const id of [s.testid, s.in?.testid]) {
+          if (id && !recipeScope.contractText.includes(`\`${id}\``)) {
+            fail(at, `testid "${id}" is not in the selected recipe contracts`);
+          }
+        }
+      }
     }
-    const pts = (f.criteria ?? []).reduce((n, c) => n + (c.points ?? 1), 0);
-    if (f.max != null && pts !== f.max) fail(`F${f.id}`, `criteria total ${pts} but max says ${f.max}`);
+    const pts = criteria.reduce((n, c) => n + (c.points ?? 1), 0);
+    if (!recipeScope && f.max != null && pts !== f.max) {
+      fail(`F${f.id}`, `criteria total ${pts} but max says ${f.max}`);
+    }
   }
  }
 }
