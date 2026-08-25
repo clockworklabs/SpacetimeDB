@@ -214,6 +214,7 @@ export const supportTicket = table(
   {
     id: t.u64().primaryKey().autoInc(),
     reference: t.string().unique(),
+    creatorIdentity: t.identity(),
     accountId: t.option(t.u64()),
     email: t.string(),
     subject: t.string(),
@@ -329,6 +330,7 @@ export const scheduledRestock = table(
     quantity: t.u32(),
     dueMicros: t.i64(),
     status: t.string(),
+    reorderRuleId: t.option(t.u64()),
   }
 );
 

@@ -16,7 +16,7 @@ interface SupportReply { ticketId: bigint; author: string; body: string }
 interface Preferences { orderEnabled: boolean; stockEnabled: boolean }
 interface Notification { id: bigint; message: string }
 interface ExpiredCartItem { itemId: bigint }
-interface Restock { id: bigint; itemId: bigint; dueMicros: bigint; status: string }
+interface Restock { id: bigint; itemId: bigint; dueMicros: bigint; status: string; reorderRuleId?: bigint }
 interface StockLedgerEntry { itemId: bigint; quantity: number }
 interface Activity { actor: string; action: string; subject: string; createdMicros: bigint }
 interface PromotionReport { promotionId: bigint; code: string; redemptions: number; revenue: number }
@@ -64,7 +64,7 @@ export default function ProgressionWorkbench(props: Props) {
   const [supportEmail, setSupportEmail] = useState('');
   const [supportSubject, setSupportSubject] = useState('');
   const [supportMessage, setSupportMessage] = useState('');
-  const [supportReference, setSupportReference] = useState('');
+  const [supportSubmission, setSupportSubmission] = useState<{ subject: string; afterId: bigint } | null>(null);
   const [triageByTicket, setTriageByTicket] = useState<Record<string, { assignee: string; priority: string; status: string }>>({});
   const [replyByTicket, setReplyByTicket] = useState<Record<string, string>>({});
   const [orderByTicket, setOrderByTicket] = useState<Record<string, string>>({});
@@ -85,6 +85,12 @@ export default function ProgressionWorkbench(props: Props) {
     for (const row of itemVariants) map.set(row.itemId, [...(map.get(row.itemId) ?? []), row]);
     return map;
   }, [itemVariants]);
+  const supportReference = useMemo(() => {
+    if (!supportSubmission) return '';
+    return supportTickets
+      .filter(ticket => ticket.subject === supportSubmission.subject && ticket.id > supportSubmission.afterId)
+      .sort((left, right) => left.id < right.id ? 1 : -1)[0]?.reference ?? '';
+  }, [supportSubmission, supportTickets]);
 
   useEffect(() => {
     setProfileName(profile?.name ?? '');
@@ -102,8 +108,9 @@ export default function ProgressionWorkbench(props: Props) {
   }, []);
 
   const submitSupport = async () => {
+    const afterId = supportTickets.reduce((maximum, ticket) => ticket.id > maximum ? ticket.id : maximum, 0n);
+    setSupportSubmission({ subject: supportSubject.trim(), afterId });
     await reducers?.createSupportTicket({ email: supportEmail, subject: supportSubject, message: supportMessage });
-    setSupportReference(`Ticket submitted: ${supportSubject}`);
   };
 
   return (
@@ -269,7 +276,10 @@ export default function ProgressionWorkbench(props: Props) {
           <input data-testid="reorder-threshold" value={reorder.threshold} onChange={e => setReorder({ ...reorder, threshold: value(e) })} placeholder="Threshold" />
           <input data-testid="reorder-quantity" value={reorder.quantity} onChange={e => setReorder({ ...reorder, quantity: value(e) })} placeholder="Quantity" />
           <button className="btn btn-primary btn-sm" data-testid="reorder-submit" onClick={() => reducers?.saveReorderRule({ itemId: items.find(row => row.name === reorder.item)?.id ?? 0n, warehouseId: warehouses.find(row => row.name === reorder.warehouse)?.id ?? warehouses[0]?.id ?? 0n, threshold: Number(reorder.threshold), quantity: Number(reorder.quantity) })}>Save rule</button>
-          {reorderRules.map(row => <div data-testid="reorder-rule-item" key={String(row.id)}>{itemName(row.itemId)} at {row.threshold}: {row.quantity}</div>)}
+          {reorderRules.map(row => {
+            const pending = restocks.some(restock => restock.reorderRuleId === row.id && restock.status === 'pending');
+            return <div data-testid="reorder-rule-item" key={String(row.id)}>{itemName(row.itemId)} at {row.threshold}: {row.quantity} ({pending ? 'pending' : 'ready'})</div>;
+          })}
         </section>
       )}
 

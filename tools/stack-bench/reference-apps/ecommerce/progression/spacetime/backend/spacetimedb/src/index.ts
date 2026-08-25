@@ -42,6 +42,11 @@ import spacetimedb, {
   recommendationDismissal,
   maintenanceTick,
 } from './schema';
+import {
+  hasPendingRestockForRule,
+  isTicketCreator,
+  planStockAllocation,
+} from './progression-policy';
 
 export { default } from './schema';
 
@@ -190,26 +195,34 @@ function nowMicros(ctx: Ctx): bigint {
   return ctx.timestamp.microsSinceUnixEpoch;
 }
 
-function findReservation(ctx: Ctx, accountId: bigint, itemId: bigint) {
-  for (const row of ctx.db.reservation.byAccountItem.filter([accountId, itemId])) return row;
-  return null;
+function findReservations(ctx: Ctx, accountId: bigint, itemId: bigint) {
+  return [...ctx.db.reservation.byAccountItem.filter([accountId, itemId])];
 }
 
 function reserveUnits(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: number) {
   const rows = [...ctx.db.stock.by_item_warehouse.filter(itemId)];
-  const row = rows.find(candidate => candidate.quantity >= quantity);
-  if (!row) throw new SenderError('Not enough stock to reserve.');
-  ctx.db.stock.by_item_warehouse.delete([row.item_id, row.warehouse_id]);
-  ctx.db.stock.insert({ ...row, quantity: row.quantity - quantity });
-  return ctx.db.reservation.insert({
-    id: 0n,
-    accountId,
-    itemId,
-    warehouseId: row.warehouse_id,
+  const allocations = planStockAllocation(
+    rows.map(row => ({ warehouseId: row.warehouse_id, quantity: row.quantity })),
     quantity,
-    expiresMicros: nowMicros(ctx) + 90n * SECOND,
-    expired: false,
-  });
+  );
+  if (!allocations) throw new SenderError('Not enough stock to reserve.');
+
+  const expiresMicros = nowMicros(ctx) + 90n * SECOND;
+  for (const allocation of allocations) {
+    const row = rows.find(candidate => candidate.warehouse_id === allocation.warehouseId);
+    if (!row) throw new SenderError('Warehouse stock not found.');
+    ctx.db.stock.by_item_warehouse.delete([row.item_id, row.warehouse_id]);
+    ctx.db.stock.insert({ ...row, quantity: row.quantity - allocation.quantity });
+    ctx.db.reservation.insert({
+      id: 0n,
+      accountId,
+      itemId,
+      warehouseId: row.warehouse_id,
+      quantity: allocation.quantity,
+      expiresMicros,
+      expired: false,
+    });
+  }
 }
 
 function releaseReservation(ctx: Ctx, row: {
@@ -220,6 +233,14 @@ function releaseReservation(ctx: Ctx, row: {
 }) {
   restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);
   ctx.db.reservation.id.delete(row.id);
+}
+
+function replaceReservation(ctx: Ctx, accountId: bigint, itemId: bigint, quantity: number) {
+  for (const row of findReservations(ctx, accountId, itemId)) {
+    if (!row.expired) restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);
+    ctx.db.reservation.id.delete(row.id);
+  }
+  reserveUnits(ctx, accountId, itemId, quantity);
 }
 
 function touchCart(ctx: Ctx, accountId: bigint) {
@@ -249,8 +270,7 @@ function notify(ctx: Ctx, accountId: bigint, kind: string, message: string) {
 function processReorderRules(ctx: Ctx, itemId: bigint) {
   for (const rule of ctx.db.reorderRule.iter()) {
     if (rule.itemId !== itemId || totalStock(ctx, itemId) > rule.threshold) continue;
-    const pending = [...ctx.db.scheduledRestock.iter()].some(row =>
-      row.itemId === itemId && row.status === 'pending');
+    const pending = hasPendingRestockForRule([...ctx.db.scheduledRestock.iter()], rule.id);
     if (!pending) {
       ctx.db.scheduledRestock.insert({
         id: 0n,
@@ -259,6 +279,7 @@ function processReorderRules(ctx: Ctx, itemId: bigint) {
         quantity: rule.quantity,
         dueMicros: nowMicros(ctx) + 10n * SECOND,
         status: 'pending',
+        reorderRuleId: rule.id,
       });
     }
   }
@@ -280,9 +301,10 @@ function processMaintenance(ctx: Ctx) {
         itemId: line.itemId,
         quantity: line.quantity,
       });
-      const held = findReservation(ctx, expiry.accountId, line.itemId);
-      if (held && !held.expired) releaseReservation(ctx, held);
-      else if (held) ctx.db.reservation.id.delete(held.id);
+      for (const held of findReservations(ctx, expiry.accountId, line.itemId)) {
+        if (!held.expired) releaseReservation(ctx, held);
+        else ctx.db.reservation.id.delete(held.id);
+      }
       ctx.db.cartItem.id.delete(line.id);
     }
     ctx.db.cartExpiry.accountId.update({ ...expiry, expired: true });
@@ -762,26 +784,8 @@ export const addToCart = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId
   if (!it) throw new SenderError('Item not found.');
 
   const existing = findCartLine(ctx, acc.id, itemId);
-  const held = findReservation(ctx, acc.id, itemId);
   if (existing) {
-    if (!held || held.expired) {
-      if (held) ctx.db.reservation.id.delete(held.id);
-      reserveUnits(ctx, acc.id, itemId, existing.quantity + 1);
-    } else {
-      let stockRow = null;
-      for (const row of ctx.db.stock.by_item_warehouse.filter([itemId, held.warehouseId])) {
-        stockRow = row;
-        break;
-      }
-      if (!stockRow || stockRow.quantity < 1) throw new SenderError('Not enough stock to reserve.');
-      ctx.db.stock.by_item_warehouse.delete([itemId, held.warehouseId]);
-      ctx.db.stock.insert({ ...stockRow, quantity: stockRow.quantity - 1 });
-      ctx.db.reservation.id.update({
-        ...held,
-        quantity: held.quantity + 1,
-        expiresMicros: nowMicros(ctx) + 90n * SECOND,
-      });
-    }
+    replaceReservation(ctx, acc.id, itemId, existing.quantity + 1);
     ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity + 1 });
   } else {
     reserveUnits(ctx, acc.id, itemId, 1);
@@ -797,41 +801,7 @@ export const updateCartQuantity = spacetimedb.reducer(
     if (quantity < 1) throw new SenderError('Quantity must be at least 1.');
     const existing = findCartLine(ctx, acc.id, itemId);
     if (!existing) throw new SenderError('That item is not in your cart.');
-    const held = findReservation(ctx, acc.id, itemId);
-    if (!held || held.expired) {
-      if (held) ctx.db.reservation.id.delete(held.id);
-      reserveUnits(ctx, acc.id, itemId, quantity);
-    } else if (quantity > existing.quantity) {
-      const increase = quantity - existing.quantity;
-      let stockRow = null;
-      for (const row of ctx.db.stock.by_item_warehouse.filter([itemId, held.warehouseId])) {
-        stockRow = row;
-        break;
-      }
-      if (!stockRow || stockRow.quantity < increase) throw new SenderError('Not enough stock to reserve.');
-      ctx.db.stock.by_item_warehouse.delete([itemId, held.warehouseId]);
-      ctx.db.stock.insert({ ...stockRow, quantity: stockRow.quantity - increase });
-      ctx.db.reservation.id.update({
-        ...held,
-        quantity,
-        expiresMicros: nowMicros(ctx) + 90n * SECOND,
-        expired: false,
-      });
-    } else if (quantity < existing.quantity) {
-      const released = existing.quantity - quantity;
-      restoreStock(ctx, itemId, held.warehouseId, released);
-      ctx.db.reservation.id.update({
-        ...held,
-        quantity,
-        expiresMicros: nowMicros(ctx) + 90n * SECOND,
-      });
-    } else {
-      ctx.db.reservation.id.update({
-        ...held,
-        expiresMicros: nowMicros(ctx) + 90n * SECOND,
-        expired: false,
-      });
-    }
+    replaceReservation(ctx, acc.id, itemId, quantity);
     ctx.db.cartItem.id.update({ ...existing, quantity });
     touchCart(ctx, acc.id);
   }
@@ -841,9 +811,10 @@ export const removeFromCart = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { i
   const acc = requireAccount(ctx);
   const existing = findCartLine(ctx, acc.id, itemId);
   if (existing) {
-    const held = findReservation(ctx, acc.id, itemId);
-    if (held && !held.expired) releaseReservation(ctx, held);
-    else if (held) ctx.db.reservation.id.delete(held.id);
+    for (const held of findReservations(ctx, acc.id, itemId)) {
+      if (!held.expired) releaseReservation(ctx, held);
+      else ctx.db.reservation.id.delete(held.id);
+    }
     ctx.db.cartItem.id.delete(existing.id);
     touchCart(ctx, acc.id);
   }
@@ -859,8 +830,9 @@ export const checkout = spacetimedb.reducer((ctx) => {
   for (const line of lines) {
     const it = ctx.db.item.id.find(line.itemId);
     if (!it) throw new SenderError('An item in your cart no longer exists.');
-    const held = findReservation(ctx, acc.id, line.itemId);
-    if (!held || held.expired || held.quantity !== line.quantity) {
+    const held = findReservations(ctx, acc.id, line.itemId);
+    if (held.length === 0 || held.some(row => row.expired) ||
+      held.reduce((sum, row) => sum + row.quantity, 0) !== line.quantity) {
       throw new SenderError(`The reservation for ${it.name} has expired.`);
     }
     priced.push({ itemId: it.id, name: it.name, quantity: line.quantity, price: it.price });
@@ -883,9 +855,9 @@ export const checkout = spacetimedb.reducer((ctx) => {
   });
 
   for (const p of priced) {
-    const held = findReservation(ctx, acc.id, p.itemId);
-    if (!held) throw new SenderError('Reservation not found.');
-    const allocations = [{ warehouseId: held.warehouseId, quantity: held.quantity }];
+    const held = findReservations(ctx, acc.id, p.itemId);
+    if (held.length === 0) throw new SenderError('Reservation not found.');
+    const allocations = held.map(row => ({ warehouseId: row.warehouseId, quantity: row.quantity }));
     const orderItemRow = ctx.db.orderItem.insert({
       id: 0n,
       orderId: order.id,
@@ -897,7 +869,7 @@ export const checkout = spacetimedb.reducer((ctx) => {
     });
     recordOrderItemStock(ctx, orderItemRow.id, allocations);
     bumpPurchaseCount(ctx, p.itemId, p.quantity);
-    ctx.db.reservation.id.delete(held.id);
+    for (const row of held) ctx.db.reservation.id.delete(row.id);
     processReorderRules(ctx, p.itemId);
   }
 
@@ -1148,6 +1120,7 @@ export const createSupportTicket = spacetimedb.reducer(
     ctx.db.supportTicket.insert({
       id: 0n,
       reference,
+      creatorIdentity: ctx.sender,
       accountId: accountId ?? undefined,
       email: email.trim(),
       subject: subject.trim(),
@@ -1285,6 +1258,7 @@ export const scheduleRestock = spacetimedb.reducer(
       quantity: input.quantity,
       dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,
       status: 'pending',
+      reorderRuleId: undefined,
     });
   }
 );
@@ -1431,11 +1405,11 @@ export const visibleSupportTickets = spacetimedb.view(
   t.array(SupportTicketView),
   (ctx) => {
     const accountId = getAccountId(ctx);
-    if (accountId === null) return [];
-    const actor = ctx.db.account.id.find(accountId);
-    if (!actor) return [];
+    const actor = accountId === null ? null : ctx.db.account.id.find(accountId);
+    const sender = ctx.sender.toHexString();
     return [...ctx.db.supportTicket.iter()]
-      .filter(row => actor.isAdmin || actor.isStaff || row.accountId === accountId)
+      .filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||
+        !!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))
       .map(row => ({
         id: row.id,
         reference: row.reference,
@@ -1524,11 +1498,18 @@ export const myReservations = spacetimedb.view(
   (ctx) => {
     const accountId = getAccountId(ctx);
     if (accountId === null) return [];
-    return [...ctx.db.reservation.byAccountItem.filter(accountId)].map(row => ({
-      itemId: row.itemId,
-      expiresMicros: row.expiresMicros,
-      expired: row.expired,
-    }));
+    const reservations = new Map<bigint, { itemId: bigint; expiresMicros: bigint; expired: boolean }>();
+    for (const row of ctx.db.reservation.byAccountItem.filter(accountId)) {
+      const current = reservations.get(row.itemId);
+      reservations.set(row.itemId, {
+        itemId: row.itemId,
+        expiresMicros: current && current.expiresMicros < row.expiresMicros
+          ? current.expiresMicros
+          : row.expiresMicros,
+        expired: (current?.expired ?? false) || row.expired,
+      });
+    }
+    return [...reservations.values()];
   }
 );
 
