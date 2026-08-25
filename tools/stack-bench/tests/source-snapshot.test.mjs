@@ -22,6 +22,8 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'BUG_REPORT.md'), 'current harness report\n');
   put(join(app, '.session-fix-l1.json'), '{}\n');
   put(join(app, 'ui', 'dist', 'bundle.js'), 'compiled\n');
+  put(join(app, 'server.log'), 'server output\n');
+  put(join(app, 'ui', 'vite.log'), 'client output\n');
 
   const watchedDirectoryIdentity = statSync(client).ino;
   snapshotAppSource(app, snapshot);
@@ -29,6 +31,8 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(existsSync(join(snapshot, 'backend', 'spacetimedb', 'node_modules')), false);
   assert.equal(existsSync(join(snapshot, 'BUG_REPORT.md')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'dist')), false);
+  assert.equal(existsSync(join(snapshot, 'server.log')), false);
+  assert.equal(existsSync(join(snapshot, 'ui', 'vite.log')), false);
 
   put(join(client, 'App.tsx'), 'export const value = "bad fix";\n');
   put(join(client, 'introduced.ts'), 'remove me\n');
@@ -37,6 +41,8 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'new-layout', 'node_modules', 'installed', 'index.js'), 'keep me\n');
   put(join(app, 'ui', 'dist', 'stale.js'), 'remove me\n');
   put(join(app, 'BUG_REPORT.md'), 'latest harness report\n');
+  put(join(app, 'server.log'), 'new server output\n');
+  put(join(app, 'ui', 'vite.log'), 'new client output\n');
 
   restoreAppSource(snapshot, app);
 
@@ -48,6 +54,8 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(readFileSync(join(app, 'backend', 'spacetimedb', 'node_modules', 'dep', 'index.js'), 'utf8'), 'dependency\n');
   assert.equal(existsSync(join(app, 'ui', 'dist')), false);
   assert.equal(readFileSync(join(app, 'BUG_REPORT.md'), 'utf8'), 'latest harness report\n');
+  assert.equal(readFileSync(join(app, 'server.log'), 'utf8'), 'new server output\n');
+  assert.equal(readFileSync(join(app, 'ui', 'vite.log'), 'utf8'), 'new client output\n');
   assert.equal(statSync(client).ino, watchedDirectoryIdentity, 'restore replaced a watched source directory');
 });
 
@@ -75,11 +83,15 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v1\n');
     put(join(app, 'stack-bench', 'bundle.json'), '{}\n');
     put(join(app, 'BUG_REPORT.md'), 'private evidence\n');
+    put(join(app, 'server.log'), 'server output v1\n');
+    put(join(app, 'client', 'vite.log'), 'client output v1\n');
     const first = hashAppSource(app);
     snapshotAppSource(app, snapshot);
     assert.equal(hashAppSource(snapshot).sha256, first.sha256);
     put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v2\n');
     put(join(app, 'stack-bench', 'bundle.json'), '{"changed":true}\n');
+    put(join(app, 'server.log'), 'server output v2\n');
+    put(join(app, 'client', 'vite.log'), 'client output v2\n');
     assert.equal(hashAppSource(app).sha256, first.sha256);
     put(join(app, 'src', 'app.ts'), 'export const value = 2;\n');
     assert.notEqual(hashAppSource(app).sha256, first.sha256);

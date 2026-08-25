@@ -11,6 +11,7 @@ const ROOT_HARNESS_FILES = new Set([
   '.lint-port', '.sandbox-settings.json', '.stack-bench-backend',
   'BUG_REPORT.md', 'check-hooks.sh',
 ]);
+const RUNTIME_LOG_FILES = new Set(['client.log', 'server.log', 'vite.log']);
 
 const parts = value => value.split(/[\\/]/).filter(Boolean);
 
@@ -18,6 +19,10 @@ function rootHarnessFile(rel) {
   const names = parts(rel);
   if (names.length !== 1) return false;
   return ROOT_HARNESS_FILES.has(names[0]) || /^\.(?:prompt|session)-/.test(names[0]);
+}
+
+function preservedRuntimeFile(rel) {
+  return rootHarnessFile(rel) || RUNTIME_LOG_FILES.has(basename(rel));
 }
 
 function directoryDisposition(rel) {
@@ -33,7 +38,7 @@ function copySourceTree(from, to, rel = '') {
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
     if (entry.isDirectory() && directoryDisposition(childRel) !== 'source') continue;
-    if (!entry.isDirectory() && rootHarnessFile(childRel)) continue;
+    if (!entry.isDirectory() && preservedRuntimeFile(childRel)) continue;
     const source = join(from, entry.name);
     const target = join(to, entry.name);
     if (entry.isDirectory()) copySourceTree(source, target, childRel);
@@ -46,7 +51,7 @@ function copySourceTree(from, to, rel = '') {
 function removeAbsent(path, rel) {
   const stat = lstatSync(path);
   if (!stat.isDirectory()) {
-    if (!rootHarnessFile(rel)) rmSync(path, { force: true });
+    if (!preservedRuntimeFile(rel)) rmSync(path, { force: true });
     return;
   }
   const disposition = directoryDisposition(rel);
@@ -68,7 +73,7 @@ function syncSourceTree(snapshot, appDir, rel = '') {
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
     if (entry.isDirectory() && directoryDisposition(childRel) === 'preserve') continue;
-    if (!entry.isDirectory() && rootHarnessFile(childRel)) continue;
+    if (!entry.isDirectory() && preservedRuntimeFile(childRel)) continue;
     if (entry.isDirectory() && directoryDisposition(childRel) === 'transient') {
       rmSync(join(appDir, entry.name), { recursive: true, force: true });
       continue;
@@ -100,7 +105,7 @@ export function snapshotAppSource(appDir, to) {
 
 export function hashAppSource(appDir) {
   return hashDirectory(appDir, { exclude: (rel, entry) => entry.isDirectory()
-    ? directoryDisposition(rel) !== 'source' : rootHarnessFile(rel) });
+    ? directoryDisposition(rel) !== 'source' : preservedRuntimeFile(rel) });
 }
 
 export function restoreAppSource(from, appDir) {
