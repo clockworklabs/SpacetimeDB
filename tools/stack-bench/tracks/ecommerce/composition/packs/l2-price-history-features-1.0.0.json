@@ -8,22 +8,20 @@
   "moduleType": "feature",
   "title": "Price history",
   "description": "Update live prices without changing paid order prices.",
-  "requiresPacks": ["ecommerce.feature.catalog@1.2.0", "ecommerce.feature.purchasing@1.2.0", "ecommerce.feature.cart-checkout@1.3.0"],
+  "requiresPacks": ["ecommerce.feature.cart-checkout@1.3.0", "ecommerce.feature.purchasing@1.2.0", "ecommerce.progression.catalog-management@1.0.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.l2.price-history", "path": "prompts/02-operations.md", "order": 41, "from": "### Prices", "until": "### Live operational views", "modes": ["upgrade"] }],
+    "requirements": [{ "id": "ecommerce.l2.price-history", "path": "prompts/modular/price-history-1.0.0.md", "order": 2040, "modes": ["upgrade"] }],
     "contracts": [
-      { "id": "ecommerce.l2.price-hooks", "path": "contracts/appendix-02.md", "order": 2040, "from": "| `price-input`", "until": "| `low-stock-list`", "modes": ["upgrade"] },
-      { "id": "ecommerce.l2.price-action-input", "path": "prompts/l2-action-inputs.md", "order": 2085, "from": "## Price action input", "until": "## Inventory contention action inputs", "modes": ["upgrade"] },
-      { "id": "ecommerce.l2.price-testing-call", "path": "prompts/fragments/named-actions-price-history-1.0.0.md", "order": 2087, "modes": ["upgrade"] }
+      { "id": "ecommerce.l2.price-hooks", "path": "contracts/price-history-1.0.md", "order": 2041, "modes": ["upgrade"] }
     ]
   },
   "checks": [
     { "id": "price-history-exact", "stableId": "price-history", "source": "scenarios/02-paid-price-history-1.4.0.json", "feature": 4, "criteria": ["4a"], "role": "feature" },
     { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-live-price-1.4.0.json", "feature": 4, "criteria": ["4b"], "role": "feature" },
-    { "id": "price-cart-checkout", "stableId": "price-history", "source": "scenarios/02-features.json", "feature": 4, "criteria": ["4c"], "role": "feature" }
+    { "id": "price-cart-checkout", "stableId": "price-history", "source": "scenarios/progression-price-cart-checkout-1.0.0.json", "feature": 420, "criteria": ["4c"], "role": "feature" }
   ]
 }

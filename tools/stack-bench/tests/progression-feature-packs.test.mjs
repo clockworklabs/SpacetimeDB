@@ -23,7 +23,6 @@ function selectedChecks(pack) {
   return pack.checks.flatMap(check => {
     const scenario = compileScenarioDefinition(readJson(join(trackRoot, check.source)), {
       source: check.source,
-      expectedLevel: 2,
     });
     const feature = scenario.features.find(candidate => candidate.id === check.feature);
     const criteria = check.criteria === undefined
@@ -59,7 +58,11 @@ test('split L2 feature packs preserve every established feature point', () => {
     totals.set(family, (totals.get(family) ?? 0) + check.points);
     return totals;
   }, new Map());
-  assert.deepEqual(totalByFamily(split), totalByFamily(established));
+  const splitTotals = totalByFamily(split);
+  for (const [key, points] of totalByFamily(established)) {
+    assert.equal(splitTotals.get(key), points, `${key} must preserve its established points`);
+  }
+  assert.equal(splitTotals.get('ecommerce.returns-pricing.cancellation-and-return.3e'), 1);
 });
 
 test('each split pack owns only its prompt and exact dependencies', () => {
@@ -81,15 +84,15 @@ test('each split pack owns only its prompt and exact dependencies', () => {
   assert.deepEqual(returns.requiresPacks,
     ['ecommerce.l3.order-delivery-features@1.1.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(pricing.requiresPacks,
-    ['ecommerce.feature.catalog@1.2.0', 'ecommerce.feature.purchasing@1.2.0',
-      'ecommerce.feature.cart-checkout@1.3.0']);
+    ['ecommerce.feature.cart-checkout@1.3.0', 'ecommerce.feature.purchasing@1.2.0',
+      'ecommerce.progression.catalog-management@1.0.0']);
   assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(views.requiresPacks,
     ['ecommerce.feature.cart-checkout@1.3.0', 'ecommerce.feature.purchasing@1.2.0',
       'ecommerce.feature.warehouse-admin@1.2.0']);
 
   assert.doesNotMatch(fragmentText(cancellation.task.requirements[0]), /return|price|Live operational views/i);
-  assert.doesNotMatch(fragmentText(returns.task.requirements[0]), /cancel|price|Live operational views/i);
+  assert.doesNotMatch(fragmentText(returns.task.requirements[0]), /cancel|Live operational views/i);
   assert.doesNotMatch(fragmentText(pricing.task.requirements[0]), /Cancelling and returning|Live operational views/);
   assert.doesNotMatch(fragmentText(transfers.task.requirements[0]), /Cancelling and returning|Live operational views/);
   assert.doesNotMatch(fragmentText(views.task.requirements[0]), /cancel|return|price/i);

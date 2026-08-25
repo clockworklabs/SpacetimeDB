@@ -355,7 +355,8 @@
         "ecommerce.l3.order-returns-features@1.1.0"
       ],
       "gradingGroups": [
-        "ecommerce.l3.order-returns-features@1.1.0#return-complete"
+        "ecommerce.l3.order-returns-features@1.1.0#return-complete",
+        "ecommerce.l3.order-returns-features@1.1.0#return-before-shipping"
       ],
       "dependencies": [
         {

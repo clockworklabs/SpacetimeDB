@@ -14,11 +14,9 @@
   "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 86000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.l2.stock-transfer", "path": "prompts/02-operations.md", "order": 30, "from": "### Moving stock", "until": "### Cancelling and returning", "modes": ["upgrade"] }],
+    "requirements": [{ "id": "ecommerce.l2.stock-transfer", "path": "prompts/modular/stock-transfers-1.0.0.md", "order": 2030, "modes": ["upgrade"] }],
     "contracts": [
-      { "id": "ecommerce.l2.transfer-hooks", "path": "contracts/appendix-02.md", "order": 2030, "from": "| `transfer-from`", "until": "| `price-input`", "modes": ["upgrade"] },
-      { "id": "ecommerce.l2.inventory-action-inputs", "path": "prompts/l2-action-inputs.md", "order": 2090, "from": "## Inventory contention action inputs", "modes": ["upgrade"] },
-      { "id": "ecommerce.l2.transfer-testing-call", "path": "prompts/fragments/named-actions-inventory-operations-1.0.0.md", "order": 2095, "modes": ["upgrade"] }
+      { "id": "ecommerce.l2.transfer-hooks", "path": "contracts/stock-transfers-1.0.md", "order": 2031, "modes": ["upgrade"] }
     ]
   },
   "checks": [
