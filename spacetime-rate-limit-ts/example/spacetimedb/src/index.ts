@@ -1,13 +1,4 @@
-import {
-  schema,
-  table,
-  t,
-  Range,
-  SenderError,
-  type InferSchema,
-  type ReducerCtx,
-  type ViewCtx,
-} from 'spacetimedb/server';
+import { t, Range, SenderError, type ViewCtx } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import { ScheduleAt, Timestamp } from 'spacetimedb';
 import {
@@ -52,44 +43,16 @@ const ADMIN_EVENT_VIEW_LIMIT = 1000;
 
 import {
   rateLimitEvent,
-  reactorRoomState,
-  reactorPlayerState,
   reactorEvent,
-} from './model';
-
-const rateLimitDemoConfig = table(
-  { name: 'rate_limit_demo_config', public: true },
-  {
-    singleton: t.bool().primaryKey(),
-    retainEvents: t.u32(),
-    eventPruneBatch: t.u32(),
-    updatedAt: t.timestamp(),
-  }
-);
-const rateLimitDemoSweepTick = table(
-  {
-    name: 'rate_limit_demo_sweep_tick',
-    scheduled: (): any => rate_limit_demo_sweep,
-  },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
-);
-
-const spacetimedb = schema({
-  rateLimit,
-  rateLimitEvent,
   reactorRoomState,
-  reactorPlayerState,
-  reactorEvent,
-  rateLimitDemoConfig,
   rateLimitDemoSweepTick,
-});
+  setSweepReducer,
+  spacetimedb,
+  type Schema,
+  type Tx,
+} from './schema';
 export default spacetimedb;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type Tx = ReducerCtx<Schema>;
 type ReactorStateRow = NonNullable<
   ReturnType<Tx['db']['reactorRoomState']['singleton']['find']>
 >;
@@ -1165,3 +1128,5 @@ export const rate_limit_demo_sweep = spacetimedb.reducer(
     pruneRateLimitEvents(ctx, retainEvents, pruneBatch);
   }
 );
+
+setSweepReducer(rate_limit_demo_sweep);
