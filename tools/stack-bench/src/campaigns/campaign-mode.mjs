@@ -50,7 +50,22 @@ const sequentialMode = {
   },
 };
 
-export const CAMPAIGN_MODE_REGISTRY = createCampaignModeRegistry([sequentialMode]);
+const dependencyMode = {
+  id: 'dependency',
+  version: '1.0.0',
+  validate(value, { at }) {
+    const fields = new Set(['id', 'version']);
+    for (const key of Object.keys(value)) {
+      if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
+    }
+    return { id: value.id, version: value.version };
+  },
+};
+
+export const CAMPAIGN_MODE_REGISTRY = createCampaignModeRegistry([
+  dependencyMode,
+  sequentialMode,
+]);
 
 export function validateCampaignMode(value, options) {
   return CAMPAIGN_MODE_REGISTRY.validate(value, options);

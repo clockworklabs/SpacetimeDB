@@ -11,6 +11,7 @@ import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
+import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
@@ -100,6 +101,28 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
       documents: {} },
   } }, '/campaign/attempt', 0), /has no guidance document/);
   assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
+});
+
+test('dependency attempts pass one progression input and no separate level range', () => {
+  const plan = compileCampaignFile(example);
+  const progression = compileProgressionInput({
+    schemaVersion: 2, kind: 'progression-mode', id: 'single-level', version: '1.0.0',
+    state: 'draft', title: 'Single level',
+    policy: 'dependency-gated', strikes: { default: 1, levels: {} },
+    nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity', dependencies: [],
+      featureRefs: ['ecommerce.feature.accounts@1.1.0'], promptModules: [],
+      gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1 }] }],
+    questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
+  });
+  const attempt = { ...plan.attempts[0], mode: { id: 'dependency', version: '1.0.0' }, progression };
+  const argv = attemptArgv(plan, attempt, '/campaign/dependency', 0);
+  assert.equal(argv.includes('--levels'), false);
+  const index = argv.indexOf('--progression-json');
+  assert(index > 0);
+  assert.deepEqual(JSON.parse(argv[index + 1]), progression);
+  assert.throws(() => attemptArgv(plan, { ...attempt,
+    mode: { id: 'sequential', version: '1.0.0' },
+  }, '/campaign/dependency', 0), /mode and progression input do not match/);
 });
 
 test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {

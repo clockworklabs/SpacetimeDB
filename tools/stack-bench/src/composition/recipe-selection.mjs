@@ -26,7 +26,7 @@ function exactModuleRef(value, label) {
 // omission. The closed treatment set prevents contradictory boolean policies.
 export function resolveModularRecipeSelection(release, {
   featureIds = [], requestedSpecifications = [], expectedSpecifications = [],
-  observedSpecifications = [], checkKeys = [],
+  observedSpecifications = [], checkKeys = [], dependencyExpansion = 'recursive',
 } = {}) {
   if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
     || !Array.isArray(release.components?.packs)) {
@@ -47,6 +47,9 @@ export function resolveModularRecipeSelection(release, {
     observed: unique(observedSpecifications, 'observed specifications'),
   };
   const selectedCheckKeys = unique(checkKeys, 'selected scored checks');
+  if (!['recursive', 'exact'].includes(dependencyExpansion)) {
+    throw new Error('dependencyExpansion must be recursive or exact');
+  }
   const assigned = new Map();
   for (const [treatment, refs] of Object.entries(inputTreatments)) {
     for (const ref of refs) {
@@ -87,9 +90,11 @@ export function resolveModularRecipeSelection(release, {
       visit(required, required.moduleType === 'feature' ? 'feature' : target, [...chain, ref]);
     }
   };
-  for (const id of [...featureSet]) visit(features.get(id), 'feature');
-  for (const [treatment, refs] of Object.entries(treatmentSets)) {
-    for (const ref of [...refs]) visit(specifications.get(ref), treatment);
+  if (dependencyExpansion === 'recursive') {
+    for (const id of [...featureSet]) visit(features.get(id), 'feature');
+    for (const [treatment, refs] of Object.entries(treatmentSets)) {
+      for (const ref of [...refs]) visit(specifications.get(ref), treatment);
+    }
   }
   const resolvedAssignments = new Map();
   for (const [treatment, refs] of Object.entries(treatmentSets)) {
@@ -170,6 +175,7 @@ export function resolveModularRecipeSelection(release, {
     specifications: Object.fromEntries(Object.entries(inputTreatments)
       .map(([treatment, refs]) => [treatment, [...refs].sort()])),
     checks: [...selectedCheckKeys].sort(),
+    ...(dependencyExpansion === 'exact' ? { dependencyExpansion } : {}),
   };
   return {
     schemaVersion: 3,
@@ -381,6 +387,7 @@ export function resolveModularRecipeTaskRequest(binding, request) {
     expectedSpecifications: requested?.specifications?.expected,
     observedSpecifications: requested?.specifications?.observed,
     checkKeys: requested?.checks,
+    dependencyExpansion: requested?.dependencyExpansion,
   });
   if (!same(resolved.request, request)) {
     throw new Error('modular recipe task changed after request resolution');
@@ -435,6 +442,7 @@ export function createAgentVisibleTaskRequest(binding, selected) {
     // the coding-process request could disclose an expected check name after
     // its owning specification has been deliberately removed.
     checkKeys: [],
+    dependencyExpansion: requested.dependencyExpansion,
   });
   if (visible.task.sha256 !== resolved.task.sha256) {
     throw new Error('undisclosed treatment removal changed the agent task');

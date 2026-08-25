@@ -46,7 +46,7 @@ const ENVELOPE_KEYS = new Set([
 const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'track', 'backend', 'model', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
-  'skills', 'runtime']);
+  'skills', 'runtime', 'progression']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -59,7 +59,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'streams']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
-    'attempts', 'summary']),
+    'attempts', 'summary', 'progression']),
   campaign_report: new Set(['reportSchemaVersion', 'campaign', 'scope', 'policy', 'attempts',
     'conditions', 'summary', 'limitations', 'contentSha256']),
   campaign_state: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'status',

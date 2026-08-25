@@ -4,11 +4,41 @@ import test from 'node:test';
 import { gradeArgv, parseArgs, repairHistoryEntry, repairProgressState } from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
+import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
 
 test('direct runs default to ten repair rounds while an explicit budget still wins', () => {
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres',
     '--fix-rounds', '4']).fixRounds, 4);
+});
+
+test('dependency run levels come only from the compiled progression graph', () => {
+  const progression = compileProgressionInput({
+    schemaVersion: 2, kind: 'progression-mode', id: 'three-levels', version: '1.0.0',
+    state: 'draft', title: 'Three levels',
+    policy: 'dependency-gated', strikes: { default: 1, levels: {} },
+    nodes: [
+      { id: 'one', title: 'One', questline: 'path', dependencies: [],
+        featureRefs: ['feature.one@1.0.0'],
+        promptModules: [], gradingChecks: [{ id: 'check.one', points: 1 }] },
+      { id: 'two', title: 'Two', questline: 'path',
+        dependencies: [{ id: 'one', reason: 'Two requires one.' }],
+        featureRefs: ['feature.two@1.0.0'],
+        promptModules: [], gradingChecks: [{ id: 'check.two', points: 1 }] },
+      { id: 'three', title: 'Three', questline: 'path',
+        dependencies: [{ id: 'two', reason: 'Three requires two.' }],
+        featureRefs: ['feature.three@1.0.0'],
+        promptModules: [], gradingChecks: [{ id: 'check.three', points: 1 }] },
+    ],
+    questlines: [{ id: 'path', title: 'Path', nodes: ['one', 'two', 'three'] }],
+  });
+  const args = parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--progression-json', JSON.stringify(progression)]);
+  assert.deepEqual(args.levelList, [1, 2, 3]);
+  assert.equal(args.levels, '1-3');
+  assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--levels', '1-2', '--progression-json', JSON.stringify(progression)]),
+  /cannot be combined/);
 });
 
 test('repair progress pauses only on repeated findings without a score gain', () => {

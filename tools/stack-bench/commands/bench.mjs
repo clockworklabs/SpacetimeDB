@@ -55,13 +55,18 @@ import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
+import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionLevels, validateProgressionInput }
+  from '../src/progression/progression-definition.mjs';
+import { resolveProgressionRecipeAction }
+  from '../src/progression/progression-recipe-selection.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 export function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
-    fixRounds: 10, runIndex: 0, levels: '1', media: true,
+    fixRounds: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
     maxStalledRepairs: 3,
     guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
     featureIds: [], requestedSpecifications: [], expectedSpecifications: [],
@@ -71,7 +76,8 @@ export function parseArgs(argv) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
       case '--track': a.track = argv[++i]; break;
-      case '--levels': a.levels = argv[++i]; break;
+      case '--levels': a.levels = argv[++i]; a.levelsProvided = true; break;
+      case '--progression-json': a.progression = JSON.parse(argv[++i]); break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -124,8 +130,15 @@ export function parseArgs(argv) {
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
   }
-  const [from, to] = a.levels.split('-').map(Number);
-  a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
+  if (a.progression) {
+    if (a.levelsProvided) throw new Error('--levels cannot be combined with --progression-json');
+    a.progression = validateProgressionInput(a.progression);
+    a.levelList = progressionLevels(a.progression);
+    a.levels = `${a.levelList[0]}-${a.levelList.at(-1)}`;
+  } else {
+    const [from, to] = a.levels.split('-').map(Number);
+    a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
+  }
   if (a.recipe && a.levelList.length !== 1) {
     throw new Error('--recipe requires exactly one requested level');
   }
@@ -500,6 +513,15 @@ async function main() {
         agentRequest: createAgentVisibleTaskRequest(binding, resolved) });
     }
   }
+  if (args.progression) {
+    const state = progressionEngine.initialize(args.progression.definition);
+    const declared = args.condition?.requested?.levels
+      ?.find(entry => entry.level === state.level) ?? null;
+    const binding = resolveRecipeRelease(track, state.level,
+      declared ? `${declared.recipe.id}@${declared.recipe.version}` : null);
+    args.progressionBoundary = resolveProgressionRecipeAction(binding, state);
+    throw new Error('dependency progression execution is not enabled in the live bench runner');
+  }
   if (repairGrant) {
     const expectedSelection = repairGrant.level.selection?.sha256 ?? null;
     const resolvedSelection = args.recipeTasks.get(repairGrant.level.level)?.request.selection.sha256 ?? null;
@@ -790,6 +812,7 @@ async function main() {
     skills: args.skills ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE, url },
     selectionRequest: args.selectionRequest,
+    progression: args.progression ?? null,
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
     validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels,

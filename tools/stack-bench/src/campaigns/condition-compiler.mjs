@@ -227,8 +227,14 @@ function validateRequestedScope(input) {
       || (!modular && !['full', 'subset'].includes(entry.selection.completeness))) {
       fail(`${at}.selection`, 'has an invalid identity');
     }
-    strict(entry.selection.requested, `${at}.selection.requested`, modular
+    const requested = structuredClone(entry.selection.requested);
+    const dependencyExpansion = requested?.dependencyExpansion;
+    if (modular) delete requested.dependencyExpansion;
+    strict(requested, `${at}.selection.requested`, modular
       ? new Set(['features', 'specifications', 'checks']) : new Set(['packs', 'checks']));
+    if (dependencyExpansion !== undefined && dependencyExpansion !== 'exact') {
+      fail(`${at}.selection.requested.dependencyExpansion`, 'must be exact');
+    }
     const packs = modular ? entry.selection.promptPacks : entry.selection.taskPacks;
     if (!Array.isArray(packs)
       || new Set(packs).size !== packs.length

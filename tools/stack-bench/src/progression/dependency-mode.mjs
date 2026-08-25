@@ -44,8 +44,10 @@ function positiveInteger(value, at) {
   return value;
 }
 
-function uniqueStrings(value, at, { exactRefs = false } = {}) {
-  if (!Array.isArray(value) || value.length === 0) fail(at, 'must be a non-empty array');
+function uniqueStrings(value, at, { exactRefs = false, nonEmpty = true } = {}) {
+  if (!Array.isArray(value) || (nonEmpty && value.length === 0)) {
+    fail(at, `must be ${nonEmpty ? 'a non-empty' : 'an'} array`);
+  }
   const seen = new Set();
   return value.map((item, index) => {
     nonEmptyString(item, `${at}[${index}]`);
@@ -131,7 +133,7 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
     identifier(node.questline, `${at}.questline`);
     node.featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`, { exactRefs: true }).sort();
     node.promptModules = uniqueStrings(node.promptModules, `${at}.promptModules`,
-      { exactRefs: true }).sort();
+      { exactRefs: true, nonEmpty: false }).sort();
     if (!Array.isArray(node.gradingChecks) || node.gradingChecks.length === 0) {
       fail(`${at}.gradingChecks`, 'must be a non-empty array');
     }
@@ -354,6 +356,7 @@ function openLevel(state, level) {
   let passed = 0;
   for (const node of nodes) {
     const unlocked = node.dependencies.every(parentId => state.nodes[parentId].status === 'passed');
+    if (state.nodes[node.id].status === 'exhausted') continue;
     if (state.nodes[node.id].status === 'passed' && unlocked) {
       passed += 1;
       continue;
@@ -617,7 +620,16 @@ function applyStrikeGrant(inputState, inputGrant) {
     state.nodes[node.id].exhaustedAtLevel = null;
   }
   for (const node of state.definition.nodes.filter(node => node.level > grant.level)) {
-    if (state.nodes[node.id].status === 'blocked') state.nodes[node.id].status = 'locked';
+    const nodeState = state.nodes[node.id];
+    nodeState.checks = Object.fromEntries(node.gradingChecks.map(check => [check.id, null]));
+    const counter = state.strikes[String(node.level)];
+    if (counter.used >= counter.budget) {
+      nodeState.status = 'exhausted';
+      nodeState.exhaustedAtLevel = node.level;
+    } else {
+      nodeState.status = 'locked';
+      nodeState.exhaustedAtLevel = null;
+    }
   }
   state.grants.push(grant);
   return state;

@@ -76,6 +76,29 @@ function modularDefinition({ requested = [], expected = [], observed = [] } = {}
   });
 }
 
+function dependencyDefinition() {
+  const value = modularDefinition();
+  value.mode = { id: 'dependency', version: '1.0.0' };
+  delete value.levels;
+  value.selection.levels[0].features = ['ecommerce.feature.accounts'];
+  value.selection.levels[0].checks = ['ecommerce.feature.accounts.accounts.1a'];
+  value.progression = {
+    schemaVersion: 2,
+    kind: 'progression-mode',
+    id: 'ecommerce-dependency',
+    version: '1.0.0',
+    state: 'draft',
+    title: 'Ecommerce dependency fixture',
+    policy: 'dependency-gated',
+    strikes: { default: 2, levels: {} },
+    nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity', dependencies: [],
+      featureRefs: ['ecommerce.feature.accounts@1.1.0'], promptModules: [],
+      gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1 }] }],
+    questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
+  };
+  return value;
+}
+
 test('campaign compilation binds exact inputs and expands a balanced immutable attempt plan', () => {
   const plan = compile(definition());
   assert.equal(plan.summary.attempts, 9);
@@ -92,6 +115,31 @@ test('campaign compilation binds exact inputs and expands a balanced immutable a
   }
   assert.equal(new Set(plan.attempts.filter(attempt => attempt.order === 1)
     .map(attempt => attempt.stack)).size, 3, 'each stack must lead one repetition');
+});
+
+test('dependency campaigns derive levels and freeze the progression identity in every attempt', () => {
+  const plan = compile(dependencyDefinition());
+  assert.deepEqual(plan.definition.levels, [1]);
+  assert.equal(plan.progression.identity.id, 'ecommerce-dependency');
+  assert.equal(plan.progression.identity.version, '1.0.0');
+  assert.match(plan.progression.identity.sha256, /^[a-f0-9]{64}$/);
+  assert(plan.attempts.every(attempt =>
+    canonicalDefinitionJson(attempt.progression) === canonicalDefinitionJson(plan.progression)));
+  assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
+  assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
+    /levels.*derived/);
+});
+
+test('dependency campaigns reject static product scope that contradicts the graph', () => {
+  const value = dependencyDefinition();
+  value.selection.levels[0].features = ['ecommerce.feature.catalog'];
+  assert.throws(() => compile(value), /must match the progression graph derived grading scope/);
+  const specifications = dependencyDefinition();
+  specifications.conditions[0].specifications.levels[0].expected = [
+    'ecommerce.spec.state-durability@1.1.0',
+  ];
+  assert.throws(() => compile(specifications),
+    /must match the progression graph derived grading scope/);
 });
 
 test('campaign identity ignores JSON formatting but changes with study semantics', () => {
@@ -219,8 +267,11 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: undefined }), /mode must be an object/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
+    id: 'unknown', version: '1.0.0',
+  } }), /unknown unknown@1\.0\.0/);
+  assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'dependency', version: '1.0.0',
-  } }), /unknown dependency@1\.0\.0/);
+  } }), /progression.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',
   } }), /graph is unknown for sequential mode/);

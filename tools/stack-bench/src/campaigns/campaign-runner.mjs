@@ -34,15 +34,23 @@ export function attemptArgv(plan, attempt, output, runIndex) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
   const levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
+  const dependencyMode = attempt.mode?.id === 'dependency';
+  if (dependencyMode !== Boolean(attempt.progression)) {
+    throw new Error(`attempt ${attempt.id} mode and progression input do not match`);
+  }
   const guidanceDocument = attempt.condition?.guidance?.documents?.[attempt.stack];
   if (!guidanceDocument) {
     throw new Error(`attempt ${attempt.id} has no guidance document for ${attempt.stack}`);
   }
   const args = [BENCH,
     '--backend', attempt.stack,
-    '--track', plan.definition.track,
-    '--levels', levels,
-    '--run-index', String(runIndex),
+    '--track', plan.definition.track];
+  if (dependencyMode) {
+    args.push('--progression-json', JSON.stringify(attempt.progression));
+  } else {
+    args.push('--levels', levels);
+  }
+  args.push('--run-index', String(runIndex),
     '--out', output,
     '--agent-adapter', attempt.agentAdapter,
     '--model', attempt.model,
@@ -52,7 +60,7 @@ export function attemptArgv(plan, attempt, output, runIndex) {
     '--selection-json', JSON.stringify(plan.definition.selection),
     '--fix-rounds', String(plan.definition.budgets.fixRounds),
     '--parent-attempt-id', attempt.id,
-    '--no-media'];
+    '--no-media');
   for (const pack of plan.definition.selection.packs ?? []) args.push('--pack', pack);
   for (const check of plan.definition.selection.checks ?? []) args.push('--check', check);
   args.push('--skills-json', JSON.stringify(attempt.skills));
@@ -96,6 +104,8 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     !== canonicalDefinitionJson(attempt.condition), 'condition');
   mismatch(canonicalDefinitionJson(run.selectionRequest)
     !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
+  mismatch(canonicalDefinitionJson(run.progression ?? null)
+    !== canonicalDefinitionJson(attempt.progression ?? null), 'progression');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
   mismatch(!exactLevels && !interruptedPrefix && !gatedPrefix, 'levels');
   mismatch(run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256,

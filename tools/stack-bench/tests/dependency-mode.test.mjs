@@ -271,9 +271,43 @@ test('a continuation grant can reopen an exhausted branch after another branch c
     accounts: 'pass', catalog: 'pass',
   }));
   assert.equal(state.level, 2);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['search']);
+  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership', 'search']);
   assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds,
     ['accounts', 'catalog', 'ownership', 'search']);
+  assert.equal(state.nodes.ownership.checks['check.ownership.1'], null);
+  assert.equal(state.nodes.recovery.checks['check.recovery.1'], null);
+});
+
+test('an earlier grant does not reopen a later exhausted level or retain its evidence', () => {
+  const value = fixture();
+  value.strikes.default = 1;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'partial-l1', {
+    accounts: 'pass', catalog: 'fail',
+  }));
+  state = progressionEngine.recordResult(state, conclusive(state, 'failed-l2', {
+    accounts: 'pass', ownership: 'fail',
+  }));
+  assert.equal(state.phase, 'terminal');
+  assert.equal(state.nodes.catalog.exhaustedAtLevel, 1);
+  assert.equal(state.nodes.ownership.exhaustedAtLevel, 2);
+
+  state = progressionEngine.grantStrikes(state, {
+    grantId: 'l1-only', level: 1, strikes: 1,
+  });
+  assert.equal(state.nodes.ownership.status, 'exhausted');
+  assert.equal(state.nodes.ownership.exhaustedAtLevel, 2);
+  assert.equal(state.nodes.ownership.checks['check.ownership.1'], null);
+  state = progressionEngine.recordResult(state, conclusive(state, 'repair-l1', {
+    accounts: 'pass', catalog: 'pass',
+  }));
+  assert.equal(state.phase, 'terminal');
+  assert.equal(state.terminalOutcome.blockedLevel, 2);
+  assert.throws(() => progressionEngine.grantStrikes(state,
+    { grantId: 'wrong-level', level: 1, strikes: 1 }), /no exhausted repair target/);
+  state = progressionEngine.grantStrikes(state,
+    { grantId: 'l2-needed', level: 2, strikes: 1 });
+  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership', 'search']);
 });
 
 test('state resumes by replay and rejects contradictory snapshots or event sequences', () => {
@@ -405,7 +439,7 @@ test('a continuation grant reopens a regressed ancestor and its affected child',
   }));
   assert.equal(state.level, 3);
   assert.equal(state.nodes.recovery.status, 'active');
-  assert.equal(state.nodes.recommendations.status, 'passed');
+  assert.equal(state.nodes.recommendations.status, 'active');
 });
 
 test('questline percentages use partial check points and the overall score weights groups equally', () => {

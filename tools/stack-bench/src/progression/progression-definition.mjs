@@ -3,7 +3,11 @@ import { dirname, join, resolve } from 'node:path';
 
 import { compilePackDefinition } from '../composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../composition/definition-compiler.mjs';
+import { canonicalDefinitionJson, canonicalizeDefinition }
+  from '../composition/definition-plan.mjs';
+import { sha256 } from '../evidence/provenance.mjs';
 import { compileDependencyMode } from './dependency-mode.mjs';
+import { progressionEngine } from './progression-engine.mjs';
 
 export const PROGRESSION_DEFINITION_SCHEMA_VERSION = 1;
 
@@ -29,8 +33,10 @@ function identifier(value, at) {
   return value;
 }
 
-function uniqueStrings(value, at, pattern = null) {
-  if (!Array.isArray(value) || value.length === 0) fail(at, 'must be a non-empty array');
+function uniqueStrings(value, at, pattern = null, { nonEmpty: required = true } = {}) {
+  if (!Array.isArray(value) || (required && value.length === 0)) {
+    fail(at, `must be ${required ? 'a non-empty' : 'an'} array`);
+  }
   const seen = new Set();
   return value.map((item, index) => {
     nonEmpty(item, `${at}[${index}]`);
@@ -100,7 +106,7 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
   const nodes = definition.nodes.map((node, index) => {
     const at = `${source}.nodes[${index}]`;
     strictObject(node, at, new Set([
-      'id', 'title', 'questline', 'featureRefs', 'gradingGroups', 'dependencies',
+      'id', 'title', 'questline', 'featureRefs', 'promptModules', 'gradingGroups', 'dependencies',
     ]));
     identifier(node.id, `${at}.id`);
     nonEmpty(node.title, `${at}.title`);
@@ -110,6 +116,15 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
       const pack = packs.get(reference);
       if (!pack) fail(`${at}.featureRefs`, `missing pack ${reference}`);
       if (pack.moduleType !== 'feature') fail(`${at}.featureRefs`, `${reference} is not a feature pack`);
+    }
+    const promptModules = uniqueStrings(node.promptModules ?? [], `${at}.promptModules`, EXACT_REF,
+      { nonEmpty: false }).sort();
+    for (const reference of promptModules) {
+      const pack = packs.get(reference);
+      if (!pack) fail(`${at}.promptModules`, `missing pack ${reference}`);
+      if (pack.moduleType !== 'specification') {
+        fail(`${at}.promptModules`, `${reference} is not a specification pack`);
+      }
     }
     const gradingGroups = uniqueStrings(node.gradingGroups, `${at}.gradingGroups`).sort();
     const gradingChecks = gradingGroups.flatMap((reference, groupIndex) => {
@@ -146,7 +161,7 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
       title: node.title,
       questline: node.questline,
       featureRefs,
-      promptModules: featureRefs,
+      promptModules,
       gradingChecks,
       dependencies: structuredClone(node.dependencies),
     };
@@ -171,4 +186,36 @@ export function compileProgressionDefinitionFile(path, { trackRoot } = {}) {
     trackRoot: resolve(trackRoot ?? join(dirname(absolute), '..')),
     source: absolute,
   });
+}
+
+function identity(definition) {
+  return canonicalizeDefinition({
+    id: definition.id,
+    version: definition.version,
+    policy: definition.policy,
+    sha256: sha256(canonicalDefinitionJson(definition)),
+  });
+}
+
+export function compileProgressionInput(input) {
+  const definition = progressionEngine.compile(input);
+  return canonicalizeDefinition({ definition, identity: identity(definition) });
+}
+
+export function validateProgressionInput(input) {
+  if (!object(input)) throw new Error('progression input must be an object');
+  const fields = new Set(['definition', 'identity']);
+  for (const key of Object.keys(input)) {
+    if (!fields.has(key)) throw new Error(`progression input.${key} is unknown`);
+  }
+  const compiled = compileProgressionInput(input.definition);
+  if (canonicalDefinitionJson(input) !== canonicalDefinitionJson(compiled)) {
+    throw new Error('progression input identity does not match its compiled definition');
+  }
+  return compiled;
+}
+
+export function progressionLevels(input) {
+  const { definition } = validateProgressionInput(input);
+  return [...new Set(definition.nodes.map(node => node.level))].sort((left, right) => left - right);
 }
