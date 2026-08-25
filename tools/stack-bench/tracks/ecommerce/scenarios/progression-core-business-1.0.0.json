@@ -9,14 +9,7 @@
       "id": 620,
       "name": "Customer profile",
       "actors": ["owner", "other"],
-      "setup": [
-        { "do": "signUp", "actor": "owner", "name": "profile-owner" },
-        { "do": "click", "actor": "owner", "testid": "profile-link" },
-        { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
-        { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
-        { "do": "click", "actor": "owner", "testid": "profile-save" },
-        { "do": "signUp", "actor": "other", "name": "profile-other" }
-      ],
+      "setup": [],
       "criteria": [
         {
           "id": "620a",
@@ -24,6 +17,11 @@
           "points": 2,
           "statedBy": "A customer profile persists.",
           "steps": [
+            { "do": "signUp", "actor": "owner", "name": "profile-owner" },
+            { "do": "click", "actor": "owner", "testid": "profile-link" },
+            { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
+            { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
+            { "do": "click", "actor": "owner", "testid": "profile-save" },
             { "do": "reload", "actor": "owner", "settleMs": 2500 },
             { "do": "click", "actor": "owner", "testid": "profile-link" },
             { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street" }
@@ -35,6 +33,12 @@
           "points": 2,
           "statedBy": "Customer profiles are private.",
           "steps": [
+            { "do": "signUp", "actor": "owner", "name": "profile-private-owner" },
+            { "do": "click", "actor": "owner", "testid": "profile-link" },
+            { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
+            { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
+            { "do": "click", "actor": "owner", "testid": "profile-save" },
+            { "do": "signUp", "actor": "other", "name": "profile-other" },
             { "do": "click", "actor": "other", "testid": "profile-link" },
             { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "14 Market Street", "absent": true }
           ]
@@ -45,11 +49,7 @@
       "id": 621,
       "name": "Staff roles",
       "actors": ["admin", "staff"],
-      "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "admin", "testid": "staff-link" }
-      ],
+      "setup": [],
       "criteria": [
         {
           "id": "621a",
@@ -57,6 +57,11 @@
           "points": 2,
           "statedBy": "Administrators can assign staff roles.",
           "steps": [
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+            { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
             { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
             { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
             { "do": "expect", "actor": "admin", "testid": "staff-role-row", "contains": "inventory", "within": 10000 }
@@ -64,10 +69,21 @@
         },
         {
           "id": "621b",
-          "desc": "a staff member cannot assign roles",
+          "desc": "a staff member cannot assign roles through the UI or a replayed request",
           "points": 2,
           "statedBy": "Staff members cannot assign roles.",
           "steps": [
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+            { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
+            { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
+            { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
+            { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
+            { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 },
             { "do": "click", "actor": "staff", "testid": "staff-link" },
             { "do": "expect", "actor": "staff", "testid": "staff-role-save", "absent": true },
             { "do": "replayAs", "actor": "staff", "from": "admin", "match": "role", "settleMs": 1500 },

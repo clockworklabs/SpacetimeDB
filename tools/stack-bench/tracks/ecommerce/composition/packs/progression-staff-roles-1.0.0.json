@@ -7,5 +7,5 @@
     "requirements": [{ "id": "ecommerce.progression.staff-roles", "path": "prompts/modular/core-business-features-1.0.0.md", "order": 1250, "from": "## Staff roles", "until": "## Catalog management", "modes": ["upgrade"] }],
     "contracts": [{ "id": "ecommerce.progression.staff-role-hooks", "path": "contracts/core-business-hooks-1.0.md", "order": 1960, "from": "## Staff role hooks", "until": "## Catalog management hooks", "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "roles", "stableId": "staff-roles", "source": "scenarios/progression-core-business-1.0.0.json", "feature": 621, "role": "feature" }]
+  "checks": [{ "id": "roles", "stableId": "staff-roles", "source": "scenarios/progression-core-business-1.0.0.json", "feature": 621, "criteria": ["621a", "621b"], "role": "feature" }]
 }

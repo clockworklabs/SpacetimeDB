@@ -9,17 +9,25 @@
       "id": 601,
       "name": "Staff access",
       "actors": ["customer", "staff", "admin"],
-      "setup": [
-        { "do": "signUp", "actor": "customer", "name": "staff-boundary" },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
-      ],
+      "setup": [],
       "criteria": [
-        { "id": "601a", "desc": "staff and administrators can open staff tools", "points": 2, "statedBy": "Staff and administrators can sign in and use staff areas.", "steps": [
-          { "do": "expect", "actor": "staff", "testid": "staff-link" },
-          { "do": "expect", "actor": "admin", "testid": "staff-link" }
+        { "id": "601a", "desc": "staff and administrators can sign in and open staff tools", "points": 2, "statedBy": "Staff and administrators can sign in and use staff areas.", "steps": [
+          { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
+          { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
+          { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
+          { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 },
+          { "do": "expect", "actor": "staff", "testid": "staff-link", "within": 6000 },
+          { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+          { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+          { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+          { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+          { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 }
         ] },
-        { "id": "601b", "desc": "customers cannot open staff tools", "points": 2, "statedBy": "Staff areas are not available to customers.", "steps": [
+        { "id": "601b", "desc": "customers cannot open staff tools", "points": 2, "statedBy": "Staff areas are not available to other users.", "steps": [
+          { "do": "fill", "actor": "customer", "testid": "staff-signin-username", "text": "customer" },
+          { "do": "fill", "actor": "customer", "testid": "staff-signin-password", "text": "stackbench-customer-2026" },
+          { "do": "click", "actor": "customer", "testid": "staff-signin-submit" },
+          { "do": "expect", "actor": "customer", "testid": "staff-current-user", "contains": "customer", "within": 6000 },
           { "do": "expect", "actor": "customer", "testid": "staff-link", "absent": true }
         ] }
       ]

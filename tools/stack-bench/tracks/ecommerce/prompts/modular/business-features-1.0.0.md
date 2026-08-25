@@ -1,6 +1,6 @@
 ## Staff access
 
-Staff and administrators can sign in. Staff areas are not available to customers.
+Staff and administrators can sign in to staff tools. Other users cannot open those tools.
 
 ## Support intake
 
