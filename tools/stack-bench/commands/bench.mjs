@@ -179,6 +179,13 @@ export function parseArgs(argv) {
       throw new Error('--campaign-sha256 does not match the compiled campaign plan');
     }
     const attempt = plan.attempts.find(item => item.id === a.campaignAttemptId);
+    if (attempt) {
+      a.condition ??= structuredClone(attempt.condition);
+      a.skills ??= structuredClone(attempt.skills);
+      a.selectionRequest ??= structuredClone(plan.definition.selection);
+      a.guidanceDocument ??= structuredClone(
+        attempt.condition?.guidance?.documents?.[attempt.stack]);
+    }
     if (!attempt || attempt.stack !== a.backend || attempt.agentAdapter !== a.agentAdapter
       || attempt.model !== a.model
       || plan.definition.track !== a.track || attempt.guidance !== a.guidance

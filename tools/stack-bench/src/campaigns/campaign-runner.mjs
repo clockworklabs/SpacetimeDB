@@ -81,15 +81,17 @@ export function attemptArgv(plan, attempt, output, runIndex, progressionPath = n
     '--agent-adapter', attempt.agentAdapter,
     '--model', attempt.model,
     '--guidance', attempt.guidance,
-    '--guidance-document-json', JSON.stringify(guidanceDocument),
-    '--condition-json', JSON.stringify(attempt.condition),
-    '--selection-json', JSON.stringify(plan.definition.selection),
     '--fix-rounds', String(plan.definition.budgets.fixRounds),
     '--parent-attempt-id', attempt.id,
     '--no-media');
+  if (!dependencyMode) {
+    args.push('--guidance-document-json', JSON.stringify(guidanceDocument),
+      '--condition-json', JSON.stringify(attempt.condition),
+      '--selection-json', JSON.stringify(plan.definition.selection));
+  }
   for (const pack of plan.definition.selection.packs ?? []) args.push('--pack', pack);
   for (const check of plan.definition.selection.checks ?? []) args.push('--check', check);
-  args.push('--skills-json', JSON.stringify(attempt.skills));
+  if (!dependencyMode) args.push('--skills-json', JSON.stringify(attempt.skills));
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     args.push('--max-budget-usd', String(plan.definition.budgets.maxCostUsdPerAttempt));
   }
