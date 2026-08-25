@@ -99,7 +99,7 @@
   .graph-canvas {
     position: relative;
     min-width: 850px;
-    min-height: 648px;
+    min-height: 760px;
     padding: 22px;
   }
 
@@ -140,7 +140,7 @@
 
   .node {
     width: 100%;
-    height: 68px;
+    min-height: 82px;
     margin-bottom: 16px;
     padding: 12px 14px;
     display: grid;
@@ -155,7 +155,8 @@
     cursor: default;
   }
 
-  .node .name { min-width: 0; grid-row: 1 / span 2; font: 600 13px/1.25 var(--mono); }
+  .node .name { min-width: 0; font: 600 13px/1.25 var(--mono); }
+  .node .depends { min-width: 0; color: #b9c4c1; font: 10px/1.35 var(--mono); }
   .node .state { grid-row: 1 / span 2; grid-column: 2; font: 700 13px/1 var(--mono); }
 
   .node.qualified { border-color: #287b55; background: var(--green-bg); }
@@ -180,7 +181,7 @@
   <header>
     <div>
       <h1>Ecommerce dependency graph</h1>
-      <p class="subtitle">Six L1 features, three L2 features, and four draft L3 features.</p>
+      <p class="subtitle">Six L1 features, five L2 features, and four draft L3 features.</p>
     </div>
   </header>
 
@@ -209,14 +210,16 @@
     { id: 'reviews', name: 'Reviews', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.reviews@1.1.0', scope: 'Verified-purchase reviews and live rating updates.' },
     { id: 'warehouse-admin', name: 'Warehouse administration', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.warehouse-admin@1.1.0', scope: 'Warehouse stock, administrator access, and live inventory updates.' },
 
-    { id: 'fulfilment-operations', name: 'Fulfilment operations', level: 2, state: 'qualified', parents: ['accounts', 'purchasing', 'warehouse-admin'], pack: 'ecommerce.operations-access-features@1.0.0', scope: 'Staff queues, shipping, and operator workflows.' },
-    { id: 'returns-pricing', name: 'Returns and pricing', level: 2, state: 'qualified', parents: ['catalog', 'purchasing', 'cart-checkout'], pack: 'ecommerce.returns-pricing-features@1.1.0', scope: 'Cancellation, returns, live prices, and paid-price history.' },
-    { id: 'inventory-operations', name: 'Inventory operations', level: 2, state: 'qualified', parents: ['catalog', 'purchasing', 'warehouse-admin'], pack: 'ecommerce.inventory-operations-features@1.2.0', scope: 'Stock transfers and live operational views.' },
+    { id: 'fulfilment-queue', name: 'Fulfilment queue', level: 2, state: 'qualified', parents: ['purchasing', 'warehouse-admin'], pack: 'ecommerce.operations-access-features@1.0.0', scope: 'Staff queues, shipping, and operator workflows.' },
+    { id: 'warehouse-transfer', name: 'Stock transfers', level: 2, state: 'qualified', parents: ['warehouse-admin'], pack: 'ecommerce.inventory-operations-features@1.2.0', scope: 'Move stock between warehouses without changing the total.' },
+    { id: 'cancellation-return', name: 'Cancellation and returns', level: 2, state: 'qualified', parents: ['purchasing', 'cart-checkout'], pack: 'ecommerce.returns-pricing-features@1.1.0', scope: 'Cancel orders, return shipped orders, and restore stock.' },
+    { id: 'price-history', name: 'Price history', level: 2, state: 'qualified', parents: ['catalog', 'purchasing'], pack: 'ecommerce.returns-pricing-features@1.1.0', scope: 'Live catalog prices and immutable paid prices.' },
+    { id: 'operational-views', name: 'Operational views', level: 2, state: 'qualified', parents: ['catalog', 'purchasing', 'warehouse-admin'], pack: 'ecommerce.inventory-operations-features@1.2.0', scope: 'Low stock, sales, recommendations, and best sellers.' },
 
-    { id: 'reservations', name: 'Reservations', level: 3, state: 'draft', parents: ['inventory-operations', 'returns-pricing'], pack: 'ecommerce.l3.reservations-features@1.0.0', scope: 'Timed stock reservations, renewal, expiry, and checkout conversion.' },
-    { id: 'scheduled-restocks', name: 'Scheduled restocks', level: 3, state: 'draft', parents: ['fulfilment-operations', 'inventory-operations'], pack: 'ecommerce.l3.scheduled-restocks-features@1.0.0', scope: 'Schedule, cancel, and complete durable restocks.' },
-    { id: 'order-delivery', name: 'Order delivery', level: 3, state: 'draft', parents: ['fulfilment-operations', 'returns-pricing'], pack: 'ecommerce.l3.order-delivery-features@1.0.0', scope: 'Automatic delivery after shipping, with cancellation protection.' },
-    { id: 'cart-expiration', name: 'Cart expiration', level: 3, state: 'draft', parents: ['returns-pricing'], pack: 'ecommerce.l3.cart-expiration-features@1.0.0', scope: 'Abandoned-cart expiry and reservation release.' }
+    { id: 'reservations', name: 'Reservations', level: 3, state: 'draft', parents: ['warehouse-transfer', 'price-history'], pack: 'ecommerce.l3.reservations-features@1.0.0', scope: 'Timed stock reservations, renewal, expiry, and checkout conversion.' },
+    { id: 'scheduled-restocks', name: 'Scheduled restocks', level: 3, state: 'draft', parents: ['fulfilment-queue', 'warehouse-transfer'], pack: 'ecommerce.l3.scheduled-restocks-features@1.0.0', scope: 'Schedule, cancel, and complete durable restocks.' },
+    { id: 'order-delivery', name: 'Order delivery', level: 3, state: 'draft', parents: ['fulfilment-queue', 'cancellation-return'], pack: 'ecommerce.l3.order-delivery-features@1.0.0', scope: 'Automatic delivery after shipping, with cancellation protection.' },
+    { id: 'cart-expiration', name: 'Cart expiration', level: 3, state: 'draft', parents: ['cancellation-return'], pack: 'ecommerce.l3.cart-expiration-features@1.0.0', scope: 'Abandoned-cart expiry and reservation release.' }
   ];
 
   const byId = new Map(features.map(feature => [feature.id, feature]));
@@ -234,7 +237,10 @@
       node.className = `node ${feature.state}`;
       node.dataset.id = feature.id;
       node.setAttribute('aria-label', `${feature.name}, ${feature.state}`);
-      node.innerHTML = `<span class="name">${feature.name}</span><span class="state" title="${feature.state}">●</span>`;
+      const dependencies = feature.parents.length
+        ? `Needs: ${feature.parents.map(parent => byId.get(parent).name).join(' + ')}`
+        : 'Starts here';
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="depends">${dependencies}</span><span class="state" title="${feature.state}">●</span>`;
       column.appendChild(node);
     }
 
