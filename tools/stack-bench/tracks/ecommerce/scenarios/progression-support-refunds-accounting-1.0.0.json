@@ -11,6 +11,7 @@
       "actors": ["owner", "staff"],
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "refund-accounting-owner" },
+        { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Keyboard", "enter": true },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "click", "actor": "owner", "testid": "orders-toggle" },
         { "do": "recordNumber", "actor": "owner", "testid": "order-total", "in": { "testid": "order-item", "contains": "Keyboard" }, "as": "paid-total" },

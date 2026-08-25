@@ -11,6 +11,7 @@
       "actors": ["owner", "staff"],
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "refund-resolution-owner" },
+        { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Keyboard", "enter": true },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "click", "actor": "owner", "testid": "support-link" },
         { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Resolution refund case" },

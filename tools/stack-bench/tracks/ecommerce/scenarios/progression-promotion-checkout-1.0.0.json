@@ -42,6 +42,7 @@
           "points": 3,
           "statedBy": "An active promotion applies to the cart and the order records its discount.",
           "steps": [
+            { "do": "fill", "actor": "activeBuyer", "testid": "search-input", "text": "Keyboard", "enter": true },
             { "do": "click", "actor": "activeBuyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "click", "actor": "activeBuyer", "testid": "cart-toggle" },
             { "do": "fill", "actor": "activeBuyer", "testid": "cart-promotion", "text": "LIVE10" },
@@ -57,6 +58,7 @@
           "points": 2,
           "statedBy": "Expired promotions cannot be applied.",
           "steps": [
+            { "do": "fill", "actor": "expiredBuyer", "testid": "search-input", "text": "Keyboard", "enter": true },
             { "do": "click", "actor": "expiredBuyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "click", "actor": "expiredBuyer", "testid": "cart-toggle" },
             { "do": "fill", "actor": "expiredBuyer", "testid": "cart-promotion", "text": "OLD10" },
@@ -70,11 +72,13 @@
           "points": 2,
           "statedBy": "A promotion cannot be used after its redemption limit is reached.",
           "steps": [
+            { "do": "fill", "actor": "firstBuyer", "testid": "search-input", "text": "Keyboard", "enter": true },
             { "do": "click", "actor": "firstBuyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "click", "actor": "firstBuyer", "testid": "cart-toggle" },
             { "do": "fill", "actor": "firstBuyer", "testid": "cart-promotion", "text": "ONCE10" },
             { "do": "click", "actor": "firstBuyer", "testid": "apply-promotion" },
             { "do": "click", "actor": "firstBuyer", "testid": "checkout-submit" },
+            { "do": "fill", "actor": "secondBuyer", "testid": "search-input", "text": "Keyboard", "enter": true },
             { "do": "click", "actor": "secondBuyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "click", "actor": "secondBuyer", "testid": "cart-toggle" },
             { "do": "fill", "actor": "secondBuyer", "testid": "cart-promotion", "text": "ONCE10" },

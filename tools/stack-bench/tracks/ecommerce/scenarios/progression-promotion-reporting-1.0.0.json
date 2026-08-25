@@ -19,6 +19,7 @@
         { "do": "fill", "actor": "staff", "testid": "promotion-limit", "text": "2" },
         { "do": "click", "actor": "staff", "testid": "promotion-submit" },
         { "do": "signUp", "actor": "buyer", "name": "promotion-report-buyer" },
+        { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Keyboard", "enter": true },
         { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "click", "actor": "buyer", "testid": "cart-toggle" },
         { "do": "fill", "actor": "buyer", "testid": "cart-promotion", "text": "REPORT10" },

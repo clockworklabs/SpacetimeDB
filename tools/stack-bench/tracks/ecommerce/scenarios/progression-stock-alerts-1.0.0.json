@@ -15,6 +15,7 @@
         { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "East", "quantity": 0, "settleMs": 1000 },
         { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "West", "quantity": 0, "settleMs": 1000 },
+        { "do": "fill", "actor": "subscriber", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
         { "do": "click", "actor": "subscriber", "testid": "stock-alert", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },

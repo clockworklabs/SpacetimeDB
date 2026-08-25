@@ -23,7 +23,7 @@
         "ecommerce.feature.accounts@1.2.0#account-duplicate",
         "ecommerce.feature.accounts@1.2.0#account-password",
         "ecommerce.feature.accounts@1.2.0#account-signout",
-        "ecommerce.spec.state-durability@1.1.0#session-reload"
+        "ecommerce.spec.state-durability@1.2.0#session-reload"
       ],
       "dependencies": []
     },
@@ -71,9 +71,9 @@
         "ecommerce.spec.access-control@1.2.0#purchase-attribution",
         "ecommerce.spec.access-control@1.2.0#purchase-session",
         "ecommerce.spec.access-control@1.2.0#signed-out-purchase",
-        "ecommerce.spec.live-state@1.2.0#purchase-stock",
-        "ecommerce.spec.live-state@1.2.0#ranking",
-        "ecommerce.spec.transactional-integrity@1.3.0#server-price"
+        "ecommerce.spec.live-state@1.3.0#purchase-stock",
+        "ecommerce.spec.live-state@1.3.0#ranking",
+        "ecommerce.spec.transactional-integrity@1.4.0#server-price"
       ],
       "dependencies": [
         {
@@ -96,11 +96,11 @@
       "gradingGroups": [
         "ecommerce.feature.cart-checkout@1.3.0#cart",
         "ecommerce.spec.access-control@1.2.0#cart-boundary",
-        "ecommerce.spec.concurrency-safety@1.3.0#duplicate-checkout",
-        "ecommerce.spec.live-state@1.2.0#shared-cart",
-        "ecommerce.spec.state-durability@1.1.0#account-state-reconnect",
-        "ecommerce.spec.state-durability@1.1.0#account-state-reload",
-        "ecommerce.spec.state-durability@1.1.0#cart-reload"
+        "ecommerce.spec.concurrency-safety@1.4.0#duplicate-checkout",
+        "ecommerce.spec.live-state@1.3.0#shared-cart",
+        "ecommerce.spec.state-durability@1.2.0#account-state-reconnect",
+        "ecommerce.spec.state-durability@1.2.0#account-state-reload",
+        "ecommerce.spec.state-durability@1.2.0#cart-reload"
       ],
       "dependencies": [
         {
@@ -150,9 +150,9 @@
       "gradingGroups": [
         "ecommerce.feature.reviews@1.2.0#reviews",
         "ecommerce.spec.access-control@1.2.0#review-eligibility",
-        "ecommerce.spec.live-state@1.2.0#open-list",
-        "ecommerce.spec.live-state@1.2.0#rating",
-        "ecommerce.spec.transactional-integrity@1.3.0#unique-review"
+        "ecommerce.spec.live-state@1.3.0#open-list",
+        "ecommerce.spec.live-state@1.3.0#rating",
+        "ecommerce.spec.transactional-integrity@1.4.0#unique-review"
       ],
       "dependencies": [
         {
@@ -174,8 +174,8 @@
         "ecommerce.progression.fulfilment-queue@1.0.0#fulfilment-ship",
         "ecommerce.progression.fulfilment-queue@1.0.0#fulfilment-warehouse",
         "ecommerce.progression.operations-access-specifications@1.0.0#operator-authorization-direct",
-        "ecommerce.spec.concurrency-safety@1.3.0#last-unit",
-        "ecommerce.spec.concurrency-safety@1.3.0#restock-race"
+        "ecommerce.spec.concurrency-safety@1.4.0#last-unit",
+        "ecommerce.spec.concurrency-safety@1.4.0#restock-race"
       ],
       "dependencies": [
         {
@@ -280,7 +280,7 @@
         "ecommerce.l2.operational-views-features@1.0.0#operational-views-category-totals",
         "ecommerce.l2.operational-views-features@1.0.0#operational-views-low-stock",
         "ecommerce.l2.operational-views-features@1.0.0#operational-views-recommendations",
-        "ecommerce.spec.transactional-integrity@1.3.0#books-balance"
+        "ecommerce.spec.transactional-integrity@1.4.0#books-balance"
       ],
       "dependencies": [
         {
@@ -584,7 +584,7 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.payment-records@1.0.0#payment",
-        "ecommerce.spec.concurrency-safety@1.3.0#stock-limit"
+        "ecommerce.spec.concurrency-safety@1.4.0#stock-limit"
       ],
       "dependencies": [
         {

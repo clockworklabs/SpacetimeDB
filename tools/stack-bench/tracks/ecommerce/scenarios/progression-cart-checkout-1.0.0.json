@@ -20,6 +20,7 @@
           "points": 1,
           "statedBy": "Adding an existing cart item increases its quantity.",
           "steps": [
+            { "do": "fill", "actor": "quantity", "testid": "search-input", "text": "Headphones", "enter": true },
             { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "wait", "actor": "quantity", "ms": 800 },
             { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
@@ -34,6 +35,7 @@
           "points": 2,
           "statedBy": "Checkout creates one order, reduces stock, and empties the cart.",
           "steps": [
+            { "do": "fill", "actor": "checkout", "testid": "search-input", "text": "Headphones", "enter": true },
             { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 100 },
             { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 1 },

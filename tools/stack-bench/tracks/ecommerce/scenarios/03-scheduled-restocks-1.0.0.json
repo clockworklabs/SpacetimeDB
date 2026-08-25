@@ -30,7 +30,7 @@
       "id": 305,
       "name": "A due restock applies",
       "actors": ["admin", "watcher"],
-      "setup": [{ "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }, { "do": "click", "actor": "admin", "testid": "admin-link" }, { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "before" }],
+      "setup": [{ "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }, { "do": "click", "actor": "admin", "testid": "admin-link" }, { "do": "fill", "actor": "watcher", "testid": "search-input", "text": "Keyboard", "enter": true }, { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "before" }],
       "criteria": [{
         "id": "305a",
         "desc": "a due restock updates stock and moves to the ledger",

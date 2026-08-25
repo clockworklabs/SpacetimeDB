@@ -34,7 +34,9 @@
           "points": 3,
           "statedBy": "Crossing a reorder threshold schedules a restock.",
           "steps": [
+            { "do": "fill", "actor": "buyer-a", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
             { "do": "click", "actor": "buyer-a", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "fill", "actor": "buyer-b", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
             { "do": "click", "actor": "buyer-b", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
             { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
           ]
@@ -45,6 +47,7 @@
           "points": 2,
           "statedBy": "A pending automatic restock is not scheduled twice.",
           "steps": [
+            { "do": "fill", "actor": "buyer-c", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
             { "do": "click", "actor": "buyer-c", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
             { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
           ]

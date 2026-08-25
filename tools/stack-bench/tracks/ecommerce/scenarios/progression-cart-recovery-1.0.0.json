@@ -11,9 +11,12 @@
       "actors": ["available-shopper", "partial-shopper"],
       "setup": [
         { "do": "signUp", "actor": "available-shopper", "name": "cart-recovery-available" },
+        { "do": "fill", "actor": "available-shopper", "testid": "search-input", "text": "Keyboard", "enter": true },
         { "do": "click", "actor": "available-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "signUp", "actor": "partial-shopper", "name": "cart-recovery-partial" },
+        { "do": "fill", "actor": "partial-shopper", "testid": "search-input", "text": "Webcam", "enter": true },
         { "do": "click", "actor": "partial-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Webcam" } },
+        { "do": "fill", "actor": "partial-shopper", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
         { "do": "click", "actor": "partial-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
         { "do": "wait", "actor": "available-shopper", "ms": 310000 }
       ],

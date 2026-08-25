@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression books balance",
+  "features": [
+    {
+      "id": 107,
+      "name": "The books balance",
+      "actors": ["buyer", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "sam" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before" },
+        { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Laptop Stand" }, "as": "stand-before" },
+        { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Laptop Stand", "enter": true },
+        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+        { "do": "wait", "actor": "buyer", "ms": 1000 },
+        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+        { "do": "wait", "actor": "buyer", "ms": 2000 }
+      ],
+      "criteria": [
+        {
+          "id": "107a",
+          "desc": "revenue rises by exactly what was bought",
+          "points": 1,
+          "statedBy": "total revenue equals the sum of order totals",
+          "steps": [
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 58, "within": 10000 }
+          ]
+        },
+        {
+          "id": "107b",
+          "desc": "what the store sold is what left the warehouses, and a fresh client agrees",
+          "points": 1,
+          "statedBy": "warehouse totals and a fresh storefront agree with completed sales",
+          "steps": [
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Laptop Stand" }, "relativeTo": "stand-before", "plus": -2 },
+            { "do": "freshClient", "actor": "buyer" },
+            { "do": "fill", "actor": "buyer-fresh", "testid": "search-input", "text": "Laptop Stand", "enter": true },
+            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Laptop Stand" }, "relativeTo": "stand-before", "plus": -2 }
+          ]
+        }
+      ]
+    }
+  ]
+}

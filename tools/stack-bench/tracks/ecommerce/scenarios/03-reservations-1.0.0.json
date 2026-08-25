@@ -31,6 +31,7 @@
       "actors": ["shopper"],
       "setup": [
         { "do": "signUp", "actor": "shopper", "name": "reserve-clock" },
+        { "do": "fill", "actor": "shopper", "testid": "search-input", "text": "Webcam", "enter": true },
         { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Webcam" } },
         { "do": "click", "actor": "shopper", "testid": "cart-toggle" }
       ],
@@ -52,6 +53,7 @@
       "actors": ["shopper"],
       "setup": [
         { "do": "signUp", "actor": "shopper", "name": "reserve-checkout" },
+        { "do": "fill", "actor": "shopper", "testid": "search-input", "text": "Keyboard", "enter": true },
         { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
         { "do": "click", "actor": "shopper", "testid": "cart-toggle" }
       ],
@@ -94,6 +96,7 @@
       "actors": ["shopper"],
       "setup": [
         { "do": "signUp", "actor": "shopper", "name": "reserve-renew" },
+        { "do": "fill", "actor": "shopper", "testid": "search-input", "text": "Headphones", "enter": true },
         { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
         { "do": "wait", "actor": "shopper", "ms": 60000 },
         { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },

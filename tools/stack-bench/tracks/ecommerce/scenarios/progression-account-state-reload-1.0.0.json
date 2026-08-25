@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression account state after reload",
+  "features": [
+    {
+      "id": 105,
+      "name": "An account keeps what belongs to it",
+      "actors": ["shopper"],
+      "setup": [
+        { "do": "signUp", "actor": "shopper", "name": "pat" }
+      ],
+      "criteria": [
+        {
+          "id": "105a",
+          "desc": "cart and order history survive a reload as the same account",
+          "points": 1,
+          "statedBy": "the signed-in account, cart, and orders persist across a page reload",
+          "steps": [
+            { "do": "fill", "actor": "shopper", "testid": "search-input", "text": "Headphones", "enter": true },
+            { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "click", "actor": "shopper", "testid": "checkout-submit" },
+            { "do": "fill", "actor": "shopper", "testid": "search-input", "text": "Keyboard", "enter": true },
+            { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+            { "do": "reload", "actor": "shopper", "settleMs": 4000 },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
+            { "do": "reload", "actor": "shopper", "settleMs": 2500 },
+            { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Headphones", "count": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

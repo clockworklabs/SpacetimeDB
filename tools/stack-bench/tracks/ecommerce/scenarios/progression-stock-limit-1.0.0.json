@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression stock limit",
+  "features": [
+    {
+      "id": 3,
+      "name": "Buying",
+      "actors": ["buyer", "watcher", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "eli" },
+        { "do": "signUp", "actor": "watcher", "name": "fay" }
+      ],
+      "criteria": [
+        {
+          "id": "3d",
+          "desc": "an item sells out visibly, and a checkout exceeding stock is refused and changes nothing",
+          "points": 2,
+          "statedBy": "an item with zero stock cannot be bought",
+          "steps": [
+            { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
+            { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" }, "equals": 0 },
+            { "do": "expect", "actor": "buyer", "testid": "out-of-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "click", "actor": "buyer", "testid": "cart-toggle" },
+            { "do": "click", "actor": "buyer", "testid": "checkout-submit" },
+            { "do": "expect", "actor": "buyer", "testid": "buy-error", "within": 6000 },
+            { "do": "expect", "actor": "buyer", "testid": "cart-item", "contains": "Mirrorless Camera" },
+            { "do": "reload", "actor": "buyer", "settleMs": 3000 },
+            { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" }, "equals": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}
