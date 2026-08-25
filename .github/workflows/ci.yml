@@ -1325,6 +1325,8 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+
       - name: Find Git ref
         env:
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
@@ -1340,6 +1342,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
+          fetch-depth: 0
+
+      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1353,7 +1358,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-global-json-policy
-          path: ${{ github.workspace }}/target/cargo-timings/
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
   smoketests_mod_rs_complete:
@@ -1366,6 +1371,8 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1382,6 +1389,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
+          fetch-depth: 0
+
+      - *restore-source-mtimes
+
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
