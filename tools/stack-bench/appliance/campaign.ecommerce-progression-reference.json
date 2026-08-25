@@ -26,7 +26,7 @@
   "agents": [
     {
       "adapter": "reference-fixture",
-      "adapterVersion": "1.2.0",
+      "adapterVersion": "1.3.0",
       "model": "reference-fixture"
     }
   ],

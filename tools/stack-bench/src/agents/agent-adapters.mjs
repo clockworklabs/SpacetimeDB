@@ -46,7 +46,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection',
     { modes: ['build'], costLimit: 'non-billable', version: '1.1.0' }),
   adapter('reference-fixture', join('src', 'references', 'reference-agent.mjs'), 'reference-fixture',
-    { modes: ['build', 'upgrade'], costLimit: 'non-billable', version: '1.2.0' }),
+    { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', version: '1.3.0' }),
 ]);
 
 export function agentAdapterIdentity(value) {

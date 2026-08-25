@@ -1033,6 +1033,12 @@ async function main() {
         reason, appFailures: [], inconclusive: [], harnessFailures: [reason] };
       run.validation.ladder.stoppedAfterLevel = run.levels.at(-1)?.level ?? null;
       run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
+      if (progressionExecution) {
+        run.progressionStatus = progressionExecution.status();
+        run.validation.ladder.completedLevels = [...new Set(progressionExecution.state.attempts
+          .filter(attempt => attempt.outcome === 'conclusive')
+          .map(attempt => attempt.level))];
+      }
       finalizeRunTotals(run, started, { costComplete: false });
       run.completedAt = new Date().toISOString();
       writeRunJson(join(args.out, 'run.json'), run);

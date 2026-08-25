@@ -45,8 +45,8 @@ export function parseReferenceAgentArgs(argv) {
   }
   args.level = Number(args.level);
   args.runIndex = Number(args['run-index']);
-  if (!['build', 'upgrade'].includes(args.mode)) {
-    throw new Error(`reference-agent supports only build and upgrade modes, got ${args.mode}`);
+  if (!['build', 'upgrade', 'fix'].includes(args.mode)) {
+    throw new Error(`reference-agent supports only build, upgrade and fix modes, got ${args.mode}`);
   }
   if (!Number.isSafeInteger(args.level) || args.level < 1) {
     throw new Error(`reference-agent requires a positive integer level, got ${args.level}`);
@@ -102,8 +102,8 @@ export function prepareReferenceSource(args) {
   assertPlainAppSourceTree(args.app);
   const before = hashAppSource(args.app);
   if (before.files.length === 0) {
-    if ((args.mode ?? 'build') === 'upgrade') {
-      throw new Error(`reference upgrade requires the existing ${fixture.id} source`);
+    if ((args.mode ?? 'build') !== 'build') {
+      throw new Error(`reference ${args.mode} requires the existing ${fixture.id} source`);
     }
     prepareReferenceFixtureSource(fixture, args.app);
   } else if (before.sha256 !== fixture.imported.sourceSha256) {

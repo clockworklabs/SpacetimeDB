@@ -169,6 +169,17 @@ async function expect({ input, capabilities, signal }) {
   }
   if (!visible) return { visible: false };
 
+  if (input.value !== undefined) {
+    const deadline = Date.now() + within;
+    let value = await readValue(loc);
+    while (value !== input.value && Date.now() <= deadline) {
+      await browser.sleep(250, signal);
+      value = await readValue(loc);
+    }
+    if (value !== input.value) {
+      fail(`${browser.testId(input.testid)} expected value "${input.value}", got "${value}"`);
+    }
+  }
   if (input.notContains) {
     const text = (await loc.innerText().catch(() => '')) || '';
     if (text.includes(input.notContains)) {
@@ -180,7 +191,7 @@ async function expect({ input, capabilities, signal }) {
     const text = (await readValue(loc)).trim();
     if (!text) fail(`${browser.testId(input.testid)} is visible but empty`);
   }
-  return { visible: true };
+  return { visible: true, ...(input.value === undefined ? {} : { value: input.value }) };
 }
 
 async function expectElementCount({ input, capabilities, signal }) {

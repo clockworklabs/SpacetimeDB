@@ -141,6 +141,19 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
   assert.equal(populated.status, 'passed');
 });
 
+test('expect can verify a persisted form value', async () => {
+  const locator = {
+    waitFor: async () => {},
+    evaluate: async () => 'INPUT',
+    inputValue: async () => 'staff',
+  };
+  const actor = { loc: () => locator };
+  const result = await run({ do: 'expect', actor: 'a', testid: 'support-assignee',
+    value: 'staff' }, services(actor));
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.observation, { visible: true, value: 'staff' });
+});
+
 test('ordered text and unavailable controls are explicit implementation-neutral observations', async () => {
   const items = {
     filter: () => items,

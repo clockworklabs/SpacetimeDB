@@ -12,12 +12,17 @@ import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   processFailureDetail, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
+import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { liveProgressionStatus } from '../src/progression/live-progression.mjs';
+import { writeProgressionState } from '../src/progression/progression-state.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const productBrief = join(import.meta.dirname, '..', 'appliance',
   'campaign.product-brief-reference.json');
+const dependencyModelFree = join(import.meta.dirname, 'fixtures',
+  'dependency-model-free-campaign.json');
 
 // A valid run artifact carries the exact planned selection for each level; the
 // modular example selection made this mandatory for level-1 fixtures.
@@ -217,6 +222,51 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, backend: 'wrong' }, { buildImage: 'test-build-image' }),
   /does not match.*backend/);
+});
+
+test('dependency validation keeps a conclusive grade when its repair session is interrupted', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-interrupted-'));
+  try {
+    const plan = compileCampaignFile(dependencyModelFree);
+    const attempt = plan.attempts[0];
+    const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+    const stack = plan.stacks.find(item => item.id === attempt.stack);
+    const owner = { schemaVersion: 1,
+      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+      attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
+        agentAdapter: attempt.agentAdapter, model: attempt.model,
+        conditionSha256: attempt.condition.sha256 },
+      workspace: { appDirectory: 'source' } };
+    let state = progressionEngine.initialize(plan.progression.definition);
+    const selection = progressionEngine.gradingSelection(state);
+    state = progressionEngine.recordResult(state, {
+      attemptId: 'grade-before-agent-failure', outcome: 'conclusive',
+      nodes: selection.nodeIds.map(id => ({ id,
+        checks: selection.checks.filter(check => check.nodeId === id)
+          .map(check => ({ id: check.id, outcome: 'fail' })) })),
+    });
+    writeProgressionState(join(root, 'progression-state.json'), {
+      progression: plan.progression, owner, state,
+    });
+    const run = {
+      artifactEnvelope: { attempt: { parentId: attempt.id },
+        identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+          agentAdapter: agent.identity, stackAdapter: stack }) },
+      track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      guidance: attempt.guidance, condition: attempt.condition,
+      selectionRequest: plan.definition.selection, progression: attempt.progression,
+      progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
+      progressionStatus: liveProgressionStatus(state), skills: attempt.skills,
+      runtime: { buildImage: 'test-build-image' },
+      validation: { ladder: { policy: 'dependency-gated', requestedLevels: attempt.levels,
+        completedLevels: [1], stoppedAfterLevel: null, blockedLevels: [1] } },
+      levels: [], outcome: { kind: 'harness_failure', phase: 'agent-fix',
+        reason: 'repair process exited before completion' },
+    };
+    assert.equal(validateCampaignRun(plan, attempt, run, {
+      buildImage: 'test-build-image', resultDir: root,
+    }), run);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('campaign validation accepts an explicit repeated-findings pause but rejects an unexplained stop', () => {

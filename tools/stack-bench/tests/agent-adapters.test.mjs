@@ -15,7 +15,8 @@ test('built-in agent adapters are statically registered and content identified',
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
     const expectedVersion = id === 'claude-code' ? '1.15.0'
-      : ['deterministic', 'reference-fixture'].includes(id) ? '1.2.0' : '1.1.0';
+      : id === 'reference-fixture' ? '1.3.0'
+      : id === 'deterministic' ? '1.2.0' : '1.1.0';
     assert.equal(identity.version, expectedVersion);
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
@@ -58,7 +59,7 @@ test('requests are normalized and unsupported modes fail before launch', () => {
     .includes('--max-budget-usd'), false);
   const reference = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
   assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'upgrade' }));
-  assert.throws(() => agentRequestArgv(reference, { ...request, mode: 'fix' }), /does not support mode fix/);
+  assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'fix' }));
 });
 
 test('a campaign-bound task supplies the exact recipe when no direct CLI recipe exists', () => {

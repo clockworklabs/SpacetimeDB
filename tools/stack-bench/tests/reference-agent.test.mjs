@@ -18,6 +18,7 @@ test('the model-free reference builder accepts any explicit positive level', () 
   assert.equal(parseReferenceAgentArgs(argv({ level: '2' })).level, 2);
   assert.equal(parseReferenceAgentArgs(argv({ level: '3' })).level, 3);
   assert.equal(parseReferenceAgentArgs(argv({ mode: 'upgrade', level: '4' })).mode, 'upgrade');
+  assert.equal(parseReferenceAgentArgs(argv({ mode: 'fix', level: '4' })).mode, 'fix');
 });
 
 test('the shared adapter request forwards the exact recipe into reference selection', async () => {
@@ -33,7 +34,8 @@ test('the shared adapter request forwards the exact recipe into reference select
 });
 
 test('the model-free reference builder rejects unsupported modes and malformed scope', () => {
-  assert.throws(() => parseReferenceAgentArgs(argv({ mode: 'fix' })), /only build and upgrade modes/);
+  assert.throws(() => parseReferenceAgentArgs(argv({ mode: 'resume' })),
+    /only build, upgrade and fix modes/);
   assert.throws(() => parseReferenceAgentArgs(argv({ level: '0' })), /positive integer level/);
   assert.throws(() => parseReferenceAgentArgs(argv({ level: '1.5' })), /positive integer level/);
   assert.throws(() => parseReferenceAgentArgs(argv({ runIndex: '-1' })), /non-negative integer run-index/);
@@ -54,6 +56,11 @@ test('dependency progression seeds once and verifies the same full fixture on la
     assert.equal(upgraded.sourceSha256, fresh.sourceSha256);
     assert.equal(upgraded.seeded, false);
 
+    const repaired = prepareReferenceSource({ ...common, mode: 'fix', level: 2 });
+    assert.equal(repaired.fixture.id, fresh.fixture.id);
+    assert.equal(repaired.sourceSha256, fresh.sourceSha256);
+    assert.equal(repaired.seeded, false);
+
     const dependencyDirectory = join(app, 'client', 'node_modules', '.bin');
     mkdirSync(dependencyDirectory, { recursive: true });
     try {
@@ -71,6 +78,9 @@ test('dependency progression seeds once and verifies the same full fixture on la
     const empty = join(root, 'empty');
     assert.throws(() => prepareReferenceSource({ ...common, mode: 'upgrade', level: 2, app: empty }),
       /upgrade requires the existing ecommerce-progression-mongodb source/);
+    assert.throws(() => prepareReferenceSource({ ...common, mode: 'fix', level: 2,
+      app: join(root, 'empty-fix') }),
+    /fix requires the existing ecommerce-progression-mongodb source/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

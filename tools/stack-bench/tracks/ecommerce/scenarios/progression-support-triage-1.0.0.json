@@ -27,7 +27,8 @@
           "steps": [
             { "do": "fill", "actor": "staff", "testid": "support-assignee", "in": { "testid": "support-ticket", "contains": "Missing item" }, "text": "staff" },
             { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" } },
-            { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "staff" }
+            { "do": "reload", "actor": "staff", "settleMs": 2500 },
+            { "do": "expect", "actor": "staff", "testid": "support-assignee", "in": { "testid": "support-ticket", "contains": "Missing item" }, "value": "staff" }
           ]
         },
         {
@@ -38,7 +39,8 @@
           "steps": [
             { "do": "fill", "actor": "staff", "testid": "support-priority", "in": { "testid": "support-ticket", "contains": "Missing item" }, "text": "high" },
             { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Missing item" } },
-            { "do": "expect", "actor": "staff", "testid": "support-ticket", "contains": "high" }
+            { "do": "reload", "actor": "staff", "settleMs": 2500 },
+            { "do": "expect", "actor": "staff", "testid": "support-priority", "in": { "testid": "support-ticket", "contains": "Missing item" }, "value": "high" }
           ]
         },
         {

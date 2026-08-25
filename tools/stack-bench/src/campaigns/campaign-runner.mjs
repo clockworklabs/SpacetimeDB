@@ -376,7 +376,7 @@ export function validateCampaignRun(plan, attempt, run, {
           const expectedOutcome = stored.state.terminalOutcome.kind === 'passed'
             ? 'passed' : 'app_failure';
           mismatch(run.outcome?.kind !== expectedOutcome, 'outcome.kind');
-        } else {
+        } else if (!interruptedPrefix) {
           mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
             'progressionState.phase');
         }
