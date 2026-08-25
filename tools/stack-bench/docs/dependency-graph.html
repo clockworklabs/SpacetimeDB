@@ -21,8 +21,6 @@
     --blue-bg: #102938;
     --yellow: #f3c959;
     --yellow-bg: #352b13;
-    --pink: #ff648f;
-    --pink-bg: #35151f;
     --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
     --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
@@ -104,11 +102,8 @@
   .legend { display: flex; flex-wrap: wrap; gap: 18px; }
   .legend span { color: var(--muted); font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .07em; }
   .legend i { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; }
-  .legend .passed { background: var(--green); }
-  .legend .working { background: var(--yellow); }
-  .legend .open { background: var(--blue); }
-  .legend .failed { background: var(--pink); }
-  .legend .locked { background: var(--dim); }
+  .legend .qualified { background: var(--green); }
+  .legend .draft { background: var(--yellow); }
 
   .toolbar-note { color: var(--dim); font: 10px/1.3 var(--mono); }
 
@@ -145,8 +140,7 @@
   }
 
   .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; }
-  .edge.active { stroke: var(--green); }
-  .edge.blocked { stroke: #26312f; stroke-dasharray: 4 5; }
+  .edge { stroke: #55706a; }
 
   .levels {
     position: relative;
@@ -188,20 +182,14 @@
   }
 
   .node:hover, .node.selected { outline: 1px solid rgba(255, 255, 255, .22); outline-offset: 2px; }
-  .node .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13px/1.2 var(--mono); }
+  .node .name { min-width: 0; font: 600 13px/1.25 var(--mono); }
   .node .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 9px/1.2 var(--mono); }
-  .node .state { grid-row: 1 / span 2; grid-column: 2; font: 700 9px/1 var(--mono); letter-spacing: .06em; }
+  .node .state { grid-row: 1 / span 2; grid-column: 2; font: 700 13px/1 var(--mono); }
 
-  .node.passed { border-color: var(--green); background: var(--green-bg); }
-  .node.passed .state { color: var(--green); }
-  .node.working { border-color: var(--yellow); background: var(--yellow-bg); }
-  .node.working .state { color: var(--yellow); }
-  .node.open { border-color: var(--blue); background: var(--blue-bg); }
-  .node.open .state { color: var(--blue); }
-  .node.failed { border-color: var(--pink); background: var(--pink-bg); }
-  .node.failed .state { color: var(--pink); }
-  .node.locked { opacity: .38; border-style: dashed; }
-  .node.locked .state { color: var(--dim); }
+  .node.qualified { border-color: #287b55; background: var(--green-bg); }
+  .node.qualified .state { color: var(--green); }
+  .node.draft { border-color: #766329; background: var(--yellow-bg); }
+  .node.draft .state { color: var(--yellow); }
 
   .details { padding: 21px; }
   .details-kicker { margin-bottom: 15px; color: var(--green); font: 700 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
@@ -260,22 +248,19 @@
         <span>STACK BENCH</span>
       </div>
       <h1>Feature dependency graph</h1>
-      <p class="subtitle">Passed features open their children. Failed features stop only their own paths.</p>
+      <p class="subtitle">Current ecommerce feature modules and the paths that connect them.</p>
     </div>
     <div class="run-meta">
-      <span>GRAPH<br><strong>ecommerce@1.0.0</strong></span><i></i>
+      <span>GRAPH<br><strong>ecommerce draft</strong></span><i></i>
       <span>LEVELS<br><strong>3</strong></span><i></i>
-      <span>FEATURES<br><strong>12</strong></span>
+      <span>FEATURES<br><strong>13</strong></span>
     </div>
   </header>
 
   <div class="toolbar">
-    <div class="legend" aria-label="Feature states">
-      <span><i class="passed"></i>Passed</span>
-      <span><i class="working"></i>Working</span>
-      <span><i class="open"></i>Open</span>
-      <span><i class="failed"></i>Failed</span>
-      <span><i class="locked"></i>Locked</span>
+    <div class="legend" aria-label="Feature release states">
+      <span><i class="qualified"></i>Qualified feature pack</span>
+      <span><i class="draft"></i>Draft feature pack</span>
     </div>
     <div class="toolbar-note">Select a feature to inspect it</div>
   </div>
@@ -289,41 +274,45 @@
     </section>
 
     <aside class="details" id="details" aria-live="polite">
-      <div class="details-kicker">Selected feature</div>
+      <div class="details-kicker">Feature module</div>
       <h2 id="detail-name"></h2>
       <p class="details-id" id="detail-id"></p>
-      <div class="detail-row"><span>State</span><strong class="status" id="detail-state"></strong></div>
+      <div class="detail-row"><span>Release status</span><strong class="status" id="detail-state"></strong></div>
       <div class="detail-row"><span>Level</span><strong id="detail-level"></strong></div>
       <div class="detail-row"><span>Depends on</span><strong id="detail-parents"></strong></div>
-      <div class="detail-row"><span>Scored checks</span><strong id="detail-checks"></strong></div>
-      <div class="detail-row"><span>Repair attempts</span><strong id="detail-attempts"></strong></div>
+      <div class="detail-row"><span>Feature pack</span><strong id="detail-pack"></strong></div>
+      <div class="detail-row"><span>Product work</span><strong id="detail-scope"></strong></div>
       <p class="details-help" id="detail-help"></p>
     </aside>
   </div>
 
   <div class="summary" aria-label="Graph summary">
-    <div class="summary-item"><span>Passed</span><strong>5</strong></div>
-    <div class="summary-item"><span>Working</span><strong>1</strong></div>
-    <div class="summary-item"><span>Open</span><strong>2</strong></div>
-    <div class="summary-item"><span>Failed</span><strong>1</strong></div>
-    <div class="summary-item"><span>Locked</span><strong>3</strong></div>
+    <div class="summary-item"><span>L1 features</span><strong>6</strong></div>
+    <div class="summary-item"><span>L2 features</span><strong>3</strong></div>
+    <div class="summary-item"><span>L3 features</span><strong>4</strong></div>
+    <div class="summary-item"><span>Qualified</span><strong>9</strong></div>
+    <div class="summary-item"><span>Draft</span><strong>4</strong></div>
   </div>
+  <p class="subtitle" style="margin:14px 2px 0">L4 and L5 have product targets, but their feature modules and dependency links are not defined yet.</p>
 </main>
 
 <script>
   const features = [
-    { id: 'accounts', name: 'Accounts', level: 1, state: 'passed', parents: [], checks: 8, attempts: '1 of 3', help: 'This pass opens Operator access in level 2.' },
-    { id: 'catalog', name: 'Catalog', level: 1, state: 'failed', parents: [], checks: 7, attempts: '3 of 3', help: 'This path stops here. Search and Recommendations stay locked.' },
-    { id: 'cart', name: 'Cart', level: 1, state: 'passed', parents: [], checks: 9, attempts: '2 of 3', help: 'This pass opens Checkout in level 2.' },
-    { id: 'warehouse', name: 'Warehouse', level: 1, state: 'passed', parents: [], checks: 8, attempts: '1 of 3', help: 'This pass opens Stock transfers in level 2.' },
-    { id: 'operator-access', name: 'Operator access', level: 2, state: 'passed', parents: ['accounts'], checks: 6, attempts: '1 of 3', help: 'This pass opens Account recovery in level 3.' },
-    { id: 'search', name: 'Search', level: 2, state: 'locked', parents: ['catalog'], checks: 5, attempts: 'Not started', help: 'Catalog did not pass, so this feature did not open.' },
-    { id: 'checkout', name: 'Checkout', level: 2, state: 'working', parents: ['cart'], checks: 10, attempts: '2 of 3', help: 'The agent is repairing failed Checkout checks.' },
-    { id: 'stock-transfers', name: 'Stock transfers', level: 2, state: 'passed', parents: ['warehouse'], checks: 7, attempts: '1 of 3', help: 'This pass opens Scheduled restocks in level 3.' },
-    { id: 'account-recovery', name: 'Account recovery', level: 3, state: 'open', parents: ['operator-access'], checks: 8, attempts: 'Not started', help: 'All dependencies passed. This feature is ready to build.' },
-    { id: 'recommendations', name: 'Recommendations', level: 3, state: 'locked', parents: ['search'], checks: 6, attempts: 'Not started', help: 'Search is locked, so this feature stays locked.' },
-    { id: 'returns', name: 'Returns', level: 3, state: 'locked', parents: ['checkout'], checks: 9, attempts: 'Not started', help: 'Checkout has not passed, so this feature stays locked.' },
-    { id: 'scheduled-restocks', name: 'Scheduled restocks', level: 3, state: 'open', parents: ['stock-transfers'], checks: 7, attempts: 'Not started', help: 'All dependencies passed. This feature is ready to build.' }
+    { id: 'accounts', name: 'Accounts', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.accounts@1.1.0', scope: 'Account creation, sign-in, sign-out, and durable account state.' },
+    { id: 'catalog', name: 'Catalog', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.catalog@1.1.0', scope: 'Public products, stock, ratings, and sales ranking.' },
+    { id: 'purchasing', name: 'Purchasing and orders', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.purchasing@1.1.0', scope: 'Authenticated purchases, order totals, and order history.' },
+    { id: 'cart-checkout', name: 'Cart and checkout', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.cart-checkout@1.2.0', scope: 'Shared carts, quantities, checkout, and purchase creation.' },
+    { id: 'reviews', name: 'Reviews', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.reviews@1.1.0', scope: 'Verified-purchase reviews and live rating updates.' },
+    { id: 'warehouse-admin', name: 'Warehouse administration', level: 1, state: 'qualified', parents: [], pack: 'ecommerce.feature.warehouse-admin@1.1.0', scope: 'Warehouse stock, administrator access, and live inventory updates.' },
+
+    { id: 'fulfilment-operations', name: 'Fulfilment operations', level: 2, state: 'qualified', parents: ['accounts', 'purchasing', 'warehouse-admin'], pack: 'ecommerce.operations-access-features@1.0.0', scope: 'Staff queues, shipping, and operator workflows.' },
+    { id: 'returns-pricing', name: 'Returns and pricing', level: 2, state: 'qualified', parents: ['catalog', 'purchasing', 'cart-checkout'], pack: 'ecommerce.returns-pricing-features@1.1.0', scope: 'Cancellation, returns, live prices, and paid-price history.' },
+    { id: 'inventory-operations', name: 'Inventory operations', level: 2, state: 'qualified', parents: ['catalog', 'purchasing', 'warehouse-admin'], pack: 'ecommerce.inventory-operations-features@1.2.0', scope: 'Stock transfers and live operational views.' },
+
+    { id: 'reservations', name: 'Reservations', level: 3, state: 'draft', parents: ['inventory-operations', 'returns-pricing'], pack: 'ecommerce.l3.reservations-features@1.0.0', scope: 'Timed stock reservations, renewal, expiry, and checkout conversion.' },
+    { id: 'scheduled-restocks', name: 'Scheduled restocks', level: 3, state: 'draft', parents: ['fulfilment-operations', 'inventory-operations'], pack: 'ecommerce.l3.scheduled-restocks-features@1.0.0', scope: 'Schedule, cancel, and complete durable restocks.' },
+    { id: 'order-delivery', name: 'Order delivery', level: 3, state: 'draft', parents: ['fulfilment-operations', 'returns-pricing'], pack: 'ecommerce.l3.order-delivery-features@1.0.0', scope: 'Automatic delivery after shipping, with cancellation protection.' },
+    { id: 'cart-expiration', name: 'Cart expiration', level: 3, state: 'draft', parents: ['returns-pricing'], pack: 'ecommerce.l3.cart-expiration-features@1.0.0', scope: 'Abandoned-cart expiry and reservation release.' }
   ];
 
   const byId = new Map(features.map(feature => [feature.id, feature]));
@@ -341,7 +330,8 @@
       node.type = 'button';
       node.className = `node ${feature.state}`;
       node.dataset.id = feature.id;
-      node.innerHTML = `<span class="name">${feature.name}</span><span class="id">${feature.id}</span><span class="state">${feature.state.toUpperCase()}</span>`;
+      node.setAttribute('aria-label', `${feature.name}, ${feature.state}`);
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="id">${feature.id}</span><span class="state" title="${feature.state}">●</span>`;
       node.addEventListener('click', () => selectFeature(feature.id));
       column.appendChild(node);
     }
@@ -359,9 +349,11 @@
     document.getElementById('detail-state').textContent = feature.state.toUpperCase();
     document.getElementById('detail-level').textContent = `Level ${feature.level}`;
     document.getElementById('detail-parents').textContent = feature.parents.length ? feature.parents.map(parent => byId.get(parent).name).join(', ') : 'None';
-    document.getElementById('detail-checks').textContent = String(feature.checks);
-    document.getElementById('detail-attempts').textContent = feature.attempts;
-    document.getElementById('detail-help').textContent = feature.help;
+    document.getElementById('detail-pack').textContent = feature.pack;
+    document.getElementById('detail-scope').textContent = feature.scope;
+    document.getElementById('detail-help').textContent = feature.level === 1
+      ? 'This feature starts a product path.'
+      : 'Every listed dependency must pass before this feature opens.';
   }
 
   function drawEdges() {
@@ -380,8 +372,7 @@
         const bend = x1 + (x2 - x1) / 2;
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('d', `M${x1} ${y1} H${bend} V${y2} H${x2}`);
-        const edgeState = parent.state === 'passed' ? 'active' : 'blocked';
-        path.setAttribute('class', `edge ${edgeState}`);
+        path.setAttribute('class', 'edge');
         edges.appendChild(path);
       }
     }
@@ -389,7 +380,7 @@
 
   addEventListener('resize', drawEdges);
   new ResizeObserver(drawEdges).observe(canvas);
-  selectFeature('checkout');
+  selectFeature('returns-pricing');
   drawEdges();
 </script>
 </body>
