@@ -604,25 +604,31 @@ async function main() {
         validateProgressionCampaignLevelScope(binding, args.progression, declared, level);
       }
       const requested = declared?.selection?.requested;
-      const options = requested?.features
-        ? { featureIds: requested.features,
-            requestedSpecifications: requested.specifications?.requested,
-            expectedSpecifications: requested.specifications?.expected,
-            observedSpecifications: requested.specifications?.observed,
-            checkKeys: requested.checks }
-        : args;
-      const resolved = createBoundRecipeTaskRequest(binding, options);
+      const resolved = args.progression
+        ? resolveProgressionRecipeLevelSelection(binding, args.progression, level)
+        : createBoundRecipeTaskRequest(binding, requested?.features
+          ? { featureIds: requested.features,
+              requestedSpecifications: requested.specifications?.requested,
+              expectedSpecifications: requested.specifications?.expected,
+              observedSpecifications: requested.specifications?.observed,
+              checkKeys: requested.checks }
+          : args);
+      const grader = args.progression ? resolved.grader : resolved;
       if (args.condition && !declared) {
         throw new Error(`study condition does not bind requested L${level}`);
       }
-      if (declared && (declared.recipe.contentSha256 !== resolved.request.recipe.contentSha256
-        || declared.selection.sha256 !== resolved.request.selection.sha256
-        || JSON.stringify(declared.selection.taskPacks) !== JSON.stringify(resolved.request.selection.taskPacks)
-        || declared.task.sha256 !== resolved.request.task.sha256)) {
+      if (declared && (declared.recipe.contentSha256 !== grader.request.recipe.contentSha256
+        || declared.selection.sha256 !== grader.request.selection.sha256
+        || JSON.stringify(declared.selection.taskPacks) !== JSON.stringify(grader.request.selection.taskPacks)
+        || declared.task.sha256 !== grader.request.task.sha256)) {
         throw new Error(`study condition requested scope changed before L${level}`);
       }
-      args.recipeTasks.set(level, { ...resolved,
-        agentRequest: createAgentVisibleTaskRequest(binding, resolved) });
+      args.recipeTasks.set(level, args.progression ? {
+        request: grader.request,
+        selection: grader.selection,
+        task: grader.task,
+        agentRequest: resolved.agent.request,
+      } : { ...resolved, agentRequest: createAgentVisibleTaskRequest(binding, resolved) });
     }
   }
   if (args.progression) {
