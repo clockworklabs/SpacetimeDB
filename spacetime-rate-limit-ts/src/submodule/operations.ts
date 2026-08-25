@@ -9,7 +9,6 @@ import {
 import {
   rateLimitBucket,
   rateLimitSweepTick,
-  setRateLimitSweepReducer,
   spacetimedb,
   t,
   type ReducerModuleCtx,
@@ -181,6 +180,7 @@ export const adminRateLimitBuckets = spacetimedb.view(
 );
 
 export const rate_limit_sweep = spacetimedb.reducer(
+  { onSchedule: rateLimitSweepTick },
   { arg: rateLimitSweepTick.rowType },
   (ctx, _args) => {
     runRateLimitSweep(
@@ -191,5 +191,3 @@ export const rate_limit_sweep = spacetimedb.reducer(
     );
   }
 );
-
-setRateLimitSweepReducer(rate_limit_sweep);

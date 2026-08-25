@@ -30,27 +30,13 @@ export const rateLimitDemoConfig = table(
   }
 );
 
-let sweepReducer: unknown;
-
 export const rateLimitDemoSweepTick = table(
-  {
-    name: 'rate_limit_demo_sweep_tick',
-    scheduled: (): any => {
-      if (!sweepReducer) {
-        throw new Error('rate_limit_demo.sweep_reducer_not_registered');
-      }
-      return sweepReducer;
-    },
-  },
+  { name: 'rate_limit_demo_sweep_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
   }
 );
-
-export function setSweepReducer(reducer: unknown): void {
-  sweepReducer = reducer;
-}
 
 export const spacetimedb = schema({
   rateLimit,

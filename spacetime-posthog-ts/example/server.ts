@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { DbConnection, tables, type ErrorContext } from './src/codegen';
+import { DbConnection, tables, type ErrorContext } from './src/module_bindings';
 import { PRODUCTS, SCENARIOS } from './catalog/catalog';
 import {
   discardStoredServerToken,

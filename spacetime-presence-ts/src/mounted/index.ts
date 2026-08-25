@@ -56,7 +56,7 @@ const presenceAdminIdentity = table(
 );
 
 const presenceSweepTick = table(
-  { name: 'presence_sweep_tick', scheduled: (): any => presence_sweep },
+  { name: 'presence_sweep_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -244,6 +244,7 @@ export const presenceEntriesAdmin = spacetimedb.view(
 );
 
 export const presence_sweep = spacetimedb.reducer(
+  { onSchedule: presenceSweepTick },
   { arg: presenceSweepTick.rowType },
   (ctx, _args) => {
     runPresenceSweep(

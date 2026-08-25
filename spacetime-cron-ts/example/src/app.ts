@@ -1,5 +1,5 @@
-import { DbConnection, tables, type ErrorContext } from './codegen/app';
-import type { CronSchedule } from './codegen/app/types';
+import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
+import type { CronSchedule } from './module_bindings/app/types';
 
 interface ServerConfig {
   stdbUri: string;

@@ -1,4 +1,4 @@
-import type { FileSummary, Folder } from './codegen/app/types';
+import type { FileSummary, Folder } from './module_bindings/app/types';
 import {
   baseName,
   childPrefix,

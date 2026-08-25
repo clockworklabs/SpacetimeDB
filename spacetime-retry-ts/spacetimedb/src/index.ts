@@ -108,10 +108,10 @@ export const init = spacetimedb.init(ctx => {
 });
 
 export const retry_fire = spacetimedb.reducer(
+  { onSchedule: retryTask },
   { arg: retryTask.rowType },
   retry.reducers.retryFire
 );
-retry.setRetryFireReducer(retry_fire);
 
 export const submit_retry_task = spacetimedb.reducer(
   retry.reducers.submitRetryTask.params,

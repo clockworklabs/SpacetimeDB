@@ -3,7 +3,7 @@ import {
   tables,
   type EventContext,
   type ErrorContext,
-} from './codegen/app';
+} from './module_bindings/app';
 
 declare global {
   interface Window {

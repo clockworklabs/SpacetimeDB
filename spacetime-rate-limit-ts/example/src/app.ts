@@ -3,7 +3,7 @@ import {
   tables,
   type ErrorContext,
   type EventContext,
-} from './codegen/app/index.ts';
+} from './module_bindings/app/index.ts';
 
 type TimestampLike = { microsSinceUnixEpoch: bigint };
 

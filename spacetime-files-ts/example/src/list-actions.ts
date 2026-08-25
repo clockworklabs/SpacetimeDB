@@ -1,4 +1,4 @@
-import type { FileSummary } from './codegen/app/types';
+import type { FileSummary } from './module_bindings/app/types';
 import type { ContextTarget } from './context-menu';
 
 export interface ListActionServices {

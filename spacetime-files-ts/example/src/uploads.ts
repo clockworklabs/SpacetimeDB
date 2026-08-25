@@ -1,5 +1,5 @@
 import { FILE_BYTES_MAX } from '@spacetimedb/files/constants';
-import type { FileSummary } from './codegen/app/types';
+import type { FileSummary } from './module_bindings/app/types';
 import type { DialogOptions } from './dialog';
 import {
   errorCode,

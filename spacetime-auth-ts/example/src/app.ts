@@ -5,7 +5,7 @@ import {
   tables,
   type EventContext,
   type ErrorContext,
-} from './codegen/app';
+} from './module_bindings/app';
 
 interface AuthUserRow {
   userId: string;

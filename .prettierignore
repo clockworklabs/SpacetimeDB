@@ -6,6 +6,6 @@ target
 coverage
 **/public/app.js
 **/public/app.js.map
-**/src/codegen/**
+**/src/module_bindings/**
 **/ts-codegen/**
 .stdb-*

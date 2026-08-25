@@ -1,4 +1,4 @@
-import { DbConnection, tables, type ErrorContext } from './codegen';
+import { DbConnection, tables, type ErrorContext } from './module_bindings';
 
 import {
   TOKEN_KEY_PREFIX,

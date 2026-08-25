@@ -80,27 +80,13 @@ export const presenceConfig = table(
   }
 );
 
-let colonySweepReducer: unknown;
-
 export const colonySweepTick = table(
-  {
-    name: 'colony_sweep_tick',
-    scheduled: (): any => {
-      if (!colonySweepReducer) {
-        throw new Error('colony.sweep_reducer_not_registered');
-      }
-      return colonySweepReducer;
-    },
-  },
+  { name: 'colony_sweep_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
   }
 );
-
-export function setColonySweepReducer(reducer: unknown): void {
-  colonySweepReducer = reducer;
-}
 
 export const spacetimedb = schema({
   apiKeys,

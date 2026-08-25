@@ -4,7 +4,7 @@ import {
   type ErrorContext,
   type EventContext,
   type SubscriptionEventContext,
-} from './codegen';
+} from './module_bindings';
 import type { Timestamp } from 'spacetimedb';
 import { messageHtml } from '../spacetimedb/src/message';
 

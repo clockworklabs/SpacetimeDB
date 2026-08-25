@@ -4,7 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { DbConnection, tables, type ErrorContext } from './src/codegen/app';
+import {
+  DbConnection,
+  tables,
+  type ErrorContext,
+} from './src/module_bindings/app';
 import {
   discardStoredServerToken,
   grantServerIdentity,

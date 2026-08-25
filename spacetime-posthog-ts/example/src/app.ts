@@ -3,7 +3,7 @@ import {
   tables,
   type ErrorContext,
   type EventContext,
-} from './codegen';
+} from './module_bindings';
 import {
   MAX_MACHINE_LEVEL,
   RUSH_CYCLE_TICKS,

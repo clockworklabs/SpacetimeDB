@@ -608,7 +608,7 @@ async function smoke(example, browser) {
       ],
       { inherit: true }
     );
-    run(pnpmCommand, ['--dir', example.dir, 'run', 'build:codegen'], {
+    run(pnpmCommand, ['--dir', example.dir, 'run', 'spacetime:generate'], {
       inherit: true,
     });
     run(pnpmCommand, ['--dir', example.dir, 'run', 'build:app'], {

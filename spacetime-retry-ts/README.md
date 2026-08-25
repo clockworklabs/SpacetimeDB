@@ -55,10 +55,10 @@ const retry = createRetrySubmodule(
 
 const db = schema({ ...retry.tables });
 const retryFire = db.reducer(
+  { onSchedule: retry.tables.retryTask },
   { arg: retry.tables.retryTask.rowType },
   retry.reducers.retryFire
 );
-retry.setRetryFireReducer(retryFire);
 
 export const submitRetryTask = db.reducer(
   retry.reducers.submitRetryTask.params,
@@ -78,9 +78,7 @@ is scheduled immediately; subsequent delays are `backoffSecs * 2^attempt`.
   handler. The handler returns `retryOk()` or `retryFailed(error)`.
 - `makeRetryDispatch(handlers)` creates a typed tagged-union dispatcher.
 - `createRetrySubmodule(deps, handlers, auth?)` returns tables, enum helpers,
-  reducers, admin views, installation, and scheduled-reducer wiring.
-- `setRetryFireReducer(reducer)` completes the scheduled-table forward
-  reference and must be called during module definition.
+  reducers, admin views, and installation.
 - `installRetry(ctx)` seeds the publishing identity as the initial admin.
 
 The generated client can submit a task when the host exports

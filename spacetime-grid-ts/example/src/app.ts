@@ -14,7 +14,7 @@ import {
   tables,
   type ErrorContext,
   type SubscriptionHandle,
-} from './codegen/app';
+} from './module_bindings/app';
 interface AuthUser {
   userId: string;
   email: string;

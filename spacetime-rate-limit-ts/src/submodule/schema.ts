@@ -38,22 +38,8 @@ export const rateLimitConfig = table(
   }
 );
 
-let rateLimitSweepReducer: unknown;
-
-export function setRateLimitSweepReducer(reducer: unknown): void {
-  rateLimitSweepReducer = reducer;
-}
-
 export const rateLimitSweepTick = table(
-  {
-    name: 'rate_limit_sweep_tick',
-    scheduled: (): any => {
-      if (!rateLimitSweepReducer) {
-        throw new Error('rate_limit.sweep_reducer_not_registered');
-      }
-      return rateLimitSweepReducer;
-    },
-  },
+  { name: 'rate_limit_sweep_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),

@@ -118,7 +118,7 @@ import {
 } from './model';
 
 const threadLockSweeperTick = table(
-  { name: 'thread_lock_sweeper_tick', scheduled: (): any => thread_lock_sweep },
+  { name: 'thread_lock_sweeper_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -1008,6 +1008,7 @@ export const generate_thread_title = spacetimedb.procedure(
 );
 
 export const thread_lock_sweep = spacetimedb.reducer(
+  { onSchedule: threadLockSweeperTick },
   { arg: threadLockSweeperTick.rowType },
   (ctx, _arg) => {
     const secret = ctx.db.agentSecret.singleton.find(true);

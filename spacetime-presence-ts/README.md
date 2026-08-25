@@ -42,7 +42,7 @@ import {
 const presenceEntry = createPresenceEntryTable({ public: true });
 const presenceConfig = createPresenceConfigTable({ public: false });
 const presenceSweepTick = table(
-  { name: 'presence_sweep_tick', scheduled: (): any => presence_sweep },
+  { name: 'presence_sweep_tick' },
   presenceSweepTickRow
 );
 
@@ -76,6 +76,7 @@ export const heartbeat = spacetimedb.procedure(
 );
 
 export const presence_sweep = spacetimedb.reducer(
+  { onSchedule: presenceSweepTick },
   { arg: presenceSweepTick.rowType },
   ctx => {
     runPresenceSweep(

@@ -46,7 +46,6 @@ import {
   reactorEvent,
   reactorRoomState,
   rateLimitDemoSweepTick,
-  setSweepReducer,
   spacetimedb,
   type Schema,
   type Tx,
@@ -1118,6 +1117,7 @@ export const updateConfig = spacetimedb.reducer(
 );
 
 export const rate_limit_demo_sweep = spacetimedb.reducer(
+  { onSchedule: rateLimitDemoSweepTick },
   { arg: rateLimitDemoSweepTick.rowType },
   (ctx, _args) => {
     const demo = ctx.db.rateLimitDemoConfig.singleton.find(true);
@@ -1128,5 +1128,3 @@ export const rate_limit_demo_sweep = spacetimedb.reducer(
     pruneRateLimitEvents(ctx, retainEvents, pruneBatch);
   }
 );
-
-setSweepReducer(rate_limit_demo_sweep);

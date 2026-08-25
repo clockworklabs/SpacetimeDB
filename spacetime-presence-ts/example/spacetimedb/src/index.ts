@@ -50,12 +50,7 @@ import {
   typingScope,
 } from './chat-policy';
 import { registerChatViews } from './views';
-import {
-  chatSweepTick,
-  setSweepReducer,
-  spacetimedb,
-  type DbSchema,
-} from './schema';
+import { chatSweepTick, spacetimedb, type DbSchema } from './schema';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const TYPING_TTL_SECONDS = 4;
@@ -1052,6 +1047,7 @@ export const search_messages = spacetimedb.procedure(
 );
 
 export const chat_sweep = spacetimedb.reducer(
+  { onSchedule: chatSweepTick },
   { arg: chatSweepTick.rowType },
   ctx => {
     runPresenceSweep(
@@ -1079,8 +1075,6 @@ export const chat_sweep = spacetimedb.reducer(
     }
   }
 );
-
-setSweepReducer(chat_sweep);
 
 export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
   passwordSignupHandler(ctx.as.auth, req)

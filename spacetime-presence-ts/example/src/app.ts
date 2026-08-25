@@ -3,7 +3,7 @@ import {
   tables,
   type ErrorContext,
   type EventContext,
-} from './codegen/app/index.ts';
+} from './module_bindings/app/index.ts';
 import type {
   PresenceEntry,
   Server,
@@ -11,7 +11,7 @@ import type {
   ChatRateLimitStatus,
   MessageThread,
   ThreadMessage,
-} from './codegen/app/types.ts';
+} from './module_bindings/app/types.ts';
 
 interface AttachmentInput {
   mimeType: string;

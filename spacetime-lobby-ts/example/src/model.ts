@@ -297,4 +297,4 @@ export function maneuverFx(move: ManeuverCatalogRow): string {
     .map(c => `<i class="fx ${c.cost ? 'fx-cost' : 'fx-buff'}">${c.text}</i>`)
     .join('');
 }
-import type { EventContext } from './codegen';
+import type { EventContext } from './module_bindings';

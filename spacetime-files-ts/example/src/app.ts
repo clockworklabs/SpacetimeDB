@@ -1,6 +1,6 @@
 // SpacetimeDB connection and file-manager UI composition.
-import { DbConnection, tables, type ErrorContext } from './codegen/app';
-import type { FileSummary, Folder } from './codegen/app/types';
+import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
+import type { FileSummary, Folder } from './module_bindings/app/types';
 import {
   loadToken,
   saveToken,

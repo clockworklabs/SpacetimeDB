@@ -5,8 +5,11 @@ import {
   type ErrorContext,
   type EventContext,
   type SubscriptionHandle,
-} from './codegen/app';
-import type { File as FileRow, AgentConfigStatus } from './codegen/app/types';
+} from './module_bindings/app';
+import type {
+  File as FileRow,
+  AgentConfigStatus,
+} from './module_bindings/app/types';
 
 interface AuthUser {
   userId: string;

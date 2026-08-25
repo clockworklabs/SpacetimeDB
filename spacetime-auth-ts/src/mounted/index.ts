@@ -148,7 +148,7 @@ const authAdminIdentity = table(
 );
 
 const authSweeperTick = table(
-  { name: 'auth_sweeper_tick', scheduled: (): any => auth_sweep },
+  { name: 'auth_sweeper_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
@@ -242,6 +242,7 @@ export const revoke_my_session = spacetimedb.reducer(
 );
 
 export const auth_sweep = spacetimedb.reducer(
+  { onSchedule: authSweeperTick },
   { arg: authSweeperTick.rowType },
   (ctx, _arg) => {
     authSweepImpl(ctx);

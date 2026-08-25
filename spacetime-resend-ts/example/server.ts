@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { DbConnection, type ErrorContext } from './src/codegen';
+import { DbConnection, type ErrorContext } from './src/module_bindings';
 import {
   discardStoredServerToken,
   grantServerIdentity,

@@ -28,27 +28,13 @@ export const presenceConfig = table(
   }
 );
 
-let sweepReducer: unknown;
-
 export const chatSweepTick = table(
-  {
-    name: 'chat_sweep_tick',
-    scheduled: (): any => {
-      if (!sweepReducer) {
-        throw new Error('chat.sweep_reducer_not_registered');
-      }
-      return sweepReducer;
-    },
-  },
+  { name: 'chat_sweep_tick' },
   {
     scheduledId: t.u64().primaryKey().autoInc(),
     scheduledAt: t.scheduleAt(),
   }
 );
-
-export function setSweepReducer(reducer: unknown): void {
-  sweepReducer = reducer;
-}
 
 export const spacetimedb = schema({
   auth,

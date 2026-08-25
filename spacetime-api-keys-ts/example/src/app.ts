@@ -2,7 +2,7 @@ import {
   DbConnection,
   tables,
   type ErrorContext,
-} from './codegen/app/index.ts';
+} from './module_bindings/app/index.ts';
 import { parseShareKey, shareKeyFromHash } from './share-key';
 
 import {

@@ -21,7 +21,7 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '**/public/app.js',
-      '**/src/codegen/**',
+      '**/src/module_bindings/**',
       '**/ts-codegen/**',
       '**/templates/angular-ts/.angular/**',
     ],

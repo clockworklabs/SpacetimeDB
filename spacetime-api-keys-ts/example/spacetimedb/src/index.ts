@@ -24,7 +24,6 @@ import {
 import {
   accessKeySummary,
   colonySweepTick,
-  setColonySweepReducer,
   spacetimedb,
   type HttpCtx,
   type ReadCtx,
@@ -697,6 +696,7 @@ export const presence_leave = spacetimedb.reducer(
 );
 
 export const colony_sweep = spacetimedb.reducer(
+  { onSchedule: colonySweepTick },
   { arg: colonySweepTick.rowType },
   ctx => {
     runPresenceSweep(
@@ -707,8 +707,6 @@ export const colony_sweep = spacetimedb.reducer(
     );
   }
 );
-
-setColonySweepReducer(colony_sweep);
 
 // Reads. world, world_event, and presence_entry are public tables the
 // client subscribes to with a WHERE on the colony id. The grid submodule's

@@ -30,17 +30,10 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
   const { table, t, SenderError, ScheduleAt } = deps;
   const retryArgs = t.enum('RetryArgs', handlers as unknown as VariantsObj);
 
-  let retryFireReducer: unknown;
   const retryTask = table(
     {
       name: 'retry_task',
       public: false,
-      scheduled: (): any => {
-        if (!retryFireReducer) {
-          throw new Error('retry.fire_reducer_not_registered');
-        }
-        return retryFireReducer;
-      },
     },
     {
       scheduledId: t.u64().primaryKey().autoInc(),
@@ -121,10 +114,6 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
   }
 
   const dispatchRetry = makeRetryDispatch(handlers);
-
-  function setRetryFireReducer(reducer: unknown): void {
-    retryFireReducer = reducer;
-  }
 
   function installRetry(ctx: unknown): void {
     const retryCtx = retryContext(ctx);
@@ -315,7 +304,6 @@ export function createRetrySubmodule<const H extends RetryHandlers>(
     retryArgs,
     retryHistoryStatus,
     RetryHistoryStatus,
-    setRetryFireReducer,
     installRetry,
     requireAdmin,
     views: {

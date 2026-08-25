@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import type { FileSummary } from '../src/codegen/app/types';
+import type { FileSummary } from '../src/module_bindings/app/types';
 import {
   ARCHIVE_ENTRY_COUNT_MAX,
   ARCHIVE_FILE_COUNT_MAX,
