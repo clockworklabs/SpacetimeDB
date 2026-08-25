@@ -127,5 +127,3 @@ pnpm components:build
 
 The root lint command also validates Markdown links, TypeScript/JavaScript code
 fences, stale work-in-progress markers, and the required README structure.
-Follow [`NPM_RELEASE_CHECKLIST.md`](./NPM_RELEASE_CHECKLIST.md) for versioning,
-npm authentication, publication order, and post-publish verification.

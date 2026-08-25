@@ -14,7 +14,7 @@
     "test": "pnpm run-all test && pnpm components:test",
     "generate": "pnpm run-all generate",
     "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage",
-    "components:format": "prettier \"spacetime-*-ts/**/*.{js,cjs,mjs,ts,tsx,json,md,html,css,yml,yaml}\" \"COMPONENTS*.md\" \"NPM_RELEASE_CHECKLIST.md\" \"tools/{check-example-assets,check-spacetime-release,consumer-install-check,doc-check,release-check,release-packages,run-example-builds,run-example-smokes,run-example-tests,run-module-builds,run-package-checks,run-production-audits}.mjs\" tools/example-server-identity.ts --write --ignore-path .prettierignore",
+    "components:format": "prettier \"spacetime-*-ts/**/*.{js,cjs,mjs,ts,tsx,json,md,html,css,yml,yaml}\" \"COMPONENTS*.md\" \"tools/{check-example-assets,check-spacetime-release,consumer-install-check,doc-check,release-check,release-packages,run-example-builds,run-example-smokes,run-example-tests,run-module-builds,run-package-checks,run-production-audits}.mjs\" tools/example-server-identity.ts --write --ignore-path .prettierignore",
     "components:lint": "node tools/doc-check.mjs && node tools/release-check.mjs && node tools/check-example-assets.mjs && eslint \"tools/{check-example-assets,check-spacetime-release,consumer-install-check,doc-check,release-check,release-packages,run-example-builds,run-example-smokes,run-example-tests,run-module-builds,run-package-checks,run-production-audits}.mjs\" tools/example-server-identity.ts && pnpm -r --filter \"./spacetime-*-ts\" run lint",
     "components:test": "node tools/run-package-checks.mjs && node tools/run-example-tests.mjs",
     "components:toolchain:check": "node tools/check-spacetime-release.mjs",

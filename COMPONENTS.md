@@ -149,8 +149,3 @@ With a local SpacetimeDB server running, the Stripe and Resend synthetic smoke
 tests need no provider credentials. Credentialed provider tests, such as
 Stripe's sandbox E2E suite, are documented in the corresponding package
 README.
-
-## Releasing
-
-Follow [NPM_RELEASE_CHECKLIST.md](./NPM_RELEASE_CHECKLIST.md) for authentication,
-versioning, dependency order, dry runs, manual publication, and verification.

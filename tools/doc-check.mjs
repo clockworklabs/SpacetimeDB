@@ -17,7 +17,6 @@ const documentationFiles = [
   'COMPONENTS.md',
   'COMPONENTS_GETTING_STARTED.md',
   'COMPONENTS_AUTHORING.md',
-  'NPM_RELEASE_CHECKLIST.md',
   ...releasePackages.flatMap(packageDir => {
     const files = [`${packageDir}/README.md`];
     const exampleReadme = `${packageDir}/example/README.md`;

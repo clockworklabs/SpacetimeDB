@@ -27,4 +27,4 @@ The parent test app's `pnpm run dev` calls this for you.
 
 ## License
 
-[BSL 1.1](./LICENSE.txt), same as SpacetimeDB.
+[BUSL 1.1](../../LICENSE.txt), same as SpacetimeDB.
