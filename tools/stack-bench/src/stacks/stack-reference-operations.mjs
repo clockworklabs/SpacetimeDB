@@ -1,5 +1,3 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { dockerHostServiceAddress } from '../runtime/docker-network.mjs';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.mjs';
 import { referenceInstallSteps } from '../references/reference-install.mjs';
@@ -25,8 +23,6 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
     PORT: String(ports.express),
     ...extraEnv,
   };
-  writeFileSync(join(args.app, metadata.server.directory, '.env'),
-    `${Object.entries(serverEnv).map(([key, value]) => `${key}=${value}`).join('\n')}\n`);
   for (const directory of metadata.installDirectories) {
     helpers.phase(`installing ${directory}`);
     helpers.docker(container, `/app/${directory}`, 'npm', ['ci', '--no-audit', '--no-fund']);

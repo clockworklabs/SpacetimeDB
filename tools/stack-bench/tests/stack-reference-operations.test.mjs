@@ -1,7 +1,46 @@
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { deploySpacetimeReference } from '../src/stacks/stack-reference-operations.mjs';
+import { deployMongoDbReference, deploySpacetimeReference }
+  from '../src/stacks/stack-reference-operations.mjs';
+
+test('hosted reference credentials stay in process environment', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-environment-'));
+  try {
+    const app = join(root, 'app');
+    mkdirSync(join(app, 'server'), { recursive: true });
+    const starts = [];
+    const helpers = {
+      dbName() { return 'stackbench_ecom_run0'; },
+      runSync(label) {
+        return label === 'inspecting leased database container' ? 'container-id\n' : '';
+      },
+      docker() {},
+      phase() {},
+      startDetached(...args) { starts.push(args); },
+      async waitFor() {},
+      containerLogs() { return ''; },
+    };
+    await deployMongoDbReference({
+      args: { app, backend: 'mongodb', runIndex: 0 },
+      metadata: { installDirectories: [], server: { directory: 'server' },
+        client: { directory: 'client' } },
+      lease: { resources: { database: 'stackbench_ecom_run0',
+        container: { name: 'mongodb', id: 'container-id' } } },
+      track: {}, container: 'build-0', ports: { dbPort: 6537, express: 6401, vite: 6673 },
+      buildNetworkMode: 'host', helpers,
+    });
+    assert.equal(existsSync(join(app, 'server', '.env')), false);
+    assert.match(starts[0][3].DATABASE_URL, /stackbench_ecom_run0/);
+    assert.equal(starts[0][3].PORT, '6401');
+    assert.equal(starts[0][3].JWT_SECRET, 'stack-bench-reference-only-secret-2026');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('Spacetime reference client uses its assigned Vite port', async () => {
   const starts = [];
