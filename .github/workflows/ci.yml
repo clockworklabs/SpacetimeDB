@@ -1708,8 +1708,8 @@ jobs:
       - name: Install released SpacetimeDB toolchain
         run: |
           curl -sSf https://install.spacetimedb.com | sh -s -- --root-dir "$RUNNER_TEMP/spacetime" --yes
-          echo "$RUNNER_TEMP/spacetime/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/spacetime/bin/spacetime" version install 2.8.3 --use --yes
+          echo "$RUNNER_TEMP/spacetime" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/spacetime/spacetime" version install 2.8.3 --use --yes
 
       - name: Check submodules
         run: |
