@@ -805,12 +805,10 @@ public static class Module
                 throw new Exception("Unrecognised extra bytes in the HTTP handler request");
             }
 
+            using var requestBodyStream = requestBody.Consume(ref httpRequestBodyBuffer);
             var response = HttpHandlerCache<H>.Instance.Invoke(
                 ctx,
-                SpacetimeDB.HttpClient.FromWire(
-                    requestWire,
-                    requestBody.Consume(ref httpRequestBodyBuffer).ToArray()
-                )
+                SpacetimeDB.HttpClient.FromWire(requestWire, requestBodyStream.ToArray())
             );
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
             responseSink.Write(
