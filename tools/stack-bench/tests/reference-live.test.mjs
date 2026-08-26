@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
   readParallelMutationWorker, referenceQualificationPaths,
+  qualificationMutationManifest,
   referenceQualificationRelease,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
@@ -23,6 +24,20 @@ import { resolveProgressionRecipeLevelSelection }
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };
+
+test('reference qualification runs only the mutations selected by its check scope', () => {
+  const path = 'grader/mutations/mongodb-ecom-l1-modular-2.4.0.json';
+  const source = JSON.parse(readFileSync(join(import.meta.dirname, '..', path), 'utf8'));
+  const ids = source.mutations.slice(0, 2).map(mutation => mutation.id);
+  const selected = qualificationMutationManifest({ ...fixture, id: 'selected-mutations',
+    mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb',
+      targets: ids.map(id => ({ id })) }] } });
+
+  assert.deepEqual(selected.mutations.map(mutation => mutation.id), ids);
+  assert.throws(() => qualificationMutationManifest({ ...fixture, id: 'missing-mutation',
+    mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb',
+      targets: [{ id: 'not-present' }] }] } }), /mutation selection is missing/);
+});
 
 test('reference qualification requires an explicit valid stack scope', () => {
   const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',

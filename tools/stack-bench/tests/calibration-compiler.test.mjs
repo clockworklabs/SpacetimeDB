@@ -39,11 +39,13 @@ function withCurrentScope(artifact, entry, context) {
 
 test('runtime calibration resolution binds the qualified L1 and L2 releases', () => {
   const l1 = resolveRecipeRelease(TRACK, 1).release;
-  const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  const resolved = resolveCalibrationForRelease(l1,
+    { trackRoot: TRACK.dir, stackBenchRoot: ROOT, alias: 'L1' });
   assert.equal(resolved.id, 'ecommerce.l1-modular-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   const l2 = resolveRecipeRelease(TRACK, 2).release;
-  const qualified = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  const qualified = resolveCalibrationForRelease(l2,
+    { trackRoot: TRACK.dir, stackBenchRoot: ROOT, alias: 'L2' });
   assert.equal(qualified.id, 'ecommerce.l2-standard-calibration');
   assert.equal(qualified.state, 'qualified');
   assert.deepEqual(qualified.qualification.stacks.map(stack => stack.status),
@@ -52,6 +54,15 @@ test('runtime calibration resolution binds the qualified L1 and L2 releases', ()
   assert.deepEqual(qualified.qualification.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
+});
+
+test('runtime calibration resolution uses the requested level alias', () => {
+  const release = resolveRecipeRelease(TRACK, 3,
+    'ecommerce.progression-catalog@1.0.0').release;
+  const options = { trackRoot: TRACK.dir, stackBenchRoot: ROOT };
+  assert.equal(resolveCalibrationForRelease(release, { ...options, alias: 'L3' })?.id,
+    'ecommerce.progression-calibration');
+  assert.equal(resolveCalibrationForRelease(release, { ...options, alias: 'L2' }), null);
 });
 
 function temporaryCalibration(change) {
@@ -115,6 +126,13 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.equal(first.fixture.sourceSha256, current().binding.release.components.fixture.sha256);
   assert.equal(first.references.entries.length, 3);
   assert.equal(first.mutations.length, 3);
+  const scored = new Set(current().binding.release.checkCatalog.filter(check => check.points > 0)
+    .map(check => check.stableKey));
+  for (const mutation of first.mutations) {
+    const covered = new Set(mutation.targets.flatMap(target => target.stableKeys));
+    assert.deepEqual([...scored].filter(key => !covered.has(key)), [],
+      `${mutation.backend} must cover every scored check`);
+  }
   assert.equal(first.controls.length, 2);
   assert.equal(first.controls.every(control => control.role === 'precondition'), true);
   assert.equal(new Set(first.controls.map(control => control.stableKey)).size, 2);

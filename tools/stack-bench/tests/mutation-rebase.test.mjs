@@ -26,11 +26,11 @@ const fixtures = new Map(loadReferenceRegistry().fixtures
   .map(fixture => [fixture.backend, fixture]));
 const expected = {
   mongodb: { mutations: 46, covered: 47, missing: 65,
-    blocked: { 'unknown-target': 4, 'outside-selection': 9, 'anchor-mismatch': 12 } },
+    blocked: { 'unknown-target': 4, 'anchor-mismatch': 12 }, excluded: 9 },
   postgres: { mutations: 47, covered: 50, missing: 62,
-    blocked: { 'unknown-target': 4, 'outside-selection': 9, 'anchor-mismatch': 13 } },
+    blocked: { 'unknown-target': 4, 'anchor-mismatch': 13 }, excluded: 9 },
   spacetime: { mutations: 58, covered: 60, missing: 52,
-    blocked: { 'unknown-target': 4, 'outside-selection': 10, 'anchor-mismatch': 2 } },
+    blocked: { 'unknown-target': 4, 'anchor-mismatch': 2 }, excluded: 10 },
 };
 
 for (const backend of Object.keys(expected)) {
@@ -53,6 +53,7 @@ for (const backend of Object.keys(expected)) {
     assert.equal(first.coverage.covered.length, expected[backend].covered);
     assert.equal(first.coverage.missing.length, expected[backend].missing);
     assert.equal(first.coverage.selected.length, 112);
+    assert.equal(first.excluded.length, expected[backend].excluded);
     assert(binding.release.checkCatalog.filter(check =>
       first.coverage.selected.includes(check.stableKey)).every(check => check.points > 0));
     assert.deepEqual(Object.fromEntries(Object.entries(Object.groupBy(first.blocked,

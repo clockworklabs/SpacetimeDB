@@ -9,7 +9,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync,
-  writeSync } from 'node:fs';
+  writeFileSync, writeSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -362,8 +362,10 @@ export function referenceQualificationContext(fixture, recipe = null,
   const binding = resolveRecipeRelease(track, level, recipe);
   if (!binding) throw new Error(`${fixture.track} L${level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release,
-    { trackRoot: track.dir, stackBenchRoot: ROOT });
-  if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);
+    { trackRoot: track.dir, stackBenchRoot: ROOT, alias: `L${level}` });
+  if (!calibration) {
+    throw new Error(`${binding.release.id}@${binding.release.version} has no L${level} calibration`);
+  }
   const reference = calibration.references.entries.find(entry => entry.backend === fixture.backend
     && entry.id === fixture.id && entry.sourceSha256 === fixture.imported.sourceSha256);
   if (!reference) throw new Error(`${fixture.id} is not selected by calibration ${calibration.id}`);
@@ -424,6 +426,22 @@ export function referenceQualificationWorkRoot(env = process.env) {
   return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
 }
 
+export function qualificationMutationManifest(fixture, context) {
+  if (fixture.mutationManifests.length !== 1) {
+    throw new Error(`${fixture.id} must own exactly one mutation manifest for live mutation qualification`);
+  }
+  const manifest = readJson(join(ROOT, fixture.mutationManifests[0]));
+  const selection = context.calibration.mutations.find(entry => entry.backend === fixture.backend);
+  if (!selection) throw new Error(`${fixture.id} has no mutation selection in its calibration`);
+  const selectedIds = new Set(selection.targets.map(target => target.id));
+  const mutations = manifest.mutations.filter(mutation => selectedIds.delete(mutation.id));
+  if (selectedIds.size) {
+    throw new Error(`${fixture.id} mutation selection is missing: ${[...selectedIds].sort().join(', ')}`);
+  }
+  if (mutations.length === 0) throw new Error(`${fixture.id} mutation selection is empty`);
+  return { ...manifest, mutations };
+}
+
 async function runOnce(fixture, args, context, id, repetition) {
   const workRoot = referenceQualificationWorkRoot();
   mkdirSync(workRoot, { recursive: true });
@@ -449,10 +467,10 @@ async function runOnce(fixture, args, context, id, repetition) {
       context.progressionSelection));
     benchArgs.push('--parent-attempt-id', id);
     if (args.mutations) {
-      if (fixture.mutationManifests.length !== 1) {
-        throw new Error(`${fixture.id} must own exactly one mutation manifest for live mutation qualification`);
-      }
-      benchArgs.push('--mutations', join(ROOT, fixture.mutationManifests[0]));
+      const manifestPath = join(work, 'selected-mutations.json');
+      writeFileSync(manifestPath, `${JSON.stringify(qualificationMutationManifest(fixture, context),
+        null, 2)}\n`);
+      benchArgs.push('--mutations', manifestPath);
       if (args.mutationShardCount !== null) {
         benchArgs.push('--mutation-shard-index', String(args.mutationShardIndex),
           '--mutation-shard-count', String(args.mutationShardCount));
@@ -597,10 +615,7 @@ export function readParallelMutationWorker(path, processResult, expected, manife
 }
 
 async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
-  if (fixture.mutationManifests.length !== 1) {
-    throw new Error(`${fixture.id} must own exactly one mutation manifest for parallel qualification`);
-  }
-  const manifest = readJson(join(ROOT, fixture.mutationManifests[0]));
+  const manifest = qualificationMutationManifest(fixture, context);
   const scenarios = new Set((manifest.mutations ?? [])
     .map(mutation => mutation.scenario ?? manifest.scenario).filter(Boolean));
   if (!Array.isArray(manifest.mutations) || scenarios.size < args.mutationWorkers) {

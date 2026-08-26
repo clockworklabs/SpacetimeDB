@@ -524,8 +524,9 @@ function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
   return { entries: normalized, staleness, buildImage: [...images][0] ?? null };
 }
 
-function mutationExecutionSha256(manifest) {
-  const { status: _status, ...execution } = manifest;
+function mutationExecutionSha256(manifest, mutations = manifest.mutations) {
+  const { status: _status, mutations: _mutations, ...fields } = manifest;
+  const execution = { ...fields, mutations };
   return sha256(canonicalDefinitionJson(canonicalizeDefinition(execution)));
 }
 
@@ -645,8 +646,10 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     };
   });
 
+  const releaseStableKeys = new Set(release.checkCatalog.map(check => check.stableKey));
   const qualifiedStableKeys = new Set(qualificationRelease.checkCatalog.map(check => check.stableKey));
   const mutationTargetRefs = new Map();
+  const mutationCoverage = new Map();
   const mutations = calibration.mutations.map((selection, index) => {
     const at = `${source}.mutations[${index}]`;
     const ref = contained(benchRoot, benchRoot, selection.path, `${at}.path`);
@@ -665,21 +668,40 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     const definitions = validateMutationDefinitions(manifest.mutations,
       { defaultScenario: manifest.scenario, requireScenario: true });
     if (!definitions.ok) fail(at, `invalid mutation definitions: ${definitions.issues.map(issue => issue.kind).join(', ')}`);
+    const selectedMutations = [];
     const targets = [];
+    const covered = mutationCoverage.get(selection.backend) ?? new Set();
     for (const mutation of manifest.mutations) {
       const stableKeys = mutationTargetKeys(mutation);
       for (const stableKey of stableKeys) {
-        if (!qualifiedStableKeys.has(stableKey)) {
+        if (!releaseStableKeys.has(stableKey)) {
           fail(at, `mutation ${mutation.id} targets unknown recipe check ${stableKey}`);
         }
       }
+      if (!stableKeys.every(stableKey => qualifiedStableKeys.has(stableKey))) continue;
+      selectedMutations.push(mutation);
+      for (const stableKey of stableKeys) covered.add(stableKey);
       const targetRef = `${selection.backend}:${mutation.id}`;
       mutationTargetRefs.set(targetRef, new Set(stableKeys));
       targets.push({ id: mutation.id, stableKeys });
     }
+    mutationCoverage.set(selection.backend, covered);
     return { ...selection, path: ref.relative, status: manifest.status,
-      executionSha256: mutationExecutionSha256(manifest), targets };
+      executionSha256: mutationExecutionSha256(manifest, selectedMutations), targets };
   });
+
+  if (calibration.promotion.status !== 'retired') {
+    const scoredKeys = qualificationRelease.checkCatalog.filter(check => check.points > 0)
+      .map(check => check.stableKey);
+    for (const stack of calibration.qualification.stacks.filter(stack =>
+      stack.status !== 'unsupported')) {
+      const covered = mutationCoverage.get(stack.id) ?? new Set();
+      const missing = scoredKeys.filter(key => !covered.has(key));
+      if (missing.length) {
+        fail(`${source}.mutations`, `${stack.id} does not cover scored checks: ${missing.join(', ')}`);
+      }
+    }
+  }
 
   const zeroPoint = new Set(qualificationRelease.checkCatalog.filter(check => check.points === 0)
     .map(check => check.stableKey));
@@ -806,7 +828,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     qualificationStaleness: verifiedEvidence.staleness };
 }
 
-export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoot } = {}) {
+export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoot, alias = null } = {}) {
   if (!release) return null;
   const root = realpathSync(resolve(trackRoot));
   const directory = join(root, 'composition', 'calibrations');
@@ -817,10 +839,12 @@ export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoo
     const raw = readJson(path, 'calibration');
     if (raw.recipe?.id !== release.id || raw.recipe?.version !== release.version
       || raw.recipe?.contentSha256 !== release.contentSha256) continue;
+    if (alias !== null && raw.promotion?.alias !== alias) continue;
     matches.push(compileCalibrationFile(path, { trackRoot: root, stackBenchRoot, release }));
   }
   if (matches.length > 1) {
-    throw new Error(`multiple calibrations match ${release.id}@${release.version} (${release.contentSha256})`);
+    const scope = alias === null ? '' : ` for ${alias}`;
+    throw new Error(`multiple calibrations match ${release.id}@${release.version}${scope} (${release.contentSha256})`);
   }
   return matches[0] ?? null;
 }

@@ -76,6 +76,7 @@ export function rebaseMutationManifest(manifest,
 
   const { catalog, selected } = selectedKeys(release, selectedCheckKeys);
   const blocked = [];
+  const excluded = [];
   const mutations = [];
   for (const mutation of manifest.mutations) {
     const targets = mutationTargetKeys(mutation);
@@ -86,7 +87,7 @@ export function rebaseMutationManifest(manifest,
     }
     const outside = targets.filter(key => !selected.has(key));
     if (outside.length) {
-      blocked.push({ id: mutation.id, reason: 'outside-selection', targets: outside.sort() });
+      excluded.push({ id: mutation.id, targets: outside.sort() });
       continue;
     }
     const issue = anchorIssue(app, mutation);
@@ -130,6 +131,7 @@ export function rebaseMutationManifest(manifest,
       mutations,
     },
     blocked,
+    excluded,
     coverage: {
       selected: [...selected].sort(),
       covered,
