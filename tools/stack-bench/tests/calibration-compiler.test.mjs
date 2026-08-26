@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { calibrationQualificationIdentity, compileCalibrationDefinition, compileCalibrationFile,
+import { calibrationQualificationIdentity, calibrationQualificationRelease,
+  compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, resolveCalibrationForRelease,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
@@ -72,6 +73,38 @@ function compileChanged(change) {
       { trackRoot: temporary.trackRoot, stackBenchRoot: ROOT, release });
   } finally { rmSync(temporary.directory, { recursive: true, force: true }); }
 }
+
+test('calibration definitions bind an optional stable-check subset', () => {
+  const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
+  value.qualification.checks = ['check.b', 'check.a'];
+  const compiled = compileCalibrationDefinition(value);
+  assert.deepEqual(compiled.qualification.checks, ['check.b', 'check.a']);
+  const identityInput = { ...compiled, mutations: compiled.mutations.map(mutation => ({
+    ...mutation, executionSha256: 'a'.repeat(64),
+  })) };
+  const first = calibrationQualificationIdentity(identityInput);
+  identityInput.qualification.checks = ['check.a'];
+  assert.notEqual(calibrationQualificationIdentity(identityInput).sha256, first.sha256);
+  value.qualification.checks = ['check.a', 'check.a'];
+  assert.throws(() => compileCalibrationDefinition(value), /must not contain duplicates/);
+});
+
+test('calibration check subsets produce an exact qualification release', () => {
+  const sourceRelease = { scoring: { mode: 'source-points', checks: 2, points: 3 },
+    checkCatalog: [
+      { stableKey: 'check.a', executionId: 'suite', points: 1 },
+      { stableKey: 'check.b', executionId: 'unused', points: 2 },
+    ] };
+  const execution = [{ id: 'suite', ownership: { kind: 'current' } },
+    { id: 'unused', ownership: { kind: 'current' } }];
+  const scoped = calibrationQualificationRelease({ qualification: { checks: ['check.a'] } },
+    sourceRelease, execution);
+  assert.deepEqual(scoped.release.checkCatalog.map(check => check.stableKey), ['check.a']);
+  assert.deepEqual(scoped.release.scoring, { mode: 'source-points', checks: 1, points: 1 });
+  assert.deepEqual(scoped.execution.map(entry => entry.id), ['suite']);
+  assert.throws(() => calibrationQualificationRelease(
+    { qualification: { checks: ['missing'] } }, sourceRelease, execution), /unknown checks/);
+});
 
 test('the current L1 calibration deterministically binds recipe, fixture, references, mutations, and controls', () => {
   const first = current().plan;

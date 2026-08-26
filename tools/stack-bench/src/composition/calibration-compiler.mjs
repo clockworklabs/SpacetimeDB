@@ -96,7 +96,8 @@ const MUTATION_FIELDS = new Set(['backend', 'path', 'sha256', 'referenceId']);
 const NULL_FIELDS = new Set(['pointBearing', 'zeroPoint', 'repetitions']);
 const CONTROL_FIELDS = new Set(['stableKey', 'role', 'promotionPolicy', 'mutationTargets', 'reason']);
 const QUALIFICATION_FIELDS = new Set([
-  'exactCombinationRequired', 'referenceRepetitions', 'mutationRepetitions', 'runner', 'stacks', 'evidence',
+  'exactCombinationRequired', 'referenceRepetitions', 'mutationRepetitions', 'checks', 'runner',
+  'stacks', 'evidence',
 ]);
 const RUNNER_FIELDS = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
 const STACK_FIELDS = new Set(['id', 'status']);
@@ -209,6 +210,14 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
   for (const field of ['referenceRepetitions', 'mutationRepetitions']) {
     if (!Number.isInteger(value.qualification[field]) || value.qualification[field] < 1) {
       fail(`${source}.qualification.${field}`, 'must be a positive integer');
+    }
+  }
+  if (value.qualification.checks !== undefined) {
+    array(value.qualification.checks, `${source}.qualification.checks`, { nonEmpty: true });
+    value.qualification.checks.forEach((key, index) =>
+      string(key, `${source}.qualification.checks[${index}]`));
+    if (new Set(value.qualification.checks).size !== value.qualification.checks.length) {
+      fail(`${source}.qualification.checks`, 'must not contain duplicates');
     }
   }
   if (value.qualification.runner !== undefined) {
@@ -398,6 +407,13 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     { id: reference.id, version: null, sha256: reference.sourceSha256 }, `${at}.fixture`);
   if (artifact.identities?.stackAdapter?.id !== entry.stack) evidenceFailure(at, 'has wrong stack adapter');
   const payload = artifact.payload;
+  if (calibration.qualification.checks !== undefined) {
+    const actualChecks = [...(payload.qualifiedCheckKeys ?? [])].sort();
+    const expectedChecks = release.checkCatalog.map(check => check.stableKey).sort();
+    if (canonicalDefinitionJson(actualChecks) !== canonicalDefinitionJson(expectedChecks)) {
+      evidenceFailure(at, 'does not prove the exact selected checks');
+    }
+  }
   const mutationControl = entry.kind === 'mutation';
   const requiredRepetitions = mutationControl
     ? calibration.qualification.mutationRepetitions : calibration.qualification.referenceRepetitions;
@@ -545,6 +561,8 @@ export function calibrationQualificationIdentity(calibration) {
       exactCombinationRequired: calibration.qualification?.exactCombinationRequired,
       referenceRepetitions: calibration.qualification?.referenceRepetitions,
       mutationRepetitions: calibration.qualification?.mutationRepetitions,
+      ...(calibration.qualification?.checks
+        ? { checks: [...calibration.qualification.checks].sort() } : {}),
       ...(calibration.qualification?.runner ? { runner: calibration.qualification.runner } : {}),
       stacks: (calibration.qualification?.stacks ?? []).map(stack => ({
         id: stack.id, supported: stack.status !== 'unsupported',
@@ -554,6 +572,25 @@ export function calibrationQualificationIdentity(calibration) {
   });
   return { id: calibration.id, version: calibration.version,
     sha256: sha256(canonicalDefinitionJson(document)) };
+}
+
+export function calibrationQualificationRelease(calibration, release, execution,
+  { source = '<calibration>' } = {}) {
+  const requested = new Set(calibration.qualification.checks
+    ?? release.checkCatalog.map(check => check.stableKey));
+  const checkCatalog = release.checkCatalog.filter(check => requested.delete(check.stableKey));
+  if (requested.size) {
+    fail(`${source}.qualification.checks`, `contains unknown checks: ${
+      [...requested].sort().join(', ')}`);
+  }
+  if (checkCatalog.length === 0) fail(`${source}.qualification.checks`, 'selects no checks');
+  const executionIds = new Set(checkCatalog.map(check => check.executionId));
+  return {
+    release: { ...release, checkCatalog, scoring: { ...release.scoring,
+      checks: checkCatalog.length,
+      points: checkCatalog.reduce((total, check) => total + check.points, 0) } },
+    execution: execution.filter(entry => executionIds.has(entry.id)),
+  };
 }
 
 export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchRoot, release } = {}) {
@@ -578,6 +615,8 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     trackRoot: root,
     level: Number(calibration.promotion.alias.slice(1)),
   });
+  const { release: qualificationRelease, execution: qualificationExecution }
+    = calibrationQualificationRelease(calibration, release, execution, { source });
   if (calibration.fixture.id !== release.components.fixture.id
     || calibration.fixture.version !== release.components.fixture.version) {
     fail(`${source}.fixture`, 'does not match the resolved fixture identity');
@@ -606,7 +645,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     };
   });
 
-  const stableByLegacyKey = new Map(release.checkCatalog.map(check => [
+  const stableByLegacyKey = new Map(qualificationRelease.checkCatalog.map(check => [
     `${check.source}:${check.featureId}:${check.criterionId}`, check.stableKey,
   ]));
   const mutationTargetRefs = new Map();
@@ -643,7 +682,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
       executionSha256: mutationExecutionSha256(manifest), targets };
   });
 
-  const zeroPoint = new Set(release.checkCatalog.filter(check => check.points === 0)
+  const zeroPoint = new Set(qualificationRelease.checkCatalog.filter(check => check.points === 0)
     .map(check => check.stableKey));
   const controls = calibration.controls.map((control, index) => {
     const at = `${source}.controls[${index}]`;
@@ -666,9 +705,9 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     `${source}.qualification.evidence`, {
       calibration: { ...calibration, references: { ...calibration.references, entries: references }, mutations },
       qualificationIdentity,
-      release,
+      release: qualificationRelease,
       references,
-      execution,
+      execution: qualificationExecution,
     });
   const evidence = verifiedEvidence.entries;
   const equivalenceDecisions = calibration.equivalenceDecisions.map((decision, index) => ({
