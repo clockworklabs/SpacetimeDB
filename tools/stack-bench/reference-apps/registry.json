@@ -18,8 +18,10 @@
         "path": "reference-apps/ecommerce/progression/mongodb",
         "sourceSha256": "85b83f5a9f196431a6c51faecbfe7dc5f4cc3116a01e4f5d5abdcfa2541d4dc5"
       },
-      "mutationManifests": [],
-      "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecom-progression-1.0.0.json"
+      ],
+      "qualification": "Candidate pending model-free Docker qualification."
     },
     {
       "id": "ecommerce-progression-postgres",
@@ -38,8 +40,10 @@
         "path": "reference-apps/ecommerce/progression/postgres",
         "sourceSha256": "8ab89d7299635abfa02a44a6c5a2fab7c7107a07962c5706216fd5c30f1fe5d8"
       },
-      "mutationManifests": [],
-      "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
+      "mutationManifests": [
+        "grader/mutations/postgres-ecom-progression-1.0.0.json"
+      ],
+      "qualification": "Candidate pending model-free Docker qualification."
     },
     {
       "id": "ecommerce-progression-spacetime",
@@ -58,8 +62,10 @@
         "path": "reference-apps/ecommerce/progression/spacetime",
         "sourceSha256": "d44c28a76587806303d473f3f2bc2ccb53617e1ccdb1579551891dbbacdb5366"
       },
-      "mutationManifests": [],
-      "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecom-progression-1.0.0.json"
+      ],
+      "qualification": "Candidate pending model-free Docker qualification."
     },
     {
       "id": "ecommerce-l1-mongodb",
