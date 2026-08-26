@@ -60,7 +60,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/spacetime",
-        "sourceSha256": "d44c28a76587806303d473f3f2bc2ccb53617e1ccdb1579551891dbbacdb5366"
+        "sourceSha256": "7f0ede3f81b314ea25e787eebf9c7a5ff19a76c21b011822e647770604c5ae21"
       },
       "mutationManifests": [
         "grader/mutations/spacetime-ecom-progression-1.0.0.json"

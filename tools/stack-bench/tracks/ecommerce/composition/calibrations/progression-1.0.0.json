@@ -35,7 +35,7 @@
       {
         "backend": "spacetime",
         "id": "ecommerce-progression-spacetime",
-        "sourceSha256": "d44c28a76587806303d473f3f2bc2ccb53617e1ccdb1579551891dbbacdb5366"
+        "sourceSha256": "7f0ede3f81b314ea25e787eebf9c7a5ff19a76c21b011822e647770604c5ae21"
       }
     ]
   },
@@ -55,7 +55,7 @@
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-progression-1.0.0.json",
-      "sha256": "f7cc3c1964bf2b2e34497e0d3d88a83bda98d0cb9bbd67dec9d3fdbe7f4c3b20",
+      "sha256": "0ced1cd31c5c79c0705324a00a9bae4007439a7e496ad25bf6e48b42337a2269",
       "referenceId": "ecommerce-progression-spacetime"
     }
   ],

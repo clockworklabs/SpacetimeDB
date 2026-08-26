@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "d44c28a76587806303d473f3f2bc2ccb53617e1ccdb1579551891dbbacdb5366",
+  "fixtureSha256": "7f0ede3f81b314ea25e787eebf9c7a5ff19a76c21b011822e647770604c5ae21",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "SpacetimeDB cumulative L1-L3 mutation candidate for all 112 scored checks in ecommerce.progression-catalog@1.0.0. Each deterministic defect binds to the current check-owned scenario and the full progression reference app.",
