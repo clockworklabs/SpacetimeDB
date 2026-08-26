@@ -12,7 +12,7 @@ use crate::{
     error,
     index::{IndexError, IndexFileMut},
     payload::Encode,
-    repo::{TxOffset, TxOffsetIndex, TxOffsetIndexMut},
+    repo::{SegmentPos, TxOffset, TxOffsetIndex, TxOffsetIndexMut},
     Options,
 };
 
@@ -571,7 +571,7 @@ pub struct Commits<R> {
     reader: R,
 }
 
-impl<R: io::BufRead + io::Seek> Iterator for Commits<R> {
+impl<R: io::BufRead + SegmentPos> Iterator for Commits<R> {
     type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -580,7 +580,7 @@ impl<R: io::BufRead + io::Seek> Iterator for Commits<R> {
 }
 
 #[cfg(test)]
-impl<R: io::BufRead + io::Seek> Commits<R> {
+impl<R: io::BufRead + SegmentPos> Commits<R> {
     pub fn with_log_format_version(self) -> impl Iterator<Item = io::Result<(u8, StoredCommit)>> {
         CommitsWithVersion { inner: self }
     }
@@ -592,7 +592,7 @@ struct CommitsWithVersion<R> {
 }
 
 #[cfg(test)]
-impl<R: io::BufRead + io::Seek> Iterator for CommitsWithVersion<R> {
+impl<R: io::BufRead + SegmentPos> Iterator for CommitsWithVersion<R> {
     type Item = io::Result<(u8, StoredCommit)>;
 
     fn next(&mut self) -> Option<Self::Item> {

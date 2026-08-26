@@ -190,7 +190,7 @@ impl Commit {
     /// [`ChecksumMismatch`] is returned.
     ///
     /// To retain access to the checksum, use [`StoredCommit::decode`].
-    pub fn decode<R: Read + SegmentPos>(reader: R) -> io::Result<Option<Self>> {
+    pub fn decode<R: Read + SegmentPos>(reader: &mut R) -> io::Result<Option<Self>> {
         let commit = StoredCommit::decode(reader)?;
         Ok(commit.map(Into::into))
     }
@@ -295,12 +295,12 @@ impl StoredCommit {
     /// Verifies the checksum of the commit. If it doesn't match, an error of
     /// kind [`io::ErrorKind::InvalidData`] with an inner error downcastable to
     /// [`ChecksumMismatch`] is returned.
-    pub fn decode<R: Read + SegmentPos>(reader: R) -> io::Result<Option<Self>> {
+    pub fn decode<R: Read + SegmentPos>(reader: &mut R) -> io::Result<Option<Self>> {
         Self::decode_internal(reader, DEFAULT_LOG_FORMAT_VERSION)
     }
 
     pub(crate) fn decode_internal<R: Read + SegmentPos>(
-        mut reader: R,
+        reader: &mut R,
         log_format_version: u8,
     ) -> io::Result<Option<Self>> {
         let pos = reader.segment_pos()?;
@@ -382,7 +382,7 @@ impl Metadata {
     /// Note that this decodes the commit due to checksum verification.
     /// Like [`StoredCommit::decode`], this method returns `None` if the reader
     /// is at EOF already.
-    pub fn extract<R: io::Read + io::Seek>(reader: R) -> io::Result<Option<Self>> {
+    pub fn extract<R: io::Read + SegmentPos>(reader: &mut R) -> io::Result<Option<Self>> {
         StoredCommit::decode(reader).map(|maybe_commit| maybe_commit.map(Self::from))
     }
 }

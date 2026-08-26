@@ -313,7 +313,7 @@ where
             );
             stream.read_exact(&mut self.commit_buf.body).await?;
             // Decode the commit and verify its checksum.
-            let commit = StoredCommit::decode(self.commit_buf.as_reader(bytes_written))
+            let commit = StoredCommit::decode(&mut self.commit_buf.as_reader(bytes_written))
                 .inspect_err(|e| warn!("failed to decode commit: {e}"))?
                 .expect("commit decode cannot return `None` because we already decoded the header");
 
