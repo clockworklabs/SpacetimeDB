@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { ProgressionPanel } from "./ProgressionPanel";
 
@@ -510,7 +510,9 @@ export default function App() {
         </div>
       </main>
 
-      <ProgressionPanel account={account} items={items} orders={orders} state={progression} reload={reloadProgression} />
+      {!(account?.isAdmin || account?.isStaff) &&
+        <ProgressionPanel account={account} items={items} orders={orders}
+          state={progression} reload={reloadProgression} />}
 
       {cartOpen && (
         <>
@@ -541,14 +543,20 @@ export default function App() {
             onRestock={restock}
             onTransfer={transfer}
             onChangePrice={changePrice}
-          />
+          >
+            <ProgressionPanel account={account} items={items} orders={orders}
+              state={progression} reload={reloadProgression} />
+          </AdminPanel>
         </>
       )}
 
       {fulfilmentOpen && account && (account.isAdmin || account.isStaff) && (
         <>
           <div className="backdrop" onClick={() => setFulfilmentOpen(false)} />
-          <FulfilmentPanel queue={queue} onClose={() => setFulfilmentOpen(false)} onShip={shipOrder} />
+          <FulfilmentPanel queue={queue} onClose={() => setFulfilmentOpen(false)} onShip={shipOrder}>
+            <ProgressionPanel account={account} items={items} orders={orders}
+              state={progression} reload={reloadProgression} />
+          </FulfilmentPanel>
         </>
       )}
     </div>
@@ -906,12 +914,13 @@ function CartPanel(props: {
       ) : (
         <div className="stack">
           {cart.items.map((line) => (
-            <div className="cart-item" data-testid={line.expired ? "cart-item-expired" : "cart-item"}
+            <div className="cart-item" data-testid="cart-item"
               data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })} key={line.itemId}>
               <div className="cart-item-top">
                 <span className="item-name">{line.name}</span>
                 <span>{money(line.lineTotal)}</span>
                 <span data-testid="cart-reservation-timer">{Math.max(0, (line.reservationSeconds ?? 0) - elapsed)}</span>
+                {line.expired && <span data-testid="cart-item-expired">Expired</span>}
               </div>
               <div className="cart-item-top">
                 <div className="qty-controls">
@@ -1039,8 +1048,9 @@ function AdminPanel(props: {
   onRestock: (itemId: number, warehouseId: number, quantity: number) => void;
   onTransfer: (itemId: number, fromWarehouseId: number, toWarehouseId: number, quantity: number) => void;
   onChangePrice: (itemId: number, price: number) => void;
+  children?: ReactNode;
 }) {
-  const { admin, onClose, onRestock, onTransfer, onChangePrice } = props;
+  const { admin, onClose, onRestock, onTransfer, onChangePrice, children } = props;
   const [restockAmounts, setRestockAmounts] = useState<Record<string, number>>({});
   const [transferState, setTransferState] = useState<Record<number, { from: number; to: number; qty: number }>>({});
   const [priceState, setPriceState] = useState<Record<number, number>>({});
@@ -1286,12 +1296,14 @@ function AdminPanel(props: {
           })}
         </div>
       </div>
+      {children}
     </div>
   );
 }
 
-function FulfilmentPanel(props: { queue: QueueState; onClose: () => void; onShip: (orderId: number) => void }) {
-  const { queue, onClose, onShip } = props;
+function FulfilmentPanel(props: { queue: QueueState; onClose: () => void;
+  onShip: (orderId: number) => void; children?: ReactNode }) {
+  const { queue, onClose, onShip, children } = props;
   return (
     <div className="panel wide" data-testid="fulfilment-panel">
       <div className="panel-header">
@@ -1330,6 +1342,7 @@ function FulfilmentPanel(props: { queue: QueueState; onClose: () => void; onShip
           ))}
         </div>
       )}
+      {children}
     </div>
   );
 }

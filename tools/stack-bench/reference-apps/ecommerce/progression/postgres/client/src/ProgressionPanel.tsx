@@ -37,6 +37,9 @@ export function ProgressionPanel({
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "90" });
   const [reply, setReply] = useState<Record<number, string>>({});
   const [supportOrders, setSupportOrders] = useState<Record<number, number>>({});
+  const [triage, setTriage] = useState<Record<number, {
+    assignee: string; priority: string; status: string;
+  }>>({});
   const [reorders, setReorders] = useState<Record<number, { threshold: string; quantity: string }>>({});
   const [preferences, setPreferences] = useState({ order: false, stock: false });
 
@@ -97,21 +100,30 @@ export function ProgressionPanel({
           const created = await request("/api/support/cases", "POST", support); setCreatedReference(created.reference);
         })}>Open case</button>
         {createdReference && <strong data-testid="support-reference">{createdReference}</strong>}
-        {(state?.support ?? []).map((entry: any) => <div data-testid="support-ticket" key={entry.id}>
+        {(state?.support ?? []).map((entry: any) => {
+          const draft = triage[entry.id] ?? {
+            assignee: entry.assignee ?? "", priority: entry.priority, status: entry.status,
+          };
+          const update = (field: keyof typeof draft, value: string) =>
+            setTriage((current) => ({ ...current,
+              [entry.id]: { ...draft, [field]: value } }));
+          return <div data-testid="support-ticket" key={entry.id}>
           <strong data-testid="support-reference">{entry.reference}</strong>
+          <span>{entry.subject}</span>
           <span data-testid="support-status">{entry.status}</span>
           {staff && <>
-            <input data-testid="support-assignee" defaultValue={entry.assignee} onBlur={(event) => run(() =>
-              request(`/api/support/cases/${entry.id}`, "PUT", { assignee: event.target.value }))} />
-            <select data-testid="support-priority" defaultValue={entry.priority} onChange={(event) => run(() =>
-              request(`/api/support/cases/${entry.id}`, "PUT", { priority: event.target.value }))}>
+            <input data-testid="support-assignee" value={draft.assignee}
+              onChange={(event) => update("assignee", event.target.value)} />
+            <select data-testid="support-priority" value={draft.priority}
+              onChange={(event) => update("priority", event.target.value)}>
               <option>low</option><option>normal</option><option>high</option>
             </select>
-            <select data-testid="support-status-input" defaultValue={entry.status} onChange={(event) => run(() =>
-              request(`/api/support/cases/${entry.id}`, "PUT", { status: event.target.value }))}>
+            <select data-testid="support-status-input" value={draft.status}
+              onChange={(event) => update("status", event.target.value)}>
               <option>new</option><option>open</option><option>resolved</option>
             </select>
-            <button data-testid="support-update">Update</button>
+            <button data-testid="support-update" onClick={() => run(() =>
+              request(`/api/support/cases/${entry.id}`, "PUT", draft))}>Update</button>
           </>}
           {account && orders.map((order) => <button data-testid="support-order-option" key={order.id}
             onClick={() => setSupportOrders({ ...supportOrders, [entry.id]: order.id })}>
@@ -130,7 +142,7 @@ export function ProgressionPanel({
             onChange={(event) => setReply({ ...reply, [entry.id]: event.target.value })} />
             <button data-testid="support-reply-submit" onClick={() => run(() =>
               request(`/api/support/cases/${entry.id}/replies`, "POST", { message: reply[entry.id] }))}>Reply</button></>}
-        </div>)}
+        </div>})}
       </article>
 
       {account && <article className="progression-card" data-testid="notification-settings">
@@ -214,13 +226,20 @@ export function ProgressionPanel({
           <input data-testid="promotion-limit" value={promotion.limit} onChange={(e) => setPromotion({ ...promotion, limit: e.target.value })} />
           <button data-testid="promotion-submit" data-promotion-code={promotion.code} onClick={() => run(() => request("/api/promotions", "POST", promotion))}>Save promotion</button>
           {(state?.promotions ?? []).map((item: any) => <div data-testid="promotion-item" key={item.id}>
-            <span data-testid="promotion-report">{item.code} <span data-testid="promotion-redemptions">{item.redemptions}</span> <span data-testid="promotion-revenue">{item.revenue}</span></span>
+            <span>{item.code}</span>
+            <span data-testid="promotion-discount">{item.discount}</span>
+            <span data-testid="promotion-start">{item.start}</span>
+            <span data-testid="promotion-end">{item.end}</span>
+            <span data-testid="promotion-limit">{item.limit}</span>
+            <span data-testid="promotion-report"><span data-testid="promotion-redemptions">{item.redemptions}</span> <span data-testid="promotion-revenue">{item.revenue}</span></span>
           </div>)}
         </article>
         <article className="progression-card">
           <h3>Roles and activity</h3>
           {(state?.roles ?? []).map((role: any) => <div data-testid="staff-role-row" data-account-id={role.id} key={role.id}>{role.username}
-            <select data-testid="staff-role-select" defaultValue={role.role} id={`role-${role.id}`}><option>support</option><option>catalog</option><option>fulfilment</option></select>
+            <select data-testid="staff-role-select" defaultValue={role.role} id={`role-${role.id}`}>
+              <option>support</option><option>catalog</option><option>inventory</option><option>fulfilment</option>
+            </select>
             <button data-testid="staff-role-save" onClick={() => run(() => request(`/api/staff/${role.id}/role`, "PUT", {
               role: (document.getElementById(`role-${role.id}`) as HTMLSelectElement).value,
             }))}>Save</button></div>)}
