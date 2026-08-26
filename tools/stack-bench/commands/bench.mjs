@@ -109,6 +109,7 @@ export function parseArgs(argv) {
       case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
       case '--condition-json': a.condition = JSON.parse(argv[++i]); break;
       case '--selection-json': a.selectionRequest = JSON.parse(argv[++i]); break;
+      case '--task-mode': a.taskMode = argv[++i]; break;
       case '--feature-module': a.featureIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--request-spec': a.requestedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--expect-spec': a.expectedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;

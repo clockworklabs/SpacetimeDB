@@ -218,6 +218,7 @@ test('progression reference qualification follows the catalog check selection', 
     [...selection.grader.selection.requested.features].sort());
   assert.deepEqual(valueAfter('--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
+  assert.equal(valueAfter('--task-mode')[0], 'upgrade');
   assert.equal(selection.grader.checkKeys.length, 112);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);

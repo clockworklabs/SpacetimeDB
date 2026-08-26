@@ -395,7 +395,12 @@ export function referenceQualificationSelectionArgs(binding, progressionSelectio
   if (!features.length || !specifications.length) {
     throw new Error('modular reference qualification requires feature and specification modules');
   }
-  return ['--feature-module', features.join(','), '--expect-spec', specifications.join(','), ...args];
+  const taskMode = progressionSelection?.grader.request.task.mode;
+  if (progressionSelection && !['fresh', 'upgrade'].includes(taskMode)) {
+    throw new Error('progression reference qualification requires a fresh or upgrade task mode');
+  }
+  return ['--feature-module', features.join(','), '--expect-spec', specifications.join(','),
+    ...(taskMode ? ['--task-mode', taskMode] : []), ...args];
 }
 
 export function referenceQualificationRelease(release, selectedCheckKeys) {
