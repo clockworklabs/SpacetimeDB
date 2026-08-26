@@ -136,10 +136,15 @@ impl CommitBuf {
         bytes::Buf::chain(&self.header[..], &self.body[..])
     }
 
-    pub fn as_reader(&self, virtual_pos: u64) -> impl io::Read + SegmentPos + '_ {
+    /// View the [CommitBuf] as an [io::Read] for decoding.
+    ///
+    /// The returned type also implements [SegmentPos] based on the supplied
+    /// position of the buffer within a segment. This is used for error
+    /// reporting.
+    pub fn as_reader(&self, segment_pos: u64) -> impl io::Read + SegmentPos + '_ {
         CommitBufReader {
             inner: io::Read::chain(&self.header[..], &self.body[..]),
-            pos: virtual_pos,
+            pos: segment_pos,
         }
     }
 
