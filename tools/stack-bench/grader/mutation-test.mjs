@@ -49,6 +49,7 @@ import { fetchStatus } from "../src/runtime/readiness.mjs";
 import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
 import { mutationShard } from "../src/evidence/mutation-shards.mjs";
+import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.mjs";
 
 // Resolve tooling relative to this file so the runner works from any directory.
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -311,11 +312,7 @@ async function main() {
   const reportPath = join(work, "grade.json");
   process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 
-  // A killed run never reaches its restore, leaving the app MUTATED on disk with
-  // a backup beside it. Every later grade then silently measures the broken app —
-  // which read as the grader inventing a defect, and nearly shipped as a
-  // three-way comparison. Check BEFORE the baseline, which is the first thing a
-  // stale mutation corrupts.
+  // Reject backups left by an interrupted run before grading the baseline.
   for (const m of spec.mutations) {
     for (const file of new Set(mutationFileEdits(m).map(edit => edit.file))) {
       const stale = resolveMutationFile(args.app, file) + ".mutation-backup";
@@ -327,9 +324,10 @@ async function main() {
     }
   }
 
-  // Refuse dead and ambiguous edits before spending a full baseline grade. The
-  // standalone checker remains useful, but correctness cannot depend on callers
-  // remembering to run it first.
+  // Catch dirty source even when no backup file remains.
+  assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture');
+
+  // Reject missing or ambiguous edit anchors before baseline grading.
   for (const m of spec.mutations) {
     for (const edit of mutationFileEdits(m)) {
       const source = readFileSync(resolveMutationFile(args.app, edit.file), "utf8");
@@ -410,6 +408,11 @@ async function main() {
           throw new Error(`mutation restore failed; do not reuse this app source: ${
             restoreFailures.join('; ')}`);
         }
+        for (const file of files) {
+          if (existsSync(file.backup) || readFileSync(file.target, 'utf8') !== file.original) {
+            throw new Error(`mutation restore verification failed for ${file.target}`);
+          }
+        }
         await sleep(m.settleMs ?? 4000);
         await reset(args);
         await waitForApp(args); // healthy again before the next probe
@@ -432,6 +435,9 @@ async function main() {
       }
     }
   }
+
+  // Detect any source change outside the files restored above.
+  assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture after worker completion');
 
   rmSync(work, { recursive: true, force: true });
   const clean = results.filter((result) => result.status === "CAUGHT");

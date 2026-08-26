@@ -111,6 +111,14 @@ export function hashAppSource(appDir) {
     ? directoryDisposition(rel) !== 'source' : preservedRuntimeFile(rel) });
 }
 
+export function assertAppSourceIdentity(appDir, expectedSha256, context = 'application source') {
+  const actual = hashAppSource(appDir);
+  if (actual.sha256 !== expectedSha256) {
+    throw new Error(`${context} hash ${actual.sha256} does not match ${expectedSha256}`);
+  }
+  return actual;
+}
+
 // Validate only the files that belong to the source identity. Dependency,
 // build-output, and harness directories can contain links created by their
 // own tools and are excluded from the source snapshot and hash.

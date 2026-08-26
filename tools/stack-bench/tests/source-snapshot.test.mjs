@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.mjs';
+import { assertAppSourceIdentity, hashAppSource, restoreAppSource, seedAppSource,
+  snapshotAppSource } from '../src/runtime/source-snapshot.mjs';
 
 const put = (path, content) => {
   mkdirSync(join(path, '..'), { recursive: true });
@@ -96,6 +97,7 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'server.log'), 'server output v1\n');
     put(join(app, 'client', 'vite.log'), 'client output v1\n');
     const first = hashAppSource(app);
+    assert.deepEqual(assertAppSourceIdentity(app, first.sha256), first);
     snapshotAppSource(app, snapshot);
     assert.equal(hashAppSource(snapshot).sha256, first.sha256);
     put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v2\n');
@@ -106,6 +108,8 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     assert.equal(hashAppSource(app).sha256, first.sha256);
     put(join(app, 'src', 'app.ts'), 'export const value = 2;\n');
     assert.notEqual(hashAppSource(app).sha256, first.sha256);
+    assert.throws(() => assertAppSourceIdentity(app, first.sha256, 'restored mutation source'),
+      /restored mutation source hash .* does not match/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
