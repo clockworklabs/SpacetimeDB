@@ -73,8 +73,8 @@ export default function App() {
   const [itemDetail, setItemDetail] = useState<{ reviews: Review[]; average: number | null } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [ordersOpen, setOrdersOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [fulfilmentOpen, setFulfilmentOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(() => sessionStorage.getItem("admin-open") === "1");
+  const [fulfilmentOpen, setFulfilmentOpen] = useState(() => sessionStorage.getItem("fulfilment-open") === "1");
   const [showSignin, setShowSignin] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [progression, setProgression] = useState<any>({});
@@ -149,6 +149,14 @@ export default function App() {
       socket.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem("admin-open", adminOpen ? "1" : "0");
+  }, [adminOpen]);
+
+  useEffect(() => {
+    sessionStorage.setItem("fulfilment-open", fulfilmentOpen ? "1" : "0");
+  }, [fulfilmentOpen]);
 
   useEffect(() => {
     const observedAtRequest = ++cartObservationRef.current;
@@ -264,6 +272,8 @@ export default function App() {
       // ignore
     }
     setAccount(null);
+    setAdminOpen(false);
+    setFulfilmentOpen(false);
     resyncSocket();
   }
 

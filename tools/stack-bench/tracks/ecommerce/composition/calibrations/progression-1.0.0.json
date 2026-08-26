@@ -30,7 +30,7 @@
       {
         "backend": "postgres",
         "id": "ecommerce-progression-postgres",
-        "sourceSha256": "88a33126ec2374673ebc81caaa82019d2effef5ee77895f098cea20b1864877e"
+        "sourceSha256": "b377bc3163dda751b0364f803a97b086ff38450d795116d1e2b67b18d79fa967"
       },
       {
         "backend": "spacetime",
@@ -49,7 +49,7 @@
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecom-progression-1.0.0.json",
-      "sha256": "f59f1786be7e828382d4bf510949ee09c2d3a6cd50ff39d22da44da0cdd2a5bc",
+      "sha256": "8bea325aaa6652ff70bdbb5edb10dffa2db0131409770173352a36278610916c",
       "referenceId": "ecommerce-progression-postgres"
     },
     {

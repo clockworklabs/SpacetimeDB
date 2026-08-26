@@ -236,7 +236,7 @@ export function ProgressionPanel({
         </article>
         <article className="progression-card">
           <h3>Roles and activity</h3>
-          {(state?.roles ?? []).map((role: any) => <div data-testid="staff-role-row" data-account-id={role.id} key={role.id}>{role.username}
+          {account?.isAdmin && (state?.roles ?? []).map((role: any) => <div data-testid="staff-role-row" data-account-id={role.id} key={role.id}>{role.username}
             <select data-testid="staff-role-select" defaultValue={role.role} id={`role-${role.id}`}>
               <option>support</option><option>catalog</option><option>inventory</option><option>fulfilment</option>
             </select>

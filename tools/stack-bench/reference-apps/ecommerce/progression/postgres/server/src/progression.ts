@@ -282,7 +282,8 @@ export async function buildProgressionState(account: ProgressionAccount | null) 
     roles: roles.rows.map((row) => ({ id: row.id, username: row.username, role: row.staff_role })),
     promotions: promotions.rows.map((row) => ({
       id: row.id, code: row.code, discount: Number(row.discount_percent),
-      start: String(row.start_at).slice(0, 10), end: String(row.end_at).slice(0, 10),
+      start: new Date(row.start_at).toISOString().slice(0, 10),
+      end: new Date(row.end_at).toISOString().slice(0, 10),
       limit: row.redemption_limit, redemptions: row.redemptions, revenue: Number(row.revenue),
     })),
     preferences: preferences ? { order: preferences.notify_order, stock: preferences.notify_stock } : null,
@@ -458,7 +459,8 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
   }));
 
   app.post("/api/support/cases", asyncRoute(async (req, res) => {
-    const email = String(req.body?.email ?? "").trim();
+    const suppliedEmail = String(req.body?.email ?? "").trim();
+    const email = suppliedEmail || (req.account ? `${req.account.username}@stackbench.local` : "");
     const subject = String(req.body?.subject ?? "").trim();
     const message = String(req.body?.message ?? "").trim();
     if (!email || !subject || !message) { res.status(400).json({ error: "all ticket fields are required" }); return; }
