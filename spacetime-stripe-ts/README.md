@@ -89,8 +89,11 @@ fresh database seeds the owner into the private `stripe_admin_identity` table.
 spacetime call --server http://127.0.0.1:3000 stripe-ts set_stripe_config \
   '"sk_test_..."' \
   null \
-  '"whsec_..."'   # webhook signing secret, optional
+  '{"some":"whsec_..."}'   # webhook signing secret, optional
 ```
+
+For `t.option(...)` CLI arguments, use `null` for no value and
+`{"some":"value"}` for a string value.
 
 Verify:
 

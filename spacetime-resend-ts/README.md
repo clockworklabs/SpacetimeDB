@@ -51,11 +51,13 @@ fresh database seeds the owner into the private `resend_admin_identity` table.
 ```bash
 spacetime call --server http://127.0.0.1:3000 resend-ts set_resend_config \
   '"re_..."' \
-  '"whsec_..."' \
-  '"onboarding@resend.dev"'
+  '{"some":"whsec_..."}' \
+  '{"some":"onboarding@resend.dev"}'
 ```
 
 Args: `apiKey`, `webhookSigningSecret` (required for webhook ingest), `defaultFrom` (optional).
+For `t.option(...)` CLI arguments, use `null` for no value and
+`{"some":"value"}` for a string value.
 
 Verify:
 
@@ -196,16 +198,16 @@ For real Resend test-mode:
 
 ```bash
 # Bootstrap once with your real key:
-spacetime call --server http://127.0.0.1:3000 resend-ts set_resend_config '"re_..."' null '"onboarding@resend.dev"'
+spacetime call --server http://127.0.0.1:3000 resend-ts set_resend_config '"re_..."' null '{"some":"onboarding@resend.dev"}'
 
 # Then send to one of Resend's test addresses (delivered@/bounced@/complained@):
 spacetime call --server http://127.0.0.1:3000 resend-ts send_email \
   null \
   '["delivered@resend.dev"]' \
   '"Test from SpacetimeDB"' \
-  '"<p>Hello.</p>"' \
+  '{"some":"<p>Hello.</p>"}' \
   null null null null \
-  '"{\"userId\":\"u_123\"}"' \
+  '{"some":"{\"userId\":\"u_123\"}"}' \
   null null null
 ```
 
