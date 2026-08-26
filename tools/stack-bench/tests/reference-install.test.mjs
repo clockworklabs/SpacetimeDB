@@ -3,15 +3,22 @@ import test from 'node:test';
 
 import { referenceInstallSteps } from '../src/references/reference-install.mjs';
 
-test('Spacetime references refresh the release SDK lock before a clean install', () => {
+test('Spacetime references use the checked-in release SDK lock', () => {
   assert.deepEqual(referenceInstallSteps({
     kind: 'spacetime',
+    frozenLock: true,
     installDirectories: ['backend/spacetimedb', 'client'],
     moduleDirectory: 'backend/spacetimedb',
   }), [
-    { directory: 'backend/spacetimedb', command: 'npm',
-      args: ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'] },
     { directory: 'backend/spacetimedb', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
+    { directory: 'client', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
+  ]);
+});
+
+test('legacy Spacetime references refresh locks until they are frozen', () => {
+  assert.deepEqual(referenceInstallSteps({
+    kind: 'spacetime', installDirectories: ['client'],
+  }), [
     { directory: 'client', command: 'npm',
       args: ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'] },
     { directory: 'client', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },

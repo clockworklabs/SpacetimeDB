@@ -126,6 +126,21 @@ export function restoreReferenceSourceIdentity(fixture, app) {
   return restored;
 }
 
+export async function deployReferenceAndRestoreSource(deploy, restore) {
+  let deployError = null;
+  try { await deploy(); }
+  catch (error) { deployError = error; }
+  try { restore(); }
+  catch (restoreError) {
+    if (deployError) {
+      throw new AggregateError([deployError, restoreError],
+        'reference deployment and source restoration both failed');
+    }
+    throw restoreError;
+  }
+  if (deployError) throw deployError;
+}
+
 function startDetached(container, cwd, logName, env = {}, options = {}) {
   const args = ['exec', '-d', '-w', cwd];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
@@ -174,12 +189,11 @@ async function main() {
     { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024, env: process.env });
   const identity = JSON.parse(prepared.trim().split(/\r?\n/).pop());
   phase(`prepared build container ${identity.containerName}`);
-  await executeStackCapability(adapter, 'reference', 'deploy', {
+  await deployReferenceAndRestoreSource(() => executeStackCapability(adapter, 'reference', 'deploy', {
     args, metadata, lease, track, container: identity.containerName, ports,
     buildNetworkMode: identity.networkMode,
     helpers: { dbName, loadTrack, moduleName, runSync, docker, startDetached, waitFor, containerLogs, phase },
-  });
-  restoreReferenceSourceIdentity(source.fixture, args.app);
+  }), () => restoreReferenceSourceIdentity(source.fixture, args.app));
 
   phase('deployment complete');
   console.log(JSON.stringify({ appDir: args.app, mode: args.mode, level: args.level,

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { finalizeRunTotals, gradeArgv, parseArgs, repairHistoryEntry, repairProgressState }
+import { finalizeRunTotals, gradeArgv, levelGradeIsUsable, parseArgs, repairHistoryEntry, repairProgressState }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -15,6 +15,12 @@ test('direct runs default to ten repair rounds while an explicit budget still wi
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres',
     '--fix-rounds', '4']).fixRounds, 4);
+});
+
+test('progression level usability follows its stricter evidence result', () => {
+  assert.equal(levelGradeIsUsable({ kind: 'app_failure' }), true);
+  assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'inconclusive' }), false);
+  assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'conclusive' }), true);
 });
 
 test('resumed dependency costs separate prior, current, and cumulative execution usage', () => {

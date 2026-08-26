@@ -200,7 +200,7 @@ export default function ProgressionWorkbench(props: Props) {
         <section className="feature-card">
           <h2>Staff roles</h2>
           {staffRoles.map(row => (
-            <div className="feature-row" data-testid="staff-role-row" key={String(row.accountId)}>
+            <div className="feature-row" data-testid="staff-role-row" data-account-id={String(row.accountId)} key={String(row.accountId)}>
               <span>{row.username}</span>
               <input data-testid="staff-role-select" defaultValue={row.role} id={`role-${String(row.accountId)}`} />
               <button className="btn btn-ghost btn-sm" data-testid="staff-role-save" onClick={() => reducers?.assignStaffRole({
@@ -232,7 +232,7 @@ export default function ProgressionWorkbench(props: Props) {
           <input data-testid="promotion-start" value={promotion.start} onChange={e => setPromotion({ ...promotion, start: value(e) })} placeholder="Start date" />
           <input data-testid="promotion-end" value={promotion.end} onChange={e => setPromotion({ ...promotion, end: value(e) })} placeholder="End date" />
           <input data-testid="promotion-limit" value={promotion.limit} onChange={e => setPromotion({ ...promotion, limit: value(e) })} placeholder="Limit" />
-          <button className="btn btn-primary btn-sm" data-testid="promotion-submit" onClick={() => reducers?.createPromotion({
+          <button className="btn btn-primary btn-sm" data-testid="promotion-submit" data-promotion-code={promotion.code} onClick={() => reducers?.createPromotion({
             code: promotion.code,
             discountPercent: Number(promotion.discount),
             startMicros: BigInt(new Date(promotion.start).getTime()) * 1000n,

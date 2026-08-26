@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "spacetime",
+  "frozenLock": true,
   "installDirectories": ["backend/spacetimedb", "client"],
   "moduleDirectory": "backend/spacetimedb",
   "bindingsDirectory": "client/src/module_bindings",

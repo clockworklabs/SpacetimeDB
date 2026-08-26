@@ -97,7 +97,8 @@ async function fill({ input, capabilities, signal }) {
   } else {
     const type = tag === 'INPUT' ? await loc.getAttribute('type').catch(() => null) : null;
     const value = type === 'datetime-local' && /^\d{4}-\d{2}-\d{2}$/.test(text)
-      ? `${text}T00:00` : text;
+      ? `${text}T00:00`
+      : type === 'date' && /^\d{4}-\d{2}-\d{2}T/.test(text) ? text.slice(0, 10) : text;
     await loc.fill(value);
   }
   if (input.enter) await loc.press('Enter');

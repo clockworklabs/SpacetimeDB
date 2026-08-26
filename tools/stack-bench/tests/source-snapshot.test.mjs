@@ -34,7 +34,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(existsSync(join(snapshot, 'BUG_REPORT.md')), false);
   assert.equal(existsSync(join(snapshot, 'bug-report-quality.json')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'dist')), false);
-  assert.equal(existsSync(join(snapshot, 'ui', 'src', 'module_bindings')), false);
+  assert.equal(existsSync(join(snapshot, 'ui', 'src', 'module_bindings')), true);
   assert.equal(existsSync(join(snapshot, 'server.log')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'vite.log')), false);
 
@@ -59,7 +59,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(readFileSync(join(app, 'new-layout', 'node_modules', 'installed', 'index.js'), 'utf8'), 'keep me\n');
   assert.equal(readFileSync(join(app, 'backend', 'spacetimedb', 'node_modules', 'dep', 'index.js'), 'utf8'), 'dependency\n');
   assert.equal(existsSync(join(app, 'ui', 'dist')), false);
-  assert.equal(existsSync(join(app, 'ui', 'src', 'module_bindings')), false);
+  assert.equal(existsSync(join(app, 'ui', 'src', 'module_bindings')), true);
   assert.equal(readFileSync(join(app, 'BUG_REPORT.md'), 'utf8'), 'latest harness report\n');
   assert.equal(readFileSync(join(app, 'bug-report-quality.json'), 'utf8'), '{"latest":true}\n');
   assert.equal(readFileSync(join(app, 'server.log'), 'utf8'), 'new server output\n');

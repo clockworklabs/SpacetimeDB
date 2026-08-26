@@ -280,6 +280,11 @@ export function repairHistoryEntry(round, before, after, result) {
   };
 }
 
+export function levelGradeIsUsable(bundleOutcome, progressionAttempt = null) {
+  if (progressionAttempt) return progressionAttempt.outcome === 'conclusive';
+  return !['ungraded', 'harness_failure'].includes(bundleOutcome.kind);
+}
+
 function snapshotSource(appDir, to) {
   snapshotAppSource(appDir, to);
 }
@@ -1441,7 +1446,12 @@ async function main() {
     // — in a ladder run it silently drops a level's result on the floor. Say so
     // instead, and leave the score null.
     const finalBundleOutcome = classifyBundle(bundle);
-    const graded = !['ungraded', 'harness_failure'].includes(finalBundleOutcome.kind);
+    const progressionAttempt = progressionExecution?.state.attempts.at(-1) ?? null;
+    // Progression uses stricter evidence rules than a regular scored bundle.
+    // Store one answer when a selected check is not measured: the raw bundle
+    // remains available for diagnosis, but the level is not a usable grade.
+    const graded = levelGradeIsUsable(finalBundleOutcome,
+      args.progression ? progressionAttempt : null);
     const progressionStrikes = progressionExecution?.state.strikes?.[String(level)] ?? null;
     const repairBudgetRounds = progressionStrikes
       ? Math.max(0, progressionStrikes.budget - 1) : args.fixRounds;

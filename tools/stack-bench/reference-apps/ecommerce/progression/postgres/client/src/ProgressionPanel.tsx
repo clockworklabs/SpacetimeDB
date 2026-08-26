@@ -212,14 +212,14 @@ export function ProgressionPanel({
           <input data-testid="promotion-start" type="date" value={promotion.start} onChange={(e) => setPromotion({ ...promotion, start: e.target.value })} />
           <input data-testid="promotion-end" type="date" value={promotion.end} onChange={(e) => setPromotion({ ...promotion, end: e.target.value })} />
           <input data-testid="promotion-limit" value={promotion.limit} onChange={(e) => setPromotion({ ...promotion, limit: e.target.value })} />
-          <button data-testid="promotion-submit" onClick={() => run(() => request("/api/promotions", "POST", promotion))}>Save promotion</button>
+          <button data-testid="promotion-submit" data-promotion-code={promotion.code} onClick={() => run(() => request("/api/promotions", "POST", promotion))}>Save promotion</button>
           {(state?.promotions ?? []).map((item: any) => <div data-testid="promotion-item" key={item.id}>
             <span data-testid="promotion-report">{item.code} <span data-testid="promotion-redemptions">{item.redemptions}</span> <span data-testid="promotion-revenue">{item.revenue}</span></span>
           </div>)}
         </article>
         <article className="progression-card">
           <h3>Roles and activity</h3>
-          {(state?.roles ?? []).map((role: any) => <div data-testid="staff-role-row" key={role.id}>{role.username}
+          {(state?.roles ?? []).map((role: any) => <div data-testid="staff-role-row" data-account-id={role.id} key={role.id}>{role.username}
             <select data-testid="staff-role-select" defaultValue={role.role} id={`role-${role.id}`}><option>support</option><option>catalog</option><option>fulfilment</option></select>
             <button data-testid="staff-role-save" onClick={() => run(() => request(`/api/staff/${role.id}/role`, "PUT", {
               role: (document.getElementById(`role-${role.id}`) as HTMLSelectElement).value,

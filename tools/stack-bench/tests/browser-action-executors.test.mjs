@@ -99,7 +99,7 @@ test('interaction scopes can match separate text fragments without assuming punc
   assert.equal(scope.contains.test('Mirrorless Camera @ West'), false);
 });
 
-test('fill adapts date values only for datetime-local controls', async () => {
+test('fill adapts values to date input types', async () => {
   const values = [];
   const locator = type => ({
     waitFor: async () => {},
@@ -119,6 +119,10 @@ test('fill adapts date values only for datetime-local controls', async () => {
     ['date', '2020-01-01'],
     ['text', '2020-01-01'],
   ]);
+
+  values.length = 0;
+  await run({ do: 'fill', actor: 'a', testid: 'date', text: '2099-12-31T23:59' }, services(actor));
+  assert.deepEqual(values, [['date', '2099-12-31']]);
 });
 
 test('recorded-number state is narrow, reusable, and numeric parsing is stable', async () => {

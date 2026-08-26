@@ -224,7 +224,7 @@ function StaffTools({ token, user, state, items, orders, act, refresh, onRefresh
 
     {user.isAdmin && <div className="progression-card">
       <h3>Staff roles</h3>
-      {(state.staffUsers || []).map((entry: any) => <div data-testid="staff-role-row" key={entry.username}>
+      {(state.staffUsers || []).map((entry: any) => <div data-testid="staff-role-row" data-account-id={entry.id} key={entry.username}>
         <span>{entry.username} {entry.roles?.join(", ")}</span>
         <input data-testid="staff-role-select" value={roles[entry.username] || ""}
           onChange={event => setRoles(value => ({ ...value, [entry.username]: event.target.value }))} />
@@ -266,7 +266,7 @@ function StaffTools({ token, user, state, items, orders, act, refresh, onRefresh
         onChange={event => setPromotion(value => ({ ...value, end: event.target.value }))} />
       <input data-testid="promotion-limit" value={promotion.limit} placeholder="Limit"
         onChange={event => setPromotion(value => ({ ...value, limit: event.target.value }))} />
-      <button data-testid="promotion-submit" onClick={() => act("/api/progression/promotions", {
+      <button data-testid="promotion-submit" data-promotion-code={promotion.code} onClick={() => act("/api/progression/promotions", {
         method: "POST", body: JSON.stringify(promotion),
       })}>Save promotion</button>
       {(state.promotions || []).map((entry: any) => <div data-testid="promotion-item" className="promotion-item" key={entry.id}>

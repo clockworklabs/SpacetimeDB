@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { parseReferenceAgentArgs, prepareReferenceSource, referenceDevCommand,
+import { deployReferenceAndRestoreSource, parseReferenceAgentArgs, prepareReferenceSource, referenceDevCommand,
   restoreReferenceSourceIdentity } from '../src/references/reference-agent.mjs';
 
 function argv({ mode = 'build', level = '2', runIndex = '0', recipe } = {}) {
@@ -104,6 +104,25 @@ test('reference deployment restores canonical source while retaining generated b
     assert.equal(readFileSync(lock, 'utf8'), canonicalLock);
     assert.equal(readFileSync(bindings, 'utf8'), 'export const generated = true;\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference deployment restores source after a failed deploy', async () => {
+  const events = [];
+  await assert.rejects(() => deployReferenceAndRestoreSource(async () => {
+    events.push('deploy');
+    throw new Error('deploy failed');
+  }, () => events.push('restore')), /deploy failed/);
+  assert.deepEqual(events, ['deploy', 'restore']);
+});
+
+test('reference deployment reports both deploy and restoration failures', async () => {
+  await assert.rejects(() => deployReferenceAndRestoreSource(async () => {
+    throw new Error('deploy failed');
+  }, () => { throw new Error('restore failed'); }), error => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.deepEqual(error.errors.map(item => item.message), ['deploy failed', 'restore failed']);
+    return true;
+  });
 });
 
 test('reference clients are explicitly reachable outside their build container', () => {
