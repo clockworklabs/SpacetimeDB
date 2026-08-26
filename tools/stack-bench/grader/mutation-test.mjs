@@ -254,7 +254,8 @@ async function main() {
     ? { index: 0, count: 1, mutationIds: fullMutations.map(mutation => mutation.id),
       mutations: fullMutations }
     : mutationShard(fullMutations,
-      { index: args.mutationShardIndex, count: args.mutationShardCount });
+      { index: args.mutationShardIndex, count: args.mutationShardCount,
+        defaultScenario: spec.scenario });
   if (shard.mutations.length === 0) throw new Error('mutation shard has no assigned mutations');
   spec.mutations = shard.mutations;
   if (args.backend && args.backend !== spec.backend) {

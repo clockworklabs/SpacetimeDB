@@ -31,21 +31,45 @@ export function mutationWorkerSlots({ workerCount, runIndex, maxRunIndex }) {
   return Array.from({ length: workerCount }, (_, index) => runIndex + index);
 }
 
-export function mutationShard(mutations, { index, count }) {
+function shardAssignments(mutations, count, defaultScenario) {
+  const groups = new Map();
+  mutations.forEach((mutation, position) => {
+    const scenario = mutation.scenario ?? defaultScenario;
+    if (typeof scenario !== 'string' || !scenario.trim()) {
+      fail(`mutation ${mutation.id} has no scenario`);
+    }
+    if (!groups.has(scenario)) groups.set(scenario, { first: position, positions: [] });
+    groups.get(scenario).positions.push(position);
+  });
+  const workers = Array.from({ length: count }, () => ({ size: 0, positions: [] }));
+  const groupsBySize = [...groups.values()].sort((a, b) =>
+    b.positions.length - a.positions.length || a.first - b.first);
+  for (const group of groupsBySize) {
+    const worker = workers.reduce((best, candidate) =>
+      candidate.size < best.size ? candidate : best, workers[0]);
+    worker.positions.push(...group.positions);
+    worker.size += group.positions.length;
+  }
+  for (const worker of workers) worker.positions.sort((a, b) => a - b);
+  return workers;
+}
+
+export function mutationShard(mutations, { index, count, defaultScenario = null }) {
   const ids = mutationIds(mutations);
   if (!Number.isInteger(count) || count < 1) fail('shard count must be a positive integer');
   if (!Number.isInteger(index) || index < 0 || index >= count) {
     fail(`shard index must be from 0 through ${count - 1}`);
   }
+  const positions = shardAssignments(mutations, count, defaultScenario)[index].positions;
   return {
     index,
     count,
-    mutationIds: ids.filter((_, position) => position % count === index),
-    mutations: mutations.filter((_, position) => position % count === index),
+    mutationIds: positions.map(position => ids[position]),
+    mutations: positions.map(position => mutations[position]),
   };
 }
 
-export function mergeMutationShards(mutations, shards) {
+export function mergeMutationShards(mutations, shards, { defaultScenario = null } = {}) {
   const expected = mutationIds(mutations);
   if (!Array.isArray(shards) || shards.length === 0) fail('shards must be a non-empty array');
   const count = shards[0]?.count;
@@ -60,7 +84,8 @@ export function mergeMutationShards(mutations, shards) {
       fail('shard coordinates are invalid or duplicated');
     }
     indexes.add(shard.index);
-    const assigned = mutationShard(mutations, { index: shard.index, count }).mutationIds;
+    const assigned = mutationShard(mutations,
+      { index: shard.index, count, defaultScenario }).mutationIds;
     if (JSON.stringify(shard.mutationIds) !== JSON.stringify(assigned)) {
       fail(`shard ${shard.index} does not contain its exact assigned mutation ids`);
     }

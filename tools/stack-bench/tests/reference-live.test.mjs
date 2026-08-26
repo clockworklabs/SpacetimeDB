@@ -132,7 +132,7 @@ test('parallel worker evidence is read only from its exact contained output', ()
         runs: [{ ok: true, output: 'w1.runs/r1' }] } });
     const inspected = readParallelMutationWorker(artifactPath, { ok: true },
       { ...identities, workerIndex: 0, workerCount: 1 },
-      { mutations: mutationIds.map(id => ({ id })) });
+      { scenario: 'shared', mutations: mutationIds.map(id => ({ id })) });
     assert.deepEqual(inspected.failures, []);
     assert.deepEqual(inspected.control.results.map(result => result.id), ['second', 'first']);
 
@@ -141,7 +141,7 @@ test('parallel worker evidence is read only from its exact contained output', ()
     writeFileSync(artifactPath, JSON.stringify(escaped));
     const rejected = readParallelMutationWorker(artifactPath, { ok: true },
       { ...identities, workerIndex: 0, workerCount: 1 },
-      { mutations: mutationIds.map(id => ({ id })) });
+      { scenario: 'shared', mutations: mutationIds.map(id => ({ id })) });
     assert(rejected.failures.includes('worker run output escapes its artifact directory'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -4,7 +4,13 @@ import test from 'node:test';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../src/evidence/mutation-shards.mjs';
 
-const mutations = ['a', 'b', 'c', 'd', 'e'].map(id => ({ id }));
+const mutations = [
+  { id: 'a', scenario: 'one' },
+  { id: 'b', scenario: 'two' },
+  { id: 'c', scenario: 'one' },
+  { id: 'd', scenario: 'three' },
+  { id: 'e', scenario: 'two' },
+];
 
 test('mutation workers reserve one consecutive proven run slot each', () => {
   assert.deepEqual(mutationWorkerSlots({ workerCount: 4, runIndex: 8, maxRunIndex: 20 }),
@@ -16,11 +22,14 @@ test('mutation workers reserve one consecutive proven run slot each', () => {
   }
 });
 
-test('mutation partitioning is stable and permits empty trailing shards', () => {
-  assert.deepEqual(mutationShard(mutations, { index: 0, count: 3 }).mutationIds, ['a', 'd']);
+test('mutation partitioning keeps scenarios together and permits empty trailing shards', () => {
+  assert.deepEqual(mutationShard(mutations, { index: 0, count: 3 }).mutationIds, ['a', 'c']);
   assert.deepEqual(mutationShard(mutations, { index: 1, count: 3 }).mutationIds, ['b', 'e']);
-  assert.deepEqual(mutationShard(mutations, { index: 2, count: 3 }).mutationIds, ['c']);
-  assert.deepEqual(mutationShard([{ id: 'a' }], { index: 2, count: 3 }).mutationIds, []);
+  assert.deepEqual(mutationShard(mutations, { index: 2, count: 3 }).mutationIds, ['d']);
+  assert.deepEqual(mutationShard([{ id: 'a', scenario: 'one' }],
+    { index: 2, count: 3 }).mutationIds, []);
+  assert.deepEqual(mutationShard([{ id: 'a' }, { id: 'b' }],
+    { index: 0, count: 2, defaultScenario: 'shared' }).mutationIds, ['a', 'b']);
 });
 
 test('mutation shard merging restores manifest order and rejects incomplete unions', () => {

@@ -30,7 +30,8 @@ import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { controllerRunner } from '../runtime/runner-environment.mjs';
-import { mergeMutationShards, mutationWorkerSlots } from '../evidence/mutation-shards.mjs';
+import { mergeMutationShards, mutationShard, mutationWorkerSlots }
+  from '../evidence/mutation-shards.mjs';
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
@@ -541,9 +542,8 @@ export function readParallelMutationWorker(path, processResult, expected, manife
       catch (error) { failures.push(`worker mutation artifact is invalid: ${error.message}`); }
     }
   } else failures.push('worker run output is missing');
-  const assigned = manifest.mutations
-    .filter((_, position) => position % expected.workerCount === expected.workerIndex)
-    .map(mutation => mutation.id);
+  const assigned = mutationShard(manifest.mutations, { index: expected.workerIndex,
+    count: expected.workerCount, defaultScenario: manifest.scenario }).mutationIds;
   if (control && (control.shard?.index !== expected.workerIndex
       || control.shard?.count !== expected.workerCount
       || JSON.stringify(control.shard?.mutationIds) !== JSON.stringify(assigned))) {
@@ -558,8 +558,10 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
     throw new Error(`${fixture.id} must own exactly one mutation manifest for parallel qualification`);
   }
   const manifest = readJson(join(ROOT, fixture.mutationManifests[0]));
-  if (!Array.isArray(manifest.mutations) || manifest.mutations.length < args.mutationWorkers) {
-    throw new Error(`--mutation-workers cannot exceed ${manifest.mutations?.length ?? 0} mutations`);
+  const scenarios = new Set((manifest.mutations ?? [])
+    .map(mutation => mutation.scenario ?? manifest.scenario).filter(Boolean));
+  if (!Array.isArray(manifest.mutations) || scenarios.size < args.mutationWorkers) {
+    throw new Error(`--mutation-workers cannot exceed ${scenarios.size} mutation scenarios`);
   }
   preflightParallelMutationResources(args);
   const started = Date.now();
@@ -600,7 +602,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       count: worker.control?.shard?.count,
       mutationIds: worker.control?.shard?.mutationIds,
       results: worker.control?.results,
-    })));
+    })), { defaultScenario: manifest.scenario });
   } catch (error) { failures.push(error.message); }
   const representative = inspected.find(worker => worker.run)?.run ?? {};
   const caught = results.filter(result => result.status === 'CAUGHT').length;
