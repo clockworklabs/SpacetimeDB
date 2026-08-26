@@ -1,14 +1,9 @@
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, ensure, Context, Result};
 use duct::{cmd, Expression};
 use std::env;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
-
-pub struct PrebuiltRuntime {
-    pub cli: PathBuf,
-    pub standalone: PathBuf,
-}
 
 pub fn ensure_repo_root() -> Result<()> {
     if !Path::new("Cargo.toml").exists() {
@@ -26,29 +21,34 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-pub fn require_prebuilt_runtime() -> Result<PrebuiltRuntime> {
-    let target_dir = env::var_os("CARGO_TARGET_DIR")
+pub fn require_spacetime_bin() -> Result<PathBuf> {
+    let path = env::var_os("SPACETIME_BIN")
         .map(PathBuf::from)
-        .unwrap_or_else(|| repo_root().join("target"));
-    let release_dir = target_dir.join("release");
-    let binary_path = |name: &str| release_dir.join(name).with_extension(env::consts::EXE_EXTENSION);
-    let runtime = PrebuiltRuntime {
-        cli: binary_path("spacetimedb-cli"),
-        standalone: binary_path("spacetimedb-standalone"),
-    };
+        .context("--no-build requires SPACETIME_BIN")?;
+    ensure!(
+        path.is_absolute(),
+        "SPACETIME_BIN must be an absolute path, got {}",
+        path.display()
+    );
+    ensure!(
+        path.is_file(),
+        "SpacetimeDB CLI binary does not exist at {}",
+        path.display()
+    );
+    Ok(path)
+}
 
-    for (name, path) in [
-        ("spacetimedb-cli", &runtime.cli),
-        ("spacetimedb-standalone", &runtime.standalone),
-    ] {
-        ensure!(
-            path.is_file(),
-            "--prebuilt-runtime requires {name} at {}",
-            path.display()
-        );
-    }
-
-    Ok(runtime)
+pub fn require_runtime() -> Result<()> {
+    let cli = require_spacetime_bin()?;
+    let standalone = cli
+        .with_file_name("spacetimedb-standalone")
+        .with_extension(env::consts::EXE_EXTENSION);
+    ensure!(
+        standalone.is_file(),
+        "SpacetimeDB standalone binary does not exist beside the CLI at {}",
+        standalone.display()
+    );
+    Ok(())
 }
 
 pub fn pnpm<I, S>(args: I) -> Expression

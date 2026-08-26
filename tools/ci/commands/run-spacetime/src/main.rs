@@ -56,7 +56,7 @@ fn local_cli() -> Result<PathBuf> {
 fn main() -> Result<()> {
     let args = env::args_os().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
-        bail!("Usage: cargo ci run-spacetime <command> [args...]");
+        bail!("Usage: cargo spacetime <command> [args...]");
     }
 
     let cli = match env::var_os("SPACETIME_BIN") {

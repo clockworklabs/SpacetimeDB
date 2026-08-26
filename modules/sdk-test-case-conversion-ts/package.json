@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "cargo ci run-spacetime build",
-    "generate-ts": "cargo ci run-spacetime generate --lang typescript --out-dir ts-codegen",
-    "publish": "cargo ci run-spacetime publish"
+    "build": "cargo spacetime build",
+    "generate-ts": "cargo spacetime generate --lang typescript --out-dir ts-codegen",
+    "publish": "cargo spacetime publish"
   },
   "keywords": [],
   "author": "",

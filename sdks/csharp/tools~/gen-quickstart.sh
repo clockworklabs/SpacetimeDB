@@ -68,4 +68,4 @@ if [ -n "$DOTNET_VERSION" ]; then
     BUILD_OPTIONS+=("--build-options=--dotnet-version $DOTNET_VERSION")
 fi
 
-cargo ci run-spacetime generate -y -l csharp -o "$STDB_PATH/templates/chat-console-cs/module_bindings" --module-path "$STDB_PATH/templates/chat-console-cs/spacetimedb" "${BUILD_OPTIONS[@]}"
+cargo spacetime generate -y -l csharp -o "$STDB_PATH/templates/chat-console-cs/module_bindings" --module-path "$STDB_PATH/templates/chat-console-cs/spacetimedb" "${BUILD_OPTIONS[@]}"

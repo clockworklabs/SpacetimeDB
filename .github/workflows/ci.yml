@@ -579,6 +579,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
       - name: Find Git ref
         env:
@@ -682,7 +683,7 @@ jobs:
       - name: Run tests
         run: |
           source ~/emsdk/emsdk_env.sh
-          cargo ci test --prebuilt-runtime
+          cargo ci test --no-build
 
       - name: Upload timing reports
         if: always()
@@ -833,6 +834,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
       - *find-git-ref
       - *checkout-sources
@@ -845,7 +847,7 @@ jobs:
       - *extract-build-artifacts
 
       - name: Build module with latest compatible dependencies
-        run: cargo ci module-latest-deps --prebuilt-cli
+        run: cargo ci module-latest-deps --no-build
 
   publish_checks:
     needs: [merge_queue_noop]
@@ -1582,6 +1584,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
       - *find-git-ref
       - *checkout-sources
@@ -1613,7 +1616,7 @@ jobs:
       - *extract-build-artifacts
 
       - name: Run TypeScript tests
-        run: cargo ci typescript-test --prebuilt-runtime
+        run: cargo ci typescript-test --no-build
 
       - name: Upload timing reports
         if: always()

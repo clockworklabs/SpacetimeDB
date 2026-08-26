@@ -55,8 +55,7 @@ fn main() -> Result<()> {
     run_inherit(
         "cargo",
         &[
-            "ci",
-            "run-spacetime",
+            "spacetime",
             "generate",
             "-y",
             "--lang",

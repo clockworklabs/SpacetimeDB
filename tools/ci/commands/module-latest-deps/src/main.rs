@@ -8,9 +8,9 @@ use std::{env, path::PathBuf};
 /// Checks that a module builds with the latest compatible dependencies.
 #[derive(Parser)]
 struct Cli {
-    /// Use the release CLI already present in the Cargo target directory.
+    /// Do not build the CLI; use the binary selected by SPACETIME_BIN.
     #[arg(long)]
-    prebuilt_cli: bool,
+    no_build: bool,
 }
 
 fn target_dir() -> PathBuf {
@@ -26,17 +26,13 @@ fn main() -> Result<()> {
 
     // Build the CLI before updating the lockfile so a newly published incompatible dependency
     // cannot prevent us from exercising the fresh module dependency graph.
-    let cli_path = if cli.prebuilt_cli {
-        let path = target_dir()
-            .join("release/spacetimedb-cli")
-            .with_extension(env::consts::EXE_EXTENSION);
-        ensure!(
-            path.is_file(),
-            "--prebuilt-cli requires spacetimedb-cli at {}",
-            path.display()
-        );
-        path
+    let cli_path = if cli.no_build {
+        ci_common::require_spacetime_bin()?
     } else {
+        ensure!(
+            env::var_os("SPACETIME_BIN").is_none(),
+            "SPACETIME_BIN requires --no-build"
+        );
         cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
         target_dir()
             .join("debug/spacetimedb-cli")
