@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "929250538b7842fe0db830e5a39609a07de7e22a6281d87e56542e10862d9410",
+  "fixtureSha256": "72eef561e41cd6f60b62911c1eb6ce2e6e46586633e26c4a0f21fd5a9efa11a9",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "MongoDB mutation candidate for the ecommerce progression catalog through L3. It uses the complete L5 reference app and owns defects by stable check key, independent of run mode and level.",
