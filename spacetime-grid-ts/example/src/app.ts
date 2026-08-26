@@ -1,14 +1,3 @@
-// STDB connection + game procedures + auth flow.
-//
-// Two facades on window:
-//   - window.auth: signup / login / logout / oauth / session lifecycle.
-//   - window.grid: game ops (create_match, join_match, move_unit, attack_unit,
-//                  end_turn, getCellsInRange, setActiveMatch).
-//
-// Page load attempts a cookie-based session refresh, connects to SpacetimeDB,
-// and calls link_connection so visibility filters return the user's data.
-// Anonymous visitors see the login card.
-
 import {
   DbConnection,
   tables,
@@ -73,8 +62,6 @@ declare global {
 
 type ConnState = 'idle' | 'connecting' | 'connected' | 'error';
 
-// Module state
-
 let currentConn: DbConnection | null = null;
 let globalSub: SubscriptionHandle | null = null;
 let matchSub: SubscriptionHandle | null = null;
@@ -97,7 +84,6 @@ let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000];
 
-// Browser event bus
 function dispatch(name: string, detail: unknown): void {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
@@ -169,7 +155,6 @@ function requireConn(): DbConnection {
   return currentConn;
 }
 
-// Authentication requests
 async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(path, {
     method: body !== undefined ? 'POST' : 'GET',
@@ -201,12 +186,11 @@ async function loadServerConfig(): Promise<ServerConfig> {
   return cfg;
 }
 
-// SpacetimeDB connection
-function buildConnection(uri: string, db: string): Promise<DbConnection> {
+function connect(uri: string, databaseName: string): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     DbConnection.builder()
       .withUri(uri)
-      .withDatabaseName(db)
+      .withDatabaseName(databaseName)
       .onConnect(c => resolve(c))
       .onDisconnect((_ctx, err) => {
         broadcastConn('error', err?.message ?? 'disconnected');
@@ -288,7 +272,7 @@ function setActiveMatch(matchId: bigint | null): void {
     ]);
 }
 
-function wireRowHandlers(conn: DbConnection): void {
+function registerRowCallbacks(conn: DbConnection): void {
   const tableAccessors = [
     conn.db.myMatches,
     conn.db.myMatchParticipants,
@@ -320,7 +304,7 @@ async function bindSession(
   if (!currentConn) {
     broadcastConn('connecting');
     try {
-      const conn = await buildConnection(
+      const conn = await connect(
         serverCfg.stdbUri,
         serverCfg.appDatabase
       );
@@ -330,7 +314,7 @@ async function bindSession(
 
       broadcastState();
 
-      wireRowHandlers(conn);
+      registerRowCallbacks(conn);
 
       globalSub = conn
         .subscriptionBuilder()
@@ -381,7 +365,6 @@ async function restoreSession(): Promise<boolean> {
   }
 }
 
-// Authentication flows
 async function signup(args: {
   email: string;
   password: string;
@@ -429,7 +412,6 @@ async function requestEmailVerify(): Promise<void> {
   await callJson('/auth/email/verify-request', {});
 }
 
-// Application startup
 async function main(): Promise<void> {
   window.auth = {
     signup,

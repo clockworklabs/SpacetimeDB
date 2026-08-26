@@ -1,7 +1,3 @@
-// spacetime-grid-example module. Wires auth-ts + grid-ts plus
-// game-specific tables (match, unit_type, player_unit) for an Advance-Wars-lite
-// turn-based strategy demo on a hex grid.
-
 import { t, SenderError, type ProcedureCtx } from 'spacetimedb/server';
 import { Timestamp, type Identity } from 'spacetimedb';
 import * as auth from '@spacetimedb/auth/submodule';
@@ -16,8 +12,6 @@ import {
 } from '@spacetimedb/grid';
 import { distance } from '@spacetimedb/grid/math';
 
-// Dev mailer
-
 import {
   MatchStatus,
   AI_BOT_USER_ID,
@@ -29,8 +23,6 @@ import {
 export { default } from './schema';
 export * from './auth-adapter';
 
-// Helpers
-
 function throwSenderError(msg: string): never {
   throw new SenderError(msg);
 }
@@ -41,16 +33,12 @@ function requireUserId(ctx: ProcedureCtx<Schema>): string {
   return userId;
 }
 
-// Views (caller-scoped)
-
 export * from './views';
 
 export const init = spacetimedb.init(ctx => {
   auth.installAuth(ctx.as.auth);
   gridSubmodule.installGrid(ctx.as.grid);
 
-  // Seed canonical unit types. Theme: stranded survey crew on a hostile alien
-  // planet. Unit stats support distinct movement and combat roles.
   const types = [
     {
       typeId: 'marine',
@@ -95,8 +83,6 @@ export const init = spacetimedb.init(ctx => {
   }
 });
 
-// Whoami (debug helper)
-
 export const whoami = spacetimedb.procedure(
   {},
   t.object('WhoAmI', {
@@ -112,8 +98,6 @@ export const whoami = spacetimedb.procedure(
   }
 );
 
-// Game: match flow
-
 // The playable area is a HEXAGON of radius R centered at axial (R, R).
 // The grid submodule allocates a (2R+1) x (2R+1) rectangle because its bounds
 // checker uses rectangular coordinates. Cells outside the playable hex are
@@ -122,7 +106,6 @@ const GRID_RADIUS = 5;
 const GRID_DIAMETER = 2 * GRID_RADIUS + 1; // 11
 const DEFAULT_COST = 1;
 
-// Hex distance from (R, R). <= R means the cell is inside the play hex.
 function isInHexShape(q: number, r: number): boolean {
   const cx = GRID_RADIUS,
     cy = GRID_RADIUS;
@@ -132,7 +115,6 @@ function isInHexShape(q: number, r: number): boolean {
   );
 }
 
-// Top corner of the hex; bottom corner is mirror across (R, R).
 const PLAYER_SPAWNS = [
   { x: GRID_RADIUS, y: 0, typeId: 'marine' },
   { x: GRID_RADIUS - 1, y: 1, typeId: 'titan' },
@@ -209,7 +191,6 @@ export const create_match = spacetimedb.procedure(
               terrain: 'crater',
             });
           }
-          // else: regolith plains (default cost, no row needed)
         }
       }
 
@@ -226,7 +207,6 @@ export const create_match = spacetimedb.procedure(
         updatedAt: ctx.timestamp,
       });
 
-      // 4. Seat the caller at seat 0 (team 0) and drop their landing party.
       insertParticipant(tx, matchInserted.matchId, userId, 0, 0, ctx.timestamp);
       placeStartingUnits(
         tx,
@@ -237,7 +217,6 @@ export const create_match = spacetimedb.procedure(
         PLAYER_SPAWNS
       );
 
-      // 5. If vs-AI, seat the bot at seat 1 (team 1) and drop the xeno garrison.
       if (args.vsAi) {
         insertParticipant(
           tx,
@@ -333,8 +312,6 @@ export const end_turn = spacetimedb.procedure(
   }
 );
 
-// Participant helpers
-
 function insertParticipant(
   tx: WriteCtx,
   matchId: bigint,
@@ -379,7 +356,6 @@ function participantTeams(tx: WriteCtx, matchId: bigint): Map<string, number> {
   return teams;
 }
 
-// Helper used by create_match + join_match to drop starting units.
 function placeStartingUnits(
   tx: WriteCtx,
   timestamp: Timestamp,
@@ -415,8 +391,6 @@ function placeStartingUnits(
     });
   }
 }
-
-// Game: per-unit movement and attack procedures.
 
 export const move_unit = spacetimedb.procedure(
   { entityId: t.u64(), toX: t.i32(), toY: t.i32() },
@@ -460,7 +434,6 @@ export const move_unit = spacetimedb.procedure(
       typeMovement = type.movement;
     });
 
-    // Run A* pathfinding in a read-only transaction.
     const path = computePathImpl(
       ctx.as.grid,
       {
@@ -550,11 +523,9 @@ export const attack_unit = spacetimedb.procedure(
       tx.db.playerUnit.entityId.update({ ...attacker, hasAttacked: true });
 
       if (newHp <= 0) {
-        // Unit dies: remove both the playerUnit row and the gridEntity.
         tx.db.playerUnit.delete(target);
         tx.db.grid.gridEntity.delete(targetEntity);
 
-        // Win check: are there any units left on any other team?
         const teamByUser = participantTeams(tx, attacker.matchId);
         const myTeam = teamByUser.get(userId);
         const remaining = [
@@ -658,7 +629,6 @@ export const ai_take_turn = spacetimedb.procedure(
     };
     const events: TurnEvent[] = [];
 
-    // Snapshot: read match + unit positions/HP + unit-type catalog.
     let gridId = 0n;
     const aiUnits: AiUnit[] = [];
     const enemyUnits: EnemyUnit[] = [];
@@ -792,14 +762,12 @@ export const ai_take_turn = spacetimedb.procedure(
       const type = typeIdx.get(aiUnit.typeId);
       if (!type) continue;
 
-      // Buffer per-unit events until movement and combat complete.
       const evt: TurnEvent = {
         entityId: aiUnit.entityId,
         movePath: undefined,
         attack: undefined,
       };
 
-      // 1. Shoot from the current position when a target is in range.
       if (!aiUnit.hasAttacked) {
         const target = pickTarget(aiUnit, type.attackRange);
         if (target) {
@@ -814,7 +782,6 @@ export const ai_take_turn = spacetimedb.procedure(
         }
       }
 
-      // 2. Otherwise close the distance toward the nearest enemy.
       if (!aiUnit.hasMoved && enemyUnits.length > 0) {
         const cells = (
           cellsInRangeImpl(
@@ -896,7 +863,6 @@ export const ai_take_turn = spacetimedb.procedure(
                   { x: best.x, y: best.y },
                 ];
 
-          // After the move, attack if newly in range.
           if (!aiUnit.hasAttacked) {
             const target = pickTarget(aiUnit, type.attackRange);
             if (target) {
@@ -911,11 +877,9 @@ export const ai_take_turn = spacetimedb.procedure(
         }
       }
 
-      // Emit the event if this unit did anything (move or attack).
       if (evt.movePath || evt.attack) events.push(evt);
     }
 
-    // End the AI's turn: flip back to the human and reset their per-turn flags.
     ctx.withTx(tx => {
       const m = tx.db.match.matchId.find(args.matchId);
       if (!m || m.status.tag !== 'Active') return;

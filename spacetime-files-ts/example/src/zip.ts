@@ -122,7 +122,6 @@ export function buildZip(entries: ZipEntry[]): Blob {
   // BlobPart requires an ArrayBuffer-backed byte view under TS 5.7.
   return new Blob(chunks as unknown as BlobPart[], { type: 'application/zip' });
 }
-// Timestamp in the archive name so repeat downloads don't collide.
 export function zipStamp(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');

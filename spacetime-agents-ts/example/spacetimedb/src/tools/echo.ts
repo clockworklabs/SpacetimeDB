@@ -1,5 +1,3 @@
-// Demo tool: echoes the given message back.
-
 import { t } from 'spacetimedb/server';
 import { agentTool } from '@spacetimedb/agents/kit';
 

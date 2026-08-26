@@ -1,4 +1,3 @@
-// SpacetimeDB connection and file-manager UI composition.
 import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
 import type { FileSummary, Folder } from './module_bindings/app/types';
 import {
@@ -77,7 +76,6 @@ function connect(config: ServerConfig): Promise<DbConnection> {
   });
 }
 
-// The bridge the UI talks to; also exposed as window.vault for console tinkering.
 const vault = {
   createFolder: (path: string) => conn!.reducers.createFolder({ path }),
   deleteFolder: (path: string) => conn!.reducers.deleteFolder({ path }),
@@ -121,12 +119,9 @@ function requireVault(): typeof vault | null {
   return vault;
 }
 
-// UI state
-
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 
-// Persisted view preferences
 const PREFS_KEY = 'vault:prefs';
 interface Prefs {
   viewMode?: 'list' | 'grid';
@@ -164,7 +159,6 @@ let dragDepth = 0;
 let sortKey: SortKey = prefs.sortKey ?? 'name';
 let sortDir: 1 | -1 = prefs.sortDir ?? 1;
 let viewMode: 'list' | 'grid' = prefs.viewMode ?? 'list';
-// Normalize stored tile-size aliases to pixels.
 let tileSize: number =
   typeof prefs.tileSize === 'number'
     ? prefs.tileSize
@@ -194,7 +188,6 @@ const {
   focusPath: selection.focusPath,
 }));
 
-// Returns the candidate path when available, otherwise adds a numeric suffix.
 function freeName(candidate: string): string {
   const taken = (p: string) =>
     files.some(f => f.path === p) || folders.some(f => f.path === p);
@@ -284,8 +277,6 @@ function getFileBlob(row: FileSummary): Promise<Blob> {
   return loadFileBlob(row, downloadServices);
 }
 
-// Thumbnails (grid view + details panel)
-
 const thumbCache = new Map<string, string>();
 let thumbGeneration = 0;
 // Object-URL cache keyed by path@mtime; older revisions revoked on refresh.
@@ -323,8 +314,6 @@ async function loadThumbs(): Promise<void> {
     slot.replaceChildren(img);
   }
 }
-
-// Rendering
 
 function renderCrumbs(): void {
   if (searchQuery) {
@@ -403,7 +392,6 @@ function renderHead(): void {
   const { fs } = visibleEntries();
   const all = fs.length > 0 && fs.every(f => selected.has(f.path));
   $<HTMLInputElement>('select-all').checked = all;
-  // View controls
   $('view-toggle').innerHTML = icon(viewMode === 'grid' ? 'list' : 'grid');
   $('view-toggle').title = viewMode === 'grid' ? 'List view' : 'Grid view';
   $('zoom-ctl').hidden = viewMode !== 'grid';
@@ -446,7 +434,6 @@ function renderStorage(): void {
     : 'No files stored yet';
 }
 
-// Details panel
 function wireDetailsNav(scope: HTMLElement): void {
   scope.querySelectorAll<HTMLElement>('[data-goto]').forEach(btn =>
     btn.addEventListener('click', () => {
@@ -527,8 +514,6 @@ function render(): void {
   renderDetails();
 }
 
-// Selection & focus
-
 function setFocus(path: string): void {
   // No re-render if already focused: dblclick's second click must hit the same node.
   if (selection.focus(path)) render();
@@ -597,8 +582,6 @@ function confirmDeleteFolder(path: string): void {
     () => runAction('Folder deleted', () => vault.deleteFolder(path))
   );
 }
-
-// Internal drag-to-move + OS-file drop onto folders
 
 function wireFolderDropTarget(el: HTMLElement, folderPath: string): void {
   wireDropTarget(el, folderPath, {
@@ -681,8 +664,6 @@ function openMove(paths: string[]): void {
   );
 }
 
-// Copy link (visibility-aware)
-
 async function writeClipboard(text: string): Promise<void> {
   await navigator.clipboard.writeText(text);
 }
@@ -712,8 +693,6 @@ function copyLink(path: string): void {
     { okLabel: 'Make public & copy' }
   );
 }
-
-// Actions
 
 async function runAction(
   okMessage: string,
@@ -751,8 +730,6 @@ async function duplicateFile(path: string): Promise<void> {
     toast('err', humanError(err));
   }
 }
-
-// Upload (files, folders, conflicts)
 
 async function downloadFile(row: FileSummary): Promise<void> {
   return saveDownloadedFile(row, downloadServices);
@@ -818,15 +795,11 @@ function closeViewer(): void {
   viewer.close();
 }
 
-// Search
-
 function clearSearch(): void {
   if (!searchQuery) return;
   searchQuery = '';
   $<HTMLInputElement>('search').value = '';
 }
-
-// Bulk actions
 
 // Continue-on-error loop: one summary toast, one toast per failure.
 async function bulkOp(
@@ -900,8 +873,6 @@ function handleListKeys(e: KeyboardEvent): void {
   });
 }
 
-// One-time wiring
-
 function endFileDrag(): void {
   dragDepth = 0;
   document.body.classList.remove('dragging-files');
@@ -944,7 +915,6 @@ function wireUi(): void {
     })();
   });
 
-  // Search
   $<HTMLInputElement>('search').addEventListener('input', () => {
     searchQuery = $<HTMLInputElement>('search').value.trim();
     render();
@@ -956,7 +926,6 @@ function wireUi(): void {
     }
   });
 
-  // Sorting + view controls
   $('list-head')
     .querySelectorAll<HTMLElement>('[data-sort]')
     .forEach(btn => {
@@ -986,7 +955,6 @@ function wireUi(): void {
     savePrefs();
     render();
   });
-  // Live-resize tiles while dragging by updating the CSS variable.
   $<HTMLInputElement>('tile-slider').addEventListener('input', () => {
     tileSize = Number($<HTMLInputElement>('tile-slider').value);
     $('list').style.setProperty('--tile', `${tileSize}px`);
@@ -1000,7 +968,6 @@ function wireUi(): void {
     render();
   });
 
-  // Bulk actions
   $('bulk-clear').addEventListener('click', () => {
     selected.clear();
     render();
@@ -1032,13 +999,11 @@ function wireUi(): void {
     }
   });
 
-  // Context menu dismissal
   document.addEventListener('click', e => {
     if (!(e.target as HTMLElement).closest('#ctx')) closeCtxMenu();
   });
   document.addEventListener('scroll', closeCtxMenu, true);
 
-  // Viewer controls
   $('lb-prev').addEventListener('click', () => vStep(-1));
   $('lb-next').addEventListener('click', () => vStep(1));
   $('lb-in').addEventListener('click', () => viewer.zoom(1.25));
@@ -1063,7 +1028,6 @@ function wireUi(): void {
     { passive: false }
   );
 
-  // Dialog controls + keyboard
   $('dialog-ok').addEventListener('click', () => void commitDialog());
   $('dialog-cancel').addEventListener('click', closeDialog);
   $('dialog').addEventListener('click', e => {
@@ -1122,8 +1086,6 @@ function wireUi(): void {
     })();
   });
 }
-
-// Data flow: subscriptions -> state -> render
 
 function refreshData(): void {
   if (!conn) return;

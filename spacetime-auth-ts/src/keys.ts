@@ -1,5 +1,3 @@
-// ES256 (P-256) keypair generation. PEM (SPKI + PKCS#8) and JWK encoders.
-
 import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2';
 

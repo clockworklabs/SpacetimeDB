@@ -1,8 +1,7 @@
 # @spacetimedb/agents
 
-Typed tools, agent definitions, chat-provider adapters, embeddings helpers, and
-dispatch utilities for SpacetimeDB TypeScript modules. This pure helper leaves
-persistence, authorization, and lifecycle hooks to the host module.
+A ready-to-mount agent submodule and lower-level tools for custom SpacetimeDB
+TypeScript modules.
 
 ## Install
 
@@ -16,14 +15,36 @@ to build the host module.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-## Usage
+## Quick start
+
+Mount the standard submodule when you want an identity-owned chat backend with
+private provider keys, caller-scoped views, typed tools, summaries, embeddings,
+and stale-lock cleanup.
+
+```ts
+import { schema } from 'spacetimedb/server';
+import * as agents from '@spacetimedb/agents/submodule';
+
+const spacetimedb = schema({ agents });
+export default spacetimedb;
+
+export const init = spacetimedb.init(ctx => {
+  agents.installAgents(ctx);
+});
+```
+
+`installAgents` makes the installing identity the first Agents administrator
+and schedules stale-lock cleanup. Configure provider keys through the mounted
+administration operations after publishing the host module.
+
+## Custom integration
 
 ### Integrate into an application
 
-This helper package supplies agent and provider primitives. Your host module
-owns conversation tables, authorization, provider-key storage, and the
-procedure that performs HTTP. Define the registry at module scope, then call
-the provider from a procedure with `ctx.http`.
+Use the lower-level agent and provider primitives when your application needs
+its own conversation tables, authorization, provider-key storage, or HTTP
+procedure. Define the registry at module scope, then call the provider from a
+procedure with `ctx.http`.
 
 Define tools with SpacetimeDB type builders. The declaration produces the JSON
 Schema sent to the model and validates every returned tool call before the
@@ -90,8 +111,8 @@ for private configuration, caller-scoped views, and an agent loop.
   embedding requests.
 - `cosineSimilarity` and `topKByScore` provide in-memory ranking helpers.
 
-Documented subpath exports are `./kit`, `./openrouter`, `./providers`,
-`./embeddings`, and `./stale-locks`.
+Documented subpath exports are `./submodule`, `./kit`, `./openrouter`,
+`./providers`, `./embeddings`, and `./stale-locks`.
 
 Tool dispatch rejects malformed JSON, missing and unknown fields, incorrect
 types, unsafe integers, inputs above 64 KiB, arrays above 1,000 items, and tool
@@ -119,6 +140,8 @@ views.
 Package entrypoints:
 
 - `@spacetimedb/agents` exports the complete public surface.
+- `@spacetimedb/agents/submodule` exports the ready-to-mount Agents schema and
+  installer.
 - `@spacetimedb/agents/kit` exports typed agents, tools, and dispatch.
 - `@spacetimedb/agents/providers` exports provider adapters.
 - `@spacetimedb/agents/embeddings` exports embedding and ranking helpers.
@@ -133,9 +156,9 @@ pnpm test
 pnpm run lint
 ```
 
-The unit suite uses mocked HTTP with deterministic provider fixtures. See the
-[complete example](./example/)
-for a host module and client.
+The unit suite uses mocked HTTP with deterministic provider fixtures. The
+repository also builds the direct-publish module under `spacetimedb/`. See the
+[complete example](./example/) for a custom host module and client.
 
 ## License
 

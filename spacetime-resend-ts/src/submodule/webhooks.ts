@@ -244,7 +244,6 @@ const MAX_WEBHOOK_METADATA_LENGTH = 255;
 
 // Verify the Svix signature in-module, then store and apply the event. The
 // reducer and native HTTP route share this single ingest path and receive an
-// HTTP-shaped result.
 function ingestResendWebhook(
   ctx: WriteCtx,
   args: ResendWebhookIngestArgs

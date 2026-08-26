@@ -1,5 +1,3 @@
-// Canonical @spacetimedb/cron demo and integration fixture. It covers typed
-// jobs, reducer rollback, procedure failures, recovery, and runtime management.
 import {
   schema,
   table,

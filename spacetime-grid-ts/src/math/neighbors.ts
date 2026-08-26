@@ -1,5 +1,3 @@
-// Neighbor offsets per grid kind. Hex axial is orientation-agnostic.
-
 import type { Coord, Connectivity, GridKind } from './coords.ts';
 
 const SQUARE_4: ReadonlyArray<readonly [number, number]> = [

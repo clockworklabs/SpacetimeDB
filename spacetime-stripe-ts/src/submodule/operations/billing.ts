@@ -97,7 +97,6 @@ export const validate_stripe_price = spacetimedb.procedure(
   }
 );
 
-// Fetch a Stripe checkout session by id.
 export const get_remote_checkout_session = spacetimedb.procedure(
   { sessionId: t.string() },
   t.object('RemoteCheckoutSessionResult', {

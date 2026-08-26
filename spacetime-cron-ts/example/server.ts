@@ -1,6 +1,3 @@
-// Serves the browser bundle and connection settings. The browser connects
-// directly to SpacetimeDB.
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';

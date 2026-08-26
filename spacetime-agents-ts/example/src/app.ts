@@ -1,4 +1,3 @@
-// STDB connection + chat ops + auth. Exposes window.auth and window.stdb.
 import {
   DbConnection,
   tables,
@@ -249,11 +248,11 @@ function saveStdbToken(token: string): void {
   }
 }
 
-function buildConnection(uri: string, db: string): Promise<DbConnection> {
+function connect(uri: string, databaseName: string): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     DbConnection.builder()
       .withUri(uri)
-      .withDatabaseName(db)
+      .withDatabaseName(databaseName)
       .withToken(loadStdbToken())
       .onConnect((c, _identity, token) => {
         if (token) saveStdbToken(token);
@@ -323,7 +322,7 @@ function setActiveThread(threadId: bigint | null): void {
     .subscribe([tables.myMessages.where(row => row.threadId.eq(threadId))]);
 }
 
-function wireRowHandlers(conn: DbConnection): void {
+function registerRowCallbacks(conn: DbConnection): void {
   conn.db.myThreads.onInsert(() => broadcastThreads());
   conn.db.myThreads.onUpdate(() => broadcastThreads());
   conn.db.myThreads.onDelete(() => broadcastThreads());
@@ -380,7 +379,7 @@ async function bindSession(
   if (!currentConn) {
     broadcastConn('connecting');
     try {
-      const conn = await buildConnection(
+      const conn = await connect(
         serverCfg.stdbUri,
         serverCfg.appDatabase
       );
@@ -393,7 +392,7 @@ async function bindSession(
       broadcastLocks();
       broadcastOverrides();
 
-      wireRowHandlers(conn);
+      registerRowCallbacks(conn);
     } catch (err) {
       broadcastConn('error', err instanceof Error ? err.message : String(err));
       return;

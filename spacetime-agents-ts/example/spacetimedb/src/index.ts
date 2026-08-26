@@ -1,4 +1,3 @@
-// Multi-agent submodule. Effective config = thread > agent_override > code default.
 import {
   schema,
   table,

@@ -1,7 +1,3 @@
-// Node process: serves the static UI and seeds Resend config on startup. It does
-// NOT process webhooks - POST /webhook/resend is a thin passthrough to the module's
-// own native HTTP route, which verifies (in-module, via crypto-ts) and ingests.
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
@@ -142,8 +138,6 @@ app.get('/api/config', (_req: Request, res: Response) => {
   });
 });
 
-// Forward the raw body and Svix headers to the module's native route for
-// signature verification and ingestion.
 async function handleResendWebhook(req: Request, res: Response): Promise<void> {
   const rawBody =
     req.body instanceof Buffer ? req.body : Buffer.from(String(req.body ?? ''));

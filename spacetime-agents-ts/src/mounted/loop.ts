@@ -6,7 +6,7 @@ import {
   type ResponseFormat,
   type ToolCall,
   type ToolDefinition,
-} from '@spacetimedb/agents/openrouter';
+} from '../openrouter';
 
 export const USER_CONTENT_MAX = 32_000;
 export const TOOL_RESULT_MAX = 64_000;

@@ -1,6 +1,3 @@
-// Vendor-specific webhook signature verifiers. Each wraps hmacSha256 +
-// timingSafeEqual with the per-vendor framing.
-//
 // Reference docs:
 //   Stripe:  https://docs.stripe.com/webhooks/signatures
 //   Resend (svix): https://docs.svix.com/receiving/verifying-payloads/how-manual

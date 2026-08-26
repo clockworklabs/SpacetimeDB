@@ -1,5 +1,3 @@
-// STDB connection + auth flow. Exposes window.auth for the inline UI.
-
 import {
   DbConnection,
   tables,
@@ -156,7 +154,7 @@ function saveStdbToken(token: string): void {
   }
 }
 
-function connectStdb(): Promise<DbConnection> {
+function connect(): Promise<DbConnection> {
   if (!serverCfg) throw new Error('missing_server_config');
   const config = serverCfg;
   return new Promise((resolve, reject) => {
@@ -211,8 +209,9 @@ async function bindSession(token: string, user: AuthMe['user'], exp: number) {
   if (!conn) {
     broadcastConn('connecting');
     try {
-      conn = await connectStdb();
-      wireSubscriptions(conn);
+      conn = await connect();
+      registerRowCallbacks(conn);
+      subscribeToTables(conn);
       broadcastConn('connected');
     } catch (err) {
       broadcastConn('error', (err as Error).message);
@@ -242,12 +241,14 @@ function syncUserFromRow(row: AuthUserRow) {
   broadcastAuth();
 }
 
-function wireSubscriptions(c: DbConnection) {
+function subscribeToTables(c: DbConnection): void {
   c.subscriptionBuilder()
     .onApplied(() => broadcastNotes())
     .onError((ctx: ErrorContext) => console.error('sub error', ctx.event))
     .subscribe([tables.myNotes, tables.myAuthUser]);
+}
 
+function registerRowCallbacks(c: DbConnection): void {
   c.db.myNotes.onInsert(() => broadcastNotes());
   c.db.myNotes.onUpdate(() => broadcastNotes());
   c.db.myNotes.onDelete(() => broadcastNotes());

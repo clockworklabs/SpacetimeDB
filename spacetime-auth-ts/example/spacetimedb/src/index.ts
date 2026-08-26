@@ -28,7 +28,6 @@ import {
   type MailParams,
 } from '@spacetimedb/auth/submodule';
 
-// Development mailer that logs messages.
 const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
   console.log(
     `[mail] to=${params.to} subject=${params.subject}\n${params.text}`

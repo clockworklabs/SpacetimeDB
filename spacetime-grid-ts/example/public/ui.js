@@ -27,7 +27,6 @@ function toast(kind, msg) {
   }, 3000);
 }
 
-// Authentication view
 let authMode = 'login';
 function setAuthMode(m) {
   authMode = m;
@@ -128,7 +127,6 @@ $('oauth-github').addEventListener('click', () => {
 });
 $('btn-logout').addEventListener('click', () => window.auth?.logout());
 
-// State and view routing
 let state = null;
 let selectedUnitId = null;
 let reachableCache = null; // { entityId, cells: Set<"q,r"> } for Dijkstra reachability
@@ -151,17 +149,14 @@ function scheduleAnimFrame() {
   requestAnimationFrame(() => {
     rafScheduled = false;
     const now = performance.now();
-    // Prune finished move animations.
     for (const [id, a] of animatingUnits) {
       if (now >= a.startMs + a.durationMs) animatingUnits.delete(id);
     }
-    // Prune expired attack flashes.
     for (let i = attackFlashes.length - 1; i >= 0; i--) {
       if (now >= attackFlashes[i].startMs + attackFlashes[i].durationMs) {
         attackFlashes.splice(i, 1);
       }
     }
-    // Prune expired damage numbers.
     for (let i = damageNumbers.length - 1; i >= 0; i--) {
       if (now >= damageNumbers[i].startMs + damageNumbers[i].durationMs) {
         damageNumbers.splice(i, 1);
@@ -220,7 +215,6 @@ const damageNumbers = []; // [{ x, y, dmg, killed, startMs, durationMs }]
 const FLASH_MS = 220;
 const DAMAGE_FLOAT_MS = 950;
 
-// Spawn a floating "-N" damage indicator at (px, py). Drifts up + fades.
 function spawnDamageNumber(px, py, dmg, killed, atMs) {
   damageNumbers.push({
     x: px,
@@ -255,8 +249,6 @@ function flashAttack(attackerId, target, dmg, killed) {
     startMs,
     durationMs: FLASH_MS,
   });
-  // Damage number pops at the midpoint of the flash so it reads as
-  // "the hit landed, here's how much it cost you."
   const { cx, cy } = hexCenter(target.x, target.y);
   spawnDamageNumber(cx, cy, dmg, killed, startMs + FLASH_MS / 2);
   scheduleAnimFrame();
@@ -277,7 +269,6 @@ window.addEventListener('grid:ai-events', e => {
   for (const ev of events) {
     let moveEndMs = cursorMs;
 
-    // 1. Move animation (if any).
     if (Array.isArray(ev.movePath) && ev.movePath.length >= 2) {
       const pathPx = ev.movePath.map(c => {
         const { cx, cy } = hexCenter(c.x, c.y);
@@ -294,14 +285,11 @@ window.addEventListener('grid:ai-events', e => {
       cursorMs = moveEndMs + PAUSE_MS;
     }
 
-    // 2. Attack (if any). Preserve the target's pre-attack visual until
-    //    the flash fires; if killed, ghost-render the target so it stays
-    //    on screen even though state has already deleted it.
+    // Preserve the target's pre-attack visual until the flash fires. A defeated
+    // target may already be absent from state, so render it as a temporary ghost.
     if (ev.attack) {
       const a = ev.attack;
-      // Lock the target's visible HP to its pre-attack value until the flash.
       visualHp.set(a.targetId, a.targetPreHp);
-      // Render a ghost for a defeated target during its removal animation.
       if (a.killed) {
         ghostUnits.set(a.targetId, {
           entityId: a.targetId,
@@ -313,7 +301,6 @@ window.addEventListener('grid:ai-events', e => {
         });
       }
       const attackStartMs = cursorMs;
-      // Schedule the flash + release of the visual overrides.
       attackFlashes.push({
         attackerId: ev.entityId,
         targetX: a.targetX,
@@ -321,7 +308,6 @@ window.addEventListener('grid:ai-events', e => {
         startMs: attackStartMs,
         durationMs: FLASH_MS,
       });
-      // Floating "-N" damage number, scheduled to pop mid-flash.
       const { cx, cy } = hexCenter(a.targetX, a.targetY);
       spawnDamageNumber(
         cx,
@@ -330,7 +316,6 @@ window.addEventListener('grid:ai-events', e => {
         a.killed,
         attackStartMs + FLASH_MS / 2
       );
-      // When the flash fires, release HP override + ghost.
       setTimeout(
         () => {
           visualHp.delete(a.targetId);
@@ -353,10 +338,8 @@ window.addEventListener('grid:ai-events', e => {
   }
 });
 
-// Default to auth view until grid:state arrives.
 showAuth();
 
-// Rendering
 function renderAll() {
   if (!state) return;
   renderLobby();
@@ -368,13 +351,10 @@ function renderAll() {
   }
 }
 
-// Tag → lowercase string for CSS class names and display text.
-// (Enum tags from the bindings are PascalCase: 'Waiting', 'Active', etc.)
 function statusKey(s) {
   return s?.tag ? s.tag.toLowerCase() : 'unknown';
 }
 
-// Resolve seats from match_participant rows.
 function seatsForMatch(matchId) {
   const seats = {};
   for (const p of state.participants ?? []) {
@@ -428,7 +408,6 @@ function renderLobby() {
   }
   list.replaceChildren();
 
-  // Open matches anyone can join.
   for (const o of openOther) {
     const row = document.createElement('div');
     row.className = 'match-row';
@@ -574,7 +553,6 @@ function renderMatch() {
 
   $('btn-end-turn').disabled = !myTurn;
 
-  // Sidebar unit lists
   const my0 = [];
   const en = [];
   for (const u of state.units) {
@@ -603,7 +581,6 @@ function renderMatch() {
   if (my0.length === 0) myList.appendChild(hint('no units'));
   if (en.length === 0) enList.appendChild(hint('no units'));
 
-  // Selected-unit info
   const selUnit =
     selectedUnitId !== null
       ? state.units.find(u => u.entityId === selectedUnitId)
@@ -638,10 +615,8 @@ function renderMatch() {
     sel.replaceChildren(hint('click one of your units to select'));
   }
 
-  // Canvas
   drawBoard(grid, state.entities, state.cells, state.units, m, my);
 
-  // End-modal
   if (m.status.tag === 'Ended') {
     $('end-title').textContent = m.winnerUserId === my ? 'Victory!' : 'Defeat';
     $('end-title').className = m.winnerUserId === my ? 'win' : 'lose';
@@ -697,7 +672,6 @@ $('btn-end-turn').addEventListener('click', async () => {
   }
 });
 
-// Canvas drawing
 function drawBoard(grid, entities, cells, units, match, myUserId) {
   const canvas = $('board-canvas');
   // Canvas only needs to hold the hex-shape bounding box (computed at
@@ -707,12 +681,10 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d');
-  // Match the surrounding panel with a solid STDB shade7 background.
   ctx.fillStyle =
     getComputedStyle(document.body).getPropertyValue('--color-shade7').trim() ||
     '#0b1114';
   ctx.fillRect(0, 0, W, H);
-  // A deterministic pale-blue starfield supports the alien-planet view.
   const starSeed = (grid.width * 31 + grid.height) | 0;
   let s = starSeed;
   for (let i = 0; i < 60; i++) {
@@ -729,10 +701,6 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
   const cellMap = new Map(cells.map(c => [cellKey(c.x, c.y), c]));
   const reachable = reachableCache?.cells ?? null;
 
-  // 1. Draw all hex cells (STDB-palette only)
-  //   regolith = default dark teal plain      (shade5/shade4)
-  //   crater   = burned, impassable obstacle  (shade7 + dim red edge)
-  //   void     = outside the hex play area and omitted from rendering
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       if (!isInHexShape(x, y)) continue;
@@ -755,13 +723,11 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
       ctx.fillStyle = fill;
       ctx.fill();
       if (isAttackable) {
-        // STDB red at 28% marks hostile movement range.
         ctx.fillStyle = 'rgba(255, 76, 76, 0.28)';
         ctx.fill();
         ctx.strokeStyle = '#ff4c4c';
         ctx.lineWidth = 1.5;
       } else if (isReachable) {
-        // STDB blue at 20% marks friendly movement range.
         ctx.fillStyle = 'rgba(2, 190, 250, 0.20)';
         ctx.fill();
         ctx.strokeStyle = '#02befa';
@@ -774,12 +740,9 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     }
   }
 
-  // 2. Draw units (data state + ghost-rendered killed units pending flash).
-  //    The helper draws live units and ghosts with identical logic.
   const drawUnit = (u, posX, posY, hpForBar) => {
     const type = state.unitTypes.find(t => t.typeId === u.typeId);
     const isMine = u.ownerUserId === myUserId;
-    // Use STDB blue for the player's landing party and green for the xeno hive.
     const color = isMine ? '#02befa' : '#4cf490';
     ctx.beginPath();
     ctx.arc(posX, posY, HEX_SIZE * 0.55, 0, Math.PI * 2);
@@ -788,13 +751,11 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     ctx.strokeStyle = u.entityId === selectedUnitId ? '#fbdc8e' : '#000a';
     ctx.lineWidth = u.entityId === selectedUnitId ? 3 : 2;
     ctx.stroke();
-    // Glyph
     ctx.fillStyle = '#060606';
     ctx.font = 'bold 14px "Source Code Pro", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(type?.glyph ?? '?', posX, posY);
-    // HP bar
     const hpPct = type ? hpForBar / type.hp : 0;
     const barW = HEX_SIZE * 0.9;
     ctx.fillStyle = '#000a';
@@ -802,7 +763,6 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     ctx.fillStyle =
       hpPct > 0.5 ? '#4cf490' : hpPct > 0.25 ? '#fbdc8e' : '#ff4c4c';
     ctx.fillRect(posX - barW / 2, posY + HEX_SIZE * 0.6, barW * hpPct, 4);
-    // Greyed out if hasMoved + hasAttacked (turn done)
     if (isMine && u.hasMoved && u.hasAttacked) {
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
@@ -841,7 +801,6 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     drawUnit(u, cx, cy, hp);
   }
 
-  // 3. Ghost-render defeated AI targets until their attack flash runs.
   for (const g of ghostUnits.values()) {
     const { cx, cy } = hexCenter(g.x, g.y);
     drawUnit(
@@ -858,12 +817,10 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     );
   }
 
-  // 4. Draw a bright red attack beam from attacker to target.
   for (const f of attackFlashes) {
     const now = performance.now();
     const t = Math.min(1, Math.max(0, (now - f.startMs) / f.durationMs));
     if (t <= 0 || t >= 1) continue;
-    // Attacker pixel position: animated if mid-move, else data.
     let fx, fy;
     const aAnim = animatingUnits.get(f.attackerId);
     if (aAnim) {
@@ -879,7 +836,6 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
       fy = p.cy;
     }
     const tEnd = hexCenter(f.targetX, f.targetY);
-    // Pulse: stroke fades out across the flash duration.
     const alpha = 0.9 * (1 - t);
     ctx.strokeStyle = `rgba(255, 76, 76, ${alpha})`;
     ctx.lineWidth = 3;
@@ -887,7 +843,6 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     ctx.moveTo(fx, fy);
     ctx.lineTo(tEnd.cx, tEnd.cy);
     ctx.stroke();
-    // Impact ring at target.
     ctx.strokeStyle = `rgba(255, 156, 61, ${alpha})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -895,19 +850,15 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
     ctx.stroke();
   }
 
-  // 5. Draw floating damage numbers with upward drift and fade above the
-  //    flash and impact ring.
   const nowMs = performance.now();
   for (const d of damageNumbers) {
     const t = (nowMs - d.startMs) / d.durationMs;
     if (t < 0 || t > 1) continue;
-    // Fade in 0..0.15, hold to 0.7, fade out to 1.0.
     let alpha;
     if (t < 0.15) alpha = t / 0.15;
     else if (t > 0.7) alpha = (1 - t) / 0.3;
     else alpha = 1;
     alpha = Math.max(0, Math.min(1, alpha));
-    // Ease-out drift upward.
     const drift = HEX_SIZE * 1.1 * (1 - Math.pow(1 - t, 2));
     const px = d.x;
     const py = d.y - drift;
@@ -928,7 +879,6 @@ function drawBoard(grid, entities, cells, units, match, myUserId) {
   }
 }
 
-// Click handlers
 $('board-canvas').addEventListener('click', async e => {
   if (!state?.activeMatch || !state.activeGrid) return;
   const m = state.activeMatch;
@@ -951,13 +901,9 @@ $('board-canvas').addEventListener('click', async e => {
     ? state.units.find(u => u.entityId === entityAtHex.id)
     : null;
 
-  // Click on my own unit -> select + compute movement + INFLUENCE overlays.
-  // Influence is the union of cells within attackRange of every
-  // movement-reachable cell, including the origin.
   if (unitAtHex && unitAtHex.ownerUserId === state.myUserId) {
     selectedUnitId = unitAtHex.entityId;
     const type = state.unitTypes.find(t => t.typeId === unitAtHex.typeId);
-    // Reachable cells from server (Dijkstra, honors terrain + entity blocking).
     let reachCells = [{ x: hex.x, y: hex.y, cost: 0 }];
     if (type && !unitAtHex.hasMoved) {
       try {
@@ -1001,7 +947,6 @@ $('board-canvas').addEventListener('click', async e => {
     return;
   }
 
-  // Click on enemy unit while one of mine is selected -> auto-move + attack
   if (unitAtHex && selectedUnitId !== null) {
     const attacker = state.units.find(u => u.entityId === selectedUnitId);
     const attackerEnt = attacker
@@ -1021,7 +966,6 @@ $('board-canvas').addEventListener('click', async e => {
     const targetX = hex.x,
       targetY = hex.y;
 
-    // Attack from the current position when the target is in range.
     const fromHere = axialHexDistance(
       attackerEnt.x,
       attackerEnt.y,
@@ -1093,7 +1037,6 @@ $('board-canvas').addEventListener('click', async e => {
       return;
     }
 
-    // Drop highlights immediately. Then move (animated), then attack.
     selectedUnitId = null;
     reachableCache = null;
     attackableCache = null;
@@ -1150,21 +1093,18 @@ $('board-canvas').addEventListener('click', async e => {
     return;
   }
 
-  // Click empty cell while a unit is selected + cell is reachable -> move
   if (
     selectedUnitId !== null &&
     reachableCache?.entityId === selectedUnitId &&
     reachableCache.cells.has(cellKey(hex.x, hex.y))
   ) {
     const movingId = selectedUnitId;
-    // Drop highlights immediately so the player sees the action commit.
     selectedUnitId = null;
     reachableCache = null;
     attackableCache = null;
     renderMatch();
     try {
       const { path } = await window.grid.moveUnit(movingId, hex.x, hex.y);
-      // Convert the axial path into pixel centers and lerp through them.
       const pathPx = path.map(c => {
         const { cx, cy } = hexCenter(c.x, c.y);
         return { x: cx, y: cy };

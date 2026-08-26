@@ -1,5 +1,3 @@
-// Constant-time byte comparison + small hex/base64 helpers.
-
 /**
  * Compare two byte arrays in time independent of their content. Returns true
  * iff both have the same length AND identical bytes.

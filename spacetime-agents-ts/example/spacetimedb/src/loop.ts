@@ -1,5 +1,3 @@
-// Pure agent loop. No STDB imports; tests inject fakes.
-
 import {
   callChat,
   type ChatMessage,

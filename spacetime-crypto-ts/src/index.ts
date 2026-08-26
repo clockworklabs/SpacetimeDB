@@ -1,5 +1,3 @@
-// Hashing, encoding, constant-time comparison, and webhook verification.
-
 export { sha256, SHA256_BYTES } from './sha256.ts';
 export { hmacSha256 } from './hmac.ts';
 export {

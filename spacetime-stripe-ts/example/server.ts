@@ -1,5 +1,3 @@
-// Example server: static files plus a narrow provider-action boundary.
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';

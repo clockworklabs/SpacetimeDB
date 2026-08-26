@@ -1,7 +1,3 @@
-// spacetime-grid-example module. Wires auth-ts + grid-ts plus
-// game-specific tables (match, unit_type, player_unit) for an Advance-Wars-lite
-// turn-based strategy demo on a hex grid.
-
 import {
   schema,
   t,
@@ -12,8 +8,6 @@ import {
 import * as auth from '@spacetimedb/auth/submodule';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
 import { type SendMailFn, type MailParams } from '@spacetimedb/auth/submodule';
-
-// Dev mailer
 
 export const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
   console.log(
@@ -30,8 +24,6 @@ export const authUserViewRow = t.object('GridAuthUser', {
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
 });
-
-// Game tables
 
 // Static unit catalog. Seeded once in init.
 export const unitType = table(
@@ -122,8 +114,6 @@ export const playerUnit = table(
     createdAt: t.timestamp(),
   }
 );
-
-// Schema
 
 export const spacetimedb = schema({
   auth,

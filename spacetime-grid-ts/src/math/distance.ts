@@ -1,8 +1,3 @@
-// Grid distance functions. Choose based on connectivity:
-//   square 4-connected: manhattan
-//   square 8-connected: chebyshev
-//   hex (any orientation): hexDistance
-
 import type { Coord, GridKind, Connectivity } from './coords.ts';
 
 export function manhattan(a: Coord, b: Coord): number {

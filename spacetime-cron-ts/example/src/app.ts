@@ -385,7 +385,7 @@ function wireForm(): void {
   updateScheduleFields();
 }
 
-function watchTables(current: DbConnection): void {
+function registerRowCallbacks(current: DbConnection): void {
   current.db.cronJobs.onInsert(renderJobs);
   current.db.cronJobs.onDelete(renderJobs);
   current.db.cronJobs.onUpdate(renderJobs);
@@ -413,7 +413,7 @@ async function main(): Promise<void> {
     .onConnect((current: DbConnection) => {
       connection = current;
       setConnection('connected', config.appDatabase);
-      watchTables(current);
+      registerRowCallbacks(current);
       current
         .subscriptionBuilder()
         .onApplied(renderAll)

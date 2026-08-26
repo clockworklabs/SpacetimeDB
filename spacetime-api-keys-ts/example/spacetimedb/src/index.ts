@@ -40,12 +40,6 @@ import {
   safeJson,
 } from './http';
 
-// A small colony you build (terraform / build / plant) and share by handing
-// out scoped API keys. The api-keys submodule grants
-// scoped, revocable access to your colony. Internally the colony container
-// tables stay named world / world_event; everything user-facing (routes,
-// scopes, kinds) is colony-themed.
-
 const COLONY_WIDTH = 12;
 const COLONY_HEIGHT = 8;
 const EVENT_RETAIN = 120;
@@ -136,7 +130,6 @@ function ensureWorldTx(tx: Tx, ownerSubject: string) {
     updatedAt: tx.timestamp,
   });
 
-  // A small starter patch: a meadow, a pond, some rock.
   const seedCells = [
     [2, 1, 'grass'],
     [3, 1, 'grass'],
@@ -158,7 +151,6 @@ function ensureWorldTx(tx: Tx, ownerSubject: string) {
     });
   }
 
-  // One starter dome to anchor the colony.
   tx.db.grid.gridEntity.insert({
     id: 0n,
     gridId: grid.id,
@@ -558,11 +550,6 @@ function handleAuthedWorldAction(
   }
 }
 
-// Native reducers called by the SpacetimeDB client with the caller's
-// identity. ensure_world creates the caller's colony; the edit reducers only
-// touch your own colony (keyed by your subject), so no share key is needed
-// to build your own world.
-
 export const ensure_world = spacetimedb.procedure(
   {},
   t.object('EnsureWorldResult', { ownerSubject: t.string(), gridId: t.u64() }),
@@ -765,8 +752,6 @@ export const myAccessKeys = spacetimedb.view(
     return [...ctx.db.accessKeySummary.ownerSubject.filter(subject)];
   }
 );
-
-// Share keys
 
 export const create_access_key = spacetimedb.procedure(
   {

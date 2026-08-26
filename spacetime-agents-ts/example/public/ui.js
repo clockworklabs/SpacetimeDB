@@ -17,8 +17,6 @@ let inFlightSend = new Set();
 let configState = { kind: 'unknown' };
 let connState = 'connecting';
 
-// Confirmation dialog
-// Usage: const ok = await confirmDialog({ title, body, confirmText, danger });
 let confirmResolver = null;
 function confirmDialog({
   title = 'Confirm',
@@ -46,7 +44,6 @@ function closeConfirm(result) {
 }
 $('confirm-ok').addEventListener('click', () => closeConfirm(true));
 $('confirm-cancel').addEventListener('click', () => closeConfirm(false));
-// Esc cancels, Enter confirms when the dialog is open.
 document.addEventListener('keydown', e => {
   if (!$('confirm-backdrop').classList.contains('open')) return;
   if (e.key === 'Escape') {
@@ -57,12 +54,10 @@ document.addEventListener('keydown', e => {
     closeConfirm(true);
   }
 });
-// Click on backdrop (not modal) cancels.
 $('confirm-backdrop').addEventListener('click', e => {
   if (e.target === $('confirm-backdrop')) closeConfirm(false);
 });
 
-// Image viewer
 function openImageViewer(src, title) {
   $('image-full').src = src;
   $('image-full').alt = title;
@@ -88,7 +83,6 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Toast messages
 let toastTimer = null;
 function toast(kind, text) {
   const el = $('toast');
@@ -100,7 +94,6 @@ function toast(kind, text) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
 }
 
-// Connection state
 window.addEventListener('stdb:connState', e => {
   const { state, detail } = e.detail;
   connState = state;
@@ -128,7 +121,6 @@ window.addEventListener('stdb:ready', () => {
   updateButtons();
 });
 
-// Sidebar collapse toggle.
 $('btn-toggle-sidebar').addEventListener('click', () => {
   const sb = $('sidebar');
   sb.classList.toggle('collapsed');
@@ -137,12 +129,10 @@ $('btn-toggle-sidebar').addEventListener('click', () => {
     : '«';
 });
 
-// Hero "+ New chat" delegates to the sidebar's handler.
 $('btn-new-thread-hero').addEventListener('click', () =>
   $('btn-new-thread').click()
 );
 
-// Configuration
 window.addEventListener('stdb:config', e => {
   configState = e.detail.state;
   if (configState.kind === 'unconfigured') {
@@ -245,13 +235,11 @@ $('setup-form').addEventListener('submit', async e => {
 
 $('btn-settings').addEventListener('click', openSetup);
 
-// Agent overrides
 window.addEventListener('stdb:overrides', e => {
   overrides = new Map((e.detail.overrides ?? []).map(o => [o.agentName, o]));
   renderMessages();
 });
 
-// Locks
 window.addEventListener('stdb:locks', e => {
   lockedThreads = new Map(e.detail.locks);
   renderThreads();
@@ -259,7 +247,6 @@ window.addEventListener('stdb:locks', e => {
   updateButtons();
 });
 
-// Threads
 window.addEventListener('stdb:threads', e => {
   allThreads = e.detail.threads;
   renderThreads();
@@ -273,7 +260,6 @@ window.addEventListener('stdb:threads', e => {
   ) {
     selectThread(allThreads[0]?.id ?? null);
   }
-  // Re-render the chat header so title/model updates on the active thread flow through.
   if (activeThreadId !== null) renderMessages();
   updateButtons();
 });
@@ -322,9 +308,6 @@ function renderThreads() {
   }
 }
 
-// "+ New chat" creates a thread immediately with the default agent
-// (first registered). System prompt override + agent-specific
-// tweaks live in the Rename modal after creation.
 const DEFAULT_AGENT_PREFERENCE = ['chat'];
 function pickDefaultAgent() {
   const agents =
@@ -367,7 +350,6 @@ $('btn-new-thread').addEventListener('click', async () => {
   }
 });
 
-// Thread row menu
 let openMenuEl = null;
 function closeRowMenu() {
   if (openMenuEl) {
@@ -413,7 +395,6 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeRowMenu();
 });
 
-// Thread rename and delete actions
 let renameTargetId = null;
 function openRenameFor(threadId) {
   const t = allThreads.find(x => x.id === threadId);
@@ -478,7 +459,6 @@ $('rename-form').addEventListener('submit', async e => {
   }
 });
 
-// Messages
 window.addEventListener('stdb:messages', e => {
   allMessages = e.detail.messages;
   allAttachments = e.detail.attachments ?? {};
@@ -492,7 +472,6 @@ function renderMessages() {
   const composer = $('composer');
   const hero = $('empty-hero');
 
-  // Empty state: hide messages + composer + head, show the hero.
   if (activeThreadId === null) {
     head.hidden = true;
     hero.style.display = 'flex';
@@ -545,7 +524,6 @@ function renderMessages() {
     body.className = 'body';
     if (m.role === 'assistant' && !m.isError) {
       body.innerHTML = renderMarkdown(m.content) || '<em>(empty)</em>';
-      // Wrap each <pre> in .code-block + add copy button.
       body.querySelectorAll('pre').forEach(pre => {
         const wrap = document.createElement('div');
         wrap.className = 'code-block';
@@ -627,7 +605,6 @@ function renderMessages() {
       node.appendChild(tc);
     }
 
-    // Single hover-revealed footer: icon actions left, usage right.
     if (m.role === 'assistant') {
       const footer = document.createElement('div');
       footer.className = 'msg-footer';
@@ -733,7 +710,6 @@ function formatToolCalls(arr) {
     .join('\n');
 }
 
-// Message composer
 const MAX_ATTACH_BYTES = 4_000_000;
 const MAX_ATTACH_COUNT = 4;
 const MAX_ATTACH_TOTAL_BYTES = 12_000_000;
@@ -760,7 +736,6 @@ function renderPendingAttachments() {
   });
 }
 
-// Model picker
 // Model list comes from OpenRouter's /api/v1/models so it's always
 // current. Cached per page load.
 let modelListCache = null;
@@ -1017,7 +992,6 @@ function updateButtons() {
   $('btn-stop').textContent = lockedThreads.get(tid) ? 'stopping…' : 'Stop';
 }
 
-// Auth view + login card + user panel + agent strip
 let currentUserState = null;
 let authMode = 'login'; // 'login' | 'signup' | 'forgot'
 
@@ -1153,7 +1127,6 @@ function applyConnStateToAvatar(state) {
           : 'offline';
 }
 
-// Swap views based on auth state.
 function showAuthView() {
   $('auth-shell').hidden = false;
   $('shell').hidden = true;
@@ -1184,7 +1157,6 @@ window.addEventListener('auth:state', e => {
   }
 });
 
-// Mirror conn state into the user-panel status dot.
 window.addEventListener('stdb:connState', e => {
   applyConnStateToAvatar(e.detail.state);
 });

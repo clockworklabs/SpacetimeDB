@@ -1,5 +1,3 @@
-// Seed catalog. The server passes these to the sync_catalog reducer at startup.
-
 export interface VariantSeed {
   variantId: string;
   productId: string;

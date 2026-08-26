@@ -1,5 +1,3 @@
-// HMAC-SHA256 backed by @noble/hashes.
-
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 

@@ -1,11 +1,5 @@
-// spacetime-grid-example module. Wires auth-ts + grid-ts plus
-// game-specific tables (match, unit_type, player_unit) for an Advance-Wars-lite
-// turn-based strategy demo on a hex grid.
-
 import { t, type ViewCtx } from 'spacetimedb/server';
 import * as gridSubmodule from '@spacetimedb/grid/submodule';
-
-// Dev mailer
 
 import {
   authUserViewRow,
@@ -17,8 +11,6 @@ import {
   type Schema,
 } from './schema';
 export { default } from './schema';
-
-// Helpers
 
 export const myAuthUser = spacetimedb.view(
   { name: 'my_auth_user', public: true },

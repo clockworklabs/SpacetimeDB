@@ -1,5 +1,5 @@
-export { default } from './index';
-export { installAgents } from './install';
+export { default } from './mounted/index';
+export { installAgents } from './mounted/install';
 export {
   add_agent_admin_identity,
   clear_agent_override,
@@ -22,4 +22,4 @@ export {
   start_thread,
   thread_lock_sweep,
   update_thread,
-} from './index';
+} from './mounted/index';

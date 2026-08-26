@@ -45,7 +45,6 @@ function showToast(kind, msg, dur = 4500) {
   }
 })();
 
-// Connection pill
 window.addEventListener('auth:conn', e => {
   const pill = $('conn-pill');
   const text = $('conn-text');
@@ -116,7 +115,6 @@ window.addEventListener('auth:state', e => {
   }
 });
 
-// Avatar dropdown
 const avatarBtn = $('avatar-btn');
 const avatarMenu = $('avatar-menu');
 avatarBtn.addEventListener('click', e => {
@@ -230,7 +228,6 @@ window.addEventListener('auth:notes', e => {
   }
 });
 
-// Edit modal
 let editingId = null;
 let editOriginal = { title: '', body: '' };
 const editBackdrop = $('edit-backdrop');
@@ -289,7 +286,6 @@ document.addEventListener('keydown', e => {
     closeEdit();
 });
 
-// Compose-card expand/collapse
 const compose = $('compose-card');
 const ntBody = $('nt-body');
 const ntTitle = $('nt-title');
@@ -305,7 +301,6 @@ function collapseCompose() {
 ntBody.addEventListener('focus', expandCompose);
 ntTitle.addEventListener('focus', expandCompose);
 ntBody.addEventListener('input', () => {
-  // auto-grow / shrink textarea
   ntBody.style.height = 'auto';
   ntBody.style.height = ntBody.scrollHeight + 'px';
 });
@@ -420,7 +415,6 @@ $('em-btn').addEventListener('click', () =>
   })
 );
 
-// Detect reset-password landing
 (function checkResetToken() {
   if (window.location.pathname === '/auth/password/reset') {
     const params = new URLSearchParams(window.location.search);
@@ -431,7 +425,6 @@ $('em-btn').addEventListener('click', () =>
     }
   }
 })();
-// Detect verify-success redirect from STDB module
 (function checkVerifyOk() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('verified') === '1') {

@@ -1,8 +1,5 @@
-// Auto-summarization helpers. HTTP call lives in index.ts.
-
 import type { LoopMessage } from './loop';
 
-// Returns null if nothing new to summarize.
 export function pickSummarizationCandidates(
   messages: LoopMessage[], // ascending by id
   maxHistoryMessages: number,

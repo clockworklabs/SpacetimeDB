@@ -7,8 +7,6 @@ export interface ServerConfig {
   appDatabase: string;
 }
 
-// Connection + token persistence
-
 // Persisted token = same identity (and files) across reloads.
 export const TOKEN_KEY = 'vault:auth-token';
 
@@ -35,8 +33,6 @@ export function clearToken(): void {
     /* ignore */
   }
 }
-
-// Path + formatting helpers
 
 export function normalizePath(
   path: string,
@@ -114,8 +110,6 @@ export function kindClass(mime: string | undefined): {
     return { cls: 'text', ico: 'file-text' };
   return { cls: 'generic', ico: 'file' };
 }
-
-// Error mapping: turn server codes into human sentences
 
 // Errors are `<code>:<detail>`. Parse only the code because detail can contain user paths.
 export const ERROR_MESSAGES: Record<string, string> = {

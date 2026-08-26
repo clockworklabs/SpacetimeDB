@@ -1,4 +1,3 @@
-// Each impl supports both reducer ctx and procedure ctx.
 import type { Timestamp } from 'spacetimedb';
 import {
   Range,

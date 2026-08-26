@@ -270,7 +270,7 @@ async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
   return data as T;
 }
 
-async function loadConfig(): Promise<ServerConfig> {
+async function loadServerConfig(): Promise<ServerConfig> {
   const r = await fetch('/api/config');
   if (!r.ok) throw new Error(`/api/config returned ${r.status}`);
   return (await r.json()) as ServerConfig;
@@ -310,7 +310,7 @@ function scheduleReconnect(): void {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     reconnectAttempt++;
-    run().catch(err => {
+    main().catch(err => {
       emitConn('error', normalizeError(err));
       scheduleReconnect();
     });
@@ -352,7 +352,7 @@ function clearAuthToken(): void {
   }
 }
 
-function connectStdb(cfg: ServerConfig): Promise<DbConnection> {
+function connect(cfg: ServerConfig): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     const priorToken = loadStdbToken();
     DbConnection.builder()
@@ -374,7 +374,7 @@ function connectStdb(cfg: ServerConfig): Promise<DbConnection> {
   });
 }
 
-function wireSubscriptions(c: DbConnection): void {
+function subscribeToTables(c: DbConnection): void {
   c.subscriptionBuilder()
     .onApplied(() => emitData())
     .onError((ctx: ErrorContext) =>
@@ -396,7 +396,9 @@ function wireSubscriptions(c: DbConnection): void {
       tables.myAuthUser,
       tables.myRateLimitStatus,
     ]);
+}
 
+function registerRowCallbacks(c: DbConnection): void {
   const reRender = () => emitData();
   const tableAccessors = [
     c.db.myChatUsers,
@@ -728,22 +730,23 @@ async function initializeIdentity(c: DbConnection): Promise<void> {
   emitAuth();
 }
 
-async function run(): Promise<void> {
+async function main(): Promise<void> {
   emitConn('connecting');
-  if (!config) config = await loadConfig();
+  if (!config) config = await loadServerConfig();
 
-  const c = await connectStdb(config);
+  const c = await connect(config);
   conn = c;
   reconnectAttempt = 0;
   emitConn('connected');
-  wireSubscriptions(c);
+  registerRowCallbacks(c);
+  subscribeToTables(c);
   installApi();
   await initializeIdentity(c);
   await restoreSession();
   window.dispatchEvent(new CustomEvent('chat:ready'));
 }
 
-run().catch(err => {
+main().catch(err => {
   emitConn('error', normalizeError(err));
   scheduleReconnect();
 });

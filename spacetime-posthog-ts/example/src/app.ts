@@ -297,8 +297,6 @@ function currentMetrics(): MetricsRow {
   );
 }
 
-// Rendering
-
 function renderKpis(): void {
   const m = currentMetrics();
   const e = currentEcon();
@@ -779,8 +777,6 @@ function syncRunButton(): void {
   if (label) label.textContent = running ? 'Pause' : 'Run';
 }
 
-// Simulation controls
-
 function restartTimer(): void {
   if (simTimer) clearInterval(simTimer);
   simTimer = null;
@@ -806,8 +802,6 @@ async function tickSimulation(): Promise<void> {
     seed: `${Date.now()}:${Math.random()}`,
   });
 }
-
-// UI wiring
 
 function wireUi(): void {
   $('menuGrid').addEventListener('click', event => {

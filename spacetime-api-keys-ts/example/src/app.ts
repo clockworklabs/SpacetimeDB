@@ -58,7 +58,6 @@ let conn: DbConnection | null = null;
 let config: ServerConfig | null = null;
 let identityHex = '';
 
-// mode + resolved colony
 let mode: AccessMode = 'owner';
 let holderKey = '';
 let colonyId = '';
@@ -89,7 +88,6 @@ let isPainting = false;
 let paintRemove = false;
 let lastPaintTile: { x: number; y: number } | null = null;
 
-// presence
 let myName = '';
 let myColor = '';
 let lastBeatAt = 0;
@@ -171,7 +169,6 @@ function toolAllowed(tool: Tool): boolean {
   return toolAllowedFor(mode, myScopes, tool);
 }
 
-// Colors and names
 function loadName(): string {
   const stored = localStorage.getItem(NAME_KEY);
   if (stored) return stored;
@@ -296,8 +293,6 @@ function subscribeAll(): void {
   c.db.presenceEntry.onDelete(() => renderPresence());
 }
 
-// Viewport geometry, pan, and zoom
-
 function terrainFor(x: number, y: number): string {
   return cells().find(c => c.x === x && c.y === y)?.terrain ?? 'regolith';
 }
@@ -352,7 +347,6 @@ function zoomViewport(
   applyViewportTransform();
 }
 
-// Screen point to fractional tile coordinates, accounting for pan + zoom.
 function pointerToTile(
   clientX: number,
   clientY: number
@@ -395,8 +389,6 @@ function flashTile(
     window.setTimeout(() => pop.remove(), 1000);
   }
 }
-
-// World rendering. Presence is rendered separately.
 
 // A road renders exactly the arms in its own stored mask. Connections are
 // written to both roads when they are drawn/dragged together, so there is no
@@ -571,7 +563,6 @@ function renderWorld(): void {
 
 function renderPresence(): void {
   const people = presenceRows();
-  // roster
   const rosterHtml = people.length
     ? people
         .map(p => {
@@ -602,8 +593,6 @@ function renderPresence(): void {
   }
   layer.innerHTML = html;
 }
-
-// Tool application
 
 async function applyTool(x: number, y: number): Promise<void> {
   const tool = TOOLS.find(t => t.id === selectedTool);
@@ -665,8 +654,6 @@ async function applyTool(x: number, y: number): Promise<void> {
   }
 }
 
-// Remove whatever is on a tile: an object (structure or nature), or if empty,
-// reset the surface to bare. Used by the Remove tool and by ctrl/cmd-click.
 async function removeAt(x: number, y: number): Promise<void> {
   lastRoad = null;
   const ent = entityAt(x, y);
@@ -750,8 +737,6 @@ async function colonyRequest(path: string, body?: unknown): Promise<unknown> {
   }
   return data;
 }
-
-// Owner share keys
 
 let selectedRole = 'collaborator';
 
@@ -843,8 +828,6 @@ async function revokeKey(keyId: string): Promise<void> {
   toast('Access revoked');
 }
 
-// Holder access removal state
-
 function showAccessRemoved(reason: string): void {
   const overlay = $('accessOverlay');
   const expired = /expired/i.test(reason);
@@ -858,8 +841,6 @@ function showAccessRemoved(reason: string): void {
     keepaliveTimer = null;
   }
 }
-
-// Presence heartbeats
 
 function sendBeat(): void {
   if (!conn || !colonyId) return;
@@ -909,7 +890,6 @@ function startPresence(): void {
   });
 }
 
-// Confirm holder access and show the overlay after revocation.
 async function reverify(): Promise<void> {
   if (mode !== 'holder') return;
   try {
@@ -918,8 +898,6 @@ async function reverify(): Promise<void> {
     /* colonyRequest already shows the overlay on revoke/expire */
   }
 }
-
-// Pointer-driven placement. Dragging paints across tiles.
 
 function tileFromEvent(
   clientX: number,
@@ -936,7 +914,6 @@ function applyAtTile(x: number, y: number, remove: boolean): void {
 
 // Fill in every tile along a drag so a fast drag never leaves gaps (and roads
 // chain tile-by-tile). Walks orthogonally so each step is adjacent to the last.
-// HUD controls
 
 function toggle(id: string, others: string[]): void {
   const panel = $(id);
@@ -1037,7 +1014,6 @@ function wireControls(): void {
         lastPaintTile = tile;
       }
     }
-    // cursor presence
     const t = pointerToTile(event.clientX, event.clientY);
     cursor = { cx: t.cx, cy: t.cy, onGrid: t.onGrid };
     queueBeat();
@@ -1050,7 +1026,6 @@ function wireControls(): void {
     if (isPanning) {
       isPanning = false;
       viewport.classList.remove('panning');
-      // A touch tap that did not pan places a single tile.
       if (event.pointerType === 'touch' && !panMoved) {
         const tile = tileFromEvent(event.clientX, event.clientY);
         if (tile) applyAtTile(tile.x, tile.y, false);
@@ -1130,7 +1105,6 @@ function wireControls(): void {
 }
 
 function applyModeChrome(): void {
-  // Show sharing and colony administration controls to the owner.
   $('shareBtn').hidden = mode !== 'owner';
   $('drawerFoot').style.display = mode === 'owner' ? '' : 'none';
   if (mode === 'holder') {
@@ -1179,7 +1153,6 @@ async function run(): Promise<void> {
   if (mode === 'holder' && !toolAllowed(TOOLS[0]) && !canBuild() && !canPlant())
     selectedTool = 'regolith';
   else if (mode === 'holder') {
-    // Default to a tool allowed by this key.
     if (canTerraform()) selectedTool = 'soil';
     else if (canBuild()) selectedTool = 'dome';
     else if (canPlant()) selectedTool = 'tree';

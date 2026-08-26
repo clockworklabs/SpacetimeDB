@@ -1,5 +1,3 @@
-// HTTP handlers for the store module.
-
 import { Router, SyncResponse } from 'spacetimedb/server';
 import { handle_stripe_webhook } from '@spacetimedb/stripe/submodule';
 import { spacetimedb } from './schema';

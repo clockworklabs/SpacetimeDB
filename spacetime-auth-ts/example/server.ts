@@ -1,6 +1,3 @@
-// Serves the frontend and proxies /auth/* to the STDB module's HTTP routes
-// so cookies are same-origin. Browser connects to STDB over WS directly.
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -99,13 +96,11 @@ function configureAuthFromEnv(): void {
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 
-// Reset-password email link. Serve the SPA so the frontend can read ?token=...
-// and show the reset form. Must be registered BEFORE the /auth proxy below.
+// Register this before the /auth proxy so reset links reach the SPA.
 app.get('/auth/password/reset', (_req: Request, res: Response) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Proxy /auth/* to STDB module HTTP handlers. Cookie + Set-Cookie pass through.
 // Using app.use as middleware since Express 4's `app.all('/auth/*', ...)` does
 // not match nested paths reliably.
 app.use('/auth', async (req, res) => {

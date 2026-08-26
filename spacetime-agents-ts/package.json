@@ -30,6 +30,10 @@
     "./stale-locks": {
       "types": "./src/stale-locks.ts",
       "default": "./src/stale-locks.ts"
+    },
+    "./submodule": {
+      "types": "./src/submodule.ts",
+      "default": "./src/submodule.ts"
     }
   },
   "files": [

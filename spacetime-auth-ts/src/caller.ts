@@ -1,4 +1,4 @@
-// Caller identity helpers. Browser must call link_connection after STDB connect.
+// Browser clients must call link_connection after connecting to SpacetimeDB.
 
 import { SenderError } from 'spacetimedb/server';
 import type {

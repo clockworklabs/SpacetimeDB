@@ -1,5 +1,3 @@
-// Dispatch: a thin host module over the Resend submodule.
-//
 // The browser never talks to Resend directly and is never granted admin. It calls
 // host procedures that forward to the submodule through `ctx.as.resend`. Resend's
 // base tables stay private; caller-scoped views below expose only the current
@@ -227,7 +225,6 @@ export const delete_dispatch = spacetimedb.procedure(
   }
 );
 
-// Clear the whole log.
 export const clear_dispatches = spacetimedb.procedure(
   {},
   dispatchDeleteResult,

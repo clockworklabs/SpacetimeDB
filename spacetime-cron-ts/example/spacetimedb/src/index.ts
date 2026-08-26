@@ -1,5 +1,3 @@
-// Example consumer of @spacetimedb/cron: two statically declared jobs plus
-// client-facing management reducers so the UI can reschedule them at runtime.
 import {
   schema,
   table,

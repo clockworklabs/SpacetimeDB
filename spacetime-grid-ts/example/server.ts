@@ -1,7 +1,3 @@
-// Express + static. Browser connects to STDB directly via WebSocket; this
-// server serves the SPA, /api/config, and proxies /auth/* to the STDB
-// module's HTTP handlers so auth cookies stay same-origin.
-
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -100,12 +96,11 @@ function configureAuthFromEnv(): void {
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 
-// Reset-password email link serves the SPA so the frontend can read ?token=...
+// Register this before the /auth proxy so reset links reach the SPA.
 app.get('/auth/password/reset', (_req: Request, res: Response) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Proxy /auth/* to STDB module HTTP handlers. Cookies pass through both ways.
 app.use('/auth', async (req, res) => {
   const fullPath = `/auth${req.url}`;
   const qIdx = fullPath.indexOf('?');
