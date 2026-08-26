@@ -10,8 +10,12 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
-const packNames = readdirSync(packRoot).filter(name => name.startsWith('l3-') && name.endsWith('.json')).sort();
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'));
+const candidateRecipe = readJson(join(trackRoot, 'composition', 'recipes', 'l3-standard-1.0.0.json'));
+const packNames = candidateRecipe.packs
+  .map(pack => pack.path.split('/').at(-1))
+  .filter(name => name.startsWith('l3-'))
+  .sort();
 const packs = packNames.map(name => compilePackDefinition(readJson(join(packRoot, name)), { source: name }));
 const allPacks = readdirSync(packRoot).filter(name => name.endsWith('.json'))
   .map(name => compilePackDefinition(readJson(join(packRoot, name)), { source: name }));

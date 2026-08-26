@@ -52,12 +52,27 @@ function hooksByLevel(track) {
 const packId = reference => reference.slice(0, reference.lastIndexOf('@'));
 
 function recipeScenarioScopes(track, recipeFile) {
-  const recipe = compileRecipeFile(join(track.dir, 'composition', 'recipes', recipeFile), {
-    trackRoot: track.dir,
-  });
+  const recipeDir = join(track.dir, 'composition', 'recipes');
+  const chain = [];
+  const seen = new Set();
+  let currentFile = recipeFile;
+  while (currentFile) {
+    if (seen.has(currentFile)) throw new Error(`recipe base cycle at ${currentFile}`);
+    seen.add(currentFile);
+    const path = join(recipeDir, currentFile);
+    chain.push(compileRecipeFile(path, { trackRoot: track.dir }));
+    const source = JSON.parse(readFileSync(path, 'utf8'));
+    currentFile = source.task?.baseRecipe?.path ?? null;
+  }
+  const recipe = chain[0];
   const packs = new Map(recipe.packs.map(pack => [pack.id, pack]));
-  const contracts = recipe.recipe.task.contracts;
-  const requirements = recipe.recipe.task.requirements;
+  const isolatedPackScope = recipe.recipe.execution === 'all-selected-sources';
+  const contracts = isolatedPackScope
+    ? recipe.recipe.task.contracts
+    : chain.flatMap(release => release.recipe.task.contracts);
+  const requirements = isolatedPackScope
+    ? recipe.recipe.task.requirements
+    : chain.flatMap(release => release.recipe.task.requirements);
   const scopes = new Map();
 
   const ownersFor = check => {
@@ -95,10 +110,14 @@ function recipeScenarioScopes(track, recipeFile) {
 
   for (const scope of scopes.values()) {
     const owned = (fragment, owners) => fragment.owners.some(owner => owners.has(owner));
-    scope.contractText = contracts.filter(fragment => owned(fragment, scope.contractOwners))
-      .map(fragment => fragment.text).join('\n');
-    scope.requirementText = requirements.filter(fragment => owned(fragment, scope.requirementOwners))
-      .map(fragment => fragment.text).join('\n');
+    const selectedContracts = isolatedPackScope
+      ? contracts.filter(fragment => owned(fragment, scope.contractOwners))
+      : contracts;
+    const selectedRequirements = isolatedPackScope
+      ? requirements.filter(fragment => owned(fragment, scope.requirementOwners))
+      : requirements;
+    scope.contractText = selectedContracts.map(fragment => fragment.text).join('\n');
+    scope.requirementText = selectedRequirements.map(fragment => fragment.text).join('\n');
   }
   return scopes;
 }
