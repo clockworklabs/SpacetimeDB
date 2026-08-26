@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.mjs';
 import { publicBackendLease, readBackendLease } from './backend-lease.mjs';
@@ -67,11 +67,7 @@ export function writeRecoveryArtifact(path, lease, options = {}) {
     payload: plan });
 }
 
-export function recoverSupervisedRun(statePath, { removeState = true } = {}) {
-  const absoluteState = realpathSync(statePath);
-  if (!statSync(absoluteState).isFile()) throw new Error('supervisor state must be a regular file');
-  const state = validateSupervisorState(JSON.parse(readFileSync(absoluteState, 'utf8')),
-    { source: absoluteState });
+function recoverAuthorizedLease(state, { statePath = null, removeState = true } = {}) {
   let lease;
   let cleanupSucceeded = false;
   let reason = null;
@@ -104,8 +100,37 @@ export function recoverSupervisedRun(statePath, { removeState = true } = {}) {
       }
       rmSync(runtimeDir, { recursive: true, force: true });
     }
-    if (removeState) rmSync(absoluteState, { force: true });
+    if (removeState && statePath) rmSync(statePath, { force: true });
   }
   return { ok: cleanupSucceeded, state: cleanupSucceeded ? 'clean' : 'quarantined',
     runId: state.runId, recoveryPath: join(state.output, 'recovery.json') };
+}
+
+export function recoverSupervisedRun(statePath, { removeState = true } = {}) {
+  const absoluteState = realpathSync(statePath);
+  if (!statSync(absoluteState).isFile()) throw new Error('supervisor state must be a regular file');
+  const state = validateSupervisorState(JSON.parse(readFileSync(absoluteState, 'utf8')),
+    { source: absoluteState });
+  return recoverAuthorizedLease(state, { statePath: absoluteState, removeState });
+}
+
+export function recoverBackendLease(leasePath, output) {
+  const absoluteLease = realpathSync(leasePath);
+  if (!statSync(absoluteLease).isFile()) throw new Error('backend lease must be a regular file');
+  if (basename(absoluteLease) !== 'backend-lease.json') {
+    throw new Error('backend lease path must end in backend-lease.json');
+  }
+  if (!isAbsolute(output)) throw new Error('recovery output must be absolute');
+  const runtimeDir = dirname(absoluteLease);
+  const absoluteOutput = resolve(output);
+  const outputFromRuntime = relative(runtimeDir, absoluteOutput);
+  if (!outputFromRuntime || (!outputFromRuntime.startsWith('..') && !isAbsolute(outputFromRuntime))) {
+    throw new Error('recovery output must be outside the private runtime directory');
+  }
+  const lease = readBackendLease(absoluteLease);
+  mkdirSync(absoluteOutput, { recursive: true });
+  const state = validateSupervisorState({ version: SUPERVISOR_STATE_VERSION,
+    runId: lease.runId, backend: lease.backend, runtimeDir, leasePath: absoluteLease,
+    ownershipToken: lease.ownershipToken, output: absoluteOutput }, { source: absoluteLease });
+  return recoverAuthorizedLease(state);
 }

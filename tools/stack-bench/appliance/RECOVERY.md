@@ -32,6 +32,21 @@ On success the command changes `recovery.json` to `clean`, releases the exact
 owned resources, and removes the private supervisor state. It is idempotent
 when public lease evidence already proves that an earlier cleanup completed.
 
+If the parent process ended before it retained a supervisor file, recover from
+the private runtime lease instead. Supply a durable output directory outside
+the private runtime directory:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  recover-lease /var/lib/stack-bench/controller-home/runtime/<run-id>/backend-lease.json \
+  --out /var/lib/stack-bench/results/recovery/<run-id>
+```
+
+This path uses the same ownership token, container ID, listener PID, and lock
+checks. It refuses an output directory inside the runtime directory because a
+successful recovery removes that directory.
+
 ## If recovery refuses
 
 Refusal is the safety behavior. It means a live resource does not match the

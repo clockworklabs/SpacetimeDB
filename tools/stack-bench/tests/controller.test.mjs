@@ -14,6 +14,11 @@ test('controller exposes a small explicit operator command surface', () => {
   const recovery = resolveControllerCommand(['recover', '/private/supervisor.json']);
   assert.match(recovery.args[0], /recovery\.mjs$/);
   assert.deepEqual(recovery.args.slice(1), ['recover', '/private/supervisor.json']);
+  const leaseRecovery = resolveControllerCommand([
+    'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
+  assert.match(leaseRecovery.args[0], /recovery\.mjs$/);
+  assert.deepEqual(leaseRecovery.args.slice(1), [
+    'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
   const campaign = resolveControllerCommand(['campaign', 'show', '/plans/campaign.json']);
   assert.match(campaign.args[0], /campaign-cli\.mjs$/);
   assert.deepEqual(campaign.args.slice(1), ['show', '/plans/campaign.json']);

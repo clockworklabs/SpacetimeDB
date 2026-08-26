@@ -8,7 +8,7 @@ import test from 'node:test';
 import { readArtifactPayload } from '../src/evidence/artifacts.mjs';
 import { acquireResourceLock, createBackendLease, readBackendLease,
   writeBackendLease } from '../src/runtime/backend-lease.mjs';
-import { recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
+import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
   validateSupervisorState } from '../src/runtime/recovery.mjs';
 
 function fixture({ state = 'active' } = {}) {
@@ -55,6 +55,22 @@ test('authenticated recovery releases exact lease resources and removes private 
     assert.equal(existsSync(f.leasePath), false, 'private runtime lease must be removed after recovery');
     assert.equal(existsSync(f.lease.resources.locks[0].path), false);
     const recovery = readArtifactPayload(join(f.output, 'recovery.json'),
+      { expectedKind: 'recovery' });
+    assert.equal(recovery.status, 'clean');
+    assert.equal(JSON.stringify(recovery).includes(f.lease.ownershipToken), false);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('authenticated lease recovery works when parent supervisor state is missing', () => {
+  const f = fixture();
+  const output = join(f.root, 'lease-recovery');
+  try {
+    rmSync(f.statePath, { force: true });
+    const result = recoverBackendLease(f.leasePath, resolve(output));
+    assert.equal(result.ok, true);
+    assert.equal(existsSync(f.leasePath), false);
+    assert.equal(existsSync(f.lease.resources.locks[0].path), false);
+    const recovery = readArtifactPayload(join(output, 'recovery.json'),
       { expectedKind: 'recovery' });
     assert.equal(recovery.status, 'clean');
     assert.equal(JSON.stringify(recovery).includes(f.lease.ownershipToken), false);

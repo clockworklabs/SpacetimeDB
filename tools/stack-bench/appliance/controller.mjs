@@ -20,6 +20,7 @@ const COMMANDS = Object.freeze({
   'run': [join(ROOT, 'commands', 'bench.mjs')],
   'verify-release': [join(ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],
   'recover': [join(ROOT, 'commands', 'recovery.mjs'), 'recover'],
+  'recover-lease': [join(ROOT, 'commands', 'recovery.mjs'), 'recover-lease'],
   'test': ['--test', join(ROOT, 'tests', '*.test.mjs')],
 });
 
@@ -83,6 +84,7 @@ function help() {
     + '  run <exact run options>        execute and retain one requested run\n'
     + '  verify-release <manifest>      verify candidate files or a qualified signed release\n'
     + '  recover <private-state>        retry authenticated cleanup or retain quarantine\n'
+    + '  recover-lease <lease> --out <dir>  recover when parent state was not retained\n'
     + '  init-deps | verify-deps        initialize or verify the release dependency volume\n'
     + '  test                           run the model-free harness test suite\n');
 }
