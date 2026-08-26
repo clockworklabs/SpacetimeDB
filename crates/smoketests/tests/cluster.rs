@@ -13,6 +13,7 @@ mod cluster {
     mod column_defaults;
     mod confirmed_reads;
     mod connect_disconnect_from_cli;
+    mod connection_session;
     mod database_lock;
     mod delete_database;
     mod describe;

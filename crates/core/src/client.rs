@@ -3,6 +3,7 @@ use std::fmt;
 
 mod client_connection;
 mod client_connection_index;
+mod client_session_index;
 pub mod consume_each_list;
 mod message_handlers;
 mod message_handlers_v1;
@@ -16,6 +17,7 @@ pub use client_connection::{
     WsVersion,
 };
 pub use client_connection_index::ClientActorIndex;
+pub use client_session_index::{ClientSessionIndex, SessionId, SupersededConnection};
 pub use message_handlers::MessageHandleError;
 pub use message_handlers_v1::MessageExecutionError;
 pub use messages::OutboundMessage;

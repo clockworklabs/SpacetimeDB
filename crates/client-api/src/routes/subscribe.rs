@@ -28,7 +28,7 @@ use spacetimedb::client::messages::{
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
-    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, WsVersion,
+    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, SessionId, WsVersion,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -86,6 +86,17 @@ pub struct SubscribeParams {
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub connection_id: Option<ConnectionIdForUrl>,
+    /// A client-generated identifier for a logical client session,
+    /// stable across the reconnects of one client connection object.
+    ///
+    /// When a connection supplies a session id already held by a live
+    /// connection of the same identity, the old connection is torn down before
+    /// this one runs `client_connected`, so the module never observes two live
+    /// connections for one session.
+    /// See [`spacetimedb::client::ClientSessionIndex`].
+    ///
+    /// Connections which do not supply one behave exactly as before.
+    pub session_id: Option<SessionIdForUrl>,
     #[serde(default)]
     pub compression: ws_v1::Compression,
     /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
@@ -98,6 +109,25 @@ pub struct SubscribeQueryParams {
     /// If `false`, send them immediately.
     #[serde(default)]
     pub confirmed: Option<bool>,
+}
+
+/// A [`SessionId`] as supplied in the `session_id` query parameter.
+/// Represented by a 32-character hex string.
+pub struct SessionIdForUrl(SessionId);
+
+impl<'de> Deserialize<'de> for SessionIdForUrl {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let hex = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+        let value = u128::from_str_radix(&hex, 16)
+            .map_err(|_| serde::de::Error::custom("session_id must be a hex-encoded 128-bit value"))?;
+        Ok(Self(SessionId::from_u128(value)))
+    }
+}
+
+impl From<SessionIdForUrl> for SessionId {
+    fn from(session_id: SessionIdForUrl) -> Self {
+        session_id.0
+    }
 }
 
 fn resolve_confirmed_reads_default(version: WsVersion, confirmed: Option<bool>) -> bool {
@@ -119,6 +149,7 @@ pub async fn handle_websocket<S>(
     Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
     Query(SubscribeQueryParams {
         connection_id,
+        session_id,
         compression,
         light,
         confirmed,
@@ -228,6 +259,8 @@ where
         connection_id,
         name: ctx.client_actor_index().next_client_name(),
     };
+    let session_id: Option<SessionId> = session_id.map(Into::into);
+    let sessions = ctx.client_actor_index().sessions();
 
     let ws_config = WebSocketConfig::default()
         .max_message_size(Some(0x2000000))
@@ -254,6 +287,29 @@ where
         };
 
         log::debug!("websocket: New client connected from {client_log_string}");
+
+        // If this connection resumes a session which a live connection still
+        // holds, that connection is taken over. Stop its actor and run its
+        // module-side disconnect to completion, so the module observes
+        // `client_disconnected` for it strictly before `client_connected` for
+        // this one, and never two live connections for one session.
+        if let Some(session_id) = session_id
+            && let Some(superseded) = sessions.claim_session(client_id, session_id, None)
+        {
+            log::debug!(
+                "websocket: Connection {} supersedes {} for session {session_id}",
+                client_id.connection_id,
+                superseded.client_id.connection_id,
+            );
+            if let Some(sender) = &superseded.sender {
+                sender.kick(ClientDisconnectCause::ConnectionSuperseded);
+            }
+            // Awaiting this is what orders the two lifecycle reducers:
+            // both run on the module's main instance, and this one is
+            // enqueued first.
+            let module = module_rx.borrow().clone();
+            module.disconnect_client(superseded.client_id).await;
+        }
 
         let connected = match ClientConnection::call_client_connected_maybe_reject(
             &mut module_rx,
@@ -284,6 +340,11 @@ where
                     }
                 };
                 record_client_rejection(db_identity, cause);
+                // The session claim is only meaningful for a connection which
+                // exists, so give it up again.
+                if let Some(session_id) = session_id {
+                    sessions.release_session(client_id, session_id);
+                }
                 return;
             }
         };
@@ -292,7 +353,15 @@ where
             "websocket: Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
         );
 
-        let actor = |client, receiver| ws_client_actor(ws_opts, client, ws, receiver);
+        // Release the session claim when the actor ends, including when it is aborted.
+        let session_guard = session_id.map(|session_id| {
+            let sessions = sessions.clone();
+            scopeguard::guard((), move |()| sessions.release_session(client_id, session_id))
+        });
+        let actor = |client, receiver| async move {
+            let _session_guard = session_guard;
+            ws_client_actor(ws_opts, client, ws, receiver).await;
+        };
         let client = ClientConnection::spawn(
             client_id,
             auth.into(),
@@ -304,6 +373,12 @@ where
             connected,
         )
         .await;
+
+        // Now that the actor exists, register its sender so that a later
+        // connection resuming this session can stop it.
+        if let Some(session_id) = session_id {
+            sessions.attach_sender(client_id, session_id, &client.sender());
+        }
 
         // Send the client their identity token message as the first message
         // NOTE: We're adding this to the protocol because some client libraries are
