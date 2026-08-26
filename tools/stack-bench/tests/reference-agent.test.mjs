@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { parseReferenceAgentArgs, prepareReferenceSource,
-  referenceDevCommand } from '../src/references/reference-agent.mjs';
+import { parseReferenceAgentArgs, prepareReferenceSource, referenceDevCommand,
+  restoreReferenceSourceIdentity } from '../src/references/reference-agent.mjs';
 
 function argv({ mode = 'build', level = '2', runIndex = '0', recipe } = {}) {
   return ['node', 'reference-agent.mjs', '--mode', mode, '--backend', 'mongodb',
@@ -81,6 +81,28 @@ test('dependency progression seeds once and verifies the same full fixture on la
     assert.throws(() => prepareReferenceSource({ ...common, mode: 'fix', level: 2,
       app: join(root, 'empty-fix') }),
     /fix requires the existing ecommerce-progression-mongodb source/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference deployment restores canonical source while retaining generated bindings', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-identity-'));
+  try {
+    const app = join(root, 'app');
+    const prepared = prepareReferenceSource({
+      mode: 'build', backend: 'spacetime', track: 'ecommerce', level: 1,
+      recipe: 'ecommerce.progression-catalog@1.0.0', app,
+    });
+    const lock = join(app, 'client', 'package-lock.json');
+    const canonicalLock = readFileSync(lock, 'utf8');
+    writeFileSync(lock, 'runtime-generated lockfile\n');
+    const bindings = join(app, 'client', 'src', 'module_bindings', 'index.ts');
+    mkdirSync(join(app, 'client', 'src', 'module_bindings'), { recursive: true });
+    writeFileSync(bindings, 'export const generated = true;\n');
+
+    const restored = restoreReferenceSourceIdentity(prepared.fixture, app);
+    assert.equal(restored.sha256, prepared.sourceSha256);
+    assert.equal(readFileSync(lock, 'utf8'), canonicalLock);
+    assert.equal(readFileSync(bindings, 'utf8'), 'export const generated = true;\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

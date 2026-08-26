@@ -117,6 +117,15 @@ export function prepareReferenceSource(args) {
     sourceFiles: prepared.files.length };
 }
 
+export function restoreReferenceSourceIdentity(fixture, app) {
+  prepareReferenceFixtureSource(fixture, app);
+  const restored = hashAppSource(app);
+  if (restored.sha256 !== fixture.imported.sourceSha256) {
+    throw new Error(`deployed reference source does not match ${fixture.id}`);
+  }
+  return restored;
+}
+
 function startDetached(container, cwd, logName, env = {}, options = {}) {
   const args = ['exec', '-d', '-w', cwd];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
@@ -170,6 +179,7 @@ async function main() {
     buildNetworkMode: identity.networkMode,
     helpers: { dbName, loadTrack, moduleName, runSync, docker, startDetached, waitFor, containerLogs, phase },
   });
+  restoreReferenceSourceIdentity(source.fixture, args.app);
 
   phase('deployment complete');
   console.log(JSON.stringify({ appDir: args.app, mode: args.mode, level: args.level,

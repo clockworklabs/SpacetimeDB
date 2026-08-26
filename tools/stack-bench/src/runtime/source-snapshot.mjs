@@ -6,7 +6,7 @@ import { hashDirectory } from '../evidence/provenance.mjs';
 // Runtime state, dependencies, evidence, and harness-owned control files are
 // deliberately not part of the model-authored source snapshot.
 const PRESERVED_DIRS = new Set(['node_modules', '.git', 'stack-bench']);
-const TRANSIENT_DIRS = new Set(['dist', '.vite', 'coverage']);
+const TRANSIENT_DIRS = new Set(['dist', '.vite', 'coverage', 'module_bindings']);
 const ROOT_HARNESS_FILES = new Set([
   '.lint-port', '.sandbox-settings.json', '.stack-bench-backend',
   'BUG_REPORT.md', 'bug-report-quality.json', 'check-hooks.sh',

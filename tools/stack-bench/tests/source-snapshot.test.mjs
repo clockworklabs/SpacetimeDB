@@ -23,6 +23,7 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'bug-report-quality.json'), '{}\n');
   put(join(app, '.session-fix-l1.json'), '{}\n');
   put(join(app, 'ui', 'dist', 'bundle.js'), 'compiled\n');
+  put(join(app, 'ui', 'src', 'module_bindings', 'index.ts'), 'generated\n');
   put(join(app, 'server.log'), 'server output\n');
   put(join(app, 'ui', 'vite.log'), 'client output\n');
 
@@ -33,6 +34,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(existsSync(join(snapshot, 'BUG_REPORT.md')), false);
   assert.equal(existsSync(join(snapshot, 'bug-report-quality.json')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'dist')), false);
+  assert.equal(existsSync(join(snapshot, 'ui', 'src', 'module_bindings')), false);
   assert.equal(existsSync(join(snapshot, 'server.log')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'vite.log')), false);
 
@@ -42,6 +44,7 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'new-layout', 'bad-source.js'), 'remove me\n');
   put(join(app, 'new-layout', 'node_modules', 'installed', 'index.js'), 'keep me\n');
   put(join(app, 'ui', 'dist', 'stale.js'), 'remove me\n');
+  put(join(app, 'ui', 'src', 'module_bindings', 'new.ts'), 'stale binding\n');
   put(join(app, 'BUG_REPORT.md'), 'latest harness report\n');
   put(join(app, 'bug-report-quality.json'), '{"latest":true}\n');
   put(join(app, 'server.log'), 'new server output\n');
@@ -56,6 +59,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(readFileSync(join(app, 'new-layout', 'node_modules', 'installed', 'index.js'), 'utf8'), 'keep me\n');
   assert.equal(readFileSync(join(app, 'backend', 'spacetimedb', 'node_modules', 'dep', 'index.js'), 'utf8'), 'dependency\n');
   assert.equal(existsSync(join(app, 'ui', 'dist')), false);
+  assert.equal(existsSync(join(app, 'ui', 'src', 'module_bindings')), false);
   assert.equal(readFileSync(join(app, 'BUG_REPORT.md'), 'utf8'), 'latest harness report\n');
   assert.equal(readFileSync(join(app, 'bug-report-quality.json'), 'utf8'), '{"latest":true}\n');
   assert.equal(readFileSync(join(app, 'server.log'), 'utf8'), 'new server output\n');
@@ -86,6 +90,7 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'src', 'app.ts'), 'export const value = 1;\n');
     put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v1\n');
     put(join(app, 'stack-bench', 'bundle.json'), '{}\n');
+    put(join(app, 'client', 'src', 'module_bindings', 'index.ts'), 'generated v1\n');
     put(join(app, 'BUG_REPORT.md'), 'private evidence\n');
     put(join(app, 'bug-report-quality.json'), '{}\n');
     put(join(app, 'server.log'), 'server output v1\n');
@@ -95,6 +100,7 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     assert.equal(hashAppSource(snapshot).sha256, first.sha256);
     put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v2\n');
     put(join(app, 'stack-bench', 'bundle.json'), '{"changed":true}\n');
+    put(join(app, 'client', 'src', 'module_bindings', 'index.ts'), 'generated v2\n');
     put(join(app, 'server.log'), 'server output v2\n');
     put(join(app, 'client', 'vite.log'), 'client output v2\n');
     assert.equal(hashAppSource(app).sha256, first.sha256);
