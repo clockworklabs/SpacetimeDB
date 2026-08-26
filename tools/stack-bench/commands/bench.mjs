@@ -202,18 +202,22 @@ export function parseArgs(argv) {
       || a.parentAttemptId !== attempt.id || a.media !== false) {
       throw new Error('--campaign-attempt-id does not match the requested campaign attempt');
     }
-    a.progression = validateProgressionInput(plan.progression);
-    if (a.progression.identity.sha256 !== a.progressionSha256
-      || canonicalDefinitionJson(attempt.progression)
-        !== canonicalDefinitionJson(a.progression.identity)) {
+    a.featureCatalog = validateProgressionInput(plan.progression);
+    if (a.featureCatalog.identity.sha256 !== a.progressionSha256
+      || canonicalDefinitionJson(attempt.featureCatalog)
+        !== canonicalDefinitionJson(a.featureCatalog.identity)) {
       throw new Error('--progression-sha256 does not match the compiled campaign plan');
     }
-    a.progressionOwner = { schemaVersion: 1,
-      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-      attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
-        agentAdapter: attempt.agentAdapter, model: attempt.model,
-        conditionSha256: attempt.condition.sha256 } };
+    if (attempt.mode.id === 'dependency') {
+      a.progression = a.featureCatalog;
+      a.progressionOwner = { schemaVersion: 1,
+        campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+        attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
+          agentAdapter: attempt.agentAdapter, model: attempt.model,
+          conditionSha256: attempt.condition.sha256 } };
+    }
   }
+  a.featureCatalog ??= a.progression;
   if (a.progression) {
     if (a.levelsProvided) throw new Error('--levels cannot be combined with progression input');
     a.progression = validateProgressionInput(a.progression);
@@ -602,7 +606,7 @@ async function main() {
     const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
     const modularSelection = args.selectionRequest.levels?.find(entry => entry.level === level) ?? null;
     if (declared?.selection?.schemaVersion === 3) {
-      const expected = args.progression
+      const expected = args.featureCatalog
         ? { level, recipe: `${declared.recipe.id}@${declared.recipe.version}` }
         : { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
           features: declared.selection.requested.features,
@@ -621,12 +625,13 @@ async function main() {
     }
     if (binding) {
       args.recipeBindings.set(level, binding);
-      if (args.progression) {
-        validateProgressionCampaignLevelScope(binding, args.progression, declared, level);
+      if (args.featureCatalog) {
+        validateProgressionCampaignLevelScope(binding, args.featureCatalog, declared, level);
       }
       const requested = declared?.selection?.requested;
-      const resolved = args.progression
-        ? resolveProgressionRecipeLevelSelection(binding, args.progression, level)
+      const resolved = args.featureCatalog
+        ? resolveProgressionRecipeLevelSelection(binding, args.featureCatalog, level,
+          { cumulative: Boolean(args.progression) })
         : createBoundRecipeTaskRequest(binding, requested?.features
           ? { featureIds: requested.features,
               requestedSpecifications: requested.specifications?.requested,
@@ -634,7 +639,7 @@ async function main() {
               observedSpecifications: requested.specifications?.observed,
               checkKeys: requested.checks }
           : args);
-      const grader = args.progression ? resolved.grader : resolved;
+      const grader = args.featureCatalog ? resolved.grader : resolved;
       if (args.condition && !declared) {
         throw new Error(`study condition does not bind requested L${level}`);
       }
@@ -644,7 +649,7 @@ async function main() {
         || declared.task.sha256 !== grader.request.task.sha256)) {
         throw new Error(`study condition requested scope changed before L${level}`);
       }
-      args.recipeTasks.set(level, args.progression ? {
+      args.recipeTasks.set(level, args.featureCatalog ? {
         request: grader.request,
         selection: grader.selection,
         task: grader.task,
@@ -954,6 +959,7 @@ async function main() {
     skills: args.skills ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE, url },
     selectionRequest: args.selectionRequest,
+    featureCatalog: args.featureCatalog?.identity ?? null,
     progression: args.progression?.identity ?? null,
     ...(args.progressionOwner ? { progressionOwner: args.progressionOwner } : {}),
     backendLease: publicBackendLease(readBackendLease(leasePath,

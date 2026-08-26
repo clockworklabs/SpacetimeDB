@@ -134,7 +134,7 @@ test('dependency attempts pass one progression input and no separate level range
   });
   const dependencyPlan = { ...plan, progression };
   const attempt = { ...plan.attempts[0], mode: { id: 'dependency', version: '1.0.0' },
-    progression: progression.identity };
+    featureCatalog: progression.identity, progression: progression.identity };
   const argv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0,
     '/campaign/plan.json');
   assert.equal(argv.includes('--levels'), false);
@@ -254,7 +254,8 @@ test('dependency validation keeps a conclusive grade when its repair session is 
           agentAdapter: agent.identity, stackAdapter: stack }) },
       track: plan.definition.track, backend: attempt.stack, model: attempt.model,
       guidance: attempt.guidance, condition: attempt.condition,
-      selectionRequest: plan.definition.selection, progression: attempt.progression,
+      selectionRequest: plan.definition.selection, featureCatalog: attempt.featureCatalog,
+      progression: attempt.progression,
       progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
       progressionStatus: liveProgressionStatus(state), skills: attempt.skills,
       runtime: { buildImage: 'test-build-image' },

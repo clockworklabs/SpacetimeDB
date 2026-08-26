@@ -194,24 +194,27 @@ export function resolveProgressionRecipeAction(binding, state) {
     action.grading.nodeIds, action.grading.checks, taskMode) };
 }
 
-export function resolveProgressionRecipeLevelSelection(binding, input, level) {
+export function resolveProgressionRecipeLevelSelection(binding, input, level,
+  { cumulative = true } = {}) {
   const { definition } = validateProgressionInput(input);
   const promptNodeIds = definition.nodes.filter(node => node.level === level)
     .map(node => node.id);
   if (promptNodeIds.length === 0) {
     throw new Error(`progression has no nodes at level ${level}`);
   }
-  const gradingNodes = definition.nodes.filter(node => node.level <= level);
+  const gradingNodes = definition.nodes.filter(node => cumulative
+    ? node.level <= level : node.level === level);
   return resolveSelections(binding, definition, promptNodeIds,
     gradingNodes.map(node => node.id), gradingNodes.flatMap(node =>
       node.gradingChecks.map(check => ({ ...check, nodeId: node.id }))),
     level === 1 ? 'fresh' : 'upgrade');
 }
 
-export function validateProgressionRecipeBindings(input, bindings) {
+export function validateProgressionRecipeBindings(input, bindings, { levels = null } = {}) {
   const { definition } = validateProgressionInput(input);
   const byLevel = new Map(bindings.map(binding => [binding.level, binding.binding ?? binding]));
-  for (const level of [...new Set(definition.nodes.map(node => node.level))]) {
+  const selectedLevels = levels ?? [...new Set(definition.nodes.map(node => node.level))];
+  for (const level of selectedLevels) {
     const binding = byLevel.get(level);
     if (!binding) throw new Error(`progression has no recipe binding for level ${level}`);
     const levelNodes = definition.nodes.filter(node => node.level === level);

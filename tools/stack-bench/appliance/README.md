@@ -110,6 +110,19 @@ case, the running Compose controller must match the campaign. This runtime bindi
 does not replace separate release-bundle signature/integrity verification.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
+
+The feature catalog and run mode are separate choices. A campaign can bind the
+same versioned feature graph in either mode:
+
+- `sequential` runs each selected level in order. Each level gets its own
+  features. Earlier checks run again as regression checks.
+- `dependency` opens only features whose parents passed. Each branch has its
+  own strike budget and can stop without stopping unrelated branches.
+
+Both modes use the same prompt modules, checks, points, and feature ownership.
+A sequential campaign can select a contiguous prefix such as levels 1 through
+3 without copying or redefining the graph.
+
 `campaign.product-brief-reference.json` is the model-free draft gate for the
 primary modular L1 condition. The prompt requests the six product features and
 uses neutral backend guidance. Its evaluation scope also covers access control,

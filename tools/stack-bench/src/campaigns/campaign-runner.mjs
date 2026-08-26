@@ -45,6 +45,10 @@ export function attemptArgv(plan, attempt, output, runIndex, progressionPath = n
   if (dependencyMode !== Boolean(attempt.progression)) {
     throw new Error(`attempt ${attempt.id} mode and progression input do not match`);
   }
+  const hasFeatureCatalog = Boolean(plan.progression);
+  if (hasFeatureCatalog !== Boolean(attempt.featureCatalog)) {
+    throw new Error(`attempt ${attempt.id} feature catalog does not match its campaign`);
+  }
   const guidanceDocument = attempt.condition?.guidance?.documents?.[attempt.stack];
   if (!guidanceDocument) {
     throw new Error(`attempt ${attempt.id} has no guidance document for ${attempt.stack}`);
@@ -52,18 +56,20 @@ export function attemptArgv(plan, attempt, output, runIndex, progressionPath = n
   const args = [BENCH,
     '--backend', attempt.stack,
     '--track', plan.definition.track];
-  if (dependencyMode) {
+  if (hasFeatureCatalog) {
     if (typeof progressionPath !== 'string' || !progressionPath) {
       throw new Error(`attempt ${attempt.id} requires its compiled campaign plan path`);
     }
-    if (canonicalDefinitionJson(attempt.progression)
+    if (canonicalDefinitionJson(attempt.featureCatalog)
       !== canonicalDefinitionJson(plan.progression?.identity)) {
-      throw new Error(`attempt ${attempt.id} progression identity does not match its campaign`);
+      throw new Error(`attempt ${attempt.id} feature catalog identity does not match its campaign`);
     }
     args.push('--progression-file', resolve(progressionPath),
-      '--progression-sha256', attempt.progression.sha256,
+      '--progression-sha256', attempt.featureCatalog.sha256,
       '--campaign-sha256', plan.contentSha256,
       '--campaign-attempt-id', attempt.id);
+  }
+  if (dependencyMode) {
     if (progressionResumeFrom !== null) {
       if (typeof progressionResumeFrom !== 'string' || !progressionResumeFrom) {
         throw new Error(`attempt ${attempt.id} has an invalid progression resume directory`);
@@ -141,6 +147,8 @@ export function validateCampaignRun(plan, attempt, run, {
     !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
   mismatch(canonicalDefinitionJson(run.progression ?? null)
     !== canonicalDefinitionJson(attempt.progression ?? null), 'progression');
+  mismatch(canonicalDefinitionJson(run.featureCatalog ?? null)
+    !== canonicalDefinitionJson(attempt.featureCatalog ?? null), 'featureCatalog');
   const expectedProgressionOwner = attempt.progression ? { schemaVersion: 1,
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
     attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,

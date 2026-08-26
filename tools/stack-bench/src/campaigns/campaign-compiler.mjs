@@ -105,10 +105,10 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   string(value.title, `${source}.title`);
   identifier(value.track, `${source}.track`);
   value.mode = validateCampaignMode(value.mode, { at: `${source}.mode` });
-  if (value.mode.id === 'dependency') {
-    if (value.progression === undefined) {
-      fail(`${source}.progression`, 'is required for dependency mode');
-    }
+  if (value.mode.id === 'dependency' && value.progression === undefined) {
+    fail(`${source}.progression`, 'is required for dependency mode');
+  }
+  if (value.progression !== undefined) {
     if (typeof value.progression === 'string') {
       if (!EXACT_REF.test(value.progression)) {
         fail(`${source}.progression`, 'must be an exact id@version reference');
@@ -118,17 +118,18 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     } else {
       const progression = compileProgressionInput(value.progression);
       value.progression = progression.definition;
-      const derivedLevels = progressionLevels(progression);
-      if (value.levels !== undefined
-        && canonicalDefinitionJson(value.levels) !== canonicalDefinitionJson(derivedLevels)) {
-        fail(`${source}.levels`, 'must match the levels derived from progression');
+      const availableLevels = progressionLevels(progression);
+      value.levels ??= availableLevels;
+      value.levels = exactArray(value.levels, `${source}.levels`,
+        (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
+      if (value.levels.some(level => !availableLevels.includes(level))) {
+        fail(`${source}.levels`, 'must exist in progression');
       }
-      value.levels = derivedLevels;
+      if (value.levels[0] !== availableLevels[0]) {
+        fail(`${source}.levels`, 'must start at the first progression level');
+      }
     }
   } else {
-    if (value.progression !== undefined) {
-      fail(`${source}.progression`, 'does not apply to sequential mode');
-    }
     value.levels = exactArray(value.levels, `${source}.levels`,
       (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
   }
@@ -352,7 +353,9 @@ function expandAttempts(definition, requestedLevels, progressionIdentity, stacks
         skills: condition.guidance.skills[stack.id].ids,
         mode: structuredClone(definition.mode),
         levels: requestedLevels,
-        ...(progressionIdentity ? { progression: progressionIdentity } : {}),
+        ...(progressionIdentity ? { featureCatalog: progressionIdentity } : {}),
+        ...(progressionIdentity && definition.mode.id === 'dependency'
+          ? { progression: progressionIdentity } : {}),
         parentAttemptId: definition.id,
       }));
   }
@@ -389,9 +392,11 @@ function resolveCampaignInputs(definition, {
   const track = loadTrack(definition.track);
   const progression = definition.progression
     ? resolveCampaignProgression(definition.progression, track) : null;
-  if (progression && canonicalDefinitionJson(progressionLevels(progression))
-    !== canonicalDefinitionJson(definition.levels)) {
-    fail('levels', 'must match the levels derived from progression');
+  if (progression && definition.levels.some(level => !progressionLevels(progression).includes(level))) {
+    fail('levels', 'must exist in progression');
+  }
+  if (progression && definition.levels[0] !== progressionLevels(progression)[0]) {
+    fail('levels', 'must start at the first progression level');
   }
   const modularLevels = new Map((definition.selection.levels ?? [])
     .map(selection => [selection.level, selection]));
@@ -426,10 +431,10 @@ function resolveCampaignInputs(definition, {
   const bindings = bindingRecords.map(record => record.publicBinding);
   let progressionSelections = null;
   if (progression) {
-    validateProgressionRecipeBindings(progression, bindingRecords);
+    validateProgressionRecipeBindings(progression, bindingRecords, { levels: definition.levels });
     progressionSelections = new Map(bindingRecords.map(record =>
       [record.level, resolveProgressionRecipeLevelSelection(record.binding,
-        progression, record.level)]));
+        progression, record.level, { cumulative: definition.mode.id === 'dependency' })]));
   }
   if (definition.state === 'frozen') {
     for (const binding of bindings) {

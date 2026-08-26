@@ -153,9 +153,21 @@ test('dependency campaigns derive levels and freeze the progression identity in 
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.progression)
       === canonicalDefinitionJson(plan.progression.identity)));
+  assert(plan.attempts.every(attempt =>
+    canonicalDefinitionJson(attempt.featureCatalog)
+      === canonicalDefinitionJson(plan.progression.identity)));
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
   assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
-    /levels.*derived/);
+    /levels.*progression/);
+});
+
+test('sequential campaigns can use the same feature catalog without dependency gating', () => {
+  const definition = dependencyDefinition();
+  definition.mode = { id: 'sequential', version: '1.0.0' };
+  const plan = compile(definition);
+  assert.equal(plan.attempts[0].progression, undefined);
+  assert.deepEqual(plan.attempts[0].featureCatalog, plan.progression.identity);
+  assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
 });
 
 test('dependency bench input is bound to one fully validated campaign attempt', () => {
@@ -179,6 +191,25 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
     changedParent[changedParent.indexOf('--parent-attempt-id') + 1] = 'different-attempt';
     assert.throws(() => parseArgs(['node', ...changedParent]),
       /does not match the requested campaign attempt/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sequential bench input uses the catalog for selection without live gating', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-catalog-'));
+  try {
+    const definition = dependencyDefinition();
+    definition.mode = { id: 'sequential', version: '1.0.0' };
+    const plan = compile(definition);
+    const planPath = join(root, 'plan.json');
+    writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
+    const argv = attemptArgv(plan, plan.attempts[0], join(root, 'result'), 0, planPath);
+    assert(argv.includes('--levels'));
+    const args = parseArgs(['node', ...argv]);
+    assert.equal(args.progression, undefined);
+    assert.deepEqual(args.featureCatalog, plan.progression);
+    assert.deepEqual(args.levelList, [1]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

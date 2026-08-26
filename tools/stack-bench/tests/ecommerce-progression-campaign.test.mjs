@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -44,6 +44,29 @@ test('the ecommerce reference pilot resolves the exact L1-L5 progression inputs'
     ['mongodb', 'postgres', 'spacetime']);
   assert(plan.attempts.every(attempt => attempt.agentAdapter === 'reference-fixture'));
   assert.equal(validateCompiledCampaignPlan(plan).contentSha256, plan.contentSha256);
+});
+
+test('sequential mode can run a prefix of the same ecommerce feature catalog', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-prefix-'));
+  try {
+    const manifest = JSON.parse(readFileSync(campaignPath, 'utf8'));
+    manifest.id = 'ecommerce-sequential-prefix-proof';
+    manifest.mode = { id: 'sequential', version: '1.0.0' };
+    manifest.levels = [1, 2, 3];
+    manifest.selection.levels = manifest.selection.levels.slice(0, 3);
+    const path = join(directory, 'campaign.json');
+    writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+    const plan = compileCampaignFile(path);
+    assert.deepEqual(plan.definition.levels, [1, 2, 3]);
+    assert(plan.attempts.every(attempt => attempt.progression === undefined));
+    assert(plan.attempts.every(attempt =>
+      attempt.featureCatalog.sha256 === plan.progression.identity.sha256));
+    assert.deepEqual(plan.conditions[0].requested.levels.map(level => level.level), [1, 2, 3]);
+    assert.deepEqual(plan.conditions[0].requested.levels
+      .map(level => level.selection.scoredChecks.length), [11, 40, 61]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('every campaign level resolves one candidate reference for each stack', () => {
