@@ -44,7 +44,7 @@ test('an unexpected walk error records one failure before blocking later hooks',
   assert.deepEqual(results, [
     { id: 'seen', status: 'PASS' },
     { id: 'golden-path', status: 'FAIL',
-      detail: 'golden path aborted: target product was not visible' },
+      detail: 'golden path aborted: target product was not visible locator details' },
     { id: 'cart-panel', status: 'BLOCKED', detail: 'golden path aborted' },
     { id: 'order-list', status: 'BLOCKED', detail: 'golden path aborted' },
     { id: 'scenario-only', status: 'SCENARIO', detail: 'requires setup' },

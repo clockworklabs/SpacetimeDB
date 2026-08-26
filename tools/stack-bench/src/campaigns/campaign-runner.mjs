@@ -23,9 +23,16 @@ import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
+import { aggregateRunOutcome } from '../evidence/outcomes.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
+
+export function expectedDependencyRunOutcomeKind(levels, terminalOutcome) {
+  const expected = aggregateRunOutcome(levels ?? []).kind;
+  if (terminalOutcome?.kind !== 'passed' && expected === 'passed') return null;
+  return expected;
+}
 
 function contained(root, path, label) {
   const absoluteRoot = resolve(root);
@@ -397,9 +404,12 @@ export function validateCampaignRun(plan, attempt, run, {
             `levels.L${level.level}.graded`);
         }
         if (stored.state.phase === 'terminal') {
-          const expectedOutcome = stored.state.terminalOutcome.kind === 'passed'
-            ? 'passed' : 'app_failure';
-          mismatch(run.outcome?.kind !== expectedOutcome, 'outcome.kind');
+          // The graph records feature progress. The run outcome also includes
+          // whole-app checks such as the UI contract and inherited guarantees.
+          // A graph can therefore finish while one of those checks still fails.
+          const expectedOutcome = expectedDependencyRunOutcomeKind(
+            run.levels, stored.state.terminalOutcome);
+          mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
         } else if (!interruptedPrefix) {
           mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
             'progressionState.phase');

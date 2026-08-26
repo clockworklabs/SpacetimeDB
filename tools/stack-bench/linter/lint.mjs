@@ -98,7 +98,8 @@ export function completeUnvisitedHooks(hooks, results) {
 
 export function completeAbortedHooks(hooks, results, error) {
   const visited = new Set(results.map(result => result.id));
-  const detail = String(error?.message ?? error ?? 'unknown error').split(/\r?\n/)[0];
+  const detail = String(error?.message ?? error ?? 'unknown error')
+    .split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 6).join(' ').slice(0, 800);
   results.push({ id: 'golden-path', status: 'FAIL', detail: `golden path aborted: ${detail}` });
   for (const hook of hooks) {
     if (visited.has(hook.id)) continue;

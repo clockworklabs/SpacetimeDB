@@ -18,6 +18,20 @@ const SEARCH_ONLY = 'Webcam';
 export async function walk({ page, args, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT }) {
   const fail = (h, detail) => { results.push({ id: h.id, status: 'FAIL', detail }); };
   const pass = h => { results.push({ id: h.id, status: 'PASS' }); };
+  const click = async (locator, label) => {
+    try {
+      await locator.click({ timeout: CHECK_TIMEOUT });
+    } catch {
+      // A live UI can replace a button while state arrives. Resolve the locator
+      // again once before declaring that the product cannot perform the action.
+      await page.waitForTimeout(200);
+      try {
+        await locator.click({ timeout: CHECK_TIMEOUT });
+      } catch (error) {
+        throw new Error(`${label}: ${error.message}`, { cause: error });
+      }
+    }
+  };
 
   await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
 
@@ -33,7 +47,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     // and the whole golden path aborted at sign-up.
     await page.locator(tid('signup-username')).first().fill(`lint${uniq}`);
     await page.locator(tid('signup-password')).first().fill(`pwlint${uniq}`);
-    await page.locator(tid('signup-submit')).first().click();
+    await click(page.locator(tid('signup-submit')).first(), 'submit sign-up');
   }
 
   // Stage: storefront — signing up turns the buying controls on.
@@ -45,8 +59,8 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   // before it exercises the form — otherwise a spec-compliant refusal would
   // read as a missing hook.
   if (ok) {
-    await page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first()
-      .locator(tid('buy-now')).first().click();
+    await click(page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first()
+      .locator(tid('buy-now')).first(), `buy ${REVIEW_ITEM}`);
     await page.waitForTimeout(1200);
   }
 
@@ -93,7 +107,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     await rating.selectOption('5')
       .catch(async () => { await rating.fill('5').catch(async () => { await rating.click().catch(() => {}); }); });
     await page.locator(tid('review-input')).first().fill(probe);
-    await page.locator(tid('review-submit')).first().click();
+    await click(page.locator(tid('review-submit')).first(), 'submit review');
     for (const h of byStage('item-after-review')) {
       const loc = page.locator(tid(h.id), { hasText: probe }).first();
       try {
@@ -115,16 +129,16 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     const card = page.locator(tid('search-results')).first()
       .locator(tid('item-card'), { hasText: CART_ITEM }).first();
     await card.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
-    await card.locator(tid('add-to-cart')).first().click();
+    await click(card.locator(tid('add-to-cart')).first(), `add ${CART_ITEM} to cart`);
     await search.fill('');
     await search.press('Enter').catch(() => {});
-    await page.locator(tid('cart-toggle')).first().click();
+    await click(page.locator(tid('cart-toggle')).first(), 'open cart');
     for (const h of byStage('cart')) ok = (await checkHook(page, h, results)) && ok;
   } else blocked('cart');
 
   // Stage: after-checkout — the order must show the item that was bought.
   if (ok) {
-    await page.locator(tid('checkout-submit')).first().click();
+    await click(page.locator(tid('checkout-submit')).first(), 'submit checkout');
     await page.waitForTimeout(1500);
     const orders = page.locator(tid('orders-toggle')).first();
     if (await orders.isVisible().catch(() => false)) await orders.click();
@@ -145,13 +159,13 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   // Stage: admin — a separate account with its own area. Signing out and back
   // in as the seeded admin is the only way to reach it.
   if (ok) {
-    await page.locator(tid('signout')).first().click();
+    await click(page.locator(tid('signout')).first(), 'sign out');
     await page.waitForTimeout(1000);
     const toggle = page.locator(tid('signin-toggle')).first();
     if (await toggle.count()) await toggle.click().catch(() => {});
     await page.locator(tid('signin-username')).first().fill(ADMIN_USER);
     await page.locator(tid('signin-password')).first().fill(ADMIN_PASS);
-    await page.locator(tid('signin-submit')).first().click();
+    await click(page.locator(tid('signin-submit')).first(), 'submit sign-in');
     await page.waitForTimeout(1500);
     const link = page.locator(tid('admin-link')).first();
     if (await link.isVisible().catch(() => false)) await link.click();

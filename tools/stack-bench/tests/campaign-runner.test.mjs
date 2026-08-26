@@ -9,7 +9,8 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../src/evidence/artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
-  processFailureDetail, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
+  expectedDependencyRunOutcomeKind, processFailureDetail,
+  validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.mjs';
@@ -55,6 +56,20 @@ test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
   assert.equal(campaignSlotEnvironment({ KEEP: 'yes' }, 'postgres', 2).KEEP, 'yes');
   assert.throws(() => campaignSlotEnvironment({ STACK_BENCH_STDB_URI: 'https://example.com' },
     'spacetime', 1), /explicit loopback port/);
+});
+
+test('dependency completion does not hide a whole-app failure', () => {
+  assert.equal(expectedDependencyRunOutcomeKind([
+    { outcome: { kind: 'passed' } },
+    { outcome: { kind: 'app_failure' } },
+    { outcome: { kind: 'passed' } },
+  ], { kind: 'passed' }), 'app_failure');
+  assert.equal(expectedDependencyRunOutcomeKind([
+    { outcome: { kind: 'passed' } },
+  ], { kind: 'passed' }), 'passed');
+  assert.equal(expectedDependencyRunOutcomeKind([
+    { outcome: { kind: 'passed' } },
+  ], { kind: 'partial' }), null);
 });
 
 function frozenRuntime(root) {
