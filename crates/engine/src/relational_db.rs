@@ -534,6 +534,11 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
+            ENGINE_METRICS
+                .replay_snapshot_num_absent_pages
+                .with_label_values(database_identity)
+                .set(u64_to_i64(snapshot.read_metrics.absent_pages));
+
             for (kind, metrics) in snapshot.read_metrics.iter() {
                 ENGINE_METRICS
                     .replay_snapshot_read_time_seconds

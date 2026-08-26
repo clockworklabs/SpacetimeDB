@@ -205,6 +205,7 @@ impl SnapshotWorkerActor {
                     let res = self
                         .maybe_take_snapshot(database_state.as_ref())
                         .await
+                        // TODO: Review log level after lifecycle errors can be distinguished from snapshot creation failures.
                         .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
                     if let Ok(snapshot_offset) = res {
                         self.maybe_compress_snapshots(snapshot_offset).await;

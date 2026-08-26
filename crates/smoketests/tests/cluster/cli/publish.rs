@@ -1,6 +1,6 @@
 //! CLI publish command tests
 
-use spacetimedb_smoketests::{patch_module_cargo_to_local_bindings, require_local_server, Smoketest};
+use spacetimedb_smoketests::{patch_module_cargo_to_local_bindings, random_string, Smoketest};
 
 #[test]
 fn cli_can_publish_spacetimedb_on_disk() {
@@ -47,10 +47,9 @@ fn cli_can_publish_spacetimedb_on_disk() {
 // e.g. when providing --delete-data, or when there's a conflict and --delete-data=on-conflict is provided.
 
 fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bool) {
-    // This only requires a local server because the module names are static
-    require_local_server!();
-
     let test = Smoketest::builder().autopublish(false).build();
+
+    let module_name = format!("{module_name}-{}", random_string());
 
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
     let dir = workspace_dir.join("modules").join("module-test");
@@ -63,7 +62,8 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
             &dir,
             "--server",
             &test.server_url,
-            module_name,
+            "--yes=remote",
+            &module_name,
         ])
         .unwrap();
 
@@ -74,7 +74,8 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
         &dir,
         "--server",
         &test.server_url,
-        module_name,
+        "--yes=remote",
+        &module_name,
     ];
     args.extend(republish_args);
     let output = test.spacetime_cmd(&args);
