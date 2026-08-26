@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_macros)]
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;
@@ -10,10 +10,23 @@ use duct::cmd;
 /// This does not include Unreal tests.
 /// This expects to run in a clean git state.
 #[derive(Parser)]
-struct Cli {}
+struct Cli {
+    /// Do not build CLI and standalone; use the binaries selected by SPACETIME_BIN.
+    #[arg(long)]
+    no_build: bool,
+}
 
 fn main() -> Result<()> {
-    Cli::parse();
+    let cli = Cli::parse();
+
+    if cli.no_build {
+        ci_common::require_runtime()?;
+    } else {
+        ensure!(
+            std::env::var_os("SPACETIME_BIN").is_none(),
+            "SPACETIME_BIN requires --no-build"
+        );
+    }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
@@ -55,19 +68,21 @@ fn main() -> Result<()> {
     .run()?;
     // The SDK test harness uses the same child-process server guard as smoketests,
     // which expects release CLI/standalone binaries to already exist.
-    cmd!(
-        "cargo",
-        "build",
-        "-vv",
-        "--release",
-        "-p",
-        "spacetimedb-cli",
-        "-p",
-        "spacetimedb-standalone",
-        "--features",
-        "spacetimedb-standalone/allow_loopback_http_for_tests",
-    )
-    .run()?;
+    if !cli.no_build {
+        cmd!(
+            "cargo",
+            "build",
+            "-vv",
+            "--release",
+            "-p",
+            "spacetimedb-cli",
+            "-p",
+            "spacetimedb-standalone",
+            "--features",
+            "spacetimedb-standalone/allow_loopback_http_for_tests",
+        )
+        .run()?;
+    }
     // SDK procedure tests intentionally make localhost HTTP requests.
     cmd!(
         "cargo",

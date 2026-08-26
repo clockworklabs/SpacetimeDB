@@ -1,20 +1,31 @@
 #![allow(clippy::disallowed_macros)]
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use ci_common::pnpm;
 use clap::Parser;
-use duct::cmd;
 
 /// Runs TypeScript workspace tests and template build checks.
 #[derive(Parser)]
-struct Cli {}
+struct Cli {
+    /// Do not build CLI and standalone; use the binaries selected by SPACETIME_BIN.
+    #[arg(long)]
+    no_build: bool,
+}
 
 fn main() -> Result<()> {
-    Cli::parse();
+    let cli = Cli::parse();
+    if cli.no_build {
+        ci_common::require_runtime()?;
+    } else {
+        ensure!(
+            std::env::var_os("SPACETIME_BIN").is_none(),
+            "SPACETIME_BIN requires --no-build"
+        );
+    }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;
     pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
-    let diff_status = cmd!(
+    let diff_status = duct::cmd!(
         "bash",
         "tools/check-diff.sh",
         "templates/chat-react-ts/src/module_bindings"

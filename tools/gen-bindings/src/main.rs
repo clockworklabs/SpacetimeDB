@@ -4,7 +4,7 @@ use clap::Parser;
 use replace_spacetimedb::{replace_in_tree, ReplaceOptions};
 use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[derive(Parser, Debug)]
@@ -43,37 +43,20 @@ fn run_inherit(cmd: impl AsRef<OsStr>, args: &[&str], cwd: Option<&Path>) -> Res
     Ok(())
 }
 
-fn cargo_target_dir(workspace_dir: &Path) -> PathBuf {
-    match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
-        Some(path) if path.is_absolute() => path,
-        Some(path) => workspace_dir.join(path),
-        None => workspace_dir.join("target"),
-    }
-}
-
 fn main() -> Result<()> {
     let args = Cli::parse();
 
-    let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap();
-
-    // 1) Build prerequisite
-    run_inherit("cargo", &["build", "-vv"], Some(workspace_dir))?;
-
-    // 2) Ensure output directory exists
+    // 1) Ensure output directory exists
     if !Path::new(&args.out_dir).exists() {
         fs::create_dir_all(&args.out_dir).context("create output directory")?;
     }
 
-    // 3) Generate TS client from project
+    // 2) Generate TS client from project
     run_inherit(
-        cargo_target_dir(workspace_dir)
-            .join("debug/spacetimedb-cli")
-            .with_extension(std::env::consts::EXE_EXTENSION),
+        "cargo",
         &[
+            "-vv",
+            "spacetime",
             "generate",
             "-y",
             "--lang",
