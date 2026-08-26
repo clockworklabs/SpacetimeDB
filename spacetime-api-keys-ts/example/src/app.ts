@@ -117,7 +117,7 @@ function toast(message: string, kind: 'ok' | 'error' = 'ok'): void {
 }
 
 function tokenKey(): string {
-  return `${TOKEN_PREFIX}.${config?.stdbUri ?? 'unknown'}.${config?.database ?? 'unknown'}`;
+  return `${TOKEN_PREFIX}.${config?.spacetimeUri ?? 'unknown'}.${config?.databaseName ?? 'unknown'}`;
 }
 
 function requireConn(): DbConnection {
@@ -183,7 +183,7 @@ function loadColor(): string {
   );
 }
 
-async function loadConfig(): Promise<ServerConfig> {
+async function loadServerConfig(): Promise<ServerConfig> {
   const res = await fetch('/api/config');
   if (!res.ok) throw new Error(`/api/config returned ${res.status}`);
   return (await res.json()) as ServerConfig;
@@ -194,18 +194,18 @@ function connect(cfg: ServerConfig): Promise<DbConnection> {
     let retriedWithoutToken = false;
     const start = (token: string | undefined) => {
       let builder = DbConnection.builder()
-        .withUri(cfg.stdbUri)
-        .withDatabaseName(cfg.database);
+        .withUri(cfg.spacetimeUri)
+        .withDatabaseName(cfg.databaseName);
       if (token) builder = builder.withToken(token);
       builder
-        .onConnect((c, identity, nextToken) => {
-          conn = c;
+        .onConnect((connection, identity, nextToken) => {
+          conn = connection;
           identityHex =
             typeof identity.toHexString === 'function'
               ? identity.toHexString()
               : String(identity);
           if (nextToken) localStorage.setItem(tokenKey(), nextToken);
-          resolve(c);
+          resolve(connection);
         })
         .onDisconnect((_ctx, err) => {
           conn = null;
@@ -240,7 +240,7 @@ function scheduleReconnect(): void {
   if (reconnectTimer) return;
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
-    run().catch(err => {
+    main().catch(err => {
       console.error(err);
       setStatus(err instanceof Error ? err.message : String(err));
       scheduleReconnect();
@@ -251,11 +251,12 @@ function scheduleReconnect(): void {
 // Subscriptions. Owner and holder subscribe to the same colony by id;
 // only the id differs. Reads are public-by-colony; writes are gated.
 
-function subscribeAll(): void {
+function subscribeToTables(): void {
   if (subscribed) return;
   subscribed = true;
-  const c = requireConn();
-  c.subscriptionBuilder()
+  const connection = requireConn();
+  connection
+    .subscriptionBuilder()
     .onApplied(() => renderWorld())
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
@@ -269,28 +270,31 @@ function subscribeAll(): void {
       tables.presenceEntry.where(row => row.scope.eq(colonyId)),
       ...(mode === 'owner' ? [tables.myAccessKeys] : []),
     ]);
+}
 
-  c.db.world.onInsert(() => renderWorld());
-  c.db.world.onUpdate(() => renderWorld());
-  c.db.world.onDelete(() => renderWorld());
-  c.db.colonyGrid.onInsert(() => renderWorld());
-  c.db.colonyGrid.onUpdate(() => renderWorld());
-  c.db.colonyGrid.onDelete(() => renderWorld());
-  c.db.colonyCells.onInsert(() => renderWorld());
-  c.db.colonyCells.onUpdate(() => renderWorld());
-  c.db.colonyCells.onDelete(() => renderWorld());
-  c.db.colonyEntities.onInsert(() => renderWorld());
-  c.db.colonyEntities.onUpdate(() => renderWorld());
-  c.db.colonyEntities.onDelete(() => renderWorld());
-  c.db.worldEvent.onInsert(() => renderWorld());
-  c.db.worldEvent.onUpdate(() => renderWorld());
-  c.db.worldEvent.onDelete(() => renderWorld());
-  c.db.myAccessKeys.onInsert(() => renderWorld());
-  c.db.myAccessKeys.onUpdate(() => renderWorld());
-  c.db.myAccessKeys.onDelete(() => renderWorld());
-  c.db.presenceEntry.onInsert(() => renderPresence());
-  c.db.presenceEntry.onUpdate(() => renderPresence());
-  c.db.presenceEntry.onDelete(() => renderPresence());
+function registerRowCallbacks(): void {
+  const connection = requireConn();
+  connection.db.world.onInsert(() => renderWorld());
+  connection.db.world.onUpdate(() => renderWorld());
+  connection.db.world.onDelete(() => renderWorld());
+  connection.db.colonyGrid.onInsert(() => renderWorld());
+  connection.db.colonyGrid.onUpdate(() => renderWorld());
+  connection.db.colonyGrid.onDelete(() => renderWorld());
+  connection.db.colonyCells.onInsert(() => renderWorld());
+  connection.db.colonyCells.onUpdate(() => renderWorld());
+  connection.db.colonyCells.onDelete(() => renderWorld());
+  connection.db.colonyEntities.onInsert(() => renderWorld());
+  connection.db.colonyEntities.onUpdate(() => renderWorld());
+  connection.db.colonyEntities.onDelete(() => renderWorld());
+  connection.db.worldEvent.onInsert(() => renderWorld());
+  connection.db.worldEvent.onUpdate(() => renderWorld());
+  connection.db.worldEvent.onDelete(() => renderWorld());
+  connection.db.myAccessKeys.onInsert(() => renderWorld());
+  connection.db.myAccessKeys.onUpdate(() => renderWorld());
+  connection.db.myAccessKeys.onDelete(() => renderWorld());
+  connection.db.presenceEntry.onInsert(() => renderPresence());
+  connection.db.presenceEntry.onUpdate(() => renderPresence());
+  connection.db.presenceEntry.onDelete(() => renderPresence());
 }
 
 function terrainFor(x: number, y: number): string {
@@ -937,7 +941,7 @@ function joinColony(): void {
   location.href = shareLink(key);
 }
 
-function wireControls(): void {
+function registerUiHandlers(): void {
   if (controlsWired) return;
   controlsWired = true;
 
@@ -1112,11 +1116,11 @@ function applyModeChrome(): void {
   }
 }
 
-async function run(): Promise<void> {
+async function main(): Promise<void> {
   setStatus('Connecting');
-  config = await loadConfig();
-  const c = await connect(config);
-  conn = c;
+  config = await loadServerConfig();
+  const connection = await connect(config);
+  conn = connection;
   myName = loadName();
   myColor = loadColor();
 
@@ -1160,14 +1164,15 @@ async function run(): Promise<void> {
 
   setStatus('Connected');
   applyModeChrome();
-  subscribeAll();
-  wireControls();
+  registerRowCallbacks();
+  subscribeToTables();
+  registerUiHandlers();
   renderRoleGrid();
   renderWorld();
   startPresence();
 }
 
-run().catch(err => {
+main().catch(err => {
   console.error(err);
   setStatus(err instanceof Error ? err.message : String(err));
   toast(err instanceof Error ? err.message : String(err), 'error');

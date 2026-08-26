@@ -59,8 +59,8 @@ interface AuthMe {
 }
 
 interface ServerConfig {
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
   oauth?: {
     google?: boolean;
     github?: boolean;
@@ -159,12 +159,12 @@ function connect(): Promise<DbConnection> {
   const config = serverCfg;
   return new Promise((resolve, reject) => {
     DbConnection.builder()
-      .withUri(config.stdbUri)
-      .withDatabaseName(config.appDatabase)
+      .withUri(config.spacetimeUri)
+      .withDatabaseName(config.databaseName)
       .withToken(loadStdbToken())
-      .onConnect((c, _identity, token) => {
+      .onConnect((connection, _identity, token) => {
         if (token) saveStdbToken(token);
-        resolve(c);
+        resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
         broadcastConn('error', err?.message ?? 'disconnected');
@@ -241,25 +241,26 @@ function syncUserFromRow(row: AuthUserRow) {
   broadcastAuth();
 }
 
-function subscribeToTables(c: DbConnection): void {
-  c.subscriptionBuilder()
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
     .onApplied(() => broadcastNotes())
     .onError((ctx: ErrorContext) => console.error('sub error', ctx.event))
     .subscribe([tables.myNotes, tables.myAuthUser]);
 }
 
-function registerRowCallbacks(c: DbConnection): void {
-  c.db.myNotes.onInsert(() => broadcastNotes());
-  c.db.myNotes.onUpdate(() => broadcastNotes());
-  c.db.myNotes.onDelete(() => broadcastNotes());
+function registerRowCallbacks(connection: DbConnection): void {
+  connection.db.myNotes.onInsert(() => broadcastNotes());
+  connection.db.myNotes.onUpdate(() => broadcastNotes());
+  connection.db.myNotes.onDelete(() => broadcastNotes());
 
-  c.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
+  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
     syncUserFromRow(row)
   );
-  c.db.myAuthUser.onUpdate(
+  connection.db.myAuthUser.onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  c.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
+  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
     if (!currentUser || row.userId !== currentUser.userId) return;
     currentUser = null;
     currentExp = undefined;
@@ -384,7 +385,7 @@ window.auth = {
   setProfile,
 };
 
-(async () => {
+async function main(): Promise<void> {
   broadcastConn('idle');
   try {
     serverCfg = await loadServerConfig();
@@ -394,4 +395,6 @@ window.auth = {
   }
   await restoreSession();
   dispatch('auth:ready', {});
-})();
+}
+
+void main();

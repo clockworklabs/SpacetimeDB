@@ -28,10 +28,7 @@ import { collectDropped, UploadController } from './uploads';
 import { ContextMenu } from './context-menu';
 import { bindListActions as bindListInteractions } from './list-actions';
 import { handleListKey } from './keyboard';
-import {
-  uploadDropped,
-  wireFolderDropTarget as wireDropTarget,
-} from './drop-target';
+import { uploadDropped, registerFolderDropTarget } from './drop-target';
 import {
   createVaultRendering,
   fileDetailsHtml,
@@ -45,7 +42,7 @@ import { VaultSelection } from './selection';
 let conn: DbConnection | null = null;
 let authToken: string | undefined = loadToken();
 
-async function loadConfig(): Promise<ServerConfig> {
+async function loadServerConfig(): Promise<ServerConfig> {
   const res = await fetch('/api/config');
   if (!res.ok) throw new Error(`/api/config returned ${res.status}`);
   return (await res.json()) as ServerConfig;
@@ -54,13 +51,13 @@ async function loadConfig(): Promise<ServerConfig> {
 function connect(config: ServerConfig): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     DbConnection.builder()
-      .withUri(config.stdbUri)
-      .withDatabaseName(config.appDatabase)
+      .withUri(config.spacetimeUri)
+      .withDatabaseName(config.databaseName)
       .withToken(authToken)
-      .onConnect((c, _identity, token) => {
+      .onConnect((connection, _identity, token) => {
         authToken = token;
         saveToken(token);
-        resolve(c);
+        resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
         conn = null;
@@ -375,7 +372,7 @@ function renderTree(): void {
       btn.addEventListener('contextmenu', e =>
         openCtxMenu(e, { type: 'folder', path: btn.dataset.path! })
       );
-      wireFolderDropTarget(btn, btn.dataset.path!);
+      registerFolderDropCallbacks(btn, btn.dataset.path!);
     });
 }
 function renderHead(): void {
@@ -434,7 +431,7 @@ function renderStorage(): void {
     : 'No files stored yet';
 }
 
-function wireDetailsNav(scope: HTMLElement): void {
+function registerDetailsNavigationHandlers(scope: HTMLElement): void {
   scope.querySelectorAll<HTMLElement>('[data-goto]').forEach(btn =>
     btn.addEventListener('click', () => {
       currentPath = btn.dataset.goto!;
@@ -464,7 +461,7 @@ async function loadDetailsThumb(row: FileSummary): Promise<void> {
 function renderFileDetails(body: HTMLElement, row: FileSummary): void {
   const isImage = (row.mimeType || '').startsWith('image/');
   body.innerHTML = fileDetailsHtml(row);
-  wireDetailsNav(body);
+  registerDetailsNavigationHandlers(body);
   if (isImage) void loadDetailsThumb(row);
 }
 function renderFolderDetails(body: HTMLElement, folderPath: string): void {
@@ -475,7 +472,7 @@ function renderFolderDetails(body: HTMLElement, folderPath: string): void {
     row ?? undefined,
     subtreeStats(folderPath)
   );
-  wireDetailsNav(body);
+  registerDetailsNavigationHandlers(body);
 }
 function renderDetails(): void {
   document
@@ -553,7 +550,7 @@ function bindListActions(): void {
     moveFile: path => openMove([path]),
     deleteFile: confirmDeleteFile,
     deleteFolder: confirmDeleteFolder,
-    wireFolderDropTarget,
+    registerFolderDropCallbacks,
   });
 }
 
@@ -583,8 +580,11 @@ function confirmDeleteFolder(path: string): void {
   );
 }
 
-function wireFolderDropTarget(el: HTMLElement, folderPath: string): void {
-  wireDropTarget(el, folderPath, {
+function registerFolderDropCallbacks(
+  el: HTMLElement,
+  folderPath: string
+): void {
+  registerFolderDropTarget(el, folderPath, {
     currentPath: () => currentPath,
     endFileDrag,
     upload: (dataTransfer, path) =>
@@ -878,7 +878,7 @@ function endFileDrag(): void {
   document.body.classList.remove('dragging-files');
 }
 
-function wireUi(): void {
+function registerUiHandlers(): void {
   $('new-folder').addEventListener('click', openNewFolder);
   $('upload').addEventListener('click', () => {
     if (!uploading) $('file-input').click();
@@ -1113,12 +1113,31 @@ function scheduleRefresh(): void {
   });
 }
 
+function registerRowCallbacks(connection: DbConnection): void {
+  connection.db.myFolders.onInsert(scheduleRefresh);
+  connection.db.myFolders.onUpdate(scheduleRefresh);
+  connection.db.myFolders.onDelete(scheduleRefresh);
+  connection.db.myFileSummaries.onInsert(scheduleRefresh);
+  connection.db.myFileSummaries.onUpdate(scheduleRefresh);
+  connection.db.myFileSummaries.onDelete(scheduleRefresh);
+}
+
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
+    .onApplied(() => refreshData())
+    .onError((ctx: ErrorContext) =>
+      console.error('subscription error', ctx.event)
+    )
+    .subscribe([tables.myFolders, tables.myFileSummaries]);
+}
+
 async function main(): Promise<void> {
-  wireUi();
+  registerUiHandlers();
   render();
   let config: ServerConfig;
   try {
-    config = await loadConfig();
+    config = await loadServerConfig();
     try {
       conn = await connect(config);
     } catch (err) {
@@ -1133,20 +1152,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  conn
-    .subscriptionBuilder()
-    .onApplied(() => refreshData())
-    .onError((ctx: ErrorContext) =>
-      console.error('subscription error', ctx.event)
-    )
-    .subscribe([tables.myFolders, tables.myFileSummaries]);
-
-  conn.db.myFolders.onInsert(scheduleRefresh);
-  conn.db.myFolders.onUpdate(scheduleRefresh);
-  conn.db.myFolders.onDelete(scheduleRefresh);
-  conn.db.myFileSummaries.onInsert(scheduleRefresh);
-  conn.db.myFileSummaries.onUpdate(scheduleRefresh);
-  conn.db.myFileSummaries.onDelete(scheduleRefresh);
+  registerRowCallbacks(conn);
+  subscribeToTables(conn);
 
   window.vault = vault;
 }

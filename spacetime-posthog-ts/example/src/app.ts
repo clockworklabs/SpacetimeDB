@@ -16,8 +16,8 @@ import {
 } from '../spacetimedb/src/economy';
 
 interface ServerConfig {
-  stdbUri: string;
-  database: string;
+  spacetimeUri: string;
+  databaseName: string;
   posthogAppUrl?: string | null;
 }
 
@@ -224,16 +224,16 @@ function connect(config: ServerConfig): Promise<DbConnection> {
   const attempt = (token: string | null): Promise<DbConnection> =>
     new Promise((resolve, reject) => {
       let builder = DbConnection.builder()
-        .withUri(config.stdbUri)
-        .withDatabaseName(config.database)
+        .withUri(config.spacetimeUri)
+        .withDatabaseName(config.databaseName)
         // Persist the token so this browser keeps its identity across reloads.
-        .onConnect((c, _identity, tok) => {
+        .onConnect((connection, _identity, token) => {
           try {
-            localStorage.setItem(TOKEN_KEY, tok);
+            localStorage.setItem(TOKEN_KEY, token);
           } catch {
             /* ignore */
           }
-          resolve(c);
+          resolve(connection);
         })
         .onDisconnect((_ctx, err) => {
           stopSimulation();
@@ -803,7 +803,7 @@ async function tickSimulation(): Promise<void> {
   });
 }
 
-function wireUi(): void {
+function registerNavigationHandlers(): void {
   $('menuGrid').addEventListener('click', event => {
     const card = (event.target as HTMLElement).closest(
       '[data-variant-id]'
@@ -827,7 +827,7 @@ function guard(fn: () => Promise<void>): () => Promise<void> {
   };
 }
 
-function wireActions(): void {
+function registerActionHandlers(): void {
   $('runToggle').addEventListener('click', () => {
     running = !running;
     restartTimer();
@@ -930,7 +930,7 @@ function wireActions(): void {
   });
 }
 
-function wireTableEvents(): void {
+function registerRowCallbacks(): void {
   const render = () => renderAll();
   const sources = [
     productsTable(),
@@ -950,10 +950,33 @@ function wireTableEvents(): void {
   }
 }
 
-async function run(): Promise<void> {
-  // Wire the chrome first so the menu and drawer are interactive immediately.
-  wireUi();
-  wireActions();
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
+    .onApplied(() => {
+      renderAll();
+      showToast('Context Cafe ready.');
+    })
+    .onError((ctx: ErrorContext) =>
+      console.error('subscription error', ctx.event)
+    )
+    .subscribe([
+      tables.cafeProducts,
+      tables.cafeVariants,
+      tables.cafeScenarios,
+      tables.cafeConfig,
+      tables.cafeMetrics,
+      tables.cafeEcon,
+      tables.cafeQueue,
+      tables.cafeRecentSessions,
+      tables.cafeAnalyticsSummary,
+    ]);
+}
+
+async function main(): Promise<void> {
+  // Register the chrome handlers first so the menu and drawer work immediately.
+  registerNavigationHandlers();
+  registerActionHandlers();
 
   const config = await loadServerConfig();
 
@@ -975,32 +998,12 @@ async function run(): Promise<void> {
     console.error('init_session failed', err);
   }
 
-  conn
-    .subscriptionBuilder()
-    .onApplied(() => {
-      renderAll();
-      showToast('Context Cafe ready.');
-    })
-    .onError((ctx: ErrorContext) =>
-      console.error('subscription error', ctx.event)
-    )
-    .subscribe([
-      tables.cafeProducts,
-      tables.cafeVariants,
-      tables.cafeScenarios,
-      tables.cafeConfig,
-      tables.cafeMetrics,
-      tables.cafeEcon,
-      tables.cafeQueue,
-      tables.cafeRecentSessions,
-      tables.cafeAnalyticsSummary,
-    ]);
-
-  wireTableEvents();
+  registerRowCallbacks();
+  subscribeToTables(conn);
 
   renderAll();
 }
 
-run().catch(err => {
+main().catch(err => {
   showToast(err instanceof Error ? err.message : String(err), 'error');
 });

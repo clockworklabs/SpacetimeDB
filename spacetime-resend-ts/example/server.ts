@@ -90,7 +90,7 @@ function connectAttempt(token: string | undefined): Promise<ConnectedServer> {
   });
 }
 
-async function connectStdb(): Promise<ConnectedServer> {
+async function connect(): Promise<ConnectedServer> {
   const stored = loadServerToken(
     SERVER_TOKEN_PATH,
     process.env.STDB_SERVER_TOKEN
@@ -125,13 +125,13 @@ app.use(express.json({ limit: '512kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: DB_NAME });
+  res.json({ ok: true, databaseName: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
-    stdbUri: STDB_URI,
-    database: DB_NAME,
+    spacetimeUri: STDB_URI,
+    databaseName: DB_NAME,
     resendConfigured,
     defaultFrom: DEFAULT_FROM,
     allowedRecipients: ALLOWED_RECIPIENTS,
@@ -191,7 +191,7 @@ async function bootstrapResendConfig(): Promise<void> {
 (async () => {
   console.log(`[stdb] connecting to ${STDB_URI}/${DB_NAME} ...`);
   try {
-    const connected = await connectStdb();
+    const connected = await connect();
     stdb = connected.connection;
     grantServerIdentity({
       spacetimeBin: SPACETIME_BIN,

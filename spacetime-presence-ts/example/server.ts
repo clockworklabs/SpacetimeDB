@@ -148,13 +148,13 @@ app.use('/auth', proxyStdbRoute('/auth'));
 app.use('/files', proxyStdbRoute('/files'));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, app: DB_NAME });
+  res.json({ ok: true, databaseName: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
-    stdbUri: STDB_URI,
-    appDatabase: DB_NAME,
+    spacetimeUri: STDB_URI,
+    databaseName: DB_NAME,
     auth: {
       issuerUrl: AUTH_ISSUER_URL,
       baseUrl: AUTH_BASE_URL,

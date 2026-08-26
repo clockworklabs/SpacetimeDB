@@ -112,7 +112,7 @@ let currentConn: DbConnection | null = null;
 let globalSub: SubscriptionHandle | null = null;
 let messageSub: SubscriptionHandle | null = null;
 let activeThreadId: bigint | null = null;
-let serverCfg: { stdbUri: string; appDatabase: string } | null = null;
+let serverCfg: { spacetimeUri: string; databaseName: string } | null = null;
 
 let currentUser: AuthUser | null = null;
 let currentExp: number | undefined;
@@ -223,8 +223,8 @@ async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
 }
 
 async function loadServerConfig(): Promise<{
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
 }> {
   const res = await fetch('/api/config', { credentials: 'same-origin' });
   if (!res.ok) throw new Error(`/api/config returned ${res.status}`);
@@ -254,9 +254,9 @@ function connect(uri: string, databaseName: string): Promise<DbConnection> {
       .withUri(uri)
       .withDatabaseName(databaseName)
       .withToken(loadStdbToken())
-      .onConnect((c, _identity, token) => {
+      .onConnect((connection, _identity, token) => {
         if (token) saveStdbToken(token);
-        resolve(c);
+        resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
         broadcastConn('error', err?.message ?? 'disconnected');
@@ -322,39 +322,60 @@ function setActiveThread(threadId: bigint | null): void {
     .subscribe([tables.myMessages.where(row => row.threadId.eq(threadId))]);
 }
 
-function registerRowCallbacks(conn: DbConnection): void {
-  conn.db.myThreads.onInsert(() => broadcastThreads());
-  conn.db.myThreads.onUpdate(() => broadcastThreads());
-  conn.db.myThreads.onDelete(() => broadcastThreads());
+function registerRowCallbacks(connection: DbConnection): void {
+  connection.db.myThreads.onInsert(() => broadcastThreads());
+  connection.db.myThreads.onUpdate(() => broadcastThreads());
+  connection.db.myThreads.onDelete(() => broadcastThreads());
 
-  conn.db.myMessages.onInsert(() => broadcastMessages());
-  conn.db.myMessages.onUpdate(() => broadcastMessages());
-  conn.db.myMessages.onDelete(() => broadcastMessages());
+  connection.db.myMessages.onInsert(() => broadcastMessages());
+  connection.db.myMessages.onUpdate(() => broadcastMessages());
+  connection.db.myMessages.onDelete(() => broadcastMessages());
 
-  conn.db.myFiles.onInsert(() => broadcastMessages());
-  conn.db.myFiles.onUpdate(() => broadcastMessages());
-  conn.db.myFiles.onDelete(() => broadcastMessages());
+  connection.db.myFiles.onInsert(() => broadcastMessages());
+  connection.db.myFiles.onUpdate(() => broadcastMessages());
+  connection.db.myFiles.onDelete(() => broadcastMessages());
 
-  conn.db.myThreadLocks.onInsert(() => broadcastLocks());
-  conn.db.myThreadLocks.onUpdate(() => broadcastLocks());
-  conn.db.myThreadLocks.onDelete(() => broadcastLocks());
+  connection.db.myThreadLocks.onInsert(() => broadcastLocks());
+  connection.db.myThreadLocks.onUpdate(() => broadcastLocks());
+  connection.db.myThreadLocks.onDelete(() => broadcastLocks());
 
-  conn.db.agentOverride.onInsert(() => broadcastOverrides());
-  conn.db.agentOverride.onUpdate(() => broadcastOverrides());
-  conn.db.agentOverride.onDelete(() => broadcastOverrides());
+  connection.db.agentOverride.onInsert(() => broadcastOverrides());
+  connection.db.agentOverride.onUpdate(() => broadcastOverrides());
+  connection.db.agentOverride.onDelete(() => broadcastOverrides());
 
-  conn.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
+  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
     syncUserFromRow(row)
   );
-  conn.db.myAuthUser.onUpdate(
+  connection.db.myAuthUser.onUpdate(
     (_ctx: EventContext, _o: AuthUserRow, n: AuthUserRow) => syncUserFromRow(n)
   );
-  conn.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
+  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
     if (!currentUser || row.userId !== currentUser.userId) return;
     currentUser = null;
     currentExp = undefined;
     broadcastAuth();
   });
+}
+
+function subscribeToTables(connection: DbConnection): SubscriptionHandle {
+  return connection
+    .subscriptionBuilder()
+    .onApplied(() => {
+      broadcastThreads();
+      broadcastLocks();
+      broadcastOverrides();
+      broadcastMessages();
+    })
+    .onError((ctx: ErrorContext) =>
+      console.error('global sub error', ctx.event)
+    )
+    .subscribe([
+      tables.myThreads,
+      tables.myThreadLocks,
+      tables.agentOverride,
+      tables.myFiles,
+      tables.myAuthUser,
+    ]);
 }
 
 async function refreshConfigStatus(): Promise<AgentConfigStatus> {
@@ -380,8 +401,8 @@ async function bindSession(
     broadcastConn('connecting');
     try {
       const conn = await connect(
-        serverCfg.stdbUri,
-        serverCfg.appDatabase
+        serverCfg.spacetimeUri,
+        serverCfg.databaseName
       );
       currentConn = conn;
       reconnectAttempt = 0;
@@ -407,24 +428,7 @@ async function bindSession(
   }
 
   if (!globalSub) {
-    globalSub = currentConn
-      .subscriptionBuilder()
-      .onApplied(() => {
-        broadcastThreads();
-        broadcastLocks();
-        broadcastOverrides();
-        broadcastMessages();
-      })
-      .onError((ctx: ErrorContext) =>
-        console.error('global sub error', ctx.event)
-      )
-      .subscribe([
-        tables.myThreads,
-        tables.myThreadLocks,
-        tables.agentOverride,
-        tables.myFiles,
-        tables.myAuthUser,
-      ]);
+    globalSub = subscribeToTables(currentConn);
 
     const previousActive = activeThreadId;
     activeThreadId = null;

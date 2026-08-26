@@ -1,6 +1,6 @@
 export interface ServerConfig {
-  stdbUri: string;
-  database: string;
+  spacetimeUri: string;
+  databaseName: string;
 }
 
 export type TableEvents<T> = {

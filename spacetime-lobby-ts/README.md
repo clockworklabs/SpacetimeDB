@@ -60,14 +60,16 @@ After generating bindings, a client joins through the host operation and reads
 match state through subscriptions:
 
 ```ts
+import { tables } from './module_bindings';
+
 await conn.reducers.findDuel({});
 
 conn
   .subscriptionBuilder()
   .subscribe([
-    'SELECT * FROM my_lobby_tickets',
-    'SELECT * FROM my_lobby_rooms',
-    'SELECT * FROM my_lobby_room_seats',
+    tables.myLobbyTickets,
+    tables.myLobbyRooms,
+    tables.myLobbyRoomSeats,
   ]);
 ```
 
@@ -85,10 +87,10 @@ export {
   join_queue,
   join_ranked_queue,
   cancel_ticket,
-  my_lobby_tickets,
-  my_lobby_rooms,
-  lobby_queue_summary,
-  lobby_ranked_leaderboard,
+  myLobbyTickets,
+  myLobbyRooms,
+  lobbyQueueSummary,
+  lobbyRankedLeaderboard,
 } from '@spacetimedb/lobby';
 ```
 

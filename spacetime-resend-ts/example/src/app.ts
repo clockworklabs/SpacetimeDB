@@ -46,8 +46,8 @@ type SendResult = {
 };
 
 type ServerConfig = {
-  stdbUri: string;
-  database: string;
+  spacetimeUri: string;
+  databaseName: string;
   resendConfigured: boolean;
   defaultFrom: string;
   allowedRecipients: string[];
@@ -159,8 +159,8 @@ async function loadServerConfig(): Promise<ServerConfig> {
 async function connect(config: ServerConfig): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     DbConnection.builder()
-      .withUri(config.stdbUri)
-      .withDatabaseName(config.database)
+      .withUri(config.spacetimeUri)
+      .withDatabaseName(config.databaseName)
       .onConnect(c => resolve(c))
       .onDisconnect((_ctx, err) => {
         showError(`Disconnected: ${err?.message ?? 'connection lost'}`);
@@ -487,7 +487,7 @@ function scheduleRender() {
   }, 0);
 }
 
-function wireTable(name: string) {
+function registerTableCallbacks(name: string): void {
   const accessor = table<unknown>(name);
   if (!accessor) throw new Error(`missing table accessor: ${name}`);
   accessor.onInsert(() => scheduleRender());
@@ -495,12 +495,14 @@ function wireTable(name: string) {
   accessor.onDelete(() => scheduleRender());
 }
 
-function wireDataHandlers() {
+function registerRowCallbacks(): void {
   for (const name of ['myDispatchEmails', 'myDispatchDeliveryEvents']) {
-    wireTable(name);
+    registerTableCallbacks(name);
   }
+}
 
-  conn!
+function subscribeToTables(connection: DbConnection): void {
+  connection
     .subscriptionBuilder()
     .onApplied((_ctx: SubscriptionEventContext) => {
       render();
@@ -602,7 +604,7 @@ async function submitCompose() {
   }
 }
 
-function wireActions() {
+function registerUiHandlers(): void {
   $('compose-form').addEventListener('submit', event => {
     event.preventDefault();
     submitCompose().catch(err => {
@@ -656,12 +658,13 @@ function wireActions() {
 }
 
 async function main() {
-  wireActions();
+  registerUiHandlers();
   currentConfig = await loadServerConfig();
   const recipientInput = $('to-input') as HTMLInputElement;
   recipientInput.value = currentConfig.allowedRecipients[0] ?? '';
   conn = await connect(currentConfig);
-  wireDataHandlers();
+  registerRowCallbacks();
+  subscribeToTables(conn);
 }
 
 main().catch(err => {

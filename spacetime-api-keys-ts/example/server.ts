@@ -33,13 +33,13 @@ app.use(express.json({ limit: '256kb' }));
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
-    stdbUri: STDB_URI,
-    database: DB_NAME,
+    spacetimeUri: STDB_URI,
+    databaseName: DB_NAME,
   });
 });
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: DB_NAME });
+  res.json({ ok: true, databaseName: DB_NAME });
 });
 
 app.use('/api/colony', async (req: Request, res: Response) => {

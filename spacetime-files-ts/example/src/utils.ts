@@ -3,8 +3,8 @@ import type { Timestamp } from 'spacetimedb';
 export type Visibility = 'owner' | 'public';
 
 export interface ServerConfig {
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
 }
 
 // Persisted token = same identity (and files) across reloads.

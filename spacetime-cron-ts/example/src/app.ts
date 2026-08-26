@@ -2,8 +2,8 @@ import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
 import type { CronSchedule } from './module_bindings/app/types';
 
 interface ServerConfig {
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -305,7 +305,7 @@ function applyPreset(preset: string): void {
   expression.focus();
 }
 
-function wireForm(): void {
+function registerUiHandlers(): void {
   const form = byId<HTMLFormElement>('schedule-form');
   const kind = byId<HTMLSelectElement>('spec-kind');
   const expression = byId<HTMLInputElement>('spec-expr');
@@ -385,39 +385,45 @@ function wireForm(): void {
   updateScheduleFields();
 }
 
-function registerRowCallbacks(current: DbConnection): void {
-  current.db.cronJobs.onInsert(renderJobs);
-  current.db.cronJobs.onDelete(renderJobs);
-  current.db.cronJobs.onUpdate(renderJobs);
-  current.db.cronRun.onInsert(renderRuns);
-  current.db.cronRun.onDelete(renderRuns);
-  current.db.cronRun.onUpdate(renderRuns);
-  current.db.activityLog.onInsert(renderActivity);
-  current.db.activityLog.onDelete(renderActivity);
-  current.db.activityLog.onUpdate(renderActivity);
+function registerRowCallbacks(connection: DbConnection): void {
+  connection.db.cronJobs.onInsert(renderJobs);
+  connection.db.cronJobs.onUpdate(renderJobs);
+  connection.db.cronJobs.onDelete(renderJobs);
+  connection.db.cronRun.onInsert(renderRuns);
+  connection.db.cronRun.onUpdate(renderRuns);
+  connection.db.cronRun.onDelete(renderRuns);
+  connection.db.activityLog.onInsert(renderActivity);
+  connection.db.activityLog.onUpdate(renderActivity);
+  connection.db.activityLog.onDelete(renderActivity);
 }
 
-async function main(): Promise<void> {
-  wireForm();
-  setConnection('connecting', 'Connecting');
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
+    .onApplied(renderAll)
+    .onError((ctx: ErrorContext) =>
+      console.error('subscription error', ctx.event)
+    )
+    .subscribe([tables.cronJobs, tables.cronRun, tables.activityLog]);
+}
 
+async function loadServerConfig(): Promise<ServerConfig> {
   const response = await fetch('/api/config');
   if (!response.ok) {
     throw new Error(`Config request failed: ${response.status}`);
   }
-  const config = (await response.json()) as ServerConfig;
+  return (await response.json()) as ServerConfig;
+}
 
+function connect(config: ServerConfig): void {
   DbConnection.builder()
-    .withUri(config.stdbUri)
-    .withDatabaseName(config.appDatabase)
+    .withUri(config.spacetimeUri)
+    .withDatabaseName(config.databaseName)
     .onConnect((current: DbConnection) => {
       connection = current;
-      setConnection('connected', config.appDatabase);
+      setConnection('connected', config.databaseName);
       registerRowCallbacks(current);
-      current
-        .subscriptionBuilder()
-        .onApplied(renderAll)
-        .subscribe([tables.cronJobs, tables.cronRun, tables.activityLog]);
+      subscribeToTables(current);
     })
     .onConnectError((_ctx: ErrorContext, error: Error) => {
       setConnection('error', 'Connection failed');
@@ -429,6 +435,12 @@ async function main(): Promise<void> {
       if (error) setFormStatus(error.message, 'error');
     })
     .build();
+}
+
+async function main(): Promise<void> {
+  registerUiHandlers();
+  setConnection('connecting', 'Connecting');
+  connect(await loadServerConfig());
 }
 
 void main().catch(error => {

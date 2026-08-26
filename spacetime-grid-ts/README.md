@@ -57,6 +57,8 @@ The generated client calls the host procedure, then subscribes to the host's
 caller-scoped grid views:
 
 ```ts
+import { tables } from './module_bindings';
+
 const gridId = await conn.procedures.createPlayerGrid({
   name: 'Arena',
   kind: 'square',
@@ -68,7 +70,7 @@ const gridId = await conn.procedures.createPlayerGrid({
   mode: 'owner',
 });
 
-conn.subscriptionBuilder().subscribe(['SELECT * FROM my_grids']);
+conn.subscriptionBuilder().subscribe([tables.myGrids]);
 ```
 
 ### Standalone table builders

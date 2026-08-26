@@ -89,6 +89,8 @@ After generating bindings, upload through the host wrapper and subscribe to a
 host view that returns file summaries:
 
 ```ts
+import { tables } from './module_bindings';
+
 const fileId = await conn.procedures.uploadFile({
   path: '/avatars/me.png',
   mimeType: 'image/png',
@@ -96,7 +98,7 @@ const fileId = await conn.procedures.uploadFile({
   visibility: 'owner',
 });
 
-conn.subscriptionBuilder().subscribe(['SELECT * FROM my_file_summaries']);
+conn.subscriptionBuilder().subscribe([tables.myFileSummaries]);
 ```
 
 ## API

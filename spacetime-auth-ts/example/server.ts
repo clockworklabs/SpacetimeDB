@@ -150,8 +150,8 @@ app.use('/auth', async (req, res) => {
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
-    stdbUri: STDB_URI,
-    appDatabase: DB_NAME,
+    spacetimeUri: STDB_URI,
+    databaseName: DB_NAME,
     auth: {
       issuerUrl: AUTH_ISSUER_URL,
       baseUrl: AUTH_BASE_URL,
@@ -169,7 +169,7 @@ app.get('/api/config', (_req: Request, res: Response) => {
 });
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, app: DB_NAME });
+  res.json({ ok: true, databaseName: DB_NAME });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

@@ -93,8 +93,8 @@ declare global {
 }
 
 interface ServerConfig {
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
 }
 
 interface AuthUser {
@@ -356,12 +356,12 @@ function connect(cfg: ServerConfig): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     const priorToken = loadStdbToken();
     DbConnection.builder()
-      .withUri(cfg.stdbUri)
-      .withDatabaseName(cfg.appDatabase)
+      .withUri(cfg.spacetimeUri)
+      .withDatabaseName(cfg.databaseName)
       .withToken(priorToken)
-      .onConnect((c, _identity, token) => {
+      .onConnect((connection, _identity, token) => {
         if (token) saveStdbToken(token);
-        resolve(c);
+        resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
         conn = null;
@@ -374,8 +374,9 @@ function connect(cfg: ServerConfig): Promise<DbConnection> {
   });
 }
 
-function subscribeToTables(c: DbConnection): void {
-  c.subscriptionBuilder()
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
     .onApplied(() => emitData())
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
@@ -398,21 +399,21 @@ function subscribeToTables(c: DbConnection): void {
     ]);
 }
 
-function registerRowCallbacks(c: DbConnection): void {
+function registerRowCallbacks(connection: DbConnection): void {
   const reRender = () => emitData();
   const tableAccessors = [
-    c.db.myChatUsers,
-    c.db.myRooms,
-    c.db.myRoomMembers,
-    c.db.myRoomMessages,
-    c.db.myRoomMessageReactions,
-    c.db.myRoomAttachments,
-    c.db.myServerMembers,
-    c.db.myMessageThreads,
-    c.db.myThreadMessages,
-    c.db.myRoomReadCursors,
-    c.db.myPresenceEntries,
-    c.db.myRateLimitStatus,
+    connection.db.myChatUsers,
+    connection.db.myRooms,
+    connection.db.myRoomMembers,
+    connection.db.myRoomMessages,
+    connection.db.myRoomMessageReactions,
+    connection.db.myRoomAttachments,
+    connection.db.myServerMembers,
+    connection.db.myMessageThreads,
+    connection.db.myThreadMessages,
+    connection.db.myRoomReadCursors,
+    connection.db.myPresenceEntries,
+    connection.db.myRateLimitStatus,
   ];
   for (const t of tableAccessors) {
     t.onInsert(reRender);
@@ -420,9 +421,9 @@ function registerRowCallbacks(c: DbConnection): void {
     t.onDelete(reRender);
   }
 
-  c.db.myServers.onInsert(reRender);
-  c.db.myServers.onUpdate(reRender);
-  c.db.myServers.onDelete((_ctx: EventContext, row: Server) => {
+  connection.db.myServers.onInsert(reRender);
+  connection.db.myServers.onUpdate(reRender);
+  connection.db.myServers.onDelete((_ctx: EventContext, row: Server) => {
     if (activeServerId === row.id) {
       activeServerId = null;
       activeRoomId = null;
@@ -441,14 +442,14 @@ function registerRowCallbacks(c: DbConnection): void {
     };
     emitAuth();
   };
-  c.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
+  connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
     syncUserFromRow(row)
   );
-  c.db.myAuthUser.onUpdate(
+  connection.db.myAuthUser.onUpdate(
     (_ctx: EventContext, _old: AuthUserRow, neu: AuthUserRow) =>
       syncUserFromRow(neu)
   );
-  c.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
+  connection.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
     if (!authUser || row.userId !== authUser.userId) return;
     authUser = null;
     sessionExpiresAt = undefined;
@@ -713,8 +714,8 @@ function derivePresenceSnapshot() {
   return { global, typingByRoom };
 }
 
-async function initializeIdentity(c: DbConnection): Promise<void> {
-  const me = await c.procedures.whoami({});
+async function initializeIdentity(connection: DbConnection): Promise<void> {
+  const me = await connection.procedures.whoami({});
   meHex = me.senderIdentityHex;
   const snap = derivePresenceSnapshot();
   window.dispatchEvent(
@@ -734,14 +735,14 @@ async function main(): Promise<void> {
   emitConn('connecting');
   if (!config) config = await loadServerConfig();
 
-  const c = await connect(config);
-  conn = c;
+  const connection = await connect(config);
+  conn = connection;
   reconnectAttempt = 0;
   emitConn('connected');
-  registerRowCallbacks(c);
-  subscribeToTables(c);
+  registerRowCallbacks(connection);
+  subscribeToTables(connection);
   installApi();
-  await initializeIdentity(c);
+  await initializeIdentity(connection);
   await restoreSession();
   window.dispatchEvent(new CustomEvent('chat:ready'));
 }

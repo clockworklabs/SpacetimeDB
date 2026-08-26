@@ -290,7 +290,7 @@ function maneuversTable(): TableEvents<DuelManeuver> {
 }
 
 function tokenKey(config: ServerConfig): string {
-  return `${TOKEN_KEY_PREFIX}:${config.stdbUri}:${config.database}`;
+  return `${TOKEN_KEY_PREFIX}:${config.spacetimeUri}:${config.databaseName}`;
 }
 
 function loadToken(config: ServerConfig): string | undefined {
@@ -325,7 +325,7 @@ function isStaleTokenError(err: unknown): boolean {
   );
 }
 
-async function loadConfig(): Promise<ServerConfig> {
+async function loadServerConfig(): Promise<ServerConfig> {
   const r = await fetch('/api/config');
   if (!r.ok) throw new Error(`/api/config returned ${r.status}`);
   return (await r.json()) as ServerConfig;
@@ -337,15 +337,15 @@ function connectOnce(
 ): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     let builder = DbConnection.builder()
-      .withUri(config.stdbUri)
-      .withDatabaseName(config.database);
+      .withUri(config.spacetimeUri)
+      .withDatabaseName(config.databaseName);
     if (token) builder = builder.withToken(token);
     builder
-      .onConnect((c, identity, token) => {
-        conn = c;
+      .onConnect((connection, identity, token) => {
+        conn = connection;
         me = identity.toHexString();
         if (token) saveToken(config, token);
-        resolve(c);
+        resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
         showToast(err?.message ?? 'Disconnected.', 'error');
@@ -892,7 +892,7 @@ function render(): void {
   setScreen(desiredScreen());
 }
 
-function wireTables(): void {
+function registerRowCallbacks(): void {
   const rerender = () => render();
   const sources = [
     profileTable(),
@@ -917,7 +917,7 @@ function wireTables(): void {
   }
 }
 
-function wireActions(): void {
+function registerUiHandlers(): void {
   const moveShip = async (direction: -1 | 1) => {
     const index = shipClasses.indexOf(selectedShip);
     const next =
@@ -1033,10 +1033,9 @@ function wireActions(): void {
   });
 }
 
-async function run(): Promise<void> {
-  const config = await loadConfig();
-  const c = await connect(config);
-  c.subscriptionBuilder()
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
     .onApplied(() => render())
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
@@ -1057,13 +1056,19 @@ async function run(): Promise<void> {
       tables.myDuelRoundLogs,
       tables.myDuelManeuvers,
     ]);
-  wireTables();
-  wireActions();
+}
+
+async function main(): Promise<void> {
+  const config = await loadServerConfig();
+  const connection = await connect(config);
+  registerRowCallbacks();
+  subscribeToTables(connection);
+  registerUiHandlers();
   setupTooltip();
   showToast('Connected.');
   render();
 }
 
-run().catch(err => {
+main().catch(err => {
   showToast(errorMessage(err), 'error');
 });

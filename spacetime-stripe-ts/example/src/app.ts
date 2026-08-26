@@ -50,8 +50,8 @@ type StoreProductRow = {
 };
 
 interface ServerConfig {
-  stdbUri: string;
-  database: string;
+  spacetimeUri: string;
+  databaseName: string;
 }
 
 const products = new Map<string, StoreProductRow>();
@@ -109,15 +109,15 @@ async function loadServerConfig(): Promise<ServerConfig> {
   return (await r.json()) as ServerConfig;
 }
 
-function connectApp(config: ServerConfig): Promise<DbConnection> {
+function connect(config: ServerConfig): Promise<DbConnection> {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(
-      () => reject(new Error(`Timed out connecting to ${config.stdbUri}`)),
+      () => reject(new Error(`Timed out connecting to ${config.spacetimeUri}`)),
       10000
     );
     DbConnection.builder()
-      .withUri(config.stdbUri)
-      .withDatabaseName(config.database)
+      .withUri(config.spacetimeUri)
+      .withDatabaseName(config.databaseName)
       .withCompression('none')
       .onConnect(c => {
         window.clearTimeout(timeout);
@@ -158,32 +158,59 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function registerRowCallbacks(connection: DbConnection): void {
+  connection.db.storeProduct.onInsert(
+    (_ctx: EventContext, row: StoreProductRow) => {
+      products.set(row.productId, row);
+      broadcastCatalog();
+    }
+  );
+  connection.db.storeProduct.onUpdate(
+    (_ctx: EventContext, _oldRow: StoreProductRow, row: StoreProductRow) => {
+      products.set(row.productId, row);
+      broadcastCatalog();
+    }
+  );
+  connection.db.storeProduct.onDelete(
+    (_ctx: EventContext, row: StoreProductRow) => {
+      products.delete(row.productId);
+      broadcastCatalog();
+    }
+  );
+}
+
+function subscribeToTables(connection: DbConnection): void {
+  connection
+    .subscriptionBuilder()
+    .onApplied(() => {
+      products.clear();
+      for (const row of connection.db.storeProduct.iter() as Iterable<StoreProductRow>) {
+        products.set(row.productId, row);
+      }
+      broadcastCatalog();
+      updateConnState('connected');
+      window.dispatchEvent(new CustomEvent('stdb:ready'));
+    })
+    .onError((ctx: ErrorContext) => {
+      console.error('catalog sub error', ctx.event);
+      updateConnState('error', String(ctx.event));
+    })
+    .subscribe([tables.storeProduct]);
+}
+
 async function main() {
   updateConnState('connecting');
   let conn: DbConnection;
   try {
     const config = await loadServerConfig();
-    conn = await connectApp(config);
+    conn = await connect(config);
   } catch (err) {
     console.error('STDB connect failed:', err);
     updateConnState('error', err instanceof Error ? err.message : String(err));
     return;
   }
 
-  conn.db.storeProduct.onInsert((_ctx: EventContext, row: StoreProductRow) => {
-    products.set(row.productId, row);
-    broadcastCatalog();
-  });
-  conn.db.storeProduct.onUpdate(
-    (_ctx: EventContext, _o: StoreProductRow, n: StoreProductRow) => {
-      products.set(n.productId, n);
-      broadcastCatalog();
-    }
-  );
-  conn.db.storeProduct.onDelete((_ctx: EventContext, row: StoreProductRow) => {
-    products.delete(row.productId);
-    broadcastCatalog();
-  });
+  registerRowCallbacks(conn);
 
   window.stdb = {
     getOrCreateCustomer: args => api('/api/customer', args),
@@ -200,22 +227,7 @@ async function main() {
       ),
   };
 
-  conn
-    .subscriptionBuilder()
-    .onApplied(() => {
-      products.clear();
-      for (const row of conn.db.storeProduct.iter() as Iterable<StoreProductRow>) {
-        products.set(row.productId, row);
-      }
-      broadcastCatalog();
-      updateConnState('connected');
-      window.dispatchEvent(new CustomEvent('stdb:ready'));
-    })
-    .onError((ctx: ErrorContext) => {
-      console.error('catalog sub error', ctx.event);
-      updateConnState('error', String(ctx.event));
-    })
-    .subscribe([tables.storeProduct]);
+  subscribeToTables(conn);
 }
 
 main();

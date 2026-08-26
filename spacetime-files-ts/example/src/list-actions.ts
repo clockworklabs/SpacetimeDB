@@ -21,7 +21,7 @@ export interface ListActionServices {
   moveFile(path: string): void;
   deleteFile(path: string): void;
   deleteFolder(path: string): void;
-  wireFolderDropTarget(element: HTMLElement, path: string): void;
+  registerFolderDropCallbacks(element: HTMLElement, path: string): void;
 }
 
 export function bindListActions(
@@ -152,6 +152,6 @@ export function bindListActions(
   list
     .querySelectorAll<HTMLElement>('[data-drop-folder]')
     .forEach(row =>
-      services.wireFolderDropTarget(row, row.dataset.dropFolder!)
+      services.registerFolderDropCallbacks(row, row.dataset.dropFolder!)
     );
 }

@@ -7,7 +7,7 @@ export interface FolderDropServices {
   move(paths: string[], folderPath: string): Promise<void>;
 }
 
-export function wireFolderDropTarget(
+export function registerFolderDropTarget(
   element: HTMLElement,
   folderPath: string,
   services: FolderDropServices

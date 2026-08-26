@@ -114,8 +114,8 @@ declare global {
 }
 
 interface ServerConfig {
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
 }
 
 type TableEvents<T> = {
@@ -239,8 +239,8 @@ function openConnection(
     };
 
     const builder = DbConnection.builder()
-      .withUri(cfg.stdbUri)
-      .withDatabaseName(cfg.appDatabase)
+      .withUri(cfg.spacetimeUri)
+      .withDatabaseName(cfg.databaseName)
       .onConnect((conn, identity, nextToken) =>
         settle(() => {
           currentIdentityHex =
@@ -265,7 +265,7 @@ function openConnection(
 }
 
 async function connect(cfg: ServerConfig): Promise<DbConnection> {
-  const tokenKey = `${TOKEN_STORAGE_PREFIX}.${cfg.stdbUri}.${cfg.appDatabase}`;
+  const tokenKey = `${TOKEN_STORAGE_PREFIX}.${cfg.spacetimeUri}.${cfg.databaseName}`;
   const token = window.localStorage.getItem(tokenKey) ?? undefined;
   try {
     return await openConnection(cfg, tokenKey, token);
@@ -287,25 +287,30 @@ function scheduleReconnect(): void {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     reconnectAttempt++;
-    run().catch(err => {
+    main().catch(err => {
       broadcastConn('error', err instanceof Error ? err.message : String(err));
       scheduleReconnect();
     });
   }, delay);
 }
 
-function wireDataHandlers(conn: DbConnection): void {
-  const db = conn.db as NamespacedDb;
-  let subscriptionsApplied = false;
-  const seenEventIds = new Set<string>();
+type TableSyncState = {
+  subscriptionApplied: boolean;
+  seenEventIds: Set<string>;
+};
 
-  conn
+function subscribeToTables(
+  connection: DbConnection,
+  state: TableSyncState
+): void {
+  const db = connection.db as NamespacedDb;
+  connection
     .subscriptionBuilder()
     .onApplied(() => {
       for (const row of db.reactorEvents.iter()) {
-        seenEventIds.add(row.id.toString());
+        state.seenEventIds.add(row.id.toString());
       }
-      subscriptionsApplied = true;
+      state.subscriptionApplied = true;
       broadcastState();
     })
     .onError((ctx: ErrorContext) =>
@@ -319,14 +324,21 @@ function wireDataHandlers(conn: DbConnection): void {
       tables.reactorShop,
       tables.rateLimitDemoConfig,
     ]);
+}
 
+function registerRowCallbacks(
+  connection: DbConnection,
+  state: TableSyncState
+): void {
+  const db = connection.db as NamespacedDb;
   db.reactorState.onInsert(() => broadcastState());
   db.reactorState.onUpdate(() => broadcastState());
   db.reactorState.onDelete(() => broadcastState());
   db.reactorEvents.onInsert((_ctx, row) => {
     const id = row.id.toString();
-    const isNewLiveEvent = subscriptionsApplied && !seenEventIds.has(id);
-    seenEventIds.add(id);
+    const isNewLiveEvent =
+      state.subscriptionApplied && !state.seenEventIds.has(id);
+    state.seenEventIds.add(id);
     if (isNewLiveEvent) broadcastEventInsert(row);
     broadcastState();
   });
@@ -379,7 +391,7 @@ function installReactorActions(): ReactorActions {
   return actions;
 }
 
-async function run(): Promise<void> {
+async function main(): Promise<void> {
   window.reactor = undefined;
   broadcastConn('connecting');
   if (!serverConfig) {
@@ -389,7 +401,12 @@ async function run(): Promise<void> {
     const conn = await connect(serverConfig);
     currentConn = conn;
     reconnectAttempt = 0;
-    wireDataHandlers(conn);
+    const tableSyncState: TableSyncState = {
+      subscriptionApplied: false,
+      seenEventIds: new Set(),
+    };
+    registerRowCallbacks(conn, tableSyncState);
+    subscribeToTables(conn, tableSyncState);
     const reactor = installReactorActions();
     window.dispatchEvent(new CustomEvent('reactor:ready'));
     broadcastConn('connected');
@@ -403,7 +420,7 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch(err => {
+main().catch(err => {
   console.error('reactor connection failed', err);
   broadcastConn('error', err instanceof Error ? err.message : String(err));
   scheduleReconnect();

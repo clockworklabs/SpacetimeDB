@@ -67,8 +67,8 @@ let globalSub: SubscriptionHandle | null = null;
 let matchSub: SubscriptionHandle | null = null;
 let activeMatchId: bigint | null = null;
 type ServerConfig = {
-  stdbUri: string;
-  appDatabase: string;
+  spacetimeUri: string;
+  databaseName: string;
   oauth?: {
     google?: boolean;
     github?: boolean;
@@ -272,23 +272,39 @@ function setActiveMatch(matchId: bigint | null): void {
     ]);
 }
 
-function registerRowCallbacks(conn: DbConnection): void {
+function registerRowCallbacks(connection: DbConnection): void {
   const tableAccessors = [
-    conn.db.myMatches,
-    conn.db.myMatchParticipants,
-    conn.db.myPlayerUnits,
-    conn.db.unitType,
-    conn.db.myGrids,
-    conn.db.myGridEntities,
-    conn.db.myCellStates,
-    conn.db.actorDirectory,
-    conn.db.lobbyOpenMatches,
+    connection.db.myMatches,
+    connection.db.myMatchParticipants,
+    connection.db.myPlayerUnits,
+    connection.db.unitType,
+    connection.db.myGrids,
+    connection.db.myGridEntities,
+    connection.db.myCellStates,
+    connection.db.actorDirectory,
+    connection.db.lobbyOpenMatches,
   ];
   for (const t of tableAccessors) {
     t.onInsert(() => broadcastState());
     t.onUpdate(() => broadcastState());
     t.onDelete(() => broadcastState());
   }
+}
+
+function subscribeToTables(connection: DbConnection): SubscriptionHandle {
+  return connection
+    .subscriptionBuilder()
+    .onApplied(() => broadcastState())
+    .onError((ctx: ErrorContext) =>
+      console.error('global sub error', ctx.event)
+    )
+    .subscribe([
+      tables.myMatches,
+      tables.myMatchParticipants,
+      tables.unitType,
+      tables.actorDirectory,
+      tables.lobbyOpenMatches,
+    ]);
 }
 
 async function bindSession(
@@ -305,8 +321,8 @@ async function bindSession(
     broadcastConn('connecting');
     try {
       const conn = await connect(
-        serverCfg.stdbUri,
-        serverCfg.appDatabase
+        serverCfg.spacetimeUri,
+        serverCfg.databaseName
       );
       currentConn = conn;
       reconnectAttempt = 0;
@@ -316,19 +332,7 @@ async function bindSession(
 
       registerRowCallbacks(conn);
 
-      globalSub = conn
-        .subscriptionBuilder()
-        .onApplied(() => broadcastState())
-        .onError((ctx: ErrorContext) =>
-          console.error('global sub error', ctx.event)
-        )
-        .subscribe([
-          tables.myMatches,
-          tables.myMatchParticipants,
-          tables.unitType,
-          tables.actorDirectory,
-          tables.lobbyOpenMatches,
-        ]);
+      globalSub = subscribeToTables(conn);
 
       // Re-open per-match subscription if a match was active before reconnect.
       const previousActive = activeMatchId;

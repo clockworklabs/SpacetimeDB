@@ -101,6 +101,8 @@ After generating bindings, send heartbeats through the host procedure and
 subscribe to the host's public or caller-scoped presence table:
 
 ```ts
+import { tables } from './module_bindings';
+
 await conn.procedures.heartbeat({
   scope: 'room:42',
   status: 'online',
@@ -108,7 +110,7 @@ await conn.procedures.heartbeat({
 
 conn
   .subscriptionBuilder()
-  .subscribe(["SELECT * FROM presence_entry WHERE scope = 'room:42'"]);
+  .subscribe([tables.myPresenceEntries.where(row => row.scope.eq('room:42'))]);
 ```
 
 ## API

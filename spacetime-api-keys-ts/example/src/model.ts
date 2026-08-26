@@ -1,7 +1,10 @@
 export type TimestampLike = { microsSinceUnixEpoch: bigint };
 export type EnumTag<T extends string = string> = { tag: T };
 
-export type ServerConfig = { stdbUri: string; database: string };
+export type ServerConfig = {
+  spacetimeUri: string;
+  databaseName: string;
+};
 
 export type World = {
   ownerSubject: string;

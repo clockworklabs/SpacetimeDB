@@ -89,11 +89,11 @@ app.use('/files', proxyStdbRoute('/files'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, app: DB_NAME });
+  res.json({ ok: true, databaseName: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
-  res.json({ stdbUri: STDB_URI, appDatabase: DB_NAME });
+  res.json({ spacetimeUri: STDB_URI, databaseName: DB_NAME });
 });
 
 app.listen(PORT, HOST, () => {

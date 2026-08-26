@@ -29,7 +29,7 @@ const spacetimedb = schema({ agents });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  agents.installAgents(ctx);
+  agents.installAgents(ctx.as.agents);
 });
 ```
 
