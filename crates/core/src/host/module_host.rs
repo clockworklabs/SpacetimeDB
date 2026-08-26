@@ -480,7 +480,7 @@ impl WasmtimeModuleHost {
         let label = label.to_owned();
         self.executor.enqueue_sync_job(move |state| {
             scopeguard::defer_on_unwind!({
-                log::warn!("wasm main operation {label} panicked");
+                log::error!("wasm main operation {label} panicked");
                 on_panic();
             });
 
@@ -506,7 +506,7 @@ impl WasmtimeModuleHost {
         let label = label.to_owned();
         self.executor.enqueue_async_job(async move || {
             scopeguard::defer_on_unwind!({
-                log::warn!("wasm procedure {label} panicked");
+                log::error!("wasm procedure {label} panicked");
                 on_panic();
             });
 
@@ -1925,7 +1925,7 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
-            log::warn!("module operation {label} panicked");
+            log::error!("module operation {label} panicked");
             (self.on_panic)();
         });
 
@@ -1969,7 +1969,7 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
-            log::warn!("pooled operation {label} panicked");
+            log::error!("pooled operation {label} panicked");
             (self.on_panic)();
         });
 
@@ -2015,7 +2015,7 @@ impl ModuleHost {
     {
         let panic_label = label.to_owned();
         scopeguard::defer_on_unwind!({
-            log::warn!("{panic_kind} {panic_label} panicked");
+            log::error!("{panic_kind} {panic_label} panicked");
             (self.on_panic)();
         });
 
@@ -2061,6 +2061,7 @@ impl ModuleHost {
                         let result = inst.call_view(cmd);
                         ModuleHost::record_view_command_round_trip(&info, metric);
                         if let Err(err) = result {
+                            // TODO: Review log level after guest view errors can be distinguished from internal database failures.
                             log::warn!("websocket view operation failed: {err:#}");
                         }
                     },
@@ -2686,7 +2687,7 @@ impl ModuleHost {
 
         let guard_procedure_name = procedure_name.clone();
         scopeguard::defer_on_unwind!({
-            log::warn!("websocket procedure operation {guard_procedure_name} panicked");
+            log::error!("websocket procedure operation {guard_procedure_name} panicked");
             (self.on_panic)();
         });
 
@@ -2708,7 +2709,7 @@ impl ModuleHost {
                             }
                         }
                         JsProcedureCallCompletion::Panicked | JsProcedureCallCompletion::WorkerExited => {
-                            log::warn!("detached JS procedure worker failed before returning a result");
+                            log::error!("detached JS procedure worker failed before returning a result");
                             (module.on_panic)();
                         }
                     }
@@ -3336,7 +3337,7 @@ impl ModuleHost {
                 let label = label.to_owned();
                 executor.enqueue_sync_job(move |_| {
                     scopeguard::defer_on_unwind!({
-                        log::warn!("websocket one-off query operation {label} panicked");
+                        log::error!("websocket one-off query operation {label} panicked");
                         on_panic();
                     });
 
