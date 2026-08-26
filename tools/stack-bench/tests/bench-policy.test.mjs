@@ -83,7 +83,7 @@ test('dependency campaign progression rejects an incomplete or unbound plan refe
     const path = join(root, 'plan.json');
     writeArtifact(path, { kind: 'campaign_plan', id: 'plan', payload: { progression } });
     assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
-      '--progression-file', path, '--progression-sha256', progression.identity.sha256,
+      '--campaign-file', path, '--feature-catalog-sha256', progression.identity.sha256,
       '--campaign-sha256', 'b'.repeat(64), '--campaign-attempt-id', 'attempt']),
     /compiled campaign/);
   } finally {

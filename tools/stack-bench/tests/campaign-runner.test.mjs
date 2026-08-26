@@ -28,6 +28,8 @@ const dependencyModelFree = join(import.meta.dirname, 'fixtures',
 // modular example selection made this mandatory for level-1 fixtures.
 const plannedSelection = (attempt, level) => structuredClone(
   attempt.condition.requested.levels.find(item => item.level === level).selection);
+const experimentIdentity = plan => ({ id: plan.id, version: plan.version,
+  sha256: plan.contentSha256, state: plan.state });
 
 test('campaign failures prefer the last explicit error over stack and exit noise', () => {
   const stderrTail = [
@@ -101,23 +103,27 @@ function frozenRuntime(root) {
 
 test('attempt argv is derived completely from the compiled campaign plan', () => {
   const plan = compileCampaignFile(example);
-  const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0);
+  const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
+    '/campaign/plan.json');
   assert.deepEqual(argv.slice(1), [
     '--backend', plan.attempts[0].stack,
-    '--track', 'ecommerce', '--levels', '1-1', '--run-index', '0',
+    '--track', 'ecommerce', '--campaign-file', resolve('/campaign/plan.json'),
+    '--campaign-sha256', plan.contentSha256,
+    '--campaign-attempt-id', plan.attempts[0].id,
+    '--levels', '1-1', '--run-index', '0',
     '--out', '/campaign/attempt', '--agent-adapter', 'deterministic',
     '--model', 'deterministic', '--guidance', 'prescribed',
+    '--fix-rounds', '3', '--parent-attempt-id', plan.attempts[0].id, '--no-media',
     '--guidance-document-json', JSON.stringify(plan.attempts[0].condition.guidance.documents[
       plan.attempts[0].stack]),
     '--condition-json', JSON.stringify(plan.attempts[0].condition),
-    '--selection-json', JSON.stringify(plan.definition.selection), '--fix-rounds', '3',
-    '--parent-attempt-id', plan.attempts[0].id, '--no-media',
+    '--selection-json', JSON.stringify(plan.definition.selection),
     '--skills-json', JSON.stringify(plan.attempts[0].skills),
   ]);
   assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], condition: {
     ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,
       documents: {} },
-  } }, '/campaign/attempt', 0), /has no guidance document/);
+  } }, '/campaign/attempt', 0, '/campaign/plan.json'), /has no guidance document/);
   assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
 });
 
@@ -138,10 +144,10 @@ test('dependency attempts pass one progression input and no separate level range
   const argv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0,
     '/campaign/plan.json');
   assert.equal(argv.includes('--levels'), false);
-  const index = argv.indexOf('--progression-file');
+  const index = argv.indexOf('--campaign-file');
   assert(index > 0);
   assert.equal(argv[index + 1], resolve('/campaign/plan.json'));
-  assert.equal(argv[argv.indexOf('--progression-sha256') + 1], progression.identity.sha256);
+  assert.equal(argv[argv.indexOf('--feature-catalog-sha256') + 1], progression.identity.sha256);
   assert.equal(argv[argv.indexOf('--campaign-sha256') + 1], dependencyPlan.contentSha256);
   assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
   for (const option of ['--guidance-document-json', '--condition-json', '--selection-json',
@@ -165,14 +171,22 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   const stack = plan.stacks.find(item => item.id === attempt.stack);
   const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-      agentAdapter: agent.identity, stackAdapter: stack }) },
-  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+  mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
   levels: [{ level: 1, selection: plannedSelection(attempt, 1) }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  assert.throws(() => validateCampaignRun(plan, attempt,
+    { ...run, mode: { id: 'dependency', version: '1.0.0' } },
+    { buildImage: 'test-build-image' }), /does not match.*mode/);
+  assert.throws(() => validateCampaignRun(plan, attempt, { ...run,
+    artifactEnvelope: { ...run.artifactEnvelope, identities: {
+      ...run.artifactEnvelope.identities,
+      experiment: { ...run.artifactEnvelope.identities.experiment, sha256: 'a'.repeat(64) },
+    } } }, { buildImage: 'test-build-image' }), /does not match.*identities\.experiment/);
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, levels: [{ level: 1 }] }, { buildImage: 'test-build-image' }), error => {
     assert.match(error.message, /levels\.L1\.selection/);
@@ -209,8 +223,8 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   const stack = plan.stacks.find(item => item.id === attempt.stack);
   const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-      agentAdapter: agent.identity, stackAdapter: stack }) },
-  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+  mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, levels: [],
@@ -251,8 +265,8 @@ test('dependency validation keeps a conclusive grade when its repair session is 
     const run = {
       artifactEnvelope: { attempt: { parentId: attempt.id },
         identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-          agentAdapter: agent.identity, stackAdapter: stack }) },
-      track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+          experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+      mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
       guidance: attempt.guidance, condition: attempt.condition,
       selectionRequest: plan.definition.selection, featureCatalog: attempt.featureCatalog,
       progression: attempt.progression,
@@ -277,8 +291,8 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
   const stack = plan.stacks.find(item => item.id === attempt.stack);
   const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-      agentAdapter: agent.identity, stackAdapter: stack }) },
-  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+  mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -325,8 +339,8 @@ test('campaign validation requires complete first-build and final measurement co
   const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
   const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-      agentAdapter: agent.identity, stackAdapter: stack }) },
-  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+  mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -393,8 +407,8 @@ test('campaign validation binds observed-only evidence to its exact first-build 
   const stack = plan.stacks.find(item => item.id === attempt.stack);
   const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-      agentAdapter: agent.identity, stackAdapter: stack }) },
-  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+  mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -581,9 +595,11 @@ test('model-free campaign execution checkpoints an authorized retry and every co
         if (calls.length === 1) {
           writeRunJson(join(output, 'run.json'), { id: 'fake-provider-failure',
             parentAttemptId: parent, startedAt: completedAt, completedAt,
-            identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
+            identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
+              agentAdapter: agent.identity,
               stackAdapter: stack }),
-            track: planned.definition.track, backend: attempt.stack, model: attempt.model,
+            mode: attempt.mode, track: planned.definition.track,
+            backend: attempt.stack, model: attempt.model,
             guidance: attempt.guidance, condition: attempt.condition,
             selectionRequest: planned.definition.selection,
             skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
@@ -603,9 +619,11 @@ test('model-free campaign execution checkpoints an authorized retry and every co
         }
         writeRunJson(join(output, 'run.json'), { id: `fake-${calls.length}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
-          identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
+          identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
+            agentAdapter: agent.identity,
             stackAdapter: stack }),
-          track: planned.definition.track, backend: attempt.stack, model: attempt.model,
+          mode: attempt.mode, track: planned.definition.track,
+          backend: attempt.stack, model: attempt.model,
           guidance: attempt.guidance, condition: attempt.condition,
           selectionRequest: planned.definition.selection,
           skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
@@ -670,9 +688,11 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
         const { writeRunJson } = await import('../src/evidence/artifacts.mjs');
         writeRunJson(join(output, 'run.json'), { id: `parallel-${runIndex}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
-          identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
+          identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
+            agentAdapter: agent.identity,
             stackAdapter: stack }),
-          track: planned.definition.track, backend: attempt.stack, model: attempt.model,
+          mode: attempt.mode, track: planned.definition.track,
+          backend: attempt.stack, model: attempt.model,
           guidance: attempt.guidance, condition: attempt.condition,
           selectionRequest: planned.definition.selection, skills: attempt.skills,
           runtime: { buildImage: options.env.STACK_BENCH_IMAGE }, totals: { costUsd: 0 },

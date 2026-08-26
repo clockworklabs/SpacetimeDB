@@ -83,8 +83,8 @@ export function parseArgs(argv) {
       case '--track': a.track = argv[++i]; break;
       case '--levels': a.levels = argv[++i]; a.levelsProvided = true; break;
       case '--progression-json': a.progression = JSON.parse(argv[++i]); break;
-      case '--progression-file': a.progressionFile = resolve(argv[++i]); break;
-      case '--progression-sha256': a.progressionSha256 = argv[++i]; break;
+      case '--campaign-file': a.campaignFile = resolve(argv[++i]); break;
+      case '--feature-catalog-sha256': a.featureCatalogSha256 = argv[++i]; break;
       case '--campaign-sha256': a.campaignSha256 = argv[++i]; break;
       case '--campaign-attempt-id': a.campaignAttemptId = argv[++i]; break;
       case '--progression-resume-from': a.progressionResumeFrom = resolve(argv[++i]); break;
@@ -140,22 +140,20 @@ export function parseArgs(argv) {
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
   }
-  if (a.progression && a.progressionFile) {
-    throw new Error('--progression-json cannot be combined with --progression-file');
+  if (a.progression && a.campaignFile) {
+    throw new Error('--progression-json cannot be combined with --campaign-file');
   }
-  if ((a.progressionFile === undefined) !== (a.progressionSha256 === undefined)) {
-    throw new Error('--progression-file requires --progression-sha256');
+  if (a.campaignFile && (!a.campaignSha256 || !a.campaignAttemptId)) {
+    throw new Error('--campaign-file requires --campaign-sha256 and --campaign-attempt-id');
   }
-  if (a.progressionFile && (!a.campaignSha256 || !a.campaignAttemptId)) {
-    throw new Error('--progression-file requires --campaign-sha256 and --campaign-attempt-id');
+  if (!a.campaignFile && (a.campaignSha256 || a.campaignAttemptId
+    || a.featureCatalogSha256)) {
+    throw new Error('campaign binding requires --campaign-file');
   }
-  if (!a.progressionFile && (a.campaignSha256 || a.campaignAttemptId)) {
-    throw new Error('campaign progression binding requires --progression-file');
+  if (a.progressionResumeFrom && !a.campaignFile) {
+    throw new Error('--progression-resume-from requires a compiled campaign');
   }
-  if (a.progressionResumeFrom && !a.progressionFile) {
-    throw new Error('--progression-resume-from requires a compiled campaign progression');
-  }
-  if (a.progressionFile) {
+  if (a.campaignFile) {
     const unsupported = [
       [a.maxStalledRepairs !== 3, '--max-stalled-repairs'],
       [a.skipProbe === true, '--skip-probe'],
@@ -175,7 +173,7 @@ export function parseArgs(argv) {
     if (unsupported.length) {
       throw new Error(`campaign progression input cannot override ${unsupported.join(', ')}`);
     }
-    const artifact = readArtifact(a.progressionFile, { expectedKind: 'campaign_plan' });
+    const artifact = readArtifact(a.campaignFile, { expectedKind: 'campaign_plan' });
     const plan = validateCompiledCampaignPlan(artifact.payload);
     if (plan.contentSha256 !== a.campaignSha256) {
       throw new Error('--campaign-sha256 does not match the compiled campaign plan');
@@ -202,11 +200,19 @@ export function parseArgs(argv) {
       || a.parentAttemptId !== attempt.id || a.media !== false) {
       throw new Error('--campaign-attempt-id does not match the requested campaign attempt');
     }
-    a.featureCatalog = validateProgressionInput(plan.progression);
-    if (a.featureCatalog.identity.sha256 !== a.progressionSha256
-      || canonicalDefinitionJson(attempt.featureCatalog)
-        !== canonicalDefinitionJson(a.featureCatalog.identity)) {
-      throw new Error('--progression-sha256 does not match the compiled campaign plan');
+    a.experimentIdentity = {
+      id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
+    };
+    a.runMode = structuredClone(attempt.mode);
+    if (plan.progression) {
+      a.featureCatalog = validateProgressionInput(plan.progression);
+      if (a.featureCatalog.identity.sha256 !== a.featureCatalogSha256
+        || canonicalDefinitionJson(attempt.featureCatalog)
+          !== canonicalDefinitionJson(a.featureCatalog.identity)) {
+        throw new Error('--feature-catalog-sha256 does not match the compiled campaign plan');
+      }
+    } else if (a.featureCatalogSha256 !== undefined || attempt.featureCatalog !== undefined) {
+      throw new Error('campaign attempt has an unexpected feature catalog');
     }
     if (attempt.mode.id === 'dependency') {
       a.progression = a.featureCatalog;
@@ -950,9 +956,11 @@ async function main() {
     startedAt: new Date(started).toISOString(),
     parentAttemptId: args.parentAttemptId ?? null,
     identities: emptyArtifactIdentities({
+      experiment: args.experimentIdentity ?? null,
       agentAdapter: agentAdapterIdentity(agentAdapter),
       stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
+    mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential', version: '1.0.0' },
     track: args.track, backend: args.backend, model: args.model,
     guidance: args.guidance, condition: args.condition ?? null,
     stack: args.guidance === 'minimal' ? 'free' : args.guidance,

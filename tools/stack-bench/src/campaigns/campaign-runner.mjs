@@ -35,7 +35,7 @@ function contained(root, path, label) {
   return absolute;
 }
 
-export function attemptArgv(plan, attempt, output, runIndex, progressionPath = null,
+export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = null,
   progressionResumeFrom = null) {
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
@@ -56,18 +56,18 @@ export function attemptArgv(plan, attempt, output, runIndex, progressionPath = n
   const args = [BENCH,
     '--backend', attempt.stack,
     '--track', plan.definition.track];
+  if (typeof campaignPlanPath !== 'string' || !campaignPlanPath) {
+    throw new Error(`attempt ${attempt.id} requires its compiled campaign plan path`);
+  }
+  args.push('--campaign-file', resolve(campaignPlanPath),
+    '--campaign-sha256', plan.contentSha256,
+    '--campaign-attempt-id', attempt.id);
   if (hasFeatureCatalog) {
-    if (typeof progressionPath !== 'string' || !progressionPath) {
-      throw new Error(`attempt ${attempt.id} requires its compiled campaign plan path`);
-    }
     if (canonicalDefinitionJson(attempt.featureCatalog)
       !== canonicalDefinitionJson(plan.progression?.identity)) {
       throw new Error(`attempt ${attempt.id} feature catalog identity does not match its campaign`);
     }
-    args.push('--progression-file', resolve(progressionPath),
-      '--progression-sha256', attempt.featureCatalog.sha256,
-      '--campaign-sha256', plan.contentSha256,
-      '--campaign-attempt-id', attempt.id);
+    args.push('--feature-catalog-sha256', attempt.featureCatalog.sha256);
   }
   if (dependencyMode) {
     if (progressionResumeFrom !== null) {
@@ -137,6 +137,8 @@ export function validateCampaignRun(plan, attempt, run, {
   const mismatches = [];
   const mismatch = (condition, field) => { if (condition) mismatches.push(field); };
   mismatch(run.artifactEnvelope?.attempt?.parentId !== attempt.id, 'attempt.parentId');
+  mismatch(canonicalDefinitionJson(run.mode ?? null)
+    !== canonicalDefinitionJson(attempt.mode), 'mode');
   mismatch(run.track !== plan.definition.track, 'track');
   mismatch(run.backend !== attempt.stack, 'backend');
   mismatch(run.model !== attempt.model, 'model');
@@ -162,6 +164,11 @@ export function validateCampaignRun(plan, attempt, run, {
     'identities.agentAdapter.sha256');
   mismatch(run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256,
     'identities.engine.sha256');
+  mismatch(run.artifactEnvelope?.identities?.experiment?.id !== plan.id
+    || run.artifactEnvelope?.identities?.experiment?.version !== plan.version
+    || run.artifactEnvelope?.identities?.experiment?.sha256 !== plan.contentSha256
+    || run.artifactEnvelope?.identities?.experiment?.state !== plan.state,
+  'identities.experiment');
   mismatch(run.artifactEnvelope?.identities?.stackAdapter?.id !== attempt.stack,
     'identities.stackAdapter.id');
   mismatch(run.artifactEnvelope?.identities?.stackAdapter?.version

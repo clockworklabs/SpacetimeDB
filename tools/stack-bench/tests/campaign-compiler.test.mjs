@@ -179,6 +179,8 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
     const attempt = plan.attempts[0];
     const argv = attemptArgv(plan, attempt, join(root, 'result'), 0, planPath);
     const args = parseArgs(['node', ...argv]);
+    assert.deepEqual(args.runMode, attempt.mode);
+    assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
     assert.deepEqual(args.progression, plan.progression);
     assert.deepEqual(args.progressionOwner, { schemaVersion: 1,
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
@@ -207,9 +209,31 @@ test('sequential bench input uses the catalog for selection without live gating'
     const argv = attemptArgv(plan, plan.attempts[0], join(root, 'result'), 0, planPath);
     assert(argv.includes('--levels'));
     const args = parseArgs(['node', ...argv]);
+    assert.deepEqual(args.runMode, plan.attempts[0].mode);
+    assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
     assert.equal(args.progression, undefined);
     assert.deepEqual(args.featureCatalog, plan.progression);
     assert.deepEqual(args.levelList, [1]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sequential campaign input retains its campaign and mode without a feature catalog', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-plan-'));
+  try {
+    const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
+      'campaign.example.json'));
+    const planPath = join(root, 'plan.json');
+    writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
+    const attempt = plan.attempts[0];
+    const argv = attemptArgv(plan, attempt, join(root, 'result'), 0, planPath);
+    assert.equal(argv.includes('--feature-catalog-sha256'), false);
+    const args = parseArgs(['node', ...argv]);
+    assert.deepEqual(args.runMode, attempt.mode);
+    assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
+    assert.equal(args.featureCatalog, undefined);
+    assert.equal(args.progression, undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

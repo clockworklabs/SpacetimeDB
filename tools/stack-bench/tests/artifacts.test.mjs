@@ -35,9 +35,14 @@ test('run artifacts are atomic and identify the producing run', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
   try {
     const path = join(root, 'run.json');
-    writeRunJson(path, { id: 'run-a', levels: [] });
+    const mode = { id: 'sequential', version: '1.0.0' };
+    const featureCatalog = { id: 'catalog', version: '1.0.0', sha256: 'a'.repeat(64),
+      state: 'draft' };
+    writeRunJson(path, { id: 'run-a', mode, featureCatalog, levels: [] });
     const artifact = readRunJson(path, 'run-a');
     assert.equal(artifact.id, 'run-a');
+    assert.deepEqual(artifact.mode, mode);
+    assert.deepEqual(artifact.featureCatalog, featureCatalog);
     assert.equal(artifact.artifactSchemaVersion, ARTIFACT_SCHEMA_VERSION);
     assert.throws(() => readRunJson(path, 'run-b'), /belongs to run-a/);
   } finally { rmSync(root, { recursive: true, force: true }); }
