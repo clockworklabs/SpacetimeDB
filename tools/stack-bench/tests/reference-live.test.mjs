@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
   readParallelMutationWorker, referenceQualificationPaths,
+  referenceQualificationRelease,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
@@ -16,6 +17,9 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
+import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.mjs';
+import { resolveProgressionRecipeLevelSelection }
+  from '../src/progression/progression-recipe-selection.mjs';
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };
@@ -35,6 +39,9 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--mutations', '--timeout-minutes', '120']).timeoutMinutes, 120);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--feature-catalog', 'ecommerce.questlines@1.0.0'])
+    .featureCatalog, 'ecommerce.questlines@1.0.0');
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '4']), /declared/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
@@ -181,6 +188,27 @@ test('modular reference qualification selects every exact check without prescrib
   assert.equal(task.selection.checks.filter(check => check.points === 0).length, 2);
   assert.equal(task.selection.specifications.requested.length, 0);
   assert.equal(task.selection.specifications.expected.length, expectedSpecifications.length);
+});
+
+test('progression reference qualification follows the catalog check selection', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@1.0.0');
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@1.0.0', track);
+  const selection = resolveProgressionRecipeLevelSelection(binding, catalog, 3,
+    { cumulative: true });
+  const argv = referenceQualificationSelectionArgs(binding, selection);
+  const valueAfter = flag => argv[argv.indexOf(flag) + 1].split(',');
+  assert.deepEqual(valueAfter('--check').sort(), [...selection.grader.checkKeys].sort());
+  assert.deepEqual(valueAfter('--feature-module').sort(),
+    [...selection.grader.selection.requested.features].sort());
+  assert.deepEqual(valueAfter('--expect-spec').sort(),
+    [...selection.grader.selection.requested.specifications.expected].sort());
+  assert.equal(selection.grader.checkKeys.length, 112);
+  assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
+  const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
+  assert.equal(scoped.checkCatalog.length, 112);
+  assert.throws(() => referenceQualificationRelease(binding.release,
+    [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
 });
 
 test('reference qualification keeps underlying runs beside the requested artifact', () => {

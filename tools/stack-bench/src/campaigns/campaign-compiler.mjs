@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 
@@ -9,12 +9,12 @@ import { currentEngineIdentity } from '../evidence/artifacts.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
-import { compileDependencyPolicyInput, compileFeatureCatalogInput,
-  compileProgressionDefinitionFile, progressionLevels,
+import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,
   validateDependencyPolicyInput, validateFeatureCatalogInput }
   from '../progression/progression-definition.mjs';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.mjs';
+import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
@@ -366,26 +366,6 @@ function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dep
   return attempts;
 }
 
-function resolveCampaignFeatureCatalog(input, track) {
-  if (typeof input !== 'string') return compileFeatureCatalogInput(input);
-  const match = EXACT_REF.exec(input);
-  if (!match) fail('featureCatalog', 'must be an exact id@version reference');
-  const directory = join(track.dir, 'progression');
-  const candidates = readdirSync(directory)
-    .filter(name => name.endsWith('.json'))
-    .map(name => join(directory, name))
-    .filter(path => {
-      const value = loadJson(path);
-      return value.id === match[1] && value.version === match[2];
-    });
-  if (candidates.length !== 1) {
-    fail('featureCatalog', `must resolve exactly one ${input} definition in track ${track.name}`);
-  }
-  return compileFeatureCatalogInput(compileProgressionDefinitionFile(candidates[0], {
-    trackRoot: track.dir,
-  }));
-}
-
 function resolveCampaignInputs(definition, {
   stackBenchRoot = ROOT,
   calibrationResolver = resolveCalibrationForRelease,
@@ -394,8 +374,11 @@ function resolveCampaignInputs(definition, {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
   const track = loadTrack(definition.track);
-  const featureCatalog = definition.featureCatalog
-    ? resolveCampaignFeatureCatalog(definition.featureCatalog, track) : null;
+  let featureCatalog = null;
+  try {
+    featureCatalog = definition.featureCatalog
+      ? resolveFeatureCatalog(definition.featureCatalog, track) : null;
+  } catch (error) { fail('featureCatalog', error.message.replace(/^feature catalog /, '')); }
   if (featureCatalog && definition.levels.some(level => !progressionLevels(featureCatalog).includes(level))) {
     fail('levels', 'must exist in feature catalog');
   }

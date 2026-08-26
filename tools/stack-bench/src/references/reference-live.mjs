@@ -33,6 +33,9 @@ import { controllerRunner } from '../runtime/runner-environment.mjs';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.mjs';
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
+import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
+import { resolveProgressionRecipeLevelSelection }
+  from '../progression/progression-recipe-selection.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
 
@@ -59,6 +62,7 @@ export function parseReferenceQualificationArgs(argv) {
     else if (argv[i] === '--track') args.track = argv[++i];
     else if (argv[i] === '--level') args.level = Number(argv[++i]);
     else if (argv[i] === '--recipe') args.recipe = argv[++i];
+    else if (argv[i] === '--feature-catalog') args.featureCatalog = argv[++i];
     else if (argv[i] === '--repetitions') args.repetitions = Number(argv[++i]);
     else if (argv[i] === '--run-index') args.runIndex = Number(argv[++i]);
     else if (argv[i] === '--spacetime-port') {
@@ -233,7 +237,8 @@ function readJson(path) {
 }
 
 export function auditReferenceRun(output, fixture,
-  { requireMutationControl = false, release = null } = {}) {
+  { requireMutationControl = false, release = null, level = fixture.level,
+    selectedCheckKeys = null } = {}) {
   const runPath = join(output, 'run.json');
   const bundlePath = join(output, 'grading', 'bundle.json');
   if (!existsSync(runPath) || !existsSync(bundlePath)) {
@@ -249,12 +254,14 @@ export function auditReferenceRun(output, fixture,
   if (run.backend !== fixture.backend || run.track !== fixture.track) failures.push('run identity does not match fixture');
   if (run.setup?.isolation?.mode !== 'container') failures.push('run was not isolated in Docker');
   if (run.outcome?.kind !== 'passed') failures.push(`run outcome is ${run.outcome?.kind ?? 'missing'}`);
-  const level = run.levels?.find(candidate => candidate.level === fixture.level);
-  if (!level) failures.push(`L${fixture.level} result is missing`);
+  const levelResult = run.levels?.find(candidate => candidate.level === level);
+  if (!levelResult) failures.push(`L${level} result is missing`);
   else {
-    if (!level.graded) failures.push(`L${fixture.level} was not graded`);
-    if (!level.contractPass) failures.push(`L${fixture.level} contract lint failed`);
-    if (level.score !== level.max) failures.push(`L${fixture.level} score is ${level.score}/${level.max}`);
+    if (!levelResult.graded) failures.push(`L${level} was not graded`);
+    if (!levelResult.contractPass) failures.push(`L${level} contract lint failed`);
+    if (levelResult.score !== levelResult.max) {
+      failures.push(`L${level} score is ${levelResult.score}/${levelResult.max}`);
+    }
   }
 
   const criteria = [];
@@ -289,7 +296,14 @@ export function auditReferenceRun(output, fixture,
       'criterionId', 'packId', 'checkGroupId'];
     const shape = check => Object.fromEntries(fields.map(field => [field, check?.[field] ?? null]));
     const order = checks => checks.map(shape).sort((a, b) => a.stableKey.localeCompare(b.stableKey));
-    const expectedChecks = order(release.checkCatalog);
+    const selected = selectedCheckKeys === null ? release.checkCatalog : (() => {
+      const requested = new Set(selectedCheckKeys);
+      const checks = release.checkCatalog.filter(check => requested.delete(check.stableKey));
+      if (requested.size) failures.push(`selected checks are absent from the recipe: ${
+        [...requested].sort().join(', ')}`);
+      return checks;
+    })();
+    const expectedChecks = order(selected);
     const selectedChecks = Array.isArray(bundle.selection?.checks)
       ? order(bundle.selection.checks) : null;
     if (!selectedChecks || JSON.stringify(selectedChecks) !== JSON.stringify(expectedChecks)) {
@@ -342,33 +356,58 @@ export function auditReferenceRun(output, fixture,
     mutations: mutationControl?.summary ?? null };
 }
 
-export function referenceQualificationContext(fixture, recipe = null) {
+export function referenceQualificationContext(fixture, recipe = null,
+  { level = fixture.level, featureCatalog = null } = {}) {
   const track = loadTrack(fixture.track);
-  const binding = resolveRecipeRelease(track, fixture.level, recipe);
-  if (!binding) throw new Error(`${fixture.track} L${fixture.level} has no recipe release`);
+  const binding = resolveRecipeRelease(track, level, recipe);
+  if (!binding) throw new Error(`${fixture.track} L${level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release,
     { trackRoot: track.dir, stackBenchRoot: ROOT });
   if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);
   const reference = calibration.references.entries.find(entry => entry.backend === fixture.backend
     && entry.id === fixture.id && entry.sourceSha256 === fixture.imported.sourceSha256);
   if (!reference) throw new Error(`${fixture.id} is not selected by calibration ${calibration.id}`);
-  return { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
+  const catalog = featureCatalog ? resolveFeatureCatalog(featureCatalog, track) : null;
+  const progressionSelection = catalog
+    ? resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }) : null;
+  const selectedCheckKeys = progressionSelection?.grader.checkKeys
+    ?? binding.release.checkCatalog.map(check => check.stableKey);
+  return { binding, calibration, identity: calibrationQualificationIdentity(calibration),
+    featureCatalog: catalog?.identity ?? null, progressionSelection, selectedCheckKeys, level };
 }
 
-export function referenceQualificationSelectionArgs(binding) {
+export function referenceQualificationSelectionArgs(binding, progressionSelection = null) {
   if (!binding?.release?.checkCatalog?.length) {
     throw new Error('reference qualification requires an exact recipe check catalog');
   }
-  const args = ['--check', binding.release.checkCatalog.map(check => check.stableKey).join(',')];
+  const selected = progressionSelection?.grader.selection ?? null;
+  const checkKeys = progressionSelection?.grader.checkKeys
+    ?? binding.release.checkCatalog.map(check => check.stableKey);
+  const args = ['--check', checkKeys.join(',')];
   if (!isModularRecipeRelease(binding.release)) return args;
-  const features = binding.release.components.packs
+  const features = selected?.requested.features ?? binding.release.components.packs
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
-  const specifications = binding.release.components.packs
-    .filter(pack => pack.moduleType === 'specification').map(pack => `${pack.id}@${pack.version}`);
+  const specifications = selected?.requested.specifications.expected
+    ?? binding.release.components.packs.filter(pack => pack.moduleType === 'specification')
+      .map(pack => `${pack.id}@${pack.version}`);
   if (!features.length || !specifications.length) {
     throw new Error('modular reference qualification requires feature and specification modules');
   }
   return ['--feature-module', features.join(','), '--expect-spec', specifications.join(','), ...args];
+}
+
+export function referenceQualificationRelease(release, selectedCheckKeys) {
+  const requested = new Set(selectedCheckKeys);
+  if (requested.size !== selectedCheckKeys.length) {
+    throw new Error('reference qualification check selection contains duplicates');
+  }
+  const checkCatalog = release.checkCatalog.filter(check => requested.delete(check.stableKey));
+  if (requested.size) {
+    throw new Error(`reference qualification selected unknown checks: ${
+      [...requested].sort().join(', ')}`);
+  }
+  if (checkCatalog.length === 0) throw new Error('reference qualification selected no checks');
+  return { ...release, checkCatalog };
 }
 
 export function referenceQualificationPaths(args, id) {
@@ -403,10 +442,11 @@ async function runOnce(fixture, args, context, id, repetition) {
       ...executeStackCapability(adapter, 'run-policy', 'supervisor-env',
         { spacetimePort: args.spacetimePort }) };
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
-      '--levels', String(fixture.level), '--run-index', String(args.runIndex), '--fix-rounds', '0',
+      '--levels', String(args.level), '--run-index', String(args.runIndex), '--fix-rounds', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--skip-probe', '--no-media'];
     benchArgs.push('--recipe', `${context.binding.release.id}@${context.binding.release.version}`);
-    benchArgs.push(...referenceQualificationSelectionArgs(context.binding));
+    benchArgs.push(...referenceQualificationSelectionArgs(context.binding,
+      context.progressionSelection));
     benchArgs.push('--parent-attempt-id', id);
     if (args.mutations) {
       if (fixture.mutationManifests.length !== 1) {
@@ -453,6 +493,8 @@ async function runOnce(fixture, args, context, id, repetition) {
   const audit = auditReferenceRun(output, fixture, {
     requireMutationControl: args.mutations,
     release: context.binding.release,
+    level: args.level,
+    selectedCheckKeys: context.selectedCheckKeys,
   });
   const harnessAfter = qualificationInputs();
   if (harnessAfter.sha256 !== harnessBefore.sha256) {
@@ -475,6 +517,7 @@ export function parallelMutationChildArgv(args, context,
     '--repetitions', '1', '--run-index', String(runIndex), '--timeout-minutes',
     String(args.timeoutMinutes), '--mutations', '--mutation-shard-index',
     String(workerIndex), '--mutation-shard-count', String(workerCount), '--out', artifactPath];
+  if (args.featureCatalog) argv.push('--feature-catalog', args.featureCatalog);
   if (args.spacetimePortExplicit) {
     argv.push('--spacetime-port', String(args.spacetimePort + workerIndex));
   }
@@ -648,7 +691,8 @@ async function main() {
   const fixture = selection.fixture;
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
-  const context = referenceQualificationContext(fixture, selection.recipe);
+  const context = referenceQualificationContext(fixture, selection.recipe,
+    { level: args.level, featureCatalog: args.featureCatalog });
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;
@@ -666,9 +710,11 @@ async function main() {
   const selectedMutation = args.mutations
     ? context.calibration.mutations.find(entry => entry.backend === fixture.backend)
     : null;
+  const qualificationRelease = referenceQualificationRelease(context.binding.release,
+    context.selectedCheckKeys);
   const qualificationScope = qualificationScopeIdentity({
     kind: args.mutations ? 'mutation' : 'reference',
-    release: context.binding.release,
+    release: qualificationRelease,
     stack: fixture.backend,
     reference: selectedReference,
     mutation: selectedMutation,
@@ -684,7 +730,9 @@ async function main() {
     }),
     fixtureSha256: fixture.imported.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
-    runner: controllerRunner(), qualificationScope, mutationControl: args.mutations, runs: [] };
+    runner: controllerRunner(), qualificationScope, mutationControl: args.mutations,
+    qualifiedCheckKeys: [...context.selectedCheckKeys].sort(),
+    ...(context.featureCatalog ? { featureCatalog: context.featureCatalog } : {}), runs: [] };
   const artifactIdentities = artifact.identities;
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
