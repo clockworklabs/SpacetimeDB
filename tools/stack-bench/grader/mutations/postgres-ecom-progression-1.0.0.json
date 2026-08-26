@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "8ab89d7299635abfa02a44a6c5a2fab7c7107a07962c5706216fd5c30f1fe5d8",
+  "fixtureSha256": "d95384bc7a9eb163c018d4ab72ae78bd6f3b89ed3dbc8b20b1af9bd4bf50f6e8",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "PostgreSQL cumulative L1-L3 mutation candidate. It preserves 50 valid rebased targets and adds deterministic behavior defects for the other 62 current checks.",
