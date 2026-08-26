@@ -216,7 +216,7 @@ jobs:
         name: Show sccache statistics
         if: always() && runner.os == 'Linux'
         shell: bash
-        run: sccache --show-stats
+        run: /usr/local/bin/sccache --show-stats
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
