@@ -153,15 +153,6 @@ struct CommitBufReader<'a> {
     pos: u64,
 }
 
-impl<'a> CommitBufReader<'a> {
-    fn new(a: &'a [u8], b: &'a [u8]) -> Self {
-        Self {
-            inner: io::Read::chain(a, b),
-            pos: 0,
-        }
-    }
-}
-
 impl io::Read for CommitBufReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
