@@ -70,6 +70,9 @@ partial class RawModuleDefV10
 
     internal void RegisterHttpHandler(RawHttpHandlerDefV10 handler) => httpHandlerDefs.Add(handler);
 
+    internal bool HasHttpHandler(string sourceName) =>
+        httpHandlerDefs.Any(handler => handler.SourceName == sourceName);
+
     internal void RegisterHttpRoute(RawHttpRouteDefV10 route) => httpRouteDefs.Add(route);
 
     internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
@@ -259,12 +262,6 @@ public static class Module
 
     private static readonly RawModuleDefV10 moduleDef = new();
 
-    private static readonly List<IReducer> reducers = [];
-    private static readonly List<IProcedure> procedures = [];
-    private static readonly List<IHttpHandler> httpHandlers = [];
-    private static readonly List<IView> viewDispatchers = [];
-    private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
-
     private static class ReducerCache<R>
         where R : IReducer, new()
     {
@@ -368,7 +365,6 @@ public static class Module
         where R : IReducer, new()
     {
         var reducer = ReducerCache<R>.Instance;
-        reducers.Add(reducer);
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar), reducer.Lifecycle);
     }
 
@@ -376,7 +372,6 @@ public static class Module
         where P : IProcedure, new()
     {
         var procedure = ProcedureCache<P>.Instance;
-        procedures.Add(procedure);
         moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
     }
 
@@ -384,7 +379,6 @@ public static class Module
         where H : IHttpHandler, new()
     {
         var handler = HttpHandlerCache<H>.Instance;
-        httpHandlers.Add(handler);
         moduleDef.RegisterHttpHandler(handler.MakeHandlerDef());
     }
 
@@ -393,9 +387,7 @@ public static class Module
         foreach (var route in router.GetRoutes())
         {
             if (
-                !httpHandlers.Any(handler =>
-                    handler.MakeHandlerDef().SourceName == route.HandlerFunction
-                )
+                !moduleDef.HasHttpHandler(route.HandlerFunction)
             )
             {
                 throw new ArgumentException(
@@ -426,7 +418,6 @@ public static class Module
     {
         var dispatcher = ViewDispatcherCache<TDispatcher>.Instance;
         var def = dispatcher.MakeViewDef(typeRegistrar);
-        viewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
 
@@ -435,7 +426,6 @@ public static class Module
     {
         var dispatcher = AnonymousViewDispatcherCache<TDispatcher>.Instance;
         var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
-        anonymousViewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
 
@@ -531,6 +521,111 @@ public static class Module
         }
     }
 
+    public static void WriteBytes(BytesSink sink, ReadOnlySpan<byte> bytes) => sink.Write(bytes);
+
+    public static MemoryStream ConsumeBytes(BytesSource source, ref byte[] buffer) =>
+        source.Consume(ref buffer);
+
+    public static SpacetimeDB.HttpRequest ReadHttpRequest(
+        BytesSource request,
+        ref byte[] requestBuffer,
+        BytesSource requestBody,
+        ref byte[] requestBodyBuffer
+    )
+    {
+        using var stream = ConsumeBytes(request, ref requestBuffer);
+        using var reader = new BinaryReader(stream);
+        var requestWire = new HttpRequestWire.BSATN().Read(reader);
+        EnsureNoUnreadBytes(stream, "HTTP handler request");
+
+        using var requestBodyStream = ConsumeBytes(requestBody, ref requestBodyBuffer);
+        return SpacetimeDB.HttpClient.FromWire(requestWire, requestBodyStream.ToArray());
+    }
+
+    public static void WriteHttpResponse(
+        BytesSink responseSink,
+        BytesSink responseBodySink,
+        SpacetimeDB.HttpResponse response
+    )
+    {
+        var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
+        responseSink.Write(IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire));
+        responseBodySink.Write(responseBody);
+    }
+    public static IReducerContext CreateReducerContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp
+    )
+    {
+        var senderIdentity = Identity.From(
+            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
+        );
+        var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
+        var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+        var time = timestamp.ToStd();
+
+        return newReducerContext!(senderIdentity, connectionId, random, time);
+    }
+
+    public static IProcedureContext CreateProcedureContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp
+    )
+    {
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
+        var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
+        var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+        var time = timestamp.ToStd();
+
+        return newProcedureContext!(sender, connectionId, random, time);
+    }
+
+    public static SpacetimeDB.HandlerContextBase CreateHandlerContext(Timestamp timestamp)
+    {
+        var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+        var time = timestamp.ToStd();
+        return newHandlerContext!(random, time);
+    }
+
+    public static IViewContext CreateViewContext(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3
+    )
+    {
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]));
+        return newViewContext!(sender);
+    }
+
+    public static IAnonymousViewContext CreateAnonymousViewContext() => newAnonymousViewContext!();
+
+    public static void EnsureNoUnreadBytes(MemoryStream stream, string description)
+    {
+        if (stream.Position != stream.Length)
+        {
+            throw new Exception($"Unrecognised extra bytes in the {description}");
+        }
+    }
+
+    public static Errno WriteReducerError(BytesSink error, Exception e)
+    {
+        var error_str = e.Message ?? e.GetType().FullName ?? e.GetType().Name;
+        var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
+        error.Write(error_bytes);
+        return Errno.HOST_CALL_FAILURE;
+    }
+
     private static void Write(this BytesSink sink, ReadOnlySpan<byte> bytes)
     {
         while (!bytes.IsEmpty)
@@ -540,14 +635,6 @@ public static class Module
             bytes = bytes[written..];
         }
     }
-
-    // __call_reducer__ is not invoked in parallel because modules do not support multithreading in Wasm.
-    private static byte[] reducerArgsBuffer = new byte[0x10_000];
-    private static byte[] procedureArgsBuffer = new byte[0x10_000];
-    private static byte[] httpRequestBuffer = new byte[0x10_000];
-    private static byte[] httpRequestBodyBuffer = new byte[0x10_000];
-    private static byte[] viewArgsBuffer = new byte[0x10_000];
-    private static byte[] anonymousViewArgsBuffer = new byte[0x10_000];
 
 #pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
 
@@ -564,403 +651,6 @@ public static class Module
         catch (Exception e)
         {
             Log.Error($"Error while describing the module: {e}");
-        }
-    }
-
-    public static Errno __call_reducer__(
-        int id,
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        ulong conn_id_0,
-        ulong conn_id_1,
-        Timestamp timestamp,
-        BytesSource args,
-        BytesSink error
-    )
-    {
-        try
-        {
-            var senderIdentity = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
-            );
-            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-
-            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
-
-            using var stream = args.Consume(ref reducerArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            reducers[id].Invoke(reader, ctx);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the reducer arguments");
-            }
-            return Errno.OK; /* no exception */
-        }
-        catch (Exception e)
-        {
-            var error_str = e.Message ?? e.GetType().FullName ?? e.GetType().Name;
-            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            error.Write(error_bytes);
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    public static Errno __call_reducer__<R>(
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        ulong conn_id_0,
-        ulong conn_id_1,
-        Timestamp timestamp,
-        BytesSource args,
-        BytesSink error
-    )
-        where R : IReducer, new()
-    {
-        try
-        {
-            var senderIdentity = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
-            );
-            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-
-            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
-
-            using var stream = args.Consume(ref reducerArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            ReducerCache<R>.Instance.Invoke(reader, ctx);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the reducer arguments");
-            }
-            return Errno.OK; /* no exception */
-        }
-        catch (Exception e)
-        {
-            var error_str = e.Message ?? e.GetType().FullName ?? e.GetType().Name;
-            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            error.Write(error_bytes);
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    public static Errno __call_procedure__(
-        int id,
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        ulong conn_id_0,
-        ulong conn_id_1,
-        Timestamp timestamp,
-        BytesSource args,
-        BytesSink resultSink
-    )
-    {
-        try
-        {
-            var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
-            );
-            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-
-            var ctx = newProcedureContext!(sender, connectionId, random, time);
-
-            using var stream = args.Consume(ref procedureArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            var bytes = procedures[id].Invoke(reader, ctx);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the procedure arguments");
-            }
-            resultSink.Write(bytes);
-
-            return Errno.OK;
-        }
-        catch (Exception e)
-        {
-            // Host contract __call_procedure__ must either return Errno.OK or trap.
-            // Returning other errno values here can put the host/runtime in an unexpected state,
-            // so we log and rethrow to trap on any exception.
-            Log.Error($"Error while invoking procedure: {e}");
-            throw;
-        }
-    }
-
-    public static Errno __call_procedure__<P>(
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        ulong conn_id_0,
-        ulong conn_id_1,
-        Timestamp timestamp,
-        BytesSource args,
-        BytesSink resultSink
-    )
-        where P : IProcedure, new()
-    {
-        try
-        {
-            var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
-            );
-            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-
-            var ctx = newProcedureContext!(sender, connectionId, random, time);
-
-            using var stream = args.Consume(ref procedureArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            var bytes = ProcedureCache<P>.Instance.Invoke(reader, ctx);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the procedure arguments");
-            }
-            resultSink.Write(bytes);
-
-            return Errno.OK;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking procedure: {e}");
-            throw;
-        }
-    }
-
-    public static Errno __call_http_handler__(
-        int id,
-        Timestamp timestamp,
-        BytesSource request,
-        BytesSource requestBody,
-        BytesSink responseSink,
-        BytesSink responseBodySink
-    )
-    {
-        try
-        {
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-            var ctx = newHandlerContext!(random, time);
-
-            using var stream = request.Consume(ref httpRequestBuffer);
-            using var reader = new BinaryReader(stream);
-            var requestWire = new HttpRequestWire.BSATN().Read(reader);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the HTTP handler request");
-            }
-
-            using var requestBodyStream = requestBody.Consume(ref httpRequestBodyBuffer);
-            var response = httpHandlers[id]
-                .Invoke(
-                    ctx,
-                    SpacetimeDB.HttpClient.FromWire(requestWire, requestBodyStream.ToArray())
-                );
-            var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
-            responseSink.Write(
-                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
-            );
-            responseBodySink.Write(responseBody);
-
-            return Errno.OK;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking HTTP handler: {e}");
-            throw;
-        }
-    }
-
-    public static Errno __call_http_handler__<H>(
-        Timestamp timestamp,
-        BytesSource request,
-        BytesSource requestBody,
-        BytesSink responseSink,
-        BytesSink responseBodySink
-    )
-        where H : IHttpHandler, new()
-    {
-        try
-        {
-            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
-            var time = timestamp.ToStd();
-            var ctx = newHandlerContext!(random, time);
-
-            using var stream = request.Consume(ref httpRequestBuffer);
-            using var reader = new BinaryReader(stream);
-            var requestWire = new HttpRequestWire.BSATN().Read(reader);
-            if (stream.Position != stream.Length)
-            {
-                throw new Exception("Unrecognised extra bytes in the HTTP handler request");
-            }
-
-            using var requestBodyStream = requestBody.Consume(ref httpRequestBodyBuffer);
-            var response = HttpHandlerCache<H>.Instance.Invoke(
-                ctx,
-                SpacetimeDB.HttpClient.FromWire(requestWire, requestBodyStream.ToArray())
-            );
-            var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
-            responseSink.Write(
-                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
-            );
-            responseBodySink.Write(responseBody);
-
-            return Errno.OK;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking HTTP handler: {e}");
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Called by the host to execute a view when the sender calls the view identified by <paramref name="id" />.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The sender identity is passed as 4 <see cref="ulong" /> values (<paramref name="sender_0" /> through
-    /// <paramref name="sender_3" />) representing a little-endian <see cref="SpacetimeDB.Identity" />.
-    /// </para>
-    /// <para>
-    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
-    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
-    /// </para>
-    /// <para>
-    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
-    /// </para>
-    /// <para>
-    /// Note: a previous view ABI wrote the return rows directly to the sink.
-    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
-    /// between views that return row data and views that return queries.
-    /// </para>
-    /// <para>
-    /// The current ABI is identified by returning error code <c>2</c>.
-    /// </para>
-    /// </remarks>
-    public static Errno __call_view__(
-        int id,
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        BytesSource args,
-        BytesSink rows
-    )
-    {
-        try
-        {
-            var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
-            );
-            var ctx = newViewContext!(sender);
-            using var stream = args.Consume(ref viewArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            var bytes = viewDispatchers[id].Invoke(reader, ctx);
-            rows.Write(bytes);
-            return (Errno)2;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking view: {e}");
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    public static Errno __call_view__<TDispatcher>(
-        ulong sender_0,
-        ulong sender_1,
-        ulong sender_2,
-        ulong sender_3,
-        BytesSource args,
-        BytesSink rows
-    )
-        where TDispatcher : IView, new()
-    {
-        try
-        {
-            var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
-            );
-            var ctx = newViewContext!(sender);
-            using var stream = args.Consume(ref viewArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            var bytes = ViewDispatcherCache<TDispatcher>.Instance.Invoke(reader, ctx);
-            rows.Write(bytes);
-            return (Errno)2;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking view: {e}");
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    /// <summary>
-    /// Called by the host to execute an anonymous view.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <paramref name="args" /> is a host-registered <see cref="BytesSource" /> containing the BSATN-encoded
-    /// view arguments. For empty arguments, <paramref name="args" /> will be invalid.
-    /// </para>
-    /// <para>
-    /// The view output is written to <paramref name="rows" />, a host-registered <see cref="BytesSink" />.
-    /// </para>
-    /// <para>
-    /// Note: a previous view ABI wrote the return rows directly to the sink.
-    /// The current ABI writes a BSATN-encoded <see cref="ViewResultHeader" /> first, in order to distinguish
-    /// between views that return row data and views that return queries.
-    /// </para>
-    /// <para>
-    /// The current ABI is identified by returning error code <c>2</c>.
-    /// </para>
-    /// </remarks>
-    public static Errno __call_view_anon__(int id, BytesSource args, BytesSink rows)
-    {
-        try
-        {
-            var ctx = newAnonymousViewContext!();
-            using var stream = args.Consume(ref anonymousViewArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            var bytes = anonymousViewDispatchers[id].Invoke(reader, ctx);
-            rows.Write(bytes);
-            return (Errno)2;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking anonymous view: {e}");
-            return Errno.HOST_CALL_FAILURE;
-        }
-    }
-
-    public static Errno __call_view_anon__<TDispatcher>(BytesSource args, BytesSink rows)
-        where TDispatcher : IAnonymousView, new()
-    {
-        try
-        {
-            var ctx = newAnonymousViewContext!();
-            using var stream = args.Consume(ref anonymousViewArgsBuffer);
-            using var reader = new BinaryReader(stream);
-            var bytes = AnonymousViewDispatcherCache<TDispatcher>.Instance.Invoke(reader, ctx);
-            rows.Write(bytes);
-            return (Errno)2;
-        }
-        catch (Exception e)
-        {
-            Log.Error($"Error while invoking anonymous view: {e}");
-            return Errno.HOST_CALL_FAILURE;
         }
     }
 }
