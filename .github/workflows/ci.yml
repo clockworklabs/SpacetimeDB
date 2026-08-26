@@ -72,7 +72,7 @@ jobs:
 
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false
     name: Upload build artifacts (Linux)
     runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
