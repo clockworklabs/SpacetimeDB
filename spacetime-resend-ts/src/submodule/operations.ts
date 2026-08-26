@@ -13,11 +13,11 @@ import {
 } from './schema';
 import { callResend, ensureOkOrThrow } from './http';
 import {
-  attemptToParse,
+  parseWithSchema,
   safeJsonParse,
   summarizeIssues,
   throwSenderError,
-} from './utils';
+} from './validation';
 import { upsertEmail } from './email_writes';
 import { loadConfigOrThrowFromProcedure } from './config';
 import { adminVerdict, denyIfNotAdmin } from './auth';
@@ -51,7 +51,7 @@ function extractTagFieldsFromJson(tagsJson: string | undefined): {
   if (!tagsJson) return { userId: undefined, orgId: undefined };
   const parsed = safeJsonParse(tagsJson);
   if (parsed === undefined) return { userId: undefined, orgId: undefined };
-  const result = attemptToParse(vTagsForExtraction, parsed);
+  const result = parseWithSchema(vTagsForExtraction, parsed);
   if (result.kind === 'error') {
     return { userId: undefined, orgId: undefined };
   }
@@ -214,7 +214,7 @@ export function sendEmail(ctx: ProcedureModuleCtx, args: SendEmailArgs) {
   const parsed = safeJsonParse(response.body);
   if (parsed === undefined)
     throwSenderError('resend.send_email_invalid_response');
-  const result = attemptToParse(vSendEmailResponse, parsed);
+  const result = parseWithSchema(vSendEmailResponse, parsed);
   if (result.kind === 'error') {
     throwSenderError(
       `resend.send_email_invalid_response:${summarizeIssues(result.issues)}`

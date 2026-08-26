@@ -57,27 +57,27 @@ export {
   readBearer,
   readSession,
   configKeys,
-  type CookieOpts,
-} from './handlers/_helpers.ts';
+  type CookieOptions,
+} from './handlers/http.ts';
 
 export {
   setAuthConfigParams,
-  setAuthConfigImpl,
-  authSweepImpl,
+  setAuthConfig,
+  authSweep,
   revokeSessionParams,
-  revokeSessionImpl,
+  revokeSession,
   listMySessionsParams,
-  listMySessionsImpl,
+  listMySessions,
   revokeMySessionParams,
-  revokeMySessionImpl,
+  revokeMySession,
   getPublicKeyPemParams,
-  getPublicKeyPemImpl,
+  getPublicKeyPem,
   linkConnectionParams,
-  linkConnectionImpl,
+  linkConnection,
   unlinkConnectionParams,
-  unlinkConnectionImpl,
+  unlinkConnection,
   updateProfileParams,
-  updateProfileImpl,
+  updateProfile,
 } from './procedures.ts';
 
 export {

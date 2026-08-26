@@ -3,9 +3,9 @@ import {
   base64Url,
   extractLookupPrefix,
   hashApiKey,
-  hashMatches,
+  matchesApiKeyHash,
   hasScope,
-} from '../src/key-utils.ts';
+} from '../src/keys.ts';
 
 assert.equal(base64Url(new Uint8Array([102, 111, 111])), 'Zm9v');
 assert.equal(base64Url(new Uint8Array([255, 255, 255])), '____');
@@ -18,9 +18,9 @@ assert.equal(extractLookupPrefix('missing-secret'), undefined);
 const key = 'stdb_live_abcdefghijklmnop';
 const hash = hashApiKey(key);
 assert.match(hash, /^[0-9a-f]{64}$/);
-assert.equal(hashMatches(key, hash), true);
-assert.equal(hashMatches(`${key}x`, hash), false);
-assert.equal(hashMatches(key, 'not-hex'), false);
+assert.equal(matchesApiKeyHash(key, hash), true);
+assert.equal(matchesApiKeyHash(`${key}x`, hash), false);
+assert.equal(matchesApiKeyHash(key, 'not-hex'), false);
 
 assert.equal(hasScope('["files:*","jobs:read"]', 'files:write'), true);
 assert.equal(hasScope('["files:*","jobs:read"]', 'jobs:read'), true);

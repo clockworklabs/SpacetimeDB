@@ -18,7 +18,7 @@ import {
   makeCookie,
   requireConfig,
   safeJson,
-} from './_helpers.ts';
+} from './http.ts';
 import {
   AUTH_RATE_LIMITS,
   type AuthHttpOptions,

@@ -12,7 +12,7 @@ import {
   requireConfig,
   ConfigMissingError,
   userAgent,
-} from './_helpers.ts';
+} from './http.ts';
 import { signJwt, verifyJwt } from '../jwt.ts';
 import { privateKeyFromPem, publicKeyFromPem } from '../keys.ts';
 import { newSessionToken, uuidV7 } from '../crypto.ts';

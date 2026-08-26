@@ -28,6 +28,6 @@ export {
   readBearer,
   readSession,
   shouldUseSecureCookies,
-  type CookieOpts,
-} from './_helpers.ts';
+  type CookieOptions,
+} from './http.ts';
 export type { AuthHttpOptions, TrustedProxyHeader } from '../rate_limit.ts';

@@ -1,5 +1,4 @@
 import { SenderError } from 'spacetimedb/server';
-export { isOkStatus, toStatusCode, truncateForLog } from './value-utils';
 
 export function throwSenderError(message: string): never {
   throw new SenderError(message);

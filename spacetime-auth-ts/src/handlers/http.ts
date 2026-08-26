@@ -6,7 +6,7 @@ import type { AuthHandlerCtx, AuthTransactionCtx } from '../context.ts';
 
 export type { AuthHandlerCtx, AuthTransactionCtx };
 
-export interface CookieOpts {
+export interface CookieOptions {
   maxAgeSeconds?: number;
   path?: string;
   domain?: string;
@@ -18,20 +18,21 @@ export interface CookieOpts {
 export function makeCookie(
   name: string,
   value: string,
-  opts: CookieOpts = {}
+  options: CookieOptions = {}
 ): string {
   const parts = [`${name}=${value}`];
-  parts.push(`Path=${opts.path ?? '/'}`);
-  if (opts.maxAgeSeconds != null) parts.push(`Max-Age=${opts.maxAgeSeconds}`);
-  if (opts.domain) parts.push(`Domain=${opts.domain}`);
-  if (opts.httpOnly !== false) parts.push('HttpOnly');
-  if (opts.secure !== false) parts.push('Secure');
-  parts.push(`SameSite=${opts.sameSite ?? 'Lax'}`);
+  parts.push(`Path=${options.path ?? '/'}`);
+  if (options.maxAgeSeconds != null)
+    parts.push(`Max-Age=${options.maxAgeSeconds}`);
+  if (options.domain) parts.push(`Domain=${options.domain}`);
+  if (options.httpOnly !== false) parts.push('HttpOnly');
+  if (options.secure !== false) parts.push('Secure');
+  parts.push(`SameSite=${options.sameSite ?? 'Lax'}`);
   return parts.join('; ');
 }
 
-export function clearCookie(name: string, opts: CookieOpts = {}): string {
-  return makeCookie(name, '', { ...opts, maxAgeSeconds: 0 });
+export function clearCookie(name: string, options: CookieOptions = {}): string {
+  return makeCookie(name, '', { ...options, maxAgeSeconds: 0 });
 }
 
 export { shouldUseSecureCookies, userAgent } from '../request-trust.ts';

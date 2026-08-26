@@ -7,8 +7,8 @@ import {
   GRID_KIND_HEX,
   GRID_ORIENTATION_FLAT,
   GRID_MODE_COLLABORATIVE,
-  computePathImpl,
-  cellsInRangeImpl,
+  computePath,
+  cellsInRange,
 } from '@spacetimedb/grid';
 import { distance } from '@spacetimedb/grid/math';
 
@@ -403,7 +403,7 @@ export const move_unit = spacetimedb.procedure(
     const userId = requireUserId(ctx);
 
     // Validate ownership and turn state, then capture coordinates for pathfinding.
-    // computePathImpl opens its own transaction, so run it after this transaction.
+    // computePath opens its own transaction, so run it after this transaction.
     let entityX = 0,
       entityY = 0;
     let gridId = 0n;
@@ -434,7 +434,7 @@ export const move_unit = spacetimedb.procedure(
       typeMovement = type.movement;
     });
 
-    const path = computePathImpl(
+    const path = computePath(
       ctx.as.grid,
       {
         gridId,
@@ -784,7 +784,7 @@ export const ai_take_turn = spacetimedb.procedure(
 
       if (!aiUnit.hasMoved && enemyUnits.length > 0) {
         const cells = (
-          cellsInRangeImpl(
+          cellsInRange(
             ctx.as.grid,
             {
               gridId,
@@ -823,7 +823,7 @@ export const ai_take_turn = spacetimedb.procedure(
           // Capture the A* path BEFORE the move so the client can animate it.
           const fromX = aiUnit.x,
             fromY = aiUnit.y;
-          const pathRes = computePathImpl(
+          const pathRes = computePath(
             ctx.as.grid,
             {
               gridId,
@@ -923,7 +923,7 @@ export const get_cells_in_range = spacetimedb.procedure(
   }),
   (ctx, args) => {
     const userId = requireUserId(ctx);
-    return cellsInRangeImpl(ctx.as.grid, args, userId) as {
+    return cellsInRange(ctx.as.grid, args, userId) as {
       cells: Array<{ x: number; y: number; cost: number }>;
     };
   }

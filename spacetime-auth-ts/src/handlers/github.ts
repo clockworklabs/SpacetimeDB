@@ -4,7 +4,7 @@ import {
   type OAuthProfile,
   type OAuthProviderSpec,
 } from './oauth.ts';
-import type { AuthHandlerCtx } from './_helpers.ts';
+import type { AuthHandlerCtx } from './http.ts';
 
 const githubHeaders = {
   accept: 'application/vnd.github+json',

@@ -1,5 +1,5 @@
 import { type ProcedureModuleCtx, vResendErrorBody } from './schema';
-import { attemptToParse, safeJsonParse, throwSenderError } from './utils';
+import { parseWithSchema, safeJsonParse, throwSenderError } from './validation';
 import { buildResendHttpRequest } from './request';
 
 export type ResendHttpResponse = {
@@ -48,7 +48,7 @@ export function ensureOkOrThrow(
 export function resendErrorSuffix(body: string): string {
   const parsed = safeJsonParse(body);
   if (parsed !== undefined) {
-    const result = attemptToParse(vResendErrorBody, parsed);
+    const result = parseWithSchema(vResendErrorBody, parsed);
     if (result.kind === 'success') {
       const parts: string[] = [];
       if (result.data.name) parts.push(`name=${result.data.name}`);

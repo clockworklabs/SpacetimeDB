@@ -13,9 +13,9 @@ import {
   type WriteCtx,
 } from './schema';
 import { loadConfigOrThrowFromProcedure } from './config';
-import { posthogFetch, type PostHogHttpResult } from './http';
+import { isOkStatus, posthogFetch, type PostHogHttpResult } from './http';
 import { isAdmin, requireAdmin } from './auth';
-import { isOkStatus, parseJsonObject, throwSenderError } from './utils';
+import { parseJsonObject, throwSenderError } from './validation';
 import {
   claimHasExpired,
   claimOutboxRow,

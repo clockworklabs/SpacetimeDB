@@ -41,7 +41,7 @@ export const setAuthConfigParams = {
 const DEFAULT_COOKIE_NAME = 'stdb_auth';
 const DEFAULT_SESSION_TTL_SECONDS = 60n * 60n * 24n * 7n;
 
-export function setAuthConfigImpl(
+export function setAuthConfig(
   ctx: AuthWriteCtx,
   args: InferTypeOfParams<typeof setAuthConfigParams>
 ): void {
@@ -125,7 +125,7 @@ export function setAuthConfigImpl(
 
 const SWEEP_BATCH = 500;
 
-export function authSweepImpl(ctx: AuthWriteCtx): void {
+export function authSweep(ctx: AuthWriteCtx): void {
   const nowMicros = ctx.timestamp.microsSinceUnixEpoch as bigint;
   withCtx(ctx, tx => {
     let n = 0;
@@ -161,12 +161,12 @@ export function authSweepImpl(ctx: AuthWriteCtx): void {
 
 export const revokeSessionParams = { sessionId: t.string() };
 
-export function revokeSessionImpl(
+export function revokeSession(
   ctx: AuthWriteCtx,
   args: InferTypeOfParams<typeof revokeSessionParams>
 ): void {
   // Admin action for revoking any user's session. Self-service revocation is
-  // revokeMySessionImpl (caller-scoped). Verdict inside tx, deny outside.
+  // revokeMySession is caller-scoped. Compute the verdict inside the transaction.
   const verdict = withCtx(ctx, tx => authAdminVerdict(tx, ctx.sender));
   denyIfNotAdmin(verdict);
 
@@ -187,7 +187,7 @@ export interface MySessionSummary {
   isCurrent: boolean;
 }
 
-export function listMySessionsImpl(
+export function listMySessions(
   ctx: AuthWriteCtx,
   _args: Record<never, never>
 ): { sessions: MySessionSummary[] } {
@@ -220,7 +220,7 @@ export function listMySessionsImpl(
 
 export const revokeMySessionParams = { sessionId: t.string() };
 
-export function revokeMySessionImpl(
+export function revokeMySession(
   ctx: AuthWriteCtx,
   args: InferTypeOfParams<typeof revokeMySessionParams>
 ): void {
@@ -237,7 +237,7 @@ export function revokeMySessionImpl(
 
 export const getPublicKeyPemParams = {};
 
-export function getPublicKeyPemImpl(
+export function getPublicKeyPem(
   ctx: AuthWriteCtx,
   _args: Record<never, never>
 ): { publicKeyPem: string; keyId: string; issuerUrl: string } {
@@ -257,7 +257,7 @@ export const linkConnectionParams = { sessionToken: t.string() };
 
 const RETRY_FAILED_MSG = 'transaction retry failed again';
 
-export function linkConnectionImpl(
+export function linkConnection(
   ctx: AuthWriteCtx,
   args: InferTypeOfParams<typeof linkConnectionParams>
 ): { userId: string } {
@@ -315,7 +315,7 @@ export function linkConnectionImpl(
 
 export const unlinkConnectionParams = {};
 
-export function unlinkConnectionImpl(
+export function unlinkConnection(
   ctx: AuthWriteCtx,
   _args: Record<never, never>
 ): void {
@@ -335,7 +335,7 @@ export const updateProfileParams = {
   image: t.option(t.string()),
 };
 
-export function updateProfileImpl(
+export function updateProfile(
   ctx: AuthWriteCtx,
   args: InferTypeOfParams<typeof updateProfileParams>
 ): void {

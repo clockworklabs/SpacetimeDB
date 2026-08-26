@@ -89,7 +89,7 @@ function responseHeaders(
   };
 }
 
-export function makeFileServeImpl(opts: FileServeOptions) {
+export function createFileHttpHandler(opts: FileServeOptions) {
   return (rawCtx: unknown, req: Request): SyncResponse => {
     const ctx = rawCtx as FileHandlerContext;
     const method = req.method.toUpperCase();

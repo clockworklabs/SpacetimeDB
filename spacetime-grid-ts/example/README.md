@@ -9,8 +9,8 @@ statistics, turns, and combat rules.
 
 - Mounting the Grid and Auth submodules in one host module.
 - Authenticated match membership and caller-scoped subscriptions.
-- Hex-grid pathfinding with `computePathImpl`.
-- Movement and attack ranges with `cellsInRangeImpl`.
+- Hex-grid pathfinding with `computePath`.
+- Movement and attack ranges with `cellsInRange`.
 - Layering application rules over submodule-owned spatial state.
 - Human-versus-human matchmaking and a solo match against the built-in Xeno
   Garrison actor.

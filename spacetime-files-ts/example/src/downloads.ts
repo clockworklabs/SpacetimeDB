@@ -1,6 +1,7 @@
 import type { FileSummary } from './module_bindings/app/types';
 import { buildZip, type ZipEntry } from './zip';
-import { baseName, fileUrl, humanError, tsMs } from './utils';
+import { baseName, fileUrl } from './paths';
+import { humanError, timestampMilliseconds } from './presentation';
 
 export const ARCHIVE_FILE_COUNT_MAX = 250;
 export const ARCHIVE_ENTRY_COUNT_MAX = 1_000;
@@ -113,7 +114,7 @@ export async function downloadArchive(
       entries.push({
         name: entryName(file),
         bytes: new Uint8Array(await blob.arrayBuffer()),
-        mtimeMs: tsMs(file.updatedAt),
+        mtimeMs: timestampMilliseconds(file.updatedAt),
       });
     } catch (error) {
       failures.push(`${baseName(file.path)}: ${humanError(error)}`);

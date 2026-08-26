@@ -135,12 +135,12 @@ let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000];
 
-function dispatch(name: string, detail: unknown): void {
+function emitAppEvent(name: string, detail: unknown): void {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
-function broadcastThreads(): void {
+function emitThreads(): void {
   if (!currentConn) {
-    dispatch('stdb:threads', { threads: [] });
+    emitAppEvent('stdb:threads', { threads: [] });
     return;
   }
   const sorted = [...currentConn.db.myThreads.iter()].sort((a, b) => {
@@ -148,11 +148,11 @@ function broadcastThreads(): void {
     const bv = b.updatedAt.microsSinceUnixEpoch as bigint;
     return av < bv ? 1 : av > bv ? -1 : 0;
   });
-  dispatch('stdb:threads', { threads: sorted });
+  emitAppEvent('stdb:threads', { threads: sorted });
 }
-function broadcastMessages(): void {
+function emitMessages(): void {
   if (!currentConn) {
-    dispatch('stdb:messages', { messages: [], attachments: {} });
+    emitAppEvent('stdb:messages', { messages: [], attachments: {} });
     return;
   }
   const sorted = [...currentConn.db.myMessages.iter()].sort((a, b) =>
@@ -164,35 +164,38 @@ function broadcastMessages(): void {
     const key = f.messageId.toString();
     (atts[key] ??= []).push(f);
   }
-  dispatch('stdb:messages', { messages: sorted, attachments: atts });
+  emitAppEvent('stdb:messages', { messages: sorted, attachments: atts });
 }
-function broadcastLocks(): void {
+function emitThreadLocks(): void {
   if (!currentConn) {
-    dispatch('stdb:locks', { locks: [] });
+    emitAppEvent('stdb:locks', { locks: [] });
     return;
   }
   const entries: Array<[bigint, boolean]> = [];
   for (const l of currentConn.db.myThreadLocks.iter())
     entries.push([l.threadId, l.cancelRequested]);
-  dispatch('stdb:locks', { locks: entries });
+  emitAppEvent('stdb:locks', { locks: entries });
 }
-function broadcastOverrides(): void {
+function emitAgentOverrides(): void {
   if (!currentConn) {
-    dispatch('stdb:overrides', { overrides: [] });
+    emitAppEvent('stdb:overrides', { overrides: [] });
     return;
   }
-  dispatch('stdb:overrides', {
+  emitAppEvent('stdb:overrides', {
     overrides: [...currentConn.db.agentOverride.iter()],
   });
 }
-function broadcastConfig(): void {
-  dispatch('stdb:config', { state: configState });
+function emitConfigState(): void {
+  emitAppEvent('stdb:config', { state: configState });
 }
-function broadcastConn(state: ConnState, detail?: string): void {
-  dispatch('stdb:connState', { state, detail });
+function emitConnectionState(state: ConnState, detail?: string): void {
+  emitAppEvent('stdb:connState', { state, detail });
 }
-function broadcastAuth(): void {
-  dispatch('auth:state', { user: currentUser, sessionExpiresAt: currentExp });
+function emitAuthState(): void {
+  emitAppEvent('auth:state', {
+    user: currentUser,
+    sessionExpiresAt: currentExp,
+  });
 }
 
 function syncUserFromRow(row: AuthUserRow): void {
@@ -204,7 +207,7 @@ function syncUserFromRow(row: AuthUserRow): void {
     name: row.name ?? undefined,
     image: row.image ?? undefined,
   };
-  broadcastAuth();
+  emitAuthState();
 }
 
 function requireConn(): DbConnection {
@@ -275,14 +278,14 @@ function connect(uri: string, databaseName: string): Promise<DbConnection> {
         resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
-        broadcastConn('error', err?.message ?? 'disconnected');
+        emitConnectionState('error', err?.message ?? 'disconnected');
         currentConn = null;
         globalSub = null;
         messageSub = null;
         if (currentUser) scheduleReconnect();
       })
       .onConnectError((_ctx, err) => {
-        broadcastConn('error', err?.message ?? 'connect failed');
+        emitConnectionState('error', err?.message ?? 'connect failed');
         reject(err);
       })
       .build();
@@ -325,13 +328,13 @@ function setActiveThread(threadId: bigint | null): void {
     messageSub.unsubscribe();
     messageSub = null;
   }
-  broadcastMessages();
+  emitMessages();
 
   if (threadId === null || !currentConn) return;
 
   messageSub = currentConn
     .subscriptionBuilder()
-    .onApplied(() => broadcastMessages())
+    .onApplied(() => emitMessages())
     .onError((ctx: ErrorContext) =>
       console.error('message sub error', ctx.event)
     )
@@ -339,25 +342,25 @@ function setActiveThread(threadId: bigint | null): void {
 }
 
 function registerRowCallbacks(connection: DbConnection): void {
-  connection.db.myThreads.onInsert(() => broadcastThreads());
-  connection.db.myThreads.onUpdate(() => broadcastThreads());
-  connection.db.myThreads.onDelete(() => broadcastThreads());
+  connection.db.myThreads.onInsert(() => emitThreads());
+  connection.db.myThreads.onUpdate(() => emitThreads());
+  connection.db.myThreads.onDelete(() => emitThreads());
 
-  connection.db.myMessages.onInsert(() => broadcastMessages());
-  connection.db.myMessages.onUpdate(() => broadcastMessages());
-  connection.db.myMessages.onDelete(() => broadcastMessages());
+  connection.db.myMessages.onInsert(() => emitMessages());
+  connection.db.myMessages.onUpdate(() => emitMessages());
+  connection.db.myMessages.onDelete(() => emitMessages());
 
-  connection.db.myFiles.onInsert(() => broadcastMessages());
-  connection.db.myFiles.onUpdate(() => broadcastMessages());
-  connection.db.myFiles.onDelete(() => broadcastMessages());
+  connection.db.myFiles.onInsert(() => emitMessages());
+  connection.db.myFiles.onUpdate(() => emitMessages());
+  connection.db.myFiles.onDelete(() => emitMessages());
 
-  connection.db.myThreadLocks.onInsert(() => broadcastLocks());
-  connection.db.myThreadLocks.onUpdate(() => broadcastLocks());
-  connection.db.myThreadLocks.onDelete(() => broadcastLocks());
+  connection.db.myThreadLocks.onInsert(() => emitThreadLocks());
+  connection.db.myThreadLocks.onUpdate(() => emitThreadLocks());
+  connection.db.myThreadLocks.onDelete(() => emitThreadLocks());
 
-  connection.db.agentOverride.onInsert(() => broadcastOverrides());
-  connection.db.agentOverride.onUpdate(() => broadcastOverrides());
-  connection.db.agentOverride.onDelete(() => broadcastOverrides());
+  connection.db.agentOverride.onInsert(() => emitAgentOverrides());
+  connection.db.agentOverride.onUpdate(() => emitAgentOverrides());
+  connection.db.agentOverride.onDelete(() => emitAgentOverrides());
 
   connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
     syncUserFromRow(row)
@@ -369,7 +372,7 @@ function registerRowCallbacks(connection: DbConnection): void {
     if (!currentUser || row.userId !== currentUser.userId) return;
     currentUser = null;
     currentExp = undefined;
-    broadcastAuth();
+    emitAuthState();
   });
 }
 
@@ -377,10 +380,10 @@ function subscribeToTables(connection: DbConnection): SubscriptionHandle {
   return connection
     .subscriptionBuilder()
     .onApplied(() => {
-      broadcastThreads();
-      broadcastLocks();
-      broadcastOverrides();
-      broadcastMessages();
+      emitThreads();
+      emitThreadLocks();
+      emitAgentOverrides();
+      emitMessages();
     })
     .onError((ctx: ErrorContext) =>
       console.error('global sub error', ctx.event)
@@ -399,7 +402,7 @@ async function refreshConfigStatus(): Promise<AgentConfigStatus> {
   configState = status.isConfigured
     ? { kind: 'configured', status }
     : { kind: 'unconfigured' };
-  broadcastConfig();
+  emitConfigState();
   return status;
 }
 
@@ -414,7 +417,7 @@ async function bindSession(
   if (!serverCfg) serverCfg = await loadServerConfig();
 
   if (!currentConn) {
-    broadcastConn('connecting');
+    emitConnectionState('connecting');
     try {
       const conn = await connect(
         serverCfg.spacetimeUri,
@@ -422,16 +425,19 @@ async function bindSession(
       );
       currentConn = conn;
       reconnectAttempt = 0;
-      broadcastConn('connected');
+      emitConnectionState('connected');
 
-      broadcastThreads();
-      broadcastMessages();
-      broadcastLocks();
-      broadcastOverrides();
+      emitThreads();
+      emitMessages();
+      emitThreadLocks();
+      emitAgentOverrides();
 
       registerRowCallbacks(conn);
     } catch (err) {
-      broadcastConn('error', err instanceof Error ? err.message : String(err));
+      emitConnectionState(
+        'error',
+        err instanceof Error ? err.message : String(err)
+      );
       return;
     }
   }
@@ -453,7 +459,7 @@ async function bindSession(
   }
 
   await refreshConfigStatus();
-  broadcastAuth();
+  emitAuthState();
 }
 
 async function restoreSession(): Promise<boolean> {
@@ -501,11 +507,11 @@ async function logout(): Promise<void> {
   }
   currentUser = null;
   currentExp = undefined;
-  broadcastThreads();
-  broadcastMessages();
-  broadcastLocks();
-  broadcastOverrides();
-  broadcastAuth();
+  emitThreads();
+  emitMessages();
+  emitThreadLocks();
+  emitAgentOverrides();
+  emitAuthState();
 }
 
 function oauthStart(provider: 'google' | 'github'): void {
@@ -625,14 +631,17 @@ async function main(): Promise<void> {
     },
   };
 
-  broadcastConn('idle');
+  emitConnectionState('idle');
   serverCfg = await loadServerConfig();
-  dispatch('stdb:ready', {});
+  emitAppEvent('stdb:ready', {});
   await restoreSession();
-  dispatch('auth:ready', {});
+  emitAppEvent('auth:ready', {});
 }
 
 main().catch(err => {
   console.error(err);
-  broadcastConn('error', err instanceof Error ? err.message : String(err));
+  emitConnectionState(
+    'error',
+    err instanceof Error ? err.message : String(err)
+  );
 });

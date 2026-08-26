@@ -751,7 +751,11 @@ function maybeRunSummarization(ctx: ProcLikeCtx, threadId: bigint): void {
   });
 }
 
-function adaptTx(tx: WriteCtx, agentName: string, owner: Identity): LoopTx {
+function createLoopContext(
+  tx: WriteCtx,
+  agentName: string,
+  owner: Identity
+): LoopTx {
   return {
     listMessages(threadId: bigint): LoopMessage[] {
       return threadMessagesAscending(tx, threadId).map(toLoopMessage);
@@ -785,7 +789,7 @@ function adaptTx(tx: WriteCtx, agentName: string, owner: Identity): LoopTx {
   };
 }
 
-function runLockedLoop(
+function runAgentForThread(
   ctx: ProcLikeCtx,
   cfg: LoopConfig,
   agentName: string,
@@ -811,7 +815,7 @@ function runLockedLoop(
     runAgentLoop({
       http: ctx.http,
       withTx: <R>(fn: (lt: LoopTx) => R): R =>
-        ctx.withTx(tx => fn(adaptTx(tx, agentName, owner))),
+        ctx.withTx(tx => fn(createLoopContext(tx, agentName, owner))),
       llmToolDefs: registry.llmToolDefsFor(agentName),
       cfg: finalCfg,
       threadId,
@@ -870,7 +874,7 @@ export const send_message = spacetimedb.procedure(
     });
 
     maybeEmbedMessage(ctx, args.threadId, userMessageId);
-    runLockedLoop(ctx, cfg, agentName, threadOwner, args.threadId);
+    runAgentForThread(ctx, cfg, agentName, threadOwner, args.threadId);
     return {};
   }
 );
@@ -912,7 +916,7 @@ export const regenerate_response = spacetimedb.procedure(
       return loaded;
     });
 
-    runLockedLoop(ctx, cfg, agentName, threadOwner, threadId);
+    runAgentForThread(ctx, cfg, agentName, threadOwner, threadId);
     return {};
   }
 );

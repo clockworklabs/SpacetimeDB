@@ -5,7 +5,7 @@ import {
   type WriteCtx,
 } from './schema';
 import { requireAdmin } from './auth';
-import { normalizeHost, throwSenderError } from './utils';
+import { normalizeHost, throwSenderError } from './validation';
 
 export type PostHogConfig = {
   host: string;

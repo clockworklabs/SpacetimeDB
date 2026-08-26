@@ -31,7 +31,7 @@ export {
   setAuthConfigParams,
   getPublicKeyPemParams,
   linkConnectionParams,
-  linkConnectionImpl,
+  linkConnection,
   unlinkConnectionParams,
   updateProfileParams,
   revokeSessionParams,

@@ -1,14 +1,12 @@
 import type { FileSummary, Folder } from './module_bindings/app/types';
+import { baseName, childPrefix, parentPath } from './paths';
 import {
-  baseName,
-  childPrefix,
   escapeHtml,
-  fmtSize,
-  fmtWhen,
-  kindClass,
-  parentPath,
-  tsMs,
-} from './utils';
+  formatFileSize,
+  formatTimestamp,
+  fileKindPresentation,
+  timestampMilliseconds,
+} from './presentation';
 
 export type SortKey = 'name' | 'size' | 'updated' | 'visibility';
 export type Entry = { type: 'file' | 'folder'; path: string };
@@ -46,7 +44,8 @@ export function createVaultRendering(getState: () => VaultRenderState) {
     let result = 0;
     if (sortKey === 'size') result = Number(a.size) - Number(b.size);
     else if (sortKey === 'updated')
-      result = tsMs(a.updatedAt) - tsMs(b.updatedAt);
+      result =
+        timestampMilliseconds(a.updatedAt) - timestampMilliseconds(b.updatedAt);
     else if (sortKey === 'visibility')
       result = a.visibility.localeCompare(b.visibility);
     if (result === 0) result = baseName(a.path).localeCompare(baseName(b.path));
@@ -56,7 +55,10 @@ export function createVaultRendering(getState: () => VaultRenderState) {
   const folderCmp = (a: Folder, b: Folder): number => {
     const { sortKey, sortDir } = getState();
     let result =
-      sortKey === 'updated' ? tsMs(a.updatedAt) - tsMs(b.updatedAt) : 0;
+      sortKey === 'updated'
+        ? timestampMilliseconds(a.updatedAt) -
+          timestampMilliseconds(b.updatedAt)
+        : 0;
     if (result === 0) result = a.name.localeCompare(b.name);
     return result * sortDir;
   };
@@ -95,14 +97,14 @@ export function createVaultRendering(getState: () => VaultRenderState) {
     `<span class="sel"><input type="checkbox" data-select="${escapeHtml(file.path)}" ${getState().selected.has(file.path) ? 'checked' : ''} aria-label="Select file" /></span>`;
 
   const fileRowHtml = (file: FileSummary): string => {
-    const kind = kindClass(file.mimeType);
+    const kind = fileKindPresentation(file.mimeType);
     const isPublic = file.visibility === 'public';
     return `
       ${fileLiOpen(file, 'row')}
         ${selectionCheckbox(file)}
-        <span class="row-name"><span class="kind ${kind.cls}">${icon(kind.ico)}</span><span class="label">${escapeHtml(baseName(file.path))}</span></span>
-        <span class="meta">${getState().searchQuery ? escapeHtml(parentPath(file.path)) : fmtSize(file.size)}</span>
-        <span class="meta">${fmtWhen(file.updatedAt)}</span>
+        <span class="row-name"><span class="kind ${kind.className}">${icon(kind.iconName)}</span><span class="label">${escapeHtml(baseName(file.path))}</span></span>
+        <span class="meta">${getState().searchQuery ? escapeHtml(parentPath(file.path)) : formatFileSize(file.size)}</span>
+        <span class="meta">${formatTimestamp(file.updatedAt)}</span>
         <span class="badge-cell">
           <button class="badge ${isPublic ? 'public' : 'private'}" data-visibility="${escapeHtml(file.path)}" title="Toggle visibility">
             ${icon(isPublic ? 'globe' : 'lock')}${isPublic ? 'Public' : 'Private'}
@@ -123,7 +125,7 @@ export function createVaultRendering(getState: () => VaultRenderState) {
       <span class="sel"></span>
       <span class="row-name"><span class="kind folder">${icon('folder')}</span><span class="label">${escapeHtml(folder.name)}</span></span>
       <span class="meta">${getState().searchQuery ? escapeHtml(parentPath(folder.path)) : 'Folder'}</span>
-      <span class="meta">${fmtWhen(folder.updatedAt)}</span>
+      <span class="meta">${formatTimestamp(folder.updatedAt)}</span>
       <span class="badge-cell"></span>
       <span class="row-actions">
         <button class="icon secondary" data-rename-folder="${escapeHtml(folder.path)}" title="Rename folder" aria-label="Rename folder">${icon('pencil')}</button>
@@ -133,15 +135,15 @@ export function createVaultRendering(getState: () => VaultRenderState) {
     </li>`;
 
   const fileTileHtml = (file: FileSummary): string => {
-    const kind = kindClass(file.mimeType);
+    const kind = fileKindPresentation(file.mimeType);
     const isPublic = file.visibility === 'public';
     const isImage = (file.mimeType || '').startsWith('image/');
     return `
       ${fileLiOpen(file, 'tile')}
         ${selectionCheckbox(file)}
         <span class="vis-dot ${isPublic ? 'public' : ''}" title="${isPublic ? 'Public' : 'Private'}">${icon(isPublic ? 'globe' : 'lock')}</span>
-        <div class="thumb" ${isImage ? `data-thumb="${escapeHtml(file.path)}"` : ''}>${icon(kind.ico)}</div>
-        <div class="tile-name ${kind.cls}">${icon(kind.ico)}<span class="label" title="${escapeHtml(baseName(file.path))}">${escapeHtml(baseName(file.path))}</span></div>
+        <div class="thumb" ${isImage ? `data-thumb="${escapeHtml(file.path)}"` : ''}>${icon(kind.iconName)}</div>
+        <div class="tile-name ${kind.className}">${icon(kind.iconName)}<span class="label" title="${escapeHtml(baseName(file.path))}">${escapeHtml(baseName(file.path))}</span></div>
       </li>`;
   };
 
@@ -181,15 +183,15 @@ export function createVaultRendering(getState: () => VaultRenderState) {
 }
 
 export function fileDetailsHtml(row: FileSummary): string {
-  const kind = kindClass(row.mimeType);
+  const kind = fileKindPresentation(row.mimeType);
   const isImage = (row.mimeType || '').startsWith('image/');
-  const updatedAtMs = tsMs(row.updatedAt);
+  const updatedAtMs = timestampMilliseconds(row.updatedAt);
   return `
-    <div class="d-thumb" ${isImage ? `data-dthumb="${escapeHtml(row.path)}"` : ''}>${icon(kind.ico)}</div>
-    <div class="d-name">${icon(kind.ico)}<span>${escapeHtml(baseName(row.path))}</span></div>
+    <div class="d-thumb" ${isImage ? `data-dthumb="${escapeHtml(row.path)}"` : ''}>${icon(kind.iconName)}</div>
+    <div class="d-name">${icon(kind.iconName)}<span>${escapeHtml(baseName(row.path))}</span></div>
     <div class="details">
       <div><span>Type</span><b>${escapeHtml(row.mimeType || 'file')}</b></div>
-      <div><span>Size</span><b>${fmtSize(row.size)}</b></div>
+      <div><span>Size</span><b>${formatFileSize(row.size)}</b></div>
       <div><span>Location</span><b><button class="linkish" data-goto="${escapeHtml(parentPath(row.path))}">${escapeHtml(parentPath(row.path))}</button></b></div>
       ${updatedAtMs ? `<div><span>Modified</span><b>${escapeHtml(new Date(updatedAtMs).toLocaleString())}</b></div>` : ''}
       <div><span>Visibility</span><b>${row.visibility === 'public' ? 'Public' : 'Private (owner only)'}</b></div>
@@ -203,14 +205,14 @@ export function folderDetailsHtml(
   stats: { fileCount: number; folderCount: number; bytes: number }
 ): string {
   const isRoot = folderPath === '/';
-  const updatedAtMs = folder ? tsMs(folder.updatedAt) : 0;
+  const updatedAtMs = folder ? timestampMilliseconds(folder.updatedAt) : 0;
   return `
     <div class="d-thumb">${icon('folder')}</div>
     <div class="d-name">${icon('folder')}<span>${escapeHtml(isRoot ? 'Root' : (folder?.name ?? ''))}</span></div>
     <div class="details">
       <div><span>Type</span><b>Folder</b></div>
       <div><span>Contents</span><b>${stats.fileCount} file${stats.fileCount === 1 ? '' : 's'}, ${stats.folderCount} folder${stats.folderCount === 1 ? '' : 's'}</b></div>
-      <div><span>Size</span><b>${fmtSize(stats.bytes)}</b></div>
+      <div><span>Size</span><b>${formatFileSize(stats.bytes)}</b></div>
       ${!isRoot ? `<div><span>Location</span><b><button class="linkish" data-goto="${escapeHtml(parentPath(folderPath))}">${escapeHtml(parentPath(folderPath))}</button></b></div>` : ''}
       ${updatedAtMs ? `<div><span>Modified</span><b>${escapeHtml(new Date(updatedAtMs).toLocaleString())}</b></div>` : ''}
     </div>`;
@@ -221,7 +223,7 @@ export function selectionDetailsHtml(rows: readonly FileSummary[]): string {
   return `
     <div class="d-name">${icon('copy')}<span>${rows.length} files selected</span></div>
     <div class="details">
-      <div><span>Total size</span><b>${fmtSize(bytes)}</b></div>
+      <div><span>Total size</span><b>${formatFileSize(bytes)}</b></div>
       <div><span>Public</span><b>${rows.filter(row => row.visibility === 'public').length} of ${rows.length}</b></div>
     </div>`;
 }

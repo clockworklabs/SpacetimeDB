@@ -98,7 +98,7 @@ export const uploadFileParams = {
   visibility: t.string(),
 };
 
-export function uploadFileImpl(
+export function uploadFile(
   rawCtx: unknown,
   args: InferTypeOfParams<typeof uploadFileParams>,
   owner: string
@@ -154,7 +154,7 @@ export const deleteFileParams = {
   path: t.string(),
 };
 
-export function deleteFileImpl(
+export function deleteFile(
   rawCtx: unknown,
   args: InferTypeOfParams<typeof deleteFileParams>,
   owner: string
@@ -182,7 +182,7 @@ export const listFilesParams = {
 export const listFilesReturn = fileListPage;
 
 // Caller's own files; bytes omitted (fetch via HTTP handler).
-export function listFilesImpl(
+export function listFiles(
   rawCtx: unknown,
   args: InferTypeOfParams<typeof listFilesParams>,
   owner: string
@@ -258,7 +258,7 @@ export const readFileBytesReturn = t.object('FileBytes', {
 
 // Owner-gated byte read. HTTP handlers never see the caller's identity, so
 // private files can only be read here, over the authenticated connection.
-export function readFileBytesImpl(
+export function readFileBytes(
   rawCtx: unknown,
   args: InferTypeOfParams<typeof readFileBytesParams>,
   owner: string
@@ -280,7 +280,7 @@ export const setFileVisibilityParams = {
   visibility: t.string(),
 };
 
-export function setFileVisibilityImpl(
+export function setFileVisibility(
   rawCtx: unknown,
   args: InferTypeOfParams<typeof setFileVisibilityParams>,
   owner: string

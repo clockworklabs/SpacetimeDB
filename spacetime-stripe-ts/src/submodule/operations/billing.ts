@@ -13,7 +13,7 @@ import {
 } from '../schema';
 import { loadConfigOrThrowFromProcedure } from '../config';
 import { adminVerdict, denyIfNotAdmin } from '../auth';
-import { attemptToParse, safeJsonParse, summarizeIssues } from '../utils';
+import { parseWithSchema, safeJsonParse, summarizeIssues } from '../validation';
 
 import {
   requireProcedureAdmin,
@@ -413,7 +413,7 @@ export const create_checkout_session = spacetimedb.procedure(
       );
     }
 
-    const sessionResult = attemptToParse(
+    const sessionResult = parseWithSchema(
       vStripeCheckoutSessionResponse,
       safeJsonParse(response.body)
     );
@@ -455,7 +455,7 @@ export const create_customer_portal_session = spacetimedb.procedure(
       );
     }
 
-    const portalResult = attemptToParse(
+    const portalResult = parseWithSchema(
       vStripeBillingPortalSessionResponse,
       safeJsonParse(response.body)
     );

@@ -28,7 +28,7 @@ type WriteCtx = Tx;
 
 export const registry = makeAgentRegistry<Tx, typeof agents>(agents);
 
-export interface ProcedureRuntimeContext {
+export interface AgentProcedureContext {
   http: HttpLike;
   withTx: <R>(fn: (tx: WriteCtx) => R) => R;
 }
@@ -40,7 +40,7 @@ function threadMessagesAscending(tx: WriteCtx, threadId: bigint) {
 }
 
 export function maybeEmbedMessage(
-  ctx: ProcedureRuntimeContext,
+  ctx: AgentProcedureContext,
   threadId: bigint,
   messageId: bigint
 ): void {
@@ -90,7 +90,7 @@ export function maybeEmbedMessage(
   });
 }
 
-function retrieveRag(ctx: ProcedureRuntimeContext, threadId: bigint): string[] {
+function retrieveRag(ctx: AgentProcedureContext, threadId: bigint): string[] {
   return ctx.withTx(tx => {
     const thread = tx.db.thread.id.find(threadId);
     if (!thread) return [];
@@ -148,10 +148,7 @@ function augmentSystemWithRag(
   return `${base ?? ''}\n\n## Relevant earlier messages\n${snippets.join('\n---\n')}`.trim();
 }
 
-function runSummarization(
-  ctx: ProcedureRuntimeContext,
-  threadId: bigint
-): void {
+function runSummarization(ctx: AgentProcedureContext, threadId: bigint): void {
   const decision = ctx.withTx(tx => {
     const thread = tx.db.thread.id.find(threadId);
     if (!thread) return null;
@@ -284,7 +281,7 @@ function loadAttachments(
   return attachments;
 }
 
-function adaptTx(
+function createLoopContext(
   tx: WriteCtx,
   agentName: string,
   userId: string,
@@ -344,8 +341,8 @@ function adaptTx(
   };
 }
 
-export function runLockedLoop(
-  ctx: ProcedureRuntimeContext,
+export function runAgentForThread(
+  ctx: AgentProcedureContext,
   cfg: LoopConfig,
   agentName: string,
   userId: string,
@@ -370,7 +367,9 @@ export function runLockedLoop(
     runAgentLoop({
       http: ctx.http,
       withTx: <R>(fn: (loopTx: LoopTx) => R): R =>
-        ctx.withTx(tx => fn(adaptTx(tx, agentName, userId, recordTokens))),
+        ctx.withTx(tx =>
+          fn(createLoopContext(tx, agentName, userId, recordTokens))
+        ),
       llmToolDefs: registry.llmToolDefsFor(agentName),
       cfg: finalConfig,
       threadId,

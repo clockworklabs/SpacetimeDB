@@ -170,17 +170,17 @@ async function connect(config: ServerConfig): Promise<DbConnection> {
   });
 }
 
-function table<T>(name: string): TableAccessor<T> | undefined {
+function getTableAccessor<T>(name: string): TableAccessor<T> | undefined {
   const db = (conn?.db ?? {}) as Record<string, TableAccessor<T> | undefined>;
   return db[name];
 }
 
 function emails(): ResendEmail[] {
-  return [...(table<ResendEmail>('myDispatchEmails')?.iter() ?? [])].sort(
-    (a, b) => {
-      return timestampMs(b.createdAt) - timestampMs(a.createdAt);
-    }
-  );
+  return [
+    ...(getTableAccessor<ResendEmail>('myDispatchEmails')?.iter() ?? []),
+  ].sort((a, b) => {
+    return timestampMs(b.createdAt) - timestampMs(a.createdAt);
+  });
 }
 
 type Node = {
@@ -487,8 +487,8 @@ function scheduleRender() {
   }, 0);
 }
 
-function registerTableCallbacks(name: string): void {
-  const accessor = table<unknown>(name);
+function registerCallbacksForTable(name: string): void {
+  const accessor = getTableAccessor<unknown>(name);
   if (!accessor) throw new Error(`missing table accessor: ${name}`);
   accessor.onInsert(() => scheduleRender());
   accessor.onUpdate(() => scheduleRender());
@@ -497,7 +497,7 @@ function registerTableCallbacks(name: string): void {
 
 function registerRowCallbacks(): void {
   for (const name of ['myDispatchEmails', 'myDispatchDeliveryEvents']) {
-    registerTableCallbacks(name);
+    registerCallbacksForTable(name);
   }
 }
 

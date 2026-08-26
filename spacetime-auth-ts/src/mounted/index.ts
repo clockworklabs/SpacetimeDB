@@ -13,22 +13,22 @@ import {
 } from '../tables';
 import {
   setAuthConfigParams,
-  setAuthConfigImpl,
-  authSweepImpl,
+  setAuthConfig,
+  authSweep,
   getPublicKeyPemParams,
-  getPublicKeyPemImpl,
+  getPublicKeyPem,
   linkConnectionParams,
-  linkConnectionImpl,
+  linkConnection,
   unlinkConnectionParams,
-  unlinkConnectionImpl,
+  unlinkConnection,
   updateProfileParams,
-  updateProfileImpl,
+  updateProfile,
   revokeSessionParams,
-  revokeSessionImpl,
+  revokeSession,
   listMySessionsParams,
-  listMySessionsImpl,
+  listMySessions,
   revokeMySessionParams,
-  revokeMySessionImpl,
+  revokeMySession,
   passwordSignupHandler,
   passwordLoginHandler,
   meHandler,
@@ -80,11 +80,11 @@ export const init = spacetimedb.init(ctx => {
   installAuth(ctx);
 });
 
-// On the first set_auth_config call (no PEM supplied), setAuthConfigImpl generates a fresh ES256 keypair in-module.
+// On the first set_auth_config call, setAuthConfig generates an ES256 keypair when no PEM is supplied.
 export const set_auth_config = spacetimedb.reducer(
   setAuthConfigParams,
   (ctx, args) => {
-    setAuthConfigImpl(ctx, args);
+    setAuthConfig(ctx, args);
   }
 );
 
@@ -95,32 +95,32 @@ export const get_auth_public_key = spacetimedb.procedure(
     keyId: t.string(),
     issuerUrl: t.string(),
   }),
-  getPublicKeyPemImpl
+  getPublicKeyPem
 );
 
 export const link_connection = spacetimedb.reducer(
   linkConnectionParams,
   (ctx, args) => {
-    linkConnectionImpl(ctx, args);
+    linkConnection(ctx, args);
   }
 );
 
 export const unlink_connection = spacetimedb.reducer(
   unlinkConnectionParams,
   (ctx, args) => {
-    unlinkConnectionImpl(ctx, args);
+    unlinkConnection(ctx, args);
   }
 );
 
 export const update_profile = spacetimedb.reducer(
   updateProfileParams,
-  updateProfileImpl
+  updateProfile
 );
 
 export const revoke_session = spacetimedb.reducer(
   revokeSessionParams,
   (ctx, args) => {
-    revokeSessionImpl(ctx, args);
+    revokeSession(ctx, args);
   }
 );
 
@@ -138,13 +138,13 @@ export const list_my_sessions = spacetimedb.procedure(
       })
     ),
   }),
-  listMySessionsImpl
+  listMySessions
 );
 
 export const revoke_my_session = spacetimedb.reducer(
   revokeMySessionParams,
   (ctx, args) => {
-    revokeMySessionImpl(ctx, args);
+    revokeMySession(ctx, args);
   }
 );
 
@@ -152,7 +152,7 @@ export const auth_sweep = spacetimedb.reducer(
   { onSchedule: authSweeperTick },
   { arg: authSweeperTick.rowType },
   (ctx, _arg) => {
-    authSweepImpl(ctx);
+    authSweep(ctx);
   }
 );
 

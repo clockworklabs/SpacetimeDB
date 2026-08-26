@@ -27,10 +27,10 @@ import {
 } from './limits';
 import {
   assertExhaustive,
-  attemptToParse,
+  parseWithSchema,
   safeJsonParse,
   summarizeIssues,
-} from './utils';
+} from './validation';
 
 export function requireProcedureAdmin(ctx: ProcedureModuleCtx): void {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
@@ -492,7 +492,7 @@ export function applyStripeEvent(
     return { status: WebhookEventStatus.Failed, error: 'invalid JSON payload' };
   }
 
-  const result = attemptToParse(vStripeEvent, parsedJson);
+  const result = parseWithSchema(vStripeEvent, parsedJson);
   if (result.kind === 'error') {
     // Distinguish unhandled type (ignore) from handled-but-malformed (fail).
     const eventTypeRaw =
@@ -732,7 +732,7 @@ export function createCustomerInStripeAndSync(
   }
 
   const parsedBody = safeJsonParse(result.body);
-  const idResult = attemptToParse(vStripeIdResponse, parsedBody);
+  const idResult = parseWithSchema(vStripeIdResponse, parsedBody);
   if (idResult.kind === 'error') {
     throwSenderError(
       `stripe.create_customer_invalid_response:${summarizeIssues(idResult.issues)}`

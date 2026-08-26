@@ -151,7 +151,7 @@ const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000];
 const CONNECT_TIMEOUT_MS = 8000;
 const TOKEN_STORAGE_PREFIX = 'reactor-clicker.stdb-token';
 
-function broadcastConn(
+function emitConnectionState(
   state: 'connecting' | 'connected' | 'error',
   detail?: string
 ): void {
@@ -160,7 +160,7 @@ function broadcastConn(
   );
 }
 
-function broadcastState(): void {
+function emitReactorState(): void {
   if (!currentConn) {
     window.dispatchEvent(
       new CustomEvent('reactor:data', {
@@ -202,7 +202,7 @@ function broadcastState(): void {
   );
 }
 
-function broadcastEventInsert(row: ReactorEvent): void {
+function emitReactorEvent(row: ReactorEvent): void {
   window.dispatchEvent(
     new CustomEvent('reactor:eventInserted', { detail: { event: row } })
   );
@@ -219,7 +219,7 @@ function isStoredTokenAuthError(err: unknown): boolean {
   return /unauthorized|verify token|websocket-token/i.test(message);
 }
 
-function openConnection(
+function connectOnce(
   cfg: ServerConfig,
   tokenKey: string,
   token?: string
@@ -255,7 +255,7 @@ function openConnection(
       .onDisconnect((_ctx, err) => {
         currentConn = null;
         window.reactor = undefined;
-        broadcastConn('error', err?.message ?? 'disconnected');
+        emitConnectionState('error', err?.message ?? 'disconnected');
         scheduleReconnect();
       })
       .onConnectError((_ctx, err) => settle(() => reject(err)));
@@ -268,11 +268,11 @@ async function connect(cfg: ServerConfig): Promise<DbConnection> {
   const tokenKey = `${TOKEN_STORAGE_PREFIX}.${cfg.spacetimeUri}.${cfg.databaseName}`;
   const token = window.localStorage.getItem(tokenKey) ?? undefined;
   try {
-    return await openConnection(cfg, tokenKey, token);
+    return await connectOnce(cfg, tokenKey, token);
   } catch (err) {
     if (token && isStoredTokenAuthError(err)) {
       window.localStorage.removeItem(tokenKey);
-      return openConnection(cfg, tokenKey);
+      return connectOnce(cfg, tokenKey);
     }
     throw err;
   }
@@ -288,7 +288,10 @@ function scheduleReconnect(): void {
     reconnectTimer = null;
     reconnectAttempt++;
     main().catch(err => {
-      broadcastConn('error', err instanceof Error ? err.message : String(err));
+      emitConnectionState(
+        'error',
+        err instanceof Error ? err.message : String(err)
+      );
       scheduleReconnect();
     });
   }, delay);
@@ -311,7 +314,7 @@ function subscribeToTables(
         state.seenEventIds.add(row.id.toString());
       }
       state.subscriptionApplied = true;
-      broadcastState();
+      emitReactorState();
     })
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
@@ -331,31 +334,31 @@ function registerRowCallbacks(
   state: TableSyncState
 ): void {
   const db = connection.db as NamespacedDb;
-  db.reactorState.onInsert(() => broadcastState());
-  db.reactorState.onUpdate(() => broadcastState());
-  db.reactorState.onDelete(() => broadcastState());
+  db.reactorState.onInsert(() => emitReactorState());
+  db.reactorState.onUpdate(() => emitReactorState());
+  db.reactorState.onDelete(() => emitReactorState());
   db.reactorEvents.onInsert((_ctx, row) => {
     const id = row.id.toString();
     const isNewLiveEvent =
       state.subscriptionApplied && !state.seenEventIds.has(id);
     state.seenEventIds.add(id);
-    if (isNewLiveEvent) broadcastEventInsert(row);
-    broadcastState();
+    if (isNewLiveEvent) emitReactorEvent(row);
+    emitReactorState();
   });
-  db.reactorEvents.onUpdate(() => broadcastState());
-  db.reactorEvents.onDelete(() => broadcastState());
-  db.reactorLimitStatus.onInsert(() => broadcastState());
-  db.reactorLimitStatus.onUpdate(() => broadcastState());
-  db.reactorLimitStatus.onDelete(() => broadcastState());
-  db.reactorPlayers.onInsert(() => broadcastState());
-  db.reactorPlayers.onUpdate(() => broadcastState());
-  db.reactorPlayers.onDelete(() => broadcastState());
-  db.reactorShop.onInsert(() => broadcastState());
-  db.reactorShop.onUpdate(() => broadcastState());
-  db.reactorShop.onDelete(() => broadcastState());
-  db.rateLimitDemoConfig.onInsert(() => broadcastState());
-  db.rateLimitDemoConfig.onUpdate(() => broadcastState());
-  db.rateLimitDemoConfig.onDelete?.(() => broadcastState());
+  db.reactorEvents.onUpdate(() => emitReactorState());
+  db.reactorEvents.onDelete(() => emitReactorState());
+  db.reactorLimitStatus.onInsert(() => emitReactorState());
+  db.reactorLimitStatus.onUpdate(() => emitReactorState());
+  db.reactorLimitStatus.onDelete(() => emitReactorState());
+  db.reactorPlayers.onInsert(() => emitReactorState());
+  db.reactorPlayers.onUpdate(() => emitReactorState());
+  db.reactorPlayers.onDelete(() => emitReactorState());
+  db.reactorShop.onInsert(() => emitReactorState());
+  db.reactorShop.onUpdate(() => emitReactorState());
+  db.reactorShop.onDelete(() => emitReactorState());
+  db.rateLimitDemoConfig.onInsert(() => emitReactorState());
+  db.rateLimitDemoConfig.onUpdate(() => emitReactorState());
+  db.rateLimitDemoConfig.onDelete?.(() => emitReactorState());
 }
 
 function requireConn(): DbConnection {
@@ -393,7 +396,7 @@ function installReactorActions(): ReactorActions {
 
 async function main(): Promise<void> {
   window.reactor = undefined;
-  broadcastConn('connecting');
+  emitConnectionState('connecting');
   if (!serverConfig) {
     serverConfig = await loadServerConfig();
   }
@@ -409,9 +412,12 @@ async function main(): Promise<void> {
     subscribeToTables(conn, tableSyncState);
     const reactor = installReactorActions();
     window.dispatchEvent(new CustomEvent('reactor:ready'));
-    broadcastConn('connected');
+    emitConnectionState('connected');
     reactor.start().catch((err: unknown) => {
-      broadcastConn('error', err instanceof Error ? err.message : String(err));
+      emitConnectionState(
+        'error',
+        err instanceof Error ? err.message : String(err)
+      );
     });
   } catch (err) {
     currentConn = null;
@@ -422,6 +428,9 @@ async function main(): Promise<void> {
 
 main().catch(err => {
   console.error('reactor connection failed', err);
-  broadcastConn('error', err instanceof Error ? err.message : String(err));
+  emitConnectionState(
+    'error',
+    err instanceof Error ? err.message : String(err)
+  );
   scheduleReconnect();
 });

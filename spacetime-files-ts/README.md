@@ -41,8 +41,7 @@ export const init = spacetimedb.init(ctx => {
 export const upload_file = spacetimedb.procedure(
   files.uploadFileParams,
   t.u64(),
-  (ctx, args) =>
-    files.uploadFileImpl(ctx.as.files, args, ctx.sender.toHexString())
+  (ctx, args) => files.uploadFile(ctx.as.files, args, ctx.sender.toHexString())
 );
 ```
 
@@ -124,10 +123,7 @@ Validation exports include `validateFileOwner`, `validateFilePath`,
 ### `uploadFile`
 
 ```ts
-import {
-  uploadFileParams,
-  uploadFileImpl,
-} from '@spacetimedb/files/procedures';
+import { uploadFileParams, uploadFile } from '@spacetimedb/files/procedures';
 ```
 
 - Args: `path`, `mimeType`, `bytes` (`u8[]`), `visibility`.
@@ -151,7 +147,7 @@ import {
 import {
   listFilesParams,
   listFilesReturn,
-  listFilesImpl,
+  listFiles,
 } from '@spacetimedb/files/procedures';
 ```
 
@@ -171,15 +167,15 @@ import {
 import {
   readFileBytesParams,
   readFileBytesReturn,
-  readFileBytesImpl,
+  readFileBytes,
 } from '@spacetimedb/files/procedures';
 ```
 
 - Args: `path`. Returns: `{ bytes: u8[], mimeType: string }`.
 - Owner-gated. Throws `files.not_found` / `files.not_owner`.
 - **Private files use an authenticated procedure.** SpacetimeDB HTTP route
-  handlers see the _module's_ identity, so `makeFileServeImpl` serves public
-  files. Procedures receive the authenticated sender. Wrap `readFileBytesImpl`
+  handlers see the _module's_ identity, so `createFileHttpHandler` serves public
+  files. Procedures receive the authenticated sender. Wrap `readFileBytes`
   in a procedure for private previews and downloads, and use HTTP for cacheable
   public files.
 
@@ -187,20 +183,20 @@ import {
 export const read_file_bytes = spacetimedb.procedure(
   readFileBytesParams,
   readFileBytesReturn,
-  (ctx, args) => readFileBytesImpl(ctx, args, ctx.sender.toHexString())
+  (ctx, args) => readFileBytes(ctx, args, ctx.sender.toHexString())
 );
 ```
 
 ## HTTP serve handler
 
 ```ts
-import { makeFileServeImpl } from '@spacetimedb/files/handlers';
+import { createFileHttpHandler } from '@spacetimedb/files/handlers';
 ```
 
 Wire a handler into your module's HTTP routes:
 
 ```ts
-const serveFile = makeFileServeImpl({
+const serveFile = createFileHttpHandler({
   getOwner: _ctx => undefined,
 });
 ```

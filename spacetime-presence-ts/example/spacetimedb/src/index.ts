@@ -1104,7 +1104,7 @@ export const authGithubCallback = spacetimedb.httpHandler((ctx, req) =>
   githubCallbackHandler(ctx.as.auth, req)
 );
 
-const fileServeHandler = files.makeFileServeImpl({
+const fileServeHandler = files.createFileHttpHandler({
   getOwner: (ctx, req) =>
     ctx.withTx((tx: TransactionCtx<DbSchema>) => {
       const binding = tx.db.auth.authConnectionBinding.stdbIdentity.find(

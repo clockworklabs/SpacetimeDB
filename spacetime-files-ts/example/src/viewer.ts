@@ -1,5 +1,11 @@
 import type { FileSummary } from './module_bindings/app/types';
-import { baseName, escapeHtml, fmtSize, humanError, tsMs } from './utils';
+import { baseName } from './paths';
+import {
+  escapeHtml,
+  formatFileSize,
+  humanError,
+  timestampMilliseconds,
+} from './presentation';
 
 const element = <T extends HTMLElement = HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
@@ -108,10 +114,10 @@ export class FileViewer {
     this.index = index;
     this.path = row.path;
     element('lb-title').textContent = baseName(row.path);
-    const updatedAtMs = tsMs(row.updatedAt);
+    const updatedAtMs = timestampMilliseconds(row.updatedAt);
     element('lb-meta').textContent = [
       row.mimeType || 'file',
-      fmtSize(row.size),
+      formatFileSize(row.size),
       row.visibility === 'public' ? 'Public' : 'Private',
       updatedAtMs ? new Date(updatedAtMs).toLocaleString() : '',
       this.files.length > 1 ? `${index + 1}/${this.files.length}` : '',

@@ -5,7 +5,7 @@ export type ParseResult<T> =
   | { kind: 'success'; data: T }
   | { kind: 'error'; issues: v.BaseIssue<unknown>[] };
 
-export function attemptToParse<TSchema extends v.GenericSchema>(
+export function parseWithSchema<TSchema extends v.GenericSchema>(
   schema: TSchema,
   input: unknown
 ): ParseResult<v.InferOutput<TSchema>> {

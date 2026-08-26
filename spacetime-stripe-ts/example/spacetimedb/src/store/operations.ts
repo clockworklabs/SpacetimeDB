@@ -8,7 +8,7 @@ import {
 } from './schema';
 import * as stripe from '@spacetimedb/stripe/submodule';
 import { requireAdmin } from './auth';
-import { stringArrayFromJson, throwSenderError } from './utils';
+import { stringArrayFromJson, throwSenderError } from './validation';
 
 const DEFAULT_STORE_PRODUCTS: Array<{
   productId: string;

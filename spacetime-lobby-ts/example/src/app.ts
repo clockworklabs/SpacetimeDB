@@ -43,7 +43,7 @@ let animatedRound = -1;
 const prevVitals = new Map<string, { hull: number; shields: number }>();
 
 // Maneuver cards appear on hover or focus for elements with [data-maneuver-id].
-function setupTooltip(): void {
+function registerTooltipHandlers(): void {
   const tip = $('tooltip');
   let current: Element | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -293,7 +293,7 @@ function tokenKey(config: ServerConfig): string {
   return `${TOKEN_KEY_PREFIX}:${config.spacetimeUri}:${config.databaseName}`;
 }
 
-function loadToken(config: ServerConfig): string | undefined {
+function loadStdbToken(config: ServerConfig): string | undefined {
   try {
     return sessionStorage.getItem(tokenKey(config)) ?? undefined;
   } catch {
@@ -301,7 +301,7 @@ function loadToken(config: ServerConfig): string | undefined {
   }
 }
 
-function saveToken(config: ServerConfig, token: string): void {
+function saveStdbToken(config: ServerConfig, token: string): void {
   try {
     sessionStorage.setItem(tokenKey(config), token);
   } catch {
@@ -309,7 +309,7 @@ function saveToken(config: ServerConfig, token: string): void {
   }
 }
 
-function clearToken(config: ServerConfig): void {
+function clearStdbToken(config: ServerConfig): void {
   try {
     sessionStorage.removeItem(tokenKey(config));
   } catch {
@@ -344,7 +344,7 @@ function connectOnce(
       .onConnect((connection, identity, token) => {
         conn = connection;
         me = identity.toHexString();
-        if (token) saveToken(config, token);
+        if (token) saveStdbToken(config, token);
         resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
@@ -356,12 +356,12 @@ function connectOnce(
 }
 
 async function connect(config: ServerConfig): Promise<DbConnection> {
-  const token = loadToken(config);
+  const token = loadStdbToken(config);
   try {
     return await connectOnce(config, token);
   } catch (err) {
     if (!token || !isStaleTokenError(err)) throw err;
-    clearToken(config);
+    clearStdbToken(config);
     showToast('Session expired. Reconnecting.', 'error');
     return connectOnce(config);
   }
@@ -1064,7 +1064,7 @@ async function main(): Promise<void> {
   registerRowCallbacks();
   subscribeToTables(connection);
   registerUiHandlers();
-  setupTooltip();
+  registerTooltipHandlers();
   showToast('Connected.');
   render();
 }

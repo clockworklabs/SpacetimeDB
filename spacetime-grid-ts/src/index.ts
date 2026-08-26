@@ -16,23 +16,23 @@ export {
 
 export {
   createGridParams,
-  createGridImpl,
+  createGrid,
   deleteGridParams,
-  deleteGridImpl,
+  deleteGrid,
   setCellCostParams,
-  setCellCostImpl,
+  setCellCost,
   paintCellsParams,
-  paintCellsImpl,
+  paintCells,
   placeEntityParams,
-  placeEntityImpl,
+  placeEntity,
   moveEntityParams,
-  moveEntityImpl,
+  moveEntity,
   computePathParams,
   computePathReturn,
-  computePathImpl,
+  computePath,
   cellsInRangeParams,
   cellsInRangeReturn,
-  cellsInRangeImpl,
+  cellsInRange,
 } from './procedures.ts';
 
 export * from './math/index.ts';

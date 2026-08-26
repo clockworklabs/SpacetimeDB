@@ -63,7 +63,7 @@ export const createGridParams = {
   mode: t.string(),
 };
 
-export function createGridImpl(
+export function createGrid(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof createGridParams>,
   owner: string
@@ -127,7 +127,7 @@ export const deleteGridParams = {
   gridId: t.u64(),
 };
 
-export function deleteGridImpl(
+export function deleteGrid(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof deleteGridParams>,
   owner: string
@@ -153,7 +153,7 @@ export const setCellCostParams = {
   terrain: t.option(t.string()),
 };
 
-export function setCellCostImpl(
+export function setCellCost(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof setCellCostParams>,
   owner: string
@@ -180,7 +180,7 @@ export const paintCellsParams = {
   ),
 };
 
-export function paintCellsImpl(
+export function paintCells(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof paintCellsParams>,
   owner: string
@@ -209,7 +209,7 @@ export const placeEntityParams = {
   label: t.option(t.string()),
 };
 
-export function placeEntityImpl(
+export function placeEntity(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof placeEntityParams>,
   owner: string
@@ -249,7 +249,7 @@ export const moveEntityParams = {
   toY: t.i32(),
 };
 
-export function moveEntityImpl(
+export function moveEntity(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof moveEntityParams>,
   owner: string
@@ -295,7 +295,7 @@ export const computePathParams = {
 
 export const computePathReturn = pathResult;
 
-export function computePathImpl(
+export function computePath(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof computePathParams>,
   owner: string
@@ -389,7 +389,7 @@ export const cellsInRangeReturn = t.object('CellsInRangeResult', {
   cells: t.array(reachableCell),
 });
 
-export function cellsInRangeImpl(
+export function cellsInRange(
   ctx: ProcedureModuleCtx,
   args: InferTypeOfParams<typeof cellsInRangeParams>,
   owner: string

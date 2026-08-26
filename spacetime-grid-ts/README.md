@@ -42,8 +42,7 @@ export const init = spacetimedb.init(ctx => {
 export const create_player_grid = spacetimedb.procedure(
   grid.createGridParams,
   t.u64(),
-  (ctx, args) =>
-    grid.createGridImpl(ctx.as.grid, args, ctx.sender.toHexString())
+  (ctx, args) => grid.createGrid(ctx.as.grid, args, ctx.sender.toHexString())
 );
 ```
 

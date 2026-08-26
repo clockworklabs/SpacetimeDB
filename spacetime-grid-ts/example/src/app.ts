@@ -90,19 +90,22 @@ let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000];
 
-function dispatch(name: string, detail: unknown): void {
+function emitAppEvent(name: string, detail: unknown): void {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
-function broadcastConn(state: ConnState, detail?: string): void {
-  dispatch('grid:conn', { state, detail });
+function emitConnectionState(state: ConnState, detail?: string): void {
+  emitAppEvent('grid:conn', { state, detail });
 }
-function broadcastAuth(): void {
-  dispatch('grid:auth', { user: currentUser, sessionExpiresAt: currentExp });
+function emitAuthState(): void {
+  emitAppEvent('grid:auth', {
+    user: currentUser,
+    sessionExpiresAt: currentExp,
+  });
 }
-function broadcastState(): void {
+function emitGridState(): void {
   const myUserId = currentUser?.userId;
   if (!currentConn) {
-    dispatch('grid:state', {
+    emitAppEvent('grid:state', {
       myUserId,
       matches: [],
       activeMatchId,
@@ -140,7 +143,7 @@ function broadcastState(): void {
   const activeCells = activeGrid
     ? [...c.db.myCellStates.iter()].filter(c2 => c2.gridId === activeGrid.id)
     : [];
-  dispatch('grid:state', {
+  emitAppEvent('grid:state', {
     myUserId,
     matches: matchList,
     participants: [...c.db.myMatchParticipants.iter()],
@@ -202,14 +205,14 @@ function connect(uri: string, databaseName: string): Promise<DbConnection> {
       .withDatabaseName(databaseName)
       .onConnect(c => resolve(c))
       .onDisconnect((_ctx, err) => {
-        broadcastConn('error', err?.message ?? 'disconnected');
+        emitConnectionState('error', err?.message ?? 'disconnected');
         currentConn = null;
         globalSub = null;
         matchSub = null;
         if (currentUser) scheduleReconnect();
       })
       .onConnectError((_ctx, err) => {
-        broadcastConn('error', err?.message ?? 'connect failed');
+        emitConnectionState('error', err?.message ?? 'connect failed');
         reject(err);
       })
       .build();
@@ -254,7 +257,7 @@ function setActiveMatch(matchId: bigint | null): void {
   }
 
   if (matchId === null || !currentConn) {
-    broadcastState();
+    emitGridState();
     return;
   }
 
@@ -262,7 +265,7 @@ function setActiveMatch(matchId: bigint | null): void {
     ? [...currentConn.db.myMatches.iter()].find(x => x.matchId === matchId)
     : undefined;
   if (!m) {
-    broadcastState();
+    emitGridState();
     return;
   }
 
@@ -271,7 +274,7 @@ function setActiveMatch(matchId: bigint | null): void {
   // row + unit_type rows + auth_user rows are already in the global sub.
   matchSub = currentConn
     .subscriptionBuilder()
-    .onApplied(() => broadcastState())
+    .onApplied(() => emitGridState())
     .onError((ctx: ErrorContext) => console.error('match sub error', ctx.event))
     .subscribe([
       tables.myPlayerUnits.where(row => row.matchId.eq(matchId)),
@@ -294,16 +297,16 @@ function registerRowCallbacks(connection: DbConnection): void {
     connection.db.lobbyOpenMatches,
   ];
   for (const t of tableAccessors) {
-    t.onInsert(() => broadcastState());
-    t.onUpdate(() => broadcastState());
-    t.onDelete(() => broadcastState());
+    t.onInsert(() => emitGridState());
+    t.onUpdate(() => emitGridState());
+    t.onDelete(() => emitGridState());
   }
 }
 
 function subscribeToTables(connection: DbConnection): SubscriptionHandle {
   return connection
     .subscriptionBuilder()
-    .onApplied(() => broadcastState())
+    .onApplied(() => emitGridState())
     .onError((ctx: ErrorContext) =>
       console.error('global sub error', ctx.event)
     )
@@ -327,7 +330,7 @@ async function bindSession(
   if (!serverCfg) serverCfg = await loadServerConfig();
 
   if (!currentConn) {
-    broadcastConn('connecting');
+    emitConnectionState('connecting');
     try {
       const conn = await connect(
         serverCfg.spacetimeUri,
@@ -335,9 +338,9 @@ async function bindSession(
       );
       currentConn = conn;
       reconnectAttempt = 0;
-      broadcastConn('connected');
+      emitConnectionState('connected');
 
-      broadcastState();
+      emitGridState();
 
       registerRowCallbacks(conn);
 
@@ -349,7 +352,10 @@ async function bindSession(
       matchSub = null;
       if (previousActive !== null) setActiveMatch(previousActive);
     } catch (err) {
-      broadcastConn('error', err instanceof Error ? err.message : String(err));
+      emitConnectionState(
+        'error',
+        err instanceof Error ? err.message : String(err)
+      );
       return;
     }
   }
@@ -360,8 +366,8 @@ async function bindSession(
     console.warn('link_connection failed', err);
   }
 
-  broadcastAuth();
-  broadcastState();
+  emitAuthState();
+  emitGridState();
 }
 
 async function restoreSession(): Promise<boolean> {
@@ -412,8 +418,8 @@ async function logout(): Promise<void> {
   currentUser = null;
   currentExp = undefined;
   activeMatchId = null;
-  broadcastAuth();
-  broadcastState();
+  emitAuthState();
+  emitGridState();
 }
 function oauthStart(provider: 'google' | 'github'): void {
   window.location.href = `/auth/${provider}/start?redirectTo=/`;
@@ -498,7 +504,7 @@ async function main(): Promise<void> {
           const result = await requireConn().procedures.aiTakeTurn({ matchId });
           // Hand the events to the renderer so it can sequence:
           // move animation → pause → attack flash → target HP drop / death.
-          dispatch('grid:ai-events', { events: result.events });
+          emitAppEvent('grid:ai-events', { events: result.events });
         } catch (err) {
           console.error('ai_take_turn failed:', err);
         }
@@ -515,13 +521,16 @@ async function main(): Promise<void> {
     },
   };
 
-  broadcastConn('idle');
+  emitConnectionState('idle');
   serverCfg = await loadServerConfig();
   await restoreSession();
-  dispatch('grid:ready', {});
+  emitAppEvent('grid:ready', {});
 }
 
 main().catch(err => {
   console.error(err);
-  broadcastConn('error', err instanceof Error ? err.message : String(err));
+  emitConnectionState(
+    'error',
+    err instanceof Error ? err.message : String(err)
+  );
 });

@@ -12,7 +12,7 @@ import {
   jsonResponse,
   requireConfig,
   safeJson,
-} from './_helpers.ts';
+} from './http.ts';
 import { Timestamp } from 'spacetimedb';
 import {
   AUTH_RATE_LIMITS,

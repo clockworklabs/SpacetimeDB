@@ -19,7 +19,7 @@ import {
   parseQueryString,
   redirectResponse,
   requireConfig,
-} from './_helpers.ts';
+} from './http.ts';
 import {
   AUTH_RATE_LIMITS,
   type AuthHttpOptions,

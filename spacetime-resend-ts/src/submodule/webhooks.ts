@@ -21,11 +21,11 @@ import {
 } from 'spacetimedb/server';
 import {
   assertExhaustive,
-  attemptToParse,
+  parseWithSchema,
   safeJsonParse,
   summarizeIssues,
   throwSenderError,
-} from './utils';
+} from './validation';
 import { parseResendEventType } from './webhook-metadata';
 
 type ResendTags = EmailEvent['data']['tags'];
@@ -209,7 +209,7 @@ function applyResendEvent(
     return { status: WebhookEventStatus.Failed, error: 'invalid JSON payload' };
   }
 
-  const result = attemptToParse(vEmailEvent, parsed);
+  const result = parseWithSchema(vEmailEvent, parsed);
   if (result.kind === 'error') {
     return {
       status: WebhookEventStatus.Failed,

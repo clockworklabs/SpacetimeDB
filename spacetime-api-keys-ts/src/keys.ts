@@ -45,7 +45,7 @@ export function hashApiKey(key: string): string {
   return bytesToHex(sha256(textEncoder.encode(key)));
 }
 
-export function hashMatches(key: string, expectedHex: string): boolean {
+export function matchesApiKeyHash(key: string, expectedHex: string): boolean {
   try {
     return timingSafeEqual(
       hexToBytes(expectedHex),

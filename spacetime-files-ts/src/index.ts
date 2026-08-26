@@ -27,17 +27,17 @@ export {
 export {
   fileSha256Hex,
   uploadFileParams,
-  uploadFileImpl,
+  uploadFile,
   deleteFileParams,
-  deleteFileImpl,
+  deleteFile,
   listFilesParams,
   listFilesReturn,
-  listFilesImpl,
+  listFiles,
   readFileBytesParams,
   readFileBytesReturn,
-  readFileBytesImpl,
+  readFileBytes,
   setFileVisibilityParams,
-  setFileVisibilityImpl,
+  setFileVisibility,
 } from './procedures.ts';
 
-export { makeFileServeImpl } from './handlers.ts';
+export { createFileHttpHandler } from './handlers.ts';

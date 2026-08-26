@@ -14,11 +14,11 @@ import {
   FILE_BYTES_MAX,
   fileSummary,
   fileSha256Hex,
-  makeFileServeImpl,
+  createFileHttpHandler,
   ownerPathKey,
   readFileBytesParams,
   readFileBytesReturn,
-  readFileBytesImpl,
+  readFileBytes,
   validateMimeType,
 } from '@spacetimedb/files/submodule';
 import * as files from '@spacetimedb/files/submodule';
@@ -424,19 +424,19 @@ export const read_file_bytes = spacetimedb.procedure(
   readFileBytesParams,
   readFileBytesReturn,
   (ctx, args) =>
-    readFileBytesImpl(
+    readFileBytes(
       ctx,
       { path: normalizePath(args.path, 'file') },
       ctx.sender.toHexString()
     )
 );
 
-const fileServeImpl = makeFileServeImpl({
+const serveFile = createFileHttpHandler({
   getOwner: ctx => ctx.identity?.toHexString?.(),
 });
 
 export const file_serve = spacetimedb.httpHandler((ctx, req) => {
-  return fileServeImpl(ctx, req);
+  return serveFile(ctx, req);
 });
 
 export const router = spacetimedb.httpRouter(

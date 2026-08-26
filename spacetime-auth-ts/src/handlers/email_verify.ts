@@ -14,7 +14,7 @@ import {
   parseQueryString,
   redirectResponse,
   requireConfig,
-} from './_helpers.ts';
+} from './http.ts';
 import { verifyJwt } from '../jwt.ts';
 import { publicKeyFromPem } from '../keys.ts';
 import { Timestamp } from 'spacetimedb';

@@ -1,21 +1,25 @@
 import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
 import type { FileSummary, Folder } from './module_bindings/app/types';
 import {
-  loadToken,
-  saveToken,
-  clearToken,
+  loadStdbToken,
+  saveStdbToken,
+  clearStdbToken,
+  type ServerConfig,
+} from './session';
+import {
   parentPath,
   baseName,
   joinPath,
   childPrefix,
   fileUrl,
-  fmtSize,
-  tsMs,
+  type Visibility,
+} from './paths';
+import {
+  formatFileSize,
+  timestampMilliseconds,
   escapeHtml,
   humanError,
-  type Visibility,
-  type ServerConfig,
-} from './utils';
+} from './presentation';
 import {
   downloadArchive,
   downloadFile as saveDownloadedFile,
@@ -40,7 +44,7 @@ import {
 import { VaultSelection } from './selection';
 
 let conn: DbConnection | null = null;
-let authToken: string | undefined = loadToken();
+let authToken: string | undefined = loadStdbToken();
 
 async function loadServerConfig(): Promise<ServerConfig> {
   const res = await fetch('/api/config');
@@ -56,7 +60,7 @@ function connect(config: ServerConfig): Promise<DbConnection> {
       .withToken(authToken)
       .onConnect((connection, _identity, token) => {
         authToken = token;
-        saveToken(token);
+        saveStdbToken(token);
         resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
@@ -278,7 +282,7 @@ const thumbCache = new Map<string, string>();
 let thumbGeneration = 0;
 // Object-URL cache keyed by path@mtime; older revisions revoked on refresh.
 async function getThumbUrl(row: FileSummary): Promise<string> {
-  const key = `${row.path}@${tsMs(row.updatedAt)}`;
+  const key = `${row.path}@${timestampMilliseconds(row.updatedAt)}`;
   const cached = thumbCache.get(key);
   if (cached) return cached;
   const url = URL.createObjectURL(await getFileBlob(row));
@@ -427,7 +431,7 @@ function renderBulkbar(): void {
 function renderStorage(): void {
   const total = files.reduce((sum, f) => sum + Number(f.size), 0);
   $('storage').textContent = files.length
-    ? `${files.length} file${files.length === 1 ? '' : 's'} | ${fmtSize(total)} stored`
+    ? `${files.length} file${files.length === 1 ? '' : 's'} | ${formatFileSize(total)} stored`
     : 'No files stored yet';
 }
 
@@ -756,7 +760,7 @@ function downloadFolderZip(folderPath: string): Promise<void> {
     .filter(f => f.path !== folderPath && f.path.startsWith(prefix))
     .map(f => ({
       name: `${root}/${f.path.slice(prefix.length)}/`,
-      mtimeMs: tsMs(f.updatedAt),
+      mtimeMs: timestampMilliseconds(f.updatedAt),
     }));
   return zipAndSave(
     inFiles,
@@ -1144,7 +1148,7 @@ async function main(): Promise<void> {
       // Stale stored token (server wiped/rekeyed): drop it, retry anonymously.
       if (!authToken) throw err;
       authToken = undefined;
-      clearToken();
+      clearStdbToken();
       conn = await connect(config);
     }
   } catch (err) {

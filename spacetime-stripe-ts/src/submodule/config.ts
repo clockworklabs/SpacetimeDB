@@ -5,7 +5,7 @@ import {
   type WriteCtx,
 } from './schema';
 import { adminVerdict, denyIfNotAdmin } from './auth';
-import { throwSenderError } from './utils';
+import { throwSenderError } from './validation';
 
 export type StripeConfig = {
   secretKey: string;

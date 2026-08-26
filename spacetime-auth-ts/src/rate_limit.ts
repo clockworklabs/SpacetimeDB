@@ -3,7 +3,7 @@ import {
   consumeRateLimit,
   type RateLimitResult,
 } from '@spacetimedb/rate-limit/submodule';
-import { errorResponse } from './handlers/_helpers.ts';
+import { errorResponse } from './handlers/http.ts';
 import { clientKey, type TrustedProxyHeader } from './request-trust.ts';
 import type { AuthHandlerCtx } from './context.ts';
 export {

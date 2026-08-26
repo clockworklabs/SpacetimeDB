@@ -1,6 +1,22 @@
 import type { ProcedureModuleCtx } from './schema';
 import type { PostHogConfig } from './config';
-import { isOkStatus, toStatusCode, truncateForLog } from './utils';
+
+const MAX_LOG_BODY_LENGTH = 2048;
+
+export function truncateForLog(body: string): string {
+  return body.length <= MAX_LOG_BODY_LENGTH
+    ? body
+    : `${body.slice(0, MAX_LOG_BODY_LENGTH)}...`;
+}
+
+export function toStatusCode(status: number): number {
+  if (!Number.isInteger(status) || status < 0 || status > 0xffff) return 0;
+  return status;
+}
+
+export function isOkStatus(status: number): boolean {
+  return status >= 200 && status < 300;
+}
 
 export type PostHogHttpResult = {
   ok: boolean;

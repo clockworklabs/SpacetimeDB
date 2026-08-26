@@ -1,15 +1,13 @@
 import { FILE_BYTES_MAX } from '@spacetimedb/files/constants';
 import type { FileSummary } from './module_bindings/app/types';
 import type { DialogOptions } from './dialog';
+import { joinPath, normalizePath, type Visibility } from './paths';
 import {
   errorCode,
   escapeHtml,
-  fmtSize,
+  formatFileSize,
   humanError,
-  joinPath,
-  normalizePath,
-  type Visibility,
-} from './utils';
+} from './presentation';
 
 export interface DroppedEntries {
   files: Array<{ file: File; rel: string }>;
@@ -169,7 +167,7 @@ export class UploadController {
     const accepted = entries.files.filter(entry => {
       if (entry.file.size <= FILE_BYTES_MAX) return true;
       failures.push(
-        `${entry.rel}: ${fmtSize(entry.file.size)} exceeds the ${fmtSize(FILE_BYTES_MAX)} cap`
+        `${entry.rel}: ${formatFileSize(entry.file.size)} exceeds the ${formatFileSize(FILE_BYTES_MAX)} cap`
       );
       return false;
     });

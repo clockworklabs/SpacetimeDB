@@ -19,10 +19,10 @@ import {
   base64Url,
   extractLookupPrefix,
   hashApiKey,
-  hashMatches,
+  matchesApiKeyHash,
   hasScope,
   LOOKUP_SECRET_CHARS,
-} from '../key-utils';
+} from '../keys';
 
 const DEFAULT_KEY_PREFIX = 'stdb_live';
 const MAX_NAME_LENGTH = 120;
@@ -382,7 +382,7 @@ export function verifyApiKey(
       record: false,
     });
   }
-  if (!hashMatches(key, row.hash)) {
+  if (!matchesApiKeyHash(key, row.hash)) {
     return denied(ctx, {
       prefix,
       action,

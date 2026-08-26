@@ -79,11 +79,11 @@ let currentUser: AuthMe['user'] | null = null;
 let currentExp: number | undefined;
 let currentSenderHex: string | undefined;
 
-function dispatch(name: string, detail: unknown) {
+function emitAppEvent(name: string, detail: unknown) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
-function broadcastAuth() {
-  dispatch('auth:state', {
+function emitAuthState() {
+  emitAppEvent('auth:state', {
     user: currentUser,
     senderHex: currentSenderHex,
     sessionExpiresAt: currentExp,
@@ -91,7 +91,7 @@ function broadcastAuth() {
 }
 let lastConnState: string = '';
 let lastConnDetail: string = '';
-function broadcastConn(
+function emitConnectionState(
   state: 'idle' | 'connecting' | 'connected' | 'error',
   detail?: string
 ) {
@@ -99,9 +99,9 @@ function broadcastConn(
   if (state === lastConnState && d === lastConnDetail) return;
   lastConnState = state;
   lastConnDetail = d;
-  dispatch('auth:conn', { state, detail });
+  emitAppEvent('auth:conn', { state, detail });
 }
-function broadcastNotes() {
+function emitNotes() {
   const sorted = conn
     ? [...conn.db.myNotes.iter()].sort((a, b) =>
         Number(
@@ -109,7 +109,7 @@ function broadcastNotes() {
         )
       )
     : [];
-  dispatch('auth:notes', { notes: sorted });
+  emitAppEvent('auth:notes', { notes: sorted });
 }
 
 async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -176,12 +176,12 @@ function connect(): Promise<DbConnection> {
         resolve(connection);
       })
       .onDisconnect((_ctx, err) => {
-        broadcastConn('error', err?.message ?? 'disconnected');
+        emitConnectionState('error', err?.message ?? 'disconnected');
         conn = null;
         if (currentUser) scheduleReconnect();
       })
       .onConnectError((_ctx, err) => {
-        broadcastConn('error', 'connect failed');
+        emitConnectionState('error', 'connect failed');
         reject(err);
       })
       .build();
@@ -216,14 +216,14 @@ async function bindSession(token: string, user: AuthMe['user'], exp: number) {
   currentExp = exp;
 
   if (!conn) {
-    broadcastConn('connecting');
+    emitConnectionState('connecting');
     try {
       conn = await connect();
       registerRowCallbacks(conn);
       subscribeToTables(conn);
-      broadcastConn('connected');
+      emitConnectionState('connected');
     } catch (err) {
-      broadcastConn('error', (err as Error).message);
+      emitConnectionState('error', (err as Error).message);
       return;
     }
   }
@@ -235,7 +235,7 @@ async function bindSession(token: string, user: AuthMe['user'], exp: number) {
   } catch (err) {
     console.warn('link_connection failed', err);
   }
-  broadcastAuth();
+  emitAuthState();
 }
 
 function syncUserFromRow(row: AuthUserRow) {
@@ -247,21 +247,21 @@ function syncUserFromRow(row: AuthUserRow) {
     name: row.name ?? undefined,
     image: row.image ?? undefined,
   };
-  broadcastAuth();
+  emitAuthState();
 }
 
 function subscribeToTables(connection: DbConnection): void {
   connection
     .subscriptionBuilder()
-    .onApplied(() => broadcastNotes())
+    .onApplied(() => emitNotes())
     .onError((ctx: ErrorContext) => console.error('sub error', ctx.event))
     .subscribe([tables.myNotes, tables.myAuthUser]);
 }
 
 function registerRowCallbacks(connection: DbConnection): void {
-  connection.db.myNotes.onInsert(() => broadcastNotes());
-  connection.db.myNotes.onUpdate(() => broadcastNotes());
-  connection.db.myNotes.onDelete(() => broadcastNotes());
+  connection.db.myNotes.onInsert(() => emitNotes());
+  connection.db.myNotes.onUpdate(() => emitNotes());
+  connection.db.myNotes.onDelete(() => emitNotes());
 
   connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
     syncUserFromRow(row)
@@ -273,7 +273,7 @@ function registerRowCallbacks(connection: DbConnection): void {
     if (!currentUser || row.userId !== currentUser.userId) return;
     currentUser = null;
     currentExp = undefined;
-    broadcastAuth();
+    emitAuthState();
   });
 }
 
@@ -319,8 +319,8 @@ async function logout() {
   currentUser = null;
   currentExp = undefined;
   currentSenderHex = undefined;
-  broadcastAuth();
-  broadcastNotes();
+  emitAuthState();
+  emitNotes();
 }
 
 function createNote(args: { title: string; body: string }) {
@@ -342,7 +342,7 @@ async function whoami() {
   if (!conn) throw new Error('not_connected');
   const r = await conn.procedures.whoami({});
   currentSenderHex = r.senderIdentityHex;
-  broadcastAuth();
+  emitAuthState();
   return r;
 }
 
@@ -418,15 +418,15 @@ window.auth = {
 };
 
 async function main(): Promise<void> {
-  broadcastConn('idle');
+  emitConnectionState('idle');
   try {
     serverCfg = await loadServerConfig();
   } catch (err) {
-    broadcastConn('error', (err as Error).message);
+    emitConnectionState('error', (err as Error).message);
     return;
   }
   await restoreSession();
-  dispatch('auth:ready', {});
+  emitAppEvent('auth:ready', {});
 }
 
 void main();

@@ -148,7 +148,7 @@ function normalizeError(err: unknown): string {
   return String(err);
 }
 
-function emitConn(
+function emitConnectionState(
   state: 'connecting' | 'connected' | 'error',
   detail?: string
 ): void {
@@ -157,7 +157,7 @@ function emitConn(
   );
 }
 
-function emitAuth(): void {
+function emitAuthState(): void {
   window.dispatchEvent(
     new CustomEvent('chat:auth', {
       detail: {
@@ -169,7 +169,7 @@ function emitAuth(): void {
   );
 }
 
-function emitData(): void {
+function emitPresenceState(): void {
   if (!conn) {
     window.dispatchEvent(
       new CustomEvent('chat:data', {
@@ -363,7 +363,7 @@ function scheduleReconnect(): void {
     reconnectTimer = null;
     reconnectAttempt++;
     main().catch(err => {
-      emitConn('error', normalizeError(err));
+      emitConnectionState('error', normalizeError(err));
       scheduleReconnect();
     });
   }, delay);
@@ -418,7 +418,7 @@ function connect(cfg: ServerConfig): Promise<DbConnection> {
       .onDisconnect((_ctx, err) => {
         conn = null;
         clearHeartbeat();
-        emitConn('error', err?.message ?? 'disconnected');
+        emitConnectionState('error', err?.message ?? 'disconnected');
         scheduleReconnect();
       })
       .onConnectError((_ctx, err) => reject(err))
@@ -429,7 +429,7 @@ function connect(cfg: ServerConfig): Promise<DbConnection> {
 function subscribeToTables(connection: DbConnection): void {
   connection
     .subscriptionBuilder()
-    .onApplied(() => emitData())
+    .onApplied(() => emitPresenceState())
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
     )
@@ -452,7 +452,7 @@ function subscribeToTables(connection: DbConnection): void {
 }
 
 function registerRowCallbacks(connection: DbConnection): void {
-  const reRender = () => emitData();
+  const reRender = () => emitPresenceState();
   const tableAccessors = [
     connection.db.myChatUsers,
     connection.db.myRooms,
@@ -480,7 +480,7 @@ function registerRowCallbacks(connection: DbConnection): void {
       activeServerId = null;
       activeRoomId = null;
     }
-    emitData();
+    emitPresenceState();
   });
 
   const syncUserFromRow = (row: AuthUserRow) => {
@@ -492,7 +492,7 @@ function registerRowCallbacks(connection: DbConnection): void {
       name: row.name ?? undefined,
       image: row.image ?? undefined,
     };
-    emitAuth();
+    emitAuthState();
   };
   connection.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
     syncUserFromRow(row)
@@ -505,8 +505,8 @@ function registerRowCallbacks(connection: DbConnection): void {
     if (!authUser || row.userId !== authUser.userId) return;
     authUser = null;
     sessionExpiresAt = undefined;
-    emitAuth();
-    emitData();
+    emitAuthState();
+    emitPresenceState();
   });
 }
 
@@ -528,8 +528,8 @@ async function bindSession(
   authUser = refreshedUser;
   sessionExpiresAt = exp;
   await c.reducers.heartbeat({});
-  emitAuth();
-  emitData();
+  emitAuthState();
+  emitPresenceState();
   scheduleHeartbeat();
 }
 
@@ -549,7 +549,7 @@ async function restoreSession(): Promise<boolean> {
     authUser = null;
     sessionExpiresAt = undefined;
     clearAuthToken();
-    emitAuth();
+    emitAuthState();
     clearHeartbeat();
     return false;
   }
@@ -587,7 +587,7 @@ function installApi(): void {
     setActiveServer: (serverId: bigint | null) => {
       activeServerId = serverId;
       activeRoomId = null;
-      emitData();
+      emitPresenceState();
     },
     createRoom: (
       serverId: bigint,
@@ -680,7 +680,7 @@ function installApi(): void {
     },
     setActiveRoom: (roomId: bigint | null) => {
       activeRoomId = roomId;
-      emitData();
+      emitPresenceState();
     },
     heartbeat: () => {
       return requireConn().reducers.heartbeat({});
@@ -701,8 +701,8 @@ function installApi(): void {
       sessionExpiresAt = undefined;
       clearAuthToken();
       clearHeartbeat();
-      emitAuth();
-      emitData();
+      emitAuthState();
+      emitPresenceState();
     },
     oauthStart,
     forgotPassword,
@@ -713,7 +713,7 @@ function installApi(): void {
     whoami: async () => {
       const r = await requireConn().procedures.whoami({});
       meHex = r.senderIdentityHex;
-      emitAuth();
+      emitAuthState();
       return {
         userId: r.userId,
         senderIdentityHex: r.senderIdentityHex,
@@ -773,7 +773,7 @@ function derivePresenceSnapshot() {
   return { global, typingByRoom };
 }
 
-async function initializeIdentity(connection: DbConnection): Promise<void> {
+async function loadCurrentIdentity(connection: DbConnection): Promise<void> {
   const me = await connection.procedures.whoami({});
   meHex = me.senderIdentityHex;
   const snap = derivePresenceSnapshot();
@@ -787,26 +787,26 @@ async function initializeIdentity(connection: DbConnection): Promise<void> {
       },
     })
   );
-  emitAuth();
+  emitAuthState();
 }
 
 async function main(): Promise<void> {
-  emitConn('connecting');
+  emitConnectionState('connecting');
   if (!config) config = await loadServerConfig();
 
   const connection = await connect(config);
   conn = connection;
   reconnectAttempt = 0;
-  emitConn('connected');
+  emitConnectionState('connected');
   registerRowCallbacks(connection);
   subscribeToTables(connection);
   installApi();
-  await initializeIdentity(connection);
+  await loadCurrentIdentity(connection);
   await restoreSession();
   window.dispatchEvent(new CustomEvent('chat:ready'));
 }
 
 main().catch(err => {
-  emitConn('error', normalizeError(err));
+  emitConnectionState('error', normalizeError(err));
   scheduleReconnect();
 });

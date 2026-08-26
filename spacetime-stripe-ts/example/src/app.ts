@@ -68,7 +68,7 @@ function parsePerks(json: string | undefined): string[] {
   }
 }
 
-function broadcastCatalog() {
+function emitCatalog() {
   const sorted = [...products.values()]
     .filter(p => p.active)
     .sort((a, b) => {
@@ -162,19 +162,19 @@ function registerRowCallbacks(connection: DbConnection): void {
   connection.db.storeProduct.onInsert(
     (_ctx: EventContext, row: StoreProductRow) => {
       products.set(row.productId, row);
-      broadcastCatalog();
+      emitCatalog();
     }
   );
   connection.db.storeProduct.onUpdate(
     (_ctx: EventContext, _oldRow: StoreProductRow, row: StoreProductRow) => {
       products.set(row.productId, row);
-      broadcastCatalog();
+      emitCatalog();
     }
   );
   connection.db.storeProduct.onDelete(
     (_ctx: EventContext, row: StoreProductRow) => {
       products.delete(row.productId);
-      broadcastCatalog();
+      emitCatalog();
     }
   );
 }
@@ -187,7 +187,7 @@ function subscribeToTables(connection: DbConnection): void {
       for (const row of connection.db.storeProduct.iter() as Iterable<StoreProductRow>) {
         products.set(row.productId, row);
       }
-      broadcastCatalog();
+      emitCatalog();
       updateConnState('connected');
       window.dispatchEvent(new CustomEvent('stdb:ready'));
     })

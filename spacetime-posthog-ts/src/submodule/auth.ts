@@ -4,7 +4,7 @@ import {
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema';
-import { throwSenderError } from './utils';
+import { throwSenderError } from './validation';
 
 type Sender = WriteCtx['sender'];
 type AdminReadableCtx = {

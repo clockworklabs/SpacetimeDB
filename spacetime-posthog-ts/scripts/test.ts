@@ -3,7 +3,7 @@ import {
   isOkStatus,
   toStatusCode,
   truncateForLog,
-} from '../src/submodule/value-utils.ts';
+} from '../src/submodule/http.ts';
 import {
   MAX_DELIVERY_ATTEMPTS,
   claimHasExpired,

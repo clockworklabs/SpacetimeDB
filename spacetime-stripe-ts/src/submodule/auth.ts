@@ -4,7 +4,7 @@ import {
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema';
-import { throwSenderError } from './utils';
+import { throwSenderError } from './validation';
 
 // Admin gate. Fresh publishes seed the owner via init. Public submodule calls
 // never bootstrap admin state from "first caller wins".

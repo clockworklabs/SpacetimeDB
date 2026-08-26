@@ -20,7 +20,7 @@ import {
   setAuthConfigParams,
   getPublicKeyPemParams,
   linkConnectionParams,
-  linkConnectionImpl,
+  linkConnection,
   unlinkConnectionParams,
   updateProfileParams,
   revokeSessionParams,
@@ -59,7 +59,7 @@ import { USER_CONTENT_MAX, type LoopConfig } from './loop';
 import { SWEEPER_INTERVAL_MICROS } from './sweeper';
 import { attachmentValidationError } from './attachments';
 import { registerAgentViews } from './views';
-import { maybeEmbedMessage, registry, runLockedLoop } from './runtime';
+import { maybeEmbedMessage, registry, runAgentForThread } from './agent-runner';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const DEFAULT_STALE_LOCK_THRESHOLD_SECS = 15 * 60;
@@ -256,7 +256,7 @@ export const get_auth_public_key = spacetimedb.procedure(
 export const link_connection = spacetimedb.procedure(
   linkConnectionParams,
   t.object('LinkConnectionResult', { userId: t.string() }),
-  (ctx, args) => linkConnectionImpl(ctx.as.auth, args)
+  (ctx, args) => linkConnection(ctx.as.auth, args)
 );
 
 export const unlink_connection = spacetimedb.reducer(
@@ -365,7 +365,7 @@ export const authEmailVerify = spacetimedb.httpHandler((ctx, req) =>
   verifyHandler(ctx.as.auth, req)
 );
 
-const fileServeHandler = files.makeFileServeImpl({
+const fileServeHandler = files.createFileHttpHandler({
   getOwner: (ctx, req) =>
     ctx.withTx((tx: TransactionCtx<Schema>) => {
       const binding = tx.db.auth.authConnectionBinding.stdbIdentity.find(
@@ -987,7 +987,14 @@ export const send_message = spacetimedb.procedure(
     });
 
     maybeEmbedMessage(ctx, args.threadId, userMessageId);
-    runLockedLoop(ctx, cfg, agentName, userId, args.threadId, bumpRateLimit);
+    runAgentForThread(
+      ctx,
+      cfg,
+      agentName,
+      userId,
+      args.threadId,
+      bumpRateLimit
+    );
     return {};
   }
 );
@@ -1026,7 +1033,7 @@ export const regenerate_response = spacetimedb.procedure(
       return loaded;
     });
 
-    runLockedLoop(ctx, cfg, agentName, userId, threadId, bumpRateLimit);
+    runAgentForThread(ctx, cfg, agentName, userId, threadId, bumpRateLimit);
     return {};
   }
 );

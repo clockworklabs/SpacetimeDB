@@ -223,7 +223,7 @@ ephemeral listener secret.
 
 ## Architecture notes
 
-- **valibot for runtime validation.** `vStripeEvent` is a `v.variant('type', [...])` over the 12 supported event types. `attemptToParse` returns a tagged result; `assertExhaustive` makes the typed `switch` compiler-checked.
+- **valibot for runtime validation.** `vStripeEvent` is a `v.variant('type', [...])` over the 12 supported event types. `parseWithSchema` returns a tagged result; `assertExhaustive` makes the typed `switch` compiler-checked.
 - **SDK types, sync HTTP.** The `stripe` npm package supplies event types such as `Stripe.CustomerCreatedEvent`. Procedures use the synchronous `ctx.http.fetch` API through the request boundary in `submodule/http.ts`.
 - **Compile-time SDK alignment.** `_align*` checks in `schema.ts` assert valibot output is structurally assignable to `Stripe.*Event`. If Stripe ships a breaking change, typecheck fails.
 - **Idempotency.** Each webhook event is keyed by `event.id`; re-ingest is a no-op. `replay_webhook_event` applies the stored event state again.

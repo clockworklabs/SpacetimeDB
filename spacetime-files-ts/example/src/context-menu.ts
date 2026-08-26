@@ -1,6 +1,6 @@
 import type { FileSummary } from './module_bindings/app/types';
 import { icon } from './rendering';
-import { escapeHtml } from './utils';
+import { escapeHtml } from './presentation';
 
 export type ContextTarget =
   | { type: 'file' | 'folder'; path: string }
