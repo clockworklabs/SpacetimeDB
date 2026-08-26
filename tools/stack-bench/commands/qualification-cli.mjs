@@ -47,7 +47,10 @@ function evidencePlan(calibration) {
 }
 
 function defectCheckCoverage(release, calibration) {
-  const scored = release.checkCatalog.filter(check => check.points > 0);
+  const selected = calibration.qualification.checks
+    ? new Set(calibration.qualification.checks) : null;
+  const scored = release.checkCatalog.filter(check => check.points > 0
+    && (selected === null || selected.has(check.stableKey)));
   const scoredByKey = new Map(scored.map(check => [check.stableKey, check]));
   const stacks = calibration.qualification.stacks
     .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
@@ -80,8 +83,10 @@ export function qualificationReadiness(trackName, level, recipe = null) {
   const binding = resolveRecipeRelease(track, level, recipe);
   if (!binding) throw new Error(`${trackName} L${level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release,
-    { trackRoot: track.dir });
-  if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);
+    { trackRoot: track.dir, alias: `L${level}` });
+  if (!calibration) {
+    throw new Error(`${binding.release.id}@${binding.release.version} has no L${level} calibration`);
+  }
   const identity = calibrationQualificationIdentity(calibration);
   const launchBlockers = [];
   if (binding.release.state === 'retired') {

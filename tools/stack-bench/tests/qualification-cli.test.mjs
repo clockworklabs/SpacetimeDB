@@ -43,6 +43,17 @@ test('qualification status reports complete L2 defect coverage', () => {
   assert.equal(status.launch.ok, true);
 });
 
+test('qualification status uses the exact progression check subset', () => {
+  const status = qualificationReadiness('ecommerce', 3,
+    'ecommerce.progression-catalog@1.0.0');
+  assert.equal(status.defectChecks.totalChecks, 112);
+  assert.equal(status.defectChecks.totalPoints, 199);
+  assert(status.defectChecks.stacks.every(stack => stack.coveredChecks === 112
+    && stack.coveredPoints === 199 && stack.missingChecks.length === 0));
+  assert.equal(status.promotion.blockers.some(blocker =>
+    blocker.code === 'defect_check_coverage_incomplete'), false);
+});
+
 test('the promoted L1 release discloses complete defect coverage and exact evidence', () => {
   const status = qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.5.0');
   assert.equal(status.defectChecks.totalChecks, 46);
