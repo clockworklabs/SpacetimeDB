@@ -544,6 +544,9 @@ importers:
 
   spacetime-auth-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -712,6 +715,27 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  spacetime-example-ui-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
+
   spacetime-files-ts:
     dependencies:
       '@spacetimedb/crypto':
@@ -807,6 +831,9 @@ importers:
 
   spacetime-grid-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -1008,6 +1035,9 @@ importers:
 
   spacetime-presence-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1

@@ -164,13 +164,10 @@ document.addEventListener('keydown', e => {
   }
 });
 
-function openAuthModal() {
-  $('authModal').classList.add('open');
-  $('authEmail').focus();
+function focusAuthPanel() {
+  document.querySelector('#auth-panel input')?.focus();
 }
-function closeAuthModal() {
-  $('authModal').classList.remove('open');
-}
+
 function setResult(text, ok = true) {
   if (!text) return;
   const host =
@@ -252,7 +249,6 @@ function setAuthedUi(user) {
     renderUserBar();
     shell.classList.remove('signed-out');
     app.classList.remove('signed-out');
-    closeAuthModal();
   } else {
     openBtn.classList.remove('hidden');
     userBar.classList.add('hidden');
@@ -293,7 +289,7 @@ function updateComposerState() {
 }
 function requireAuthAction() {
   if (state.authenticated) return true;
-  openAuthModal();
+  focusAuthPanel();
   setResult('Sign in to continue.', false);
   return false;
 }
@@ -1224,150 +1220,9 @@ window.addEventListener('chat:auth', e => {
   renderAll();
 });
 
-$('openAuthBtn').addEventListener('click', openAuthModal);
-$('closeAuthBtn').addEventListener('click', closeAuthModal);
-$('authModal').addEventListener('click', e => {
-  if (e.target === $('authModal')) closeAuthModal();
+$('openAuthBtn').addEventListener('click', () => {
+  focusAuthPanel();
 });
-window.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeAuthModal();
-});
-
-async function loginFrom(emailId, passId) {
-  await window.chat.login({
-    email: $(emailId).value.trim(),
-    password: $(passId).value,
-  });
-  $(passId).value = '';
-  setResult('Signed in.');
-}
-
-async function signupFrom(emailId, passId) {
-  await window.chat.signup({
-    email: $(emailId).value.trim(),
-    password: $(passId).value,
-  });
-  $(passId).value = '';
-  setResult('Account created.');
-}
-
-$('authLoginBtn').addEventListener('click', async () => {
-  try {
-    await loginFrom('authEmail', 'authPass');
-  } catch (err) {
-    setResult(`sign in failed: ${err.message ?? err}`, false);
-  }
-});
-
-$('authSignupBtn').addEventListener('click', async () => {
-  try {
-    await signupFrom('authEmail', 'authPass');
-  } catch (err) {
-    setResult(`sign up failed: ${err.message ?? err}`, false);
-  }
-});
-
-let landingAuthMode = 'login';
-function setLandingAuthMode(mode) {
-  landingAuthMode = mode;
-  const status = document.getElementById('landingStatus');
-  if (status) {
-    status.hidden = true;
-    status.textContent = '';
-    status.classList.remove('ok');
-  }
-  const title = $('landingAuthTitle');
-  const sub = $('landingAuthSub');
-  const submit = $('landingSubmitBtn');
-  const togglePrompt = $('togglePrompt');
-  const toggleLink = $('toggleLink');
-  const forgotFoot = $('forgotFoot');
-  const nameField = $('authNameField');
-  const passField = $('authPassField');
-  if (mode === 'signup') {
-    title.textContent = 'Create an account';
-    sub.textContent = 'Sign up to start chatting.';
-    submit.textContent = 'Create account';
-    togglePrompt.textContent = 'Already have an account?';
-    toggleLink.textContent = 'Sign in';
-    forgotFoot.hidden = true;
-    nameField.hidden = false;
-    passField.hidden = false;
-    $('authPassLanding').autocomplete = 'new-password';
-  } else if (mode === 'forgot') {
-    title.textContent = 'Reset password';
-    sub.textContent = "Enter your email and we'll send a reset link.";
-    submit.textContent = 'Send reset link';
-    togglePrompt.textContent = 'Remembered it?';
-    toggleLink.textContent = 'Sign in';
-    forgotFoot.hidden = true;
-    nameField.hidden = true;
-    passField.hidden = true;
-  } else {
-    title.textContent = 'Welcome to chat';
-    sub.textContent = 'Sign in to continue.';
-    submit.textContent = 'Sign in';
-    togglePrompt.textContent = "Don't have an account?";
-    toggleLink.textContent = 'Sign up';
-    forgotFoot.hidden = false;
-    nameField.hidden = true;
-    passField.hidden = false;
-    $('authPassLanding').autocomplete = 'current-password';
-  }
-}
-
-$('toggleLink').addEventListener('click', () => {
-  setLandingAuthMode(landingAuthMode === 'login' ? 'signup' : 'login');
-});
-$('forgotLink').addEventListener('click', () => setLandingAuthMode('forgot'));
-
-function setLandingStatus(text, ok = false) {
-  const el = $('landingStatus');
-  if (!text) {
-    el.hidden = true;
-    el.textContent = '';
-    return;
-  }
-  el.hidden = false;
-  el.textContent = text;
-  el.classList.toggle('ok', ok);
-}
-
-$('authCard').addEventListener('submit', async e => {
-  e.preventDefault();
-  if (!window.chat) return;
-  const email = $('authEmailLanding').value.trim();
-  const password = $('authPassLanding').value;
-  const submit = $('landingSubmitBtn');
-  submit.disabled = true;
-  setLandingStatus('');
-  try {
-    if (landingAuthMode === 'signup') {
-      const name = $('authNameLanding').value.trim() || undefined;
-      await window.chat.signup({ email, password, name });
-    } else if (landingAuthMode === 'forgot') {
-      await window.chat.forgotPassword(email);
-      setLandingStatus(
-        'Reset link sent. Check the STDB module log (dev mailer).',
-        true
-      );
-      setLandingAuthMode('login');
-    } else {
-      await window.chat.login({ email, password });
-    }
-  } catch (err) {
-    setLandingStatus(`${landingAuthMode} failed: ${err.message ?? err}`, false);
-  } finally {
-    submit.disabled = false;
-  }
-});
-
-$('oauthGoogle').addEventListener('click', () =>
-  window.chat?.oauthStart('google')
-);
-$('oauthGithub').addEventListener('click', () =>
-  window.chat?.oauthStart('github')
-);
 
 $('authLogoutBtn').addEventListener('click', async () => {
   try {
@@ -1697,7 +1552,7 @@ $('toggleMembersBtn').addEventListener('click', () => {
 
 $('homeBtn').addEventListener('click', () => {
   if (!state.authenticated) {
-    openAuthModal();
+    focusAuthPanel();
     return;
   }
   const mine = myServers();
@@ -1799,7 +1654,7 @@ function clearPendingAtts() {
 async function sendCurrentMessage() {
   if (!state.authenticated) {
     console.warn('send blocked: not authenticated');
-    openAuthModal();
+    focusAuthPanel();
     return;
   }
   const room = activeRoom();

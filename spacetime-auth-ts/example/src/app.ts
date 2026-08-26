@@ -1,4 +1,10 @@
 import {
+  authUrlState,
+  clearAuthResultParams,
+  mountAuthPanel,
+} from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/styles.css';
+import {
   DbConnection,
   tables,
   type EventContext,
@@ -133,7 +139,10 @@ async function loadServerConfig(): Promise<ServerConfig> {
   const r = await fetch('/api/config', { credentials: 'same-origin' });
   if (!r.ok) throw new Error(`/api/config returned ${r.status}`);
   const cfg = (await r.json()) as ServerConfig;
-  dispatch('auth:server-config', cfg);
+  authPanel.setProviders({
+    google: Boolean(cfg.oauth?.google),
+    github: Boolean(cfg.oauth?.github),
+  });
   return cfg;
 }
 
@@ -367,6 +376,29 @@ function setProfile(args: { name?: string; image?: string }) {
   if (!conn) throw new Error('not_connected');
   conn.reducers.updateProfile({ name: args.name, image: args.image });
 }
+
+const authResult = authUrlState(window.location);
+const authPanelRoot = document.getElementById('auth-panel');
+if (!authPanelRoot) throw new Error('missing_auth_panel');
+const authPanel = mountAuthPanel(authPanelRoot, {
+  productName: 'Notes',
+  actions: {
+    login,
+    signup,
+    forgotPassword,
+    resetPassword,
+    oauthStart,
+  },
+  initialMode: authResult.mode,
+  resetToken: authResult.resetToken,
+});
+if (authResult.oauthError) {
+  authPanel.showMessage('error', `OAuth: ${authResult.oauthError}`);
+}
+if (authResult.verified) {
+  authPanel.showMessage('success', 'Email verified.');
+}
+clearAuthResultParams(window.location, window.history);
 
 window.auth = {
   signup,

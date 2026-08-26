@@ -209,6 +209,8 @@ __pycache__/
 spacetime-*-ts/example/.stdb-server-token
 spacetime-*-ts/example/public/app.js
 spacetime-*-ts/example/public/app.js.map
+spacetime-*-ts/example/public/app.css
+spacetime-*-ts/example/public/app.css.map
 spacetime-*-ts/ts-codegen/
 
 /protobuf

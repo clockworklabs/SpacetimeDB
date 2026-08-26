@@ -31,20 +31,6 @@ function showToast(kind, msg, dur = 4500) {
   }, dur);
 }
 
-// OAuth callback error surfacing. The submodule redirects to /?error=...
-// on failure (state expired, denied, etc.).
-(function checkOauthError() {
-  const params = new URLSearchParams(window.location.search);
-  const err = params.get('error');
-  if (err) {
-    showToast('err', `OAuth: ${err}`, 8000);
-    params.delete('error');
-    const qs = params.toString();
-    const url = window.location.pathname + (qs ? '?' + qs : '');
-    window.history.replaceState({}, '', url);
-  }
-})();
-
 window.addEventListener('auth:conn', e => {
   const pill = $('conn-pill');
   const text = $('conn-text');
@@ -59,22 +45,6 @@ window.addEventListener('auth:conn', e => {
     text.textContent = e.detail.detail || 'disconnected';
   }
 });
-window.addEventListener('auth:server-config', e => {
-  const oauth = e.detail?.oauth || {};
-  const google = $('oauth-google');
-  const github = $('oauth-github');
-  google.disabled = !oauth.google;
-  github.disabled = !oauth.github;
-  google.title = oauth.google
-    ? ''
-    : 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env';
-  github.title = oauth.github
-    ? ''
-    : 'Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in .env';
-  google.setAttribute('aria-disabled', String(!oauth.google));
-  github.setAttribute('aria-disabled', String(!oauth.github));
-});
-
 function dismissBootSplash() {
   const splash = document.getElementById('bootSplash');
   if (!splash) return;
@@ -319,126 +289,6 @@ async function tryCall(btnId, fn, okMsg) {
   }
 }
 
-let authMode = 'login'; // 'login' | 'signup' | 'forgot' | 'reset'
-let resetToken = null;
-function applyAuthMode() {
-  const isSignup = authMode === 'signup';
-  const isForgot = authMode === 'forgot';
-  const isReset = authMode === 'reset';
-  $('auth-title').textContent = isSignup
-    ? 'Create account'
-    : isForgot
-      ? 'Reset your password'
-      : isReset
-        ? 'Set a new password'
-        : 'Sign in';
-  $('auth-sub').textContent = isSignup
-    ? 'Email and password, 8+ chars.'
-    : isForgot
-      ? "Enter your email. We'll send a reset link if the account exists."
-      : isReset
-        ? 'Enter a new password.'
-        : 'Welcome back.';
-  $('em-name-field').hidden = !isSignup;
-  document.querySelector('label[for=em-email]').parentElement.hidden = isReset;
-  document.querySelector('label[for=em-pass]').parentElement.hidden = isForgot;
-  $('em-pass').setAttribute(
-    'autocomplete',
-    isSignup || isReset ? 'new-password' : 'current-password'
-  );
-  $('em-pass').setAttribute(
-    'placeholder',
-    isSignup || isReset ? 'min 8 chars' : ''
-  );
-  $('em-btn').textContent = isSignup
-    ? 'Create account'
-    : isForgot
-      ? 'Send reset email'
-      : isReset
-        ? 'Reset password'
-        : 'Sign in';
-  $('forgot-foot').hidden = isSignup || isForgot || isReset;
-  $('toggle-prompt').textContent = isSignup
-    ? 'Already have an account?'
-    : "Don't have an account?";
-  $('toggle-link').textContent =
-    isForgot || isReset ? 'Back to sign in' : isSignup ? 'Sign in' : 'Sign up';
-}
-$('toggle-link').addEventListener('click', () => {
-  if (authMode === 'forgot' || authMode === 'reset') {
-    authMode = 'login';
-  } else {
-    authMode = authMode === 'login' ? 'signup' : 'login';
-  }
-  applyAuthMode();
-});
-$('forgot-link').addEventListener('click', () => {
-  authMode = 'forgot';
-  applyAuthMode();
-});
-// Block default form navigation; the existing em-btn click handler
-// fires for both clicks and Enter-to-submit.
-$('auth-form').addEventListener('submit', e => e.preventDefault());
-
-$('em-btn').addEventListener('click', () =>
-  tryCall('em-btn', async () => {
-    const email = $('em-email').value.trim();
-    const password = $('em-pass').value;
-    if (authMode === 'signup') {
-      await window.auth.signup({
-        email,
-        password,
-        name: $('em-name').value.trim() || undefined,
-      });
-      showToast('ok', 'account created');
-    } else if (authMode === 'forgot') {
-      await window.auth.forgotPassword(email);
-      showToast(
-        'ok',
-        'If the account exists, a reset link was sent. (Check STDB log in dev.)',
-        7000
-      );
-      authMode = 'login';
-      applyAuthMode();
-    } else if (authMode === 'reset') {
-      if (!resetToken) throw new Error('missing_token');
-      await window.auth.resetPassword(resetToken, password);
-      showToast('ok', 'password reset; sign in below');
-      resetToken = null;
-      authMode = 'login';
-      window.history.replaceState({}, '', '/');
-      applyAuthMode();
-    } else {
-      await window.auth.login({ email, password });
-      showToast('ok', 'signed in');
-    }
-  })
-);
-
-(function checkResetToken() {
-  if (window.location.pathname === '/auth/password/reset') {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      resetToken = token;
-      authMode = 'reset';
-    }
-  }
-})();
-(function checkVerifyOk() {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('verified') === '1') {
-    showToast('ok', 'email verified', 5000);
-    params.delete('verified');
-    const qs = params.toString();
-    window.history.replaceState(
-      {},
-      '',
-      window.location.pathname + (qs ? '?' + qs : '')
-    );
-  }
-})();
-applyAuthMode();
 $('logout-btn').addEventListener('click', () =>
   tryCall('logout-btn', () => window.auth.logout(), 'signed out')
 );
@@ -465,17 +315,3 @@ $('nt-btn').addEventListener('click', () =>
     'note saved'
   )
 );
-$('oauth-google').addEventListener('click', () => {
-  if ($('oauth-google').disabled) {
-    showToast('err', 'Google OAuth is not configured', 4000);
-    return;
-  }
-  window.auth.oauthStart('google');
-});
-$('oauth-github').addEventListener('click', () => {
-  if ($('oauth-github').disabled) {
-    showToast('err', 'GitHub OAuth is not configured', 4000);
-    return;
-  }
-  window.auth.oauthStart('github');
-});

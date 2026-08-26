@@ -1,4 +1,10 @@
 import {
+  authUrlState,
+  clearAuthResultParams,
+  mountAuthPanel,
+} from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/styles.css';
+import {
   DbConnection,
   tables,
   type ErrorContext,
@@ -82,6 +88,7 @@ declare global {
       logout: () => Promise<void>;
       oauthStart: (provider: 'google' | 'github') => void;
       forgotPassword: (email: string) => Promise<void>;
+      resetPassword: (token: string, newPassword: string) => Promise<void>;
       requestEmailVerify: () => Promise<void>;
       whoami: () => Promise<{
         userId: string | undefined;
@@ -95,6 +102,10 @@ declare global {
 interface ServerConfig {
   spacetimeUri: string;
   databaseName: string;
+  oauth?: {
+    google?: boolean;
+    github?: boolean;
+  };
 }
 
 interface AuthUser {
@@ -273,7 +284,48 @@ async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
 async function loadServerConfig(): Promise<ServerConfig> {
   const r = await fetch('/api/config');
   if (!r.ok) throw new Error(`/api/config returned ${r.status}`);
-  return (await r.json()) as ServerConfig;
+  const nextConfig = (await r.json()) as ServerConfig;
+  authPanel.setProviders({
+    google: Boolean(nextConfig.oauth?.google),
+    github: Boolean(nextConfig.oauth?.github),
+  });
+  return nextConfig;
+}
+
+async function signup(args: {
+  email: string;
+  password: string;
+  name?: string;
+}): Promise<void> {
+  const result = await callJson<{ token: string }>('/auth/password/signup', {
+    email: args.email,
+    password: args.password,
+    name: args.name,
+  });
+  await bindSession(result.token);
+}
+
+async function login(args: { email: string; password: string }): Promise<void> {
+  const result = await callJson<{ token: string }>('/auth/password/login', {
+    email: args.email,
+    password: args.password,
+  });
+  await bindSession(result.token);
+}
+
+function oauthStart(provider: 'google' | 'github'): void {
+  window.location.href = `/auth/${provider}/start?redirectTo=/`;
+}
+
+async function forgotPassword(email: string): Promise<void> {
+  await callJson('/auth/password/forgot', { email });
+}
+
+async function resetPassword(
+  token: string,
+  newPassword: string
+): Promise<void> {
+  await callJson('/auth/password/reset', { token, newPassword });
 }
 
 function requireConn(): DbConnection {
@@ -633,21 +685,8 @@ function installApi(): void {
     heartbeat: () => {
       return requireConn().reducers.heartbeat({});
     },
-    signup: async args => {
-      const r = await callJson<{ token: string }>('/auth/password/signup', {
-        email: args.email,
-        password: args.password,
-        name: args.name,
-      });
-      await bindSession(r.token);
-    },
-    login: async args => {
-      const r = await callJson<{ token: string }>('/auth/password/login', {
-        email: args.email,
-        password: args.password,
-      });
-      await bindSession(r.token);
-    },
+    signup,
+    login,
     logout: async () => {
       const c = conn;
       if (c) {
@@ -665,12 +704,9 @@ function installApi(): void {
       emitAuth();
       emitData();
     },
-    oauthStart: provider => {
-      window.location.href = `/auth/${provider}/start?redirectTo=/`;
-    },
-    forgotPassword: async email => {
-      await callJson('/auth/password/forgot', { email });
-    },
+    oauthStart,
+    forgotPassword,
+    resetPassword,
     requestEmailVerify: async () => {
       await callJson('/auth/email/verify-request', {});
     },
@@ -691,6 +727,29 @@ function installApi(): void {
     },
   };
 }
+
+const authResult = authUrlState(window.location);
+const authPanelRoot = document.getElementById('auth-panel');
+if (!authPanelRoot) throw new Error('missing_auth_panel');
+const authPanel = mountAuthPanel(authPanelRoot, {
+  productName: 'Chat',
+  actions: {
+    login,
+    signup,
+    forgotPassword,
+    resetPassword,
+    oauthStart,
+  },
+  initialMode: authResult.mode,
+  resetToken: authResult.resetToken,
+});
+if (authResult.oauthError) {
+  authPanel.showMessage('error', `OAuth: ${authResult.oauthError}`);
+}
+if (authResult.verified) {
+  authPanel.showMessage('success', 'Email verified.');
+}
+clearAuthResultParams(window.location, window.history);
 
 function typingScopeForRoom(roomId: bigint): string {
   return `${PRESENCE_SCOPE_TYPING_PREFIX}${roomId.toString()}`;

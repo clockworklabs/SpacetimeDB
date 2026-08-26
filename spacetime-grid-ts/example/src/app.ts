@@ -1,4 +1,10 @@
 import {
+  authUrlState,
+  clearAuthResultParams,
+  mountAuthPanel,
+} from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/styles.css';
+import {
   DbConnection,
   tables,
   type ErrorContext,
@@ -182,7 +188,10 @@ async function loadServerConfig(): Promise<ServerConfig> {
   const res = await fetch('/api/config', { credentials: 'same-origin' });
   if (!res.ok) throw new Error(`/api/config returned ${res.status}`);
   const cfg = (await res.json()) as ServerConfig;
-  dispatch('auth:server-config', cfg);
+  authPanel.setProviders({
+    google: Boolean(cfg.oauth?.google),
+    github: Boolean(cfg.oauth?.github),
+  });
   return cfg;
 }
 
@@ -412,9 +421,38 @@ function oauthStart(provider: 'google' | 'github'): void {
 async function forgotPassword(email: string): Promise<void> {
   await callJson('/auth/password/forgot', { email });
 }
+async function resetPassword(
+  token: string,
+  newPassword: string
+): Promise<void> {
+  await callJson('/auth/password/reset', { token, newPassword });
+}
 async function requestEmailVerify(): Promise<void> {
   await callJson('/auth/email/verify-request', {});
 }
+
+const authResult = authUrlState(window.location);
+const authPanelRoot = document.getElementById('auth-panel');
+if (!authPanelRoot) throw new Error('missing_auth_panel');
+const authPanel = mountAuthPanel(authPanelRoot, {
+  productName: 'Grid',
+  actions: {
+    login,
+    signup,
+    forgotPassword,
+    resetPassword,
+    oauthStart,
+  },
+  initialMode: authResult.mode,
+  resetToken: authResult.resetToken,
+});
+if (authResult.oauthError) {
+  authPanel.showMessage('error', `OAuth: ${authResult.oauthError}`);
+}
+if (authResult.verified) {
+  authPanel.showMessage('success', 'Email verified.');
+}
+clearAuthResultParams(window.location, window.history);
 
 async function main(): Promise<void> {
   window.auth = {
