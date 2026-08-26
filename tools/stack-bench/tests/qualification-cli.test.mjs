@@ -50,6 +50,8 @@ test('qualification status uses the exact progression check subset', () => {
   assert.equal(status.defectChecks.totalPoints, 199);
   assert(status.defectChecks.stacks.every(stack => stack.coveredChecks === 112
     && stack.coveredPoints === 199 && stack.missingChecks.length === 0));
+  assert(status.commands.filter(command => command.startsWith('qualify-reference'))
+    .every(command => command.includes('--feature-catalog ecommerce.questlines@1.0.0')));
   assert.equal(status.promotion.blockers.some(blocker =>
     blocker.code === 'defect_check_coverage_incomplete'), false);
 });

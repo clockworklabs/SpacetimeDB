@@ -183,6 +183,11 @@
       "ecommerce.spec.transactional-integrity.server-price.104a",
       "ecommerce.spec.transactional-integrity.unique-review.6b"
     ],
+    "featureCatalog": {
+      "id": "ecommerce.questlines",
+      "version": "1.0.0",
+      "sha256": "fade707dea52dc63d1dcea29a9a253ed1f13cb9adca22eee41446d6739913d0e"
+    },
     "runner": {
       "schemaVersion": 1,
       "mode": "appliance",

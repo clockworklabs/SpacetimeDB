@@ -10,6 +10,7 @@ import { readArtifact } from '../evidence/artifacts.mjs';
 import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';
+import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
 
@@ -96,9 +97,11 @@ const MUTATION_FIELDS = new Set(['backend', 'path', 'sha256', 'referenceId']);
 const NULL_FIELDS = new Set(['pointBearing', 'zeroPoint', 'repetitions']);
 const CONTROL_FIELDS = new Set(['stableKey', 'role', 'promotionPolicy', 'mutationTargets', 'reason']);
 const QUALIFICATION_FIELDS = new Set([
-  'exactCombinationRequired', 'referenceRepetitions', 'mutationRepetitions', 'checks', 'runner',
+  'exactCombinationRequired', 'referenceRepetitions', 'mutationRepetitions', 'checks',
+  'featureCatalog', 'runner',
   'stacks', 'evidence',
 ]);
+const FEATURE_CATALOG_FIELDS = new Set(['id', 'version', 'sha256']);
 const RUNNER_FIELDS = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
 const STACK_FIELDS = new Set(['id', 'status']);
 const EVIDENCE_FIELDS = new Set(['kind', 'stack', 'repetition', 'path', 'sha256']);
@@ -219,6 +222,15 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
     if (new Set(value.qualification.checks).size !== value.qualification.checks.length) {
       fail(`${source}.qualification.checks`, 'must not contain duplicates');
     }
+  }
+  if (value.qualification.featureCatalog !== undefined) {
+    const at = `${source}.qualification.featureCatalog`;
+    strictObject(value.qualification.featureCatalog, at, FEATURE_CATALOG_FIELDS);
+    string(value.qualification.featureCatalog.id, `${at}.id`);
+    if (!VERSION.test(value.qualification.featureCatalog.version)) {
+      fail(`${at}.version`, 'must be an exact semantic version');
+    }
+    exactHash(value.qualification.featureCatalog.sha256, `${at}.sha256`);
   }
   if (value.qualification.runner !== undefined) {
     const at = `${source}.qualification.runner`;
@@ -564,6 +576,8 @@ export function calibrationQualificationIdentity(calibration) {
       mutationRepetitions: calibration.qualification?.mutationRepetitions,
       ...(calibration.qualification?.checks
         ? { checks: [...calibration.qualification.checks].sort() } : {}),
+      ...(calibration.qualification?.featureCatalog
+        ? { featureCatalog: calibration.qualification.featureCatalog } : {}),
       ...(calibration.qualification?.runner ? { runner: calibration.qualification.runner } : {}),
       stacks: (calibration.qualification?.stacks ?? []).map(stack => ({
         id: stack.id, supported: stack.status !== 'unsupported',
@@ -616,6 +630,21 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     trackRoot: root,
     level: Number(calibration.promotion.alias.slice(1)),
   });
+  if (calibration.qualification.featureCatalog) {
+    const declared = calibration.qualification.featureCatalog;
+    const catalog = resolveFeatureCatalog(`${declared.id}@${declared.version}`,
+      { dir: root, name: release.track });
+    if (catalog.identity.sha256 !== declared.sha256) {
+      fail(`${source}.qualification.featureCatalog.sha256`, 'is stale');
+    }
+    const qualificationLevel = Number(calibration.promotion.alias.slice(1));
+    const catalogChecks = catalog.definition.nodes.filter(node => node.level <= qualificationLevel)
+      .flatMap(node => node.gradingChecks.map(check => check.id)).sort();
+    const selectedChecks = [...(calibration.qualification.checks ?? [])].sort();
+    if (canonicalDefinitionJson(catalogChecks) !== canonicalDefinitionJson(selectedChecks)) {
+      fail(`${source}.qualification.checks`, 'does not match the feature catalog level selection');
+    }
+  }
   const { release: qualificationRelease, execution: qualificationExecution }
     = calibrationQualificationRelease(calibration, release, execution, { source });
   if (calibration.fixture.id !== release.components.fixture.id

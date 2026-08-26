@@ -369,13 +369,20 @@ export function referenceQualificationContext(fixture, recipe = null,
   const reference = calibration.references.entries.find(entry => entry.backend === fixture.backend
     && entry.id === fixture.id && entry.sourceSha256 === fixture.imported.sourceSha256);
   if (!reference) throw new Error(`${fixture.id} is not selected by calibration ${calibration.id}`);
-  const catalog = featureCatalog ? resolveFeatureCatalog(featureCatalog, track) : null;
+  const declaredCatalog = calibration.qualification.featureCatalog;
+  const catalogRef = featureCatalog ?? (declaredCatalog
+    ? `${declaredCatalog.id}@${declaredCatalog.version}` : null);
+  const catalog = catalogRef ? resolveFeatureCatalog(catalogRef, track) : null;
+  if (declaredCatalog && catalog.identity.sha256 !== declaredCatalog.sha256) {
+    throw new Error(`${calibration.id} feature catalog identity does not match`);
+  }
   const progressionSelection = catalog
     ? resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }) : null;
   const selectedCheckKeys = progressionSelection?.grader.checkKeys
     ?? binding.release.checkCatalog.map(check => check.stableKey);
   return { binding, calibration, identity: calibrationQualificationIdentity(calibration),
-    featureCatalog: catalog?.identity ?? null, progressionSelection, selectedCheckKeys, level };
+    featureCatalog: catalog?.identity ?? null, featureCatalogRef: catalogRef,
+    progressionSelection, selectedCheckKeys, level };
 }
 
 export function referenceQualificationSelectionArgs(binding, progressionSelection = null) {
@@ -540,7 +547,7 @@ export function parallelMutationChildArgv(args, context,
     '--repetitions', '1', '--run-index', String(runIndex), '--timeout-minutes',
     String(args.timeoutMinutes), '--mutations', '--mutation-shard-index',
     String(workerIndex), '--mutation-shard-count', String(workerCount), '--out', artifactPath];
-  if (args.featureCatalog) argv.push('--feature-catalog', args.featureCatalog);
+  if (context.featureCatalogRef) argv.push('--feature-catalog', context.featureCatalogRef);
   if (args.spacetimePortExplicit) {
     argv.push('--spacetime-port', String(args.spacetimePort + workerIndex));
   }

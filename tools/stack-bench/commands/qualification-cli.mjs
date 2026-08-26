@@ -152,6 +152,9 @@ export function qualificationReadiness(trackName, level, recipe = null) {
   const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
   const recipeOption = recipe
     ? ` --recipe ${binding.release.id}@${binding.release.version}` : '';
+  const featureCatalog = calibration.qualification.featureCatalog;
+  const featureCatalogOption = featureCatalog
+    ? ` --feature-catalog ${featureCatalog.id}@${featureCatalog.version}` : '';
   return {
     qualificationSchemaVersion: 1,
     scope: { track: trackName, level, recipe: { id: binding.release.id,
@@ -164,7 +167,7 @@ export function qualificationReadiness(trackName, level, recipe = null) {
       policy: PACK_BUDGET_POLICY,
       commands: budgetPreparationRequired ? [
         ...stacks.map((stack, index) =>
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
         `pack-budget recommend --track ${trackName} --level ${level}${recipeOption} ${budgetEvidence
           .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${level}-pack-budgets.json`,
       ] : [],
@@ -173,8 +176,8 @@ export function qualificationReadiness(trackName, level, recipe = null) {
     defectChecks,
     commands: [
       ...stacks.flatMap(stack => [
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
       ]),
       `qualify-null --track ${trackName} --level ${level}${recipeOption} --out ${output}/${trackName}-l${level}-null.json`,
     ],
