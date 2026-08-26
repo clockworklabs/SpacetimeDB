@@ -152,6 +152,7 @@ export default function App() {
 
   useEffect(() => {
     const observedAtRequest = ++cartObservationRef.current;
+    api("/api/progression").then(setProgression).catch(() => {});
     if (!account) {
       setCart({ items: [], total: 0 });
       setOrders([]);
@@ -201,7 +202,7 @@ export default function App() {
       && (!minimumPrice || item.price >= Number(minimumPrice))
       && (!maximumPrice || item.price <= Number(maximumPrice))
       && (!inStockOnly || item.stock > 0))
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => b.purchaseCount - a.purchaseCount || a.name.localeCompare(b.name))
       .slice(searchPage * CATALOG_PAGE_SIZE,
         searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);
   }, [items, search, categoryFilter, minimumPrice, maximumPrice, inStockOnly, searchPage]);
@@ -510,6 +511,17 @@ export default function App() {
         </div>
       </main>
 
+      {account && (account.isAdmin || account.isStaff) && (
+        <nav className="progression-links">
+          <button data-testid="promotions-link" onClick={() => {
+            setCartOpen(false);
+            setOrdersOpen(false);
+            setAdminOpen(false);
+            setFulfilmentOpen(true);
+          }}>Promotions</button>
+        </nav>
+      )}
+
       {!(account?.isAdmin || account?.isStaff) &&
         <ProgressionPanel account={account} items={items} orders={orders}
           state={progression} reload={reloadProgression} />}
@@ -664,7 +676,9 @@ function Header(props: {
         {account ? (
           <>
             <span className="current-user" data-testid="current-user">
-              {account.username}
+              {account.isAdmin || account.isStaff
+                ? <span data-testid="staff-current-user">{account.username}</span>
+                : account.username}
             </span>
             <button className="btn btn-ghost btn-sm" data-testid="signout" onClick={onSignout}>
               Sign out
