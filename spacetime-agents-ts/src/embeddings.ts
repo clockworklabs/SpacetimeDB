@@ -107,8 +107,7 @@ function postOpenAiEmbeddings(
       }
       if (
         !row.embedding.every(
-          component =>
-            typeof component === 'number' && Number.isFinite(component)
+          value => typeof value === 'number' && Number.isFinite(value)
         )
       ) {
         throw new Error('embedding contains a non-finite value');
