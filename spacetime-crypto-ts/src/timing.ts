@@ -70,7 +70,7 @@ export function base64ToBytes(b64: string): Uint8Array {
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const lookup = new Int8Array(256).fill(-1);
   for (let i = 0; i < ALPHABET.length; i++) lookup[ALPHABET.charCodeAt(i)] = i;
-  lookup[0x3d /* '=' */] = 0; // pad treated as 0; we trim afterwards
+  lookup[0x3d /* '=' */] = 0; // Padding is removed after decoding.
 
   // Count pad to compute output length.
   let pad = 0;

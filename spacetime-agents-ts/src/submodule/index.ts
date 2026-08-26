@@ -45,12 +45,6 @@ function throwSenderError(msg: string): never {
   throw new SenderError(msg);
 }
 
-const echo = agentTool(
-  'echoes the given message back to the caller',
-  t.object('EchoArgs', { message: t.string() }),
-  (_ctx, args) => `echo: ${args.message}`
-);
-
 const getTime = agentTool(
   'returns the current server time as an ISO-8601 string',
   t.unit(),
@@ -74,7 +68,6 @@ const chatAgent = defineAgent({
   ragTopK: 4,
   tools: {
     get_time: getTime,
-    echo,
   },
 });
 

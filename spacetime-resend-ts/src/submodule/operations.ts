@@ -68,7 +68,7 @@ function extractTagFieldsFromJson(tagsJson: string | undefined): {
   return { userId: tags['userId'], orgId: tags['orgId'] };
 }
 
-// Build POST /emails body. Resend HTTP API expects snake_case on the wire; SDK converts internally. We hand-roll, so emit snake_case directly.
+// Resend expects snake_case fields in the POST /emails request body.
 type ResendSendEmailBody = {
   from: string;
   to: string[];

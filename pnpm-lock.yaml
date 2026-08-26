@@ -494,9 +494,6 @@ importers:
       '@spacetimedb/api-keys':
         specifier: workspace:*
         version: link:../..
-      '@spacetimedb/crypto':
-        specifier: workspace:*
-        version: link:../../../spacetime-crypto-ts
       '@spacetimedb/grid':
         specifier: workspace:*
         version: link:../../../spacetime-grid-ts
@@ -871,9 +868,6 @@ importers:
       '@spacetimedb/grid':
         specifier: workspace:*
         version: link:../..
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:../../../spacetime-rate-limit-ts
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript

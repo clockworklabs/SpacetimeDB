@@ -1,6 +1,5 @@
 import { defineAgent } from '@spacetimedb/agents';
 import getTime from '../tools/getTime';
-import echo from '../tools/echo';
 
 export default defineAgent({
   defaultModel: 'anthropic/claude-haiku-4.5',
@@ -15,6 +14,5 @@ export default defineAgent({
   ragTopK: 4,
   tools: {
     get_time: getTime,
-    echo,
   },
 });

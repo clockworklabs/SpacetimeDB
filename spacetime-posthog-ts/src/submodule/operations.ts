@@ -180,7 +180,7 @@ function pruneDeliveryHistory(
 }
 
 // Remove queued and delivered outbox entries plus the delivery log for bounded
-// demo and test resets. Events received by PostHog remain at the provider.
+// Operator-requested cleanup. Events received by PostHog remain at the provider.
 export function clearAnalytics(
   ctx: WriteCtx,
   maxRows = 1000

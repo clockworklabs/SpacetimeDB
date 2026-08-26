@@ -12,7 +12,6 @@
     "@spacetimedb/api-keys": "workspace:*",
     "@spacetimedb/grid": "workspace:*",
     "@spacetimedb/presence": "workspace:*",
-    "@spacetimedb/crypto": "workspace:*",
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {
