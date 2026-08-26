@@ -129,6 +129,29 @@ test('reseed proof distinguishes a healthy empty app from restored startup data'
     detail: 'startup data is missing: items contains 0 entries, expected at least 1' });
 });
 
+test('reset readiness still probes the application when no seed expectation is configured', async () => {
+  let requests = 0;
+  const result = await verifyReseedProbe('http://app/health', null, {
+    fetchImpl: async () => {
+      requests += 1;
+      return { ok: true, status: 200 };
+    },
+  });
+  assert.deepEqual(result, { ok: true, detail: null, count: null });
+  assert.equal(requests, 1);
+});
+
+test('reset readiness rejects an unhealthy application without a seed expectation', async () => {
+  const result = await verifyReseedProbe('http://app/health', null, {
+    fetchImpl: async () => ({ ok: false, status: 503 }),
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    count: null,
+    detail: 'startup data probe returned HTTP 503',
+  });
+});
+
 test('reseed readiness returns as soon as startup data is restored', async () => {
   const observed = [];
   const waits = [];

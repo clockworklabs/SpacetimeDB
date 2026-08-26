@@ -252,7 +252,6 @@ async function answers(url, attempts = 3) {
 export async function verifyReseedProbe(url, expectation, {
   fetchImpl = fetch, timeoutMs = 5000,
 } = {}) {
-  if (!expectation) return { ok: true, detail: null, count: null };
   let response;
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
@@ -264,6 +263,7 @@ export async function verifyReseedProbe(url, expectation, {
     return { ok: false, count: null,
       detail: `startup data probe returned HTTP ${response.status}` };
   }
+  if (!expectation) return { ok: true, detail: null, count: null };
   let payload;
   try {
     payload = await response.json();
@@ -668,12 +668,23 @@ async function main() {
     lastResetFailure = reset.detail;
     lastResetOutcome = reset.outcome ?? { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
-    // An app whose fixture data is created at startup has just had it wiped, so
-    // the server has to come back before the state it seeds exists again.
-    // Republishing a SpacetimeDB module re-runs `init`, so only the hosted
-    // backends need this.
+    // Do not grade until the reset application is reachable. Hosted backends
+    // can also require their startup data to be present again.
     const requiresReseed = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'reset', 'requires-reseed');
+    const waitUntilReady = async () => {
+      const seeded = await waitForReseedProbe(args.reseedProbe ?? args.url,
+        args.reseedProbeExpectation);
+      if (!seeded.ok) {
+        lastResetFailure = seeded.detail;
+        lastResetOutcome = { kind: 'app_failure', phase: 'application-seed',
+          appFailures: ['application-seed'] };
+        console.log(`FAILED (${seeded.detail})`);
+        return false;
+      }
+      console.log(seeded.count === null ? 'ok' : `ok (${seeded.count} entries observed)`);
+      return true;
+    };
     if (track.reseedOnReset && (args.restartSpec || args.restartCmd) && requiresReseed) {
       process.stdout.write('  reseed      ... ');
       // The restart script leaves the new server running, and on Windows that
@@ -712,19 +723,10 @@ async function main() {
         }
       }
 
-      const seeded = await waitForReseedProbe(args.reseedProbe, args.reseedProbeExpectation);
-      if (!seeded.ok) {
-        lastResetFailure = seeded.detail;
-        lastResetOutcome = { kind: 'app_failure', phase: 'application-seed',
-          appFailures: ['application-seed'] };
-        console.log(`FAILED (${seeded.detail})`);
-        return false;
-      }
-      console.log(seeded.count === null ? 'ok' : `ok (${seeded.count} entries observed)`);
-      return true;
+      return await waitUntilReady();
     }
-    await sleep(8000);                       // let the app reconnect / republish
-    return true;
+    process.stdout.write('  ready       ... ');
+    return await waitUntilReady();
   };
 
   bundle.code = codeMetrics(args);
