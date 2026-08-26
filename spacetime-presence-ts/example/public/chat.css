@@ -902,11 +902,19 @@ main.shell:not(.signed-out) .chat-body > .main > .composer.hidden {
   min-width: 80px;
   max-width: 140px;
 }
-.pending-att img {
-  max-width: 96px;
-  max-height: 64px;
+.pending-att-preview {
+  width: 96px;
+  height: 64px;
   border-radius: 4px;
-  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: var(--color-shade6);
+  color: var(--color-n4);
+  font-family: var(--font-ibm);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .pending-att-meta {
   font-size: 10px;

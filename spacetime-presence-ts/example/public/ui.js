@@ -37,7 +37,7 @@ const REACTIONS = [
 
 let typingTimer = null;
 let typingRenewTimer = null;
-let pendingAtts = []; // { id, file, name, mimeType, bytes }
+let pendingAtts = []; // { id, name, mimeType, bytes }
 let pendingAttSeq = 0;
 let replyTargetId = null;
 let editTargetId = null;
@@ -1578,27 +1578,14 @@ function renderPendingAtts() {
     item.dataset.pid = String(attachment.id);
 
     const isImage = attachment.mimeType.startsWith('image/');
-    if (isImage) {
-      const image = document.createElement('img');
-      const objectUrl = URL.createObjectURL(attachment.file);
-      image.src = objectUrl;
-      image.alt = attachment.name;
-      const releaseObjectUrl = () => URL.revokeObjectURL(objectUrl);
-      image.addEventListener('load', releaseObjectUrl, { once: true });
-      image.addEventListener('error', releaseObjectUrl, { once: true });
-      item.append(image);
-    } else {
-      const name = document.createElement('div');
-      name.className = 'pending-att-meta';
-      name.textContent = attachment.name;
-      item.append(name);
-    }
+    const preview = document.createElement('div');
+    preview.className = 'pending-att-preview';
+    preview.textContent = isImage ? 'Image' : 'File';
+    item.append(preview);
 
     const metadata = document.createElement('div');
     metadata.className = 'pending-att-meta';
-    metadata.textContent = isImage
-      ? `${attachment.name} - ${fmtBytes(attachment.bytes.length)}`
-      : fmtBytes(attachment.bytes.length);
+    metadata.textContent = `${attachment.name} - ${fmtBytes(attachment.bytes.length)}`;
     item.append(metadata);
 
     const removeButton = document.createElement('button');
@@ -1650,7 +1637,6 @@ $('attachInput')?.addEventListener('change', async e => {
       const mimeType = f.type || 'application/octet-stream';
       pendingAtts.push({
         id: ++pendingAttSeq,
-        file: f,
         name: f.name,
         mimeType,
         bytes,

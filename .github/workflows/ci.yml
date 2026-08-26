@@ -1705,6 +1705,9 @@ jobs:
         with:
           run_install: true
 
+      - name: Build TypeScript SDK
+        run: pnpm --dir crates/bindings-typescript run build
+
       - name: Install released SpacetimeDB toolchain
         run: |
           curl -sSf https://install.spacetimedb.com | sh -s -- --root-dir "$RUNNER_TEMP/spacetime" --yes
