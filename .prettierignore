@@ -6,4 +6,6 @@ target
 coverage
 **/public/app.js
 **/public/app.js.map
+**/public/app.css
+**/public/app.css.map
 **/src/module_bindings/**
