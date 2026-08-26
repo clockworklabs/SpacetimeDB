@@ -108,6 +108,14 @@ test('grading forwards the track startup-data expectation', () => {
   assert.deepEqual(JSON.parse(argv[index + 1]), { jsonPath: 'items', minCount: 1 });
 });
 
+test('Spacetime grading probes the application instead of a missing API port', () => {
+  const track = loadTrack('ecommerce');
+  const argv = gradeArgv({ backend: 'spacetime', track: 'ecommerce', runIndex: 0,
+    media: false }, '/app', 'http://localhost:6473', 'spacetime-l1', 1, track, 'attempt');
+  assert.equal(argv.includes('--reseed-probe'), false);
+  assert.equal(argv.includes('--reseed-probe-expectation-json'), false);
+});
+
 test('grading binds scored evidence to the selected application source', () => {
   const track = loadTrack('ecommerce');
   const sourceSha256 = 'a'.repeat(64);

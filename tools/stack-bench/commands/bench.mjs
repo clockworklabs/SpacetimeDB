@@ -439,12 +439,13 @@ export function finalizeRunTotals(run, started, { now = Date.now(), costComplete
 export function gradeArgv(args, appDir, url, label, level, track, parentAttemptId,
   { observation = 'scored', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
-  const expressPort = restartSpec.port ?? '';
+  const expressPort = restartSpec.port ?? null;
   return [join(ROOT, 'commands', 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
-    '--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`,
-    ...(track.reseedProbeExpectation
+    ...(expressPort === null ? []
+      : ['--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`]),
+    ...(expressPort !== null && track.reseedProbeExpectation
       ? ['--reseed-probe-expectation-json', JSON.stringify(track.reseedProbeExpectation)] : []),
     '--run-index', String(args.runIndex),
     '--parent-attempt-id', parentAttemptId,
