@@ -37,7 +37,7 @@ const REACTIONS = [
 
 let typingTimer = null;
 let typingRenewTimer = null;
-let pendingAtts = []; // { id, file, name, mimeType, bytes, previewUrl }
+let pendingAtts = []; // { id, file, name, mimeType, bytes }
 let pendingAttSeq = 0;
 let replyTargetId = null;
 let editTargetId = null;
@@ -1580,8 +1580,12 @@ function renderPendingAtts() {
     const isImage = attachment.mimeType.startsWith('image/');
     if (isImage) {
       const image = document.createElement('img');
-      image.src = attachment.previewUrl;
+      const objectUrl = URL.createObjectURL(attachment.file);
+      image.src = objectUrl;
       image.alt = attachment.name;
+      const releaseObjectUrl = () => URL.revokeObjectURL(objectUrl);
+      image.addEventListener('load', releaseObjectUrl, { once: true });
+      image.addEventListener('error', releaseObjectUrl, { once: true });
       item.append(image);
     } else {
       const name = document.createElement('div');
@@ -1611,8 +1615,7 @@ function renderPendingAtts() {
       const id = Number(btn.dataset.remove);
       const idx = pendingAtts.findIndex(p => p.id === id);
       if (idx < 0) return;
-      const removed = pendingAtts.splice(idx, 1)[0];
-      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      pendingAtts.splice(idx, 1);
       renderPendingAtts();
     });
   });
@@ -1645,16 +1648,12 @@ $('attachInput')?.addEventListener('change', async e => {
     try {
       const bytes = await readFileAsBytes(f);
       const mimeType = f.type || 'application/octet-stream';
-      const previewUrl = mimeType.startsWith('image/')
-        ? URL.createObjectURL(f)
-        : null;
       pendingAtts.push({
         id: ++pendingAttSeq,
         file: f,
         name: f.name,
         mimeType,
         bytes,
-        previewUrl,
       });
     } catch (err) {
       setResult(`${f.name}: read failed - ${err.message ?? err}`, false);
@@ -1664,8 +1663,6 @@ $('attachInput')?.addEventListener('change', async e => {
 });
 
 function clearPendingAtts() {
-  for (const p of pendingAtts)
-    if (p.previewUrl) URL.revokeObjectURL(p.previewUrl);
   pendingAtts = [];
   renderPendingAtts();
 }
