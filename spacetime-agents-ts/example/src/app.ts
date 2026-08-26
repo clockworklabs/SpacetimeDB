@@ -1,4 +1,10 @@
 import {
+  authUrlState,
+  clearAuthResultParams,
+  mountAuthPanel,
+} from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/styles.css';
+import {
   DbConnection,
   tables,
   type ErrorContext,
@@ -20,6 +26,14 @@ interface AuthUser {
 interface AuthMe {
   user: AuthUser;
   sessionExpiresAt: number;
+}
+interface ServerConfig {
+  spacetimeUri: string;
+  databaseName: string;
+  oauth?: {
+    google?: boolean;
+    github?: boolean;
+  };
 }
 interface AuthUserRow extends AuthUser {
   createdAt: unknown;
@@ -112,7 +126,7 @@ let currentConn: DbConnection | null = null;
 let globalSub: SubscriptionHandle | null = null;
 let messageSub: SubscriptionHandle | null = null;
 let activeThreadId: bigint | null = null;
-let serverCfg: { spacetimeUri: string; databaseName: string } | null = null;
+let serverCfg: ServerConfig | null = null;
 
 let currentUser: AuthUser | null = null;
 let currentExp: number | undefined;
@@ -222,13 +236,15 @@ async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
   return data as T;
 }
 
-async function loadServerConfig(): Promise<{
-  spacetimeUri: string;
-  databaseName: string;
-}> {
+async function loadServerConfig(): Promise<ServerConfig> {
   const res = await fetch('/api/config', { credentials: 'same-origin' });
   if (!res.ok) throw new Error(`/api/config returned ${res.status}`);
-  return res.json();
+  const nextConfig = (await res.json()) as ServerConfig;
+  authPanel.setProviders({
+    google: Boolean(nextConfig.oauth?.google),
+    github: Boolean(nextConfig.oauth?.github),
+  });
+  return nextConfig;
 }
 
 // Persist the STDB identity token so refresh reuses the same identity.
@@ -516,6 +532,29 @@ async function revokeMySession(sessionId: string): Promise<void> {
   requireConn().reducers.revokeMySession({ sessionId });
 }
 
+const authResult = authUrlState(window.location);
+const authPanelRoot = document.getElementById('auth-panel');
+if (!authPanelRoot) throw new Error('missing_auth_panel');
+const authPanel = mountAuthPanel(authPanelRoot, {
+  productName: 'Agents',
+  actions: {
+    login,
+    signup,
+    forgotPassword,
+    resetPassword,
+    oauthStart,
+  },
+  initialMode: authResult.mode,
+  resetToken: authResult.resetToken,
+});
+if (authResult.oauthError) {
+  authPanel.showMessage('error', `OAuth: ${authResult.oauthError}`);
+}
+if (authResult.verified) {
+  authPanel.showMessage('success', 'Email verified.');
+}
+clearAuthResultParams(window.location, window.history);
+
 async function main(): Promise<void> {
   window.auth = {
     signup,
@@ -587,6 +626,7 @@ async function main(): Promise<void> {
   };
 
   broadcastConn('idle');
+  serverCfg = await loadServerConfig();
   dispatch('stdb:ready', {});
   await restoreSession();
   dispatch('auth:ready', {});
