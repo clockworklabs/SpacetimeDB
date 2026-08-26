@@ -663,7 +663,7 @@ impl Metadata {
 
         reader.seek(SeekFrom::Start(sofar.size_in_bytes))?;
 
-        fn commit_meta<R: io::Read + io::Seek>(
+        fn commit_meta<R: io::Read + SegmentPos>(
             reader: &mut R,
             sofar: &Metadata,
         ) -> Result<Option<commit::Metadata>, error::SegmentMetadata> {
