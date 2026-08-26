@@ -68,6 +68,7 @@ test('hosted backend stop targets the listener process group, not only its child
   assert.match(command, /ps -o pgid=/);
   assert.match(command, /\/bin\/kill -TERM -- "-\$pgid"/);
   assert.match(command, /\/bin\/kill -KILL -- "-\$pgid"/);
+  assert.match(command, /quiet.*-ge 10/);
   assert.match(command, /hosted backend port 6301 still has a listener/);
   assert.match(command, /\|1\).*exit 4/);
   assert.throws(() => hostedStopScript('6301; rm -rf /'), /invalid hosted backend port/);

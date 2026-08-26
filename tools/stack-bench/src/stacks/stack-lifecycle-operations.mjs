@@ -23,8 +23,9 @@ const delay = (ms, signal) => new Promise((resolve, reject) => {
   signal?.addEventListener('abort', cancelled, { once: true });
 });
 
-async function answers(url) {
-  const status = await fetchStatus(url, { timeoutMs: 5000 });
+async function answers(url, { freshConnection = false } = {}) {
+  const status = await fetchStatus(url, { timeoutMs: 5000,
+    ...(freshConnection ? { init: { headers: { connection: 'close' } } } : {}) });
   return status !== null && status >= 200 && status < 300;
 }
 
@@ -57,12 +58,13 @@ export function hostedStopScript(port) {
     + 'pgid=$(ps -o pgid= -p "$pid" | tr -d " "); '
     + 'case "$pgid" in ""|*[!0-9]*|1) echo "unsafe process group for listener $pid" >&2; exit 4;; esac; '
     + 'case " $groups " in *" $pgid "*) ;; *) groups="$groups $pgid";; esac; done';
-  return `attempt=0; while [ "$attempt" -lt 50 ]; do ${collectGroups}; `
-    + '[ -z "$groups" ] && exit 0; '
-    + 'for pgid in $groups; do /bin/kill -TERM -- "-$pgid" 2>/dev/null || true; done; '
+  return `quiet=0; attempt=0; while [ "$attempt" -lt 100 ]; do ${collectGroups}; `
+    + 'if [ -z "$groups" ]; then quiet=$((quiet + 1)); [ "$quiet" -ge 10 ] && exit 0; '
+    + 'else quiet=0; for pgid in $groups; do /bin/kill -TERM -- "-$pgid" 2>/dev/null || true; done; fi; '
     + 'attempt=$((attempt + 1)); sleep 0.1; done; '
     + `${collectGroups}; for pgid in $groups; do /bin/kill -KILL -- "-$pgid" 2>/dev/null || true; done; `
-    + `attempt=0; while [ "$attempt" -lt 50 ]; do [ -z "$(${listeners})" ] && exit 0; `
+    + `quiet=0; attempt=0; while [ "$attempt" -lt 50 ]; do if [ -z "$(${listeners})" ]; `
+    + 'then quiet=$((quiet + 1)); [ "$quiet" -ge 10 ] && exit 0; else quiet=0; fi; '
     + 'attempt=$((attempt + 1)); sleep 0.1; done; '
     + `echo "hosted backend port ${numericPort} still has a listener" >&2; exit 4`;
 }
@@ -88,7 +90,8 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
   if (mode !== 'start') {
     exec('docker', ['exec', container.name, 'sh', '-lc', hostedStopScript(port)],
       { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
-    await waitFor(async () => !(await answers(url)), 30_000, `${backend} API to stop`, signal);
+    await waitFor(async () => !(await answers(url, { freshConnection: true })),
+      30_000, `${backend} API to stop`, signal);
   }
   if (mode === 'stop') return;
   exec('docker', ['exec', container.name, 'sh', '-lc',
