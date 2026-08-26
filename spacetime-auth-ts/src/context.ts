@@ -21,7 +21,7 @@ const authSweeperTick = table(
 );
 
 // This schema exists only to derive the context types shared by the package's
-// reducer, procedure, view, and HTTP implementations. Runtime modules mount the
+// reducer, procedure, view, and HTTP implementations. Runtime modules register the
 // same auth tables and the rate-limit submodule under their own schema.
 const _authContextSchema = schema({
   ...authTables,

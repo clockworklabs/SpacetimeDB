@@ -21,7 +21,7 @@ The host module owns HTTP route registration and any mail-delivery adapter.
 
 ### Integrate into an application
 
-Import the mountable namespace, register the handlers your application needs,
+Import the submodule namespace, register the handlers your application needs,
 then install Auth from the host `init` hook. Auth mounts and initializes its
 Rate Limit dependency.
 
@@ -103,8 +103,9 @@ await conn.reducers.updateProfile({ name: 'Ada', image: undefined });
 
 The root entrypoint exports table builders, password and OAuth handlers, JWT
 and key helpers, connection-binding procedures, and caller helpers. The
-`./submodule` entrypoint exports the mountable schema, registered operations,
-views, handlers, and `installAuth`. The host module owns `init`.
+`./submodule` entrypoint exports the submodule schema, registered database
+operations, views, handler factories, and `installAuth`. The host module owns
+`init`, HTTP routing, cookie policy, and mail delivery.
 
 Supported flows:
 
@@ -116,14 +117,12 @@ Supported flows:
 - Caller profile reads and updates
 - Fixed-window limits for authentication endpoints
 
-Mounted operations:
+Submodule operations:
 
 - Configuration and keys: `set_auth_config`, `get_auth_public_key`.
 - Connection binding: `link_connection`, `unlink_connection`, and `whoami`.
 - Profiles and sessions: `update_profile`, `list_my_sessions`,
   `revoke_my_session`, and administrative `revoke_session`.
-- HTTP handlers: password signup/login, session refresh, current user, logout,
-  Google and GitHub OAuth, password reset, and email verification.
 - Caller helpers: `getCallerUserId` and the `my_auth_user` scoped view.
 
 The handler exports are `passwordSignupHandler`, `passwordLoginHandler`,
@@ -171,7 +170,7 @@ pnpm run typecheck
 ```
 
 The unit suite covers key generation, JWT validation, password hashing, PKCE,
-tokens, and UUID generation. Build the example module to validate mounted
+tokens, and UUID generation. Build the example module to validate submodule
 schema integration.
 
 ## License

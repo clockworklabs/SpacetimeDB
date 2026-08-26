@@ -4,7 +4,7 @@ import {
   DEFAULT_PRESENCE_SWEEP_BATCH,
   DEFAULT_PRESENCE_TTL_SECONDS,
   installPresenceConfig,
-} from '@spacetimedb/presence';
+} from '../index';
 import type spacetimedb from './index';
 
 const ONE_SECOND_MICROS = 1_000_000n;

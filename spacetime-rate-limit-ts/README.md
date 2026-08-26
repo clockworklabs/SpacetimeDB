@@ -15,7 +15,7 @@ For the install-to-publish workflow, see
 
 This package gives you:
 
-- a mountable `./submodule` with submodule-owned bucket/config/admin tables
+- a `./submodule` namespace with submodule-owned bucket/config/admin tables
 - standalone helper functions for direct host integration
 - bounded sweep helpers for expired buckets
 - admin-gated procedures for diagnostics and maintenance
@@ -24,7 +24,7 @@ This package gives you:
 
 ### Integrate into an application
 
-Mount the namespace, install its scheduled cleanup and admin state, then call
+Register the namespace, install its scheduled cleanup and admin state, then call
 `consume` from the host operation before performing the protected action:
 
 ```ts
@@ -92,7 +92,7 @@ The generated client calls the product-facing operation:
 await conn.procedures.createPost({ body: 'Hello' });
 ```
 
-The submodule owns these tables under the mounted namespace:
+The submodule owns these tables under its namespace:
 
 - `rateLimit.rate_limit_bucket`
 - `rateLimit.rate_limit_admin_identity`
@@ -114,7 +114,7 @@ implementations:
 - `sweepRateLimits`
 - `resolveRateLimitSweepBatch`
 
-The mounted `consume`, `runSweep`, and `reset_buckets` operations are admin-only.
+The submodule `consume`, `runSweep`, and `reset_buckets` operations are admin-only.
 Application-facing operations should enforce a fixed policy in host code and use
 `consumeRateLimit` as shown above. `reset_buckets({ maxRows })` removes
 1,000 rows by default and accepts a maximum of 10,000 per call, so destructive
@@ -125,7 +125,7 @@ use `@spacetimedb/rate-limit/submodule`.
 
 Package entrypoints:
 
-- `@spacetimedb/rate-limit/submodule` supplies the mounted namespace,
+- `@spacetimedb/rate-limit/submodule` supplies the submodule namespace,
   maintenance operations, and host helpers.
 - `@spacetimedb/rate-limit/limit` exports standalone policy functions.
 - `@spacetimedb/rate-limit` re-exports the supported helper surface.

@@ -1,5 +1,5 @@
-export { default } from './mounted/index';
-export { installPresence } from './mounted/install';
+export { default } from './submodule/index';
+export { installPresence } from './submodule/install';
 export {
   add_presence_admin,
   clear_presence,
@@ -8,4 +8,4 @@ export {
   presence_sweep,
   run_sweep,
   update_config,
-} from './mounted/index';
+} from './submodule/index';

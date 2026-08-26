@@ -23,7 +23,7 @@ Bytes live in the module's `file` table as transactional application state.
 
 ### Integrate into an application
 
-For a new application, mount the submodule first. The host must derive an owner
+For a new application, register the submodule first. The host must derive an owner
 from its own identity or session model and expose narrow wrappers around the
 file helpers. Keep the file table private.
 
@@ -77,7 +77,7 @@ lookups, `HEAD`, and conditional `304` responses therefore avoid reading or
 copying the blob. `GET` and authenticated byte procedures load it after access
 checks pass.
 
-The mounted table is private. Host views should return `fileSummary` rows so
+The submodule table is private. Host views should return `fileSummary` rows so
 subscriptions carry safe metadata fields.
 
 The package also exports `fileSummary`, a safe metadata shape that omits
@@ -102,11 +102,11 @@ conn.subscriptionBuilder().subscribe([tables.myFileSummaries]);
 
 ## API
 
-Each `*Impl` takes `(ctx, args, owner)` so the submodule stays identity-scheme-agnostic. Wrap them with thin reducers in your app module that derive `owner` however you want (caller `Identity`, a session lookup through a mounted auth namespace, etc).
+Each `*Impl` takes `(ctx, args, owner)` so the submodule stays identity-scheme-agnostic. Wrap them with thin reducers in your app module that derive `owner` however you want (caller `Identity`, a session lookup through an Auth submodule namespace, etc).
 
 Package entrypoints:
 
-- `@spacetimedb/files/submodule` supplies the mountable namespace and all
+- `@spacetimedb/files/submodule` supplies the submodule namespace and all
   host integration helpers.
 - `@spacetimedb/files` exports the lower-level rows, validation,
   procedures, constants, and HTTP handler.
@@ -201,7 +201,7 @@ const serveFile = createFileHttpHandler({
 });
 ```
 
-Mount it under a route like `/files/*` from your module. The handler:
+Register it under a route such as `/files/*` from your module. The handler:
 
 - Accepts `GET` and `HEAD` only; everything else 405s.
 - Reads the stable file ID from `?id=<fileId>`.
@@ -250,7 +250,7 @@ pnpm run typecheck
 Build the
 [example host module](./example/spacetimedb/)
 to verify the
-mounted submodule and generated bindings together.
+registered submodule and generated bindings together.
 
 ## License
 

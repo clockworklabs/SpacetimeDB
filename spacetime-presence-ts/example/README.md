@@ -176,7 +176,7 @@ For a release smoke test, use two accounts and verify:
 ## Important files
 
 - `spacetimedb/src/index.ts` - host schema, scoped views, chat operations, and
-  mounted submodule wiring.
+  submodule registration.
 - `server.ts` - environment loading, auth bootstrap, and HTTP proxy.
 - `src/app.ts` - browser connection, linked-session setup, and subscriptions.
 - `public/index.html` - the example interface.

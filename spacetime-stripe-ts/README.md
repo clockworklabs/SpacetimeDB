@@ -24,7 +24,7 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Mount Stripe in the application schema and initialize its private tables. The
+Register Stripe in the application schema and initialize its private tables. The
 host must place authorization in front of customer, Checkout, portal, and
 billing procedures and expose only caller-scoped billing views:
 
@@ -104,7 +104,7 @@ spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status
 The Stripe secret stays in private module state. Every provider-backed,
 billing-state, configuration, and query procedure is admin-gated. A host module
 can perform application-specific authorization and then call the helpers through
-its mounted `ctx.as.stripe` context.
+its submodule-scoped `ctx.as.stripe` context.
 
 ## Private tables
 
@@ -174,7 +174,7 @@ views in the host module when a UI needs a larger history.
 Package entrypoints:
 
 - `@spacetimedb/stripe` can run as a standalone billing database.
-- `@spacetimedb/stripe/submodule` supplies mounted billing, webhook,
+- `@spacetimedb/stripe/submodule` supplies submodule billing, webhook,
   configuration, and query operations.
 
 ## Webhook events handled

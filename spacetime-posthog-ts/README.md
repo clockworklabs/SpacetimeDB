@@ -23,7 +23,7 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Mount PostHog in the host schema. Configure its private credentials through an
+Register PostHog in the host schema. Configure its private credentials through an
 administrator-only startup path, enqueue events from reducers, and perform
 network delivery from procedures:
 
@@ -114,21 +114,21 @@ The submodule stores operational state in private tables and exposes admin-gated
 - `posthog_outbox_admin` and `posthog_delivery_log_admin` expose bounded,
   administrator-scoped operational views.
 
-Mounted state exports include `posthogOutbox`, `posthogDeliveryLog`,
+Submodule state exports include `posthogOutbox`, `posthogDeliveryLog`,
 `posthogDeliveryStats`, and `OutboxStatus` for host-defined views and operator
 workflows.
 
-These mounted operations are admin-only because they can spend provider quota.
+These submodule operations are admin-only because they can spend provider quota.
 Expose product-specific host operations that derive the distinct ID and event or
 flag name from authorized application state.
 
 **Reducer-safe queueing**
 
 - `enqueue_event({ distinctId, event, propertiesJson, idempotencyKey })` writes a
-  durable event intent inside a reducer transaction. The mounted reducer is
+  durable event intent inside a reducer transaction. The submodule reducer is
   admin-only; host reducers should call `enqueueEvent` after authorization.
 
-For mounted modules, import `@spacetimedb/posthog/submodule` and call `enqueueEvent(ctx.as.posthog, ...)` from reducers or `captureNow(ctx.as.posthog, ...)` / `flushOutbox(ctx.as.posthog, ...)` from procedures.
+For host modules, import `@spacetimedb/posthog/submodule` and call `enqueueEvent(ctx.as.posthog, ...)` from reducers or `captureNow(ctx.as.posthog, ...)` / `flushOutbox(ctx.as.posthog, ...)` from procedures.
 
 The client calls the business operation. Analytics remain a server-side
 concern:
@@ -144,7 +144,7 @@ generic event names inside the module.
 Package entrypoints:
 
 - `@spacetimedb/posthog` can run as a standalone analytics database.
-- `@spacetimedb/posthog/submodule` supplies mounted state, configuration,
+- `@spacetimedb/posthog/submodule` supplies submodule state, configuration,
   delivery helpers, and admin views.
 
 ## Architecture notes

@@ -23,7 +23,7 @@ This submodule can be published directly as its own SpacetimeDB module from the 
 
 ### Integrate into an application
 
-Mount Resend in the host schema, initialize its private state, and expose only
+Register Resend in the host schema, initialize its private state, and expose only
 application-authorized send procedures and caller-scoped delivery views:
 
 ```ts
@@ -104,7 +104,7 @@ fields are capped at 320 characters, subjects at 998 characters, HTML and text
 at 200,000 characters each, and tag or header JSON at 16 KiB. Control characters
 in address, subject, and schedule fields are rejected before provider HTTP.
 
-Mounted host modules should prefer the helper export:
+Host modules should prefer the submodule helper export:
 
 ```ts
 import * as resend from '@spacetimedb/resend/submodule';
@@ -158,7 +158,7 @@ caller-scoped, paginated views for product-facing history.
 Package entrypoints:
 
 - `@spacetimedb/resend` can run as a standalone email database.
-- `@spacetimedb/resend/submodule` supplies mounted configuration, delivery,
+- `@spacetimedb/resend/submodule` supplies submodule configuration, delivery,
   webhook, and query helpers.
 
 ## Webhook events handled

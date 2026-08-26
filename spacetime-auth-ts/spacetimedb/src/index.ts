@@ -1,2 +1,2 @@
-export { default } from '../../src/mounted/index';
-export * from '../../src/mounted/index';
+export { default } from '../../src/submodule/index';
+export * from '../../src/submodule/index';

@@ -1,7 +1,7 @@
 # Vault files example
 
 Vault is a small Drive-style file manager built with
-[`@spacetimedb/files`](../). File bytes and file records live in the mounted
+[`@spacetimedb/files`](../). File bytes and file records live in the namespaced
 Files submodule; the host module adds identity-owned folder metadata and scoped
 views.
 
@@ -157,7 +157,7 @@ For a release smoke test, use two independent browser identities and verify:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - Files mount, folders, scoped views, and private reads.
+- `spacetimedb/src/index.ts` - Files registration, folders, scoped views, and private reads.
 - `src/app.ts` - file-manager state, uploads, previews, downloads, and subscriptions.
 - `server.ts` - static development server and public-file proxy.
 - `public/index.html` - Vault interface.

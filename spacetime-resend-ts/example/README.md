@@ -123,7 +123,7 @@ Delivered, Opened, Clicked, Bounced, and Complaint transitions cannot arrive.
 Browser
   -> send_dispatch host procedure
   -> recipient allowlist and caller/global quotas
-  -> mounted resend namespace
+  -> resend submodule namespace
   -> Resend API
 
 Resend webhook

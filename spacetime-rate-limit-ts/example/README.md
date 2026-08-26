@@ -2,7 +2,7 @@
 
 Powerhouse is an arcade-style reactor game built with
 [`@spacetimedb/rate-limit`](../). The browser requests actions; SpacetimeDB
-owns energy, heat, upgrades, events, and the fixed-window limiter buckets mounted
+owns energy, heat, upgrades, events, and the fixed-window limiter buckets registered
 under the `rateLimit` namespace.
 
 ## What this demonstrates
@@ -86,7 +86,7 @@ Each protected action calls
 `rateLimit.consumeRateLimit(ctx.as.rateLimit, ...)` with a server-selected scope,
 an actor key derived from `ctx.sender`, a limit, a window, and an optional cost.
 The returned result includes remaining capacity, reset time, and retry delay.
-The mounted `consume` procedure is reserved for administrators; normal gameplay
+The submodule `consume` procedure is reserved for administrators; normal gameplay
 uses the lower-level helper inside the host procedure's transaction.
 
 The submodule implements fixed-window limiting. Application heat and cooldown
@@ -111,7 +111,7 @@ subscribed server timestamps are authoritative.
 
 ## Administration
 
-A fresh publish seeds the publisher as the initial mounted Rate Limit
+A fresh publish seeds the publisher as the initial Rate Limit submodule
 administrator. The debug drawer remains empty and maintenance calls fail for an
 ordinary browser identity. To exercise those controls locally, grant the browser
 identity from the logged-in owner identity:
@@ -160,7 +160,7 @@ For a release smoke test:
 
 - **Actions fail immediately:** inspect both limiter status and reactor heat; they
   are independent rejection paths.
-- **Debug data is empty:** grant the connected browser identity mounted Rate Limit
+- **Debug data is empty:** grant the connected browser identity Rate Limit submodule
   administrator access.
 - **State is stale:** confirm `STDB_URI` targets the database published by
   the `local` server registration.
@@ -169,7 +169,7 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - submodule mount, reactor rules, scoped views, and
+- `spacetimedb/src/index.ts` - submodule registration, reactor rules, scoped views, and
   bounded maintenance operations.
 - `src/app.ts` - connection, procedures, subscriptions, and UI bridge.
 - `server.ts` - static development server and browser-safe configuration.

@@ -21,7 +21,7 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-Mount the submodule in the host schema and install its private state from the
+Register the submodule in the host schema and install its private state from the
 host lifecycle hook:
 
 ```ts
@@ -81,7 +81,7 @@ Key lifecycle operations:
 - `sweep_api_key_usage({ maxAgeSeconds, maxRows })` removes a bounded audit
   batch.
 - `createApiKey`, `rotateApiKey`, `revokeApiKey`, and `verifyApiKey` are host
-  helper functions for mounted applications.
+  helper functions for host applications.
 - `add_admin_identity({ identity })` and `remove_admin_identity({ identity })`
   manage the administrator allowlist.
 
@@ -90,7 +90,7 @@ Each owner may have up to 50 active, unexpired keys. Expiration may be set up to
 
 ## Verify in a host app
 
-Mounted apps can use the transactional helper directly:
+Host applications can use the transactional helper directly:
 
 ```ts
 const result = apiKeys.verifyApiKey(ctx.as.apiKeys, {
@@ -149,7 +149,7 @@ uses the verified subject from the key record as its owner.
 Package entrypoints:
 
 - `@spacetimedb/api-keys` supports a standalone API-key database.
-- `@spacetimedb/api-keys/submodule` supplies the mountable namespace,
+- `@spacetimedb/api-keys/submodule` supplies the submodule namespace,
   helpers, operations, and views for host applications.
 
 ## Tables and views

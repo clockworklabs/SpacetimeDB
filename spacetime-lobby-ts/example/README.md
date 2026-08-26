@@ -1,7 +1,7 @@
 # Starclash lobby example
 
 Starclash is a ranked one-on-one spaceship duel built with
-[`@spacetimedb/lobby`](../). The mounted Lobby submodule owns queue tickets,
+[`@spacetimedb/lobby`](../). The Lobby submodule owns queue tickets,
 rooms, seats, and ratings; the host module owns ship selection, duel state,
 maneuvers, combat resolution, and round logs.
 
@@ -109,7 +109,7 @@ choose for the opponent, resolve an unrelated room, or read another room merely
 by changing a client query.
 
 This example uses anonymous SpacetimeDB identities. Display names are profile
-metadata. Applications that need verified accounts can mount Auth.
+metadata. Applications that need verified accounts can register Auth.
 
 ## Security and deployment boundaries
 
@@ -157,7 +157,7 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - Lobby mount, scoped views, matchmaking, combat,
+- `spacetimedb/src/index.ts` - Lobby registration, scoped views, matchmaking, combat,
   ratings, and AI fallback.
 - `spacetimedb/src/catalog.ts` - ship and maneuver definitions used to seed the
   public catalogs.

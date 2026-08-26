@@ -114,7 +114,7 @@ function requireStdb(): DbConnection {
 
 const app = express();
 
-// Webhook uses RAW body (svix signs raw bytes); mounted before express.json().
+// Webhook uses the raw body because Svix signs raw bytes. Register it before express.json().
 app.post(
   '/webhook/resend',
   express.raw({ type: '*/*', limit: '512kb' }),

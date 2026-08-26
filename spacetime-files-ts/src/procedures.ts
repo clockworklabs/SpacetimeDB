@@ -55,7 +55,7 @@ const VALID_VISIBILITIES = new Set([
   FILE_VISIBILITY_PUBLIC,
 ]);
 
-// Direct `file` table or mounted-submodule layout, as in handlers.ts.
+// Direct `file` table or submodule namespace layout, as in handlers.ts.
 function fileTable(db: FileDbLike): FileTable {
   const table = db.file ?? db.files?.file;
   if (!table) throw new Error('files.file table is unavailable');

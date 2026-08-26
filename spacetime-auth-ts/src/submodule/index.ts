@@ -1,4 +1,4 @@
-import { schema, t, table, Router } from 'spacetimedb/server';
+import { schema, t, table } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import { installAuth } from './install';
 import {
@@ -29,30 +29,8 @@ import {
   listMySessions,
   revokeMySessionParams,
   revokeMySession,
-  passwordSignupHandler,
-  passwordLoginHandler,
-  meHandler,
-  logoutHandler,
-  refreshHandler,
-  googleStartHandler,
-  googleCallbackHandler,
-  githubStartHandler,
-  githubCallbackHandler,
-  makeForgotPasswordHandler,
-  resetPasswordHandler,
-  makeEmailVerifyRequestHandler,
-  makeEmailVerifyHandler,
   getCallerUserId,
-  type SendMailFn,
-  type MailParams,
 } from '../index';
-
-// Development mailer that logs messages to the SpacetimeDB console.
-const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
-  console.log(
-    `[mail] to=${params.to} subject=${params.subject}\n${params.text}`
-  );
-};
 
 const authSweeperTick = table(
   { name: 'auth_sweeper_tick' },
@@ -180,69 +158,4 @@ export const whoami = spacetimedb.procedure(
       senderIdentityHex: ctx.sender.toHexString(),
     };
   }
-);
-
-const localAuthHttp = { secureCookies: false } as const;
-
-export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
-  passwordSignupHandler(ctx, req, localAuthHttp)
-);
-export const authPasswordLogin = spacetimedb.httpHandler((ctx, req) =>
-  passwordLoginHandler(ctx, req, localAuthHttp)
-);
-export const authMe = spacetimedb.httpHandler(meHandler);
-export const authLogout = spacetimedb.httpHandler((ctx, req) =>
-  logoutHandler(ctx, req, localAuthHttp)
-);
-export const authRefresh = spacetimedb.httpHandler((ctx, req) =>
-  refreshHandler(ctx, req, localAuthHttp)
-);
-export const authGoogleStart = spacetimedb.httpHandler((ctx, req) =>
-  googleStartHandler(ctx, req, localAuthHttp)
-);
-export const authGoogleCallback = spacetimedb.httpHandler((ctx, req) =>
-  googleCallbackHandler(ctx, req, localAuthHttp)
-);
-export const authGithubStart = spacetimedb.httpHandler((ctx, req) =>
-  githubStartHandler(ctx, req, localAuthHttp)
-);
-export const authGithubCallback = spacetimedb.httpHandler((ctx, req) =>
-  githubCallbackHandler(ctx, req, localAuthHttp)
-);
-
-const forgotHandler = makeForgotPasswordHandler({
-  sendMail: consoleSendMail,
-  appName: 'auth-ts',
-});
-const verifyRequestHandler = makeEmailVerifyRequestHandler({
-  sendMail: consoleSendMail,
-  appName: 'auth-ts',
-});
-const verifyHandler = makeEmailVerifyHandler({
-  successRedirect: '/?verified=1',
-});
-
-export const authPasswordForgot = spacetimedb.httpHandler(forgotHandler);
-export const authPasswordReset = spacetimedb.httpHandler((ctx, req) =>
-  resetPasswordHandler(ctx, req, localAuthHttp)
-);
-export const authEmailVerifyRequest =
-  spacetimedb.httpHandler(verifyRequestHandler);
-export const authEmailVerify = spacetimedb.httpHandler(verifyHandler);
-
-export const router = spacetimedb.httpRouter(
-  new Router()
-    .post('/auth/password/signup', authPasswordSignup)
-    .post('/auth/password/login', authPasswordLogin)
-    .post('/auth/session/refresh', authRefresh)
-    .get('/auth/me', authMe)
-    .post('/auth/logout', authLogout)
-    .get('/auth/google/start', authGoogleStart)
-    .get('/auth/google/callback', authGoogleCallback)
-    .get('/auth/github/start', authGithubStart)
-    .get('/auth/github/callback', authGithubCallback)
-    .post('/auth/password/forgot', authPasswordForgot)
-    .post('/auth/password/reset', authPasswordReset)
-    .post('/auth/email/verify-request', authEmailVerifyRequest)
-    .get('/auth/email/verify', authEmailVerify)
 );

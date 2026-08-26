@@ -187,7 +187,7 @@ spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT * FR
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - auth mount, scoped views, notes, and HTTP handlers.
+- `spacetimedb/src/index.ts` - Auth registration, scoped views, notes, and HTTP handlers.
 - `server.ts` - startup configuration, static serving, and auth proxy.
 - `src/app.ts` - auth calls, connection linking, subscriptions, and reconnects.
 - `public/index.html` - notes and account-management interface.

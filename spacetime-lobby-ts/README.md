@@ -4,7 +4,7 @@ SpacetimeDB lobby and matchmaking submodule.
 
 This package provides queue tickets, deterministic same-pool matchmaking,
 ranked two-player results with Elo ratings, rooms, seats, lifecycle state,
-admin observability, and mountable helpers for host modules. Host applications
+admin observability, and submodule helpers for host modules. Host applications
 define parties, backfill, and product-specific match rules.
 
 ## Install
@@ -22,7 +22,7 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-For a host application, mount the namespace and keep the lifecycle hook in the
+For a host application, register the namespace and keep the lifecycle hook in the
 host module:
 
 ```ts
@@ -38,7 +38,7 @@ export const init = spacetimedb.init(ctx => {
 export default spacetimedb;
 ```
 
-Mounted host modules can call helpers with an explicit subject after they have
+Host modules can call submodule helpers with an explicit subject after they have
 validated auth or mapped the SpacetimeDB identity to an application user ID:
 
 ```ts
@@ -133,13 +133,13 @@ Host helper API:
 - Room lifecycle: `joinRoom`, `leaveRoom`, and `closeRoom`.
 - Ranking: `reportMatchResult`.
 
-Mounted administrator operations include `set_rating`, `expire_tickets`, and
+Submodule administrator operations include `set_rating`, `expire_tickets`, and
 `update_config`.
 
 Package entrypoints:
 
 - `@spacetimedb/lobby` can run as a standalone Lobby database.
-- `@spacetimedb/lobby/submodule` supplies the mounted namespace and host
+- `@spacetimedb/lobby/submodule` supplies the submodule namespace and host
   helpers.
 
 ## Matching
@@ -156,7 +156,7 @@ Matching is deterministic:
 the metadata when applying product-specific rules.
 
 Ranked queues use a 1,000 starting rating and a widening rating band: 100
-points initially, 50 more for each 10 seconds waited, capped at 800. A mounted
+points initially, 50 more for each 10 seconds waited, capped at 800. A host
 host reports a two-player result through `reportMatchResult` after validating
 its game-specific completion rules. Results are idempotent per room and update
 both players with Elo K=32. The room must be active. Result reporting is a host

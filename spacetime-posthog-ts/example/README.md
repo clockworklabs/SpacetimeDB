@@ -1,6 +1,6 @@
 # Context Cafe
 
-Context Cafe is a small robot café simulator that demonstrates the mounted
+Context Cafe is a small robot café simulator that demonstrates the
 `@spacetimedb/posthog/submodule`. SpacetimeDB owns the catalog, simulation,
 per-browser café state, metrics, and analytics outbox. A dedicated local server
 identity delivers queued events to PostHog; the browser never receives submodule
@@ -97,7 +97,7 @@ and preserves the delivery identity across restarts.
 ```text
 Browser
   -> caller-scoped café reducers and views
-  -> analytics events queued in the mounted posthog namespace
+  -> analytics events queued in the posthog submodule namespace
 
 Authorized example server
   -> subscribes to the admin-scoped outbox view

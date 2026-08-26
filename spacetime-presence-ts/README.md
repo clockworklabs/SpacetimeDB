@@ -138,7 +138,7 @@ Package entrypoints:
 - `@spacetimedb/presence` exports the full standalone helper surface.
 - `@spacetimedb/presence/presence` exports presence operations.
 - `@spacetimedb/presence/tables` exports table builders.
-- `@spacetimedb/presence/submodule` exports the ready-made mounted
+- `@spacetimedb/presence/submodule` exports the ready-made submodule
   namespace.
 
 The ready-made namespace publishes `presence_entry` rows. The `activity` and

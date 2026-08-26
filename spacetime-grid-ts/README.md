@@ -25,7 +25,7 @@ changes like any other table.
 
 ### Integrate into an application
 
-Mount the grid namespace, initialize it from the host lifecycle hook, and wrap
+Register the Grid namespace, initialize it from the host lifecycle hook, and wrap
 its helpers with the application's ownership rules:
 
 ```ts
@@ -132,7 +132,7 @@ Each `*Impl` takes `(ctx, args, owner)`. Wrap them with thin reducers in your mo
 
 Package entrypoints:
 
-- `@spacetimedb/grid/submodule` supplies the mounted tables and helpers.
+- `@spacetimedb/grid/submodule` supplies the submodule tables and helpers.
 - `@spacetimedb/grid` exports the lower-level rows, procedures, and math
   helpers.
 - `@spacetimedb/grid/procedures` exports operation parameters,
@@ -226,7 +226,7 @@ pnpm run typecheck
 Build the
 [example host module](./example/spacetimedb/)
 to verify the
-mounted schema, procedures, and generated bindings.
+submodule schema, procedures, and generated bindings.
 
 ## License
 

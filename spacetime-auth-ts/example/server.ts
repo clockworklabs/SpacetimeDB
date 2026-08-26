@@ -104,7 +104,7 @@ app.get('/auth/password/reset', (_req: Request, res: Response) => {
 // Using app.use as middleware since Express 4's `app.all('/auth/*', ...)` does
 // not match nested paths reliably.
 app.use('/auth', async (req, res) => {
-  const fullPath = `/auth${req.url}`; // req.url here is relative to /auth mount
+  const fullPath = `/auth${req.url}`; // req.url is relative to the /auth route prefix
   const qIdx = fullPath.indexOf('?');
   const path = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
   const query = qIdx < 0 ? '' : fullPath.slice(qIdx);

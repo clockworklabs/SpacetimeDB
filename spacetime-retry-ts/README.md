@@ -27,7 +27,7 @@ example below is a module-definition skeleton: replace `sendReceipt` with an
 idempotent application handler. Keep the registration casts at this SDK/factory
 boundary; application code stays typed through the handler map.
 
-Create the factory before the schema so its tables can be mounted. Register the
+Create the factory before the schema so its tables can be registered. Register the
 scheduled reducer afterward to resolve the scheduled-table reference.
 
 ```ts

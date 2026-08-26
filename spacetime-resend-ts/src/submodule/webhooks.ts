@@ -338,10 +338,10 @@ function webhookJson(body: unknown, status: number): SyncResponse {
   });
 }
 
-// Native SpacetimeDB HTTP route handler. Host modules mount this on a router so
-// Resend posts directly to the database. No external relay, no shim.
+// Native SpacetimeDB HTTP route handler. Host modules register it on a router so
+// Resend can post directly to the database.
 export function makeResendWebhookHandler() {
-  // The host passes the mounted context, so this handler remains schema-agnostic.
+  // The host passes the submodule-scoped context, so this handler remains schema-agnostic.
   return function resendWebhook(
     ctx: HandlerContext<typeof spacetimedb.schemaType>,
     req: Request

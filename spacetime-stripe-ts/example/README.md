@@ -97,7 +97,7 @@ webhook route. The product catalog and storefront are demonstration code.
 
 When no server token is supplied, the server persists one in the ignored
 `.stdb-server-token` file. The logged-in publishing identity registers that server
-identity in both the host store and mounted Stripe administrator registries. The
+identity in both the host store and Stripe submodule administrator registries. The
 browser identity is never granted either role.
 
 ## Startup behavior
@@ -121,13 +121,13 @@ Browser storefront
   -> same-origin /api checkout/customer/validation routes
   -> authorized server identity
   -> host checkout/customer/validation procedures
-  -> mounted stripe namespace
+  -> stripe submodule namespace
   -> Stripe API
 
 Stripe
   -> POST /route/stripe/webhook on the SpacetimeDB database
   -> host router
-  -> mounted stripe webhook handler
+  -> stripe submodule webhook handler
 
 Authorized example server
   -> private configuration and catalog setup during startup

@@ -1,7 +1,7 @@
 # Grid tactics example
 
 This example is a turn-based hex-grid tactics game built with
-[`@spacetimedb/grid`](../). The mounted Grid submodule owns grids, cell
+[`@spacetimedb/grid`](../). The Grid submodule owns grids, cell
 state, and entity positions; the host module owns matches, participants, unit
 statistics, turns, and combat rules.
 
@@ -103,12 +103,12 @@ blocked cells, exceed movement range, attack outside range, or act out of turn.
 ## Architecture and visibility
 
 ```text
-Browser -> /auth/* proxy -> mounted Auth HTTP handlers
+Browser -> /auth/* proxy -> Auth submodule HTTP handlers
 Browser -> linked SpacetimeDB connection
         -> my_matches / my_match_participants
         -> match-scoped my_player_units / my_grid_entities / my_cell_states
 
-Host match rules -> mounted Grid tables and helpers
+Host match rules -> Grid submodule tables and helpers
 ```
 
 The browser first subscribes to caller-scoped match views. It creates a second,

@@ -1,19 +1,6 @@
-export { default } from './mounted/index';
-export { installAuth } from './mounted/install';
+export { default } from './submodule/index';
+export { installAuth } from './submodule/install';
 export {
-  authEmailVerify,
-  authEmailVerifyRequest,
-  authGithubCallback,
-  authGithubStart,
-  authGoogleCallback,
-  authGoogleStart,
-  authLogout,
-  authMe,
-  authPasswordForgot,
-  authPasswordLogin,
-  authPasswordReset,
-  authPasswordSignup,
-  authRefresh,
   auth_sweep,
   get_auth_public_key,
   link_connection,
@@ -25,7 +12,7 @@ export {
   unlink_connection,
   update_profile,
   whoami,
-} from './mounted/index';
+} from './submodule/index';
 
 export {
   setAuthConfigParams,

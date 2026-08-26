@@ -1,6 +1,6 @@
 # @spacetimedb/agents
 
-A ready-to-mount agent submodule and lower-level tools for custom SpacetimeDB
+A prebuilt agent submodule and lower-level tools for custom SpacetimeDB
 TypeScript modules.
 
 ## Install
@@ -17,7 +17,7 @@ For the install-to-publish workflow, see
 
 ## Quick start
 
-Mount the standard submodule when you want an identity-owned chat backend with
+Register the standard submodule when you want an identity-owned chat backend with
 private provider keys, caller-scoped views, typed tools, summaries, embeddings,
 and stale-lock cleanup.
 
@@ -34,7 +34,7 @@ export const init = spacetimedb.init(ctx => {
 ```
 
 `installAgents` makes the installing identity the first Agents administrator
-and schedules stale-lock cleanup. Configure provider keys through the mounted
+and schedules stale-lock cleanup. Configure provider keys through the submodule
 administration operations after publishing the host module.
 
 ## Custom integration
@@ -140,7 +140,7 @@ views.
 Package entrypoints:
 
 - `@spacetimedb/agents` exports the complete public surface.
-- `@spacetimedb/agents/submodule` exports the ready-to-mount Agents schema and
+- `@spacetimedb/agents/submodule` exports the prebuilt Agents schema and
   installer.
 - `@spacetimedb/agents` exports typed agents, tools, and dispatch.
 - `@spacetimedb/agents/providers` exports provider adapters.

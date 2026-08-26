@@ -382,9 +382,7 @@ and the example module. The recovery suite verifies that a procedure commits
 its next calendar fire before external work, survives a host stop, and performs
 at most one catch-up invocation after downtime.
 
-See the
-[browser example](./example/)
-for a complete integration and [`DESIGN.md`](./DESIGN.md) for the transaction model and invariants.
+See the [browser example](./example/) for a complete integration.
 
 ## License
 

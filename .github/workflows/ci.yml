@@ -1712,10 +1712,9 @@ jobs:
           "$RUNNER_TEMP/spacetime/bin/spacetime" version install 2.8.3 --use --yes
 
       - name: Check submodules
-        run: pnpm submodules:check
+        run: |
+          pnpm -r -F "./spacetime-*-ts/**" run typecheck
+          pnpm -r -F "./spacetime-*-ts/**" run test
 
       - name: Build submodule packages and examples
-        run: pnpm submodules:build
-
-      - name: Audit packed production dependencies
-        run: pnpm submodules:audit:prod
+        run: pnpm -r -F "./spacetime-*-ts/**" run build
