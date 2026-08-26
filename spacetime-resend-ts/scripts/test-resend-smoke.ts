@@ -342,10 +342,22 @@ async function main() {
     'list_delivery_events_for_email',
     [quote(em('a'))]
   );
-  if (!clickEvents.includes('email.clicked')) {
+  const clickRows: unknown = JSON.parse(clickEvents);
+  const clickRow = Array.isArray(clickRows)
+    ? clickRows.find(row => Array.isArray(row) && row[2] === 'email.clicked')
+    : undefined;
+  if (!clickRow) {
     throw new Error(`expected click event in delivery log: ${clickEvents}`);
   }
-  if (!clickEvents.includes('spacetimedb.com')) {
+  const detailOption = Array.isArray(clickRow) ? clickRow[4] : undefined;
+  const detailJson =
+    Array.isArray(detailOption) &&
+    detailOption[0] === 0 &&
+    typeof detailOption[1] === 'string'
+      ? detailOption[1]
+      : undefined;
+  const clickDetail = detailJson ? JSON.parse(detailJson) : undefined;
+  if (clickDetail?.link !== 'https://spacetimedb.com') {
     throw new Error(`expected click detail (link) preserved: ${clickEvents}`);
   }
 

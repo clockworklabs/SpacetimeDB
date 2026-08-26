@@ -226,7 +226,7 @@ function buildPostCheckoutUrl(flag) {
 }
 
 function makeDefaultUserId() {
-  return `pilot_${Math.random().toString(36).slice(2, 8)}`;
+  return `pilot_${crypto.randomUUID().slice(0, 8)}`;
 }
 
 function seedDefaultBuyerDetails() {

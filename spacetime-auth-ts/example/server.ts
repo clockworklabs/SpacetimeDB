@@ -7,6 +7,8 @@ import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const SPA_HTML = readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
 const inheritedEnv = new Set(Object.keys(process.env));
 
 function loadEnv(pathname: string, override: boolean): void {
@@ -98,7 +100,7 @@ app.use(express.json({ limit: '256kb' }));
 
 // Register this before the /auth proxy so reset links reach the SPA.
 app.get('/auth/password/reset', (_req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.type('html').send(SPA_HTML);
 });
 
 // Using app.use as middleware since Express 4's `app.all('/auth/*', ...)` does
@@ -172,7 +174,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ ok: true, databaseName: DB_NAME });
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(PUBLIC_DIR));
 
 try {
   console.log(`[auth] bootstrapping env config via ${SPACETIME_BIN}`);

@@ -1571,22 +1571,41 @@ function renderPendingAtts() {
     return;
   }
   root.hidden = false;
-  root.innerHTML = pendingAtts
-    .map(p => {
-      const isImg = p.mimeType.startsWith('image/');
-      const preview = isImg
-        ? `<img src="${p.previewUrl}" alt="${escapeHtml(p.name)}">`
-        : `<div class="pending-att-meta">${escapeHtml(p.name)}</div>`;
-      const meta = isImg
-        ? `<div class="pending-att-meta">${escapeHtml(p.name)} - ${fmtBytes(p.bytes.length)}</div>`
-        : `<div class="pending-att-meta">${fmtBytes(p.bytes.length)}</div>`;
-      return `<div class="pending-att" data-pid="${p.id}">
-      ${preview}
-      ${meta}
-      <button type="button" class="pending-att-x" data-remove="${p.id}" aria-label="Remove">×</button>
-    </div>`;
-    })
-    .join('');
+  root.replaceChildren();
+  for (const attachment of pendingAtts) {
+    const item = document.createElement('div');
+    item.className = 'pending-att';
+    item.dataset.pid = String(attachment.id);
+
+    const isImage = attachment.mimeType.startsWith('image/');
+    if (isImage) {
+      const image = document.createElement('img');
+      image.src = attachment.previewUrl;
+      image.alt = attachment.name;
+      item.append(image);
+    } else {
+      const name = document.createElement('div');
+      name.className = 'pending-att-meta';
+      name.textContent = attachment.name;
+      item.append(name);
+    }
+
+    const metadata = document.createElement('div');
+    metadata.className = 'pending-att-meta';
+    metadata.textContent = isImage
+      ? `${attachment.name} - ${fmtBytes(attachment.bytes.length)}`
+      : fmtBytes(attachment.bytes.length);
+    item.append(metadata);
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'pending-att-x';
+    removeButton.dataset.remove = String(attachment.id);
+    removeButton.setAttribute('aria-label', 'Remove');
+    removeButton.textContent = '×';
+    item.append(removeButton);
+    root.append(item);
+  }
   root.querySelectorAll('[data-remove]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = Number(btn.dataset.remove);

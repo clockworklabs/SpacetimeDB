@@ -494,7 +494,13 @@ function renderRoleBanner(): void {
   const role = myRole();
   const viewOnly = role === 'Viewer';
   banner.className = `role-banner glass ${viewOnly ? 'view-only' : ''}`;
-  banner.innerHTML = `<span class="swatch" style="color:${myColor}"></span>Joined as <b>${escapeHtml(role)}</b>${viewOnly ? ' (view only)' : ''}`;
+  const swatch = document.createElement('span');
+  swatch.className = 'swatch';
+  swatch.style.color = myColor;
+  const roleName = document.createElement('b');
+  roleName.textContent = role;
+  banner.replaceChildren(swatch, 'Joined as ', roleName);
+  if (viewOnly) banner.append(' (view only)');
 }
 
 function renderFeed(): void {
