@@ -38,7 +38,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/postgres",
-        "sourceSha256": "b377bc3163dda751b0364f803a97b086ff38450d795116d1e2b67b18d79fa967"
+        "sourceSha256": "5aa92006dd93fa45715907d7b7f09c5f1a924ac43206208dcacd3f1163f1014d"
       },
       "mutationManifests": [
         "grader/mutations/postgres-ecom-progression-1.0.0.json"

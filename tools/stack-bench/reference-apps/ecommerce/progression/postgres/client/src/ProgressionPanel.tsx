@@ -120,7 +120,7 @@ export function ProgressionPanel({
             </select>
             <select data-testid="support-status-input" value={draft.status}
               onChange={(event) => update("status", event.target.value)}>
-              <option>new</option><option>open</option><option>resolved</option>
+              <option>new</option><option>open</option><option>in progress</option><option>resolved</option>
             </select>
             <button data-testid="support-update" onClick={() => run(() =>
               request(`/api/support/cases/${entry.id}`, "PUT", draft))}>Update</button>
