@@ -202,6 +202,7 @@ export default function ProgressionWorkbench(props: Props) {
           {staffRoles.map(row => (
             <div className="feature-row" data-testid="staff-role-row" data-account-id={String(row.accountId)} key={String(row.accountId)}>
               <span>{row.username}</span>
+              <span data-testid="staff-role-value">{row.role}</span>
               <input data-testid="staff-role-select" defaultValue={row.role} id={`role-${String(row.accountId)}`} />
               <button className="btn btn-ghost btn-sm" data-testid="staff-role-save" onClick={() => reducers?.assignStaffRole({
                 accountId: row.accountId,
@@ -263,7 +264,7 @@ export default function ProgressionWorkbench(props: Props) {
           <input data-testid="schedule-restock-delay" value={restock.delay} onChange={e => setRestock({ ...restock, delay: value(e) })} placeholder="Delay seconds" />
           <button className="btn btn-primary btn-sm" data-testid="schedule-restock-submit"
             data-action-input={JSON.stringify({ item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity), delaySeconds: Number(restock.delay) })}
-            onClick={() => reducers?.scheduleRestock({ itemId: items.find(row => row.name === restock.item)?.id ?? 0n, warehouseId: warehouses.find(row => row.name === restock.warehouse)?.id ?? 0n, quantity: Number(restock.quantity), delaySeconds: Number(restock.delay) })}>Schedule</button>
+            onClick={() => reducers?.scheduleRestock({ item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity), delaySeconds: Number(restock.delay) })}>Schedule</button>
           {restocks.filter(row => row.status === 'pending').map(row => <div data-testid="pending-restock-item" data-entity-id={String(row.id)} key={String(row.id)}>{itemName(row.itemId)} <span data-testid="pending-restock-remaining">{Math.max(0, Number((row.dueMicros - BigInt(Date.now()) * 1000n) / 1_000_000n))}</span><button data-testid="pending-restock-cancel" onClick={() => reducers?.cancelScheduledRestock({ restockId: row.id })}>Cancel</button></div>)}
           {stockLedger.map((row, index) => <div data-testid="stock-ledger-entry" key={index}>{itemName(row.itemId)} +{row.quantity}</div>)}
         </section>

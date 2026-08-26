@@ -283,7 +283,7 @@ export default function AdminPanel({
                 const k = key(item.id, wh.id);
                 return (
                   <tr data-testid="admin-location-row" key={k}
-                    data-restock-input={JSON.stringify({ itemId: Number(item.id), warehouseId: Number(wh.id), quantity: Number(restockInputs[k] || 0) })}>
+                    data-restock-input={JSON.stringify({ itemId: Number(item.id), warehouseId: Number(wh.id), quantity: Number(restockInputs[k] || 1) })}>
                     <td>{item.name}</td>
                     <td>{wh.name}</td>
                     <td data-testid="admin-location-qty">{stockOf(item.id, wh.id)}</td>

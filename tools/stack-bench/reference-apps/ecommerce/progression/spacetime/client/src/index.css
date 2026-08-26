@@ -98,10 +98,11 @@ a {
 /* Header */
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3);
-  padding: 0 var(--sp-4);
-  height: var(--header-h);
+  padding: var(--sp-2) var(--sp-4);
+  min-height: var(--header-h);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -130,6 +131,7 @@ a {
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
 }

@@ -15,12 +15,13 @@ test('Spacetime references use the checked-in release SDK lock', () => {
   ]);
 });
 
-test('legacy Spacetime references refresh locks until they are frozen', () => {
+test('Spacetime references explicitly refresh the local SDK lock until it is frozen', () => {
   assert.deepEqual(referenceInstallSteps({
     kind: 'spacetime', installDirectories: ['client'],
   }), [
     { directory: 'client', command: 'npm',
-      args: ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'] },
+      args: ['install', 'spacetimedb@file:/deps/spacetimedb.tgz', '--package-lock-only',
+        '--ignore-scripts', '--no-audit', '--no-fund'] },
     { directory: 'client', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
   ]);
 });

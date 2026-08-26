@@ -388,9 +388,7 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
 test('replay uses an authenticated named action when the source write is an opaque WebSocket call', async () => {
   const requests = [];
   const source = { name: 'staff', writes: [], received: [],
-    lastWsWrite: { event: 'binary reducer call', body: {} } };
-  const customer = {
-    name: 'customer', writes: [], received: [],
+    lastWsWrite: { event: 'binary reducer call', body: {} },
     loc: (testid, options) => {
       assert.equal(testid, 'order-item');
       assert.deepEqual(options, { contains: 'Webcam' });
@@ -401,7 +399,9 @@ test('replay uses an authenticated named action when the source write is an opaq
           return '52';
         },
       };
-    },
+    } };
+  const customer = {
+    name: 'customer', writes: [], received: [],
     context: { cookies: async () => [] },
     page: { evaluate: async () => 'eyJcustomer.token.value' },
   };
@@ -416,6 +416,7 @@ test('replay uses an authenticated named action when the source write is an opaq
   });
 
   const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: '52', with: '53' },
     namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
     namedTarget: { testid: 'order-item', contains: 'Webcam',
       attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 }, provided);
@@ -423,7 +424,7 @@ test('replay uses an authenticated named action when the source write is an opaq
   assert.deepEqual(replayed.observation,
     { attempted: true, accepted: false, status: 530, namedAction: 'ship' });
   assert.equal(requests[0].url, 'http://127.0.0.1:3000/v1/database/shop/call/ship_order');
-  assert.equal(requests[0].options.body, '[52]');
+  assert.equal(requests[0].options.body, '[53]');
   assert.equal(requests[0].options.headers.Authorization, 'Bearer eyJcustomer.token.value');
 
   const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);

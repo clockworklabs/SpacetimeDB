@@ -42,7 +42,7 @@
                 "id": "linkSupportOrder",
                 "path": "/api/support/cases/{caseId}/order",
                 "method": "POST",
-                "reducer": "linkSupportOrder",
+                "reducer": "link_support_order",
                 "args": [0, 0],
                 "params": [
                   { "name": "caseId", "in": "path", "placeholder": "{caseId}", "wireType": "u64" },

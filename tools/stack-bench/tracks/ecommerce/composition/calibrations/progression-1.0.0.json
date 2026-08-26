@@ -10,9 +10,9 @@
     "path": "../recipes/progression-catalog-1.0.0.json",
     "id": "ecommerce.progression-catalog",
     "version": "1.0.0",
-    "meaningSha256": "19b59e3dd471c0ac4eeee362d3b77dcc0aa83c25bd246b2a4e17849bae38aca4",
-    "executionSha256": "70e53dbd118b43e6d9c5b6f5104289c42e648f597e922f505b905293d2eea7a7",
-    "contentSha256": "bd7428209d8ae6a167c32c47428496c4a110187f6c628dcd988260b17f76219c"
+    "meaningSha256": "dadeae3d0e0b789a476ae44c4239b775b9ba05e2089c95e08ee97f4d1403cb6e",
+    "executionSha256": "4acb2da9340afa3337b55ed20ee5806f8bfd17751339e7c879533c59c51e67be",
+    "contentSha256": "67bcb44f3e10d2ed203da05a211c3ceaa439edd5fc9791b27e05023ba51663d7"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -35,7 +35,7 @@
       {
         "backend": "spacetime",
         "id": "ecommerce-progression-spacetime",
-        "sourceSha256": "a5ec1866dd4fabd915e7b2cd24cc2f4da458125b25a1f91b900e0703997d0096"
+        "sourceSha256": "4bcad5fc080aa7e8ca2dc1c7ea356ba564d3cf5320016c3e01a6c58a37c9a6bd"
       }
     ]
   },
@@ -55,7 +55,7 @@
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-progression-1.0.0.json",
-      "sha256": "232a26728e9dd8fabd91ec856f9788274ba05800b4abedbf282a56fb9ea8aadb",
+      "sha256": "25961b68bdbc7d3fbbf6f4d531e3e38b08575bb48795f9dc134ae1ca3b88196d",
       "referenceId": "ecommerce-progression-spacetime"
     }
   ],

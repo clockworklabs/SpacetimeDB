@@ -40,7 +40,7 @@
           "statedBy": "Customers cannot manage promotion rules.",
           "steps": [
             { "do": "expect", "actor": "customer", "testid": "promotions-link", "absent": true },
-            { "do": "replayAs", "actor": "customer", "from": "staff", "match": "SAVE10", "swap": { "find": "SAVE10", "with": "HACK10" }, "namedAction": { "id": "createPromotion", "path": "/api/promotions", "reducer": "createPromotion", "args": ["", 10, 4070908800000000, 4102444740000000, 2], "params": [{ "name": "code", "in": "body" }, { "name": "discountPercent", "in": "body" }, { "name": "startMicros", "in": "body" }, { "name": "endMicros", "in": "body" }, { "name": "usageLimit", "in": "body" }] }, "namedTarget": { "testid": "promotion-submit", "attribute": "data-promotion-code", "valueType": "string" }, "settleMs": 1500 },
+            { "do": "replayAs", "actor": "customer", "from": "staff", "match": "SAVE10", "swap": { "find": "SAVE10", "with": "HACK10" }, "namedAction": { "id": "createPromotion", "path": "/api/promotions", "reducer": "create_promotion", "args": ["", 10, 4070908800000000, 4102444740000000, 2], "params": [{ "name": "code", "in": "body" }, { "name": "discountPercent", "in": "body" }, { "name": "startMicros", "in": "body" }, { "name": "endMicros", "in": "body" }, { "name": "usageLimit", "in": "body" }] }, "namedTarget": { "testid": "promotion-submit", "attribute": "data-promotion-code", "valueType": "string" }, "settleMs": 1500 },
             { "do": "expectReplayRejected", "actor": "customer" },
             { "do": "expect", "actor": "staff", "testid": "promotion-item", "contains": "HACK10", "absent": true }
           ]

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "a5ec1866dd4fabd915e7b2cd24cc2f4da458125b25a1f91b900e0703997d0096",
+  "fixtureSha256": "4bcad5fc080aa7e8ca2dc1c7ea356ba564d3cf5320016c3e01a6c58a37c9a6bd",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "SpacetimeDB cumulative L1-L3 mutation candidate for all 112 scored checks in ecommerce.progression-catalog@1.0.0. Each deterministic defect binds to the current check-owned scenario and the full progression reference app.",
@@ -1034,8 +1034,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "  (ctx, input) => {\n    requireAdmin(ctx);\n    if (!ctx.db.item.id.find(input.itemId) || !ctx.db.warehouse.id.find(input.warehouseId)) {",
-          "replace": "  (ctx, input) => {\n    // mutant: any signed-in or anonymous caller can schedule work\n    if (!ctx.db.item.id.find(input.itemId) || !ctx.db.warehouse.id.find(input.warehouseId)) {"
+          "find": "  (ctx, input) => {\n    requireAdmin(ctx);\n    const itemName = input.item.trim();\n    const warehouseName = input.warehouse.trim();\n    const item = [...ctx.db.item].find(row => row.name === itemName);\n    const warehouse = [...ctx.db.warehouse].find(row => row.name === warehouseName);",
+          "replace": "  (ctx, input) => {\n    // mutant: any signed-in or anonymous caller can schedule work\n    const itemName = input.item.trim();\n    const warehouseName = input.warehouse.trim();\n    const item = [...ctx.db.item].find(row => row.name === itemName);\n    const warehouse = [...ctx.db.warehouse].find(row => row.name === warehouseName);"
         }
       ]
     },
@@ -1669,7 +1669,7 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId, priority, status });",
+          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });",
           "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: undefined, priority, status });"
         }
       ]
@@ -1684,8 +1684,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId, priority, status });",
-          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId, priority: 'normal', status });"
+          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });",
+          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority: 'normal', status });"
         }
       ]
     },
@@ -1699,8 +1699,8 @@
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId, priority, status });",
-          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId, priority, status: ticket.status });"
+          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });",
+          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status: ticket.status });"
         }
       ]
     },

@@ -1150,9 +1150,13 @@ export const triageSupport = spacetimedb.reducer(
     requireStaffOrAdmin(ctx);
     const ticket = ctx.db.supportTicket.id.find(ticketId);
     if (!ticket) throw new SenderError('Support ticket not found.');
-    const assignee = ctx.db.account.id.find(assigneeId);
-    if (!assignee || (!assignee.isStaff && !assignee.isAdmin)) throw new SenderError('Assignee must be staff.');
-    ctx.db.supportTicket.id.update({ ...ticket, assigneeId, priority, status });
+    let nextAssigneeId = ticket.assigneeId;
+    if (assigneeId !== 0n) {
+      const assignee = ctx.db.account.id.find(assigneeId);
+      if (!assignee || (!assignee.isStaff && !assignee.isAdmin)) throw new SenderError('Assignee must be staff.');
+      nextAssigneeId = assigneeId;
+    }
+    ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });
   }
 );
 
@@ -1245,16 +1249,20 @@ export const requestStockAlert = spacetimedb.reducer({ itemId: t.u64() }, (ctx, 
 });
 
 export const scheduleRestock = spacetimedb.reducer(
-  { itemId: t.u64(), warehouseId: t.u64(), quantity: t.u32(), delaySeconds: t.u32() },
+  { item: t.string(), warehouse: t.string(), quantity: t.u32(), delaySeconds: t.u32() },
   (ctx, input) => {
     requireAdmin(ctx);
-    if (!ctx.db.item.id.find(input.itemId) || !ctx.db.warehouse.id.find(input.warehouseId)) {
+    const itemName = input.item.trim();
+    const warehouseName = input.warehouse.trim();
+    const item = [...ctx.db.item].find(row => row.name === itemName);
+    const warehouse = [...ctx.db.warehouse].find(row => row.name === warehouseName);
+    if (!item || !warehouse) {
       throw new SenderError('Item or warehouse not found.');
     }
     ctx.db.scheduledRestock.insert({
       id: 0n,
-      itemId: input.itemId,
-      warehouseId: input.warehouseId,
+      itemId: item.id,
+      warehouseId: warehouse.id,
       quantity: input.quantity,
       dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,
       status: 'pending',

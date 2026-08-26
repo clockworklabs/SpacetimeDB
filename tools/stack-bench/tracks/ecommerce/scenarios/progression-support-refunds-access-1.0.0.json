@@ -41,7 +41,7 @@
                 "id": "supportRefund",
                 "path": "/api/support/cases/{caseId}/refund",
                 "method": "POST",
-                "reducer": "supportRefund",
+                "reducer": "support_refund",
                 "args": [0],
                 "params": [{ "name": "caseId", "in": "path", "placeholder": "{caseId}", "wireType": "u64" }]
               },

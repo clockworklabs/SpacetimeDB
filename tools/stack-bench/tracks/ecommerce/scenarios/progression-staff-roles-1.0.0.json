@@ -46,7 +46,7 @@
             { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 },
             { "do": "click", "actor": "staff", "testid": "staff-link" },
             { "do": "expect", "actor": "staff", "testid": "staff-role-save", "absent": true },
-            { "do": "replayAs", "actor": "staff", "from": "replayAdmin", "match": "role", "namedAction": { "id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assignStaffRole", "args": [0, "inventory"], "params": [{ "name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "role", "in": "body" }] }, "namedTarget": { "testid": "staff-role-row", "contains": "staff", "attribute": "data-account-id", "valueType": "number" }, "settleMs": 1500 },
+            { "do": "replayAs", "actor": "staff", "from": "replayAdmin", "match": "role", "namedAction": { "id": "assignStaffRole", "path": "/api/staff/:id/role", "method": "PUT", "reducer": "assign_staff_role", "args": [0, "inventory"], "params": [{ "name": "accountId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "role", "in": "body" }] }, "namedTarget": { "testid": "staff-role-row", "contains": "staff", "attribute": "data-account-id", "valueType": "number" }, "settleMs": 1500 },
             { "do": "expectReplayRejected", "actor": "staff" }
           ]
         }

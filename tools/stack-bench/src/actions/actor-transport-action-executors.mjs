@@ -435,7 +435,7 @@ async function replayAs({ input, capabilities, signal }) {
     if (input.namedAction && input.namedTarget) {
       const named = capabilities['named-actions'];
       const action = input.namedAction;
-      const target = actor.loc(input.namedTarget.testid, { contains: input.namedTarget.contains });
+      const target = source.loc(input.namedTarget.testid, { contains: input.namedTarget.contains });
       await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
       const rawValue = await target.getAttribute(input.namedTarget.attribute);
       if (rawValue === null || rawValue === '') {
@@ -443,8 +443,12 @@ async function replayAs({ input, capabilities, signal }) {
           `${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay`);
       }
       let value = rawValue;
+      if (input.swap) {
+        value = value.replaceAll(transport.expand(input.swap.find),
+          transport.expand(input.swap.with));
+      }
       if (input.namedTarget.valueType === 'number') {
-        value = Number(rawValue);
+        value = Number(value);
         if (!Number.isSafeInteger(value)) {
           replayUnavailable(actor,
             `${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"`);
