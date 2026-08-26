@@ -24,10 +24,7 @@ const activeManifest = backend => loadJson(join(ROOT, 'grader', 'mutations',
   `${backend}-ecom-l2-cumulative-1.4.0.json`));
 const activeL1Manifest = backend => loadJson(join(ROOT, 'grader', 'mutations',
   `${backend}-ecom-l1-modular-2.3.0.json`));
-const stableByLegacyTarget = new Map(release.checkCatalog.map(check => [
-  `${check.source}:${check.featureId}:${check.criterionId}`,
-  check.stableKey,
-]));
+const checkByStableKey = new Map(release.checkCatalog.map(check => [check.stableKey, check]));
 const l2CoverageByBackend = new Map();
 
 for (const backend of cases) {
@@ -38,7 +35,7 @@ for (const backend of cases) {
       const qualifiedL1 = activeL1Manifest(backend);
       assert.deepEqual({ schemaVersion: manifest.schemaVersion, status: manifest.status,
         backend: manifest.backend, track: manifest.track, level: manifest.level }, {
-        schemaVersion: 1, status: 'active', backend, track: 'ecommerce', level: 2,
+        schemaVersion: 2, status: 'active', backend, track: 'ecommerce', level: undefined,
       });
       assert.equal(Object.hasOwn(manifest, 'scenario'), false,
         'combined manifests must not rely on a fallback scenario');
@@ -64,14 +61,10 @@ for (const backend of cases) {
 
       const l2StableKeys = new Set();
       for (const mutation of manifest.mutations) {
-        const scenario = mutation.scenario.replaceAll('\\', '/')
-          .replace(/^tracks\/ecommerce\//, '');
-        for (const key of mutationTargetKeys(mutation)) {
-          const separator = key.indexOf(':');
-          const stableKey = stableByLegacyTarget.get(
-            `${scenario}:${key.slice(0, separator)}:${key.slice(separator + 1)}`);
-          assert(stableKey, `${mutation.id} target ${scenario}:${key} is absent from L2 1.4`);
-          if (scenario.startsWith('scenarios/02-')) l2StableKeys.add(stableKey);
+        for (const stableKey of mutationTargetKeys(mutation)) {
+          const check = checkByStableKey.get(stableKey);
+          assert(check, `${mutation.id} target ${stableKey} is absent from L2 1.4`);
+          if (check.source.startsWith('scenarios/02-')) l2StableKeys.add(stableKey);
         }
 
         const path = join(app, ...mutation.file.split('/'));

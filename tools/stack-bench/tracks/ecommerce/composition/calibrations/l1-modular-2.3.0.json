@@ -43,19 +43,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecom-l1-modular-2.3.0.json",
-      "sha256": "db5fbcb1fce6aba53076b8f2c931a397a501c5300b56c3768af71af9d1d5cdbe",
+      "sha256": "9f23dd67a50b62bfc03638db9cb4293dd113d8a92ab2b6342cedc99e1b012121",
       "referenceId": "ecommerce-l1-direct-actions-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecom-l1-modular-2.3.0.json",
-      "sha256": "b44da99067fa67a7bd36173bf0bd841ba31b1cc6abbbe4e2755b5693ea344892",
+      "sha256": "cbc6a9427395218eae34a416247274df034e28abcf0f7d57c89d98af5a5cce1b",
       "referenceId": "ecommerce-l1-direct-actions-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-l1-modular-2.3.0.json",
-      "sha256": "1a04f068ef30beae94dfeb2314ddcde7432227c035cbb10d52de84b8f778bcee",
+      "sha256": "9dd46a676485318c4c4c5660251b6e1805f318227361199a59f06e3e21f86936",
       "referenceId": "ecommerce-l1-direct-actions-spacetime"
     }
   ],

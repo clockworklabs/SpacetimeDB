@@ -1,20 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "active",
   "fixtureSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",
   "backend": "spacetime",
   "track": "ecommerce",
-  "level": 1,
   "scenario": "tracks/ecommerce/scenarios/01-contention.json",
   "note": "Defects injected into the generated SpacetimeDB shop.\n\nAN ASYMMETRY WORTH STATING PLAINLY: the PostgreSQL and MongoDB oversell mutants remove a CONCURRENCY CONTROL — a row lock, a conditional update — and the criterion then catches simultaneous buyers each passing the same availability check. There is no equivalent edit here, because a reducer runs as one transaction and nothing interleaves inside it. The defect those mutants inject is not expressible in this module.\n\nThat is a real structural difference, but 'we could not write the mutant' is weaker evidence than 'we wrote one and it was caught', and it must not be reported as though the criterion had been validated the same way. The mutant below establishes the narrower claim that stock, order-count and restock-rush assertions can detect a purchase path that forgets to reserve inventory. That is an application defect, not a race.\n\nClaim it this way: applications built on the other two backends shipped a stock decrement whose correctness depended on a lock the author had to remember; the reducer model removes that interleaving opportunity. Never claim the other databases cannot do it correctly — every one of these apps could be fixed with one line.",
   "mutations": [
     {
       "id": "purchase-does-not-reserve-stock",
-      "targets": [
-        { "feature": 201, "criterion": "201a" },
-        { "feature": 201, "criterion": "201b" },
-        { "feature": 202, "criterion": "202a" }
-      ],
+      "targets": ["ecommerce.catalog-inventory.last-unit-sold-once.201a","ecommerce.catalog-inventory.last-unit-sold-once.201b","ecommerce.catalog-inventory.restock-during-rush.202a"],
       "desc": "Omit the inventory decrement from the buy reducer. All six purchases can create orders while the three units remain available, and the restock rush gains five rather than net two. The exact targets declare all three direct consequences. This is NOT the concurrency defect the other backends' mutants inject.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -26,9 +21,8 @@
     },
     {
       "id": "checkout-does-not-empty-cart",
-      "kills": ["203b"],
+      "targets": ["ecommerce.cart-checkout.duplicate-checkout.203b"],
       "desc": "Keep checked-out cart lines instead of deleting them. Reducers still serialize, but the second checkout sees the same cart and creates a duplicate order; this proves the idempotency oracle independently of a race that the reducer runtime cannot express.",
-      "breaks": 203,
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {

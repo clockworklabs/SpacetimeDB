@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { agentRecipeIdentity } from '../agents/agent-adapter-contract.mjs';
@@ -17,13 +16,13 @@ function restartSpecFor(args, appDir, track) {
 
 export function mutationControlArgv(args, appDir, url, track) {
   const output = join(args.out, 'mutation-control.json');
-  const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
-  const recipeTask = args.recipeTasks?.get(Number(manifest.level))?.agentRequest
-    ?? args.recipeTasks?.get(Number(manifest.level))?.request ?? null;
+  const recipeTask = args.recipeTasks?.get(Number(args.level))?.agentRequest
+    ?? args.recipeTasks?.get(Number(args.level))?.request ?? null;
   const recipe = agentRecipeIdentity(args.recipe, recipeTask);
   return [join(STACK_BENCH_ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
     '--url', url, '--mutations', args.mutations, '--backend', args.backend,
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
+    '--level', String(args.level),
     '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
     '--parent-attempt-id', args.parentAttemptId,
     ...(args.mutationShardCount === undefined ? [] : [

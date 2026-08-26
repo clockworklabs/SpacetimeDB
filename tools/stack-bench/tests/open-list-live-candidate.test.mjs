@@ -55,7 +55,7 @@ for (const [backend, fixtureSha256] of cases) {
     const manifest = JSON.parse(readFileSync(join(MUTATIONS,
       `${backend}-ecom-l1-modular-2.3.0.json`), 'utf8'));
     const mutations = manifest.mutations.filter(mutation =>
-      mutationTargetKeys(mutation).includes('902:902a'));
+      mutationTargetKeys(mutation).includes('ecommerce.spec.live-state.open-list.902a'));
     assert.equal(manifest.fixtureSha256, fixtureSha256);
     assert.deepEqual(validateMutationDefinitions(mutations, {
       defaultScenario: manifest.scenario,
@@ -63,7 +63,7 @@ for (const [backend, fixtureSha256] of cases) {
     }).issues, []);
     assert.equal(mutations.length, 2);
     assert.deepEqual(mutations.map(mutation => mutationTargetKeys(mutation)),
-      [[`902:902a`], [`902:902a`]]);
+      [[`ecommerce.spec.live-state.open-list.902a`], [`ecommerce.spec.live-state.open-list.902a`]]);
     assert(mutations.some(mutation => /ignore|snapshot/i.test(mutation.desc)),
       'one mutation must omit the committed review from the open reader');
     assert(mutations.some(mutation => /twice/i.test(mutation.desc)),

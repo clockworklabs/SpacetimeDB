@@ -1,29 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "active",
   "fixtureSha256": "359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc",
   "backend": "spacetime",
   "track": "ecommerce",
-  "level": 2,
   "note": "Candidate cumulative L2 1.4 mutation coverage. The first nine mutations carry the qualified L1 2.3 defect shapes onto the exact derived L2 source; the remaining mutations cover L2-specific behavior.",
   "mutations": [
     {
       "id": "purchase-does-not-reserve-stock-last-unit",
       "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
-      "targets": [
-        {
-          "feature": 201,
-          "criterion": "201a"
-        },
-        {
-          "feature": 201,
-          "criterion": "201b"
-        },
-        {
-          "feature": 201,
-          "criterion": "201c"
-        }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.last-unit.201a","ecommerce.spec.concurrency-safety.last-unit.201b","ecommerce.spec.concurrency-safety.last-unit.201c"],
       "desc": "Create purchase orders without reserving stock, proving the focused last-unit stock, order-count, and revenue consequences.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -36,12 +22,7 @@
     {
       "id": "purchase-does-not-reserve-stock-restock-race",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
-      "targets": [
-        {
-          "feature": 202,
-          "criterion": "202a"
-        }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.restock-race.202a"],
       "desc": "Create purchase orders without reserving stock, so the rush ends at start plus five instead of start plus two.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -54,16 +35,7 @@
     {
       "id": "restock-does-not-increase-stock",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
-      "targets": [
-        {
-          "feature": 202,
-          "criterion": "202-control"
-        },
-        {
-          "feature": 202,
-          "criterion": "202a"
-        }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.restock-race.202-control","ecommerce.spec.concurrency-safety.restock-race.202a"],
       "desc": "The restock reducer accepts the request but preserves existing stock, breaking both the ordinary restock precondition and the race total.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -76,12 +48,7 @@
     {
       "id": "existing-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
-      "targets": [
-        {
-          "feature": 203,
-          "criterion": "203a"
-        }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203a"],
       "desc": "The existing cart row is written back without increasing its quantity.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -94,12 +61,7 @@
     {
       "id": "checkout-does-not-empty-cart",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
-      "targets": [
-        {
-          "feature": 203,
-          "criterion": "203b"
-        }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203b"],
       "desc": "Keep checked-out cart lines so the next serialized checkout creates a duplicate order.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -112,12 +74,7 @@
     {
       "id": "stock-subscription-snapshotted-once",
       "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
-      "targets": [
-        {
-          "feature": 901,
-          "criterion": "901a"
-        }
-      ],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901a"],
       "desc": "Render the first non-empty stock snapshot forever instead of following committed subscription updates.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -134,12 +91,7 @@
     {
       "id": "stock-view-keeps-pre-reconnect-snapshot",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
-      "targets": [
-        {
-          "feature": 901,
-          "criterion": "901d"
-        }
-      ],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901d"],
       "desc": "Continue following stock until the browser goes offline, then retain the last online snapshot after network restoration.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -156,12 +108,7 @@
     {
       "id": "open-review-list-snapshots-on-selection",
       "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
-      "targets": [
-        {
-          "feature": 902,
-          "criterion": "902a"
-        }
-      ],
+      "targets": ["ecommerce.spec.live-state.open-list.902a"],
       "desc": "Snapshot the selected item's reviews when the detail opens instead of following later subscription updates.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -178,12 +125,7 @@
     {
       "id": "open-review-list-renders-each-review-twice",
       "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
-      "targets": [
-        {
-          "feature": 902,
-          "criterion": "902a"
-        }
-      ],
+      "targets": ["ecommerce.spec.live-state.open-list.902a"],
       "desc": "Render every committed review twice in the already-open list.",
       "file": "client/src/components/ItemDetail.tsx",
       "edits": [
@@ -196,12 +138,7 @@
     {
       "id": "cancel-does-not-restore-stock-feature",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 3,
-          "criterion": "3a"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.cancellation-and-return.3a"],
       "desc": "The serialized cancellation reducer changes order state and purchase counts but skips allocation restoration.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -214,16 +151,7 @@
     {
       "id": "cancel-does-not-restore-stock-fresh-client",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
-      "targets": [
-        {
-          "feature": 202,
-          "criterion": "202b"
-        },
-        {
-          "feature": 202,
-          "criterion": "202c"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.stock-conservation.202b","ecommerce.inventory-operations.stock-conservation.202c"],
       "desc": "The serialized cancellation reducer skips allocation restoration, so a fresh client reads the persisted shortfall.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -236,12 +164,7 @@
     {
       "id": "cancel-restores-stock-but-keeps-pending-status",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
-      "targets": [
-        {
-          "feature": 3,
-          "criterion": "3b"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.cancellation-and-return.3b"],
       "desc": "The serialized cancellation reducer restores allocations but writes pending back to order history.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -254,12 +177,7 @@
     {
       "id": "cancelled-order-remains-in-revenue-feature",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 3,
-          "criterion": "3a"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.cancellation-and-return.3a"],
       "desc": "The admin revenue view includes cancelled orders even though cancellation otherwise succeeds.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -272,12 +190,7 @@
     {
       "id": "cancelled-order-remains-in-revenue-invariant",
       "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
-      "targets": [
-        {
-          "feature": 203,
-          "criterion": "203a"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.refund-accounting.203a"],
       "desc": "The admin revenue view includes cancelled orders even though cancellation otherwise succeeds.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -290,12 +203,7 @@
     {
       "id": "customer-can-transfer-stock-focused",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
-      "targets": [
-        {
-          "feature": 201,
-          "criterion": "201a"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.operator-authorization.201a"],
       "desc": "The transfer reducer drops its administrator role gate.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -308,12 +216,7 @@
     {
       "id": "customer-can-change-price-focused",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
-      "targets": [
-        {
-          "feature": 201,
-          "criterion": "201b"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.operator-authorization.201b"],
       "desc": "The price reducer drops its administrator role gate.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -326,12 +229,7 @@
     {
       "id": "customer-can-ship-order-direct-1-1",
       "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
-      "targets": [
-        {
-          "feature": 201,
-          "criterion": "201c"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.operator-authorization.201c"],
       "desc": "The shipping reducer drops its staff role check while retaining pending-state validation.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -344,12 +242,7 @@
     {
       "id": "customer-can-cancel-foreign-order-1-1",
       "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
-      "targets": [
-        {
-          "feature": 204,
-          "criterion": "204a"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.order-owner.204a"],
       "desc": "Cancellation bypasses the owner helper while retaining missing-order and pending-state validation.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -362,12 +255,7 @@
     {
       "id": "queue-depth-lags-one-order",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 1,
-          "criterion": "1a"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.fulfilment-queue.1a"],
       "desc": "The reactive queue renders every order but its visible depth remains one behind.",
       "file": "client/src/components/FulfilmentPanel.tsx",
       "edits": [
@@ -380,12 +268,7 @@
     {
       "id": "ship-acknowledges-without-changing-status",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
-      "targets": [
-        {
-          "feature": 1,
-          "criterion": "1c"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.fulfilment-queue.1c"],
       "desc": "The serialized shipping reducer accepts the call but writes pending back to the order.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -398,12 +281,7 @@
     {
       "id": "customer-sees-fulfilment-navigation",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 1,
-          "criterion": "1d"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.fulfilment-queue.1d"],
       "desc": "The fulfilment navigation is shown to every signed-in account instead of only staff and administrators.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -416,12 +294,7 @@
     {
       "id": "customer-can-ship-order-focused",
       "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
-      "targets": [
-        {
-          "feature": 1,
-          "criterion": "1e"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.fulfilment-queue.1e"],
       "desc": "The shipping reducer drops the staff role check while retaining the pending-order guard.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -434,16 +307,7 @@
     {
       "id": "transfer-debits-source-without-crediting-existing-destination",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
-      "targets": [
-        {
-          "feature": 2,
-          "criterion": "2a"
-        },
-        {
-          "feature": 202,
-          "criterion": "202a"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.warehouse-transfer.2a","ecommerce.inventory-operations.stock-conservation.202a"],
       "desc": "A transfer debits the source row but writes the existing destination quantity back unchanged, violating both directional movement and total conservation inside the serialized reducer.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -456,12 +320,7 @@
     {
       "id": "transfer-warehouse-totals-omit-destination-credit",
       "scenario": "tracks/ecommerce/scenarios/02-transfer-totals-1.4.0.json",
-      "targets": [
-        {
-          "feature": 2,
-          "criterion": "2b"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.warehouse-transfer.2b"],
       "desc": "The serialized transfer debits the source but writes the existing destination quantity back unchanged.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -474,12 +333,7 @@
     {
       "id": "transfer-overdraft-guard-removed",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
-      "targets": [
-        {
-          "feature": 2,
-          "criterion": "2c"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.warehouse-transfer.2c"],
       "desc": "The serialized reducer no longer rejects insufficient source stock and commits negative source quantity.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -492,12 +346,7 @@
     {
       "id": "catalog-search-keeps-pre-change-price",
       "scenario": "tracks/ecommerce/scenarios/02-live-price-1.4.0.json",
-      "targets": [
-        {
-          "feature": 4,
-          "criterion": "4b"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.price-history.4b"],
       "desc": "The search result renderer caches each item's first visible price and ignores later live price updates.",
       "file": "client/src/components/ItemCard.tsx",
       "edits": [
@@ -518,12 +367,7 @@
     {
       "id": "open-cart-keeps-pre-change-price",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 4,
-          "criterion": "4c"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.price-history.4c"],
       "desc": "The open-cart memo ignores reactive item-table price updates while checkout still reads the current server price.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -536,12 +380,7 @@
     {
       "id": "low-stock-excludes-boundary-ten",
       "scenario": "tracks/ecommerce/scenarios/02-low-stock-1.4.0.json",
-      "targets": [
-        {
-          "feature": 5,
-          "criterion": "5a"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.operational-views.5a"],
       "desc": "The reactive low-stock view uses a strict boundary and omits items with exactly ten units.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -554,12 +393,7 @@
     {
       "id": "category-totals-ignore-pending-purchases",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 5,
-          "criterion": "5b"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.operational-views.5b"],
       "desc": "The category totals view includes only shipped orders, so a newly accepted pending purchase is absent.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -572,12 +406,7 @@
     {
       "id": "recommendations-ignore-pending-purchases",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "targets": [
-        {
-          "feature": 5,
-          "criterion": "5c"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.operational-views.5c"],
       "desc": "The personal recommendation view derives categories only from shipped orders, so a new pending purchase has no influence.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -590,12 +419,7 @@
     {
       "id": "cancelled-purchases-remain-in-best-sellers",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
-      "targets": [
-        {
-          "feature": 5,
-          "criterion": "5d"
-        }
-      ],
+      "targets": ["ecommerce.inventory-operations.operational-views.5d"],
       "desc": "Cancellation leaves the purchase count unchanged, so the cancelled product remains in signed-out best sellers.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -608,12 +432,7 @@
     {
       "id": "catalog-price-rewrites-receipts",
       "scenario": "tracks/ecommerce/scenarios/02-paid-price-history-1.4.0.json",
-      "targets": [
-        {
-          "feature": 4,
-          "criterion": "4a"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.price-history.4a"],
       "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals inside the reducer transaction.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -626,12 +445,7 @@
     {
       "id": "catalog-price-rewrites-earned-revenue",
       "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
-      "targets": [
-        {
-          "feature": 203,
-          "criterion": "203b"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.refund-accounting.203b"],
       "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals and revenue inside the reducer transaction.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
@@ -644,12 +458,7 @@
     {
       "id": "queue-warehouse-reports-west",
       "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse-1.4.0.json",
-      "targets": [
-        {
-          "feature": 1,
-          "criterion": "1b"
-        }
-      ],
+      "targets": ["ecommerce.operations-access.fulfilment-queue.1b"],
       "desc": "The queue renders West for the deterministic Desk Lamp allocation even though the order reserved stock in East.",
       "file": "client/src/components/FulfilmentPanel.tsx",
       "edits": [
@@ -662,12 +471,7 @@
     {
       "id": "returned-line-marker-omitted",
       "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
-      "targets": [
-        {
-          "feature": 3,
-          "criterion": "3c"
-        }
-      ],
+      "targets": ["ecommerce.returns-pricing.cancellation-and-return.3c"],
       "desc": "A returned order line keeps its persisted returned state, restored stock, and adjusted revenue but omits the visible returned marker.",
       "file": "client/src/components/OrdersPanel.tsx",
       "edits": [

@@ -101,8 +101,16 @@ export function validateReferenceRegistry(registry, { root = ROOT } = {}) {
       if (!existsSync(full)) issues.push(`${label}: missing mutation manifest ${manifestPath}`);
       else {
         const manifest = JSON.parse(readFileSync(full, 'utf8'));
-        if (manifest.backend !== fixture.backend || manifest.track !== fixture.track || Number(manifest.level) !== fixture.level) {
-          issues.push(`${label}: ${manifestPath} targets a different backend/track/level`);
+        if (fixture.status === 'active' || fixture.status === 'candidate') {
+          if (manifest.schemaVersion !== 2) {
+            issues.push(`${label}: ${manifestPath} must use mutation schema 2`);
+          }
+          if (manifest.level !== undefined) {
+            issues.push(`${label}: ${manifestPath} must not own a level`);
+          }
+        }
+        if (manifest.backend !== fixture.backend || manifest.track !== fixture.track) {
+          issues.push(`${label}: ${manifestPath} targets a different backend or track`);
         }
         const expectedStatus = fixture.status === 'active' ? 'active'
           : fixture.status === 'candidate' ? 'candidate'

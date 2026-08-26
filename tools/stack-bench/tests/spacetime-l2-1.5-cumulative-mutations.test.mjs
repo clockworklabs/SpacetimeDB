@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { mutationFileEdits, mutationScenario, mutationTargetKeys,
+import { mutationFileEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { loadReferenceRegistry, prepareReferenceFixtureSource, selectReferenceFixture }
   from '../src/references/reference-fixtures.mjs';
@@ -21,10 +21,7 @@ const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
   'l2-standard-1.5.0.json'), { trackRoot: TRACK });
 const scored = release.checkCatalog.filter(check => check.points > 0);
-const checkByTarget = new Map(release.checkCatalog.map(check => [
-  `${check.source}:${check.featureId}:${check.criterionId}`,
-  check,
-]));
+const checkByTarget = new Map(release.checkCatalog.map(check => [check.stableKey, check]));
 const SERVER_GUARANTEES = new Set([
   'ecommerce.spec.concurrency-safety.stock-limit.3d',
   'ecommerce.feature.cart-checkout.cart.4d',
@@ -68,14 +65,7 @@ test('the order ownership defect exposes both orders and their line items', () =
 });
 
 function resolveTargets(mutation) {
-  const source = mutationScenario(manifest, mutation).replaceAll('\\', '/')
-    .replace(/^tracks\/ecommerce\//, '');
-  return mutationTargetKeys(mutation).map(target => {
-    const separator = target.indexOf(':');
-    return checkByTarget.get(
-      `${source}:${target.slice(0, separator)}:${target.slice(separator + 1)}`,
-    );
-  });
+  return mutationTargetKeys(mutation).map(target => checkByTarget.get(target));
 }
 
 test('SpacetimeDB L2 1.5 covers every scored cumulative check honestly', t => {
@@ -87,12 +77,12 @@ test('SpacetimeDB L2 1.5 covers every scored cumulative check honestly', t => {
     track: manifest.track,
     level: manifest.level,
   }, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'spacetime',
     track: 'ecommerce',
-    level: 2,
+    level: undefined,
   });
   assert.equal(Object.hasOwn(manifest, 'scenario'), false);
   assert.equal(manifest.mutations.length, 73);
@@ -111,7 +101,7 @@ test('SpacetimeDB L2 1.5 covers every scored cumulative check honestly', t => {
   assert(signout, 'the sign-out defect must remain explicit and source-local');
   assert.equal(signout.scenario,
     'tracks/ecommerce/scenarios/01-account-signout-2.4.0.json');
-  assert.deepEqual(signout.targets, [{ feature: 1, criterion: '1d' }]);
+  assert.deepEqual(signout.targets, ['ecommerce.feature.accounts.accounts.1d']);
   assert.equal(signout.file, 'backend/spacetimedb/src/index.ts');
   assert.deepEqual(signout.edits, [{
     find: '  if (existingSession) ctx.db.session.identity.delete(ctx.sender);',

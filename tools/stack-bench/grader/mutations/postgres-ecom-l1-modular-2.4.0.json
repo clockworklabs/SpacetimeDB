@@ -1,16 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "active",
   "fixtureSha256": "389d778f1835377fd2f92864d6afa20851c65076c80ddecba1e860cf7f4d9ec9",
   "backend": "postgres",
   "track": "ecommerce",
-  "level": 1,
   "note": "Candidate known-defect coverage for every scored check in the exact ecommerce.l1-modular@2.4.0 PostgreSQL fixture. Mutations use deterministic source defects, including one atomic schema-and-route defect for persisted review uniqueness.",
   "mutations": [
     {
       "id": "signup-ui-does-not-enter-created-account",
       "scenario": "tracks/ecommerce/scenarios/01-account-create-2.4.0.json",
-      "targets": [{ "feature": 1, "criterion": "1a" }],
+      "targets": ["ecommerce.feature.accounts.accounts.1a"],
       "desc": "Create the account successfully but discard the returned signed-in identity in the client.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -21,7 +20,7 @@
     {
       "id": "duplicate-signup-authenticates-existing-account",
       "scenario": "tracks/ecommerce/scenarios/01-account-duplicate-2.4.0.json",
-      "targets": [{ "feature": 1, "criterion": "1b" }],
+      "targets": ["ecommerce.feature.accounts.accounts.1b"],
       "desc": "Treat a duplicate signup as a successful session for the pre-existing account.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -32,7 +31,7 @@
     {
       "id": "password-verification-is-inverted",
       "scenario": "tracks/ecommerce/scenarios/01-account-password-2.4.0.json",
-      "targets": [{ "feature": 1, "criterion": "1c" }],
+      "targets": ["ecommerce.feature.accounts.accounts.1c"],
       "desc": "Accept a wrong password instead of enforcing password verification.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -43,7 +42,7 @@
     {
       "id": "correct-signin-is-refused",
       "scenario": "tracks/ecommerce/scenarios/01-account-signout-2.4.0.json",
-      "targets": [{ "feature": 1, "criterion": "1d" }],
+      "targets": ["ecommerce.feature.accounts.accounts.1d"],
       "desc": "Preserve wrong-password refusal but reject an otherwise valid sign-in, preventing a signed-out account from returning.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -54,7 +53,7 @@
     {
       "id": "reload-discards-session-identity",
       "scenario": "tracks/ecommerce/scenarios/01-account-reload-2.4.0.json",
-      "targets": [{ "feature": 1, "criterion": "1e" }],
+      "targets": ["ecommerce.spec.state-durability.session-reload.1e"],
       "desc": "Ignore the authenticated identity returned during initial page hydration.",
       "file": "client/src/App.tsx",
       "edits": [{ "find": "        setAccount(me.account);", "replace": "        setAccount(null);" }]
@@ -62,7 +61,7 @@
     {
       "id": "catalog-adds-one-to-every-price",
       "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
-      "targets": [{ "feature": 2, "criterion": "2a" }],
+      "targets": ["ecommerce.feature.catalog.catalog.2a"],
       "desc": "Return a catalog price one dollar above the stored price while preserving stock and names.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -73,7 +72,7 @@
     {
       "id": "unbought-ranking-is-reversed",
       "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
-      "targets": [{ "feature": 2, "criterion": "2b" }],
+      "targets": ["ecommerce.feature.catalog.catalog.2b"],
       "desc": "Reverse only the initial all-unbought ranking instead of applying the alphabetical tie-break.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -84,7 +83,7 @@
     {
       "id": "purchase-does-not-broadcast-ranking",
       "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
-      "targets": [{ "feature": 2, "criterion": "2c" }],
+      "targets": ["ecommerce.spec.live-state.ranking.2c"],
       "desc": "Commit the purchase but omit the catalog broadcast that updates already-open rankings.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -95,7 +94,7 @@
     {
       "id": "search-only-considers-top-ten",
       "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
-      "targets": [{ "feature": 2, "criterion": "2d" }],
+      "targets": ["ecommerce.feature.catalog.catalog.2d"],
       "desc": "Search only the currently visible top ten instead of the full catalog.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -106,7 +105,7 @@
     {
       "id": "signed-out-visitors-see-purchase-controls",
       "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
-      "targets": [{ "feature": 3, "criterion": "3a" }],
+      "targets": ["ecommerce.spec.access-control.signed-out-purchase.3a"],
       "desc": "Render purchasing controls without requiring a customer account.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -117,10 +116,7 @@
     {
       "id": "purchase-stock-change-is-not-broadcast",
       "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
-      "targets": [
-        { "feature": 3, "criterion": "3b" },
-        { "feature": 3, "criterion": "3d" }
-      ],
+      "targets": ["ecommerce.spec.live-state.purchase-stock.3b","ecommerce.spec.concurrency-safety.stock-limit.3d"],
       "desc": "Commit purchases without broadcasting their stock changes, breaking live stock and sold-out visibility.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -131,7 +127,7 @@
     {
       "id": "direct-purchase-order-total-is-offset",
       "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
-      "targets": [{ "feature": 3, "criterion": "3c" }],
+      "targets": ["ecommerce.feature.purchasing.purchase-order.3c"],
       "desc": "Record a direct purchase one dollar above the stored price.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -142,7 +138,7 @@
     {
       "id": "checkout-skips-insufficient-stock-refusal",
       "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
-      "targets": [{ "feature": 3, "criterion": "3d" }],
+      "targets": ["ecommerce.spec.concurrency-safety.stock-limit.3d"],
       "desc": "Proceed with checkout even when the cart quantity exceeds available stock.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -153,7 +149,7 @@
     {
       "id": "existing-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
-      "targets": [{ "feature": 4, "criterion": "4a" }],
+      "targets": ["ecommerce.feature.cart-checkout.cart.4a"],
       "desc": "Ignore an add that conflicts with an existing cart line.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -164,7 +160,7 @@
     {
       "id": "reload-hydrates-an-empty-cart",
       "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
-      "targets": [{ "feature": 4, "criterion": "4b" }],
+      "targets": ["ecommerce.spec.state-durability.cart-reload.4b"],
       "desc": "Return an empty cart from both reload hydration paths while preserving later live cart broadcasts.",
       "file": "server/src/index.ts",
       "edits": [
@@ -181,7 +177,7 @@
     {
       "id": "cart-add-does-not-broadcast-to-other-sessions",
       "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
-      "targets": [{ "feature": 4, "criterion": "4c" }],
+      "targets": ["ecommerce.spec.live-state.shared-cart.4c"],
       "desc": "Return the updated cart to the caller but omit the same-account live broadcast.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -192,7 +188,7 @@
     {
       "id": "checkout-does-not-empty-cart",
       "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
-      "targets": [{ "feature": 4, "criterion": "4d" }],
+      "targets": ["ecommerce.feature.cart-checkout.cart.4d"],
       "desc": "Keep checked-out cart lines after creating the order.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -203,7 +199,7 @@
     {
       "id": "signed-out-visitors-do-not-see-reviews",
       "scenario": "tracks/ecommerce/scenarios/01-review-visibility-2.4.0.json",
-      "targets": [{ "feature": 6, "criterion": "6a" }],
+      "targets": ["ecommerce.feature.reviews.reviews.6a"],
       "desc": "Hide an item's reviews whenever the viewer is signed out.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -214,7 +210,7 @@
     {
       "id": "repeat-review-creates-a-second-row",
       "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness-2.4.0.json",
-      "targets": [{ "feature": 6, "criterion": "6b" }],
+      "targets": ["ecommerce.spec.transactional-integrity.unique-review.6b"],
       "desc": "Persist reviews in an unconstrained shadow table and read it as ordinary review storage, allowing two rows for one item and account without polluting later mutation probes.",
       "file": "server/src/index.ts",
       "edits": [
@@ -235,7 +231,7 @@
     {
       "id": "review-average-update-is-not-broadcast",
       "scenario": "tracks/ecommerce/scenarios/01-review-rating-live-2.4.0.json",
-      "targets": [{ "feature": 6, "criterion": "6c" }],
+      "targets": ["ecommerce.spec.live-state.rating.6c"],
       "desc": "Return the new average to the submitter but omit the live review update to other viewers.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -246,7 +242,7 @@
     {
       "id": "customers-see-the-admin-link",
       "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-2.4.0.json",
-      "targets": [{ "feature": 7, "criterion": "7a" }],
+      "targets": ["ecommerce.spec.access-control.admin-ui.7a"],
       "desc": "Expose the admin navigation control to every signed-in account.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -257,7 +253,7 @@
     {
       "id": "admin-warehouse-view-drops-one-location",
       "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-2.4.0.json",
-      "targets": [{ "feature": 7, "criterion": "7b" }],
+      "targets": ["ecommerce.feature.warehouse-admin.warehouse-view.7b"],
       "desc": "Render only 23 of the 24 item-by-warehouse stock locations.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -268,7 +264,7 @@
     {
       "id": "restock-overwrites-instead-of-increments",
       "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-2.4.0.json",
-      "targets": [{ "feature": 7, "criterion": "7c" }],
+      "targets": ["ecommerce.spec.live-state.warehouse-stock.7c"],
       "desc": "Overwrite the selected warehouse quantity with the restock amount instead of adding it.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -279,7 +275,7 @@
     {
       "id": "unauthenticated-direct-purchase-uses-default-account",
       "scenario": "tracks/ecommerce/scenarios/01-purchase-session-2.4.0.json",
-      "targets": [{ "feature": 101, "criterion": "101a" }],
+      "targets": ["ecommerce.spec.access-control.purchase-session.101a"],
       "desc": "Remove purchase authentication and attribute unauthenticated requests to a default account.",
       "file": "server/src/index.ts",
       "edits": [
@@ -293,7 +289,7 @@
     {
       "id": "direct-purchase-is-attributed-to-previous-account",
       "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution-2.4.0.json",
-      "targets": [{ "feature": 102, "criterion": "102a" }],
+      "targets": ["ecommerce.spec.access-control.purchase-attribution.102a"],
       "desc": "Create the direct-purchase order for the preceding account id rather than the authenticated caller.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -304,7 +300,7 @@
     {
       "id": "customer-can-call-admin-restock",
       "scenario": "tracks/ecommerce/scenarios/01-admin-write-2.4.0.json",
-      "targets": [{ "feature": 103, "criterion": "103a" }],
+      "targets": ["ecommerce.spec.access-control.admin-write.103a"],
       "desc": "Remove the administrator guard from the direct restock route.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -315,7 +311,7 @@
     {
       "id": "direct-purchase-uses-constant-price",
       "scenario": "tracks/ecommerce/scenarios/01-server-price-2.4.0.json",
-      "targets": [{ "feature": 104, "criterion": "104a" }],
+      "targets": ["ecommerce.spec.transactional-integrity.server-price.104a"],
       "desc": "Create a direct-purchase order at a hard-coded price instead of the current stored price.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -326,7 +322,7 @@
     {
       "id": "account-state-reload-discards-session",
       "scenario": "tracks/ecommerce/scenarios/01-account-state-reload-2.4.0.json",
-      "targets": [{ "feature": 105, "criterion": "105a" }],
+      "targets": ["ecommerce.spec.state-durability.account-state-recovery.105a"],
       "desc": "Discard the authenticated account during reload hydration, making its cart and orders unavailable.",
       "file": "client/src/App.tsx",
       "edits": [{ "find": "        setAccount(me.account);", "replace": "        setAccount(null);" }]
@@ -334,7 +330,7 @@
     {
       "id": "offline-event-clears-account-state",
       "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
-      "targets": [{ "feature": 105, "criterion": "105b" }],
+      "targets": ["ecommerce.spec.state-durability.account-state-recovery.105b"],
       "desc": "Treat a temporary offline event as a sign-out and clear the account and cart state.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -345,7 +341,7 @@
     {
       "id": "order-history-ignores-account-owner",
       "scenario": "tracks/ecommerce/scenarios/01-order-ownership-2.4.0.json",
-      "targets": [{ "feature": 106, "criterion": "106a" }],
+      "targets": ["ecommerce.spec.access-control.order-ownership.106a"],
       "desc": "Return every order from the order-history query instead of filtering by account.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -356,7 +352,7 @@
     {
       "id": "admin-revenue-double-counts-orders",
       "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
-      "targets": [{ "feature": 107, "criterion": "107a" }],
+      "targets": ["ecommerce.spec.transactional-integrity.books-balance.107a"],
       "desc": "Double every non-cancelled order total in the administration revenue calculation.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -367,7 +363,7 @@
     {
       "id": "purchase-does-not-decrement-warehouse-stock",
       "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
-      "targets": [{ "feature": 107, "criterion": "107b" }],
+      "targets": ["ecommerce.spec.transactional-integrity.books-balance.107b"],
       "desc": "Create purchase orders without decrementing their selected warehouse stock row.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -378,7 +374,7 @@
     {
       "id": "review-route-skips-purchase-eligibility",
       "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
-      "targets": [{ "feature": 108, "criterion": "108a" }],
+      "targets": ["ecommerce.spec.access-control.review-eligibility.108a"],
       "desc": "Allow review creation even when the caller has never purchased the item.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -389,7 +385,7 @@
     {
       "id": "only-shipped-orders-earn-review-eligibility",
       "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
-      "targets": [{ "feature": 108, "criterion": "108b" }],
+      "targets": ["ecommerce.spec.access-control.review-eligibility.108b"],
       "desc": "Incorrectly require an order to be shipped before its buyer may review the item.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -400,7 +396,7 @@
     {
       "id": "cart-add-is-forced-into-another-account",
       "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
-      "targets": [{ "feature": 109, "criterion": "109a" }],
+      "targets": ["ecommerce.spec.access-control.cart-boundary.109a"],
       "desc": "Ignore the authenticated caller and force every cart addition into the first account created by the scenario.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -411,7 +407,7 @@
     {
       "id": "cart-update-accepts-negative-quantity",
       "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
-      "targets": [{ "feature": 109, "criterion": "109b" }],
+      "targets": ["ecommerce.spec.access-control.cart-boundary.109b"],
       "desc": "Accept a negative cart quantity update and persist it instead of refusing the named action.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -422,11 +418,7 @@
     {
       "id": "oversell-no-row-lock",
       "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
-      "targets": [
-        { "feature": 201, "criterion": "201a" },
-        { "feature": 201, "criterion": "201b" },
-        { "feature": 201, "criterion": "201c" }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.last-unit.201a","ecommerce.spec.concurrency-safety.last-unit.201b","ecommerce.spec.concurrency-safety.last-unit.201c"],
       "desc": "Drop the row lock so simultaneous buyers can select the same remaining units.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -437,7 +429,7 @@
     {
       "id": "purchase-does-not-reserve-stock-restock-race",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
-      "targets": [{ "feature": 202, "criterion": "202a" }],
+      "targets": ["ecommerce.spec.concurrency-safety.restock-race.202a"],
       "desc": "Create each purchase without decrementing stock, breaking conservation during the restock race.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -448,7 +440,7 @@
     {
       "id": "existing-cart-line-does-not-increment-concurrently",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
-      "targets": [{ "feature": 203, "criterion": "203a" }],
+      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203a"],
       "desc": "Ignore the second concurrent add when the cart line already exists.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -459,7 +451,7 @@
     {
       "id": "checkout-does-not-empty-cart-concurrently",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
-      "targets": [{ "feature": 203, "criterion": "203b" }],
+      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203b"],
       "desc": "Keep checked-out cart lines so a concurrent second checkout can create another order.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -470,7 +462,7 @@
     {
       "id": "external-stock-polling-disabled",
       "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
-      "targets": [{ "feature": 901, "criterion": "901a" }],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901a"],
       "desc": "Stop reconciling direct database changes while the server remains online.",
       "file": "server/src/index.ts",
       "edits": [{
@@ -481,7 +473,7 @@
     {
       "id": "server-restart-does-not-resynchronize-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync-1.1.0.json",
-      "targets": [{ "feature": 901, "criterion": "901c" }],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901c"],
       "desc": "After a server restart, omit both connection-time catalog hydration and periodic authoritative reconciliation.",
       "file": "server/src/index.ts",
       "edits": [
@@ -498,7 +490,7 @@
     {
       "id": "reconnect-does-not-send-current-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
-      "targets": [{ "feature": 901, "criterion": "901d" }],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901d"],
       "desc": "Follow catalog changes until the browser goes offline, then ignore updates after restoration.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -515,7 +507,7 @@
     {
       "id": "open-review-list-ignores-live-update",
       "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
-      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "targets": ["ecommerce.spec.live-state.open-list.902a"],
       "desc": "Ignore committed review updates in a detail view that is already open.",
       "file": "client/src/App.tsx",
       "edits": [{
@@ -526,7 +518,7 @@
     {
       "id": "open-review-list-renders-each-review-twice",
       "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
-      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "targets": ["ecommerce.spec.live-state.open-list.902a"],
       "desc": "Render every committed review twice in the already-open list.",
       "file": "client/src/App.tsx",
       "edits": [{

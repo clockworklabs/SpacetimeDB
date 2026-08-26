@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { mutationEdits, mutationScenario, mutationTargetKeys,
+import { mutationEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
 
@@ -20,20 +20,10 @@ const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
   'l1-modular-2.4.0.json'), { trackRoot: TRACK });
 
-const releaseKeyByTarget = new Map(release.checkCatalog.map(check => [
-  `${check.source}:${check.featureId}:${check.criterionId}`,
-  check,
-]));
+const releaseKeyByTarget = new Map(release.checkCatalog.map(check => [check.stableKey, check]));
 
 function resolvedTargets(mutation) {
-  const source = mutationScenario(manifest, mutation).replaceAll('\\', '/')
-    .replace(/^tracks\/ecommerce\//, '');
-  return mutationTargetKeys(mutation).map(target => {
-    const separator = target.indexOf(':');
-    return releaseKeyByTarget.get(
-      `${source}:${target.slice(0, separator)}:${target.slice(separator + 1)}`,
-    );
-  });
+  return mutationTargetKeys(mutation).map(target => releaseKeyByTarget.get(target));
 }
 
 test('MongoDB L1 2.4 candidate covers every scored stable check exactly', t => {
@@ -45,12 +35,12 @@ test('MongoDB L1 2.4 candidate covers every scored stable check exactly', t => {
     track: manifest.track,
     level: manifest.level,
   }, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'mongodb',
     track: 'ecommerce',
-    level: 1,
+    level: undefined,
   });
   assert.equal(Object.hasOwn(manifest, 'scenario'), false,
     'every candidate mutation must declare its exact scenario');

@@ -22,15 +22,12 @@ const EXPECTED_MISSING = [];
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
   'l1-modular-2.4.0.json'), { trackRoot: TRACK });
-const stableByTarget = new Map(release.checkCatalog.map(check => [
-  `${check.source}:${check.featureId}:${check.criterionId}`,
-  check.stableKey,
-]));
+const stableKeys = new Set(release.checkCatalog.map(check => check.stableKey));
 
 test('PostgreSQL L1 2.4 candidate mutations bind to the exact prepared fixture', () => {
   assert.deepEqual({ schemaVersion: manifest.schemaVersion, status: manifest.status,
     backend: manifest.backend, track: manifest.track, level: manifest.level }, {
-    schemaVersion: 1, status: 'active', backend: 'postgres', track: 'ecommerce', level: 1,
+    schemaVersion: 2, status: 'active', backend: 'postgres', track: 'ecommerce', level: undefined,
   });
   assert.equal(manifest.fixtureSha256, FIXTURE_SHA256);
   assert.equal(Object.hasOwn(manifest, 'scenario'), false);
@@ -55,14 +52,9 @@ test('PostgreSQL L1 2.4 candidate mutations bind to the exact prepared fixture',
 test('every PostgreSQL target resolves to the exact L1 2.4 release scenario', t => {
   const covered = new Set();
   for (const mutation of manifest.mutations) {
-    const scenario = mutation.scenario.replaceAll('\\', '/')
-      .replace(/^tracks\/ecommerce\//, '');
     for (const target of mutationTargetKeys(mutation)) {
-      const separator = target.indexOf(':');
-      const stableKey = stableByTarget.get(
-        `${scenario}:${target.slice(0, separator)}:${target.slice(separator + 1)}`);
-      assert(stableKey, `${mutation.id} target ${scenario}:${target} is not in ${RECIPE}`);
-      covered.add(stableKey);
+      assert(stableKeys.has(target), `${mutation.id} target ${target} is not in ${RECIPE}`);
+      covered.add(target);
     }
   }
 

@@ -67,11 +67,11 @@ for (const entry of cases) {
       });
       assert.equal(prepared.fixture.id, `ecommerce-l1-direct-actions-${entry.backend}`);
       assert.equal(prepared.sourceSha256, entry.fixtureSha256);
-      assert.equal(manifest.schemaVersion, 1);
+      assert.equal(manifest.schemaVersion, 2);
       assert.equal(manifest.status, 'active');
       assert.equal(manifest.backend, entry.backend);
       assert.equal(manifest.track, 'ecommerce');
-      assert.equal(manifest.level, 1);
+      assert.equal(manifest.level, undefined);
       assert.equal(manifest.fixtureSha256, prepared.sourceSha256);
       assert.deepEqual(validateMutationDefinitions(manifest.mutations, {
         defaultScenario: manifest.scenario,
@@ -81,7 +81,9 @@ for (const entry of cases) {
         candidate.id === 'existing-cart-line-does-not-increment');
       assert.equal(mutationScenario(manifest, mutation), scenarioPath);
       assert.equal(mutation.id, 'existing-cart-line-does-not-increment');
-      assert.deepEqual(mutationTargetKeys(mutation), ['203:203a']);
+      assert.deepEqual(mutationTargetKeys(mutation), [
+        'ecommerce.spec.concurrency-safety.duplicate-checkout.203a',
+      ]);
       assert.equal(mutationEdits(mutation).length, 1);
 
       const source = readFileSync(join(app, mutation.file), 'utf8');

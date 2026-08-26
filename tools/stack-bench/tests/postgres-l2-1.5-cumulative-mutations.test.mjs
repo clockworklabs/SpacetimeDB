@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { mutationFileEdits, mutationScenario, mutationTargetKeys,
+import { mutationFileEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
@@ -31,20 +31,10 @@ const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
 const scored = release.checkCatalog.filter(check => check.points > 0);
 const l1Checks = scored.filter(check => !check.source.startsWith('scenarios/02-'));
 const l2Checks = scored.filter(check => check.source.startsWith('scenarios/02-'));
-const checkByTarget = new Map(scored.map(check => [
-  `${check.source}:${check.featureId}:${check.criterionId}`,
-  check,
-]));
+const checkByTarget = new Map(scored.map(check => [check.stableKey, check]));
 
 function resolveTargets(mutation) {
-  const source = mutationScenario(manifest, mutation).replaceAll('\\', '/')
-    .replace(/^tracks\/ecommerce\//, '');
-  return mutationTargetKeys(mutation).map(target => {
-    const separator = target.indexOf(':');
-    return checkByTarget.get(
-      `${source}:${target.slice(0, separator)}:${target.slice(separator + 1)}`,
-    );
-  });
+  return mutationTargetKeys(mutation).map(target => checkByTarget.get(target));
 }
 
 test('PostgreSQL L2 1.5 is the exact cumulative mutation composition', () => {
@@ -56,12 +46,12 @@ test('PostgreSQL L2 1.5 is the exact cumulative mutation composition', () => {
     track: manifest.track,
     level: manifest.level,
   }, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'postgres',
     track: 'ecommerce',
-    level: 2,
+    level: undefined,
   });
   assert.equal(Object.hasOwn(manifest, 'scenario'), false);
   assert.equal(manifest.mutations.length, inheritedL1.length + provenL2.length + 1);
@@ -102,14 +92,14 @@ test('PostgreSQL L2 1.5 covers all 74 cumulative scored keys', t => {
   assert.equal(new Set([...coveredL1, ...coveredL2]).size, 74);
   assert.equal(scored.length, 74);
   assert.equal(manifest.mutations.filter(mutation => mutationTargetKeys(mutation)
-    .includes('202:202d')).length, 1);
+    .includes('ecommerce.inventory-operations.stock-conservation.202d')).length, 1);
   t.diagnostic('inherited L1 coverage: 46/46; L2-only coverage: 28/28');
   t.diagnostic('cumulative mutation coverage: 74/74');
 });
 
 test('202d uses source synchronization and a stale PostgreSQL write without sleeps', () => {
   const mutation = manifest.mutations.find(candidate => mutationTargetKeys(candidate)
-    .includes('202:202d'));
+    .includes('ecommerce.inventory-operations.stock-conservation.202d'));
   assert(mutation);
   assert.equal(mutation.scenario,
     'tracks/ecommerce/scenarios/02-server-actions-1.1.0.json');

@@ -13,9 +13,10 @@
 //
 // Usage: node mutation-test.mjs --app <app-dir> --url <url> --mutations mutations/<file>.json
 //
-// The manifest binds backend, track, scenario, source edits, feature and exact
-// criterion ids. Resets and restarts use the same authenticated Docker lease as
-// normal grading; mutation control has no host-mode or free-form shell escape.
+// The manifest binds backend, track, scenario, source edits, and stable check
+// IDs. The selected level and recipe come from the run. Resets and restarts use
+// the same authenticated Docker lease as normal grading. Mutation control has
+// no host-mode or free-form shell escape.
 
 import {
   copyFileSync,
@@ -234,11 +235,17 @@ function recordHarnessFailure(error) {
 
 async function main() {
   spec = JSON.parse(readFileSync(args.mutations, "utf8"));
-  if (spec.schemaVersion !== 1) throw new Error(`unsupported mutation manifest schema ${spec.schemaVersion}`);
+  if (spec.schemaVersion !== 2) throw new Error(`unsupported mutation manifest schema ${spec.schemaVersion}`);
+  const allowedFields = new Set(["schemaVersion", "status", "fixtureSha256", "backend", "track",
+    "scenario", "note", "mutations"]);
+  const unknownFields = Object.keys(spec).filter(field => !allowedFields.has(field));
+  if (unknownFields.length) {
+    throw new Error(`mutation manifest has unknown fields: ${unknownFields.join(', ')}`);
+  }
   if (!["candidate", "active"].includes(spec.status)) {
     throw new Error(`mutation manifest is ${spec.status ?? "missing a status"}; only candidate or active manifests are executable`);
   }
-  for (const field of ["backend", "track", "level", "fixtureSha256"]) {
+  for (const field of ["backend", "track", "fixtureSha256"]) {
     if (spec[field] == null) {
       throw new Error(`mutation manifest requires ${field}`);
     }
@@ -266,20 +273,18 @@ async function main() {
   if (args.track && args.track !== spec.track) {
     throw new Error(`--track conflicts with manifest track ${spec.track}`);
   }
-  if (args.level && Number(args.level) !== Number(spec.level)) {
-    throw new Error(`--level conflicts with manifest level ${spec.level}`);
+  if (!Number.isInteger(Number(args.level)) || Number(args.level) < 1) {
+    throw new Error('--level must be a positive integer');
   }
+  if (!args.recipe) throw new Error('--recipe is required for mutation control');
   args.backend = spec.backend;
   args.track = spec.track;
-  args.level = String(spec.level);
   const track = loadTrack(args.track);
-  if (args.recipe) {
-    const binding = resolveRecipeRelease(track, Number(args.level), args.recipe);
-    if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
-    args.recipe = `${binding.release.id}@${binding.release.version}`;
-    args.expectedRecipeSha256 = binding.release.contentSha256;
-    args.recipeRelease = binding.release;
-  }
+  const binding = resolveRecipeRelease(track, Number(args.level), args.recipe);
+  if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
+  args.recipe = `${binding.release.id}@${binding.release.version}`;
+  args.expectedRecipeSha256 = binding.release.contentSha256;
+  args.recipeRelease = binding.release;
   args.slug ??= track.slug;
   args.probe ??= track.restartProbe;
   args.dbName ??= dbName(track, Number(args.runIndex));

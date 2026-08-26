@@ -23,10 +23,7 @@ export function mutationFileEdits(mutation) {
 }
 
 export function mutationTargetKeys(mutation) {
-  if (Array.isArray(mutation.targets)) {
-    return mutation.targets.map(target => criterionKey(target.feature, target.criterion));
-  }
-  return (mutation.kills ?? []).map(criterion => criterionKey(mutation.breaks, criterion));
+  return Array.isArray(mutation.targets) ? mutation.targets : [];
 }
 
 export function mutationScenario(manifest, mutation) {
@@ -91,28 +88,13 @@ export function validateMutationDefinitions(mutations,
     if (requireScenario && !mutationScenario({ scenario: defaultScenario }, mutation)) {
       issues.push({ kind: 'missing_scenario', mutation: mutation.id });
     }
-    const hasExactTargets = Array.isArray(mutation.targets);
-    if (hasExactTargets) {
-      const keys = mutation.targets.map(target => target && typeof target === 'object'
-        ? criterionKey(target.feature, target.criterion) : '');
-      if (mutation.targets.length === 0 || mutation.targets.some(target => !target
-        || typeof target !== 'object' || typeof target.feature !== 'number'
-        || !Number.isFinite(target.feature) || typeof target.criterion !== 'string'
-        || !target.criterion) || new Set(keys).size !== keys.length) {
-        issues.push({ kind: 'bad_targets', mutation: mutation.id });
-      }
-      if (mutation.breaks != null || mutation.kills != null) {
-        issues.push({ kind: 'ambiguous_targets', mutation: mutation.id });
-      }
-    } else {
-      if (typeof mutation.breaks !== 'number' || !Number.isFinite(mutation.breaks)) {
-        issues.push({ kind: 'bad_feature', mutation: mutation.id });
-      }
-      if (!Array.isArray(mutation.kills) || mutation.kills.length === 0
-        || mutation.kills.some(id => typeof id !== 'string' || !id)
-        || new Set(mutation.kills).size !== mutation.kills.length) {
-        issues.push({ kind: 'bad_kills', mutation: mutation.id });
-      }
+    if (!Array.isArray(mutation.targets) || mutation.targets.length === 0
+      || mutation.targets.some(target => typeof target !== 'string' || !target.trim())
+      || new Set(mutation.targets).size !== mutation.targets.length) {
+      issues.push({ kind: 'bad_targets', mutation: mutation.id });
+    }
+    if (mutation.breaks != null || mutation.kills != null) {
+      issues.push({ kind: 'legacy_targets', mutation: mutation.id });
     }
     if (edits.length === 0) issues.push({ kind: 'missing_edits', mutation: mutation.id });
     for (const edit of edits) {
@@ -137,7 +119,9 @@ export function indexMutationReport(report) {
         setupFailures.set(featureKey(feature.id), { feature: feature.id, detail: evidence.summary,
           status: evidence.status, outcomeKind: disposition.outcomeKind, code: evidence.code });
       }
-      criteria.set(criterionKey(feature.id, criterion.id), {
+      const key = typeof criterion.stableKey === 'string' && criterion.stableKey
+        ? criterion.stableKey : criterionKey(feature.id, criterion.id);
+      criteria.set(key, {
         feature: feature.id,
         criterion: criterion.id,
         passed: disposition.passed,

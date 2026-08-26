@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { compilePromotionFile } from './composition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
-import { mutationScenario, mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.mjs';
+import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.mjs';
 import { readArtifact } from '../evidence/artifacts.mjs';
@@ -645,9 +645,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     };
   });
 
-  const stableByLegacyKey = new Map(qualificationRelease.checkCatalog.map(check => [
-    `${check.source}:${check.featureId}:${check.criterionId}`, check.stableKey,
-  ]));
+  const qualifiedStableKeys = new Set(qualificationRelease.checkCatalog.map(check => check.stableKey));
   const mutationTargetRefs = new Map();
   const mutations = calibration.mutations.map((selection, index) => {
     const at = `${source}.mutations[${index}]`;
@@ -655,6 +653,9 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     const digest = sha256(readFileSync(ref.absolute));
     if (digest !== selection.sha256) fail(`${at}.sha256`, `stale digest for ${selection.path}`);
     const manifest = readJson(ref.absolute, 'mutation manifest');
+    if (manifest.schemaVersion !== 2 || manifest.level !== undefined) {
+      fail(at, 'mutation manifest must use schema 2 and must not own a level');
+    }
     const reference = references.find(candidate => candidate.id === selection.referenceId);
     if (!reference || reference.backend !== selection.backend) fail(`${at}.referenceId`, 'does not match mutation backend');
     if (manifest.backend !== selection.backend || manifest.track !== release.track) {
@@ -666,14 +667,12 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     if (!definitions.ok) fail(at, `invalid mutation definitions: ${definitions.issues.map(issue => issue.kind).join(', ')}`);
     const targets = [];
     for (const mutation of manifest.mutations) {
-      const scenario = mutationScenario(manifest, mutation).replaceAll('\\', '/')
-        .replace(new RegExp(`^tracks/${release.track}/`), '');
-      const stableKeys = mutationTargetKeys(mutation).map(key => {
-        const split = key.indexOf(':');
-        const stable = stableByLegacyKey.get(`${scenario}:${key.slice(0, split)}:${key.slice(split + 1)}`);
-        if (!stable) fail(at, `mutation ${mutation.id} targets unknown recipe check ${key}`);
-        return stable;
-      });
+      const stableKeys = mutationTargetKeys(mutation);
+      for (const stableKey of stableKeys) {
+        if (!qualifiedStableKeys.has(stableKey)) {
+          fail(at, `mutation ${mutation.id} targets unknown recipe check ${stableKey}`);
+        }
+      }
       const targetRef = `${selection.backend}:${mutation.id}`;
       mutationTargetRefs.set(targetRef, new Set(stableKeys));
       targets.push({ id: mutation.id, stableKeys });

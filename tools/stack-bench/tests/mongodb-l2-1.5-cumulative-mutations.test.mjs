@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { mutationFileEdits, mutationScenario, mutationTargetKeys,
+import { mutationFileEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
 
@@ -31,20 +31,10 @@ const candidateFixture = {
     patchPath: 'reference-apps/patches/ecommerce-l2-cumulative-1.5/mongodb.json',
   },
 };
-const checkByTarget = new Map(expectedChecks.map(check => [
-  `${check.source}:${check.featureId}:${check.criterionId}`,
-  check,
-]));
+const checkByTarget = new Map(expectedChecks.map(check => [check.stableKey, check]));
 
 function resolveTargets(mutation) {
-  const source = mutationScenario(manifest, mutation).replaceAll('\\', '/')
-    .replace(/^tracks\/ecommerce\//, '');
-  return mutationTargetKeys(mutation).map(target => {
-    const separator = target.indexOf(':');
-    return checkByTarget.get(
-      `${source}:${target.slice(0, separator)}:${target.slice(separator + 1)}`,
-    );
-  });
+  return mutationTargetKeys(mutation).map(target => checkByTarget.get(target));
 }
 
 test('MongoDB L2 1.5 covers the exact cumulative scored catalog', t => {
@@ -56,12 +46,12 @@ test('MongoDB L2 1.5 covers the exact cumulative scored catalog', t => {
     track: manifest.track,
     level: manifest.level,
   }, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'mongodb',
     track: 'ecommerce',
-    level: 2,
+    level: undefined,
   });
   assert.equal(Object.hasOwn(manifest, 'scenario'), false);
   assert.equal(manifest.mutations.length, 71);
@@ -106,9 +96,10 @@ test('the exact L2 1.5 source supplies the inherited cart action hook', () => {
     assert.equal(client.split('data-cart-input=').length - 1, 1,
       'the recipe-specific L2 overlay must carry the L1 2.4 named cart input');
     assert(manifest.mutations.some(mutation => mutationTargetKeys(mutation)
-      .includes('109:109b')), '109b must be inherited once its action input is present');
+      .includes('ecommerce.spec.access-control.cart-boundary.109b')),
+    '109b must be inherited once its action input is present');
     assert(manifest.mutations.some(mutation => mutationTargetKeys(mutation)
-      .includes('202:202d')),
+      .includes('ecommerce.inventory-operations.stock-conservation.202d')),
     '202d must have a deterministic source-level transfer/purchase synchronization defect');
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -121,7 +112,9 @@ test('the 202d defect deterministically loses a committed purchase without timin
   assert(mutation);
   assert.equal(mutation.scenario,
     'tracks/ecommerce/scenarios/02-server-actions-1.1.0.json');
-  assert.deepEqual(mutationTargetKeys(mutation), ['202:202d']);
+  assert.deepEqual(mutationTargetKeys(mutation), [
+    'ecommerce.inventory-operations.stock-conservation.202d',
+  ]);
   assert.equal(mutation.file, 'server/src/index.ts');
   assert.equal(mutation.edits.length, 4);
 
@@ -139,7 +132,9 @@ test('the order ownership defect breaks both owner-scoped read paths', () => {
   assert(mutation);
   assert.equal(mutation.scenario,
     'tracks/ecommerce/scenarios/01-order-ownership-2.4.0.json');
-  assert.deepEqual(mutationTargetKeys(mutation), ['106:106a']);
+  assert.deepEqual(mutationTargetKeys(mutation), [
+    'ecommerce.spec.access-control.order-ownership.106a',
+  ]);
   assert.equal(mutation.file, 'server/src/index.ts');
   assert.equal(mutation.edits.length, 2);
 

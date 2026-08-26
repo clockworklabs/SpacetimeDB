@@ -13,7 +13,7 @@ const report = (criteria, setupError = null) => ({
   max: Object.keys(criteria).length,
   features: [{
     id: 7,
-    criteria: Object.entries(criteria).map(([id, value]) => ({ id,
+    criteria: Object.entries(criteria).map(([id, value]) => ({ id, stableKey: `check.${id}`,
       evidence: createCheckEvidence({
         status: value === true ? 'passed' : value === 'inconclusive' ? 'inconclusive' : 'failed',
         code: value === true ? 'completed' : 'test_result',
@@ -22,18 +22,18 @@ const report = (criteria, setupError = null) => ({
       }) })),
   }],
 });
-const mutation = { id: 'break-b', breaks: 7, kills: ['b'] };
+const mutation = { id: 'break-b', targets: ['check.b'] };
 
 test('mutation definitions name exact criteria and contain real edits', () => {
   const valid = { ...mutation, file: 'src/app.ts', find: 'correct', replace: 'broken' };
   assert.equal(validateMutationDefinitions([valid]).ok, true);
   const invalid = validateMutationDefinitions([
-    { id: 'duplicate', file: '', breaks: '7', kills: [], find: 'same', replace: 'same' },
-    { id: 'duplicate', file: 'src/app.ts', breaks: 7, kills: ['b', 'b'], edits: [] },
+    { id: 'duplicate', file: '', targets: [], find: 'same', replace: 'same' },
+    { id: 'duplicate', file: 'src/app.ts', targets: ['check.b', 'check.b'], edits: [] },
   ]);
   assert.equal(invalid.ok, false);
   assert.deepEqual([...new Set(invalid.issues.map(issue => issue.kind))],
-    ['bad_file', 'bad_feature', 'bad_kills', 'bad_edit', 'duplicate_id', 'missing_edits']);
+    ['bad_file', 'bad_targets', 'bad_edit', 'duplicate_id', 'missing_edits']);
 });
 
 test('one mutation may atomically edit multiple application files', () => {
@@ -98,7 +98,7 @@ test('recipe-bound mutation grading selects only checks owned by the scenario', 
 test('a mutation can declare exact targets across multiple features', () => {
   const crossFeature = {
     id: 'cross-feature', file: 'src/app.ts', find: 'correct', replace: 'broken',
-    targets: [{ feature: 7, criterion: 'b' }, { feature: 8, criterion: 'c' }],
+    targets: ['check.b', 'check.c'],
   };
   assert.equal(validateMutationDefinitions([crossFeature]).ok, true);
   assert.equal(validateMutationDefinitions([{ ...crossFeature, breaks: 7, kills: ['b'] }]).ok, false);
@@ -123,7 +123,7 @@ test('mutation files cannot escape the application directory', () => {
 test('a mutation baseline must pass every criterion and contain every declared target', () => {
   assert.equal(validateMutationBaseline(report({ a: true, b: true }), [mutation]).ok, true);
   const invalid = validateMutationBaseline(report({ a: true, b: 'inconclusive' }), [
-    mutation, { id: 'missing', breaks: 7, kills: ['c'] },
+    mutation, { id: 'missing', targets: ['check.c'] },
   ]);
   assert.equal(invalid.ok, false);
   assert.deepEqual(invalid.issues.map(issue => issue.kind),
@@ -133,7 +133,7 @@ test('a mutation baseline must pass every criterion and contain every declared t
 test('only a conclusive failure of the declared criterion is a clean kill', () => {
   const result = classifyMutationResult(report({ a: true, b: true }), report({ a: true, b: false }), mutation);
   assert.equal(result.status, 'CAUGHT');
-  assert.deepEqual(result.regressions.map(item => item.key), ['7:b']);
+  assert.deepEqual(result.regressions.map(item => item.key), ['check.b']);
 });
 
 test('a score drop caused by setup failure is rejected', () => {
@@ -153,31 +153,31 @@ test('a typed harness failure is not mistaken for an inconclusive or caught muta
     phase: 'assertion', summary: 'not an application observation', startedAtMs: 1, completedAtMs: 2 });
   const mutant = report({ a: true, b: true });
   mutant.total = 1;
-  mutant.features[0].criteria[1] = { id: 'b', evidence };
+  mutant.features[0].criteria[1] = { id: 'b', stableKey: 'check.b', evidence };
   const result = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
   assert.equal(result.status, 'INVALID_HARNESS_FAILURE');
-  assert.deepEqual(result.targetHarnessFailures, ['7:b']);
+  assert.deepEqual(result.targetHarnessFailures, ['check.b']);
 });
 
 test('lost evidence outside the declared target invalidates a mutation kill', () => {
   const inconclusive = classifyMutationResult(report({ a: true, b: true }),
     report({ a: 'inconclusive', b: false }), mutation);
   assert.equal(inconclusive.status, 'INVALID_INCONCLUSIVE');
-  assert.deepEqual(inconclusive.collateralInconclusive, ['7:a']);
+  assert.deepEqual(inconclusive.collateralInconclusive, ['check.a']);
 
   const harnessEvidence = createCheckEvidence({ status: 'harness_failure', code: 'browser_failure',
     phase: 'assertion', summary: 'browser disappeared', startedAtMs: 1, completedAtMs: 2 });
   const mutant = report({ a: true, b: false });
-  mutant.features[0].criteria[0] = { id: 'a', evidence: harnessEvidence };
+  mutant.features[0].criteria[0] = { id: 'a', stableKey: 'check.a', evidence: harnessEvidence };
   const harness = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
   assert.equal(harness.status, 'INVALID_HARNESS_FAILURE');
-  assert.deepEqual(harness.collateralHarnessFailures, ['7:a']);
+  assert.deepEqual(harness.collateralHarnessFailures, ['check.a']);
 });
 
 test('failure in the wrong criterion is distinguished from survival', () => {
   const result = classifyMutationResult(report({ a: true, b: true }), report({ a: false, b: true }), mutation);
   assert.equal(result.status, 'WRONG_CRITERION');
-  assert.deepEqual(result.collateral.map(item => item.key), ['7:a']);
+  assert.deepEqual(result.collateral.map(item => item.key), ['check.a']);
 });
 
 test('collateral damage fails even when the intended criterion catches the mutant', () => {

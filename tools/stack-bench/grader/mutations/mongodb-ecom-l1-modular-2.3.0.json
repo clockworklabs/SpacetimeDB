@@ -1,21 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "active",
   "fixtureSha256": "d90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40",
   "backend": "mongodb",
   "track": "ecommerce",
-  "level": 1,
   "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
   "note": "Candidate mutation coverage for L1 modular 2.3. It preserves the 2.2 defects and adds deterministic concurrency, external-data synchronization, reconnect recovery, and already-open review-list defects.",
   "mutations": [
     {
       "id": "oversell-unguarded-decrement",
       "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
-      "targets": [
-        { "feature": 201, "criterion": "201a" },
-        { "feature": 201, "criterion": "201b" },
-        { "feature": 201, "criterion": "201c" }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.last-unit.201a","ecommerce.spec.concurrency-safety.last-unit.201b","ecommerce.spec.concurrency-safety.last-unit.201c"],
       "desc": "Remove the quantity guard from the atomic stock decrement so all simultaneous buyers can reserve inventory.",
       "file": "server/src/index.ts",
       "edits": [
@@ -28,7 +23,7 @@
     {
       "id": "purchase-does-not-reserve-stock-restock-race",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
-      "targets": [{ "feature": 202, "criterion": "202a" }],
+      "targets": ["ecommerce.spec.concurrency-safety.restock-race.202a"],
       "desc": "A purchase still creates an order but changes stock by zero, so the rush ends at start plus five instead of start plus two.",
       "file": "server/src/index.ts",
       "edits": [
@@ -41,10 +36,7 @@
     {
       "id": "restock-does-not-increase-stock",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
-      "targets": [
-        { "feature": 202, "criterion": "202-control" },
-        { "feature": 202, "criterion": "202a" }
-      ],
+      "targets": ["ecommerce.spec.concurrency-safety.restock-race.202-control","ecommerce.spec.concurrency-safety.restock-race.202a"],
       "desc": "The restock endpoint accepts the request but increments stock by zero, breaking both the ordinary restock precondition and the race total.",
       "file": "server/src/index.ts",
       "edits": [
@@ -56,7 +48,7 @@
     },
     {
       "id": "existing-cart-line-does-not-increment",
-      "targets": [{ "feature": 203, "criterion": "203a" }],
+      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203a"],
       "desc": "An add to an existing cart line reports success without increasing its quantity.",
       "file": "server/src/index.ts",
       "edits": [
@@ -68,7 +60,7 @@
     },
     {
       "id": "checkout-not-idempotent",
-      "targets": [{ "feature": 203, "criterion": "203b" }],
+      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203b"],
       "desc": "Replace the atomic claim-and-clear with a read so two checkouts can create two orders from one cart.",
       "file": "server/src/index.ts",
       "edits": [
@@ -81,7 +73,7 @@
     {
       "id": "external-stock-polling-disabled",
       "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
-      "targets": [{ "feature": 901, "criterion": "901a" }],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901a"],
       "desc": "Stop reconciling direct database changes while leaving route-triggered broadcasts and admin polling intact.",
       "file": "server/src/index.ts",
       "edits": [
@@ -94,7 +86,7 @@
     {
       "id": "reconnect-generation-ignores-current-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
-      "targets": [{ "feature": 901, "criterion": "901d" }],
+      "targets": ["ecommerce.spec.external-data-sync.external-stock.901d"],
       "desc": "The client follows stock normally until the browser goes offline, then ignores both reconnect refreshes and catalog events after network restoration.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -115,7 +107,7 @@
     {
       "id": "open-review-list-ignores-live-update",
       "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
-      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "targets": ["ecommerce.spec.live-state.open-list.902a"],
       "desc": "Ignore the committed review update in clients whose item detail is already open.",
       "file": "client/src/App.tsx",
       "edits": [
@@ -128,7 +120,7 @@
     {
       "id": "open-review-list-renders-each-review-twice",
       "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
-      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "targets": ["ecommerce.spec.live-state.open-list.902a"],
       "desc": "Render every committed review twice in the already-open list.",
       "file": "client/src/App.tsx",
       "edits": [

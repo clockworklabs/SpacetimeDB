@@ -39,15 +39,15 @@ const cases = [
     manifest: 'mongodb-ecom-l1-modular-2.3.0.json',
     lastUnitMutation: 'oversell-unguarded-decrement',
     expectedMutations: [
-      ['oversell-unguarded-decrement', LAST_UNIT, ['201:201a', '201:201b', '201:201c']],
-      ['purchase-does-not-reserve-stock-restock-race', RESTOCK_RACE, ['202:202a']],
-      ['restock-does-not-increase-stock', RESTOCK_RACE, ['202:202-control', '202:202a']],
-      ['existing-cart-line-does-not-increment', DUPLICATE_CHECKOUT, ['203:203a']],
-      ['checkout-not-idempotent', DUPLICATE_CHECKOUT, ['203:203b']],
-      ['external-stock-polling-disabled', EXTERNAL_LIVE, ['901:901a']],
-      ['reconnect-generation-ignores-current-catalog', EXTERNAL_RECONNECT, ['901:901d']],
-      ['open-review-list-ignores-live-update', OPEN_LIST, ['902:902a']],
-      ['open-review-list-renders-each-review-twice', OPEN_LIST, ['902:902a']],
+      ['oversell-unguarded-decrement', LAST_UNIT, ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']],
+      ['purchase-does-not-reserve-stock-restock-race', RESTOCK_RACE, ['ecommerce.spec.concurrency-safety.restock-race.202a']],
+      ['restock-does-not-increase-stock', RESTOCK_RACE, ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'ecommerce.spec.concurrency-safety.restock-race.202a']],
+      ['existing-cart-line-does-not-increment', DUPLICATE_CHECKOUT, ['ecommerce.spec.concurrency-safety.duplicate-checkout.203a']],
+      ['checkout-not-idempotent', DUPLICATE_CHECKOUT, ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b']],
+      ['external-stock-polling-disabled', EXTERNAL_LIVE, ['ecommerce.spec.external-data-sync.external-stock.901a']],
+      ['reconnect-generation-ignores-current-catalog', EXTERNAL_RECONNECT, ['ecommerce.spec.external-data-sync.external-stock.901d']],
+      ['open-review-list-ignores-live-update', OPEN_LIST, ['ecommerce.spec.live-state.open-list.902a']],
+      ['open-review-list-renders-each-review-twice', OPEN_LIST, ['ecommerce.spec.live-state.open-list.902a']],
     ],
   },
   {
@@ -56,15 +56,15 @@ const cases = [
     manifest: 'postgres-ecom-l1-modular-2.3.0.json',
     lastUnitMutation: 'oversell-no-row-lock',
     expectedMutations: [
-      ['oversell-no-row-lock', LAST_UNIT, ['201:201a', '201:201b', '201:201c']],
-      ['purchase-does-not-reserve-stock-restock-race', RESTOCK_RACE, ['202:202a']],
-      ['restock-does-not-increase-stock', RESTOCK_RACE, ['202:202-control', '202:202a']],
-      ['existing-cart-line-does-not-increment', DUPLICATE_CHECKOUT, ['203:203a']],
-      ['checkout-does-not-empty-cart', DUPLICATE_CHECKOUT, ['203:203b']],
-      ['external-stock-polling-disabled', EXTERNAL_LIVE, ['901:901a']],
-      ['reconnect-does-not-send-current-catalog', EXTERNAL_RECONNECT, ['901:901d']],
-      ['open-review-list-ignores-live-update', OPEN_LIST, ['902:902a']],
-      ['open-review-list-renders-each-review-twice', OPEN_LIST, ['902:902a']],
+      ['oversell-no-row-lock', LAST_UNIT, ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']],
+      ['purchase-does-not-reserve-stock-restock-race', RESTOCK_RACE, ['ecommerce.spec.concurrency-safety.restock-race.202a']],
+      ['restock-does-not-increase-stock', RESTOCK_RACE, ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'ecommerce.spec.concurrency-safety.restock-race.202a']],
+      ['existing-cart-line-does-not-increment', DUPLICATE_CHECKOUT, ['ecommerce.spec.concurrency-safety.duplicate-checkout.203a']],
+      ['checkout-does-not-empty-cart', DUPLICATE_CHECKOUT, ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b']],
+      ['external-stock-polling-disabled', EXTERNAL_LIVE, ['ecommerce.spec.external-data-sync.external-stock.901a']],
+      ['reconnect-does-not-send-current-catalog', EXTERNAL_RECONNECT, ['ecommerce.spec.external-data-sync.external-stock.901d']],
+      ['open-review-list-ignores-live-update', OPEN_LIST, ['ecommerce.spec.live-state.open-list.902a']],
+      ['open-review-list-renders-each-review-twice', OPEN_LIST, ['ecommerce.spec.live-state.open-list.902a']],
     ],
   },
   {
@@ -74,15 +74,15 @@ const cases = [
     lastUnitMutation: 'purchase-does-not-reserve-stock-last-unit',
     expectedMutations: [
       ['purchase-does-not-reserve-stock-last-unit', LAST_UNIT,
-        ['201:201a', '201:201b', '201:201c']],
-      ['purchase-does-not-reserve-stock-restock-race', RESTOCK_RACE, ['202:202a']],
-      ['restock-does-not-increase-stock', RESTOCK_RACE, ['202:202-control', '202:202a']],
-      ['existing-cart-line-does-not-increment', DUPLICATE_CHECKOUT, ['203:203a']],
-      ['checkout-does-not-empty-cart', DUPLICATE_CHECKOUT, ['203:203b']],
-      ['stock-subscription-snapshotted-once', EXTERNAL_LIVE, ['901:901a']],
-      ['stock-view-keeps-pre-reconnect-snapshot', EXTERNAL_RECONNECT, ['901:901d']],
-      ['open-review-list-snapshots-on-selection', OPEN_LIST, ['902:902a']],
-      ['open-review-list-renders-each-review-twice', OPEN_LIST, ['902:902a']],
+        ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']],
+      ['purchase-does-not-reserve-stock-restock-race', RESTOCK_RACE, ['ecommerce.spec.concurrency-safety.restock-race.202a']],
+      ['restock-does-not-increase-stock', RESTOCK_RACE, ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'ecommerce.spec.concurrency-safety.restock-race.202a']],
+      ['existing-cart-line-does-not-increment', DUPLICATE_CHECKOUT, ['ecommerce.spec.concurrency-safety.duplicate-checkout.203a']],
+      ['checkout-does-not-empty-cart', DUPLICATE_CHECKOUT, ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b']],
+      ['stock-subscription-snapshotted-once', EXTERNAL_LIVE, ['ecommerce.spec.external-data-sync.external-stock.901a']],
+      ['stock-view-keeps-pre-reconnect-snapshot', EXTERNAL_RECONNECT, ['ecommerce.spec.external-data-sync.external-stock.901d']],
+      ['open-review-list-snapshots-on-selection', OPEN_LIST, ['ecommerce.spec.live-state.open-list.902a']],
+      ['open-review-list-renders-each-review-twice', OPEN_LIST, ['ecommerce.spec.live-state.open-list.902a']],
     ],
   },
 ];
@@ -189,30 +189,26 @@ for (const entry of cases) {
         mutationTargetKeys(mutation),
       ]), entry.expectedMutations);
       assert.equal(manifest.mutations.some(mutation => mutationTargetKeys(mutation)
-        .includes('901:901b')), false, '901b has no deterministic candidate mutation');
+        .includes('ecommerce.spec.external-data-sync.external-stock.901b')), false, '901b has no deterministic candidate mutation');
       const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
       const lastUnit = mutations.get(entry.lastUnitMutation);
       assert.equal(mutationScenario(manifest, lastUnit),
         'tracks/ecommerce/scenarios/01-last-unit-2.3.0.json');
-      assert.deepEqual(mutationTargetKeys(lastUnit), ['201:201a', '201:201b', '201:201c']);
+      assert.deepEqual(mutationTargetKeys(lastUnit), ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']);
 
       const purchase = mutations.get('purchase-does-not-reserve-stock-restock-race');
       assert.equal(mutationScenario(manifest, purchase),
         'tracks/ecommerce/scenarios/01-restock-race-2.3.0.json');
-      assert.deepEqual(mutationTargetKeys(purchase), ['202:202a']);
+      assert.deepEqual(mutationTargetKeys(purchase), ['ecommerce.spec.concurrency-safety.restock-race.202a']);
       const restock = mutations.get('restock-does-not-increase-stock');
       assert.equal(mutationScenario(manifest, restock),
         'tracks/ecommerce/scenarios/01-restock-race-2.3.0.json');
-      assert.deepEqual(mutationTargetKeys(restock), ['202:202-control', '202:202a']);
+      assert.deepEqual(mutationTargetKeys(restock), ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'ecommerce.spec.concurrency-safety.restock-race.202a']);
 
+      const releaseKeys = new Set(release.checkCatalog.map(check => check.stableKey));
       for (const mutation of manifest.mutations) {
-        const scenario = mutationScenario(manifest, mutation)
-          .replace('tracks/ecommerce/', '');
         for (const key of mutationTargetKeys(mutation)) {
-          const split = key.indexOf(':');
-          assert(release.checkCatalog.some(check => check.source === scenario
-            && String(check.featureId) === key.slice(0, split)
-            && check.criterionId === key.slice(split + 1)),
+          assert(releaseKeys.has(key),
           `${mutation.id} must target an exact check in the 2.3 release`);
         }
         const source = readFileSync(join(app, mutation.file), 'utf8');

@@ -16,29 +16,30 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
   assert.ok(files.length > 0, 'expected mutation manifests');
   for (const file of files) {
     const manifest = JSON.parse(readFileSync(join(MUTATIONS, file), 'utf8'));
+    if (manifest.status === 'legacy-unreproducible') {
+      assert.equal(manifest.schemaVersion, undefined,
+        `${file} must remain archive data rather than an executable manifest`);
+      continue;
+    }
     const definitions = validateMutationDefinitions(manifest.mutations,
       { defaultScenario: manifest.scenario, requireScenario: true });
     assert.deepEqual(definitions.issues, [], `${file} has an invalid mutation definition`);
     assert.match(manifest.status, /^(active|candidate|legacy-unreproducible)$/);
-    if (manifest.status !== 'legacy-unreproducible') assert.equal(manifest.schemaVersion, 1);
+    assert.equal(manifest.schemaVersion, 2);
+    assert.deepEqual(Object.keys(manifest).filter(field => !new Set([
+      'schemaVersion', 'status', 'fixtureSha256', 'backend', 'track', 'scenario', 'note', 'mutations',
+    ]).has(field)), [], `${file} has unknown root fields`);
     assert.match(manifest.backend, /^(spacetime|postgres|mongodb)$/);
     assert.equal(typeof manifest.track, 'string');
-    assert.ok(Number.isInteger(manifest.level) && manifest.level > 0);
-    if (manifest.status !== 'legacy-unreproducible') {
-      assert.match(manifest.fixtureSha256, /^[a-f0-9]{64}$/);
-    }
+    assert.equal(manifest.level, undefined);
+    assert.match(manifest.fixtureSha256, /^[a-f0-9]{64}$/);
 
     for (const mutation of manifest.mutations) {
       const scenarioPath = mutationScenario(manifest, mutation);
       assert.equal(typeof scenarioPath, 'string');
-      const scenario = JSON.parse(readFileSync(join(ROOT, scenarioPath), 'utf8'));
       for (const target of mutationTargetKeys(mutation)) {
-        const [featureId, ...criterionParts] = target.split(':');
-        const feature = scenario.features.find(candidate => String(candidate.id) === featureId);
-        assert.ok(feature, `${file}/${mutation.id} names missing feature ${featureId}`);
-        const criteria = new Set(feature.criteria.map(criterion => String(criterion.id)));
-        const criterion = criterionParts.join(':');
-        assert.ok(criteria.has(criterion), `${file}/${mutation.id} names missing criterion ${target}`);
+        assert.match(target, /^[a-z0-9][a-z0-9.-]+$/,
+          `${file}/${mutation.id} has an invalid stable check ID`);
       }
     }
   }

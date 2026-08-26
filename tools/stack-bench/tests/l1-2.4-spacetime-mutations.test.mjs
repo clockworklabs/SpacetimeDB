@@ -40,11 +40,7 @@ const SERVER_GUARANTEES = new Set([
 ]);
 
 function targetStableKey(release, mutation, target) {
-  const source = mutation.scenario.replaceAll('\\', '/')
-    .replace(/^tracks\/ecommerce\//, '');
-  return release.checkCatalog.find(check => check.source === source
-    && check.featureId === Number(target.split(':', 1)[0])
-    && check.criterionId === target.slice(target.indexOf(':') + 1))?.stableKey;
+  return release.checkCatalog.find(check => check.stableKey === target)?.stableKey;
 }
 
 test('Spacetime shared L1 mutations bind every honest defect to the current source', t => {
@@ -59,7 +55,7 @@ test('Spacetime shared L1 mutations bind every honest defect to the current sour
 
     assert.deepEqual({ schemaVersion: manifest.schemaVersion, status: manifest.status,
       backend: manifest.backend, track: manifest.track, level: manifest.level }, {
-      schemaVersion: 1, status: 'active', backend: 'spacetime', track: 'ecommerce', level: 1,
+      schemaVersion: 2, status: 'active', backend: 'spacetime', track: 'ecommerce', level: undefined,
     });
     assert.equal(Object.hasOwn(manifest, 'scenario'), false,
       'each mutation must own its exact scenario instead of using a fallback');

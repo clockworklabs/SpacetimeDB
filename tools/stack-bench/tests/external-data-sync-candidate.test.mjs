@@ -33,24 +33,24 @@ const cases = [
     backend: 'mongodb',
     fixtureSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40',
     mutations: [
-      ['external-stock-polling-disabled', LIVE_SCENARIO, ['901:901a']],
-      ['reconnect-generation-ignores-current-catalog', RECONNECT_SCENARIO, ['901:901d']],
+      ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
+      ['reconnect-generation-ignores-current-catalog', RECONNECT_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901d']],
     ],
   },
   {
     backend: 'postgres',
     fixtureSha256: 'ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1',
     mutations: [
-      ['external-stock-polling-disabled', LIVE_SCENARIO, ['901:901a']],
-      ['reconnect-does-not-send-current-catalog', RECONNECT_SCENARIO, ['901:901d']],
+      ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
+      ['reconnect-does-not-send-current-catalog', RECONNECT_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901d']],
     ],
   },
   {
     backend: 'spacetime',
     fixtureSha256: '7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6',
     mutations: [
-      ['stock-subscription-snapshotted-once', LIVE_SCENARIO, ['901:901a']],
-      ['stock-view-keeps-pre-reconnect-snapshot', RECONNECT_SCENARIO, ['901:901d']],
+      ['stock-subscription-snapshotted-once', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
+      ['stock-view-keeps-pre-reconnect-snapshot', RECONNECT_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901d']],
     ],
   },
 ];
@@ -155,14 +155,15 @@ for (const entry of cases) {
         requireScenario: true,
       }).issues, []);
       const mutations = manifest.mutations.filter(mutation =>
-        mutationTargetKeys(mutation).some(key => key.startsWith('901:')));
+        mutationTargetKeys(mutation).some(key =>
+          key.startsWith('ecommerce.spec.external-data-sync.external-stock.901')));
       assert.deepEqual(mutations.map(mutation => [
         mutation.id,
         mutationScenario(manifest, mutation),
         mutationTargetKeys(mutation),
       ]), entry.mutations);
       assert.equal(mutations.some(mutation =>
-        mutationTargetKeys(mutation).includes('901:901b')), false,
+        mutationTargetKeys(mutation).includes('ecommerce.spec.external-data-sync.external-stock.901b')), false,
       'supporting reload evidence must not acquire a synthetic mutant');
 
       for (const mutation of mutations) {
@@ -202,7 +203,7 @@ test('MongoDB reconnect calibration freezes both catalog recovery paths only aft
   const manifest = json(join(MUTATIONS, 'mongodb-ecom-l1-modular-2.3.0.json'));
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'reconnect-generation-ignores-current-catalog');
-  assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
+  assert.deepEqual(mutationTargetKeys(mutation), ['ecommerce.spec.external-data-sync.external-stock.901d']);
   assert.equal(mutation.file, 'client/src/App.tsx');
   assert.equal(mutationEdits(mutation).length, 3);
   assert.match(mutationEdits(mutation)[0].replace, /addEventListener\(\"offline\"/);
@@ -214,7 +215,7 @@ test('PostgreSQL reconnect calibration freezes catalog updates only after the of
   const manifest = json(join(MUTATIONS, 'postgres-ecom-l1-modular-2.3.0.json'));
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'reconnect-does-not-send-current-catalog');
-  assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
+  assert.deepEqual(mutationTargetKeys(mutation), ['ecommerce.spec.external-data-sync.external-stock.901d']);
   assert.equal(mutation.file, 'client/src/App.tsx');
   assert.match(mutationEdits(mutation)[0].replace, /addEventListener\(\"offline\"/);
   assert.match(mutationEdits(mutation)[1].replace, /acceptCatalogUpdates\.current/);
@@ -225,7 +226,7 @@ test('SpacetimeDB reconnect calibration preserves the last online stock snapshot
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'stock-view-keeps-pre-reconnect-snapshot');
   const replacement = mutationEdits(mutation).at(-1).replace;
-  assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
+  assert.deepEqual(mutationTargetKeys(mutation), ['ecommerce.spec.external-data-sync.external-stock.901d']);
   assert.equal(mutation.file, 'client/src/App.tsx');
   assert.match(replacement, /addEventListener\('offline'/);
   assert.match(replacement, /lastOnlineStockRows\.current = liveStockRows/);

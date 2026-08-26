@@ -1,18 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "active",
   "fixtureSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0",
   "backend": "postgres",
   "track": "ecommerce",
-  "level": 2,
   "scenario": "tracks/ecommerce/scenarios/01-contention.json",
   "note": "Exact defects for the maintained PostgreSQL oracle reused by L2. Inherited contention and L2 fulfilment authorization are independently graded under their own scenarios.",
   "mutations": [
     {
       "id": "oversell-no-row-lock",
-      "kills": ["201a", "201b"],
+      "targets": ["ecommerce.catalog-inventory.last-unit-sold-once.201a","ecommerce.catalog-inventory.last-unit-sold-once.201b"],
       "desc": "Drop FOR UPDATE from the positive-stock row selection so concurrent buyers can select the same last unit.",
-      "breaks": 201,
       "file": "server/src/index.ts",
       "edits": [
         {
@@ -23,9 +21,8 @@
     },
     {
       "id": "checkout-does-not-empty-cart",
-      "kills": ["203b"],
+      "targets": ["ecommerce.cart-checkout.duplicate-checkout.203b"],
       "desc": "Keep checked-out cart lines so a second checkout can create another order from the same cart.",
-      "breaks": 203,
       "file": "server/src/index.ts",
       "edits": [
         {
@@ -37,9 +34,8 @@
     {
       "id": "customer-can-ship-order",
       "scenario": "tracks/ecommerce/scenarios/02-features.json",
-      "kills": ["1e"],
+      "targets": ["ecommerce.operations-access.fulfilment-queue.1e"],
       "desc": "Replace the staff gate on the ship route with ordinary authentication, allowing a customer to ship their own pending order.",
-      "breaks": 1,
       "file": "server/src/index.ts",
       "edits": [
         {

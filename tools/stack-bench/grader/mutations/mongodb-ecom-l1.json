@@ -1,18 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "active",
   "fixtureSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
   "backend": "mongodb",
   "track": "ecommerce",
-  "level": 1,
   "scenario": "tracks/ecommerce/scenarios/01-contention.json",
   "note": "Defects injected into the generated MongoDB shop, so the ecommerce contention criteria are proven on the backend they score rather than only on PostgreSQL. Anchors are specific to this app; regenerate for another.",
   "mutations": [
     {
       "id": "oversell-unguarded-decrement",
-      "kills": ["201a", "201b"],
+      "targets": ["ecommerce.catalog-inventory.last-unit-sold-once.201a","ecommerce.catalog-inventory.last-unit-sold-once.201b"],
       "desc": "Remove the quantity guard from the atomic stock decrement. The app reserves stock with findOneAndUpdate({_id, quantity: {$gte: take}}, {$inc: {quantity: -take}}) — the filter is what makes the decrement safe under concurrency, because a document whose stock has already been taken no longer matches. Without it the update always applies and simultaneous buyers each decrement the same units.",
-      "breaks": 201,
       "file": "server/src/index.ts",
       "edits": [
         {
@@ -23,9 +21,8 @@
     },
     {
       "id": "checkout-not-idempotent",
-      "kills": ["203b"],
+      "targets": ["ecommerce.cart-checkout.duplicate-checkout.203b"],
       "desc": "Replace the atomic claim-and-clear with a read, so two simultaneous checkouts both observe the same cart and each create an order.",
-      "breaks": 203,
       "file": "server/src/index.ts",
       "edits": [
         {
