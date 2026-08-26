@@ -15,10 +15,6 @@
       "types": "./src/openrouter.ts",
       "default": "./src/openrouter.ts"
     },
-    "./kit": {
-      "types": "./src/kit.ts",
-      "default": "./src/kit.ts"
-    },
     "./providers": {
       "types": "./src/providers.ts",
       "default": "./src/providers.ts"
@@ -65,7 +61,7 @@
     "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run test:unit",
-    "test:unit": "tsx scripts/test-kit.ts"
+    "test:unit": "tsx scripts/test.ts"
   },
   "dependencies": {},
   "peerDependencies": {

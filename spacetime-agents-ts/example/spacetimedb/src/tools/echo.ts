@@ -1,5 +1,5 @@
 import { t } from 'spacetimedb/server';
-import { agentTool } from '@spacetimedb/agents/kit';
+import { agentTool } from '@spacetimedb/agents';
 
 export default agentTool(
   'echoes the given message back to the caller',

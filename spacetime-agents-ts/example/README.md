@@ -8,7 +8,7 @@ and file HTTP handlers.
 
 ## What this demonstrates
 
-- Defining typed agents and tools with `@spacetimedb/agents/kit`.
+- Defining typed agents and tools with `@spacetimedb/agents`.
 - Running an agent loop from a SpacetimeDB procedure with OpenRouter, OpenAI, or
   Anthropic.
 - Isolating threads, messages, locks, files, and embeddings by authenticated user.
@@ -152,7 +152,7 @@ Agents are registered by key in `spacetimedb/src/agents/index.ts`. The registry 
 is the runtime name stored on each thread.
 
 ```ts
-import { defineAgent } from '@spacetimedb/agents/kit';
+import { defineAgent } from '@spacetimedb/agents';
 import myTool from '../tools/myTool';
 
 export default defineAgent({

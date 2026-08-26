@@ -20,7 +20,7 @@ import {
   formatMessagesForSummarizer,
 } from '../src/summarize.ts';
 import type { HttpLike } from '@spacetimedb/agents/openrouter';
-import type { InvokeResult } from '@spacetimedb/agents/kit';
+import type { InvokeResult } from '@spacetimedb/agents';
 
 let failures = 0;
 function assert(cond: boolean, msg: string): void {

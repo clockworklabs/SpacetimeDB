@@ -12,7 +12,7 @@ import {
 import { Timestamp, type Identity } from 'spacetimedb';
 import { deleteStaleThreadLocks, staleLockCutoffMicros } from '../stale-locks';
 import { installAgents } from './install';
-import { agentTool, defineAgent, makeAgentRegistry } from '../kit';
+import { agentTool, defineAgent, makeAgentRegistry } from '../agent';
 import {
   callChat,
   type ChatMessage,

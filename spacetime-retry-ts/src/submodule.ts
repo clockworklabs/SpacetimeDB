@@ -1,4 +1,4 @@
-import { makeRetryDispatch, type RetryHandler } from './kit';
+import { makeRetryDispatch, type RetryHandler } from './handler';
 import type { Identity, ScheduleAt, Timestamp } from 'spacetimedb';
 import type { Infer, VariantsObj } from 'spacetimedb/server';
 

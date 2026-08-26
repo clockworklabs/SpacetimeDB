@@ -1,4 +1,4 @@
-import { makeAgentRegistry } from '@spacetimedb/agents/kit';
+import { makeAgentRegistry } from '@spacetimedb/agents';
 import {
   callChat,
   type ChatMessage,

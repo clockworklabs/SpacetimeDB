@@ -11,10 +11,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./kit": {
-      "types": "./src/kit.ts",
-      "default": "./src/kit.ts"
-    },
     "./submodule": {
       "types": "./src/submodule.ts",
       "default": "./src/submodule.ts"

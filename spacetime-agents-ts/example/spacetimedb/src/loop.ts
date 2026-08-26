@@ -8,7 +8,7 @@ import {
   type ResponseFormat,
   type Provider,
 } from '@spacetimedb/agents/openrouter';
-import type { InvokeResult } from '@spacetimedb/agents/kit';
+import type { InvokeResult } from '@spacetimedb/agents';
 
 export const USER_CONTENT_MAX = 32_000;
 export const TOOL_RESULT_MAX = 64_000;

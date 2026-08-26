@@ -111,8 +111,8 @@ for private configuration, caller-scoped views, and an agent loop.
   embedding requests.
 - `cosineSimilarity` and `topKByScore` provide in-memory ranking helpers.
 
-Documented subpath exports are `./submodule`, `./kit`, `./openrouter`,
-`./providers`, `./embeddings`, and `./stale-locks`.
+Documented subpath exports are `./submodule`, `./openrouter`, `./providers`,
+`./embeddings`, and `./stale-locks`.
 
 Tool dispatch rejects malformed JSON, missing and unknown fields, incorrect
 types, unsafe integers, inputs above 64 KiB, arrays above 1,000 items, and tool
@@ -142,7 +142,7 @@ Package entrypoints:
 - `@spacetimedb/agents` exports the complete public surface.
 - `@spacetimedb/agents/submodule` exports the ready-to-mount Agents schema and
   installer.
-- `@spacetimedb/agents/kit` exports typed agents, tools, and dispatch.
+- `@spacetimedb/agents` exports typed agents, tools, and dispatch.
 - `@spacetimedb/agents/providers` exports provider adapters.
 - `@spacetimedb/agents/embeddings` exports embedding and ranking helpers.
 - `@spacetimedb/agents/openrouter` exports the common chat request layer.

@@ -1,4 +1,4 @@
-import { defineAgent } from '@spacetimedb/agents/kit';
+import { defineAgent } from '@spacetimedb/agents';
 
 export default defineAgent({
   defaultModel: 'anthropic/claude-haiku-4.5',

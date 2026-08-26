@@ -1,4 +1,4 @@
-// Pure-Node tests for spacetime-agents-ts/kit.
+// Pure-Node tests for the Agents package.
 // Avoids importing 'spacetimedb/server' (Node 22 ESM can't parse its `using` decls);
 // builds minimal AlgebraicType fixtures matching what t.object(...) would produce.
 
@@ -8,7 +8,7 @@ import {
   defineAgent,
   makeAgentRegistry,
   typeBuilderToJsonSchema,
-} from '../src/kit.ts';
+} from '../src/agent.ts';
 import {
   openRouterProvider,
   openAiProvider,
@@ -1186,4 +1186,4 @@ if (failures > 0) {
   process.stderr.write(`\n${failures} test(s) failed.\n`);
   process.exit(1);
 }
-process.stdout.write('\nall kit tests passed.\n');
+process.stdout.write('\nall Agents tests passed.\n');

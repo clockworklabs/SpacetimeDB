@@ -6,7 +6,7 @@ import {
   retryFailed,
   retryHandler,
   retryOk,
-} from '../src/kit.ts';
+} from '../src/handler.ts';
 
 const fakeBuilder = <T>(): TypeBuilder<T, AlgebraicType> =>
   ({}) as unknown as TypeBuilder<T, AlgebraicType>;

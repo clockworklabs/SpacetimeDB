@@ -5,5 +5,5 @@ export {
   retryOk,
   type RetryHandler,
   type RetryResult,
-} from './kit';
+} from './handler';
 export { createRetrySubmodule, type RetryHandlers } from './submodule';

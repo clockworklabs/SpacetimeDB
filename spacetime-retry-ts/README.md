@@ -101,11 +101,9 @@ screens can subscribe to the factory's admin task and history views.
 Package entrypoints:
 
 - `@spacetimedb/retry/submodule` exports `createRetrySubmodule`.
-- `@spacetimedb/retry/kit` exports handler, dispatch, and result helpers.
-- `@spacetimedb/retry` re-exports the supported public surface.
+- `@spacetimedb/retry` exports handler, dispatch, and result helpers.
 
-The helpers are available from the package root and `./kit`; the complete
-factory is available from `./submodule`.
+The complete factory is available from `./submodule`.
 
 ## Testing
 

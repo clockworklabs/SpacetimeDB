@@ -4,14 +4,14 @@ export {
   defineAgent,
   makeAgentRegistry,
   typeBuilderToJsonSchema,
-} from './kit.ts';
+} from './agent.ts';
 export type {
   AgentTool,
   AgentDefinition,
   AgentRegistry,
   InvokeResult,
   ToolMap,
-} from './kit.ts';
+} from './agent.ts';
 
 export { callChat, isRetryableError } from './openrouter.ts';
 export type {

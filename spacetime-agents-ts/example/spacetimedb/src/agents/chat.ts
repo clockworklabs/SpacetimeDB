@@ -1,4 +1,4 @@
-import { defineAgent } from '@spacetimedb/agents/kit';
+import { defineAgent } from '@spacetimedb/agents';
 import getTime from '../tools/getTime';
 import echo from '../tools/echo';
 
