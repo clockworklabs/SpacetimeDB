@@ -994,6 +994,7 @@ dependencies = [
  "ci-common",
  "clap 4.5.50",
  "duct",
+ "spacetimedb-testing",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 #[cfg(feature = "browser")]
 use std::path::Path;
 
-use spacetimedb_testing::sdk::{Test, TestBuilder};
+use spacetimedb_testing::sdk::{PrebuiltClient, Test, TestBuilder};
 
 fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> TestBuilder {
     let builder = Test::builder();
@@ -77,6 +77,10 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
         builder
             .with_compile_command(compile_command)
             .with_run_command(run_command)
+            .with_prebuilt_client(PrebuiltClient::BrowserRust {
+                package_name,
+                run_selector: run_selector.to_owned(),
+            })
     }
 
     #[cfg(not(feature = "browser"))]
@@ -86,9 +90,17 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
             None => "cargo run".to_owned(),
         };
 
+        let binary_name = std::path::Path::new(client_project)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("client project path should end in a UTF-8 directory name")
+            .to_owned();
+        let args = run_selector.into_iter().map(str::to_owned).collect();
+
         builder
             .with_compile_command("cargo build")
             .with_run_command(run_command)
+            .with_prebuilt_client(PrebuiltClient::NativeRust { binary_name, args })
     }
 }
 
@@ -621,20 +633,24 @@ view_tests!(rust_view, "");
 //view_tests!(cpp_view, "-cpp");
 
 mod case_conversion_ts {
-    use spacetimedb_testing::sdk::Test;
+    use spacetimedb_testing::sdk::{PrebuiltClient, Test};
 
     const MODULE: &str = "sdk-test-case-conversion-ts";
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
 
     fn make_test(subcommand: &str) -> Test {
         Test::builder()
+            .with_client(CLIENT)
             .with_name(subcommand)
             .with_module(MODULE)
-            .with_client(CLIENT)
             .with_language("rust")
             .with_bindings_dir("src/module_bindings")
             .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
+            .with_run_command(format!("cargo run -- {subcommand}"))
+            .with_prebuilt_client(PrebuiltClient::NativeRust {
+                binary_name: "case-conversion-client".into(),
+                args: vec![subcommand.into()],
+            })
             .build()
     }
 
@@ -670,20 +686,24 @@ mod case_conversion_ts {
 }
 
 mod case_conversion_rust {
-    use spacetimedb_testing::sdk::Test;
+    use spacetimedb_testing::sdk::{PrebuiltClient, Test};
 
     const MODULE: &str = "sdk-test-case-conversion";
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
 
     fn make_test(subcommand: &str) -> Test {
         Test::builder()
+            .with_client(CLIENT)
             .with_name(subcommand)
             .with_module(MODULE)
-            .with_client(CLIENT)
             .with_language("rust")
             .with_bindings_dir("src/module_bindings")
             .with_compile_command("cargo build")
-            .with_run_command(format!("cargo run -- {}", subcommand))
+            .with_run_command(format!("cargo run -- {subcommand}"))
+            .with_prebuilt_client(PrebuiltClient::NativeRust {
+                binary_name: "case-conversion-client".into(),
+                args: vec![subcommand.into()],
+            })
             .build()
     }
 
@@ -724,7 +744,7 @@ mod case_conversion_rust {
 /// - Table accessors, field names with digit boundaries, nested structs, enum variants
 /// - Reducers with explicit names, query builder filters and joins
 mod case_conversion_rust_ts_client {
-    use spacetimedb_testing::sdk::Test;
+    use spacetimedb_testing::sdk::{PrebuiltClient, Test};
 
     const MODULE: &str = "sdk-test-case-conversion";
     const CLIENT: &str = concat!(
@@ -743,6 +763,11 @@ mod case_conversion_rust_ts_client {
                 "sh -c 'pnpm install && pnpm --dir .. run build && pnpm exec prettier --write src/module_bindings && pnpm run build'",
             )
             .with_run_command(format!("node dist/index.js {}", subcommand))
+            .with_prebuilt_client(PrebuiltClient::TypeScript {
+                package_name: "case-conversion-test-client".to_owned(),
+                entrypoint: "dist/index.js".into(),
+                args: vec![subcommand.to_owned()],
+            })
             .build()
     }
 
