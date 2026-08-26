@@ -6,7 +6,7 @@
   "scripts": {
     "build": "spacetime build",
     "publish:local": "spacetime publish --server local --yes spacetime-agents-example",
-    "test:unit": "tsx scripts/test-loop.ts"
+    "test": "tsx scripts/test-loop.ts"
   },
   "dependencies": {
     "@spacetimedb/agents": "workspace:*",

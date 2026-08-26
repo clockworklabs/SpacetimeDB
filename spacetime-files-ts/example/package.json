@@ -9,7 +9,7 @@
     "build:module:fresh": "pnpm --dir spacetimedb run build && pnpm --dir spacetimedb run publish:local:reset && pnpm run spacetime:generate && pnpm run build:app",
     "build:app": "pnpm run check && esbuild src/app.ts --bundle --format=esm --outfile=public/app.js --target=es2022 --sourcemap",
     "check": "tsc --noEmit",
-    "test:unit": "tsx scripts/test-downloads.ts && tsx scripts/test-selection.ts",
+    "test": "tsx scripts/test-downloads.ts && tsx scripts/test-selection.ts",
     "build": "pnpm run spacetime:generate && pnpm run build:app",
     "dev": "pnpm run build && tsx server.ts"
   },

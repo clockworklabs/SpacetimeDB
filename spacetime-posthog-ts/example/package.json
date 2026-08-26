@@ -11,7 +11,7 @@
     "build:app": "pnpm run check && esbuild src/app.ts --bundle --format=esm --outfile=public/app.js --target=es2022 --sourcemap",
     "build": "pnpm run spacetime:generate && pnpm run build:app",
     "dev": "pnpm run build && tsx server.ts",
-    "test:unit": "tsx scripts/test-economy.ts"
+    "test": "tsx scripts/test-economy.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

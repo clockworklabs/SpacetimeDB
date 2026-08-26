@@ -183,7 +183,7 @@ After changing an agent or tool, republish the module and regenerate the client.
 
 ```powershell
 pnpm --dir spacetimedb run build
-pnpm --dir spacetimedb run test:unit
+pnpm --dir spacetimedb test
 pnpm run build
 pnpm exec tsc -p tsconfig.json
 ```

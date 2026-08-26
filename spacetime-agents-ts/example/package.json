@@ -8,7 +8,7 @@
     "build:module": "spacetime publish --server local --yes --module-path ./spacetimedb spacetime-agents-example && pnpm run spacetime:generate && pnpm run build:app",
     "build:module:fresh": "spacetime publish --server local --yes --delete-data=always --module-path ./spacetimedb spacetime-agents-example && pnpm run spacetime:generate && pnpm run build:app",
     "check": "tsc --noEmit",
-    "test:unit": "node scripts/test-markdown.mjs",
+    "test": "node scripts/test-markdown.mjs",
     "build:app": "pnpm run check && esbuild src/app.ts --bundle --format=esm --outfile=public/app.js --target=es2022 --sourcemap",
     "build": "pnpm run spacetime:generate && pnpm run build:app",
     "dev": "pnpm run build && tsx server.ts"
