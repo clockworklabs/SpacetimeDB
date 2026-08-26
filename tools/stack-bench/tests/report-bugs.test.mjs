@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'commands', 'report-bugs.mjs');
 
@@ -44,6 +45,25 @@ test('repair report selection follows typed evidence even when prose claims the 
     assert.equal(reported.status, 0, reported.stderr);
     assert.match(readFileSync(join(failedApp, 'BUG_REPORT.md'), 'utf8'),
       /INCONCLUSIVE: this wording must not suppress repair/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('repair metadata stays in the harness evidence directory and does not change source identity', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-metadata-'));
+  try {
+    const app = join(root, 'app');
+    mkdirSync(app, { recursive: true });
+    writeGrade(app, 'failed', 'the owner check still failed');
+    const before = hashAppSource(app).sha256;
+
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+
+    assert.equal(reported.status, 0, reported.stderr);
+    assert.equal(existsSync(join(app, 'bug-report-quality.json')), false);
+    assert.equal(existsSync(join(app, 'stack-bench', 'bug-report-quality.json')), true);
+    assert.equal(hashAppSource(app).sha256, before);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

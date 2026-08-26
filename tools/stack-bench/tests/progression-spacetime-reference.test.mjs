@@ -123,3 +123,12 @@ test('the client implements the exact testing interface of every graph feature',
     assert(clientSource.includes(`${attribute}=`), `client must expose ${attribute}`);
   }
 });
+
+test('direct action handles carry scenario-owned values before form interaction', () => {
+  const source = read(join(appRoot, 'client', 'src', 'components', 'AdminPanel.tsx'));
+  assert.match(source, /item\.name === 'Gaming Mouse'[\s\S]*price: 1/);
+  assert.match(source, /warehouse\.name === 'East'/);
+  assert.match(source, /warehouse\.name === 'West'/);
+  assert.match(source, /item\.name === 'Headphones'[\s\S]*quantity: 25/);
+  assert.doesNotMatch(source, /fromWarehouseId: Number\(transfer\.from \|\| 0\)/);
+});

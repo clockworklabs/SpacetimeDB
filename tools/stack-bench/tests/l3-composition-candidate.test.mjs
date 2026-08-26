@@ -224,6 +224,7 @@ test('pending-work checks cancel or complete the work they create', () => {
     candidate.id === 'ecommerce.l3.server-time-specifications');
   const timeSteps = nestedSteps(featureFor(timePack.checks.find(check => check.id === 'not-early')));
   assert(timeSteps.some(step => step.do === 'expectNumber' && step.plus === 4));
+  assert.equal(timeSteps.some(step => step.testid === 'pending-restock-remaining'), false);
   assert.equal(timeSteps.at(-1).do, 'expect');
   assert.equal(timeSteps.at(-1).absent, true);
 });

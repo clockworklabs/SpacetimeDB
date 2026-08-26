@@ -18,8 +18,8 @@
         { "do": "fill", "actor": "subscriber", "testid": "search-input", "text": "Mirrorless Camera", "enter": true },
         { "do": "click", "actor": "subscriber", "testid": "stock-alert", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },
-        { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } }
+        { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] } },
+        { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] } }
       ],
       "criteria": [
         {
@@ -30,8 +30,8 @@
           "steps": [
             { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" },
             { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 },
-            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },
-            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera East" } },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] } },
             { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
           ]
         },

@@ -16,6 +16,7 @@
         { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Owner order case" },
         { "do": "fill", "actor": "owner", "testid": "support-message", "text": "This case belongs to the order owner." },
         { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Desk Lamp", "in": { "testid": "support-ticket", "contains": "Owner order case" } },
         { "do": "signUp", "actor": "other", "name": "order-boundary-other" },
         { "do": "click", "actor": "other", "testid": "support-link" },
         { "do": "fill", "actor": "other", "testid": "support-subject", "text": "Other order case" },

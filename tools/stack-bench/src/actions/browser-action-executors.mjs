@@ -24,6 +24,7 @@ export const BROWSER_ACTION_IDS = Object.freeze([
 ].sort());
 
 const fail = message => { throw new ActionApplicationFailure(message); };
+const escapePattern = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function actorFor(capabilities, name) {
   const actor = capabilities.actors.get(name);
@@ -37,6 +38,20 @@ function interaction(capabilities) {
 
 function observation(capabilities) {
   return capabilities['browser-observation'];
+}
+
+function inputScope(browser, value) {
+  if (!value) return undefined;
+  if (value.containsAll !== undefined) {
+    if (!Array.isArray(value.containsAll) || value.containsAll.length === 0
+      || !value.containsAll.every(item => typeof item === 'string' && item.length > 0)) {
+      throw new TypeError('locator containsAll must be a non-empty string array');
+    }
+    const terms = value.containsAll.map(item => escapePattern(browser.expand(item)));
+    return { testid: value.testid,
+      contains: new RegExp(`^${terms.map(term => `(?=[\\s\\S]*${term})`).join('')}[\\s\\S]*$`, 'i') };
+  }
+  return { testid: value.testid, contains: browser.expand(value.contains) };
 }
 
 async function readValue(loc) {
@@ -62,9 +77,7 @@ async function clearInput({ input, capabilities }) {
 async function click({ input, capabilities, signal }) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
-  const scope = input.in
-    ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
-    : undefined;
+  const scope = inputScope(browser, input.in);
   await actor.loc(input.testid, { contains: browser.expand(input.contains), scope })
     .click({ timeout: input.within ?? browser.defaultWithin });
   if (input.settleMs) await browser.sleep(input.settleMs, signal);
@@ -74,9 +87,7 @@ async function click({ input, capabilities, signal }) {
 async function fill({ input, capabilities, signal }) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
-  const scope = input.in
-    ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
-    : undefined;
+  const scope = inputScope(browser, input.in);
   const loc = actor.loc(input.testid, { scope });
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   const text = browser.expand(input.text) ?? '';
@@ -84,7 +95,10 @@ async function fill({ input, capabilities, signal }) {
   if (tag === 'SELECT') {
     await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
   } else {
-    await loc.fill(text);
+    const type = tag === 'INPUT' ? await loc.getAttribute('type').catch(() => null) : null;
+    const value = type === 'datetime-local' && /^\d{4}-\d{2}-\d{2}$/.test(text)
+      ? `${text}T00:00` : text;
+    await loc.fill(value);
   }
   if (input.enter) await loc.press('Enter');
   if (input.settleMs) await browser.sleep(input.settleMs, signal);

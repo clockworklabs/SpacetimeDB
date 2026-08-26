@@ -36,7 +36,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/postgres",
-        "sourceSha256": "6b6fc6ed0a68f12a7da151bd9de82b014b71481047c8c254e496fa3f99e719c8"
+        "sourceSha256": "220e556443864d7c9e80597b5c2fad9fcf16c8403ff3729ffd02d4139285b996"
       },
       "mutationManifests": [],
       "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
@@ -56,7 +56,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/spacetime",
-        "sourceSha256": "327809987773bda351e9d2abbb527d57017d74c1974689c95e0bc923a7ee5524"
+        "sourceSha256": "f26a125e6e847adcd9c463ba97396b8fc5a9e664fe3e4b100aa1a80555032c5a"
       },
       "mutationManifests": [],
       "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."

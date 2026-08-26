@@ -44,3 +44,10 @@ test('PostgreSQL progression reference exposes stable testing handles', () => {
     'data-cancel-input', 'data-action-input',
   ]) assert.ok(client.includes(attribute), `missing ${attribute}`);
 });
+
+test('support order choices expose product names as separate actions', () => {
+  const client = read('client', 'src', 'ProgressionPanel.tsx');
+  assert.match(client, /orders\.map\(\(order\) => <button data-testid="support-order-option"/);
+  assert.match(client, /order\.items\?\.map\(\(item\) => item\.name\)/);
+  assert.doesNotMatch(client, /<select data-testid="support-order-option"/);
+});

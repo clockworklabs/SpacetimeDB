@@ -103,7 +103,8 @@
         { "do": "fill", "actor": "admin", "testid": "catalog-category", "text": "Kitchen" },
         { "do": "fill", "actor": "admin", "testid": "catalog-price", "text": "24.00" },
         { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Black, Silver" },
-        { "do": "click", "actor": "admin", "testid": "catalog-save" }
+        { "do": "click", "actor": "admin", "testid": "catalog-save" },
+        { "do": "reload", "actor": "visitor", "settleMs": 2500 }
       ],
       "criteria": [
         {
@@ -159,7 +160,7 @@
           "points": 2,
           "statedBy": "A checkout does not create duplicate payments.",
           "steps": [
-            { "do": "expectElementCount", "actor": "owner", "testid": "payment-record", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
+            { "do": "expectElementCount", "actor": "owner", "testid": "payment-record", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 1, "within": 10000 }
           ]
         }
       ]

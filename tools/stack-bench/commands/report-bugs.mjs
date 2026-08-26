@@ -177,7 +177,7 @@ if (vaguePct >= 50) {
 try {
   const bundle = existsSync(bundlePath) ? readArtifact(bundlePath, { expectedKind: 'grade_bundle' }) : null;
   const parentId = bundle?.attempt.id ?? null;
-  writeArtifact(join(dirname(args.out), 'bug-report-quality.json'), {
+  writeArtifact(join(resultsDir, 'bug-report-quality.json'), {
     kind: 'bug_report_quality', id: `${parentId ?? 'bugs'}-bug-report-quality`,
     attempt: { id: `${parentId ?? 'bugs'}-bug-report-quality`, parentId },
     identities: bundle?.identities ?? emptyArtifactIdentities(),

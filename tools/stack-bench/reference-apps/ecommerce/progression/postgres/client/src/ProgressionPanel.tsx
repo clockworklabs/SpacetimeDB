@@ -113,10 +113,10 @@ export function ProgressionPanel({
             </select>
             <button data-testid="support-update">Update</button>
           </>}
-          {account && <select data-testid="support-order-option" value={supportOrders[entry.id] ?? ""}
-            onChange={(event) => setSupportOrders({ ...supportOrders, [entry.id]: Number(event.target.value) })}>
-            <option value="">Select order</option>{orders.map((order) => <option value={order.id} key={order.id}>{order.id}</option>)}
-          </select>}
+          {account && orders.map((order) => <button data-testid="support-order-option" key={order.id}
+            onClick={() => setSupportOrders({ ...supportOrders, [entry.id]: order.id })}>
+            {order.items?.map((item) => item.name).join(", ") || `Order ${order.id}`}
+          </button>)}
           {account && supportOrders[entry.id] && <button data-testid="support-link-order"
             data-action-input={JSON.stringify({ caseId: entry.id, orderId: supportOrders[entry.id] })}
             onClick={() => run(() => request(`/api/support/cases/${entry.id}/order`, "POST", { orderId: supportOrders[entry.id] }))}>Link order</button>}

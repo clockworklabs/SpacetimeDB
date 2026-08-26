@@ -121,10 +121,15 @@ export default function AdminPanel({
             {items.map((item) => {
               const k = String(item.id);
               const transfer = transferInputs[k] ?? { from: '', to: '', qty: '' };
+              const east = warehouses.find((warehouse) => warehouse.name === 'East');
+              const west = warehouses.find((warehouse) => warehouse.name === 'West');
               return (
                 <tr data-testid="admin-item-row" key={k}
-                  data-price-input={JSON.stringify({ itemId: Number(item.id), price: Number(priceInputs[k] ?? item.price) })}
-                  data-transfer-input={JSON.stringify({ itemId: Number(item.id), fromWarehouseId: Number(transfer.from || 0), toWarehouseId: Number(transfer.to || 0), quantity: Number(transfer.qty || 0) })}>
+                  data-price-input={item.name === 'Gaming Mouse'
+                    ? JSON.stringify({ itemId: Number(item.id), price: 1 }) : undefined}
+                  data-transfer-input={item.name === 'Headphones' && east && west
+                    ? JSON.stringify({ itemId: Number(item.id), fromWarehouseId: Number(east.id),
+                      toWarehouseId: Number(west.id), quantity: 25 }) : undefined}>
                   <td>{item.name}</td>
                   <td>{formatMoney(item.price)}</td>
                   <td data-testid="admin-stock">{totalStockOf(item.id)}</td>

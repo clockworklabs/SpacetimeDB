@@ -64,8 +64,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { numeric: boolean, ...locator, ...within }),
   expectAllPresent: fields({ ...actor, prefix: string, count: integer, within: number }),
   expectCallOutcomes: fields({ accepted: integer }),
-  expectElementCount: fields({ ...actor, testid: nonEmptyString, contains: string,
-    equals: integer, within: number }),
+  expectElementCount: fields({ ...actor, testid: nonEmptyString, equals: integer },
+    { contains: string, ...locator, within: number }),
   expectForgeryRejected: fields(actor),
   expectNotReceived: fields({ ...actor, contains: string }),
   expectNumber: fields({ ...actor, testid: nonEmptyString },
@@ -123,9 +123,16 @@ function strictObject(value, at, allowed) {
 }
 
 function validateLocator(value, at) {
-  strictObject(value, at, new Set(['testid', 'contains']));
+  strictObject(value, at, new Set(['testid', 'contains', 'containsAll']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
+  if (value.containsAll !== undefined
+    && (!stringArray(value.containsAll) || value.containsAll.length === 0)) {
+    fail(`${at}.containsAll`, 'must be a non-empty string array');
+  }
+  if (value.contains !== undefined && value.containsAll !== undefined) {
+    fail(at, 'cannot use both contains and containsAll');
+  }
 }
 
 function validateSwap(value, at) {

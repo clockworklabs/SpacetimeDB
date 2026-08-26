@@ -84,6 +84,43 @@ test('interaction actions receive scoped values and preserve the legacy click op
   ]);
 });
 
+test('interaction scopes can match separate text fragments without assuming punctuation', async () => {
+  let scope;
+  const actor = { loc: (_testid, options) => {
+    scope = options.scope;
+    return { click: async () => {} };
+  } };
+  const result = await run({ do: 'click', actor: 'a', testid: 'save',
+    in: { testid: 'row', containsAll: ['Mirrorless Camera', 'East'] } }, services(actor));
+  assert.equal(result.status, 'passed');
+  assert.equal(scope.testid, 'row');
+  assert(scope.contains.test('Mirrorless Camera @ East'));
+  assert(scope.contains.test('East: Mirrorless Camera'));
+  assert.equal(scope.contains.test('Mirrorless Camera @ West'), false);
+});
+
+test('fill adapts date values only for datetime-local controls', async () => {
+  const values = [];
+  const locator = type => ({
+    waitFor: async () => {},
+    evaluate: async () => 'INPUT',
+    getAttribute: async name => name === 'type' ? type : null,
+    fill: async value => values.push([type, value]),
+  });
+  const actor = { loc: testid => locator(testid) };
+
+  for (const testid of ['datetime-local', 'date', 'text']) {
+    const result = await run({ do: 'fill', actor: 'a', testid, text: '2020-01-01' }, services(actor));
+    assert.equal(result.status, 'passed');
+  }
+
+  assert.deepEqual(values, [
+    ['datetime-local', '2020-01-01T00:00'],
+    ['date', '2020-01-01'],
+    ['text', '2020-01-01'],
+  ]);
+});
+
 test('recorded-number state is narrow, reusable, and numeric parsing is stable', async () => {
   assert.equal(parseRenderedNumber('Stock: 1,024 left'), 1024);
   assert.equal(parseRenderedNumber('$12.50'), 12.5);
@@ -196,6 +233,16 @@ test('element counts use visible observations instead of hidden duplicate markup
     contains: 'item', equals: 2, within: 1 }, services(actor));
   assert.equal(result.status, 'passed');
   assert.deepEqual(result.observation, { count: 2 });
+});
+
+test('element counts can be scoped to a matching parent', async () => {
+  const child = { filter: () => ({ count: async () => 1 }) };
+  const parent = { filter: () => parent, first: () => parent, locator: () => child };
+  const actor = { page: { locator: () => parent } };
+  const result = await run({ do: 'expectElementCount', actor: 'a', testid: 'payment-record',
+    in: { testid: 'order-item', contains: 'Desk Lamp' }, equals: 1, within: 1 }, services(actor));
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.observation, { count: 1 });
 });
 
 test('browser timeouts are application evidence while crashes and code bugs remain harness failures', async () => {

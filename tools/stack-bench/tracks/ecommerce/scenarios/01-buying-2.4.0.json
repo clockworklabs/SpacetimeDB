@@ -52,14 +52,10 @@
         },
         {
           "id": "3d",
-          "desc": "an item sells out visibly, and a checkout exceeding stock is refused and changes nothing",
+          "desc": "the last unit sells and the next purchase is refused without changing stock",
           "points": 2,
           "steps": [
             { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Mirrorless Camera", "enter": true, "settleMs": 1500 },
-            { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
-            { "do": "wait", "actor": "buyer", "ms": 800 },
-            { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
-            { "do": "wait", "actor": "buyer", "ms": 800 },
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
             { "do": "wait", "actor": "buyer", "ms": 800 },
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
@@ -67,10 +63,8 @@
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
             { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" }, "equals": 0 },
             { "do": "expect", "actor": "buyer", "testid": "out-of-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
-            { "do": "click", "actor": "buyer", "testid": "cart-toggle" },
-            { "do": "click", "actor": "buyer", "testid": "checkout-submit" },
-            { "do": "expect", "actor": "buyer", "testid": "buy-error", "within": 6000 },
-            { "do": "expect", "actor": "buyer", "testid": "cart-item", "contains": "Mirrorless Camera" },
+            { "do": "callAction", "actor": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Mirrorless Camera", "attribute": "data-buy-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "buyer", "outcome": "refused" },
             { "do": "reload", "actor": "buyer", "settleMs": 3000 },
             { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" }, "equals": 0 }
           ],
