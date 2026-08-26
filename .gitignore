@@ -206,8 +206,7 @@ __pycache__/
 .idea/
 
 # TypeScript submodule development outputs
-.stdb-*/
-spacetime-*-ts/example/.stdb-*
+spacetime-*-ts/example/.stdb-server-token
 spacetime-*-ts/example/public/app.js
 spacetime-*-ts/example/public/app.js.map
 spacetime-*-ts/ts-codegen/

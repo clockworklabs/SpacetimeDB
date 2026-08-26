@@ -4,8 +4,3 @@ dist
 target
 .github
 coverage
-**/public/app.js
-**/public/app.js.map
-**/src/module_bindings/**
-**/ts-codegen/**
-.stdb-*
