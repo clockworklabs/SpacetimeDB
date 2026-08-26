@@ -545,6 +545,13 @@ export default function App() {
             onChangeQuantity={changeCartQuantity}
             onRemove={removeCartLine}
             onCheckout={checkout}
+            onApplyPromotion={async (code) => {
+              await api("/api/cart/promotion", {
+                method: "POST",
+                body: JSON.stringify({ code }),
+              });
+              await reloadProgression();
+            }}
           />
         </>
       )}
@@ -914,9 +921,12 @@ function CartPanel(props: {
   onChangeQuantity: (itemId: number, quantity: number) => void;
   onRemove: (itemId: number) => void;
   onCheckout: () => void;
+  onApplyPromotion: (code: string) => Promise<void>;
 }) {
-  const { cart, onClose, onChangeQuantity, onRemove, onCheckout } = props;
+  const { cart, onClose, onChangeQuantity, onRemove, onCheckout, onApplyPromotion } = props;
   const [openedAt] = useState(Date.now());
+  const [promotionCode, setPromotionCode] = useState("");
+  const [promotionError, setPromotionError] = useState("");
   const [, setClock] = useState(0);
   useEffect(() => {
     const timer = window.setInterval(() => setClock((value) => value + 1), 1000);
@@ -979,6 +989,15 @@ function CartPanel(props: {
         </div>
       )}
       {(cart.expiredAt || cart.items.some((line) => line.expired)) && <div data-testid="cart-expired-notice">The cart expired.</div>}
+      <div className="stack">
+        <input className="input" data-testid="cart-promotion" value={promotionCode}
+          placeholder="Promotion code" onChange={(event) => setPromotionCode(event.target.value)} />
+        <button className="btn btn-ghost" data-testid="apply-promotion" onClick={async () => {
+          try { await onApplyPromotion(promotionCode); setPromotionError(""); }
+          catch (error) { setPromotionError(error instanceof Error ? error.message : "Promotion unavailable"); }
+        }}>Apply promotion</button>
+        {promotionError && <span data-testid="promotion-error">{promotionError}</span>}
+      </div>
       <div className="panel-footer">
         <div className="cart-total" data-testid="cart-total">
           Total: {money(cart.total)}

@@ -1454,7 +1454,7 @@ async function main() {
         continue;
       }
       if (shared.after === shared.before) {
-        const remaining = args.fixRounds - fixRounds;
+        const remaining = displayedRepairBudget - fixRounds;
         console.log(`    ${formatRepairProgress(shared, { before, beforeMax, after, afterMax })}; `
           + (remaining > 0 ? `${remaining} correction round(s) remain` : 'correction budget exhausted'));
       }

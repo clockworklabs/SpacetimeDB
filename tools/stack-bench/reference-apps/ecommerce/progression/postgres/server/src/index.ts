@@ -213,7 +213,7 @@ async function buildFulfilmentQueue() {
 async function buildRecommended(accountId: number | null) {
   const catalog = await buildCatalog();
   if (accountId == null) {
-    return catalog.filter((i) => i.purchaseCount > 0).slice(0, 10);
+    return catalog.slice(0, 10);
   }
   const categoriesResult = await pool.query(
     `SELECT DISTINCT i.category
@@ -334,7 +334,7 @@ async function broadcastCatalog() {
     lastCatalogJson = json;
     io.emit("items:update", { items: catalog });
     io.to("visitors").emit("recommended:update", {
-      items: catalog.filter((item) => item.purchaseCount > 0).slice(0, 10),
+      items: catalog.slice(0, 10),
     });
   }
   const adminState = await buildAdminState();

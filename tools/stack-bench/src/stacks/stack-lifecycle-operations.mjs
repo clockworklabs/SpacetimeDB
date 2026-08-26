@@ -52,17 +52,19 @@ export function hostedStopScript(port) {
   if (!Number.isInteger(numericPort) || numericPort <= 0 || numericPort > 65535) {
     throw new Error(`invalid hosted backend port ${port}`);
   }
-  return `pids=$(lsof -ti tcp:${numericPort} -sTCP:LISTEN); `
-    + '[ -z "$pids" ] && exit 0; groups=""; '
-    + 'for pid in $pids; do pgid=$(ps -o pgid= -p "$pid" | tr -d " "); '
+  const listeners = `lsof -ti tcp:${numericPort} -sTCP:LISTEN`;
+  const collectGroups = `groups=""; for pid in $(${listeners}); do `
+    + 'pgid=$(ps -o pgid= -p "$pid" | tr -d " "); '
     + 'case "$pgid" in ""|*[!0-9]*|1) echo "unsafe process group for listener $pid" >&2; exit 4;; esac; '
-    + 'case " $groups " in *" $pgid "*) ;; *) groups="$groups $pgid";; esac; done; '
+    + 'case " $groups " in *" $pgid "*) ;; *) groups="$groups $pgid";; esac; done';
+  return `attempt=0; while [ "$attempt" -lt 50 ]; do ${collectGroups}; `
+    + '[ -z "$groups" ] && exit 0; '
     + 'for pgid in $groups; do /bin/kill -TERM -- "-$pgid" 2>/dev/null || true; done; '
-    + 'attempt=0; while [ "$attempt" -lt 50 ]; do alive=""; '
-    + 'for pgid in $groups; do ps -eo pgid= | awk -v g="$pgid" \'$1 == g { found=1 } END { exit !found }\' '
-    + '&& alive="$alive $pgid" || true; done; [ -z "$alive" ] && exit 0; '
-    + 'groups="$alive"; attempt=$((attempt + 1)); sleep 0.1; done; '
-    + 'for pgid in $groups; do /bin/kill -KILL -- "-$pgid" 2>/dev/null || true; done';
+    + 'attempt=$((attempt + 1)); sleep 0.1; done; '
+    + `${collectGroups}; for pgid in $groups; do /bin/kill -KILL -- "-$pgid" 2>/dev/null || true; done; `
+    + `attempt=0; while [ "$attempt" -lt 50 ]; do [ -z "$(${listeners})" ] && exit 0; `
+    + 'attempt=$((attempt + 1)); sleep 0.1; done; '
+    + `echo "hosted backend port ${numericPort} still has a listener" >&2; exit 4`;
 }
 
 export function captureHostedDiagnostics({ lease, output, exec = execFileSync }) {

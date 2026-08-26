@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -8,6 +8,10 @@ import { deployMongoDbReference, deployPostgresReference, deploySpacetimeReferen
   from '../src/stacks/stack-reference-operations.mjs';
 
 test('PostgreSQL reference deployment uses its locked schema tool', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-postgres-reference-'));
+  const app = join(root, 'app');
+  mkdirSync(join(app, 'server'), { recursive: true });
+  writeFileSync(join(app, 'server', 'package.json'), JSON.stringify({ scripts: { start: 'node server.js' } }));
   const dockerCalls = [];
   const helpers = {
     dbName() { return 'stackbench_ecom_run0'; },
@@ -20,21 +24,25 @@ test('PostgreSQL reference deployment uses its locked schema tool', async () => 
     async waitFor() {},
     containerLogs() { return ''; },
   };
-  await deployPostgresReference({
-    args: { backend: 'postgres', runIndex: 0 },
-    metadata: { installDirectories: [], server: { directory: 'server' },
-      client: { directory: 'client' } },
-    lease: { resources: { database: 'stackbench_ecom_run0',
-      container: { name: 'postgres', id: 'container-id' } } },
-    track: { restartProbe: '/api/items' }, container: 'build-0',
-    ports: { dbPort: 6532, express: 6301, vite: 6573 }, buildNetworkMode: 'host', helpers,
-  });
+  try {
+    await deployPostgresReference({
+      args: { app, backend: 'postgres', runIndex: 0 },
+      metadata: { installDirectories: [], server: { directory: 'server' },
+        client: { directory: 'client' } },
+      lease: { resources: { database: 'stackbench_ecom_run0',
+        container: { name: 'postgres', id: 'container-id' } } },
+      track: { restartProbe: '/api/items' }, container: 'build-0',
+      ports: { dbPort: 6532, express: 6301, vite: 6573 }, buildNetworkMode: 'host', helpers,
+    });
 
-  assert.equal(dockerCalls.length, 1);
-  assert.deepEqual(dockerCalls[0].slice(0, 4), [
-    'build-0', '/app/server', './node_modules/.bin/drizzle-kit', ['push', '--force'],
-  ]);
-  assert.match(dockerCalls[0][4].DATABASE_URL, /stackbench_ecom_run0/);
+    assert.equal(dockerCalls.length, 1);
+    assert.deepEqual(dockerCalls[0].slice(0, 4), [
+      'build-0', '/app/server', './node_modules/.bin/drizzle-kit', ['push', '--force'],
+    ]);
+    assert.match(dockerCalls[0][4].DATABASE_URL, /stackbench_ecom_run0/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('hosted reference credentials stay in process environment', async () => {
@@ -42,6 +50,7 @@ test('hosted reference credentials stay in process environment', async () => {
   try {
     const app = join(root, 'app');
     mkdirSync(join(app, 'server'), { recursive: true });
+    writeFileSync(join(app, 'server', 'package.json'), JSON.stringify({ scripts: { start: 'node server.js' } }));
     const starts = [];
     const helpers = {
       dbName() { return 'stackbench_ecom_run0'; },

@@ -33,7 +33,6 @@ export function ProgressionPanel({
   const [createdReference, setCreatedReference] = useState("");
   const [catalog, setCatalog] = useState({ name: "", category: "", price: "", variants: "" });
   const [promotion, setPromotion] = useState({ code: "", discount: "", start: "", end: "", limit: "" });
-  const [promotionCode, setPromotionCode] = useState("");
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "90" });
   const [reply, setReply] = useState<Record<number, string>>({});
   const [supportOrders, setSupportOrders] = useState<Record<number, number>>({});
@@ -178,10 +177,6 @@ export function ProgressionPanel({
           <span data-testid="order-refund-total">{order.refundTotal?.toFixed(2)}</span>
           {order.refundTotal ? <span data-testid="refund-entry">{order.items?.map((item) => item.name).join(", ")} refund {order.refundTotal.toFixed(2)}</span> : null}
         </div>)}
-        <input data-testid="cart-promotion" value={promotionCode} placeholder="Promotion code"
-          onChange={(event) => setPromotionCode(event.target.value)} />
-        <button data-testid="apply-promotion" onClick={() => run(() =>
-          request("/api/cart/promotion", "POST", { code: promotionCode }))}>Apply</button>
       </article>}
 
       {(state?.expiredCarts ?? []).map((cart: any) => <article className="progression-card" data-testid="expired-cart" key={cart.id}>
