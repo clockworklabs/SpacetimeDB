@@ -36,7 +36,7 @@ const PORT = Number.parseInt(process.env.PORT ?? '8793', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
-const STDB_APP_DB = process.env.STDB_APP_DATABASE ?? 'spacetime-grid-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-grid-example';
 const AUTH_ISSUER_URL =
   process.env.AUTH_ISSUER_URL ?? `http://localhost:${PORT}`;
 const AUTH_BASE_URL = process.env.AUTH_BASE_URL ?? AUTH_ISSUER_URL;
@@ -89,7 +89,7 @@ function configureAuthFromEnv(): void {
 
   const result = spawnSync(
     SPACETIME_BIN,
-    ['call', '--server', STDB_SERVER, STDB_APP_DB, 'set_auth_config', ...args],
+    ['call', '--server', STDB_SERVER, DB_NAME, 'set_auth_config', ...args],
     { stdio: 'inherit', shell: false }
   );
   if (result.status !== 0) {
@@ -111,7 +111,7 @@ app.use('/auth', async (req, res) => {
   const qIdx = fullPath.indexOf('?');
   const subpath = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
   const query = qIdx < 0 ? '' : fullPath.slice(qIdx);
-  const upstreamUrl = `${STDB_HTTP}/v1/database/${STDB_APP_DB}/route${subpath}${query}`;
+  const upstreamUrl = `${STDB_HTTP}/v1/database/${DB_NAME}/route${subpath}${query}`;
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.headers)) {
     if (typeof v === 'string') headers[k] = v;
@@ -151,13 +151,13 @@ app.use('/auth', async (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, app: STDB_APP_DB });
+  res.json({ ok: true, app: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
     stdbUri: STDB_URI,
-    appDatabase: STDB_APP_DB,
+    appDatabase: DB_NAME,
     auth: {
       issuerUrl: AUTH_ISSUER_URL,
       baseUrl: AUTH_BASE_URL,
@@ -192,5 +192,5 @@ app.listen(PORT, HOST, () => {
   console.log(`Grid example running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
   console.log(`  STDB http-> ${STDB_HTTP}  (proxying /auth/*)`);
-  console.log(`  Database -> ${STDB_APP_DB}`);
+  console.log(`  Database -> ${DB_NAME}`);
 });

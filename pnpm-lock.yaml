@@ -137,7 +137,7 @@ importers:
         version: 8.40.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.3)
       '@vitest/coverage-v8':
         specifier: ^3.2.4
-        version: 3.2.4(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.9.5)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))
+        version: 3.2.4(vitest@3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))
       brotli-size-cli:
         specifier: ^1.0.0
         version: 1.0.0
@@ -158,7 +158,7 @@ importers:
         version: 5.46.4
       ts-node:
         specifier: ^10.9.2
-        version: 10.9.2(@types/node@25.9.5)(typescript@5.9.3)
+        version: 10.9.2(@types/node@22.18.0)(typescript@5.9.3)
       tsup:
         specifier: ^8.1.0
         version: 8.5.0(jiti@2.6.1)(postcss@8.5.6)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.8.2)
@@ -170,10 +170,10 @@ importers:
         version: 8.40.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.9.3)
       vite:
         specifier: ^7.1.5
-        version: 7.1.5(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
+        version: 7.1.5(@types/node@22.18.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
       vitest:
         specifier: ^3.2.4
-        version: 3.2.4(@types/debug@4.1.12)(@types/node@25.9.5)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
 
   crates/bindings-typescript/case-conversion-test-client:
     dependencies:
@@ -346,8 +346,8 @@ importers:
   spacetime-agents-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -366,12 +366,6 @@ importers:
 
   spacetime-agents-ts/example:
     dependencies:
-      '@spacetimedb/agents':
-        specifier: workspace:*
-        version: link:..
-      '@spacetimedb/auth':
-        specifier: workspace:*
-        version: link:../../spacetime-auth-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -383,11 +377,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -417,8 +411,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       tsx:
         specifier: ^4.21.0
         version: 4.23.12
@@ -436,8 +430,8 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -449,8 +443,8 @@ importers:
         version: link:../spacetime-crypto-ts
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -469,18 +463,6 @@ importers:
 
   spacetime-api-keys-ts/example:
     dependencies:
-      '@spacetimedb/api-keys':
-        specifier: workspace:*
-        version: link:..
-      '@spacetimedb/crypto':
-        specifier: workspace:*
-        version: link:../../spacetime-crypto-ts
-      '@spacetimedb/grid':
-        specifier: workspace:*
-        version: link:../../spacetime-grid-ts
-      '@spacetimedb/presence':
-        specifier: workspace:*
-        version: link:../../spacetime-presence-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -492,11 +474,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -526,8 +508,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -545,8 +527,8 @@ importers:
         version: link:../spacetime-rate-limit-ts
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -565,12 +547,6 @@ importers:
 
   spacetime-auth-ts/example:
     dependencies:
-      '@spacetimedb/auth':
-        specifier: workspace:*
-        version: link:..
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:../../spacetime-rate-limit-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -582,11 +558,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -602,16 +578,13 @@ importers:
       '@spacetimedb/auth':
         specifier: workspace:*
         version: link:../..
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:../../../spacetime-rate-limit-ts
       spacetimedb:
         specifier: workspace:*
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -629,8 +602,8 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -642,8 +615,8 @@ importers:
         version: 5.5.0
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -662,9 +635,6 @@ importers:
 
   spacetime-cron-ts/example:
     dependencies:
-      '@spacetimedb/cron':
-        specifier: workspace:*
-        version: link:..
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -676,11 +646,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -701,8 +671,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -717,8 +687,8 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -730,8 +700,8 @@ importers:
         version: 2.3.0
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -752,8 +722,8 @@ importers:
         version: link:../spacetime-crypto-ts
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -786,11 +756,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -811,8 +781,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -820,8 +790,8 @@ importers:
   spacetime-grid-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -832,7 +802,7 @@ importers:
         specifier: workspace:*
         version: link:../crates/bindings-typescript
       tsx:
-        specifier: ^4.22.3
+        specifier: ^4.21.0
         version: 4.23.12
       typescript:
         specifier: ^5.9.3
@@ -840,15 +810,6 @@ importers:
 
   spacetime-grid-ts/example:
     dependencies:
-      '@spacetimedb/auth':
-        specifier: workspace:*
-        version: link:../../spacetime-auth-ts
-      '@spacetimedb/grid':
-        specifier: workspace:*
-        version: link:..
-      '@spacetimedb/rate-limit':
-        specifier: workspace:*
-        version: link:../../spacetime-rate-limit-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -860,11 +821,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -891,8 +852,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -900,8 +861,8 @@ importers:
   spacetime-lobby-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -931,11 +892,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -956,8 +917,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -965,8 +926,8 @@ importers:
   spacetime-posthog-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -996,11 +957,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -1021,8 +982,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1030,8 +991,8 @@ importers:
   spacetime-presence-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -1061,11 +1022,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -1095,8 +1056,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1111,8 +1072,8 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1120,8 +1081,8 @@ importers:
   spacetime-rate-limit-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -1151,11 +1112,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -1176,8 +1137,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1192,8 +1153,8 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1208,8 +1169,8 @@ importers:
         version: 1.4.2(typescript@5.9.3)
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -1239,11 +1200,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -1254,8 +1215,8 @@ importers:
         specifier: ^4.21.0
         version: 4.23.12
       typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
+        specifier: ^5.9.3
+        version: 5.9.3
 
   spacetime-resend-ts/example/spacetimedb:
     dependencies:
@@ -1270,17 +1231,17 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
+        specifier: ^5.9.3
+        version: 5.9.3
 
   spacetime-retry-ts:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -1307,8 +1268,8 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1320,14 +1281,14 @@ importers:
         version: link:../spacetime-crypto-ts
       stripe:
         specifier: ^22.1.0
-        version: 22.5.0(@types/node@25.9.5)
+        version: 22.5.0(@types/node@22.18.0)
       valibot:
         specifier: ^1.4.2
         version: 1.4.2(typescript@5.9.3)
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
@@ -1357,11 +1318,11 @@ importers:
         version: link:../../crates/bindings-typescript
     devDependencies:
       '@types/express':
-        specifier: ^5.0.6
-        version: 5.0.6
+        specifier: ^4.17.21
+        version: 4.17.23
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -1369,8 +1330,8 @@ importers:
         specifier: ^4.21.0
         version: 4.23.12
       typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
+        specifier: ^5.9.3
+        version: 5.9.3
 
   spacetime-stripe-ts/example/spacetimedb:
     dependencies:
@@ -1382,8 +1343,8 @@ importers:
         version: link:../../../crates/bindings-typescript
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
-        version: 25.9.5
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1462,7 +1423,7 @@ importers:
     devDependencies:
       '@types/bun':
         specifier: latest
-        version: 1.3.14
+        version: 1.4.0
       bun:
         specifier: ^1.3.2
         version: 1.3.9
@@ -1765,7 +1726,7 @@ importers:
     dependencies:
       nuxt:
         specifier: ~3.16.0
-        version: 3.16.2(@parcel/watcher@2.5.6)(@types/node@25.9.5)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.5.1)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vite@7.3.2(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2)
+        version: 3.16.2(@parcel/watcher@2.5.6)(@types/node@25.9.5)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vite@7.3.2(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2)
       spacetimedb:
         specifier: workspace:*
         version: link:../../crates/bindings-typescript
@@ -7410,11 +7371,11 @@ packages:
   '@types/bonjour@3.5.13':
     resolution: {integrity: sha512-z9fJ5Im06zvUL548KvYNecEVlA7cVDkGUi6kZusb04mpyEFKCIZJvloCcmpmLaIahDpOQGHaHmG6imtPMmPXGQ==}
 
-  '@types/bun@1.3.14':
-    resolution: {integrity: sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw==}
-
   '@types/bun@1.3.9':
     resolution: {integrity: sha512-KQ571yULOdWJiMH+RIWIOZ7B2RXQGpL1YQrBtLIV3FqDcCu6FsbFUBwhdKUlCKUpS3PJDsHlJ1QKlpxoVR+xtw==}
+
+  '@types/bun@1.4.0':
+    resolution: {integrity: sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ==}
 
   '@types/chai@5.2.2':
     resolution: {integrity: sha512-8kB30R7Hwqf40JPiKhVzodJs2Qc1ZJ5zuT3uzw5Hq/dhNCl3G3l83jfpdI1e20BP348+fV7VIL/+FxaXkqBmWg==}
@@ -8786,11 +8747,11 @@ packages:
   buffer@6.0.3:
     resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
 
-  bun-types@1.3.14:
-    resolution: {integrity: sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ==}
-
   bun-types@1.3.9:
     resolution: {integrity: sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg==}
+
+  bun-types@1.4.0:
+    resolution: {integrity: sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q==}
 
   bun@1.3.9:
     resolution: {integrity: sha512-v5hkh1us7sMNjfimWE70flYbD5I1/qWQaqmJ45q2qk5H/7muQVa478LSVRSFyGTBUBog2LsPQnfIRdjyWJRY+A==}
@@ -10029,6 +9990,7 @@ packages:
   eslint@9.33.0:
     resolution: {integrity: sha512-TS9bTNIryDzStCpJN93aC5VRSW3uTx9sClUn4B87pwiCaJh220otoI0X8mJKr+VcPtniMdN8GKjlwgWGUv5ZKA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -14994,6 +14956,7 @@ packages:
   tsconfck@2.1.2:
     resolution: {integrity: sha512-ghqN1b0puy3MhhviwO2kGF8SeMDNhEbnKxjK7h6+fvY9JAxqvXi8y5NAHSQv687OVboS2uZIByzGd45/YxrRHg==}
     engines: {node: ^14.13.1 || ^16 || >=18}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^4.3.5 || ^5.0.0
@@ -15004,6 +14967,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -15107,11 +15071,6 @@ packages:
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
-    engines: {node: '>=14.17'}
-    hasBin: true
-
-  typescript@6.0.3:
-    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -20578,11 +20537,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@nuxt/cli@3.33.1(@nuxt/schema@3.16.2)(cac@6.7.14)(magicast@0.5.1)':
+  '@nuxt/cli@3.33.1(@nuxt/schema@3.16.2)(cac@6.7.14)(magicast@0.3.5)':
     dependencies:
       '@bomb.sh/tab': 0.0.12(cac@6.7.14)(citty@0.2.0)
       '@clack/prompts': 1.0.0
-      c12: 3.3.3(magicast@0.5.1)
+      c12: 3.3.3(magicast@0.3.5)
       citty: 0.2.0
       confbox: 0.2.4
       consola: 3.4.2
@@ -20678,9 +20637,9 @@ snapshots:
       - utf-8-validate
       - vue
 
-  '@nuxt/kit@3.16.2(magicast@0.5.1)':
+  '@nuxt/kit@3.16.2(magicast@0.3.5)':
     dependencies:
-      c12: 3.3.3(magicast@0.5.1)
+      c12: 3.3.3(magicast@0.3.5)
       consola: 3.4.2
       defu: 6.1.4
       destr: 2.0.5
@@ -20738,18 +20697,18 @@ snapshots:
       pathe: 2.0.3
       std-env: 3.10.0
 
-  '@nuxt/telemetry@2.7.0(@nuxt/kit@3.16.2(magicast@0.5.1))':
+  '@nuxt/telemetry@2.7.0(@nuxt/kit@3.16.2(magicast@0.3.5))':
     dependencies:
-      '@nuxt/kit': 3.16.2(magicast@0.5.1)
+      '@nuxt/kit': 3.16.2(magicast@0.3.5)
       citty: 0.2.0
       consola: 3.4.2
       ofetch: 2.0.0-alpha.3
       rc9: 3.0.0
       std-env: 3.10.0
 
-  '@nuxt/vite-builder@3.16.2(@types/node@25.9.5)(eslint@9.33.0(jiti@2.6.1))(magicast@0.5.1)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vue-tsc@2.2.12(typescript@5.6.3))(vue@3.5.26(typescript@5.6.3))(yaml@2.8.2)':
+  '@nuxt/vite-builder@3.16.2(@types/node@25.9.5)(eslint@9.33.0(jiti@2.6.1))(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vue-tsc@2.2.12(typescript@5.6.3))(vue@3.5.26(typescript@5.6.3))(yaml@2.8.2)':
     dependencies:
-      '@nuxt/kit': 3.16.2(magicast@0.5.1)
+      '@nuxt/kit': 3.16.2(magicast@0.3.5)
       '@rollup/plugin-replace': 6.0.3(rollup@4.56.0)
       '@vitejs/plugin-vue': 5.2.4(vite@6.4.1(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue@3.5.26(typescript@5.6.3))
       '@vitejs/plugin-vue-jsx': 4.2.0(vite@6.4.1(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue@3.5.26(typescript@5.6.3))
@@ -22812,13 +22771,13 @@ snapshots:
     dependencies:
       '@types/node': 22.18.0
 
-  '@types/bun@1.3.14':
-    dependencies:
-      bun-types: 1.3.14
-
   '@types/bun@1.3.9':
     dependencies:
       bun-types: 1.3.9
+
+  '@types/bun@1.4.0':
+    dependencies:
+      bun-types: 1.4.0
 
   '@types/chai@5.2.2':
     dependencies:
@@ -22968,6 +22927,7 @@ snapshots:
   '@types/node@25.9.5':
     dependencies:
       undici-types: 7.24.6
+    optional: true
 
   '@types/object-inspect@1.13.0': {}
 
@@ -23389,7 +23349,7 @@ snapshots:
       vite: 6.4.1(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
       vue: 3.5.26(typescript@5.6.3)
 
-  '@vitest/coverage-v8@3.2.4(vitest@3.2.4(@types/debug@4.1.12)(@types/node@25.9.5)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))':
+  '@vitest/coverage-v8@3.2.4(vitest@3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 1.0.2
@@ -23404,7 +23364,7 @@ snapshots:
       std-env: 3.9.0
       test-exclude: 7.0.1
       tinyrainbow: 2.0.0
-      vitest: 3.2.4(@types/debug@4.1.12)(@types/node@25.9.5)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
+      vitest: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -25130,11 +25090,11 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  bun-types@1.3.14:
+  bun-types@1.3.9:
     dependencies:
       '@types/node': 22.18.0
 
-  bun-types@1.3.9:
+  bun-types@1.4.0:
     dependencies:
       '@types/node': 22.18.0
 
@@ -25885,10 +25845,10 @@ snapshots:
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
 
-  db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)):
+  db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)):
     optionalDependencies:
       better-sqlite3: 12.6.2
-      drizzle-orm: 0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)
+      drizzle-orm: 0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)
 
   de-indent@1.0.2: {}
 
@@ -26063,18 +26023,6 @@ snapshots:
 
   dotenv@17.2.3: {}
 
-  drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0):
-    optionalDependencies:
-      '@opentelemetry/api': 1.9.0
-      '@types/better-sqlite3': 7.6.13
-      '@types/pg': 8.16.0
-      '@types/sql.js': 1.4.9
-      better-sqlite3: 12.6.2
-      bun-types: 1.3.14
-      pg: 8.18.0
-      sql.js: 1.14.0
-    optional: true
-
   drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.9)(pg@8.18.0)(sql.js@1.14.0):
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
@@ -26085,6 +26033,18 @@ snapshots:
       bun-types: 1.3.9
       pg: 8.18.0
       sql.js: 1.14.0
+
+  drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0):
+    optionalDependencies:
+      '@opentelemetry/api': 1.9.0
+      '@types/better-sqlite3': 7.6.13
+      '@types/pg': 8.16.0
+      '@types/sql.js': 1.4.9
+      better-sqlite3: 12.6.2
+      bun-types: 1.4.0
+      pg: 8.18.0
+      sql.js: 1.14.0
+    optional: true
 
   dunder-proto@1.0.1:
     dependencies:
@@ -29441,7 +29401,7 @@ snapshots:
 
   neo-async@2.6.2: {}
 
-  nitropack@2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13):
+  nitropack@2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.4.2
       '@rollup/plugin-alias': 6.0.0(rollup@4.56.0)
@@ -29462,7 +29422,7 @@ snapshots:
       cookie-es: 2.0.0
       croner: 9.1.0
       crossws: 0.3.5
-      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))
+      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0))
       defu: 6.1.4
       destr: 2.0.5
       dot-prop: 10.1.0
@@ -29508,7 +29468,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unimport: 5.6.0
       unplugin-utils: 0.3.1
-      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
+      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
       untyped: 2.0.0
       unwasm: 0.5.3
       youch: 4.1.0-beta.13
@@ -29714,19 +29674,19 @@ snapshots:
       schema-utils: 3.3.0
       webpack: 5.102.0
 
-  nuxt@3.16.2(@parcel/watcher@2.5.6)(@types/node@25.9.5)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.5.1)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vite@7.3.2(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2):
+  nuxt@3.16.2(@parcel/watcher@2.5.6)(@types/node@25.9.5)(better-sqlite3@12.6.2)(cac@6.7.14)(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)))(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)(eslint@9.33.0(jiti@2.6.1))(ioredis@5.9.2)(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vite@7.3.2(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue-tsc@2.2.12(typescript@5.6.3))(yaml@2.8.2):
     dependencies:
-      '@nuxt/cli': 3.33.1(@nuxt/schema@3.16.2)(cac@6.7.14)(magicast@0.5.1)
+      '@nuxt/cli': 3.33.1(@nuxt/schema@3.16.2)(cac@6.7.14)(magicast@0.3.5)
       '@nuxt/devalue': 2.0.2
       '@nuxt/devtools': 2.7.0(vite@7.3.2(@types/node@25.9.5)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(yaml@2.8.2))(vue@3.5.26(typescript@5.6.3))
-      '@nuxt/kit': 3.16.2(magicast@0.5.1)
+      '@nuxt/kit': 3.16.2(magicast@0.3.5)
       '@nuxt/schema': 3.16.2
-      '@nuxt/telemetry': 2.7.0(@nuxt/kit@3.16.2(magicast@0.5.1))
-      '@nuxt/vite-builder': 3.16.2(@types/node@25.9.5)(eslint@9.33.0(jiti@2.6.1))(magicast@0.5.1)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vue-tsc@2.2.12(typescript@5.6.3))(vue@3.5.26(typescript@5.6.3))(yaml@2.8.2)
+      '@nuxt/telemetry': 2.7.0(@nuxt/kit@3.16.2(magicast@0.3.5))
+      '@nuxt/vite-builder': 3.16.2(@types/node@25.9.5)(eslint@9.33.0(jiti@2.6.1))(magicast@0.3.5)(optionator@0.9.4)(rollup@4.56.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.23.12)(typescript@5.6.3)(vue-tsc@2.2.12(typescript@5.6.3))(vue@3.5.26(typescript@5.6.3))(yaml@2.8.2)
       '@oxc-parser/wasm': 0.60.0
       '@unhead/vue': 2.1.4(vue@3.5.26(typescript@5.6.3))
       '@vue/shared': 3.5.26
-      c12: 3.3.3(magicast@0.5.1)
+      c12: 3.3.3(magicast@0.3.5)
       chokidar: 4.0.3
       compatx: 0.1.8
       consola: 3.4.2
@@ -29751,7 +29711,7 @@ snapshots:
       mlly: 1.8.0
       mocked-exports: 0.1.1
       nanotar: 0.2.1
-      nitropack: 2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)
+      nitropack: 2.13.1(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0))(encoding@0.1.13)
       nypm: 0.6.4
       ofetch: 1.5.1
       ohash: 2.0.11
@@ -29773,7 +29733,7 @@ snapshots:
       unimport: 4.2.0
       unplugin: 2.3.11
       unplugin-vue-router: 0.12.0(vue-router@4.6.4(vue@3.5.26(typescript@5.6.3)))(vue@3.5.26(typescript@5.6.3))
-      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
+      unstorage: 1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2)
       untyped: 2.0.0
       vue: 3.5.26(typescript@5.6.3)
       vue-bundle-renderer: 2.2.0
@@ -32358,9 +32318,9 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  stripe@22.5.0(@types/node@25.9.5):
+  stripe@22.5.0(@types/node@22.18.0):
     optionalDependencies:
-      '@types/node': 25.9.5
+      '@types/node': 22.18.0
 
   structured-clone-es@1.0.0: {}
 
@@ -32685,6 +32645,24 @@ snapshots:
       '@ts-morph/common': 0.20.0
       code-block-writer: 12.0.0
 
+  ts-node@10.9.2(@types/node@22.18.0)(typescript@5.9.3):
+    dependencies:
+      '@cspotcode/source-map-support': 0.8.1
+      '@tsconfig/node10': 1.0.11
+      '@tsconfig/node12': 1.0.11
+      '@tsconfig/node14': 1.0.3
+      '@tsconfig/node16': 1.0.4
+      '@types/node': 22.18.0
+      acorn: 8.15.0
+      acorn-walk: 8.3.4
+      arg: 4.1.3
+      create-require: 1.1.1
+      diff: 4.0.2
+      make-error: 1.3.6
+      typescript: 5.9.3
+      v8-compile-cache-lib: 3.0.1
+      yn: 3.1.1
+
   ts-node@10.9.2(@types/node@25.9.5)(typescript@5.6.3):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
@@ -32703,24 +32681,6 @@ snapshots:
       v8-compile-cache-lib: 3.0.1
       yn: 3.1.1
     optional: true
-
-  ts-node@10.9.2(@types/node@25.9.5)(typescript@5.9.3):
-    dependencies:
-      '@cspotcode/source-map-support': 0.8.1
-      '@tsconfig/node10': 1.0.11
-      '@tsconfig/node12': 1.0.11
-      '@tsconfig/node14': 1.0.3
-      '@tsconfig/node16': 1.0.4
-      '@types/node': 25.9.5
-      acorn: 8.15.0
-      acorn-walk: 8.3.4
-      arg: 4.1.3
-      create-require: 1.1.1
-      diff: 4.0.2
-      make-error: 1.3.6
-      typescript: 5.9.3
-      v8-compile-cache-lib: 3.0.1
-      yn: 3.1.1
 
   ts-pattern@5.0.5: {}
 
@@ -32852,8 +32812,6 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  typescript@6.0.3: {}
-
   ufo@1.6.1: {}
 
   ufo@1.6.3: {}
@@ -32873,7 +32831,8 @@ snapshots:
 
   undici-types@6.21.0: {}
 
-  undici-types@7.24.6: {}
+  undici-types@7.24.6:
+    optional: true
 
   undici@6.21.3: {}
 
@@ -33089,7 +33048,7 @@ snapshots:
       picomatch: 4.0.3
       webpack-virtual-modules: 0.6.2
 
-  unstorage@1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2):
+  unstorage@1.17.4(db0@0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0)))(ioredis@5.9.2):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -33100,7 +33059,7 @@ snapshots:
       ofetch: 1.5.1
       ufo: 1.6.3
     optionalDependencies:
-      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.3.14)(pg@8.18.0)(sql.js@1.14.0))
+      db0: 0.3.4(better-sqlite3@12.6.2)(drizzle-orm@0.44.7(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.16.0)(@types/sql.js@1.4.9)(better-sqlite3@12.6.2)(bun-types@1.4.0)(pg@8.18.0)(sql.js@1.14.0))
       ioredis: 5.9.2
 
   untun@0.1.3:

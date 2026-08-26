@@ -81,12 +81,12 @@ The complete server integration is in [`spacetimedb/src/index.ts`](./spacetimedb
 
 The static server reads these optional variables from the process environment or `.env` files:
 
-| Variable            | Default                  | Purpose                              |
-| ------------------- | ------------------------ | ------------------------------------ |
-| `PORT`              | `8788`                   | Development web-server port.         |
-| `HOST`              | `127.0.0.1`              | Development web-server bind address. |
-| `STDB_URI`          | `ws://127.0.0.1:3000`    | Browser WebSocket endpoint.          |
-| `STDB_APP_DATABASE` | `spacetime-cron-example` | Published database name.             |
+| Variable              | Default                  | Purpose                              |
+| --------------------- | ------------------------ | ------------------------------------ |
+| `PORT`                | `8788`                   | Development web-server port.         |
+| `HOST`                | `127.0.0.1`              | Development web-server bind address. |
+| `STDB_URI`            | `ws://127.0.0.1:3000`    | Browser WebSocket endpoint.          |
+| `SPACETIMEDB_DB_NAME` | `spacetime-cron-example` | Published database name.             |
 
 The browser connects directly to SpacetimeDB. The Express process serves static files and `/api/config`.
 
@@ -181,7 +181,7 @@ For a browser release check:
 
 ## Troubleshooting
 
-- **No jobs appear:** confirm `STDB_APP_DATABASE` matches
+- **No jobs appear:** confirm `SPACETIMEDB_DB_NAME` matches
   `spacetime-cron-example` and reload after the subscription applies.
 - **The browser cannot connect:** confirm `STDB_URI` points to the server used by
   `spacetime publish --server local`.

@@ -70,12 +70,12 @@ heat model are application code.
 
 ## Configuration
 
-| Variable            | Default                        | Purpose                              |
-| ------------------- | ------------------------------ | ------------------------------------ |
-| `HOST`              | `127.0.0.1`                    | Development web-server bind address. |
-| `PORT`              | `8792`                         | Development web-server port.         |
-| `STDB_URI`          | `ws://127.0.0.1:3000`          | Browser WebSocket endpoint.          |
-| `STDB_APP_DATABASE` | `spacetime-rate-limit-example` | Published database name.             |
+| Variable              | Default                        | Purpose                              |
+| --------------------- | ------------------------------ | ------------------------------------ |
+| `HOST`                | `127.0.0.1`                    | Development web-server bind address. |
+| `PORT`                | `8792`                         | Development web-server port.         |
+| `STDB_URI`            | `ws://127.0.0.1:3000`          | Browser WebSocket endpoint.          |
+| `SPACETIMEDB_DB_NAME` | `spacetime-rate-limit-example` | Published database name.             |
 
 The Node process serves static files, `GET /api/health`, and browser-safe
 `GET /api/config`. Gameplay calls go directly from the browser to SpacetimeDB.

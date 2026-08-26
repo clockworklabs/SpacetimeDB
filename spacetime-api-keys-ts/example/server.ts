@@ -26,10 +26,7 @@ const PORT = Number.parseInt(process.env.PORT ?? '8798', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
-const STDB_DATABASE =
-  process.env.STDB_DATABASE ??
-  process.env.STDB_APP_DATABASE ??
-  'spacetime-api-keys-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-api-keys-example';
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -37,12 +34,12 @@ app.use(express.json({ limit: '256kb' }));
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
     stdbUri: STDB_URI,
-    database: STDB_DATABASE,
+    database: DB_NAME,
   });
 });
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: STDB_DATABASE });
+  res.json({ ok: true, database: DB_NAME });
 });
 
 app.use('/api/colony', async (req: Request, res: Response) => {
@@ -50,7 +47,7 @@ app.use('/api/colony', async (req: Request, res: Response) => {
   const qIdx = fullPath.indexOf('?');
   const subpath = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
   const query = qIdx < 0 ? '' : fullPath.slice(qIdx);
-  const upstreamUrl = `${STDB_HTTP}/v1/database/${STDB_DATABASE}/route${subpath}${query}`;
+  const upstreamUrl = `${STDB_HTTP}/v1/database/${DB_NAME}/route${subpath}${query}`;
   const headers: Record<string, string> = {};
   for (const [key, value] of Object.entries(req.headers)) {
     if (typeof value === 'string') headers[key] = value;
@@ -98,5 +95,5 @@ app.listen(PORT, HOST, () => {
   console.log(`Colony running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
   console.log(`  STDB http-> ${STDB_HTTP}`);
-  console.log(`  Database -> ${STDB_DATABASE}`);
+  console.log(`  Database -> ${DB_NAME}`);
 });

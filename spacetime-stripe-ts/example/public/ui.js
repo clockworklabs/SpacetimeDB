@@ -11,6 +11,18 @@ const state = {
 
 const byId = id => document.getElementById(id);
 
+const HTML_ESCAPE = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => HTML_ESCAPE[character]);
+}
+
 const ui = {
   btnCart: byId('btnCart'),
   btnSettings: byId('btnSettings'),
@@ -326,6 +338,9 @@ function renderCartList() {
       const unitPrice = parseAmountFromPriceLabel(item.priceLabel);
       const lineTotal = unitPrice * item.quantity;
       const cartKey = getCartKey(item.id, item.priceId);
+      const itemId = escapeHtml(item.id);
+      const itemName = escapeHtml(item.name);
+      const priceId = escapeHtml(item.priceId);
       const stepperClass =
         state.animatedStepperKey === cartKey
           ? ' card-stepper bump cart-stepper'
@@ -335,15 +350,15 @@ function renderCartList() {
           <div class="cart-item-top">
             <div class="cart-item-thumb" aria-hidden="true"></div>
             <div class="cart-item-content">
-              <div class="cart-item-name">${item.name}</div>
+              <div class="cart-item-name">${itemName}</div>
               <div class="cart-item-meta">${item.mode === 'subscription' ? 'Subscription' : 'One-time payment'}</div>
               <div class="cart-item-sub">${formatUsd(unitPrice)} x ${item.quantity} = ${formatUsd(lineTotal)}${item.mode === 'subscription' ? ' /mo' : ''}</div>
             </div>
             <div class="cart-item-controls">
               <div class="${stepperClass.trim()}">
-                <button class="stepper-btn js-cart-minus ${item.quantity === 1 ? 'is-trash' : ''}" data-product-id="${item.id}" data-price-id="${item.priceId}" aria-label="${item.quantity === 1 ? 'Remove item' : 'Decrease quantity'}">${item.quantity === 1 ? '<svg class="trash-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' : '-'}</button>
+                <button class="stepper-btn js-cart-minus ${item.quantity === 1 ? 'is-trash' : ''}" data-product-id="${itemId}" data-price-id="${priceId}" aria-label="${item.quantity === 1 ? 'Remove item' : 'Decrease quantity'}">${item.quantity === 1 ? '<svg class="trash-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' : '-'}</button>
                 <div class="stepper-count">${item.quantity} in cart</div>
-                <button class="stepper-btn js-cart-plus" data-product-id="${item.id}" data-price-id="${item.priceId}" aria-label="Increase quantity">+</button>
+                <button class="stepper-btn js-cart-plus" data-product-id="${itemId}" data-price-id="${priceId}" aria-label="Increase quantity">+</button>
               </div>
             </div>
           </div>
@@ -410,23 +425,29 @@ function renderCatalog() {
           ? 'card-stepper bump'
           : 'card-stepper';
       const isMissingPrice = !item.priceId;
+      const itemId = escapeHtml(item.id);
+      const itemName = escapeHtml(item.name);
+      const itemDescription = escapeHtml(item.description);
+      const priceId = escapeHtml(item.priceId);
+      const priceLabel = escapeHtml(item.priceLabel);
+      const badge = merch?.badge ? escapeHtml(merch.badge) : '';
       return `
-        <article class="product-card" data-product-id="${item.id}">
+        <article class="product-card" data-product-id="${itemId}">
           <div class="product-row">
             <div class="product-media" aria-hidden="true"></div>
             <div class="product-head">
               <div class="badge-row">
-                ${merch?.badge ? `<span class="merch-badge sale">${merch.badge}</span>` : ''}
+                ${badge ? `<span class="merch-badge sale">${badge}</span>` : ''}
                 <span class="merch-badge mode">${purchaseType}</span>
               </div>
               <div class="product-copy">
-                <h3 class="product-title">${item.name}</h3>
-                <p class="product-description">${item.description}</p>
+                <h3 class="product-title">${itemName}</h3>
+                <p class="product-description">${itemDescription}</p>
               </div>
               <div class="product-rating"><span>${rating.toFixed(1)}</span><span class="product-stars">${stars}</span><span>(${reviews})</span></div>
               <div class="card-top">
                 <div class="price-stack">
-                  <div class="price-label">${item.priceLabel}</div>
+                  <div class="price-label">${priceLabel}</div>
                   ${compareAt ? `<div class="price-compare">List: <s>${formatUsd(compareAt)}</s></div>` : ''}
                 </div>
               </div>
@@ -435,14 +456,14 @@ function renderCatalog() {
                   inCartQty > 0
                     ? `
                     <div class="${stepperClass}">
-                      <button class="stepper-btn js-card-minus ${inCartQty === 1 ? 'is-trash' : ''}" data-product-id="${item.id}" data-price-id="${item.priceId}" aria-label="${inCartQty === 1 ? 'Remove item' : 'Decrease quantity'}">${inCartQty === 1 ? '<svg class="trash-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' : '-'}</button>
+                      <button class="stepper-btn js-card-minus ${inCartQty === 1 ? 'is-trash' : ''}" data-product-id="${itemId}" data-price-id="${priceId}" aria-label="${inCartQty === 1 ? 'Remove item' : 'Decrease quantity'}">${inCartQty === 1 ? '<svg class="trash-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' : '-'}</button>
                       <div class="stepper-count">${inCartQty} in cart</div>
-                      <button class="stepper-btn js-card-plus" data-product-id="${item.id}" data-price-id="${item.priceId}" aria-label="Increase quantity">+</button>
+                      <button class="stepper-btn js-card-plus" data-product-id="${itemId}" data-price-id="${priceId}" aria-label="Increase quantity">+</button>
                     </div>
                   `
                     : isMissingPrice
                       ? '<button class="btn add-cart" disabled title="Set STRIPE_SYNC_PRICES=1 and restart the example server.">Sync price first</button>'
-                      : `<button class="btn add-cart js-add-to-cart" data-product-id="${item.id}">Add to cart</button>`
+                      : `<button class="btn add-cart js-add-to-cart" data-product-id="${itemId}">Add to cart</button>`
                 }
               </div>
             </div>

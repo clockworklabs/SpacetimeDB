@@ -37,7 +37,7 @@ const PORT = Number.parseInt(process.env.PORT ?? '8796', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
-const STDB_DB = process.env.STDB_DATABASE ?? 'spacetime-posthog-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-posthog-example';
 const POSTHOG_HOST = process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com';
 const POSTHOG_PROJECT_API_KEY = process.env.POSTHOG_PROJECT_API_KEY ?? '';
 const SPACETIME_BIN = process.env.SPACETIME_BIN?.trim() || 'spacetime';
@@ -57,7 +57,7 @@ function connectAttempt(token: string | undefined): Promise<ConnectedServer> {
   return new Promise((resolve, reject) => {
     let builder = DbConnection.builder()
       .withUri(STDB_URI)
-      .withDatabaseName(STDB_DB)
+      .withDatabaseName(DB_NAME)
       .onConnect((connection, identity, nextToken) => {
         if (!process.env.STDB_SERVER_TOKEN?.trim()) {
           saveServerToken(SERVER_TOKEN_PATH, nextToken);
@@ -100,7 +100,7 @@ function callSpacetime(procedureName: string, ...args: unknown[]): void {
       'call',
       '--server',
       STDB_HTTP,
-      STDB_DB,
+      DB_NAME,
       procedureName,
       ...args.map(arg => JSON.stringify(arg)),
     ],
@@ -206,26 +206,26 @@ app.use(express.json({ limit: '256kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: STDB_DB });
+  res.json({ ok: true, database: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
     stdbUri: STDB_URI,
-    database: STDB_DB,
+    database: DB_NAME,
     posthogAppUrl: POSTHOG_PROJECT_API_KEY ? posthogAppUrl() : null,
   });
 });
 
 (async () => {
-  console.log(`[stdb] connecting to ${STDB_URI}/${STDB_DB} ...`);
+  console.log(`[stdb] connecting to ${STDB_URI}/${DB_NAME} ...`);
   try {
     const connected = await connectStdb();
     stdb = connected.connection;
     grantServerIdentity({
       spacetimeBin: SPACETIME_BIN,
       server: STDB_HTTP,
-      database: STDB_DB,
+      database: DB_NAME,
       procedure: 'posthog.add_admin_identity',
       identity: connected.identity,
     });
@@ -272,6 +272,6 @@ app.get('/api/config', (_req: Request, res: Response) => {
       );
     }
     process.stdout.write(`  spacetime: ${SPACETIME_BIN}\n`);
-    process.stdout.write(`  database: ${STDB_URI}/${STDB_DB}\n\n`);
+    process.stdout.write(`  database: ${STDB_URI}/${DB_NAME}\n\n`);
   });
 })();

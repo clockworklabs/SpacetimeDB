@@ -25,23 +25,23 @@ loadEnv(path.resolve(__dirname, '.env'), true);
 const PORT = Number.parseInt(process.env.PORT ?? '8797', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
-const STDB_DATABASE = process.env.STDB_DATABASE ?? 'spacetime-lobby-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-lobby-example';
 
 const app = express();
 app.use(express.json({ limit: '128kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: STDB_DATABASE });
+  res.json({ ok: true, database: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
-  res.json({ stdbUri: STDB_URI, database: STDB_DATABASE });
+  res.json({ stdbUri: STDB_URI, database: DB_NAME });
 });
 
 app.listen(PORT, HOST, () => {
   process.stdout.write(
     `\nspacetime-lobby-example listening on http://${HOST}:${PORT}\n`
   );
-  process.stdout.write(`  database: ${STDB_URI}/${STDB_DATABASE}\n\n`);
+  process.stdout.write(`  database: ${STDB_URI}/${DB_NAME}\n\n`);
 });

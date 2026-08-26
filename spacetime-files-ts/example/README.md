@@ -68,13 +68,13 @@ and file-manager UI are application code in the example.
 
 ## Configuration
 
-| Variable            | Default                   | Purpose                                          |
-| ------------------- | ------------------------- | ------------------------------------------------ |
-| `HOST`              | `127.0.0.1`               | Development web-server bind address.             |
-| `PORT`              | `8799`                    | Development web-server port.                     |
-| `STDB_URI`          | `ws://127.0.0.1:3000`     | Browser WebSocket endpoint.                      |
-| `STDB_HTTP`         | `http://127.0.0.1:3000`   | Upstream endpoint for public file HTTP requests. |
-| `STDB_APP_DATABASE` | `spacetime-files-example` | Published database name.                         |
+| Variable              | Default                   | Purpose                                          |
+| --------------------- | ------------------------- | ------------------------------------------------ |
+| `HOST`                | `127.0.0.1`               | Development web-server bind address.             |
+| `PORT`                | `8799`                    | Development web-server port.                     |
+| `STDB_URI`            | `ws://127.0.0.1:3000`     | Browser WebSocket endpoint.                      |
+| `STDB_HTTP`           | `http://127.0.0.1:3000`   | Upstream endpoint for public file HTTP requests. |
+| `SPACETIMEDB_DB_NAME` | `spacetime-files-example` | Published database name.                         |
 
 The Node server hosts the bundle and proxies `/files?id=<fileId>` to the module HTTP router.
 It receives metadata for authorization decisions. Private bytes travel through
@@ -148,7 +148,7 @@ For a release smoke test, use two independent browser identities and verify:
 
 - **A preview is empty:** inspect the procedure failure and verify the connected
   identity owns the file.
-- **A public link returns an error:** confirm `STDB_HTTP` and `STDB_APP_DATABASE`
+- **A public link returns an error:** confirm `STDB_HTTP` and `SPACETIMEDB_DB_NAME`
   target the database used by `STDB_URI`.
 - **An upload exceeds the limit:** keep example files below 4 MB; use an external
   object store for larger production assets.

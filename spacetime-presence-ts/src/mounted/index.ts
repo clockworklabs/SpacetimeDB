@@ -20,31 +20,20 @@ import {
   updatePresenceConfig,
   upsertPresence,
 } from '../index';
+import {
+  presenceConfigRow,
+  presenceEntryRow,
+  presenceSweepTickRow,
+} from '../tables';
 
 const presenceEntry = table(
   { name: 'presence_entry', public: true },
-  {
-    key: t.string().primaryKey(),
-    scope: t.string().index(),
-    subject: t.string().index(),
-    status: t.string().index(),
-    activity: t.option(t.string()),
-    payloadJson: t.option(t.string()),
-    joinedAt: t.timestamp().index(),
-    lastSeenAt: t.timestamp().index(),
-    expiresAt: t.timestamp().index(),
-    updatedAt: t.timestamp(),
-  }
+  presenceEntryRow
 );
 
 const presenceConfig = table(
   { name: 'presence_config', public: true },
-  {
-    singleton: t.bool().primaryKey(),
-    defaultTtlSeconds: t.u32(),
-    sweepBatch: t.u32(),
-    updatedAt: t.timestamp(),
-  }
+  presenceConfigRow
 );
 
 const presenceAdminIdentity = table(
@@ -57,10 +46,7 @@ const presenceAdminIdentity = table(
 
 const presenceSweepTick = table(
   { name: 'presence_sweep_tick' },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
+  presenceSweepTickRow
 );
 
 const spacetimedb = schema({

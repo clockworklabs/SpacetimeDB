@@ -84,7 +84,7 @@ replace the example's development identity bootstrap in production.
 | `DEFAULT_FROM`              | `onboarding@resend.dev`    | Default sender; use a verified address outside Resend's test flow.                              |
 | `STDB_URI`                  | `ws://127.0.0.1:3000`      | Browser and server WebSocket endpoint.                                                          |
 | `STDB_HTTP`                 | `http://127.0.0.1:3000`    | CLI and native-route HTTP endpoint. Must match `STDB_URI`.                                      |
-| `STDB_DATABASE`             | `spacetime-resend-example` | Published database name.                                                                        |
+| `SPACETIMEDB_DB_NAME`       | `spacetime-resend-example` | Published database name.                                                                        |
 | `STDB_SERVER_TOKEN`         | generated locally          | Optional pre-provisioned server identity token.                                                 |
 | `HOST`                      | `127.0.0.1`                | Static-server bind address.                                                                     |
 | `PORT`                      | `8790`                     | Static-server port.                                                                             |

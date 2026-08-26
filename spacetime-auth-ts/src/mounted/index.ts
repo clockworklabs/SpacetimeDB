@@ -2,6 +2,16 @@ import { schema, t, table, Router } from 'spacetimedb/server';
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import { installAuth } from './install';
 import {
+  authAccountTable as authAccount,
+  authAdminIdentityTable as authAdminIdentity,
+  authConfigTable as authConfig,
+  authConnectionBindingTable as authConnectionBinding,
+  authOauthStateTable as authOauthState,
+  authSessionTable as authSession,
+  authUserTable as authUser,
+  authVerificationTable as authVerification,
+} from '../tables';
+import {
   setAuthConfigParams,
   setAuthConfigImpl,
   authSweepImpl,
@@ -43,109 +53,6 @@ const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
     `[mail] to=${params.to} subject=${params.subject}\n${params.text}`
   );
 };
-
-// STDB requires submodule tables declared inline at the module's literal site, not imported as values.
-const authUser = table(
-  { name: 'auth_user', public: false },
-  {
-    userId: t.string().primaryKey(),
-    email: t.string().unique(),
-    emailVerified: t.bool(),
-    name: t.option(t.string()),
-    image: t.option(t.string()),
-    createdAt: t.timestamp(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const authSession = table(
-  { name: 'auth_session', public: false },
-  {
-    sessionId: t.string().primaryKey(),
-    userId: t.string().index(),
-    token: t.string().unique(),
-    expiresAt: t.timestamp().index(),
-    ipAddress: t.option(t.string()),
-    userAgent: t.option(t.string()),
-    createdAt: t.timestamp(),
-  }
-);
-
-const authAccount = table(
-  { name: 'auth_account', public: false },
-  {
-    accountId: t.string().primaryKey(),
-    userId: t.string().index(),
-    providerId: t.string().index(),
-    providerAccountId: t.string().index(),
-    passwordHash: t.option(t.string()),
-    accessToken: t.option(t.string()),
-    refreshToken: t.option(t.string()),
-    accessTokenExpiresAt: t.option(t.timestamp()),
-    createdAt: t.timestamp(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const authVerification = table(
-  { name: 'auth_verification', public: false },
-  {
-    verificationId: t.string().primaryKey(),
-    identifier: t.string().index(),
-    value: t.string().unique(),
-    purpose: t.string(),
-    expiresAt: t.timestamp().index(),
-    createdAt: t.timestamp(),
-  }
-);
-
-const authOauthState = table(
-  { name: 'auth_oauth_state', public: false },
-  {
-    state: t.string().primaryKey(),
-    provider: t.string(),
-    codeVerifier: t.string(),
-    redirectTo: t.string(),
-    expiresAt: t.timestamp().index(),
-    createdAt: t.timestamp(),
-  }
-);
-
-const authConfig = table(
-  { name: 'auth_config', public: false },
-  {
-    singleton: t.bool().primaryKey(),
-    issuerUrl: t.string(),
-    baseUrl: t.string(),
-    cookieName: t.string(),
-    sessionTtlSeconds: t.u64(),
-    es256PrivateKeyPem: t.string(),
-    es256PublicKeyPem: t.string(),
-    keyId: t.string(),
-    googleClientId: t.option(t.string()),
-    googleClientSecret: t.option(t.string()),
-    githubClientId: t.option(t.string()),
-    githubClientSecret: t.option(t.string()),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const authConnectionBinding = table(
-  { name: 'auth_connection_binding', public: false },
-  {
-    stdbIdentity: t.identity().primaryKey(),
-    userId: t.string().index(),
-    linkedAt: t.timestamp(),
-  }
-);
-
-const authAdminIdentity = table(
-  { name: 'auth_admin_identity', public: false },
-  {
-    identity: t.identity().primaryKey(),
-    addedAtMicros: t.i64(),
-  }
-);
 
 const authSweeperTick = table(
   { name: 'auth_sweeper_tick' },

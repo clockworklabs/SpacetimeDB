@@ -78,7 +78,7 @@ rules are host-owned example code.
 | `STDB_URI`                          | `ws://127.0.0.1:3000`    | Browser WebSocket endpoint.                                              |
 | `STDB_HTTP`                         | `http://127.0.0.1:3000`  | HTTP endpoint used by the auth proxy.                                    |
 | `STDB_SERVER`                       | `STDB_HTTP`              | CLI target used during startup auth configuration.                       |
-| `STDB_APP_DATABASE`                 | `spacetime-grid-example` | Published database name.                                                 |
+| `SPACETIMEDB_DB_NAME`               | `spacetime-grid-example` | Published database name.                                                 |
 | `AUTH_ISSUER_URL` / `AUTH_BASE_URL` | `http://localhost:8793`  | JWT issuer and browser-visible auth origin.                              |
 | `AUTH_COOKIE_NAME`                  | `stdb_auth`              | Session-cookie name.                                                     |
 | `AUTH_SESSION_TTL_SECONDS`          | `604800`                 | Session lifetime in seconds.                                             |

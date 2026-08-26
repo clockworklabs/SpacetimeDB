@@ -98,7 +98,7 @@ set by the launching process are never overwritten.
 | `STDB_URI`                                  | `ws://127.0.0.1:3000`      | Browser WebSocket endpoint.                                        |
 | `STDB_HTTP`                                 | `http://127.0.0.1:3000`    | HTTP endpoint used by the auth/file proxy.                         |
 | `STDB_SERVER`                               | `STDB_HTTP`                | CLI target used for startup configuration.                         |
-| `STDB_APP_DATABASE`                         | `spacetime-agents-example` | Published database name.                                           |
+| `SPACETIMEDB_DB_NAME`                       | `spacetime-agents-example` | Published database name.                                           |
 | `HOST`                                      | `127.0.0.1`                | Development web-server bind address.                               |
 | `PORT`                                      | `8789`                     | Static-server port.                                                |
 

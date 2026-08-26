@@ -33,21 +33,21 @@ loadEnv(path.resolve(__dirname, '.env'), true);
 const PORT = Number.parseInt(process.env.PORT ?? '8788', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
-const STDB_APP_DB = process.env.STDB_APP_DATABASE ?? 'spacetime-cron-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-cron-example';
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, app: STDB_APP_DB });
+  res.json({ ok: true, app: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
-  res.json({ stdbUri: STDB_URI, appDatabase: STDB_APP_DB });
+  res.json({ stdbUri: STDB_URI, appDatabase: DB_NAME });
 });
 
 app.listen(PORT, HOST, () => {
   console.log(`Cron example running at http://${HOST}:${PORT}`);
-  console.log(`  SpacetimeDB: ${STDB_URI} (${STDB_APP_DB})`);
+  console.log(`  SpacetimeDB: ${STDB_URI} (${DB_NAME})`);
 });

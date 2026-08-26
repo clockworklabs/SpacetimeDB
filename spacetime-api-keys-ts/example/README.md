@@ -69,13 +69,13 @@ colony, grid, and presence features are application-specific demonstration code.
 
 ## Configuration
 
-| Variable        | Default                      | Purpose                              |
-| --------------- | ---------------------------- | ------------------------------------ |
-| `HOST`          | `127.0.0.1`                  | Development web-server bind address. |
-| `PORT`          | `8798`                       | Development web-server port.         |
-| `STDB_URI`      | `ws://127.0.0.1:3000`        | Browser WebSocket endpoint.          |
-| `STDB_HTTP`     | `http://127.0.0.1:3000`      | Upstream module HTTP endpoint.       |
-| `STDB_DATABASE` | `spacetime-api-keys-example` | Published database name.             |
+| Variable              | Default                      | Purpose                              |
+| --------------------- | ---------------------------- | ------------------------------------ |
+| `HOST`                | `127.0.0.1`                  | Development web-server bind address. |
+| `PORT`                | `8798`                       | Development web-server port.         |
+| `STDB_URI`            | `ws://127.0.0.1:3000`        | Browser WebSocket endpoint.          |
+| `STDB_HTTP`           | `http://127.0.0.1:3000`      | Upstream module HTTP endpoint.       |
+| `SPACETIMEDB_DB_NAME` | `spacetime-api-keys-example` | Published database name.             |
 
 The publish scripts target the SpacetimeDB server registered as `local`. If that
 registration resolves to a different endpoint than `STDB_URI` and `STDB_HTTP`,

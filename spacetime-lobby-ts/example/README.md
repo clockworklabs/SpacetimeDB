@@ -72,12 +72,12 @@ simulation are application-specific demonstration code.
 
 ## Configuration
 
-| Variable        | Default                   | Purpose                              |
-| --------------- | ------------------------- | ------------------------------------ |
-| `HOST`          | `127.0.0.1`               | Development web-server bind address. |
-| `PORT`          | `8797`                    | Development web-server port.         |
-| `STDB_URI`      | `ws://127.0.0.1:3000`     | Browser WebSocket endpoint.          |
-| `STDB_DATABASE` | `spacetime-lobby-example` | Published database name.             |
+| Variable              | Default                   | Purpose                              |
+| --------------------- | ------------------------- | ------------------------------------ |
+| `HOST`                | `127.0.0.1`               | Development web-server bind address. |
+| `PORT`                | `8797`                    | Development web-server port.         |
+| `STDB_URI`            | `ws://127.0.0.1:3000`     | Browser WebSocket endpoint.          |
+| `SPACETIMEDB_DB_NAME` | `spacetime-lobby-example` | Published database name.             |
 
 The Node process serves static files, `GET /api/health`, and browser-safe
 `GET /api/config`. Matchmaking and combat calls travel directly to SpacetimeDB.

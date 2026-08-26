@@ -42,7 +42,7 @@ function requireAdmin(ctx: ReducerModuleCtx): void {
 
 function toU32(name: string, value: number, max = 0xffff_ffff): number {
   if (!Number.isInteger(value) || value <= 0 || value > max) {
-    throw new Error(`rate_limit.invalid_${name}`);
+    throw new SenderError(`rate_limit.invalid_${name}`);
   }
   return value;
 }

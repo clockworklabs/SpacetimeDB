@@ -29,7 +29,7 @@ const PORT = Number.parseInt(process.env.PORT ?? '8799', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
-const STDB_APP_DB = process.env.STDB_APP_DATABASE ?? 'spacetime-files-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-files-example';
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -48,7 +48,7 @@ function proxyStdbRoute(prefix: string) {
     const qIdx = fullPath.indexOf('?');
     const routePath = qIdx < 0 ? fullPath : fullPath.slice(0, qIdx);
     const query = qIdx < 0 ? '' : fullPath.slice(qIdx);
-    const upstreamUrl = `${STDB_HTTP}/v1/database/${STDB_APP_DB}/route${routePath}${query}`;
+    const upstreamUrl = `${STDB_HTTP}/v1/database/${DB_NAME}/route${routePath}${query}`;
 
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(req.headers)) {
@@ -89,16 +89,16 @@ app.use('/files', proxyStdbRoute('/files'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, app: STDB_APP_DB });
+  res.json({ ok: true, app: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
-  res.json({ stdbUri: STDB_URI, appDatabase: STDB_APP_DB });
+  res.json({ stdbUri: STDB_URI, appDatabase: DB_NAME });
 });
 
 app.listen(PORT, HOST, () => {
   console.log(`Vault example running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
   console.log(`  STDB http-> ${STDB_HTTP} (proxy /files/*)`);
-  console.log(`  Database -> ${STDB_APP_DB}`);
+  console.log(`  Database -> ${DB_NAME}`);
 });

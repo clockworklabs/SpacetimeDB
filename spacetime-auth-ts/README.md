@@ -7,7 +7,7 @@ profile management, and in-module rate limiting.
 ## Install
 
 ```bash
-npm install @spacetimedb/auth @spacetimedb/rate-limit spacetimedb@^2.8.3
+npm install @spacetimedb/auth spacetimedb@^2.8.3
 ```
 
 Requires SpacetimeDB 2.8.3 or later for submodule mounting.
@@ -15,26 +15,24 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-Mount `@spacetimedb/rate-limit/submodule` beside the auth submodule. The
-host module owns HTTP route registration and any mail-delivery adapter.
+The host module owns HTTP route registration and any mail-delivery adapter.
 
 ## Usage
 
 ### Integrate into an application
 
 Import the mountable namespace, register the handlers your application needs,
-then install Auth and its Rate Limit dependency from the host `init` hook.
+then install Auth from the host `init` hook. Auth mounts and initializes its
+Rate Limit dependency.
 
 ```ts
 import { schema } from 'spacetimedb/server';
 import * as auth from '@spacetimedb/auth/submodule';
-import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 
-const spacetimedb = schema({ auth, rateLimit });
+const spacetimedb = schema({ auth });
 export default spacetimedb;
 
 export const init = spacetimedb.init(ctx => {
-  rateLimit.installRateLimit(ctx.as.rateLimit);
   auth.installAuth(ctx.as.auth);
 });
 ```

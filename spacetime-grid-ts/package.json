@@ -64,9 +64,9 @@
   "devDependencies": {
     "eslint": "^9.17.0",
     "prettier": "^3.3.3",
-    "@types/node": "^25.6.0",
+    "@types/node": "^22.10.2",
     "spacetimedb": "workspace:*",
-    "tsx": "^4.22.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

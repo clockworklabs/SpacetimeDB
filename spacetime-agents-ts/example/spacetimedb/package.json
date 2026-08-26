@@ -16,7 +16,7 @@
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^22.10.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

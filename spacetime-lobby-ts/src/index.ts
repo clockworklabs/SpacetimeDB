@@ -1,5 +1,3 @@
-// Registered SpacetimeDB exports for direct module publication.
-
 export { default, init } from './submodule/schema';
 export {
   add_admin_identity,

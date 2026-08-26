@@ -13,15 +13,13 @@
     "dev": "pnpm run build && tsx server.ts"
   },
   "dependencies": {
-    "@spacetimedb/auth": "workspace:*",
-    "@spacetimedb/rate-limit": "workspace:*",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.6.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.2",
     "esbuild": "^0.28.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

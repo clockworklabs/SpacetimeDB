@@ -27,7 +27,7 @@ const PORT = Number.parseInt(process.env.PORT ?? '8787', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
-const STDB_DATABASE = process.env.STDB_DATABASE ?? 'spacetime-stripe-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-stripe-example';
 const NODE_ENV = (process.env.NODE_ENV ?? '').replace(/^['"]|['"]$/g, '');
 const IS_PRODUCTION = NODE_ENV === 'production';
 const SPACETIME_BIN = process.env.SPACETIME_BIN?.trim() || 'spacetime';
@@ -126,7 +126,7 @@ function connectAttempt(token: string | undefined): Promise<ConnectedServer> {
   return new Promise((resolve, reject) => {
     let builder = DbConnection.builder()
       .withUri(STDB_URI)
-      .withDatabaseName(STDB_DATABASE)
+      .withDatabaseName(DB_NAME)
       .onConnect((connection, identity, nextToken) => {
         if (!process.env.STDB_SERVER_TOKEN?.trim()) {
           saveServerToken(SERVER_TOKEN_PATH, nextToken);
@@ -207,14 +207,14 @@ function staticOptions() {
 }
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: STDB_DATABASE });
+  res.json({ ok: true, database: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
   const envStripeSecret = process.env.STRIPE_SECRET_KEY?.trim() ?? '';
   res.json({
     stdbUri: STDB_URI,
-    database: STDB_DATABASE,
+    database: DB_NAME,
     hasStripeSecretKey: envStripeSecret.length > 0,
     stripeConfigured,
     adminEndpointsEnabled: false,
@@ -356,23 +356,21 @@ async function seedCatalogIfEmpty(conn: DbConnection): Promise<void> {
 }
 
 (async () => {
-  console.log(
-    `[stdb] connecting to ${STDB_URI} (database=${STDB_DATABASE}) ...`
-  );
+  console.log(`[stdb] connecting to ${STDB_URI} (database=${DB_NAME}) ...`);
   try {
     const connected = await connectStdb();
     stdb = connected.connection;
     grantServerIdentity({
       spacetimeBin: SPACETIME_BIN,
       server: STDB_HTTP,
-      database: STDB_DATABASE,
+      database: DB_NAME,
       procedure: 'add_admin_identity',
       identity: connected.identity,
     });
     grantServerIdentity({
       spacetimeBin: SPACETIME_BIN,
       server: STDB_HTTP,
-      database: STDB_DATABASE,
+      database: DB_NAME,
       procedure: 'stripe.add_admin_identity',
       identity: connected.identity,
     });

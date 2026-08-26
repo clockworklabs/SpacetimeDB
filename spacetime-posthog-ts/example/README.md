@@ -82,7 +82,7 @@ its event catalog are demonstration code.
 | `POSTHOG_HOST`            | `https://us.i.posthog.com`  | PostHog ingestion host.                                                  |
 | `STDB_URI`                | `ws://127.0.0.1:3000`       | Browser and server WebSocket endpoint.                                   |
 | `STDB_HTTP`               | `http://127.0.0.1:3000`     | CLI administration endpoint. Must address the same server as `STDB_URI`. |
-| `STDB_DATABASE`           | `spacetime-posthog-example` | Published database name.                                                 |
+| `SPACETIMEDB_DB_NAME`     | `spacetime-posthog-example` | Published database name.                                                 |
 | `STDB_SERVER_TOKEN`       | generated locally           | Optional pre-provisioned server identity token.                          |
 | `HOST`                    | `127.0.0.1`                 | Static-server bind address.                                              |
 | `PORT`                    | `8796`                      | Static-server port.                                                      |

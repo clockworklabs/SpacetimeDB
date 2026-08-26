@@ -1709,8 +1709,7 @@ jobs:
         run: |
           curl -sSf https://install.spacetimedb.com | sh -s -- --root-dir "$RUNNER_TEMP/spacetime" --yes
           echo "$RUNNER_TEMP/spacetime/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/spacetime/bin/spacetime" version install 2.8.3
-          "$RUNNER_TEMP/spacetime/bin/spacetime" version use 2.8.3
+          "$RUNNER_TEMP/spacetime/bin/spacetime" version install 2.8.3 --use --yes
 
       - name: Check submodules
         run: pnpm submodules:check

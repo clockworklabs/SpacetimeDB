@@ -42,7 +42,7 @@ const PORT = Number.parseInt(process.env.PORT ?? '8790', 10);
 const HOST = process.env.HOST?.trim() || '127.0.0.1';
 const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_HTTP = process.env.STDB_HTTP ?? 'http://127.0.0.1:3000';
-const STDB_DB = process.env.STDB_DATABASE ?? 'spacetime-resend-example';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-resend-example';
 const SPACETIME_BIN = process.env.SPACETIME_BIN?.trim() || 'spacetime';
 const RESEND_API_KEY = process.env.RESEND_API_KEY ?? '';
 const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET ?? '';
@@ -75,7 +75,7 @@ function connectAttempt(token: string | undefined): Promise<ConnectedServer> {
   return new Promise((resolve, reject) => {
     let builder = DbConnection.builder()
       .withUri(STDB_URI)
-      .withDatabaseName(STDB_DB)
+      .withDatabaseName(DB_NAME)
       .onConnect((connection, identity, nextToken) => {
         if (!process.env.STDB_SERVER_TOKEN?.trim()) {
           saveServerToken(SERVER_TOKEN_PATH, nextToken);
@@ -129,13 +129,13 @@ app.use(express.json({ limit: '512kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, database: STDB_DB });
+  res.json({ ok: true, database: DB_NAME });
 });
 
 app.get('/api/config', (_req: Request, res: Response) => {
   res.json({
     stdbUri: STDB_URI,
-    database: STDB_DB,
+    database: DB_NAME,
     resendConfigured,
     defaultFrom: DEFAULT_FROM,
     allowedRecipients: ALLOWED_RECIPIENTS,
@@ -147,7 +147,7 @@ app.get('/api/config', (_req: Request, res: Response) => {
 async function handleResendWebhook(req: Request, res: Response): Promise<void> {
   const rawBody =
     req.body instanceof Buffer ? req.body : Buffer.from(String(req.body ?? ''));
-  const url = `${STDB_HTTP}/v1/database/${STDB_DB}/route/webhook/resend`;
+  const url = `${STDB_HTTP}/v1/database/${DB_NAME}/route/webhook/resend`;
 
   const headers: Record<string, string> = {
     'content-type': 'application/json',
@@ -195,14 +195,14 @@ async function bootstrapResendConfig(): Promise<void> {
 }
 
 (async () => {
-  console.log(`[stdb] connecting to ${STDB_URI}/${STDB_DB} ...`);
+  console.log(`[stdb] connecting to ${STDB_URI}/${DB_NAME} ...`);
   try {
     const connected = await connectStdb();
     stdb = connected.connection;
     grantServerIdentity({
       spacetimeBin: SPACETIME_BIN,
       server: STDB_HTTP,
-      database: STDB_DB,
+      database: DB_NAME,
       procedure: 'resend.add_admin_identity',
       identity: connected.identity,
     });
@@ -236,6 +236,6 @@ async function bootstrapResendConfig(): Promise<void> {
     process.stdout.write(
       `  webhook endpoint: POST http://127.0.0.1:${PORT}/webhook/resend\n`
     );
-    process.stdout.write(`  database: ${STDB_URI}/${STDB_DB}\n\n`);
+    process.stdout.write(`  database: ${STDB_URI}/${DB_NAME}\n\n`);
   });
 })();

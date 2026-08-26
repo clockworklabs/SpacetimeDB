@@ -61,7 +61,7 @@ preserved.
 This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
-npm install @spacetimedb/auth @spacetimedb/rate-limit spacetimedb@^2.8.3
+npm install @spacetimedb/auth spacetimedb@^2.8.3
 ```
 
 Follow the package's
@@ -78,7 +78,7 @@ console mailer and development server before production.
 | `STDB_URI`                     | `ws://127.0.0.1:3000`    | Browser WebSocket endpoint.                                       |
 | `STDB_HTTP`                    | `http://127.0.0.1:3000`  | HTTP endpoint used by the auth proxy.                             |
 | `STDB_SERVER`                  | `STDB_HTTP`              | CLI target used during startup configuration.                     |
-| `STDB_APP_DATABASE`            | `spacetime-auth-example` | Published database name.                                          |
+| `SPACETIMEDB_DB_NAME`          | `spacetime-auth-example` | Published database name.                                          |
 | `AUTH_ISSUER_URL`              | `http://localhost:8791`  | JWT issuer and OAuth redirect origin.                             |
 | `AUTH_BASE_URL`                | `http://localhost:8791`  | Browser-visible auth base URL.                                    |
 | `AUTH_COOKIE_NAME`             | `stdb_auth`              | Session-cookie name.                                              |

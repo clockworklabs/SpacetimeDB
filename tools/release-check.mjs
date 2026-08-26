@@ -313,6 +313,27 @@ for (const packageDir of releasePackages) {
     fail(packageDir, 'typecheck script is required');
   if (!manifest.scripts?.test) fail(packageDir, 'a test script is required');
 
+  const rootSource = readFileSync(resolve(directory, 'src/index.ts'), 'utf8');
+  const isStandaloneModule =
+    /export\s*\{(?=[^}]*\bdefault\b)(?=[^}]*\binit\b)[^}]*\}/s.test(rootSource);
+  if (isStandaloneModule) {
+    if (manifest.scripts?.build !== 'spacetime build') {
+      fail(
+        packageDir,
+        'standalone module packages must provide a spacetime build script'
+      );
+    }
+    if (
+      manifest.scripts?.['spacetime:generate'] !==
+      'spacetime generate --lang typescript --out-dir ts-codegen'
+    ) {
+      fail(
+        packageDir,
+        'standalone module packages must provide the standard spacetime:generate script'
+      );
+    }
+  }
+
   for (const requiredFile of ['src', 'README.md', 'LICENSE.txt']) {
     if (!manifest.files?.includes(requiredFile))
       fail(packageDir, `files must include ${requiredFile}`);

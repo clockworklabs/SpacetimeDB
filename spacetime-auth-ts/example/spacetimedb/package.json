@@ -10,11 +10,10 @@
   },
   "dependencies": {
     "@spacetimedb/auth": "workspace:*",
-    "@spacetimedb/rate-limit": "workspace:*",
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^22.10.2",
     "typescript": "^5.9.3"
   }
 }
