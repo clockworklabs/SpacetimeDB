@@ -112,16 +112,47 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
           # Full history lets git restore-mtime recover each file's actual
-          # last-change timestamp instead of using the shallow checkout's timestamp.
+          # last-change timestamp and makes the warmed commit available for
+          # content-based cache invalidation below.
           fetch-depth: 0
 
-      # Cargo checks source mtimes for freshness, so restore committed mtimes to
-      # avoid invalidating otherwise reusable artifacts in the prebuilt target cache.
+      # cargo has a behavior that's a bit unfortunate for us here. It does not know the mtime of the files that
+      # were used to build its artifacts; it just knows the mtime of the artifact.
+      # So, if you have a sequence of events like:
+      # 1. cache source commit X happens at time X
+      # 2. PR commit Y happens at time Y > X
+      # 3. cache is warmed from commit X at time Z > Y
+      #
+      # cargo then sees "artifact built at time Z is more recent than time Y, so it must be up to date".
+      #
+      # So here we restore committed mtimes to reuse warm artifacts, then touch files that
+      # differ from the warmed commit so they will look more recent than the artifact,
+      # and cargo will properly rebuild anything depending on those files.
       - &restore-source-mtimes
-        name: Restore source mtimes from git history
+        name: Restore source mtimes and invalidate changed files
         if: runner.os == 'Linux'
         shell: bash
-        run: git restore-mtime --quiet
+        run: |
+          cached_commit_file="${CARGO_TARGET_DIR}/.warm-cache-commit-SpacetimeDB"
+          if [[ -f "${cached_commit_file}" ]]; then
+            cached_commit="$(<"${cached_commit_file}")"
+          else
+            cached_commit=""
+          fi
+
+          if [[ -n "${cached_commit}" ]] && git cat-file -e "${cached_commit}^{commit}" 2>/dev/null; then
+            git restore-mtime --quiet
+            echo "Invalidating files changed since cached commit ${cached_commit}"
+            while IFS= read -r -d '' path; do
+              if [[ -L "${path}" ]]; then
+                touch -h -- "${path}"
+              elif [[ -e "${path}" ]]; then
+                touch -- "${path}"
+              fi
+            done < <(git diff --name-only -z "${cached_commit}" HEAD --)
+          else
+            echo "::warning::Warm-cache commit is unavailable; leaving checkout mtimes unchanged"
+          fi
 
       - uses: dsherret/rust-toolchain-file@v1
       - &set-default-rust-toolchain
