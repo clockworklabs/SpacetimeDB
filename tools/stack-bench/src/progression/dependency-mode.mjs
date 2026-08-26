@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 export const DEPENDENCY_MODE_SCHEMA_VERSION = 2;
 export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
+export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
@@ -104,23 +105,25 @@ function assertAcyclic(nodesById) {
   for (const node of nodesById.values()) visit(node, []);
 }
 
-export function compileDependencyMode(input, { source = '<dependency-mode>' } = {}) {
+function compileGraphDefinition(input, { source, catalogOnly }) {
   const definition = structuredClone(input);
-  strictObject(definition, source, new Set([
-    'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'policy', 'strikes', 'nodes',
-    'questlines',
-  ]));
-  if (definition.schemaVersion !== DEPENDENCY_MODE_SCHEMA_VERSION) {
-    fail(`${source}.schemaVersion`, `must be ${DEPENDENCY_MODE_SCHEMA_VERSION}`);
+  const fields = ['schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes',
+    'questlines'];
+  if (!catalogOnly) fields.push('policy', 'strikes');
+  strictObject(definition, source, new Set(fields));
+  const expectedSchema = catalogOnly ? FEATURE_CATALOG_SCHEMA_VERSION : DEPENDENCY_MODE_SCHEMA_VERSION;
+  const expectedKind = catalogOnly ? 'feature-catalog' : 'progression-mode';
+  if (definition.schemaVersion !== expectedSchema) {
+    fail(`${source}.schemaVersion`, `must be ${expectedSchema}`);
   }
-  if (definition.kind !== 'progression-mode') fail(`${source}.kind`, 'must be "progression-mode"');
+  if (definition.kind !== expectedKind) fail(`${source}.kind`, `must be ${JSON.stringify(expectedKind)}`);
   identifier(definition.id, `${source}.id`);
   semanticVersion(definition.version, `${source}.version`);
   if (!RELEASE_STATES.has(definition.state)) {
     fail(`${source}.state`, 'must be "draft" or "qualified"');
   }
   nonEmptyString(definition.title, `${source}.title`);
-  if (definition.policy !== DEPENDENCY_MODE_POLICY) {
+  if (!catalogOnly && definition.policy !== DEPENDENCY_MODE_POLICY) {
     fail(`${source}.policy`, `must be ${JSON.stringify(DEPENDENCY_MODE_POLICY)}`);
   }
   if (!Array.isArray(definition.nodes) || definition.nodes.length === 0) {
@@ -223,7 +226,9 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
   }
   definition.nodes.sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
   const levels = [...new Set(definition.nodes.map(node => node.level))].sort((a, b) => a - b);
-  definition.strikes = { levels: compileStrikeBudgets(definition.strikes, levels) };
+  if (!catalogOnly) {
+    definition.strikes = { levels: compileStrikeBudgets(definition.strikes, levels) };
+  }
 
   if (!Array.isArray(definition.questlines) || definition.questlines.length === 0) {
     fail(`${source}.questlines`, 'must be a non-empty array');
@@ -258,6 +263,14 @@ export function compileDependencyMode(input, { source = '<dependency-mode>' } = 
   });
   definition.questlines.sort((left, right) => left.id.localeCompare(right.id));
   return definition;
+}
+
+export function compileFeatureCatalog(input, { source = '<feature-catalog>' } = {}) {
+  return compileGraphDefinition(input, { source, catalogOnly: true });
+}
+
+export function compileDependencyMode(input, { source = '<dependency-mode>' } = {}) {
+  return compileGraphDefinition(input, { source, catalogOnly: false });
 }
 
 function nodesAt(definition, level) {

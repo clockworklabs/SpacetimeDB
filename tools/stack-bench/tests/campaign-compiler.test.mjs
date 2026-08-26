@@ -14,7 +14,7 @@ import { sha256 } from '../src/evidence/provenance.mjs';
 
 function definition(overrides = {}) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     kind: 'campaign-manifest',
     id: 'ecommerce-l1-comparison',
     version: '1.0.0',
@@ -102,20 +102,19 @@ function modularDefinition({ requested = [], expected = [], observed = [] } = {}
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '1.0.0' };
+  value.mode = { id: 'dependency', version: '1.0.0',
+    strikes: { default: 2, levels: {} } };
   delete value.levels;
   delete value.selection.levels[0].features;
   delete value.selection.levels[0].checks;
   delete value.conditions[0].specifications;
-  value.progression = {
-    schemaVersion: 2,
-    kind: 'progression-mode',
+  value.featureCatalog = {
+    schemaVersion: 1,
+    kind: 'feature-catalog',
     id: 'ecommerce-dependency',
     version: '1.0.0',
     state: 'draft',
     title: 'Ecommerce dependency fixture',
-    policy: 'dependency-gated',
-    strikes: { default: 2, levels: {} },
     nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity', dependencies: [],
       featureRefs: ['ecommerce.feature.accounts@1.1.0'], promptModules: [],
       gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1 }] }],
@@ -143,31 +142,50 @@ test('campaign compilation binds exact inputs and expands a balanced immutable a
     .map(attempt => attempt.stack)).size, 3, 'each stack must lead one repetition');
 });
 
-test('dependency campaigns derive levels and freeze the progression identity in every attempt', () => {
+test('dependency campaigns bind separate catalog and policy identities in every attempt', () => {
   const plan = compile(dependencyDefinition());
   assert.deepEqual(plan.definition.levels, [1]);
-  assert.equal(plan.definition.progression, undefined);
-  assert.equal(plan.progression.identity.id, 'ecommerce-dependency');
-  assert.equal(plan.progression.identity.version, '1.0.0');
-  assert.match(plan.progression.identity.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(plan.definition.featureCatalog, undefined);
+  assert.equal(plan.featureCatalog.identity.id, 'ecommerce-dependency');
+  assert.equal(plan.featureCatalog.identity.version, '1.0.0');
+  assert.match(plan.featureCatalog.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
-    canonicalDefinitionJson(attempt.progression)
-      === canonicalDefinitionJson(plan.progression.identity)));
+    canonicalDefinitionJson(attempt.dependencyPolicy)
+      === canonicalDefinitionJson(plan.dependencyPolicy.identity)));
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.featureCatalog)
-      === canonicalDefinitionJson(plan.progression.identity)));
+      === canonicalDefinitionJson(plan.featureCatalog.identity)));
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
   assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
-    /levels.*progression/);
+    /levels.*feature catalog/);
 });
 
 test('sequential campaigns can use the same feature catalog without dependency gating', () => {
+  const dependencyPlan = compile(dependencyDefinition());
   const definition = dependencyDefinition();
   definition.mode = { id: 'sequential', version: '1.0.0' };
   const plan = compile(definition);
-  assert.equal(plan.attempts[0].progression, undefined);
-  assert.deepEqual(plan.attempts[0].featureCatalog, plan.progression.identity);
+  assert.equal(plan.attempts[0].dependencyPolicy, undefined);
+  assert.deepEqual(plan.attempts[0].featureCatalog, plan.featureCatalog.identity);
+  assert.equal(plan.featureCatalog.identity.sha256,
+    dependencyPlan.featureCatalog.identity.sha256);
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
+});
+
+test('strike changes affect dependency policy but not the shared feature catalog', () => {
+  const first = compile(dependencyDefinition());
+  const changed = dependencyDefinition();
+  changed.mode.strikes.default = 5;
+  const second = compile(changed);
+  assert.equal(first.featureCatalog.identity.sha256, second.featureCatalog.identity.sha256);
+  assert.notEqual(first.dependencyPolicy.identity.sha256,
+    second.dependencyPolicy.identity.sha256);
+  const changedIdentity = structuredClone(first);
+  changedIdentity.dependencyPolicy.identity.sha256 = 'a'.repeat(64);
+  assert.throws(() => validateCompiledCampaignPlan(changedIdentity),
+    /dependency policy identity/);
+  assert.throws(() => validateCompiledCampaignPlan({ ...first, dependencyPolicy: null }),
+    /dependency policy does not match its mode/);
 });
 
 test('dependency bench input is bound to one fully validated campaign attempt', () => {
@@ -181,7 +199,9 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
     const args = parseArgs(['node', ...argv]);
     assert.deepEqual(args.runMode, attempt.mode);
     assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
-    assert.deepEqual(args.progression, plan.progression);
+    assert.deepEqual(args.featureCatalog, plan.featureCatalog);
+    assert.deepEqual(args.dependencyPolicy, plan.dependencyPolicy);
+    assert.equal(args.progression.definition.policy, 'dependency-gated');
     assert.deepEqual(args.progressionOwner, { schemaVersion: 1,
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
@@ -212,7 +232,7 @@ test('sequential bench input uses the catalog for selection without live gating'
     assert.deepEqual(args.runMode, plan.attempts[0].mode);
     assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
     assert.equal(args.progression, undefined);
-    assert.deepEqual(args.featureCatalog, plan.progression);
+    assert.deepEqual(args.featureCatalog, plan.featureCatalog);
     assert.deepEqual(args.levelList, [1]);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -284,7 +304,7 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   assert.notEqual(identityOnly.bindings[0].task.sha256, first.bindings[0].task.sha256);
   assert.notEqual(identityOnly.conditions[0].sha256, first.conditions[0].sha256);
   const multiAgent = definition({ agents: [definition().agents[0],
-    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic' }] });
+    { adapter: 'fault-injection', adapterVersion: '1.1.0', model: 'deterministic' }] });
   const multiAgentReordered = structuredClone(multiAgent);
   multiAgentReordered.agents.reverse();
   assert.equal(compile(multiAgent).contentSha256, compile(multiAgentReordered).contentSha256);
@@ -293,7 +313,7 @@ test('campaign identity ignores JSON formatting but changes with study semantics
 test('balanced rotation covers every stack-agent condition and rotates the global lead', () => {
   const agents = [
     { adapter: 'deterministic', adapterVersion: '1.2.0', model: 'deterministic' },
-    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic' },
+    { adapter: 'fault-injection', adapterVersion: '1.1.0', model: 'deterministic' },
   ];
   const plan = compile(definition({ agents, repetitions: 6 }));
   for (let repetition = 1; repetition <= 6; repetition += 1) {
@@ -385,8 +405,8 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '1.0.0',
-  } }), /progression.*required/);
+    id: 'dependency', version: '1.0.0', strikes: { default: 3, levels: {} },
+  } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',
   } }), /graph is unknown for sequential mode/);

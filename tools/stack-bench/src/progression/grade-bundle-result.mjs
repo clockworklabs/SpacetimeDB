@@ -29,7 +29,7 @@ function inconclusive(attemptId, runId, sourceSha256, selectionSha256, evidence,
 }
 
 export function gradeBundleToProgressionResult(input, action,
-  { owner, runArtifact, progressionIdentity, selectionSha256,
+  { owner, runArtifact, featureCatalogIdentity, dependencyPolicyIdentity, selectionSha256,
     sourceSha256, recipeIdentity, sequence } = {}) {
   const artifact = validateArtifact(input, { source: '<progression-grade-bundle>' });
   const run = validateArtifact(runArtifact, { source: '<progression-benchmark-run>' });
@@ -57,15 +57,19 @@ export function gradeBundleToProgressionResult(input, action,
   }
   const ownerMismatches = [];
   const mismatch = (changed, field) => { if (changed) ownerMismatches.push(field); };
-  mismatch(!object(progressionIdentity) || !HASH.test(progressionIdentity?.sha256 ?? ''),
-    'progressionIdentity');
+  mismatch(!object(featureCatalogIdentity) || !HASH.test(featureCatalogIdentity?.sha256 ?? ''),
+    'featureCatalogIdentity');
+  mismatch(!object(dependencyPolicyIdentity) || !HASH.test(dependencyPolicyIdentity?.sha256 ?? ''),
+    'dependencyPolicyIdentity');
   mismatch(run.payload.backend !== owner.attempt.stack, 'run.backend');
   mismatch(run.payload.model !== owner.attempt.model, 'run.model');
   mismatch(run.payload.condition?.sha256 !== owner.attempt.conditionSha256, 'run.condition');
   mismatch(canonicalDefinitionJson(run.payload.progressionOwner)
     !== canonicalDefinitionJson(campaignOwner), 'run.progressionOwner');
-  mismatch(canonicalDefinitionJson(run.payload.progression)
-    !== canonicalDefinitionJson(progressionIdentity), 'run.progression');
+  mismatch(canonicalDefinitionJson(run.payload.featureCatalog)
+    !== canonicalDefinitionJson(featureCatalogIdentity), 'run.featureCatalog');
+  mismatch(canonicalDefinitionJson(run.payload.dependencyPolicy)
+    !== canonicalDefinitionJson(dependencyPolicyIdentity), 'run.dependencyPolicy');
   mismatch(run.identities.agentAdapter?.id !== owner.attempt.agentAdapter,
     'run.agentAdapter');
   mismatch(run.identities.stackAdapter?.id !== owner.attempt.stack, 'run.stackAdapter');

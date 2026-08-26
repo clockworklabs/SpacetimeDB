@@ -7,8 +7,11 @@ import test from 'node:test';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.mjs';
-import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
+import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
+import { parseArgs } from '../commands/bench.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { parseReferenceAgentArgs } from '../src/references/reference-agent.mjs';
@@ -36,8 +39,9 @@ function sourceText(directory) {
 test('the ecommerce reference pilot resolves the exact L1-L5 progression inputs', () => {
   const plan = compileCampaignFile(campaignPath);
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5]);
-  assert.equal(plan.progression.identity.id, 'ecommerce.questlines');
-  assert.equal(plan.progression.identity.version, '1.0.0');
+  assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
+  assert.equal(plan.featureCatalog.identity.version, '1.0.0');
+  assert.equal(plan.dependencyPolicy.identity.id, 'dependency-gated');
   assert.deepEqual(plan.bindings.map(binding => `${binding.recipe.id}@${binding.recipe.version}`),
     Array(5).fill('ecommerce.progression-catalog@1.0.0'));
   assert.deepEqual(plan.attempts.map(attempt => attempt.stack).sort(),
@@ -58,12 +62,55 @@ test('sequential mode can run a prefix of the same ecommerce feature catalog', (
     writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
     const plan = compileCampaignFile(path);
     assert.deepEqual(plan.definition.levels, [1, 2, 3]);
-    assert(plan.attempts.every(attempt => attempt.progression === undefined));
+    assert(plan.attempts.every(attempt => attempt.dependencyPolicy === undefined));
     assert(plan.attempts.every(attempt =>
-      attempt.featureCatalog.sha256 === plan.progression.identity.sha256));
+      attempt.featureCatalog.sha256 === plan.featureCatalog.identity.sha256));
     assert.deepEqual(plan.conditions[0].requested.levels.map(level => level.level), [1, 2, 3]);
     assert.deepEqual(plan.conditions[0].requested.levels
       .map(level => level.selection.scoredChecks.length), [11, 40, 61]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('dependency mode stops at the selected catalog prefix', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-prefix-'));
+  try {
+    const manifest = JSON.parse(readFileSync(campaignPath, 'utf8'));
+    manifest.id = 'ecommerce-dependency-prefix-proof';
+    manifest.levels = [1, 2, 3];
+    manifest.selection.levels = manifest.selection.levels.slice(0, 3);
+    const sourcePath = join(directory, 'campaign.json');
+    writeFileSync(sourcePath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const plan = compileCampaignFile(sourcePath);
+    assert.deepEqual(plan.dependencyPolicy.definition.levels, [1, 2, 3]);
+    assert.deepEqual(Object.keys(plan.dependencyPolicy.definition.strikes.levels),
+      ['1', '2', '3']);
+
+    const planPath = join(directory, 'plan.json');
+    writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
+    const attempt = plan.attempts[0];
+    const args = parseArgs(['node', ...attemptArgv(plan, attempt,
+      join(directory, 'result'), 0, planPath)]);
+    assert.deepEqual(args.levelList, [1, 2, 3]);
+    assert.equal(Math.max(...args.progression.definition.nodes.map(node => node.level)), 3);
+
+    let state = progressionEngine.initialize(args.progression.definition);
+    const visited = [];
+    while (state.phase === 'active') {
+      const action = progressionEngine.nextAction(state);
+      visited.push(action.level);
+      const selection = progressionEngine.gradingSelection(state);
+      state = progressionEngine.recordResult(state, {
+        attemptId: `level-${action.level}`,
+        outcome: 'conclusive',
+        nodes: selection.nodeIds.map(id => ({ id,
+          checks: selection.checks.filter(check => check.nodeId === id)
+            .map(check => ({ id: check.id, outcome: 'pass' })) })),
+      });
+    }
+    assert.deepEqual(visited, [1, 2, 3]);
+    assert.equal(progressionEngine.nextAction(state).type, 'terminal');
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -107,7 +154,7 @@ test('every progression action input is exposed by every reference app', () => {
 
 test('the model-free reference adapter can advance through progression levels', () => {
   const adapter = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
-  assert.deepEqual(adapter.modes, ['build', 'upgrade']);
+  assert.deepEqual(adapter.modes, ['build', 'fix', 'upgrade']);
   const parsed = parseReferenceAgentArgs([
     'node', 'reference-agent.mjs',
     '--backend', 'mongodb',
@@ -121,7 +168,7 @@ test('the model-free reference adapter can advance through progression levels', 
   assert.equal(parsed.level, 2);
 });
 
-test('campaign admission sends the exact progression and default build image to preflight', () => {
+test('campaign admission sends the exact catalog, mode, and default build image to preflight', () => {
   const output = mkdtempSync(join(tmpdir(), 'stack-bench-progression-admission-'));
   try {
     const plan = compileCampaignFile(campaignPath);
@@ -142,6 +189,8 @@ test('campaign admission sends the exact progression and default build image to 
     assert.equal(admission.payload.ok, true);
     assert.equal(calls.length, 3);
     assert(calls.every(call => call.image === DEFAULT_BUILD_IMAGE));
-    assert(calls.every(call => call.progression.identity.sha256 === plan.progression.identity.sha256));
+    assert(calls.every(call => call.featureCatalog.identity.sha256
+      === plan.featureCatalog.identity.sha256));
+    assert(calls.every(call => call.mode.id === 'dependency'));
   } finally { rmSync(output, { recursive: true, force: true }); }
 });

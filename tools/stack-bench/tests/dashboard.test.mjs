@@ -8,7 +8,8 @@ import test from 'node:test';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
-import { createCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+import { claimNextAttempt, createCampaignState, finishCampaignExecution }
+  from '../src/campaigns/campaign-scheduler.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
   readCampaignArtifactBody, resolveCampaignArtifact, summarizeCampaign,
@@ -16,8 +17,21 @@ import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
-import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../src/progression/progression-definition.mjs';
 import { writeProgressionState } from '../src/progression/progression-state.mjs';
+
+const EXAMPLE_CAMPAIGN = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
+const DEPENDENCY_CAMPAIGN = join(import.meta.dirname, '..', 'appliance',
+  'campaign.ecommerce-progression-reference.json');
+
+function writeCampaign(root, plan, state) {
+  mkdirSync(root, { recursive: true });
+  writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
+    identities: emptyArtifactIdentities(), payload: plan });
+  writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
+    identities: emptyArtifactIdentities(), payload: state });
+}
 
 test('dashboard run progress reports only completed grades while the next repair is underway', () => {
   const progress = parseRunProgress(`
@@ -85,49 +99,24 @@ test('campaign facts surface the identity an operator otherwise reads plan.json 
     { level: 2, id: 'ecommerce.l2-standard', version: '1.5.0' },
   ]);
   assert.equal(facts.runtime.controllerImage, 'stack-bench-controller@sha256:' + 'a'.repeat(64));
-  // A schema-1 plan predates most of this; every field degrades to empty.
-  assert.deepEqual(campaignFacts({ definition: {} }),
-    { mode: 'sequential', agents: [], recipes: [], runtime: null });
 });
 
 test('dashboard reports dependency work from the validated persisted state', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-dependency-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const progression = compileProgressionInput({ schemaVersion: 2, kind: 'progression-mode',
-    id: 'dashboard-dependency', version: '1.0.0', state: 'draft', title: 'Dashboard test',
-    policy: 'dependency-gated', strikes: { default: 3, levels: {} },
-    nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity', level: 1,
-      dependencies: [], dependencyReasons: {}, featureRefs: ['accounts@1.0.0'],
-      promptModules: [], gradingChecks: [{ id: 'accounts.create', points: 1 }] }],
-    questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }] });
-  const attemptPlan = { id: 'dependency-postgres', stack: 'postgres', model: 'model',
-    agentAdapter: 'deterministic', guidance: 'neutral', repetition: 1, levels: [1],
-    mode: { id: 'dependency', version: '1.0.0' }, progression: progression.identity,
-    condition: { sha256: 'c'.repeat(64) } };
-  const plan = { campaignSchemaVersion: 1, id: 'dependency-dashboard', version: '1.0.0',
-    state: 'draft', title: 'Dependency dashboard', source: 'campaign.json',
-    contentSha256: 'd'.repeat(64),
-    definition: { track: 'ecommerce', mode: { id: 'dependency', version: '1.0.0' },
-      levels: [1], repetitions: 1,
-      budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 100 } },
-    identities: {}, bindings: [], stacks: [{ id: 'postgres' }], agents: [], conditions: [],
-    progression, attempts: [attemptPlan], summary: { attempts: 1 } };
-  const outputRelative = `attempts/${attemptPlan.id}/execution-1`;
+  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const now = '2026-08-25T12:00:00.000Z';
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  const state = claimed.state;
+  const attemptPlan = state.attempts.find(attempt =>
+    attempt.executions.at(-1)?.id === claimed.claim.executionId).plan;
+  const outputRelative = claimed.claim.output;
   const output = join(root, outputRelative);
   mkdirSync(join(output, 'source'), { recursive: true });
-  const now = '2026-08-25T12:00:00.000Z';
-  const state = { schemaVersion: 1, campaignId: plan.id, campaignSha256: plan.contentSha256,
-    status: 'running', createdAt: now, updatedAt: now,
-    attempts: [{ plan: attemptPlan, status: 'running', executions: [{
-      id: `${attemptPlan.id}-execution1`, ordinal: 1, status: 'running', output: outputRelative,
-      startedAt: now, completedAt: null, exitCode: null, outcome: null, reason: null,
-      admissionId: 'admission-1',
-    }] }], summary: { total: 1, completed: 0, invalid: 0, pending: 0, running: 1,
-      executions: 1 } };
-  writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
-    identities: emptyArtifactIdentities(), payload: plan });
-  writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
-    identities: emptyArtifactIdentities(), payload: state });
+  writeCampaign(root, plan, state);
+  const progression = compileProgressionInput(dependencyRuntimeDefinition(
+    plan.featureCatalog, plan.dependencyPolicy));
   const owner = { schemaVersion: 1,
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
     attempt: { id: attemptPlan.id, track: plan.definition.track, stack: attemptPlan.stack,
@@ -135,12 +124,14 @@ test('dashboard reports dependency work from the validated persisted state', t =
       conditionSha256: attemptPlan.condition.sha256 },
     workspace: { appDirectory: 'source' } };
   writeProgressionState(join(output, 'progression-state.json'), { progression,
+    featureCatalogIdentity: plan.featureCatalog.identity,
+    dependencyPolicyIdentity: plan.dependencyPolicy.identity,
     owner, state: progressionEngine.initialize(progression.definition) });
 
   const summary = summarizeCampaign(root, { includePackage: true });
   assert.equal(summary.mode, 'dependency');
   assert.equal(summary.attempts[0].dependency.level, 1);
-  assert.deepEqual(summary.attempts[0].dependency.work.current.map(node => node.id), ['accounts']);
+  assert(summary.attempts[0].dependency.work.current.some(node => node.id === 'accounts'));
   assert.deepEqual(summary.attempts[0].dependency.attempts,
     { total: 0, level: 0, used: 0, budget: 3, remaining: 3 });
   assert(summary.package.executions[0].artifacts
@@ -170,36 +161,21 @@ test('dashboard CLI is deliberately loopback-only', () => {
     /port/);
 });
 
-test('dashboard can display an in-flight schema-1 campaign without reopening it for writes', t => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-v1-'));
+test('dashboard marks a current-schema campaign as interrupted when its controller stops', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-interrupted-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const attemptPlan = { id: 'ecommerce-live-r1-postgres', stack: 'postgres', model: 'model',
-    guidance: 'neutral', repetition: 1, levels: [1] };
-  const plan = { campaignSchemaVersion: 1, id: 'ecommerce-live', version: '1.0.0', state: 'frozen',
-    title: 'Live campaign', source: 'campaign.json', contentSha256: 'a'.repeat(64),
-    definition: { track: 'ecommerce', levels: [1], repetitions: 1,
-      budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 100 } },
-    identities: {}, bindings: [], stacks: [{ id: 'postgres' }], agents: [], conditions: [],
-    attempts: [attemptPlan], summary: { attempts: 1 } };
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
   const now = '2026-08-18T12:00:00.000Z';
-  const state = { schemaVersion: 1, campaignId: plan.id, campaignSha256: plan.contentSha256,
-    status: 'running', createdAt: now, updatedAt: now,
-    attempts: [{ plan: attemptPlan, status: 'running', executions: [{
-      id: `${attemptPlan.id}-execution1`, ordinal: 1, status: 'running',
-      output: `attempts/${attemptPlan.id}/execution-1`, startedAt: now, completedAt: null,
-      exitCode: null, outcome: null, reason: null, admissionId: 'admission-1',
-    }] }], summary: { total: 1, completed: 0, invalid: 0, pending: 0, running: 1, executions: 1 } };
-  writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
-    identities: emptyArtifactIdentities(), payload: plan });
-  writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
-    identities: emptyArtifactIdentities(), payload: state });
-  const output = join(root, state.attempts[0].executions[0].output);
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  writeCampaign(root, plan, claimed.state);
+  const output = join(root, claimed.claim.output);
   mkdirSync(output, { recursive: true });
-  writeFileSync(join(output, 'process.stdout.log'), '=== postgres-l1-first (postgres) ===\n  TOTAL ... 31/58\n--- fix round 1/3 ---\n');
+  writeFileSync(join(output, 'process.stdout.log'),
+    '=== postgres-l1-first (postgres) ===\n  TOTAL ... 31/58\n--- fix round 1/3 ---\n');
 
   const summary = summarizeCampaign(root);
   assert.equal(summary.status, 'running');
-  assert.equal(summary.maxParallel, 1);
   assert.equal(summary.attempts[0].progress.phase, 'Repairing L1 · round 1 of 3');
   assert.deepEqual(summary.attempts[0].progress.latestScore, { score: 31, max: 58 });
 
@@ -213,11 +189,10 @@ test('dashboard can display an in-flight schema-1 campaign without reopening it 
   assert.equal(interrupted.attempts[0].progress.phase, 'Controller stopped before completion');
 });
 
-test('dashboard keeps a schema-2 campaign readable after the controller is upgraded', t => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-historical-v2-'));
+test('dashboard keeps a current-schema campaign readable after the controller is upgraded', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-historical-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const source = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
-  const currentPlan = compileCampaignFile(source);
+  const currentPlan = compileCampaignFile(EXAMPLE_CAMPAIGN);
   const state = createCampaignState(currentPlan, { now: '2026-08-18T12:00:00.000Z' });
   const historicalPlan = structuredClone(currentPlan);
   historicalPlan.identities.engine.sha256 = 'f'.repeat(64);
@@ -246,28 +221,15 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-package-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
   const campaign = join(resultsRoot, 'campaigns', 'evidence-run');
-  const attemptPlan = { id: 'evidence-postgres', stack: 'postgres', model: 'model',
-    guidance: 'neutral', repetition: 1, levels: [1] };
-  const plan = { campaignSchemaVersion: 1, id: 'evidence', version: '1.0.0', state: 'frozen',
-    title: 'Evidence run', source: 'campaign.json', contentSha256: 'b'.repeat(64),
-    definition: { track: 'ecommerce', levels: [1], repetitions: 1,
-      budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 100 } },
-    identities: {}, bindings: [], stacks: [{ id: 'postgres' }], agents: [], conditions: [],
-    attempts: [attemptPlan], summary: { attempts: 1 } };
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
   const now = '2026-08-18T12:00:00.000Z';
-  const outputRelative = `attempts/${attemptPlan.id}/execution-1`;
-  const state = { schemaVersion: 1, campaignId: plan.id, campaignSha256: plan.contentSha256,
-    status: 'completed', createdAt: now, updatedAt: now,
-    attempts: [{ plan: attemptPlan, status: 'completed', executions: [{
-      id: `${attemptPlan.id}-execution1`, ordinal: 1, status: 'completed',
-      output: outputRelative, startedAt: now, completedAt: now, exitCode: 0,
-      outcome: 'completed', reason: null, admissionId: 'admission-1',
-    }] }], summary: { total: 1, completed: 1, invalid: 0, pending: 0, running: 0, executions: 1 } };
-  mkdirSync(campaign, { recursive: true });
-  writeArtifact(join(campaign, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
-    identities: emptyArtifactIdentities(), payload: plan });
-  writeArtifact(join(campaign, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
-    identities: emptyArtifactIdentities(), payload: state });
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: { outcome: { kind: 'passed' } } },
+    { now: '2026-08-18T12:00:01.000Z' });
+  const outputRelative = claimed.claim.output;
+  writeCampaign(campaign, plan, state);
   const output = join(campaign, outputRelative);
   const media = join(output, 'grading', 'failure-media');
   mkdirSync(media, { recursive: true });
@@ -330,35 +292,23 @@ test('dashboard serves real state and protects campaign launch with its local se
       return [...latest.values()];
     },
   };
-  const frozenPlan = { id: 'ecommerce-frozen', version: '1.0.0', title: 'Frozen ecommerce',
-    state: 'frozen', mode: 'dependency', track: 'ecommerce', levels: [1, 2], stacks: ['postgres', 'mongodb'],
-    attempts: 2, parallelism: 2, budgets: { fixRounds: 3, attemptTimeoutMinutes: 240 },
-    sha256: 'a'.repeat(64), file: 'ecommerce-frozen.json' };
+  const storedPlan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const frozenPlan = { id: storedPlan.id, version: storedPlan.version, title: storedPlan.title,
+    state: 'frozen', mode: 'dependency', track: storedPlan.definition.track,
+    levels: storedPlan.definition.levels, stacks: storedPlan.stacks.map(stack => stack.id),
+    attempts: storedPlan.summary.attempts, parallelism: storedPlan.summary.parallelism,
+    budgets: storedPlan.definition.budgets, sha256: storedPlan.contentSha256,
+    file: 'ecommerce-progression-reference.json' };
   const campaignDirectory = join(root, 'campaigns', 'prepared-run');
-  mkdirSync(campaignDirectory, { recursive: true });
-  const attemptPlan = { id: 'prepared-postgres', stack: 'postgres', model: 'model',
-    guidance: 'neutral', repetition: 1, levels: [1], mode: { id: 'dependency', version: '1.0.0' } };
-  const storedPlan = { campaignSchemaVersion: 1, id: frozenPlan.id, version: frozenPlan.version,
-    state: 'frozen', title: frozenPlan.title, source: 'campaign.json',
-    contentSha256: frozenPlan.sha256,
-    definition: { track: 'ecommerce', mode: { id: 'dependency', version: '1.0.0' },
-      levels: [1], repetitions: 1,
-      budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 100 } },
-    identities: {}, bindings: [], stacks: [{ id: 'postgres' }], agents: [], conditions: [],
-    attempts: [attemptPlan], summary: { attempts: 1 } };
   const now = '2026-08-25T12:00:00.000Z';
-  const storedState = { schemaVersion: 1, campaignId: storedPlan.id,
-    campaignSha256: storedPlan.contentSha256, status: 'prepared', createdAt: now, updatedAt: now,
-    attempts: [{ plan: attemptPlan, status: 'pending', executions: [{
-      id: `${attemptPlan.id}-execution1`, ordinal: 1, status: 'invalid',
-      output: `attempts/${attemptPlan.id}/execution-1`, startedAt: now, completedAt: now,
-      exitCode: null, outcome: 'interrupted', reason: 'controller stopped', admissionId: 'old',
-    }] }],
-    summary: { total: 1, completed: 0, invalid: 0, pending: 1, running: 0, executions: 1 } };
-  writeArtifact(join(campaignDirectory, 'plan.json'), { kind: 'campaign_plan',
-    id: `${storedPlan.id}-plan`, identities: emptyArtifactIdentities(), payload: storedPlan });
-  writeArtifact(join(campaignDirectory, 'state.json'), { kind: 'campaign_state',
-    id: `${storedPlan.id}-state`, identities: emptyArtifactIdentities(), payload: storedState });
+  const claimed = claimNextAttempt(createCampaignState(storedPlan, { now }),
+    { now, admissionId: 'old' });
+  const storedState = finishCampaignExecution(claimed.state, claimed.claim.executionId, {
+    exitCode: 1,
+    run: { outcome: { kind: 'harness_failure', reason: 'controller stopped' } },
+    retryAuthority: { transient: true, recoveryClean: true, cause: 'controller stopped' },
+  }, { now: '2026-08-25T12:00:01.000Z', retries: 1, retryOn: ['harness_failure'] });
+  writeCampaign(campaignDirectory, storedPlan, storedState);
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
     token: 'test-session-token', feed, plans: () => [frozenPlan],
     launch(input) { launches.push(input); const child = new EventEmitter(); child.pid = 1234;
@@ -385,7 +335,7 @@ test('dashboard serves real state and protects campaign launch with its local se
   const overview = await (await fetch(`${origin}/api/overview`)).json();
   assert.equal(overview.canStart, true);
   assert.equal(overview.csrfToken, 'test-session-token');
-  assert.deepEqual(overview.plans.map(plan => plan.id), ['ecommerce-frozen']);
+  assert.deepEqual(overview.plans.map(plan => plan.id), [frozenPlan.id]);
 
   const reboundStatus = await new Promise((resolveStatus, reject) => {
     const rebound = httpRequest(`${origin}/api/overview`, { headers: { host: 'attacker.invalid' } },

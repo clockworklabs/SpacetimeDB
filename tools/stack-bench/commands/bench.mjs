@@ -56,7 +56,8 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs'
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
-import { progressionLevels, validateProgressionInput }
+import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels,
+  validateFeatureCatalogInput, validateProgressionInput }
   from '../src/progression/progression-definition.mjs';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.mjs';
@@ -82,9 +83,9 @@ export function parseArgs(argv) {
       case '--backend': a.backend = argv[++i]; break;
       case '--track': a.track = argv[++i]; break;
       case '--levels': a.levels = argv[++i]; a.levelsProvided = true; break;
-      case '--progression-json': a.progression = JSON.parse(argv[++i]); break;
       case '--campaign-file': a.campaignFile = resolve(argv[++i]); break;
       case '--feature-catalog-sha256': a.featureCatalogSha256 = argv[++i]; break;
+      case '--dependency-policy-sha256': a.dependencyPolicySha256 = argv[++i]; break;
       case '--campaign-sha256': a.campaignSha256 = argv[++i]; break;
       case '--campaign-attempt-id': a.campaignAttemptId = argv[++i]; break;
       case '--progression-resume-from': a.progressionResumeFrom = resolve(argv[++i]); break;
@@ -140,14 +141,11 @@ export function parseArgs(argv) {
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
   }
-  if (a.progression && a.campaignFile) {
-    throw new Error('--progression-json cannot be combined with --campaign-file');
-  }
   if (a.campaignFile && (!a.campaignSha256 || !a.campaignAttemptId)) {
     throw new Error('--campaign-file requires --campaign-sha256 and --campaign-attempt-id');
   }
   if (!a.campaignFile && (a.campaignSha256 || a.campaignAttemptId
-    || a.featureCatalogSha256)) {
+    || a.featureCatalogSha256 || a.dependencyPolicySha256)) {
     throw new Error('campaign binding requires --campaign-file');
   }
   if (a.progressionResumeFrom && !a.campaignFile) {
@@ -204,8 +202,8 @@ export function parseArgs(argv) {
       id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
     };
     a.runMode = structuredClone(attempt.mode);
-    if (plan.progression) {
-      a.featureCatalog = validateProgressionInput(plan.progression);
+    if (plan.featureCatalog) {
+      a.featureCatalog = validateFeatureCatalogInput(plan.featureCatalog);
       if (a.featureCatalog.identity.sha256 !== a.featureCatalogSha256
         || canonicalDefinitionJson(attempt.featureCatalog)
           !== canonicalDefinitionJson(a.featureCatalog.identity)) {
@@ -215,7 +213,14 @@ export function parseArgs(argv) {
       throw new Error('campaign attempt has an unexpected feature catalog');
     }
     if (attempt.mode.id === 'dependency') {
-      a.progression = a.featureCatalog;
+      if (plan.dependencyPolicy?.identity?.sha256 !== a.dependencyPolicySha256
+        || canonicalDefinitionJson(attempt.dependencyPolicy)
+          !== canonicalDefinitionJson(plan.dependencyPolicy.identity)) {
+        throw new Error('--dependency-policy-sha256 does not match the compiled campaign plan');
+      }
+      a.dependencyPolicy = plan.dependencyPolicy;
+      a.progression = compileProgressionInput(dependencyRuntimeDefinition(
+        a.featureCatalog, a.dependencyPolicy));
       a.progressionOwner = { schemaVersion: 1,
         campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
         attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
@@ -223,7 +228,6 @@ export function parseArgs(argv) {
           conditionSha256: attempt.condition.sha256 } };
     }
   }
-  a.featureCatalog ??= a.progression;
   if (a.progression) {
     if (a.levelsProvided) throw new Error('--levels cannot be combined with progression input');
     a.progression = validateProgressionInput(a.progression);
@@ -698,7 +702,8 @@ async function main() {
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
     recipe: args.recipe,
     requestedScopes: args.condition?.requested ? [args.condition.requested] : null,
-    progression: args.progression ?? null,
+    featureCatalog: args.featureCatalog ?? null,
+    mode: args.runMode ?? null,
     agentSkills: args.skills ?? null,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
@@ -968,7 +973,7 @@ async function main() {
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE, url },
     selectionRequest: args.selectionRequest,
     featureCatalog: args.featureCatalog?.identity ?? null,
-    progression: args.progression?.identity ?? null,
+    dependencyPolicy: args.dependencyPolicy?.identity ?? null,
     ...(args.progressionOwner ? { progressionOwner: args.progressionOwner } : {}),
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
@@ -984,6 +989,8 @@ async function main() {
   } : null;
   const progressionExecution = args.progression ? createLiveProgressionExecution({
       progression: args.progression,
+      featureCatalogIdentity: args.featureCatalog?.identity,
+      dependencyPolicyIdentity: args.dependencyPolicy?.identity,
       owner: progressionOwner,
       statePath: join(args.out, 'progression-state.json'),
       runId,

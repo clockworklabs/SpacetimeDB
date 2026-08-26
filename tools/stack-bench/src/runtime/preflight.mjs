@@ -14,7 +14,7 @@ import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from '../composition/product-config.mjs';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.mjs';
-import { validateProgressionInput } from '../progression/progression-definition.mjs';
+import { validateFeatureCatalogInput } from '../progression/progression-definition.mjs';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
@@ -224,8 +224,8 @@ export function runPreflight(request, dependencies = {}) {
     track = loadTrack(request.track);
     assertNoPortCollisions();
     if (request.requestedScopes?.length) {
-      const progression = request.progression
-        ? validateProgressionInput(request.progression) : null;
+      const featureCatalog = request.featureCatalog
+        ? validateFeatureCatalogInput(request.featureCatalog) : null;
       for (const scope of request.requestedScopes) {
         if (scope?.track !== request.track || !Array.isArray(scope.levels)
           || scope.levels.length === 0
@@ -240,8 +240,9 @@ export function runPreflight(request, dependencies = {}) {
             throw new Error(`L${requested.level} requested recipe ${recipe} changed`);
           }
           const selection = requested.selection.requested;
-          const resolvedRequest = progression
-            ? resolveProgressionRecipeLevelSelection(binding, progression, requested.level).grader.request
+          const resolvedRequest = featureCatalog
+            ? resolveProgressionRecipeLevelSelection(binding, featureCatalog, requested.level,
+              { cumulative: request.mode?.id === 'dependency' }).grader.request
             : createBoundRecipeTaskRequest(binding, selection.features
               ? { featureIds: selection.features,
                   requestedSpecifications: selection.specifications?.requested,

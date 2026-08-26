@@ -292,7 +292,7 @@ test('a campaign can bind the full graph to one catalog across five levels', t =
     'dependency-model-free-campaign.json'));
   campaign.id = 'full-graph-catalog-proof';
   campaign.title = 'Full graph catalog proof';
-  campaign.progression = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  campaign.featureCatalog = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   campaign.selection.levels = [1, 2, 3, 4, 5].map(level => ({
     level,
     recipe: 'ecommerce.progression-catalog@1.0.0',
@@ -301,7 +301,7 @@ test('a campaign can bind the full graph to one catalog across five levels', t =
   writeFileSync(path, `${JSON.stringify(campaign, null, 2)}\n`);
   const plan = compileCampaignFile(path);
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5]);
-  assert.equal(plan.progression.definition.nodes.length, 39);
+  assert.equal(plan.featureCatalog.definition.nodes.length, 39);
   assert.equal(new Set(plan.bindings.map(binding => binding.recipe.contentSha256)).size, 1);
   assert(plan.conditions[0].requested.levels.every(level =>
     ['fresh', 'upgrade'].includes(level.task.mode)));

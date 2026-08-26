@@ -10,7 +10,8 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { gradeBundleToProgressionResult } from '../src/progression/grade-bundle-result.mjs';
-import { compileProgressionDefinitionFile, compileProgressionInput }
+import { compileDependencyPolicyInput, compileFeatureCatalogInput,
+  compileProgressionDefinitionFile, compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.mjs';
 import { auditProgressionReferenceRun }
   from '../src/progression/progression-reference-audit.mjs';
@@ -34,10 +35,13 @@ const setupEvidence = () => createCheckEvidence({ status: 'passed', code: 'compl
   phase: 'setup', startedAtMs: 1, completedAtMs: 2 });
 
 const track = loadTrack('ecommerce');
-const progression = compileProgressionInput(compileProgressionDefinitionFile(
+const featureCatalog = compileFeatureCatalogInput(compileProgressionDefinitionFile(
   join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-1.0.0.json'),
   { trackRoot: track.dir },
 ));
+const dependencyPolicy = compileDependencyPolicyInput({ default: 3, levels: {} }, featureCatalog);
+const progression = compileProgressionInput(dependencyRuntimeDefinition(
+  featureCatalog, dependencyPolicy));
 const recipeBindings = new Map([1, 2, 3, 4, 5].map(level => [level,
   resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@1.0.0')]));
 const release = recipeBindings.get(5).release;
@@ -56,7 +60,8 @@ function writeReferenceRun(root, { attempts = Infinity, tamperRecordedResult = f
       backend: owner.attempt.stack,
       model: owner.attempt.model,
       condition: { sha256: owner.attempt.conditionSha256 },
-      progression: progression.identity,
+      featureCatalog: featureCatalog.identity,
+      dependencyPolicy: dependencyPolicy.identity,
       progressionOwner: { schemaVersion: owner.schemaVersion,
         campaign: owner.campaign, attempt: owner.attempt },
     },
@@ -96,7 +101,8 @@ function writeReferenceRun(root, { attempts = Infinity, tamperRecordedResult = f
     let result = gradeBundleToProgressionResult(bundle, action, {
       owner,
       runArtifact,
-      progressionIdentity: progression.identity,
+      featureCatalogIdentity: featureCatalog.identity,
+      dependencyPolicyIdentity: dependencyPolicy.identity,
       selectionSha256: selected.grader.selectionSha256,
       sourceSha256,
       recipeIdentity: { id: release.id, version: release.version,
@@ -110,11 +116,14 @@ function writeReferenceRun(root, { attempts = Infinity, tamperRecordedResult = f
   }
   writeProgressionState(join(root, 'progression-state.json'), {
     progression,
+    featureCatalogIdentity: featureCatalog.identity,
+    dependencyPolicyIdentity: dependencyPolicy.identity,
     owner,
     state,
     id: 'progression-state',
   });
-  return { progression, recipeBindings, release };
+  return { progression, featureCatalogIdentity: featureCatalog.identity,
+    dependencyPolicyIdentity: dependencyPolicy.identity, recipeBindings, release };
 }
 
 function audit(root, input) {

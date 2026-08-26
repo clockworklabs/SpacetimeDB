@@ -1,15 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "progression-definition",
   "id": "ecommerce.questlines",
   "version": "1.0.0",
   "state": "draft",
   "title": "Ecommerce progression",
-  "policy": "dependency-gated",
-  "strikes": {
-    "default": 3,
-    "levels": {}
-  },
   "nodes": [
     {
       "id": "accounts",

@@ -11,7 +11,8 @@ import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact
   from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
-import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
+import { compileDependencyPolicyInput, compileFeatureCatalogInput, compileProgressionInput }
+  from '../src/progression/progression-definition.mjs';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
 import { validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
@@ -36,6 +37,15 @@ const definition = () => ({
   }],
   questlines: [{ id: 'identity', title: 'Identity' }],
 });
+const splitIdentities = progression => {
+  const { policy: _policy, strikes, ...catalogDefinition } = progression.definition;
+  const featureCatalog = compileFeatureCatalogInput({ ...catalogDefinition,
+    schemaVersion: 1, kind: 'feature-catalog' });
+  const dependencyPolicy = compileDependencyPolicyInput({ levels: strikes.levels }, featureCatalog);
+  return { featureCatalog, dependencyPolicy,
+    featureCatalogIdentity: featureCatalog.identity,
+    dependencyPolicyIdentity: dependencyPolicy.identity };
+};
 
 const evidence = status => createCheckEvidence({
   status,
@@ -62,6 +72,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
     writeFileSync(join(appDir, 'index.js'), 'export const ready = true;\n');
 
     const progression = compileProgressionInput(definition());
+    const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
       'ecommerce.l1-modular@2.5.0');
     const owner = {
@@ -72,6 +83,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       workspace: { appDirectory: 'source' },
     };
     const identities = emptyArtifactIdentities({
+      experiment: { ...owner.campaign, state: 'draft' },
       agentAdapter: { id: owner.attempt.agentAdapter },
       stackAdapter: { id: owner.attempt.stack },
     });
@@ -81,16 +93,19 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       attempt: { id: 'run-1', parentId: owner.attempt.id },
       identities,
       payload: {
+        mode: { id: 'dependency', version: '1.0.0' },
         backend: owner.attempt.stack,
         model: owner.attempt.model,
         condition: { sha256: owner.attempt.conditionSha256 },
-        progression: progression.identity,
+        featureCatalog: split.featureCatalogIdentity,
+        dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
       },
     });
     const states = [];
     const execution = createLiveProgressionExecution({
       progression,
+      ...split,
       owner,
       statePath: join(outputDir, 'progression-state.json'),
       runId: 'run-1',
@@ -159,7 +174,8 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       id: owner.attempt.id,
       mode: { id: 'dependency', version: '1.0.0' },
       levels: [1],
-      progression: progression.identity,
+      featureCatalog: split.featureCatalogIdentity,
+      dependencyPolicy: split.dependencyPolicyIdentity,
       stack: owner.attempt.stack,
       agentAdapter: owner.attempt.agentAdapter,
       model: owner.attempt.model,
@@ -170,8 +186,10 @@ test('live progression binds, records, checkpoints, and persists one exact actio
     const plan = {
       id: owner.campaign.id,
       version: owner.campaign.version,
+      state: 'draft',
       contentSha256: owner.campaign.sha256,
-      progression,
+      featureCatalog: split.featureCatalog,
+      dependencyPolicy: split.dependencyPolicy,
       definition: { track: owner.attempt.track, selection: { levels: [] },
         runtime: { buildImage: null }, budgets: { maxCostUsdPerAttempt: null } },
       agents: [{ adapter: owner.attempt.agentAdapter, model: owner.attempt.model,
@@ -240,6 +258,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
       { id: 'catalog', title: 'Catalog', nodes: ['catalog'] },
     ];
     const progression = compileProgressionInput(value);
+    const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
       'ecommerce.l1-modular@2.5.0');
     const owner = {
@@ -257,10 +276,12 @@ test('an interrupted execution restores the saved source and resumes the next gr
       kind: 'benchmark_run', id: 'run-1',
       attempt: { id: 'run-1', parentId: owner.attempt.id }, identities,
       payload: { backend: owner.attempt.stack, model: owner.attempt.model,
-        condition: { sha256: owner.attempt.conditionSha256 }, progression: progression.identity,
+        condition: { sha256: owner.attempt.conditionSha256 },
+        featureCatalog: split.featureCatalogIdentity,
+        dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt } },
     });
-    const first = createLiveProgressionExecution({ progression, owner,
+    const first = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(firstOutput, 'progression-state.json'), runId: 'run-1',
       outputDir: firstOutput, appDir: firstApp, track: owner.attempt.track,
       backend: owner.attempt.stack, identities,
@@ -298,7 +319,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
     });
     writeFileSync(join(firstApp, 'index.js'), 'export const interrupted = true;\n');
 
-    const resumed = createLiveProgressionExecution({ progression, owner,
+    const resumed = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(secondOutput, 'progression-state.json'), runId: 'run-2',
       outputDir: secondOutput, appDir: secondApp, track: owner.attempt.track,
       backend: owner.attempt.stack, identities, resumeFrom: firstOutput,
@@ -317,7 +338,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
     assert(existsSync(join(secondOutput, 'progression-state.json')));
 
     writeFileSync(join(secondOutput, 'source', 'index.js'), 'tampered\n');
-    const rejected = createLiveProgressionExecution({ progression, owner,
+    const rejected = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(secondOutput, 'progression-state.json'), runId: 'run-2',
       outputDir: secondOutput, appDir: secondApp, track: owner.attempt.track,
       backend: owner.attempt.stack, identities,
@@ -341,6 +362,7 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
     }
     writeFileSync(join(firstApp, 'index.js'), 'export const broken = true;\n');
     const progression = compileProgressionInput(definition());
+    const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
       'ecommerce.l1-modular@2.5.0');
     const owner = { schemaVersion: 1,
@@ -355,9 +377,11 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
     const runArtifact = createArtifact({ kind: 'benchmark_run', id: 'run-1',
       attempt: { id: 'run-1', parentId: owner.attempt.id }, identities,
       payload: { backend: owner.attempt.stack, model: owner.attempt.model,
-        condition: { sha256: owner.attempt.conditionSha256 }, progression: progression.identity,
+        condition: { sha256: owner.attempt.conditionSha256 },
+        featureCatalog: split.featureCatalogIdentity,
+        dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt } } });
-    const first = createLiveProgressionExecution({ progression, owner,
+    const first = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(firstOutput, 'progression-state.json'), runId: 'run-1',
       outputDir: firstOutput, appDir: firstApp, track: owner.attempt.track,
       backend: owner.attempt.stack, identities, recipeBindings: new Map([[1, binding]]),
@@ -390,7 +414,7 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
       payload: { ...runArtifact.payload, progressionStatus: first.status(),
         totals: { costUsd: 1.25, costComplete: true }, levels: [] } });
 
-    const resumed = createLiveProgressionExecution({ progression, owner,
+    const resumed = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(secondOutput, 'progression-state.json'), runId: 'run-2',
       outputDir: secondOutput, appDir: secondApp, track: owner.attempt.track,
       backend: owner.attempt.stack, identities, resumeFrom: firstOutput,

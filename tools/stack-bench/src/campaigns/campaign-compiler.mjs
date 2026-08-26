@@ -9,8 +9,10 @@ import { currentEngineIdentity } from '../evidence/artifacts.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
-import { compileProgressionDefinitionFile, compileProgressionInput, progressionLevels,
-  validateProgressionInput } from '../progression/progression-definition.mjs';
+import { compileDependencyPolicyInput, compileFeatureCatalogInput,
+  compileProgressionDefinitionFile, progressionLevels,
+  validateDependencyPolicyInput, validateFeatureCatalogInput }
+  from '../progression/progression-definition.mjs';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
@@ -18,14 +20,14 @@ import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs'
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
 import { validateCampaignMode } from './campaign-mode.mjs';
 
-export const CAMPAIGN_SCHEMA_VERSION = 3;
+export const CAMPAIGN_SCHEMA_VERSION = 4;
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
   'track', 'mode', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
-  'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'progression']);
+  'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'featureCatalog']);
 ROOT_FIELDS.add('runtime');
 const LEGACY_SELECTION_FIELDS = new Set(['packs', 'checks']);
 const MODULAR_SELECTION_FIELDS = new Set(['levels']);
@@ -105,28 +107,28 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   string(value.title, `${source}.title`);
   identifier(value.track, `${source}.track`);
   value.mode = validateCampaignMode(value.mode, { at: `${source}.mode` });
-  if (value.mode.id === 'dependency' && value.progression === undefined) {
-    fail(`${source}.progression`, 'is required for dependency mode');
+  if (value.mode.id === 'dependency' && value.featureCatalog === undefined) {
+    fail(`${source}.featureCatalog`, 'is required for dependency mode');
   }
-  if (value.progression !== undefined) {
-    if (typeof value.progression === 'string') {
-      if (!EXACT_REF.test(value.progression)) {
-        fail(`${source}.progression`, 'must be an exact id@version reference');
+  if (value.featureCatalog !== undefined) {
+    if (typeof value.featureCatalog === 'string') {
+      if (!EXACT_REF.test(value.featureCatalog)) {
+        fail(`${source}.featureCatalog`, 'must be an exact id@version reference');
       }
       value.levels = exactArray(value.levels, `${source}.levels`,
         (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
     } else {
-      const progression = compileProgressionInput(value.progression);
-      value.progression = progression.definition;
-      const availableLevels = progressionLevels(progression);
+      const featureCatalog = compileFeatureCatalogInput(value.featureCatalog);
+      value.featureCatalog = featureCatalog.definition;
+      const availableLevels = progressionLevels(featureCatalog);
       value.levels ??= availableLevels;
       value.levels = exactArray(value.levels, `${source}.levels`,
         (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
       if (value.levels.some(level => !availableLevels.includes(level))) {
-        fail(`${source}.levels`, 'must exist in progression');
+        fail(`${source}.levels`, 'must exist in feature catalog');
       }
       if (value.levels[0] !== availableLevels[0]) {
-        fail(`${source}.levels`, 'must start at the first progression level');
+        fail(`${source}.levels`, 'must start at the first feature catalog level');
       }
     }
   } else {
@@ -139,21 +141,21 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
 
   const modularSelection = object(value.selection)
     && Object.hasOwn(value.selection, 'levels');
-  if (value.progression && !modularSelection) {
-    fail(`${source}.selection`, 'progression campaigns require recipe bindings by level');
+  if (value.featureCatalog && !modularSelection) {
+    fail(`${source}.selection`, 'feature catalog campaigns require recipe bindings by level');
   }
   strict(value.selection, `${source}.selection`,
     modularSelection ? MODULAR_SELECTION_FIELDS : LEGACY_SELECTION_FIELDS);
   if (modularSelection) {
     value.selection.levels = exactArray(value.selection.levels, `${source}.selection.levels`,
       (entry, at) => {
-        strict(entry, at, value.progression ? PROGRESSION_LEVEL_FIELDS : MODULAR_LEVEL_FIELDS);
+        strict(entry, at, value.featureCatalog ? PROGRESSION_LEVEL_FIELDS : MODULAR_LEVEL_FIELDS);
         integer(entry.level, `${at}.level`, { min: 1 });
         if (typeof entry.recipe !== 'string'
           || !/^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*@\d+\.\d+\.\d+$/.test(entry.recipe)) {
           fail(`${at}.recipe`, 'must be an exact id@version reference');
         }
-        if (!value.progression) {
+        if (!value.featureCatalog) {
           entry.features = exactArray(entry.features, `${at}.features`, string,
             { nonEmpty: true, sort: true });
           entry.checks = exactArray(entry.checks, `${at}.checks`, string, { sort: true });
@@ -315,13 +317,16 @@ function imageContentDigest(value) {
   return value?.slice(value.lastIndexOf('@') + 1) ?? null;
 }
 
-function campaignIdentityDocument(definition, engine, progression, bindings, stacks, agents, conditions) {
+function campaignIdentityDocument(definition, engine, featureCatalog, dependencyPolicy,
+  bindings, stacks, agents, conditions) {
   return canonicalizeDefinition({ campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
-    definition, engine, ...(progression ? { progression } : {}),
+    definition, engine, ...(featureCatalog ? { featureCatalog } : {}),
+    ...(dependencyPolicy ? { dependencyPolicy } : {}),
     bindings, stacks, agents, conditions });
 }
 
-function expandAttempts(definition, requestedLevels, progressionIdentity, stacks, agents, studyConditions) {
+function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dependencyPolicyIdentity,
+  stacks, agents, studyConditions) {
   const repetitionsByStack = new Map(definition.stacks.map(stack =>
     [stack.id, stack.repetitions ?? definition.repetitions]));
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
@@ -351,21 +356,20 @@ function expandAttempts(definition, requestedLevels, progressionIdentity, stacks
           repair: condition.repair },
         guidance: condition.guidance.mode,
         skills: condition.guidance.skills[stack.id].ids,
-        mode: structuredClone(definition.mode),
+        mode: { id: definition.mode.id, version: definition.mode.version },
         levels: requestedLevels,
-        ...(progressionIdentity ? { featureCatalog: progressionIdentity } : {}),
-        ...(progressionIdentity && definition.mode.id === 'dependency'
-          ? { progression: progressionIdentity } : {}),
+        ...(featureCatalogIdentity ? { featureCatalog: featureCatalogIdentity } : {}),
+        ...(dependencyPolicyIdentity ? { dependencyPolicy: dependencyPolicyIdentity } : {}),
         parentAttemptId: definition.id,
       }));
   }
   return attempts;
 }
 
-function resolveCampaignProgression(input, track) {
-  if (typeof input !== 'string') return compileProgressionInput(input);
+function resolveCampaignFeatureCatalog(input, track) {
+  if (typeof input !== 'string') return compileFeatureCatalogInput(input);
   const match = EXACT_REF.exec(input);
-  if (!match) fail('progression', 'must be an exact id@version reference');
+  if (!match) fail('featureCatalog', 'must be an exact id@version reference');
   const directory = join(track.dir, 'progression');
   const candidates = readdirSync(directory)
     .filter(name => name.endsWith('.json'))
@@ -375,9 +379,9 @@ function resolveCampaignProgression(input, track) {
       return value.id === match[1] && value.version === match[2];
     });
   if (candidates.length !== 1) {
-    fail('progression', `must resolve exactly one ${input} definition in track ${track.name}`);
+    fail('featureCatalog', `must resolve exactly one ${input} definition in track ${track.name}`);
   }
-  return compileProgressionInput(compileProgressionDefinitionFile(candidates[0], {
+  return compileFeatureCatalogInput(compileProgressionDefinitionFile(candidates[0], {
     trackRoot: track.dir,
   }));
 }
@@ -390,13 +394,13 @@ function resolveCampaignInputs(definition, {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
   const track = loadTrack(definition.track);
-  const progression = definition.progression
-    ? resolveCampaignProgression(definition.progression, track) : null;
-  if (progression && definition.levels.some(level => !progressionLevels(progression).includes(level))) {
-    fail('levels', 'must exist in progression');
+  const featureCatalog = definition.featureCatalog
+    ? resolveCampaignFeatureCatalog(definition.featureCatalog, track) : null;
+  if (featureCatalog && definition.levels.some(level => !progressionLevels(featureCatalog).includes(level))) {
+    fail('levels', 'must exist in feature catalog');
   }
-  if (progression && definition.levels[0] !== progressionLevels(progression)[0]) {
-    fail('levels', 'must start at the first progression level');
+  if (featureCatalog && definition.levels[0] !== progressionLevels(featureCatalog)[0]) {
+    fail('levels', 'must start at the first feature catalog level');
   }
   const modularLevels = new Map((definition.selection.levels ?? [])
     .map(selection => [selection.level, selection]));
@@ -430,11 +434,11 @@ function resolveCampaignInputs(definition, {
   });
   const bindings = bindingRecords.map(record => record.publicBinding);
   let progressionSelections = null;
-  if (progression) {
-    validateProgressionRecipeBindings(progression, bindingRecords, { levels: definition.levels });
+  if (featureCatalog) {
+    validateProgressionRecipeBindings(featureCatalog, bindingRecords, { levels: definition.levels });
     progressionSelections = new Map(bindingRecords.map(record =>
       [record.level, resolveProgressionRecipeLevelSelection(record.binding,
-        progression, record.level, { cumulative: definition.mode.id === 'dependency' })]));
+        featureCatalog, record.level, { cumulative: definition.mode.id === 'dependency' })]));
   }
   if (definition.state === 'frozen') {
     for (const binding of bindings) {
@@ -563,7 +567,10 @@ function resolveCampaignInputs(definition, {
     stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen',
     requested: requestedForCondition,
   });
-  return { bindings, stacks, agents, conditions, progression };
+  const dependencyPolicy = definition.mode.id === 'dependency'
+    ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog,
+      definition.levels) : null;
+  return { bindings, stacks, agents, conditions, featureCatalog, dependencyPolicy };
 }
 
 export function compileCampaignFile(path, {
@@ -575,21 +582,22 @@ export function compileCampaignFile(path, {
     source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
   });
   const requestedLevels = sourceDefinition.levels;
-  const { bindings, stacks, agents, conditions, progression } =
+  const { bindings, stacks, agents, conditions, featureCatalog, dependencyPolicy } =
     resolveCampaignInputs(sourceDefinition, { stackBenchRoot, calibrationResolver });
-  const resolvedDefinition = progression
-    ? { ...sourceDefinition, progression: progression.definition }
+  const resolvedDefinition = featureCatalog
+    ? { ...sourceDefinition, featureCatalog: featureCatalog.definition }
     : sourceDefinition;
   const definition = structuredClone(resolvedDefinition);
-  if (progression) delete definition.progression;
+  if (featureCatalog) delete definition.featureCatalog;
 
   const sourceSha256 = sha256(readFileSync(absolute));
   const engine = currentEngineIdentity();
-  const identityDocument = campaignIdentityDocument(resolvedDefinition, engine, progression,
+  const identityDocument = campaignIdentityDocument(definition, engine, featureCatalog,
+    dependencyPolicy,
     bindings, stacks, agents, conditions);
   const contentSha256 = sha256(canonicalDefinitionJson(identityDocument));
-  const attempts = expandAttempts(definition, requestedLevels, progression?.identity ?? null,
-    stacks, agents, conditions);
+  const attempts = expandAttempts(definition, requestedLevels, featureCatalog?.identity ?? null,
+    dependencyPolicy?.identity ?? null, stacks, agents, conditions);
   const repetitionsByStack = Object.fromEntries(definition.stacks.map(stack =>
     [stack.id, stack.repetitions ?? definition.repetitions]).sort(([left], [right]) =>
     left.localeCompare(right)));
@@ -603,7 +611,8 @@ export function compileCampaignFile(path, {
     contentSha256,
     definition,
     identities: { engine },
-    progression,
+    featureCatalog,
+    dependencyPolicy,
     bindings,
     stacks,
     agents,
@@ -623,18 +632,23 @@ export function validateCompiledCampaignPlan(input, {
   const plan = canonicalizeDefinition(input);
   const fields = new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
-    'attempts', 'summary', 'progression']);
+    'attempts', 'summary', 'featureCatalog', 'dependencyPolicy']);
   for (const key of Object.keys(plan)) if (!fields.has(key)) throw new Error(`compiled campaign plan.${key} is unknown`);
   if (plan.campaignSchemaVersion !== CAMPAIGN_SCHEMA_VERSION) throw new Error('compiled campaign schema is unsupported');
-  const progression = plan.progression === null || plan.progression === undefined
-    ? null : validateProgressionInput(plan.progression);
+  const featureCatalog = plan.featureCatalog === null || plan.featureCatalog === undefined
+    ? null : validateFeatureCatalogInput(plan.featureCatalog);
+  const dependencyPolicy = plan.dependencyPolicy === null || plan.dependencyPolicy === undefined
+    ? null : validateDependencyPolicyInput(plan.dependencyPolicy, featureCatalog);
   const definition = validateCampaignDefinition({ ...plan.definition,
-    ...(progression ? { progression: progression.definition } : {}) },
+    ...(featureCatalog ? { featureCatalog: featureCatalog.definition } : {}) },
   { source: 'compiled campaign definition' });
+  if ((definition.mode.id === 'dependency') !== Boolean(dependencyPolicy)) {
+    throw new Error('compiled campaign dependency policy does not match its mode');
+  }
   const storedDefinition = structuredClone(definition);
-  if (progression) delete storedDefinition.progression;
+  if (featureCatalog) delete storedDefinition.featureCatalog;
   if (canonicalDefinitionJson(storedDefinition) !== canonicalDefinitionJson(plan.definition)) {
-    throw new Error('compiled campaign definition does not match its progression input');
+    throw new Error('compiled campaign definition does not match its feature catalog');
   }
   for (const field of ['id', 'version', 'state', 'title']) {
     if (plan[field] !== definition[field]) throw new Error(`compiled campaign ${field} does not match its definition`);
@@ -657,18 +671,20 @@ export function validateCompiledCampaignPlan(input, {
       throw new Error('compiled campaign engine identity does not match this executable');
     }
     const resolved = resolveCampaignInputs(definition, { calibrationResolver });
-    for (const field of ['bindings', 'stacks', 'agents', 'conditions']) {
+    for (const field of ['bindings', 'stacks', 'agents', 'conditions', 'featureCatalog',
+      'dependencyPolicy']) {
       if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
         throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
       }
     }
   }
   const expectedSha256 = sha256(canonicalDefinitionJson(campaignIdentityDocument(
-    definition, plan.identities.engine, progression, plan.bindings, plan.stacks,
+    storedDefinition, plan.identities.engine, featureCatalog, dependencyPolicy,
+    plan.bindings, plan.stacks,
     plan.agents, plan.conditions)));
   if (plan.contentSha256 !== expectedSha256) throw new Error('compiled campaign content identity does not match its inputs');
   const expectedAttempts = expandAttempts(plan.definition, definition.levels,
-    progression?.identity ?? null,
+    featureCatalog?.identity ?? null, dependencyPolicy?.identity ?? null,
     plan.stacks, plan.agents, plan.conditions);
   if (canonicalDefinitionJson(plan.attempts) !== canonicalDefinitionJson(expectedAttempts)) {
     throw new Error('compiled campaign attempt schedule does not match its inputs');

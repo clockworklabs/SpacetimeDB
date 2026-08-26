@@ -269,9 +269,8 @@ function readRun(path) {
   }
 }
 
-// The identity an operator otherwise opens plan.json to find: what model and
-// adapter ran, which exact recipes were graded, and which pinned images did
-// the work. Every field is optional because schema-1 plans predate some of it.
+// Derive operator-facing facts from the compiled plan so they cannot drift
+// from the campaign that ran.
 export function campaignFacts(plan) {
   const requested = plan.attempts?.[0]?.condition?.requested?.levels;
   return {
@@ -294,41 +293,18 @@ export function campaignFacts(plan) {
 }
 
 function readDashboardCampaignState(directory) {
-  const statePath = join(directory, 'state.json');
-  const rawState = readArtifact(statePath, { expectedKind: 'campaign_state' }).payload;
-  if (rawState.schemaVersion !== 1) {
-    const plan = validateCompiledCampaignPlan(
-      readArtifact(join(directory, 'plan.json'), { expectedKind: 'campaign_plan' }).payload,
-      { requireCurrentInputs: false });
-    const state = validateCampaignState(rawState);
-    if (state.campaignId !== plan.id || state.campaignSha256 !== plan.contentSha256
-      || state.maxParallel !== plan.summary.parallelism
-      || canonicalDefinitionJson(state.attempts.map(attempt => attempt.plan))
-        !== canonicalDefinitionJson(plan.attempts)) {
-      throw new Error('stored campaign state does not match its compiled plan');
-    }
-    return { plan, state };
+  const plan = validateCompiledCampaignPlan(
+    readArtifact(join(directory, 'plan.json'), { expectedKind: 'campaign_plan' }).payload,
+    { requireCurrentInputs: false });
+  const state = validateCampaignState(
+    readArtifact(join(directory, 'state.json'), { expectedKind: 'campaign_state' }).payload);
+  if (state.campaignId !== plan.id || state.campaignSha256 !== plan.contentSha256
+    || state.maxParallel !== plan.summary.parallelism
+    || canonicalDefinitionJson(state.attempts.map(attempt => attempt.plan))
+      !== canonicalDefinitionJson(plan.attempts)) {
+    throw new Error('stored campaign state does not match its compiled plan');
   }
-
-  // Schema 1 was the active campaign format when the dashboard was introduced.
-  // Keep this read-only projection here rather than weakening the scheduler's
-  // current schema-2 writer/validator. It can display an already-running run,
-  // but no dashboard or CLI command will write the older shape.
-  const plan = readArtifact(join(directory, 'plan.json'), { expectedKind: 'campaign_plan' }).payload;
-  if (!plan || typeof plan !== 'object' || !Array.isArray(plan.attempts)
-    || typeof plan.id !== 'string' || !/^[a-f0-9]{64}$/.test(plan.contentSha256 ?? '')
-    || rawState.campaignId !== plan.id || rawState.campaignSha256 !== plan.contentSha256
-    || !Array.isArray(rawState.attempts) || rawState.attempts.length !== plan.attempts.length) {
-    throw new Error('campaign schema-1 state does not match its compiled plan');
-  }
-  for (const [index, attempt] of rawState.attempts.entries()) {
-    if (!attempt || typeof attempt !== 'object' || attempt.plan?.id !== plan.attempts[index]?.id
-      || !['pending', 'running', 'completed', 'invalid'].includes(attempt.status)
-      || !Array.isArray(attempt.executions)) {
-      throw new Error(`campaign schema-1 attempt ${index + 1} is invalid`);
-    }
-  }
-  return { plan, state: { ...rawState, maxParallel: plan.summary?.parallelism ?? 1 } };
+  return { plan, state };
 }
 
 function summarizeAttempt(plan, attempt, campaignDirectory, fixRounds, { includeLog = false } = {}) {

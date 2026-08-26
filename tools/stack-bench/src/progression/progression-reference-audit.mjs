@@ -82,7 +82,8 @@ function coverageReport(definition, release, coveredNodeIds, coveredCheckIds) {
   };
 }
 
-export function auditProgressionReferenceRun({ outputDir, progression, owner,
+export function auditProgressionReferenceRun({ outputDir, progression, featureCatalogIdentity,
+  dependencyPolicyIdentity, owner,
   recipeBindings, release } = {}) {
   const root = resolve(outputDir);
   progression = validateProgressionInput(progression);
@@ -91,6 +92,8 @@ export function auditProgressionReferenceRun({ outputDir, progression, owner,
   const runArtifact = readArtifact(join(root, 'run.json'), { expectedKind: 'benchmark_run' });
   const stored = readProgressionState(join(root, 'progression-state.json'), {
     progression,
+    featureCatalogIdentity,
+    dependencyPolicyIdentity,
     owner,
   });
   let state = progressionEngine.initialize(progression.definition);
@@ -134,7 +137,8 @@ export function auditProgressionReferenceRun({ outputDir, progression, owner,
       {
         owner,
         runArtifact,
-        progressionIdentity: progression.identity,
+        featureCatalogIdentity,
+        dependencyPolicyIdentity,
         selectionSha256: selected.grader.selectionSha256,
         sourceSha256: event.result.sourceSha256,
         recipeIdentity: boundIdentity,

@@ -37,7 +37,8 @@ export function liveProgressionStatus(state, stateArtifact = 'progression-state.
   };
 }
 
-export function createLiveProgressionExecution({ progression, owner, statePath, runId,
+export function createLiveProgressionExecution({ progression, featureCatalogIdentity,
+  dependencyPolicyIdentity, owner, statePath, runId,
   outputDir, appDir, track, backend, identities, recipeBindings, getRunArtifact,
   resumeFrom = null, onState } = {}) {
   owner = validateProgressionOwner(owner, { requireWorkspace: true });
@@ -106,8 +107,10 @@ export function createLiveProgressionExecution({ progression, owner, statePath, 
       || canonicalDefinitionJson(runOwner)
         !== canonicalDefinitionJson({ schemaVersion: 1, campaign: owner.campaign,
           attempt: owner.attempt })
-      || canonicalDefinitionJson(artifact.payload.progression)
-        !== canonicalDefinitionJson(progression.identity)
+      || canonicalDefinitionJson(artifact.payload.featureCatalog)
+        !== canonicalDefinitionJson(featureCatalogIdentity)
+      || canonicalDefinitionJson(artifact.payload.dependencyPolicy)
+        !== canonicalDefinitionJson(dependencyPolicyIdentity)
       || artifact.payload.backend !== owner.attempt.stack
       || artifact.payload.model !== owner.attempt.model
       || artifact.payload.condition?.sha256 !== owner.attempt.conditionSha256
@@ -150,6 +153,8 @@ export function createLiveProgressionExecution({ progression, owner, statePath, 
     const resume = sourceBinding({ capture: captureSource });
     const written = writeProgressionState(statePath, {
       progression,
+      featureCatalogIdentity,
+      dependencyPolicyIdentity,
       owner,
       state,
       resume,
@@ -164,7 +169,8 @@ export function createLiveProgressionExecution({ progression, owner, statePath, 
       if (resumeFrom !== null) {
         throw new Error('live dependency progression cannot import over existing state');
       }
-      const stored = readProgressionState(statePath, { progression, owner,
+      const stored = readProgressionState(statePath, { progression, featureCatalogIdentity,
+        dependencyPolicyIdentity, owner,
         requireCurrentEngine: true });
       state = stored.state;
       resumedSnapshotSha256 = stored.snapshotSha256;
@@ -185,7 +191,8 @@ export function createLiveProgressionExecution({ progression, owner, statePath, 
         throw new Error('dependency progression resume source is the current output directory');
       }
       const stored = readProgressionState(join(previousRoot, 'progression-state.json'), {
-        progression, owner, requireCurrentEngine: true,
+        progression, featureCatalogIdentity, dependencyPolicyIdentity, owner,
+        requireCurrentEngine: true,
       });
       const previousSource = validateSavedSource(stored, previousRoot);
       state = stored.state;
@@ -249,7 +256,8 @@ export function createLiveProgressionExecution({ progression, owner, statePath, 
         {
           owner,
           runArtifact: getRunArtifact(),
-          progressionIdentity: progression.identity,
+          featureCatalogIdentity,
+          dependencyPolicyIdentity,
           selectionSha256: selected.grader.selectionSha256,
           sourceSha256: source.sha256,
           sequence,

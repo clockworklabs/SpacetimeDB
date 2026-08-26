@@ -17,6 +17,8 @@ import { validateReleaseManifest } from '../releases/release-manifest.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { readProgressionState } from '../progression/progression-state.mjs';
 import { liveProgressionStatus } from '../progression/live-progression.mjs';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../progression/progression-definition.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
@@ -42,10 +44,10 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
   }
   const levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
   const dependencyMode = attempt.mode?.id === 'dependency';
-  if (dependencyMode !== Boolean(attempt.progression)) {
-    throw new Error(`attempt ${attempt.id} mode and progression input do not match`);
+  if (dependencyMode !== Boolean(attempt.dependencyPolicy)) {
+    throw new Error(`attempt ${attempt.id} mode and dependency policy do not match`);
   }
-  const hasFeatureCatalog = Boolean(plan.progression);
+  const hasFeatureCatalog = Boolean(plan.featureCatalog);
   if (hasFeatureCatalog !== Boolean(attempt.featureCatalog)) {
     throw new Error(`attempt ${attempt.id} feature catalog does not match its campaign`);
   }
@@ -64,10 +66,13 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
     '--campaign-attempt-id', attempt.id);
   if (hasFeatureCatalog) {
     if (canonicalDefinitionJson(attempt.featureCatalog)
-      !== canonicalDefinitionJson(plan.progression?.identity)) {
+      !== canonicalDefinitionJson(plan.featureCatalog?.identity)) {
       throw new Error(`attempt ${attempt.id} feature catalog identity does not match its campaign`);
     }
     args.push('--feature-catalog-sha256', attempt.featureCatalog.sha256);
+  }
+  if (dependencyMode) {
+    args.push('--dependency-policy-sha256', attempt.dependencyPolicy.sha256);
   }
   if (dependencyMode) {
     if (progressionResumeFrom !== null) {
@@ -147,11 +152,11 @@ export function validateCampaignRun(plan, attempt, run, {
     !== canonicalDefinitionJson(attempt.condition), 'condition');
   mismatch(canonicalDefinitionJson(run.selectionRequest)
     !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
-  mismatch(canonicalDefinitionJson(run.progression ?? null)
-    !== canonicalDefinitionJson(attempt.progression ?? null), 'progression');
   mismatch(canonicalDefinitionJson(run.featureCatalog ?? null)
     !== canonicalDefinitionJson(attempt.featureCatalog ?? null), 'featureCatalog');
-  const expectedProgressionOwner = attempt.progression ? { schemaVersion: 1,
+  mismatch(canonicalDefinitionJson(run.dependencyPolicy ?? null)
+    !== canonicalDefinitionJson(attempt.dependencyPolicy ?? null), 'dependencyPolicy');
+  const expectedProgressionOwner = attempt.dependencyPolicy ? { schemaVersion: 1,
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
     attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
       agentAdapter: attempt.agentAdapter, model: attempt.model,
@@ -362,8 +367,12 @@ export function validateCampaignRun(plan, attempt, run, {
       try {
         const owner = { ...expectedProgressionOwner,
           workspace: { appDirectory: 'source' } };
+        const progression = compileProgressionInput(dependencyRuntimeDefinition(
+          plan.featureCatalog, plan.dependencyPolicy));
         const stored = readProgressionState(join(resolve(resultDir), 'progression-state.json'), {
-          progression: plan.progression,
+          progression,
+          featureCatalogIdentity: plan.featureCatalog.identity,
+          dependencyPolicyIdentity: plan.dependencyPolicy.identity,
           owner,
         });
         mismatch(canonicalDefinitionJson(run.progressionStatus)
@@ -723,7 +732,8 @@ export function runCampaignAdmission(plan, directory,
         packIds: plan.definition.selection.packs ?? [],
         checkKeys: plan.definition.selection.checks ?? [],
         requestedScopes: plan.conditions.map(condition => condition.requested),
-        progression: plan.progression,
+        featureCatalog: plan.featureCatalog,
+        mode: plan.definition.mode,
         smoke: true,
         image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE
           ?? DEFAULT_BUILD_IMAGE,

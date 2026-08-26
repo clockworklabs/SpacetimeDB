@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -104,10 +104,40 @@ test('preflight validates campaign-owned dependency selections through the progr
       packIds: [],
       checkKeys: [],
       requestedScopes: plan.conditions.map(condition => condition.requested),
-      progression: plan.progression,
+      featureCatalog: plan.featureCatalog,
+      mode: plan.definition.mode,
       smoke: false,
       image: 'unavailable-in-focused-test',
       resultsDir: root,
+    }, {
+      run: () => { throw new Error('Docker unavailable in this focused test'); },
+      env: {}, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
+    });
+    const scope = report.checks.find(check => check.id === 'request.scope');
+    assert.equal(scope.status, 'pass', scope.summary);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('preflight validates each sequential catalog level without cumulative scope', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-sequential-'));
+  try {
+    const manifest = JSON.parse(readFileSync(progressionCampaign, 'utf8'));
+    manifest.id = 'sequential-preflight-proof';
+    manifest.mode = { id: 'sequential', version: '1.0.0' };
+    manifest.levels = [1, 2];
+    manifest.selection.levels = manifest.selection.levels.slice(0, 2);
+    const path = join(root, 'campaign.json');
+    writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+    const plan = compileCampaignFile(path);
+    const report = runPreflight({
+      backends: ['mongodb'], track: plan.definition.track,
+      levelList: plan.definition.levels, runIndex: 0,
+      agentAdapter: 'reference-fixture', packIds: [], checkKeys: [],
+      requestedScopes: plan.conditions.map(condition => condition.requested),
+      featureCatalog: plan.featureCatalog, mode: plan.definition.mode,
+      smoke: false, image: 'unavailable-in-focused-test', resultsDir: root,
     }, {
       run: () => { throw new Error('Docker unavailable in this focused test'); },
       env: {}, home: root,

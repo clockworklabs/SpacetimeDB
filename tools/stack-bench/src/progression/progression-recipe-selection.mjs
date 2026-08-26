@@ -1,7 +1,11 @@
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../composition/recipe-selection.mjs';
 import { progressionEngine } from './progression-engine.mjs';
-import { validateProgressionInput } from './progression-definition.mjs';
+import { validateFeatureCatalogInput, validateProgressionInput }
+  from './progression-definition.mjs';
+
+const validateCatalog = input => input?.definition?.kind === 'feature-catalog'
+  ? validateFeatureCatalogInput(input) : validateProgressionInput(input);
 
 function exactRef(value) {
   const split = value.lastIndexOf('@');
@@ -196,7 +200,7 @@ export function resolveProgressionRecipeAction(binding, state) {
 
 export function resolveProgressionRecipeLevelSelection(binding, input, level,
   { cumulative = true } = {}) {
-  const { definition } = validateProgressionInput(input);
+  const { definition } = validateCatalog(input);
   const promptNodeIds = definition.nodes.filter(node => node.level === level)
     .map(node => node.id);
   if (promptNodeIds.length === 0) {
@@ -211,7 +215,7 @@ export function resolveProgressionRecipeLevelSelection(binding, input, level,
 }
 
 export function validateProgressionRecipeBindings(input, bindings, { levels = null } = {}) {
-  const { definition } = validateProgressionInput(input);
+  const { definition } = validateCatalog(input);
   const byLevel = new Map(bindings.map(binding => [binding.level, binding.binding ?? binding]));
   const selectedLevels = levels ?? [...new Set(definition.nodes.map(node => node.level))];
   for (const level of selectedLevels) {

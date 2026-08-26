@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { readCampaignState } from './campaign-scheduler.mjs';
 import { progressionEngine } from '../progression/progression-engine.mjs';
 import { readProgressionState } from '../progression/progression-state.mjs';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../progression/progression-definition.mjs';
 
 function progressionOwner(plan, attempt) {
   return {
@@ -22,12 +24,16 @@ function progressionOwner(plan, attempt) {
 }
 
 export function dependencyProgress(plan, attempt, executionDirectory) {
-  if (attempt.mode?.id !== 'dependency' || !plan.progression || !executionDirectory) return null;
+  if (attempt.mode?.id !== 'dependency' || !plan.featureCatalog
+    || !plan.dependencyPolicy || !executionDirectory) return null;
   const statePath = join(executionDirectory, 'progression-state.json');
   if (!existsSync(statePath)) return null;
   try {
     const stored = readProgressionState(statePath, {
-      progression: plan.progression,
+      progression: compileProgressionInput(dependencyRuntimeDefinition(
+        plan.featureCatalog, plan.dependencyPolicy)),
+      featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity,
       owner: progressionOwner(plan, attempt),
     });
     const state = stored.state;

@@ -11,7 +11,8 @@ import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   processFailureDetail, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
-import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../src/progression/progression-definition.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { liveProgressionStatus } from '../src/progression/live-progression.mjs';
 import { writeProgressionState } from '../src/progression/progression-state.mjs';
@@ -127,27 +128,19 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
   assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
 });
 
-test('dependency attempts pass one progression input and no separate level range', () => {
-  const plan = compileCampaignFile(example);
-  const progression = compileProgressionInput({
-    schemaVersion: 2, kind: 'progression-mode', id: 'single-level', version: '1.0.0',
-    state: 'draft', title: 'Single level',
-    policy: 'dependency-gated', strikes: { default: 1, levels: {} },
-    nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity', dependencies: [],
-      featureRefs: ['ecommerce.feature.accounts@1.1.0'], promptModules: [],
-      gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1 }] }],
-    questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
-  });
-  const dependencyPlan = { ...plan, progression };
-  const attempt = { ...plan.attempts[0], mode: { id: 'dependency', version: '1.0.0' },
-    featureCatalog: progression.identity, progression: progression.identity };
+test('dependency attempts pass separate catalog and policy identities with no level range', () => {
+  const dependencyPlan = compileCampaignFile(dependencyModelFree);
+  const attempt = dependencyPlan.attempts[0];
   const argv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0,
     '/campaign/plan.json');
   assert.equal(argv.includes('--levels'), false);
   const index = argv.indexOf('--campaign-file');
   assert(index > 0);
   assert.equal(argv[index + 1], resolve('/campaign/plan.json'));
-  assert.equal(argv[argv.indexOf('--feature-catalog-sha256') + 1], progression.identity.sha256);
+  assert.equal(argv[argv.indexOf('--feature-catalog-sha256') + 1],
+    dependencyPlan.featureCatalog.identity.sha256);
+  assert.equal(argv[argv.indexOf('--dependency-policy-sha256') + 1],
+    dependencyPlan.dependencyPolicy.identity.sha256);
   assert.equal(argv[argv.indexOf('--campaign-sha256') + 1], dependencyPlan.contentSha256);
   assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
   for (const option of ['--guidance-document-json', '--condition-json', '--selection-json',
@@ -161,7 +154,7 @@ test('dependency attempts pass one progression input and no separate level range
   assert.throws(() => attemptArgv(dependencyPlan, { ...attempt,
     mode: { id: 'sequential', version: '1.0.0' },
   }, '/campaign/dependency', 0, '/campaign/plan.json'),
-  /mode and progression input do not match/);
+  /mode and dependency policy do not match/);
 });
 
 test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {
@@ -251,7 +244,9 @@ test('dependency validation keeps a conclusive grade when its repair session is 
         agentAdapter: attempt.agentAdapter, model: attempt.model,
         conditionSha256: attempt.condition.sha256 },
       workspace: { appDirectory: 'source' } };
-    let state = progressionEngine.initialize(plan.progression.definition);
+    const progression = compileProgressionInput(dependencyRuntimeDefinition(
+      plan.featureCatalog, plan.dependencyPolicy));
+    let state = progressionEngine.initialize(progression.definition);
     const selection = progressionEngine.gradingSelection(state);
     state = progressionEngine.recordResult(state, {
       attemptId: 'grade-before-agent-failure', outcome: 'conclusive',
@@ -260,7 +255,8 @@ test('dependency validation keeps a conclusive grade when its repair session is 
           .map(check => ({ id: check.id, outcome: 'fail' })) })),
     });
     writeProgressionState(join(root, 'progression-state.json'), {
-      progression: plan.progression, owner, state,
+      progression, featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state,
     });
     const run = {
       artifactEnvelope: { attempt: { parentId: attempt.id },
@@ -269,7 +265,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
       mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
       guidance: attempt.guidance, condition: attempt.condition,
       selectionRequest: plan.definition.selection, featureCatalog: attempt.featureCatalog,
-      progression: attempt.progression,
+      dependencyPolicy: attempt.dependencyPolicy,
       progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
       progressionStatus: liveProgressionStatus(state), skills: attempt.skills,
       runtime: { buildImage: 'test-build-image' },

@@ -15,6 +15,7 @@ import { readCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { validateProgressionCampaignLevelScope } from '../commands/bench.mjs';
 import { replayDependencyMode } from '../src/progression/dependency-mode.mjs';
+import { dependencyRuntimeDefinition } from '../src/progression/progression-definition.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CAMPAIGN = join(ROOT, 'tests', 'fixtures', 'dependency-model-free-campaign.json');
@@ -26,11 +27,11 @@ test('dependency campaign scope must match the graph-derived scope', () => {
   const binding = resolveRecipeRelease(loadTrack(plan.definition.track), 1,
     `${declared.recipe.id}@${declared.recipe.version}`);
   assert.doesNotThrow(() => validateProgressionCampaignLevelScope(binding,
-    plan.progression, declared, 1));
+    plan.featureCatalog, declared, 1));
   const tampered = structuredClone(declared);
   tampered.selection.sha256 = '0'.repeat(64);
   assert.throws(() => validateProgressionCampaignLevelScope(binding,
-    plan.progression, tampered, 1), /graph-derived scope changed/);
+    plan.featureCatalog, tampered, 1), /graph-derived scope changed/);
 });
 
 test('real stack campaigns retain full preflight admission', () => {
@@ -105,7 +106,8 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
       expectedKind: 'benchmark_run',
     });
     assert.equal(run.attempt.parentId, campaignAttempt.plan.id);
-    assert.deepEqual(run.payload.progression, plan.progression.identity);
+    assert.deepEqual(run.payload.featureCatalog, plan.featureCatalog.identity);
+    assert.deepEqual(run.payload.dependencyPolicy, plan.dependencyPolicy.identity);
     assert.equal(run.payload.progressionStatus.phase, 'terminal');
     assert.equal(run.payload.progressionStatus.attempts, 3);
     assert.equal(run.payload.levels.length, 1);
@@ -126,7 +128,9 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     assert.equal(progression.payload.snapshot.phase, 'terminal');
     assert.equal(progression.payload.snapshot.attempts.length, 3);
     assert.equal(progression.payload.snapshot.strikes['1'].used, 3);
-    const replayed = replayDependencyMode(plan.progression.definition,
+    const runtimeDefinition = dependencyRuntimeDefinition(
+      plan.featureCatalog, plan.dependencyPolicy);
+    const replayed = replayDependencyMode(runtimeDefinition,
       progression.payload.events);
     assert.deepEqual(replayed.attempts.map(attempt => attempt.attemptId), [
       `${run.id}-progression-1`,
@@ -137,7 +141,7 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     assert(replayed.attempts.every(attempt => /^[a-f0-9]{64}$/.test(attempt.evidence.sha256)));
     const duplicate = structuredClone(progression.payload.events);
     duplicate[1].result.attemptId = duplicate[0].result.attemptId;
-    assert.throws(() => replayDependencyMode(plan.progression.definition, duplicate),
+    assert.throws(() => replayDependencyMode(runtimeDefinition, duplicate),
       /owned progression sequence|duplicate attempt id/);
 
     for (let sequence = 1; sequence <= 3; sequence += 1) {

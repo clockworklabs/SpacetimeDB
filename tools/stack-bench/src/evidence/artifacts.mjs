@@ -47,7 +47,7 @@ const ENVELOPE_KEYS = new Set([
 const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backend', 'model', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
-  'skills', 'runtime', 'featureCatalog', 'progression', 'progressionOwner', 'progressionStatus',
+  'skills', 'runtime', 'featureCatalog', 'dependencyPolicy', 'progressionOwner', 'progressionStatus',
   'progressionResume']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
@@ -61,7 +61,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'streams']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
-    'attempts', 'summary', 'progression']),
+    'attempts', 'summary', 'featureCatalog', 'dependencyPolicy']),
   campaign_report: new Set(['reportSchemaVersion', 'campaign', 'scope', 'policy', 'attempts',
     'conditions', 'summary', 'limitations', 'contentSha256']),
   campaign_state: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'status',
@@ -81,8 +81,8 @@ const PAYLOAD_FIELDS = Object.freeze({
     'seededBefore', 'sent', 'delivered', 'lost', 'elapsedMs', 'deliveryLatencyMs', 'server',
     'cpuSecondsPer1kDelivered']),
   preflight: new Set(['schemaVersion', 'generatedAt', 'request', 'ok', 'summary', 'checks']),
-  progression_state: new Set(['schemaVersion', 'owner', 'progression', 'events', 'snapshot',
-    'resume', 'snapshotSha256']),
+  progression_state: new Set(['schemaVersion', 'owner', 'featureCatalog', 'dependencyPolicy',
+    'events', 'snapshot', 'resume', 'snapshotSha256']),
   repair_continuation: new Set([...BENCHMARK_RUN_PAYLOAD_FIELDS, 'continuation']),
   repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'roundsGranted',
     'exitCode', 'signal', 'timedOut', 'streams']),
@@ -211,8 +211,8 @@ function validatePayload(kind, payload) {
   if (['benchmark_run', 'repair_continuation'].includes(kind)
     && payload.progressionStatus !== undefined) {
     objectWhenPresent('progressionStatus');
-    if (!isObject(payload.progression)) {
-      fail(`${kind} payload.progressionStatus requires progression`);
+    if (!isObject(payload.featureCatalog) || !isObject(payload.dependencyPolicy)) {
+      fail(`${kind} payload.progressionStatus requires featureCatalog and dependencyPolicy`);
     }
     const fields = new Set(['stateArtifact', 'phase', 'level', 'attempts', 'score']);
     for (const key of Object.keys(payload.progressionStatus)) {
@@ -270,9 +270,10 @@ function validatePayload(kind, payload) {
     }
   }
   if (kind === 'progression_state') {
-    if (payload.schemaVersion !== 1) fail('progression_state payload.schemaVersion must be 1');
+    if (payload.schemaVersion !== 2) fail('progression_state payload.schemaVersion must be 2');
     objectWhenPresent('owner');
-    objectWhenPresent('progression');
+    objectWhenPresent('featureCatalog');
+    objectWhenPresent('dependencyPolicy');
     objectWhenPresent('snapshot');
     arrayWhenPresent('events');
     if (!HASH.test(payload.snapshotSha256 ?? '')) {

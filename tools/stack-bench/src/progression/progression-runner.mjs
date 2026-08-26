@@ -31,25 +31,30 @@ export async function runProgressionMode({ definition = null, state: inputState 
   }
 }
 
-export async function runPersistedProgressionMode({ progression, owner, statePath, execute,
-  onState = null, engine = progressionEngine } = {}) {
+export async function runPersistedProgressionMode({ progression, featureCatalogIdentity,
+  dependencyPolicyIdentity, owner, statePath, execute, onState = null,
+  engine = progressionEngine } = {}) {
   progression = validateProgressionInput(progression);
   if (typeof statePath !== 'string' || !statePath) {
     throw new Error('persisted progression runner requires statePath');
   }
-  const lock = acquireProgressionStateLock(statePath, progression, owner);
+  const lock = acquireProgressionStateLock(statePath, progression, featureCatalogIdentity,
+    dependencyPolicyIdentity, owner);
   try {
     let state;
     if (progressionStateExists(statePath)) {
-      state = readProgressionState(statePath, { progression, owner,
+      state = readProgressionState(statePath, { progression, featureCatalogIdentity,
+        dependencyPolicyIdentity, owner,
         requireCurrentEngine: true }).state;
     } else {
       state = engine.initialize(progression.definition);
-      writeProgressionState(statePath, { progression, owner, state });
+      writeProgressionState(statePath, { progression, featureCatalogIdentity,
+        dependencyPolicyIdentity, owner, state });
     }
     return await runProgressionMode({ state, execute, engine,
       onState: async next => {
-        writeProgressionState(statePath, { progression, owner, state: next });
+        writeProgressionState(statePath, { progression, featureCatalogIdentity,
+          dependencyPolicyIdentity, owner, state: next });
         if (onState) await onState(structuredClone(next));
       } });
   } finally {

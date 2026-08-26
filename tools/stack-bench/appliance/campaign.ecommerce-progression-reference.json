@@ -1,14 +1,15 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "kind": "campaign-manifest",
   "id": "ecommerce-progression-reference",
   "version": "1.0.0",
   "state": "draft",
   "title": "Ecommerce progression reference pilot",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "1.0.0" },
+  "mode": { "id": "dependency", "version": "1.0.0",
+    "strikes": { "default": 3, "levels": {} } },
   "levels": [1, 2, 3, 4, 5],
-  "progression": "ecommerce.questlines@1.0.0",
+  "featureCatalog": "ecommerce.questlines@1.0.0",
   "selection": {
     "levels": [
       { "level": 1, "recipe": "ecommerce.progression-catalog@1.0.0" },

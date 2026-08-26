@@ -7,6 +7,8 @@ import { loadTrack } from '../composition/tracks.mjs';
 import { auditProgressionReferenceRun }
   from '../progression/progression-reference-audit.mjs';
 import { readCampaignState } from './campaign-scheduler.mjs';
+import { compileProgressionInput, dependencyRuntimeDefinition }
+  from '../progression/progression-definition.mjs';
 
 function childPath(root, path) {
   const absoluteRoot = resolve(root);
@@ -94,7 +96,11 @@ export function auditProgressionReferenceCampaign(directory, {
     attempt.plan.mode?.id === 'dependency'
     && attempt.plan.agentAdapter === 'reference-fixture');
   if (selected.length === 0) return null;
-  if (!plan.progression) throw new Error('reference campaign audit requires a progression definition');
+  if (!plan.featureCatalog || !plan.dependencyPolicy) {
+    throw new Error('reference campaign audit requires a feature catalog and dependency policy');
+  }
+  const progression = compileProgressionInput(dependencyRuntimeDefinition(
+    plan.featureCatalog, plan.dependencyPolicy));
   const { bindings, release } = exactRecipeBindings(plan, resolveRelease);
   const attempts = selected.map(attempt => {
     if (attempt.status !== 'completed') {
@@ -103,7 +109,9 @@ export function auditProgressionReferenceCampaign(directory, {
     const execution = attempt.executions.at(-1);
     const audit = auditRun({
       outputDir: childPath(paths.root, execution.output),
-      progression: plan.progression,
+      progression,
+      featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity,
       owner: progressionOwner(plan, attempt.plan),
       recipeBindings: bindings,
       release,
