@@ -128,6 +128,8 @@ test('reference deployment reports both deploy and restoration failures', async 
 test('reference clients are explicitly reachable outside their build container', () => {
   assert.equal(referenceDevCommand('reference-server'),
     'exec npm run dev > /tmp/reference-server.log 2>&1');
+  assert.equal(referenceDevCommand('reference-server', { script: 'start' }),
+    'exec npm run start > /tmp/reference-server.log 2>&1');
   assert.equal(referenceDevCommand('reference-client', { networkVisible: true }),
     'exec npm run dev -- --host 0.0.0.0 > /tmp/reference-client.log 2>&1');
   assert.equal(referenceDevCommand('reference-client', { networkVisible: true, port: 6475 }),
@@ -135,6 +137,8 @@ test('reference clients are explicitly reachable outside their build container',
   assert.throws(() => referenceDevCommand('reference-client', { port: 0 }),
     /invalid reference port 0/);
   assert.throws(() => referenceDevCommand('../unsafe'), /unsafe reference log name/);
+  assert.throws(() => referenceDevCommand('reference-server', { script: 'start; unsafe' }),
+    /unsafe reference script/);
 });
 
 test('reference adapter seeds an empty campaign app from the exact registered fixture', () => {

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { dockerHostServiceAddress } from '../runtime/docker-network.mjs';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.mjs';
 import { referenceInstallSteps } from '../references/reference-install.mjs';
@@ -29,7 +32,11 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
   }
   if (pushSchema) pushSchema({ container, metadata, serverEnv, helpers });
   helpers.phase('starting reference server and client');
-  helpers.startDetached(container, `/app/${metadata.server.directory}`, 'reference-server', serverEnv);
+  const serverPackage = JSON.parse(readFileSync(join(args.app, metadata.server.directory,
+    'package.json'), 'utf8'));
+  const serverScript = serverPackage.scripts?.start ? 'start' : 'dev';
+  helpers.startDetached(container, `/app/${metadata.server.directory}`, 'reference-server', serverEnv,
+    { script: serverScript });
   helpers.startDetached(container, `/app/${metadata.client.directory}`, 'reference-client', {
     API_PORT: String(ports.express), VITE_PORT: String(ports.vite),
   }, { networkVisible: true, port: ports.vite });

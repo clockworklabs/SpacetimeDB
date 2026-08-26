@@ -16,7 +16,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/mongodb",
-        "sourceSha256": "85b83f5a9f196431a6c51faecbfe7dc5f4cc3116a01e4f5d5abdcfa2541d4dc5"
+        "sourceSha256": "929250538b7842fe0db830e5a39609a07de7e22a6281d87e56542e10862d9410"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecom-progression-1.0.0.json"
@@ -38,7 +38,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/postgres",
-        "sourceSha256": "f2a80185b2dd71085e512cfef8689e3c76db7ab0466fd4cbef2ffbf2a6284fd6"
+        "sourceSha256": "559e8e5c92883b023346dd44626b5519b0cd7cac664268e076ae0674dca752e4"
       },
       "mutationManifests": [
         "grader/mutations/postgres-ecom-progression-1.0.0.json"

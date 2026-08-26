@@ -95,7 +95,10 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
   const serverRelative = existsSync(join(app, 'server', 'package.json')) ? 'server' : '.';
   const packageJson = JSON.parse(readFileSync(join(app, serverRelative, 'package.json'), 'utf8'));
-  const script = packageJson.scripts?.dev ? 'dev' : packageJson.scripts?.start ? 'start' : null;
+  // Prefer a stable server process when the app provides one. A file watcher
+  // can restart while an upgrade replaces source files and start two seeders
+  // against the same freshly reset database.
+  const script = packageJson.scripts?.start ? 'start' : packageJson.scripts?.dev ? 'dev' : null;
   if (!script) {
     const error = new Error(`${serverRelative}/package.json has no dev or start script`);
     error.code = 'generated_app_not_restartable';
