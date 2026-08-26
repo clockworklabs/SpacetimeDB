@@ -12,6 +12,8 @@ test('PostgreSQL progression reference has local production builds', () => {
   assert.equal(server.scripts.build, 'tsc --noEmit');
   assert.equal(client.scripts.build, 'vite build');
   assert.match(server.dependencies['drizzle-orm'], /0\.45\.[2-9]|0\.[5-9]\d|[1-9]\d*\./);
+  assert.equal(server.devDependencies['drizzle-kit'], '^0.31.10');
+  assert.match(read('server', 'drizzle.config.ts'), /schema: '\.\/src\/schema\.ts'/);
   assert.match(client.devDependencies.vite, /8\./);
 });
 

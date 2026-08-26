@@ -36,7 +36,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/postgres",
-        "sourceSha256": "220e556443864d7c9e80597b5c2fad9fcf16c8403ff3729ffd02d4139285b996"
+        "sourceSha256": "5760437dd60a2152c27967b9400ef173d42afe3eb2c64ec58a94b538bd7316a4"
       },
       "mutationManifests": [],
       "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."

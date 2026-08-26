@@ -58,8 +58,8 @@ export function deployPostgresReference(input) {
     },
     pushSchema: ({ container, metadata, serverEnv, helpers }) => {
       helpers.phase('pushing PostgreSQL schema');
-      helpers.docker(container, `/app/${metadata.server.directory}`, 'npx',
-        ['drizzle-kit', 'push', '--force'], serverEnv);
+      helpers.docker(container, `/app/${metadata.server.directory}`,
+        './node_modules/.bin/drizzle-kit', ['push', '--force'], serverEnv);
     },
   });
 }

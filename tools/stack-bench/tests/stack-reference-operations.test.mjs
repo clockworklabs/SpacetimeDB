@@ -4,8 +4,38 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { deployMongoDbReference, deploySpacetimeReference }
+import { deployMongoDbReference, deployPostgresReference, deploySpacetimeReference }
   from '../src/stacks/stack-reference-operations.mjs';
+
+test('PostgreSQL reference deployment uses its locked schema tool', async () => {
+  const dockerCalls = [];
+  const helpers = {
+    dbName() { return 'stackbench_ecom_run0'; },
+    runSync(label) {
+      return label === 'inspecting leased database container' ? 'container-id\n' : '';
+    },
+    docker(...args) { dockerCalls.push(args); },
+    phase() {},
+    startDetached() {},
+    async waitFor() {},
+    containerLogs() { return ''; },
+  };
+  await deployPostgresReference({
+    args: { backend: 'postgres', runIndex: 0 },
+    metadata: { installDirectories: [], server: { directory: 'server' },
+      client: { directory: 'client' } },
+    lease: { resources: { database: 'stackbench_ecom_run0',
+      container: { name: 'postgres', id: 'container-id' } } },
+    track: { restartProbe: '/api/items' }, container: 'build-0',
+    ports: { dbPort: 6532, express: 6301, vite: 6573 }, buildNetworkMode: 'host', helpers,
+  });
+
+  assert.equal(dockerCalls.length, 1);
+  assert.deepEqual(dockerCalls[0].slice(0, 4), [
+    'build-0', '/app/server', './node_modules/.bin/drizzle-kit', ['push', '--force'],
+  ]);
+  assert.match(dockerCalls[0][4].DATABASE_URL, /stackbench_ecom_run0/);
+});
 
 test('hosted reference credentials stay in process environment', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-environment-'));
