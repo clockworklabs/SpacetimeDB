@@ -6,7 +6,7 @@
 // entirely when two apps collide on a port), so the sequence is automated and
 // each precondition is verified rather than assumed.
 //
-//   reset database -> verify clean -> contract lint -> feature/invariant/delivery
+//   stop hosted app -> reset database -> verify clean -> contract lint -> feature/invariant/delivery
 //   suites -> bundle
 //
 // Usage:
@@ -664,14 +664,27 @@ async function main() {
   let lastResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
   const freshen = async () => {
     if (!args.reset) return true;
+    const requiresReseed = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
+      'reset', 'requires-reseed');
+    const controlledRestart = track.reseedOnReset && Boolean(args.restartSpec) && requiresReseed;
+    if (controlledRestart) {
+      process.stdout.write('  stop application ... ');
+      try {
+        await controlBackend(args.restartSpec, 'stop');
+        console.log('ok');
+      } catch (error) {
+        lastResetFailure = childFailureDetail(error);
+        lastResetOutcome = { kind: 'harness_failure', phase: 'application-reset-control' };
+        console.log(`FAILED (${lastResetFailure})`);
+        return false;
+      }
+    }
     const reset = resetDatabase(args);
     lastResetFailure = reset.detail;
     lastResetOutcome = reset.outcome ?? { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
     // Do not grade until the reset application is reachable. Hosted backends
     // can also require their startup data to be present again.
-    const requiresReseed = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-      'reset', 'requires-reseed');
     const waitUntilReady = async () => {
       const seeded = await waitForReseedProbe(args.reseedProbe ?? args.url,
         args.reseedProbeExpectation);
@@ -700,7 +713,9 @@ async function main() {
         // wait is on the pipe rather than the process. A re-baseline sat here
         // for eight hours with its server up and answering. grade.mjs already
         // does this for exactly the same command — see restartBackend.
-        if (args.restartSpec) await controlBackend(args.restartSpec, 'restart');
+        if (args.restartSpec) {
+          await controlBackend(args.restartSpec, controlledRestart ? 'start' : 'restart');
+        }
         else run('bash', ['-c', args.restartCmd], { stdio: 'ignore', timeout: 200_000 });
       } catch (err) {
         lastResetOutcome = resetFailureOutcome(err);

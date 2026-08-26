@@ -2,6 +2,7 @@
 
 import { GENERATED_APP_LAYOUT_EXIT_CODE, resetBackend } from '../src/stacks/backend-reset.mjs';
 import { GeneratedAppLayoutError } from '../src/runtime/spacetime-layout.mjs';
+import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
 
 const [backend, app] = process.argv.slice(2);
 if (!backend || !app) throw new Error('usage: node commands/reset-backend.mjs <backend> <app-dir>');
@@ -14,6 +15,10 @@ Promise.resolve().then(() => resetBackend({ backend, app })).then(result => {
     process.exitCode = GENERATED_APP_LAYOUT_EXIT_CODE;
     return;
   }
+  const childOutput = [error?.stderr, error?.stdout]
+    .filter(value => value !== undefined && value !== null && String(value).trim())
+    .map(value => String(value).trim()).join('\n');
+  if (childOutput) console.error(redactCredentials(childOutput).slice(-2000));
   console.error(error.stack ?? error.message);
   process.exitCode = 1;
 });
