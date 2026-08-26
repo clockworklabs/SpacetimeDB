@@ -10,7 +10,8 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { compileProgressionDefinitionFile,
-  compileProgressionInput } from '../src/progression/progression-definition.mjs';
+  compileDependencyPolicyInput, compileFeatureCatalogInput,
+  dependencyRuntimeDefinition } from '../src/progression/progression-definition.mjs';
 import { compileProgressionGraph,
   renderProgressionGraphHtml } from '../src/progression/progression-graph.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
@@ -217,7 +218,7 @@ test('every progression feature is a whole module and every direct graph edge is
 
 test('one progression catalog binds every node and selects only current work', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
-  const input = compileProgressionInput(definition);
+  const input = compileFeatureCatalogInput(definition);
   const track = loadTrack('ecommerce');
   const bindings = [1, 2, 3, 4, 5].map(level => ({
     level,
@@ -233,7 +234,8 @@ test('one progression catalog binds every node and selects only current work', (
   assert(definition.nodes.flatMap(node => node.gradingChecks)
     .every(check => release.checkCatalog.some(item => item.stableKey === check.id)));
 
-  let state = progressionEngine.initialize(input.definition);
+  const policy = compileDependencyPolicyInput({ default: 3, levels: {} }, input);
+  let state = progressionEngine.initialize(dependencyRuntimeDefinition(input, policy));
   const first = resolveProgressionRecipeAction(bindings[0].binding, state);
   const firstFeatures = definition.nodes.filter(node => node.level === 1)
     .flatMap(node => node.featureRefs).map(reference => reference.slice(0, reference.lastIndexOf('@')))
