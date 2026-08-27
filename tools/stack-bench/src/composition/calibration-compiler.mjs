@@ -348,6 +348,15 @@ export function currentLevelPoints(release, execution) {
   return points;
 }
 
+export function hasExactSelectedPackRuntime(packRuntime, release) {
+  if (!Array.isArray(packRuntime?.packs)) return false;
+  const expected = new Set(release.checkCatalog.map(check => check.packId));
+  const observed = new Set(packRuntime.packs.map(pack => pack.id));
+  return packRuntime.packs.length === observed.size && observed.size === expected.size
+    && [...expected].every(id => observed.has(id))
+    && packRuntime.packs.every(pack => pack.exceeded === false);
+}
+
 export function validateQualificationEvidenceArtifact(artifact, entry,
   { calibration, qualificationIdentity, release, references, execution, stackBenchRoot,
     enforceQualificationScope = true }) {
@@ -448,9 +457,7 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
       || run.criteria !== release.scoring.checks || run.zeroPointCriteria !== zeroPointChecks.length
       || !run.imageId || run.harnessSha256Before !== payload.harnessSha256
       || run.harnessSha256After !== payload.harnessSha256 || run.failures?.length !== 0
-      || !Array.isArray(run.packRuntime?.packs)
-      || run.packRuntime.packs.length !== release.components.packs.length
-      || run.packRuntime.packs.some(pack => pack.exceeded !== false)) {
+      || !hasExactSelectedPackRuntime(run.packRuntime, release)) {
       evidenceFailure(at, `contains failed or incomplete repetition ${run.repetition}`);
     }
     if (mutationControl) {

@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
   compileCalibrationDefinition, compileCalibrationFile,
-  currentLevelPoints, resolveCalibrationForRelease,
+  currentLevelPoints, hasExactSelectedPackRuntime, resolveCalibrationForRelease,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { checkCalibrations } from '../commands/check-calibration.mjs';
@@ -17,6 +17,24 @@ import { qualificationScopeIdentity } from '../src/composition/qualification-sco
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');
 const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-modular-2.5.0.json');
+
+test('qualification runtime must cover the exact selected pack set', () => {
+  const release = { checkCatalog: [{ packId: 'accounts' }, { packId: 'accounts' },
+    { packId: 'orders' }] };
+  assert.equal(hasExactSelectedPackRuntime({ packs: [
+    { id: 'accounts', exceeded: false }, { id: 'orders', exceeded: false },
+  ] }, release), true);
+  assert.equal(hasExactSelectedPackRuntime({ packs: [
+    { id: 'accounts', exceeded: false }, { id: 'orders', exceeded: false },
+    { id: 'future', exceeded: false },
+  ] }, release), false);
+  assert.equal(hasExactSelectedPackRuntime({ packs: [
+    { id: 'accounts', exceeded: false }, { id: 'accounts', exceeded: false },
+  ] }, release), false);
+  assert.equal(hasExactSelectedPackRuntime({ packs: [
+    { id: 'accounts', exceeded: false }, { id: 'orders', exceeded: true },
+  ] }, release), false);
+});
 
 function current() {
   const binding = resolveRecipeRelease(TRACK, 1);

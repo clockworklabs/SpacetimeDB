@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.mjs';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { calibrationQualificationIdentity, calibrationQualificationRelease,
+  resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -104,6 +105,19 @@ export function nullControlSuites(track, selectedLevel = null, binding = null) {
   return suites;
 }
 
+export function selectNullQualificationBinding(binding, calibration) {
+  const selected = calibrationQualificationRelease(calibration, binding.release, binding.execution);
+  return { ...binding, release: selected.release, execution: selected.execution };
+}
+
+export function createNullQualification(binding, calibration) {
+  return {
+    binding: selectNullQualificationBinding(binding, calibration),
+    calibration,
+    identity: calibrationQualificationIdentity(calibration),
+  };
+}
+
 async function listen(server) {
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -148,7 +162,8 @@ async function main() {
         const calibration = resolveCalibrationForRelease(binding.release,
           { trackRoot: track.dir, stackBenchRoot: ROOT });
         if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
-        qualification = { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
+        qualification = createNullQualification(binding, calibration);
+        binding = qualification.binding;
       }
       const selectedSuites = nullControlSuites(track, args.level, binding);
       const resolvedRecipe = binding

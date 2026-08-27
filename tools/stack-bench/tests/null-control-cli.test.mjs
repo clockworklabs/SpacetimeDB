@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
-import { nullControlSuites, parseNullControlArgs } from '../commands/null-control.mjs';
+import { nullControlSuites, parseNullControlArgs,
+  selectNullQualificationBinding } from '../commands/null-control.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -64,4 +66,18 @@ test('recipe-bound null qualification rejects an execution with no mapped checks
   binding.execution.push({ id: 'empty-execution', source: binding.execution[0].source,
     ownership: { kind: 'current', level: 1 } });
   assert.throws(() => nullControlSuites(track, 1, binding), /maps no checks/);
+});
+
+test('progression null qualification grades only the checks selected for its level', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@1.0.0');
+  const calibration = JSON.parse(readFileSync(join(track.dir, 'composition', 'calibrations',
+    'progression-1.0.0.json'), 'utf8'));
+  const selectedBinding = selectNullQualificationBinding(binding, calibration);
+  const checks = nullControlSuites(track, 3, selectedBinding)
+    .flatMap(suite => suite.checks);
+
+  assert.equal(checks.length, calibration.qualification.checks.length);
+  assert.deepEqual(checks.map(check => check.stableKey).sort(),
+    [...calibration.qualification.checks].sort());
 });
