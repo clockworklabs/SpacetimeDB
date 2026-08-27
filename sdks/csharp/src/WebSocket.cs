@@ -29,12 +29,14 @@ namespace SpacetimeDB
             public string Protocol;
         }
 
-        // WebSocket buffer for incoming messages
-        private static readonly int MAXMessageSize = 0x4000000; // 64MB
+        // WebSocket buffer for incoming messages. Most connections receive
+        // small messages, so grow on demand instead of reserving the maximum.
+        internal const int InitialReceiveBufferSize = 0x10000; // 64 KiB
+        internal const int MaxMessageSize = 0x4000000; // 64 MiB
 
         // Connection parameters
         private readonly ConnectOptions _options;
-        private readonly byte[] _receiveBuffer = new byte[MAXMessageSize];
+        private byte[] _receiveBuffer = new byte[InitialReceiveBufferSize];
         private readonly ConcurrentQueue<Action> dispatchQueue = new();
 
         protected ClientWebSocket Ws = new();
@@ -352,10 +354,10 @@ namespace SpacetimeDB
                     var count = receiveResult.Count;
                     while (receiveResult.EndOfMessage == false)
                     {
-                        if (count >= MAXMessageSize)
+                        if (count >= MaxMessageSize)
                         {
                             // TODO: Improve this, we should allow clients to receive messages of whatever size
-                            var closeMessage = $"Maximum message size: {MAXMessageSize} bytes.";
+                            var closeMessage = $"Maximum message size: {MaxMessageSize} bytes.";
                             await Ws.CloseAsync(WebSocketCloseStatus.MessageTooBig, closeMessage,
                                 CancellationToken.None);
                             if (OnClose != null)
@@ -365,8 +367,9 @@ namespace SpacetimeDB
                             return;
                         }
 
+                        EnsureReceiveCapacity(count);
                         receiveResult = await Ws.ReceiveAsync(
-                            new ArraySegment<byte>(_receiveBuffer, count, MAXMessageSize - count),
+                            new ArraySegment<byte>(_receiveBuffer, count, _receiveBuffer.Length - count),
                             CancellationToken.None);
                         count += receiveResult.Count;
                     }
@@ -385,6 +388,27 @@ namespace SpacetimeDB
                 }
             }
 #endif
+        }
+
+        internal static int NextReceiveBufferSize(int currentSize, int bytesUsed)
+        {
+            if (bytesUsed < currentSize || currentSize >= MaxMessageSize)
+            {
+                return currentSize;
+            }
+
+            return currentSize <= MaxMessageSize / 2
+                ? currentSize * 2
+                : MaxMessageSize;
+        }
+
+        private void EnsureReceiveCapacity(int bytesUsed)
+        {
+            var nextSize = NextReceiveBufferSize(_receiveBuffer.Length, bytesUsed);
+            if (nextSize != _receiveBuffer.Length)
+            {
+                Array.Resize(ref _receiveBuffer, nextSize);
+            }
         }
 
         /// <summary>
