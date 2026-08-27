@@ -386,9 +386,7 @@ public static class Module
     {
         foreach (var route in router.GetRoutes())
         {
-            if (
-                !moduleDef.HasHttpHandler(route.HandlerFunction)
-            )
+            if (!moduleDef.HasHttpHandler(route.HandlerFunction))
             {
                 throw new ArgumentException(
                     $"HTTP router references unknown handler `{route.HandlerFunction}`",
@@ -549,9 +547,12 @@ public static class Module
     )
     {
         var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
-        responseSink.Write(IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire));
+        responseSink.Write(
+            IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
+        );
         responseBodySink.Write(responseBody);
     }
+
     public static IReducerContext CreateReducerContext(
         ulong sender_0,
         ulong sender_1,
