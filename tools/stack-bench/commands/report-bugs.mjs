@@ -41,6 +41,20 @@ const VAGUE = new Set([
   'the feature could not be reached at all',
   'the app did not respond in time',
 ]);
+const REPAIR_HISTORY_LIMIT = 5;
+
+function compactRepairHistory(history) {
+  const distinct = new Map();
+  for (const item of history) {
+    const failures = Array.isArray(item?.remainingFailures)
+      ? [...new Set(item.remainingFailures)].sort() : [];
+    const key = failures.length ? JSON.stringify(failures) : `round:${item?.round}`;
+    distinct.delete(key);
+    distinct.set(key, item);
+  }
+  return [...distinct.values()].slice(-REPAIR_HISTORY_LIMIT);
+}
+
 let vagueBugs = 0;
 const bugs = [];
 
@@ -124,14 +138,18 @@ const lines = [
 ];
 
 if (args.history.length) {
+  const history = compactRepairHistory(args.history);
   lines.push('## Earlier repair results', '');
-  lines.push('These earlier rounds did not complete the repair:', '');
-  for (const item of args.history) {
+  lines.push('The latest result for each recent failure set is shown:', '');
+  for (const item of history) {
     const before = `${item.beforeScore}/${item.beforeMax}`;
     const after = `${item.afterScore}/${item.afterMax}`;
     const remaining = Array.isArray(item.remainingFailures) && item.remainingFailures.length
       ? item.remainingFailures.join(', ') : 'not recorded';
     lines.push(`- Round ${item.round}: ${before} to ${after}; ${item.result}; remaining: ${remaining}`);
+  }
+  if (args.history.length > history.length) {
+    lines.push(`- ${args.history.length - history.length} older or duplicate result(s) omitted`);
   }
   lines.push('', 'Use the current source as the starting point. Do not repeat an earlier',
     'approach only because a warm local check appeared to pass.', '');

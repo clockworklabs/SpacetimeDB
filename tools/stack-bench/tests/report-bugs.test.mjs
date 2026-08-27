@@ -187,8 +187,12 @@ test('repair feedback states clean authority and summarizes earlier failed round
   try {
     const app = join(root, 'app');
     writeGrade(app, 'failed', 'the owner check still failed');
-    const history = [{ round: 1, beforeScore: 4, beforeMax: 6, afterScore: 4,
-      afterMax: 6, result: 'kept with no score gain', remainingFailures: ['accounts/owner'] }];
+    const history = [
+      { round: 1, beforeScore: 4, beforeMax: 6, afterScore: 4,
+        afterMax: 6, result: 'kept with no score gain', remainingFailures: ['accounts/owner'] },
+      { round: 2, beforeScore: 4, beforeMax: 6, afterScore: 4,
+        afterMax: 6, result: 'kept with no score gain', remainingFailures: ['accounts/owner'] },
+    ];
     const archive = join(app, 'stack-bench', 'records', 'bug-report-round2.md');
     const reported = spawnSync(process.execPath,
       [CLI, '--app', app, '--history-json', JSON.stringify(history), '--archive', archive],
@@ -196,7 +200,9 @@ test('repair feedback states clean authority and summarizes earlier failed round
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /clean database reset and a fresh/);
-    assert.match(repair, /Round 1: 4\/6 to 4\/6/);
+    assert.doesNotMatch(repair, /Round 1:/);
+    assert.match(repair, /Round 2: 4\/6 to 4\/6/);
+    assert.match(repair, /1 older or duplicate result/);
     assert.match(repair, /accounts\/owner/);
     assert.match(repair, /warm local check/);
     assert.equal(readFileSync(archive, 'utf8'), repair);
