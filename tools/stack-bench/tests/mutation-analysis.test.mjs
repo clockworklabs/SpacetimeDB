@@ -126,6 +126,17 @@ test('recipe-bound mutation grading excludes zero-point controls', () => {
   ]);
 });
 
+test('recipe-bound mutation grading keeps only checks selected for the run', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@1.0.0');
+  assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
+    join(track.dir, 'scenarios', '02-strengthened-1.4.0.json'), [
+      'ecommerce.inventory-operations.warehouse-transfer.2a',
+    ]), [
+    'ecommerce.inventory-operations.warehouse-transfer.2a',
+  ]);
+});
+
 test('a mutation can declare exact targets across multiple features', () => {
   const crossFeature = {
     id: 'cross-feature', file: 'src/app.ts', find: 'correct', replace: 'broken',

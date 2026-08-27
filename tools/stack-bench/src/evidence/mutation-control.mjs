@@ -31,6 +31,10 @@ export function mutationControlArgv(args, appDir, url, track) {
   const recipeTask = args.recipeTasks?.get(level)?.agentRequest
     ?? args.recipeTasks?.get(level)?.request ?? null;
   const recipe = agentRecipeIdentity(args.recipe, recipeTask);
+  const selection = args.recipeTasks?.get(level)?.selection;
+  const selectedCheckKeys = (selection?.scoredChecks ?? selection?.checks ?? [])
+    .map(check => typeof check === 'string' ? check : check?.stableKey)
+    .filter(Boolean);
   return [join(STACK_BENCH_ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
     '--url', url, '--mutations', args.mutations, '--backend', args.backend,
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
@@ -48,6 +52,7 @@ export function mutationControlArgv(args, appDir, url, track) {
       '--max-runtime-minutes', String(args.mutationMaxRuntimeMinutes),
     ] : []),
     ...(args.mutationImageId ? ['--image-id', args.mutationImageId] : []),
+    ...selectedCheckKeys.flatMap(stableKey => ['--selected-check', stableKey]),
     ...(recipe ? ['--recipe', recipe] : [])];
 }
 

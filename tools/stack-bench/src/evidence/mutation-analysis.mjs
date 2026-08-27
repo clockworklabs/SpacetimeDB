@@ -42,13 +42,16 @@ export function groupMutationsByScenario(manifest) {
   return groups;
 }
 
-export function releaseScenarioCheckKeys(release, trackDir, scenarioPath) {
+export function releaseScenarioCheckKeys(release, trackDir, scenarioPath,
+  selectedCheckKeys = null) {
   if (!release || !Array.isArray(release.checkCatalog)) {
     throw new Error('recipe-bound mutation grading requires a compiled release check catalog');
   }
   const selectedScenario = resolve(scenarioPath);
+  const selected = selectedCheckKeys === null ? null : new Set(selectedCheckKeys);
   const keys = release.checkCatalog
     .filter(check => Number(check.points) > 0
+      && (selected === null || selected.has(check.stableKey))
       && resolve(trackDir, check.source) === selectedScenario)
     .map(check => check.stableKey);
   if (keys.length === 0) {

@@ -75,6 +75,10 @@ function parseArgs(argv) {
     else if (argv[i] === "--backend") a.backend = argv[++i];
     else if (argv[i] === "--track") a.track = argv[++i];
     else if (argv[i] === "--recipe") a.recipe = argv[++i];
+    else if (argv[i] === "--selected-check") {
+      a.selectedCheckKeys ??= [];
+      a.selectedCheckKeys.push(argv[++i]);
+    }
     else if (argv[i] === "--db-name") a.dbName = argv[++i];
     else if (argv[i] === "--run-index") a.runIndex = argv[++i];
     else if (argv[i] === "--track-slug") a.slug = argv[++i];
@@ -429,7 +433,8 @@ async function main() {
 
   const plans = [...groups].map(([scenarioPath, mutations]) => {
     const selectedCheckKeys = args.recipeRelease
-      ? releaseScenarioCheckKeys(args.recipeRelease, track.dir, scenarioPath) : [];
+      ? releaseScenarioCheckKeys(args.recipeRelease, track.dir, scenarioPath,
+        args.selectedCheckKeys ?? null) : [];
     return { scenarioPath, scenario: scenarioKey(scenarioPath), mutations, selectedCheckKeys,
       checkpoint: checkpointGroup(scenarioPath, mutations, selectedCheckKeys) };
   });

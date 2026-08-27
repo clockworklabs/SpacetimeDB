@@ -29,6 +29,28 @@ test('campaign-bound mutation grading forwards the run level and exact recipe', 
     loadTrack('ecommerce')), /does not match bound task/);
 });
 
+test('mutation grading receives the exact scored checks selected for the run', () => {
+  const manifest = join(ROOT, 'grader', 'mutations', 'mongodb-ecom-l1.json');
+  const args = { out: 'output', mutations: manifest, backend: 'mongodb',
+    track: 'ecommerce', levelList: [3], runIndex: 0, parentAttemptId: 'selected-attempt',
+    recipe: null, recipeTasks: new Map([[3, {
+      request: { schemaVersion: 3,
+        recipe: { id: 'ecommerce.progression-catalog', version: '1.0.0' },
+        selection: {}, task: {} },
+      selection: { scoredChecks: [
+        { stableKey: 'ecommerce.inventory-operations.warehouse-transfer.2a' },
+        { stableKey: 'ecommerce.inventory-operations.stock-conservation.202a' },
+      ] },
+    }]]) };
+  const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
+    loadTrack('ecommerce'));
+  assert.deepEqual(argv.flatMap((value, index) => value === '--selected-check'
+    ? [argv[index + 1]] : []), [
+    'ecommerce.inventory-operations.warehouse-transfer.2a',
+    'ecommerce.inventory-operations.stock-conservation.202a',
+  ]);
+});
+
 test('mutation control timeout follows its explicit runtime budget', () => {
   assert.equal(mutationControlTimeoutMs({ mutations: [] }), 80 * 60_000);
   assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 35 }, () => ({})) }),
