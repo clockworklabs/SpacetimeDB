@@ -490,7 +490,9 @@ fn previous_equivalent_run() -> Result<Option<WorkflowRun>> {
         if run
             .head_commit
             .as_ref()
+            // N.B. without checking this before the below condition, we can trigger a ton of API requests
             .is_some_and(|commit| commit.tree_id == current_tree)
+            // N.B. This condition excludes us finding the _current_ workflow
             && (run.conclusion.as_deref() == Some("success") || has_original_failure(PUBLIC_REPO, run.id)?)
         {
             return Ok(Some(run));
