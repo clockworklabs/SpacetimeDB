@@ -1,17 +1,13 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use clap::Parser;
 use duct::cmd;
 use std::{env, path::PathBuf};
 
 /// Checks that a module builds with the latest compatible dependencies.
 #[derive(Parser)]
-struct Cli {
-    /// Do not build the CLI; use the binary selected by SPACETIME_BIN.
-    #[arg(long)]
-    no_build: bool,
-}
+struct Cli {}
 
 fn target_dir() -> PathBuf {
     match env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
@@ -22,17 +18,13 @@ fn target_dir() -> PathBuf {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    Cli::parse();
 
     // Build the CLI before updating the lockfile so a newly published incompatible dependency
     // cannot prevent us from exercising the fresh module dependency graph.
-    let cli_path = if cli.no_build {
+    let cli_path = if env::var_os("SPACETIME_BIN").is_some() {
         ci_common::require_spacetime_bin()?
     } else {
-        ensure!(
-            env::var_os("SPACETIME_BIN").is_none(),
-            "SPACETIME_BIN requires --no-build"
-        );
         cmd!("cargo", "build", "-vv", "-p", "spacetimedb-cli").run()?;
         target_dir()
             .join("debug/spacetimedb-cli")

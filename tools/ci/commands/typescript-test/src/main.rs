@@ -1,25 +1,16 @@
 #![allow(clippy::disallowed_macros)]
-use anyhow::{bail, ensure, Result};
+use anyhow::{bail, Result};
 use ci_common::pnpm;
 use clap::Parser;
 
 /// Runs TypeScript workspace tests and template build checks.
 #[derive(Parser)]
-struct Cli {
-    /// Do not build CLI and standalone; use the binaries selected by SPACETIME_BIN.
-    #[arg(long)]
-    no_build: bool,
-}
+struct Cli {}
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-    if cli.no_build {
+    Cli::parse();
+    if std::env::var_os("SPACETIME_BIN").is_some() {
         ci_common::require_runtime()?;
-    } else {
-        ensure!(
-            std::env::var_os("SPACETIME_BIN").is_none(),
-            "SPACETIME_BIN requires --no-build"
-        );
     }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;

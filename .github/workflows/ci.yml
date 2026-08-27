@@ -564,7 +564,7 @@ jobs:
       - name: Run tests
         run: |
           source ~/emsdk/emsdk_env.sh
-          cargo ci test --no-build
+          cargo ci test
 
       - name: Upload timing reports
         if: always()
@@ -717,7 +717,7 @@ jobs:
       - *extract-build-artifacts
 
       - name: Build module with latest compatible dependencies
-        run: cargo ci module-latest-deps --no-build
+        run: cargo ci module-latest-deps
 
   publish_checks:
     needs: [merge_queue_noop]
@@ -1471,7 +1471,7 @@ jobs:
       - *extract-build-artifacts
 
       - name: Run TypeScript tests
-        run: cargo ci typescript-test --no-build
+        run: cargo ci typescript-test
 
       - name: Upload timing reports
         if: always()

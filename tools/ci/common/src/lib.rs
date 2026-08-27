@@ -24,7 +24,7 @@ pub fn repo_root() -> PathBuf {
 pub fn require_spacetime_bin() -> Result<PathBuf> {
     let path = env::var_os("SPACETIME_BIN")
         .map(PathBuf::from)
-        .context("--no-build requires SPACETIME_BIN")?;
+        .context("SPACETIME_BIN is not set")?;
     ensure!(
         path.is_absolute(),
         "SPACETIME_BIN must be an absolute path, got {}",
