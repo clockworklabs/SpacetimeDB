@@ -141,6 +141,9 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
       documents: {} },
   } }, '/campaign/attempt', 0, '/campaign/plan.json'), /has no guidance document/);
   assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
+  const admitted = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
+    '/campaign/plan.json', null, 'admission-1');
+  assert.equal(admitted[admitted.indexOf('--campaign-admission-id') + 1], 'admission-1');
 });
 
 test('dependency attempts pass separate catalog and policy identities with no level range', () => {

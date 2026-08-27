@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 
-import { currentEngineIdentity, emptyArtifactIdentities, readArtifact, readArtifactPayload,
+import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeArtifact } from '../evidence/artifacts.mjs';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
 import { compileCampaignFile } from './campaign-compiler.mjs';
@@ -24,6 +24,7 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { aggregateRunOutcome } from '../evidence/outcomes.mjs';
+import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
@@ -45,7 +46,7 @@ function contained(root, path, label) {
 }
 
 export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = null,
-  progressionResumeFrom = null) {
+  progressionResumeFrom = null, campaignAdmissionId = null) {
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
@@ -71,6 +72,12 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
   args.push('--campaign-file', resolve(campaignPlanPath),
     '--campaign-sha256', plan.contentSha256,
     '--campaign-attempt-id', attempt.id);
+  if (campaignAdmissionId !== null) {
+    if (typeof campaignAdmissionId !== 'string' || !campaignAdmissionId) {
+      throw new Error(`attempt ${attempt.id} has an invalid campaign admission id`);
+    }
+    args.push('--campaign-admission-id', campaignAdmissionId);
+  }
   if (hasFeatureCatalog) {
     if (canonicalDefinitionJson(attempt.featureCatalog)
       !== canonicalDefinitionJson(plan.featureCatalog?.identity)) {
@@ -558,86 +565,6 @@ export function campaignSlotEnvironment(env, stack, runIndex) {
   return executionEnv;
 }
 
-function validateCampaignAdmission(input, plan, directory) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new Error('campaign admission payload must be an object');
-  }
-  const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
-    'ok', 'runtime', 'agents', 'conditions', 'reports']);
-  for (const key of Object.keys(input)) if (!fields.has(key)) throw new Error(`campaign admission.${key} is unknown`);
-  if (input.schemaVersion !== 1 || input.campaignId !== plan.id
-    || input.campaignSha256 !== plan.contentSha256
-    || typeof input.createdAt !== 'string' || Number.isNaN(Date.parse(input.createdAt))
-    || typeof input.ok !== 'boolean') throw new Error('campaign admission identity or metadata is invalid');
-  if (canonicalDefinitionJson(input.runtime) !== canonicalDefinitionJson(plan.definition.runtime)) {
-    throw new Error('campaign admission runtime does not match the compiled plan');
-  }
-  const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-    identity: agent.identity }));
-  if (canonicalDefinitionJson(input.agents) !== canonicalDefinitionJson(expectedAgents)) {
-    throw new Error('campaign admission agents do not match the compiled plan');
-  }
-  if (canonicalDefinitionJson(input.conditions) !== canonicalDefinitionJson(plan.conditions)) {
-    throw new Error('campaign admission conditions do not match the compiled plan');
-  }
-  if (!Array.isArray(input.reports)) throw new Error('campaign admission reports must be an array');
-  const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
-  if (input.reports.length !== adapters.length * plan.summary.parallelism) {
-    throw new Error('campaign admission reports are incomplete');
-  }
-  const expectedBackends = plan.stacks.map(stack => stack.id);
-  const expectedResultsDir = resolve(directory);
-  for (const adapter of adapters) {
-    for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
-      const matches = input.reports.filter(report => report?.request?.agentAdapter === adapter
-        && report?.request?.runIndex === runIndex);
-      if (matches.length !== 1) {
-        throw new Error(`campaign admission must contain one ${adapter} report for run slot ${runIndex}`);
-      }
-      const report = matches[0];
-      if (report.schemaVersion !== 1 || typeof report.ok !== 'boolean' || !Array.isArray(report.checks)
-        || !report.summary || typeof report.summary !== 'object'
-        || !report.checks.every(check => check && typeof check === 'object'
-          && typeof check.id === 'string' && ['pass', 'warn', 'fail'].includes(check.status)
-          && typeof check.summary === 'string')
-        || report.summary.passed !== report.checks.filter(check => check.status === 'pass').length
-        || report.summary.failed !== report.checks.filter(check => check.status === 'fail').length
-        || report.summary.warnings !== report.checks.filter(check => check.status === 'warn').length
-        || report.ok !== !report.checks.some(check => check.status === 'fail')) {
-        throw new Error(`campaign admission report for ${adapter} is malformed`);
-      }
-      const request = report.request;
-      if (canonicalDefinitionJson(request.backends) !== canonicalDefinitionJson(expectedBackends)
-        || request.track !== plan.definition.track
-        || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
-        || request.runIndex !== runIndex
-        || canonicalDefinitionJson(request.packs)
-          !== canonicalDefinitionJson(plan.definition.selection.packs ?? [])
-        || canonicalDefinitionJson(request.checks)
-          !== canonicalDefinitionJson(plan.definition.selection.checks ?? [])
-        || request.smoke !== true
-        || (plan.definition.runtime.buildImage !== null
-          && request.image !== plan.definition.runtime.buildImage)
-        || resolve(request.resultsDir) !== expectedResultsDir) {
-        throw new Error(`campaign admission report for ${adapter} does not match the compiled scope`);
-      }
-    }
-  }
-  if (input.ok !== input.reports.every(report => report.ok)) {
-    throw new Error('campaign admission verdict does not match its reports');
-  }
-  return structuredClone(input);
-}
-
-function readCampaignAdmission(directory, id, plan) {
-  const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');
-  const artifact = readArtifact(path, { expectedKind: 'campaign_admission', expectedId: id });
-  if (artifact.identities.experiment?.sha256 !== plan.contentSha256) {
-    throw new Error(`campaign admission ${id} has the wrong experiment identity`);
-  }
-  return validateCampaignAdmission(artifact.payload, plan, directory);
-}
-
 function assertAdmissionReferences(plan, directory, state) {
   const ids = [...new Set(state.attempts.flatMap(attempt =>
     attempt.executions.map(execution => execution.admissionId)))];
@@ -863,7 +790,7 @@ export async function executeCampaign(campaignFile, directory,
         attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan,
           claim.attempt.mode?.id !== 'dependency' || claim.resumeFrom === null ? null
             : contained(initialized.paths.root, claim.resumeFrom,
-              'progression resume directory')), {
+              'progression resume directory'), admission.id), {
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },

@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
   validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
-import { attemptArgv } from '../src/campaigns/campaign-runner.mjs';
+import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
@@ -213,6 +213,27 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
     changedParent[changedParent.indexOf('--parent-attempt-id') + 1] = 'different-attempt';
     assert.throws(() => parseArgs(['node', ...changedParent]),
       /does not match the requested campaign attempt/);
+
+    const now = new Date().toISOString();
+    const admission = runCampaignAdmission(plan, root, {
+      now, uuid: () => 'bench-input', env: {},
+      preflight: request => ({
+        schemaVersion: 1,
+        generatedAt: now,
+        request: { backends: request.backends, track: request.track, levels: request.levelList,
+          runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+          packs: request.packIds, checks: request.checkKeys, image: request.image,
+          resultsDir: request.resultsDir, smoke: request.smoke },
+        ok: true,
+        summary: { passed: 1, failed: 0, warnings: 0 },
+        checks: [{ id: 'smoke.container', status: 'pass', summary: 'passed' }],
+      }),
+    });
+    const admittedArgv = attemptArgv(plan, attempt, join(root, 'admitted-result'), 0,
+      planPath, null, admission.id);
+    const admittedArgs = parseArgs(['node', ...admittedArgv]);
+    assert.equal(admittedArgs.campaignAdmission.id, admission.id);
+    assert.equal(admittedArgs.campaignAdmission.reusable, true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

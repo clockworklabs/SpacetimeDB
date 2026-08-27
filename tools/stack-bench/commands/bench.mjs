@@ -64,6 +64,8 @@ import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection 
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { campaignAdmissionSmokeReuse, readCampaignAdmission }
+  from '../src/campaigns/campaign-admission.mjs';
 import { gradingRunTimeoutMs, selectedGradingSourceCount }
   from '../src/runtime/grading-timeout.mjs';
 
@@ -88,6 +90,7 @@ export function parseArgs(argv) {
       case '--dependency-policy-sha256': a.dependencyPolicySha256 = argv[++i]; break;
       case '--campaign-sha256': a.campaignSha256 = argv[++i]; break;
       case '--campaign-attempt-id': a.campaignAttemptId = argv[++i]; break;
+      case '--campaign-admission-id': a.campaignAdmissionId = argv[++i]; break;
       case '--progression-resume-from': a.progressionResumeFrom = resolve(argv[++i]); break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -166,7 +169,7 @@ export function parseArgs(argv) {
     throw new Error('--campaign-file requires --campaign-sha256 and --campaign-attempt-id');
   }
   if (!a.campaignFile && (a.campaignSha256 || a.campaignAttemptId
-    || a.featureCatalogSha256 || a.dependencyPolicySha256)) {
+    || a.campaignAdmissionId || a.featureCatalogSha256 || a.dependencyPolicySha256)) {
     throw new Error('campaign binding requires --campaign-file');
   }
   if (a.progressionResumeFrom && !a.campaignFile) {
@@ -222,6 +225,21 @@ export function parseArgs(argv) {
     a.experimentIdentity = {
       id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
     };
+    if (a.campaignAdmissionId) {
+      const admission = readCampaignAdmission(dirname(a.campaignFile),
+        a.campaignAdmissionId, plan);
+      const image = plan.definition.runtime.buildImage
+        ?? process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
+      a.campaignAdmission = {
+        id: a.campaignAdmissionId,
+        ...campaignAdmissionSmokeReuse(admission, {
+          agentAdapter: a.agentAdapter,
+          runIndex: a.runIndex,
+          backend: a.backend,
+          image,
+        }),
+      };
+    }
     a.runMode = structuredClone(attempt.mode);
     if (plan.featureCatalog) {
       a.featureCatalog = validateFeatureCatalogInput(plan.featureCatalog);
@@ -732,6 +750,9 @@ async function main() {
   // The deterministic adapter/stack is the model-free unit loop. Real runs
   // prove the exact requested scope, engine, image, credentials, storage and
   // ports before the sandbox probe or any paid coding session begins.
+  const admittedSmoke = args.campaignAdmission?.reusable === true
+    ? { id: args.campaignAdmission.id, createdAt: args.campaignAdmission.createdAt }
+    : null;
   const preflight = args.backend === 'stub' ? null : runPreflight({
     backends: [args.backend], track: args.track, levels: args.levels,
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
@@ -740,7 +761,8 @@ async function main() {
     featureCatalog: args.featureCatalog ?? null,
     mode: args.runMode ?? null,
     agentSkills: args.skills ?? null,
-    packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
+    packIds: args.packIds, checkKeys: args.checkKeys, smoke: admittedSmoke === null,
+    admittedSmoke,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
     image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
     resultsDir: resolve(args.out ?? process.env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')),

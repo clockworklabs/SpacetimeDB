@@ -91,6 +91,30 @@ test('preflight does not count Docker info latency as clock skew', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('an admitted campaign smoke skips only the duplicate container run', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-admitted-'));
+  try {
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      if (args[0] === 'run') throw new Error('duplicate container smoke ran');
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const admittedSmoke = { id: 'admission-1', createdAt: '2026-08-12T12:00:00.000Z' };
+    const report = runPreflight({ ...request(root), smoke: false, admittedSmoke }, {
+      run, now: Date.parse('2026-08-12T12:00:00.100Z'), env: {}, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
+    });
+    assert.equal(report.checks.find(check => check.id === 'smoke.admission').status, 'pass');
+    assert.equal(report.checks.some(check => check.id === 'smoke.container'), false);
+    assert.equal(report.checks.some(check => check.id === 'outbound.container'), false);
+    assert.deepEqual(report.request.admittedSmoke, admittedSmoke);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('preflight validates campaign-owned dependency selections through the progression graph', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-progression-'));
   try {

@@ -376,7 +376,11 @@ export function runPreflight(request, dependencies = {}) {
     }
   }
 
-  if (!request.smoke) add('outbound.container', 'warn',
+  if (!request.smoke && request.admittedSmoke) {
+    add('smoke.admission', 'pass',
+      `Container smoke was admitted by ${request.admittedSmoke.id}`,
+      null, { admission: request.admittedSmoke });
+  } else if (!request.smoke) add('outbound.container', 'warn',
     'Container outbound access and result-volume persistence were not exercised',
     'Run the same command with --smoke before a paid campaign.');
 
@@ -527,7 +531,8 @@ export function runPreflight(request, dependencies = {}) {
       requestedScopeCount: request.requestedScopes?.length ?? 0,
       image: request.image, resultsDir: request.resultsDir,
       agentSkills: request.agentSkills ?? null,
-      smoke: request.smoke },
+      smoke: request.smoke,
+      admittedSmoke: request.admittedSmoke ?? null },
     ok: !checks.some(check => check.status === 'fail'),
     summary: { passed: checks.filter(check => check.status === 'pass').length,
       failed: checks.filter(check => check.status === 'fail').length,
