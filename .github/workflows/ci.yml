@@ -200,6 +200,7 @@ jobs:
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
