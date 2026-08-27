@@ -15,7 +15,7 @@ const PUBLIC_REPO: &str = "clockworklabs/SpacetimeDB";
 const PRIVATE_REPO: &str = "clockworklabs/SpacetimeDBPrivate";
 const PRIVATE_WORKFLOW: &str = "ci.yml";
 const PRIVATE_DEFAULT_BRANCH: &str = "master";
-const REUSE_FAILURE_STEP: &str = "Report reused CI failure on this commit"; // Must match ci.yml.
+const REUSE_JOB: &str = "Merge queue no-op/reuse"; // Must match ci.yml.
 
 /// Coordinates CI workflow runs.
 #[derive(Parser)]
@@ -158,11 +158,24 @@ fn workflow_run(repo: &str, run_id: u64) -> Result<WorkflowRunStatus> {
     get(&format!("/repos/{repo}/actions/runs/{run_id}"))
 }
 
-fn rerun_failed_jobs(repo: &str, run_id: u64) -> Result<()> {
-    cmd!("gh", "run", "rerun", run_id.to_string(), "--failed", "--repo", repo)
+fn rerun_failed_jobs(repo: &str, run: &SelectedRun) -> Result<SelectedRun> {
+    cmd!("gh", "run", "rerun", run.id.to_string(), "--failed", "--repo", repo)
         .run()
-        .with_context(|| format!("failed to rerun unsuccessful jobs in {repo} run {run_id}"))?;
-    Ok(())
+        .with_context(|| format!("failed to rerun unsuccessful jobs in {repo} run {}", run.id))?;
+    for _ in 0..30 {
+        let current = workflow_run(repo, run.id)?;
+        if current.run_attempt > run.attempt {
+            return Ok(SelectedRun {
+                id: current.id,
+                status: current.status,
+                conclusion: current.conclusion,
+                attempt: current.run_attempt,
+                url: current.html_url,
+            });
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    bail!("timed out waiting for {repo} run {} to start its rerun", run.id)
 }
 
 fn dispatch_workflow(public_sha: &str) -> Result<DispatchResponse> {
@@ -280,13 +293,6 @@ struct JobsPage {
 
 #[derive(Deserialize)]
 struct Job {
-    conclusion: Option<String>,
-    #[serde(default)]
-    steps: Vec<JobStep>,
-}
-
-#[derive(Deserialize)]
-struct JobStep {
     name: String,
     conclusion: Option<String>,
 }
@@ -423,29 +429,10 @@ fn prepare_existing_run(run: WorkflowRun) -> Result<CoordinatedRun> {
     }
 
     println!("Re-running unsuccessful jobs in the existing private run.");
-    rerun_failed_jobs(PRIVATE_REPO, selected.id)?;
     Ok(CoordinatedRun {
-        selected: wait_for_rerun(PRIVATE_REPO, &selected)?,
+        selected: rerun_failed_jobs(PRIVATE_REPO, &selected)?,
         did_start: true,
     })
-}
-
-/// Waits for GitHub to expose the new attempt so callers do not receive the stale completed result.
-fn wait_for_rerun(repo: &str, run: &SelectedRun) -> Result<SelectedRun> {
-    for _ in 0..30 {
-        let current = workflow_run(repo, run.id)?;
-        if current.run_attempt > run.attempt {
-            return Ok(SelectedRun {
-                id: current.id,
-                status: current.status,
-                conclusion: current.conclusion,
-                attempt: current.run_attempt,
-                url: current.html_url,
-            });
-        }
-        std::thread::sleep(Duration::from_secs(2));
-    }
-    bail!("timed out waiting for {repo} run {} to start its rerun", run.id)
 }
 
 fn wait_for_completion(repo: &str, mut run: SelectedRun) -> Result<SelectedRun> {
@@ -464,17 +451,20 @@ fn has_original_failure(repo: &str, run_id: u64) -> Result<bool> {
     let pages: Vec<JobsPage> = get_paginated(&format!(
         "/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
     ))?;
-    Ok(pages.into_iter().flat_map(|page| page.jobs).any(|job| {
-        let reports_reused_failure = job
-            .steps
-            .iter()
-            .any(|step| step.name == REUSE_FAILURE_STEP && step.conclusion.as_deref() == Some("failure"));
-        !reports_reused_failure
-            && job
-                .conclusion
-                .as_deref()
-                .is_some_and(|conclusion| !matches!(conclusion, "success" | "skipped" | "neutral"))
-    }))
+    let mut reuse_job_failed = false;
+    let mut other_job_failed = false;
+    for job in pages.into_iter().flat_map(|page| page.jobs) {
+        let failed = job
+            .conclusion
+            .as_deref()
+            .is_some_and(|conclusion| !matches!(conclusion, "success" | "skipped" | "neutral"));
+        if failed && job.name == REUSE_JOB {
+            reuse_job_failed = true;
+        } else if failed {
+            other_job_failed = true;
+        }
+    }
+    Ok(!reuse_job_failed && other_job_failed)
 }
 
 fn previous_equivalent_run() -> Result<Option<WorkflowRun>> {
@@ -487,6 +477,7 @@ fn previous_equivalent_run() -> Result<Option<WorkflowRun>> {
     .workflow_runs;
     runs.sort_by(|left, right| right.created_at.cmp(&left.created_at));
     for run in runs {
+        // Check the tree first: `has_original_failure` makes another API request.
         if run
             .head_commit
             .as_ref()
@@ -509,8 +500,7 @@ fn coordinate_merge_queue_reuse() -> Result<()> {
     println!("Found equivalent merge queue run: {}", run.html_url);
     let mut selected = wait_for_completion(PUBLIC_REPO, run.into())?;
     if should_rerun_failed_jobs(&selected) {
-        rerun_failed_jobs(PUBLIC_REPO, selected.id)?;
-        selected = wait_for_completion(PUBLIC_REPO, wait_for_rerun(PUBLIC_REPO, &selected)?)?;
+        selected = wait_for_completion(PUBLIC_REPO, rerun_failed_jobs(PUBLIC_REPO, &selected)?)?;
     }
     write_github_output("reuse_failed", selected.conclusion.as_deref() != Some("success"))?;
     write_github_output("reuse", true)?;

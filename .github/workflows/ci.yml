@@ -30,6 +30,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      # A reused failure also skips fresh jobs; the final step reports that failure on this commit.
       skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reuse == 'true' }}
     steps:
       - name: Checkout merge queue commit
