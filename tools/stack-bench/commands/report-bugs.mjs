@@ -3,7 +3,7 @@
 // Selectors, test mechanics, local topology and raw paths are deliberately
 // removed so a fix cannot overfit the harness instead of repairing the app.
 
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.mjs';
@@ -56,14 +56,15 @@ for (const file of readdirSync(resultsDir).filter(name => /^grading-.*\.json$/.t
       const evidence = criterionEvidence(criterion);
       if (!evidenceIsRepairable(evidence)) continue;
       const observed = renderRepairDiagnostic(evidence);
-      if (VAGUE.has(observed)) vagueBugs += 1;
+      const vague = VAGUE.has(observed);
+      if (vague) vagueBugs += 1;
       bugs.push({
         area: sanitiseDiagnostic(feature.name, 120),
         expected: sanitiseDiagnostic(criterion.desc ?? criterion.id, 300),
         observed,
         consoleErrors: (feature.consoleErrors ?? []).slice(0, 3)
           .map(sanitiseConsoleError).filter(Boolean),
-        contract: false,
+        contract: false, vague,
       });
     }
   }
@@ -80,7 +81,7 @@ if (existsSync(lintPath)) {
       expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use data-testid="${result.id}"`,
       observed: sanitiseDiagnostic(result.detail
         ?? `no visible element with data-testid="${result.id}" was found after a clean reset`, 500),
-      contract: true,
+      contract: true, vague: false,
     });
   }
 }
@@ -99,7 +100,7 @@ if (existsSync(bundlePath)) {
       expected,
       observed: sanitiseDiagnostic(bundle.outcome.reason, 500),
       consoleErrors: [],
-      contract: false,
+      contract: false, vague: false,
     });
   }
 }
@@ -109,8 +110,9 @@ if (bugs.length === 0) {
   process.exit(3);
 }
 
-const behavioural = bugs.filter(bug => !bug.contract);
-const contractFailures = bugs.filter(bug => bug.contract);
+const repairBugs = bugs.filter(bug => !bug.vague);
+const behavioural = repairBugs.filter(bug => !bug.contract);
+const contractFailures = repairBugs.filter(bug => bug.contract);
 const lines = [
   '# Bug Report',
   '',
@@ -159,21 +161,7 @@ if (contractFailures.length) {
   lines.push('');
 }
 
-const reportText = lines.join('\n');
-writeFileSync(args.out, reportText);
-if (args.archive) {
-  mkdirSync(dirname(args.archive), { recursive: true });
-  writeFileSync(args.archive, reportText);
-}
-
 const vaguePct = Math.round((vagueBugs / bugs.length) * 100);
-console.log(`Wrote ${bugs.length} bug(s) to ${args.out}`);
-console.log(`  diagnostic quality: ${bugs.length - vagueBugs}/${bugs.length} actionable, ${vagueBugs} vague (${vaguePct}%)`);
-if (vaguePct >= 50) {
-  console.log('  !! most of this report says nothing the app can act on.');
-  console.log('     A fix round will pay to rediscover what grading already knew.');
-}
-
 try {
   const bundle = existsSync(bundlePath) ? readArtifact(bundlePath, { expectedKind: 'grade_bundle' }) : null;
   const parentId = bundle?.attempt.id ?? null;
@@ -183,4 +171,19 @@ try {
     identities: bundle?.identities ?? emptyArtifactIdentities(),
     payload: { bugs: bugs.length, vague: vagueBugs, vaguePct },
   });
-} catch { /* BUG_REPORT.md is the required artifact; quality metadata is best effort. */ }
+} catch { /* Quality metadata must not block the repair decision. */ }
+
+console.log(`  diagnostic quality: ${repairBugs.length}/${bugs.length} actionable, ${vagueBugs} vague (${vaguePct}%)`);
+if (repairBugs.length === 0) {
+  rmSync(args.out, { force: true });
+  console.log('No actionable failures. A paid repair was not started.');
+  process.exit(4);
+}
+
+const reportText = lines.join('\n');
+writeFileSync(args.out, reportText);
+if (args.archive) {
+  mkdirSync(dirname(args.archive), { recursive: true });
+  writeFileSync(args.archive, reportText);
+}
+console.log(`Wrote ${repairBugs.length} bug(s) to ${args.out}`);

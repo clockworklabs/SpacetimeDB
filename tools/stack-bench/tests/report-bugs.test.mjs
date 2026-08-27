@@ -50,6 +50,21 @@ test('repair report selection follows typed evidence even when prose claims the 
   }
 });
 
+test('a vague-only report does not authorize a paid repair', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-vague-repair-'));
+  try {
+    const app = join(root, 'app');
+    writeGrade(app, 'failed', '');
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(reported.status, 4, reported.stderr);
+    assert.match(reported.stdout, /No actionable failures/);
+    assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
+    assert.equal(existsSync(join(app, 'stack-bench', 'bug-report-quality.json')), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('repair metadata stays in the harness evidence directory and does not change source identity', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-metadata-'));
   try {

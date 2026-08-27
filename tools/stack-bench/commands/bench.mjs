@@ -1417,6 +1417,10 @@ async function main() {
             `bug-report-l${level}-round${fixRounds + 1}.md`)], { stdio: 'pipe' });
       } catch (err) {
         if (err.status === 3) wroteReport = false;      // nothing failed
+        else if (err.status === 4) {
+          wroteReport = false;
+          repairStopReason = 'no-actionable-findings';
+        }
         else throw err;
       }
       if (!wroteReport) {
