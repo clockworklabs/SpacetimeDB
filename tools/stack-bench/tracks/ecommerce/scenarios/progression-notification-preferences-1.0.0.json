@@ -25,7 +25,7 @@
           "steps": [
             { "do": "reload", "actor": "owner", "settleMs": 3000 },
             { "do": "click", "actor": "owner", "testid": "notification-settings" },
-            { "do": "expect", "actor": "owner", "testid": "notification-order", "contains": "on" }
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "contains": "notifications on" }
           ]
         },
         {

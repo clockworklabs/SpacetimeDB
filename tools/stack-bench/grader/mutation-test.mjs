@@ -36,6 +36,7 @@ import { controlBackend } from "../src/runtime/backend-control.mjs";
 import {
   classifyMutationResult,
   groupMutationsByScenario,
+  isRetryableMutationBaseline,
   mutationFileEdits,
   mutationTargetKeys,
   releaseScenarioCheckKeys,
@@ -355,8 +356,13 @@ async function main() {
       : [];
     console.log(`Baseline (unmutated app, ${scenarioPath})...`);
     await waitForApp(args);
-    const baseline = await grade(args, reportPath);
-    const baselineValidation = validateMutationBaseline(baseline, mutations);
+    let baseline = await grade(args, reportPath);
+    let baselineValidation = validateMutationBaseline(baseline, mutations);
+    if (!baselineValidation.ok && isRetryableMutationBaseline(baselineValidation.issues)) {
+      console.log('  transient baseline failure; retrying once');
+      baseline = await grade(args, reportPath);
+      baselineValidation = validateMutationBaseline(baseline, mutations);
+    }
     if (!baselineValidation.ok) {
       throw new Error(
         `reference baseline is not known-good for ${scenarioPath}: ${

@@ -8,8 +8,13 @@
     {
       "id": 5,
       "name": "Signed-out best sellers",
-      "actors": ["visitor"],
-      "setup": [],
+      "actors": ["buyer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "best-seller-buyer" },
+        { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Webcam", "enter": true, "settleMs": 1500 },
+        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Webcam" } },
+        { "do": "wait", "actor": "buyer", "ms": 1500 }
+      ],
       "criteria": [
         {
           "id": "5d",
@@ -17,7 +22,7 @@
           "points": 1,
           "statedBy": "Signed-out visitors see best sellers",
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "recommended-item", "contains": "Bluetooth Speaker", "within": 10000 }
+            { "do": "expect", "actor": "visitor", "testid": "recommended-item", "contains": "Webcam", "within": 10000 }
           ]
         }
       ]

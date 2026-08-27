@@ -609,15 +609,15 @@
       ]
     },
     {
-      "id": "cancelled-purchases-remain-in-best-sellers",
+      "id": "purchases-do-not-affect-best-sellers",
       "scenario": "tracks/ecommerce/scenarios/02-operational-best-sellers-1.0.0.json",
       "targets": ["ecommerce.inventory-operations.operational-views.5d"],
-      "desc": "Best-seller purchase counts keep cancelled orders, so the cancelled product remains visible to a signed-out visitor.",
+      "desc": "Rank signed-out recommendations without purchase counts.",
       "file": "server/src/index.ts",
       "edits": [
         {
           "find": "      WHERE oi.returned = false AND o.status != 'cancelled'\n      GROUP BY oi.item_id",
-          "replace": "      WHERE oi.returned = false\n      GROUP BY oi.item_id"
+          "replace": "      WHERE FALSE\n      GROUP BY oi.item_id"
         }
       ]
     },
@@ -823,12 +823,12 @@
       "targets": [
         "ecommerce.progression.support-history.support-history-persistence.612a"
       ],
-      "desc": "Do not persist support replies.",
+      "desc": "Hide saved support cases from their owner.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "app.post(\"/api/support/cases/:id/replies\",",
-          "replace": "app.post(\"/api/mutation-disabled-support/cases/:id/replies\","
+          "find": "const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";",
+          "replace": "const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"FALSE\";"
         }
       ]
     },
@@ -943,12 +943,12 @@
       "targets": [
         "ecommerce.progression.notification-preferences.notification-preferences-privacy.630b"
       ],
-      "desc": "Return notifications for all accounts.",
+      "desc": "Save one customer's notification choice to every other account.",
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "account ? deps.pool.query(`SELECT * FROM notification WHERE account_id = $1 ORDER BY created_at DESC`, [account.id]) : { rows: [] },",
-          "replace": "account ? deps.pool.query(`SELECT * FROM notification ORDER BY created_at DESC`) : { rows: [] },"
+          "find": "await deps.pool.query(`UPDATE account SET notify_order = $1, notify_stock = $2 WHERE id = $3`,\n      [order, stock, req.account!.id]);",
+          "replace": "await deps.pool.query(`UPDATE account SET notify_order = $1, notify_stock = $2 WHERE id = $3 OR id != $3`,\n      [order, stock, req.account!.id]);"
         }
       ]
     },
@@ -1159,12 +1159,12 @@
       "id": "progression-review-conflict-is-not-updated",
       "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness-2.4.0.json",
       "targets": ["ecommerce.spec.transactional-integrity.unique-review.6b"],
-      "desc": "Do not update an existing review on conflict.",
-      "file": "server/src/index.ts",
+      "desc": "Render every stored review twice.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
-          "replace": "       ON CONFLICT (item_id, account_id) DO NOTHING`,"
+          "find": "reviews={itemDetail.reviews}",
+          "replace": "reviews={[...itemDetail.reviews, ...itemDetail.reviews]}"
         }
       ]
     },
@@ -1210,7 +1210,10 @@
     {
       "id": "progression-concurrent-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
-      "targets": ["ecommerce.spec.concurrency-safety.duplicate-checkout.203a"],
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
       "desc": "Keep the old cart quantity during concurrent adds.",
       "file": "server/src/progression.ts",
       "edits": [
@@ -1241,8 +1244,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": ".sort((a, b) => a.name.localeCompare(b.name))",
-          "replace": ".sort((a, b) => b.name.localeCompare(a.name))"
+          "find": ".sort((a, b) => b.purchaseCount - a.purchaseCount || a.name.localeCompare(b.name))",
+          "replace": ".sort((a, b) => b.purchaseCount - a.purchaseCount || b.name.localeCompare(a.name))"
         }
       ]
     },

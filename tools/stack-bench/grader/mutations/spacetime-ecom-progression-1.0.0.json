@@ -556,7 +556,8 @@
       "id": "existing-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
       "targets": [
-        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
       ],
       "desc": "The existing cart row is written back without increasing its quantity.",
       "file": "backend/spacetimedb/src/index.ts",
@@ -946,17 +947,17 @@
       ]
     },
     {
-      "id": "cancelled-purchases-remain-in-best-sellers",
+      "id": "purchases-do-not-affect-best-sellers",
       "scenario": "tracks/ecommerce/scenarios/02-operational-best-sellers-1.0.0.json",
       "targets": [
         "ecommerce.inventory-operations.operational-views.5d"
       ],
-      "desc": "Cancellation leaves the purchase count unchanged, so the cancelled product remains in signed-out best sellers.",
+      "desc": "Rank signed-out recommendations without purchase counts.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "    restoreOrderItemStock(ctx, li);\n    decrementPurchaseCount(ctx, li.itemId, li.quantity);",
-          "replace": "    restoreOrderItemStock(ctx, li);\n    // mutant: cancelled purchase remains in best-seller counts"
+          "find": "const purchaseCountOf = (id: bigint) => ctx.db.itemStats.itemId.find(id)?.purchaseCount ?? 0;",
+          "replace": "const purchaseCountOf = (_id: bigint) => 0;"
         }
       ]
     },
@@ -1260,7 +1261,7 @@
       "edits": [
         {
           "find": "for (const row of [...ctx.db.reservation.iter()]) {\n    if (row.expired || row.expiresMicros > now) continue;",
-          "replace": "for (const row of [] as Array<typeof reservation.rowType>) {\n    if (row.expired || row.expiresMicros > now) continue;"
+          "replace": "for (const row of [...ctx.db.reservation.iter()].filter(() => false)) {\n    if (row.expired || row.expiresMicros > now) continue;"
         }
       ]
     },
@@ -1705,17 +1706,17 @@
       ]
     },
     {
-      "id": "cart-view-leaks-another-account",
+      "id": "nonpositive-cart-quantity-is-treated-as-removal",
       "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
       "targets": [
         "ecommerce.spec.access-control.cart-boundary.109b"
       ],
-      "desc": "The cart view returns every account's cart lines.",
+      "desc": "Accept a negative quantity and remove the cart line instead of refusing the request.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "for (const row of ctx.db.cartItem.byAccountItem.filter(accountId)) {",
-          "replace": "for (const row of ctx.db.cartItem.iter()) {"
+          "find": "    if (quantity < 1) throw new SenderError('Quantity must be at least 1.');\n    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });",
+          "replace": "    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    if (quantity < 1) {\n      ctx.db.cartItem.id.delete(existing.id);\n      return;\n    }\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });"
         }
       ]
     }

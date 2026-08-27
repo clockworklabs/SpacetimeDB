@@ -9,7 +9,9 @@
       "id": 3,
       "name": "Buying",
       "actors": ["visitor"],
-      "setup": [],
+      "setup": [
+        { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" }
+      ],
       "criteria": [
         {
           "id": "3a",

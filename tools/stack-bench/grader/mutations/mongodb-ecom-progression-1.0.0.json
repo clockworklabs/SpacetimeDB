@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "72eef561e41cd6f60b62911c1eb6ce2e6e46586633e26c4a0f21fd5a9efa11a9",
+  "fixtureSha256": "812ba1ed7ffd656824995d26137234025b23d0ae9931a28186543b3090836c5c",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "MongoDB mutation candidate for the ecommerce progression catalog through L3. It uses the complete L5 reference app and owns defects by stable check key, independent of run mode and level.",
@@ -291,7 +291,7 @@
       "edits": [
         {
           "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
-          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let ignoreCartCatchup = false;\n    const ignoreCartAfterNetworkRestore = () => { ignoreCartCatchup = true; };\n    window.addEventListener(\"online\", ignoreCartAfterNetworkRestore, { once: true });"
+          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let ignoreCartCatchup = false;\n    socket.on(\"disconnect\", () => { ignoreCartCatchup = true; });"
         },
         {
           "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });",
@@ -300,10 +300,6 @@
         {
           "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
           "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!ignoreCartCatchup) setCart(data); });"
-        },
-        {
-          "find": "    return () => {\n      socket.disconnect();\n    };",
-          "replace": "    return () => {\n      window.removeEventListener(\"online\", ignoreCartAfterNetworkRestore);\n      socket.disconnect();\n    };"
         }
       ]
     },
@@ -313,16 +309,12 @@
       "targets": [
         "ecommerce.spec.access-control.order-ownership.106a"
       ],
-      "desc": "The order-history response and live update return every customer's orders instead of filtering by the authenticated owner.",
+      "desc": "Order history returns every customer's orders instead of filtering by the authenticated owner.",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  const orders = await Order.find({ userId: (req as any).user._id }).sort({ createdAt: -1 });",
+          "find": "  const orders = await Order.find({ userId }).sort({ createdAt: -1 });",
           "replace": "  const orders = await Order.find({}).sort({ createdAt: -1 });"
-        },
-        {
-          "find": "async function broadcastOrders(userId: string) {\n  const orders = await Order.find({ userId }).sort({ createdAt: -1 });",
-          "replace": "async function broadcastOrders(userId: string) {\n  const orders = await Order.find({}).sort({ createdAt: -1 });"
         }
       ]
     },
@@ -705,17 +697,17 @@
       ]
     },
     {
-      "id": "cancelled-purchases-remain-in-best-sellers",
+      "id": "purchases-do-not-affect-best-sellers",
       "scenario": "tracks/ecommerce/scenarios/02-operational-best-sellers-1.0.0.json",
       "targets": [
         "ecommerce.inventory-operations.operational-views.5d"
       ],
-      "desc": "Best-seller purchase counts keep cancelled orders, so the cancelled product remains visible to a signed-out visitor.",
+      "desc": "Rank signed-out recommendations without purchase counts.",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "async function getPurchaseCounts(): Promise<Map<string, number>> {\n  const rows = await Order.aggregate([\n    { $match: { status: { $ne: \"cancelled\" } } },",
-          "replace": "async function getPurchaseCounts(): Promise<Map<string, number>> {\n  const rows = await Order.aggregate([\n    { $match: {} },"
+          "find": "async function getPurchaseCounts(): Promise<Map<string, number>> {\n  const rows = await Order.aggregate([\n    { $match: { status: { $ne: \"cancelled\" } } },\n    { $unwind: \"$items\" },\n    { $match: { \"items.returned\": { $ne: true } } },\n    { $group: { _id: \"$items.itemId\", total: { $sum: \"$items.quantity\" } } },\n  ]);\n  const map = new Map<string, number>();\n  for (const row of rows) map.set(row._id.toString(), row.total);\n  return map;\n}",
+          "replace": "async function getPurchaseCounts(): Promise<Map<string, number>> {\n  return new Map<string, number>();\n}"
         }
       ]
     },
@@ -875,9 +867,13 @@
       "targets": [
         "ecommerce.l3.deferred-access.scheduled-work-access.317a"
       ],
-      "desc": "The admin scheduled-restock cancellation route omits its staff check.",
+      "desc": "Scheduled-restock cancellation routes omit their staff checks.",
       "file": "server/src/progression.ts",
       "edits": [
+        {
+          "find": "  router.delete(\"/scheduled-restocks/:id\", auth, staff, cancelScheduledRestock);",
+          "replace": "  router.delete(\"/scheduled-restocks/:id\", auth, cancelScheduledRestock);"
+        },
         {
           "find": "  adminRouter.delete(\"/scheduled-restocks/:id\", auth, staff, cancelScheduledRestock);",
           "replace": "  adminRouter.delete(\"/scheduled-restocks/:id\", auth, cancelScheduledRestock);"
@@ -1029,8 +1025,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  line.reservationExpiresAt = new Date(Date.now() + 90_000);",
-          "replace": "  line.reservationExpiresAt = line.reservationExpiresAt;"
+          "find": "        $set: { \"items.$.reservationExpiresAt\": new Date(Date.now() + 90_000),\n          inactiveExpiresAt: new Date(Date.now() + 300_000) },",
+          "replace": "        $set: { inactiveExpiresAt: new Date(Date.now() + 300_000) },"
         }
       ]
     },
@@ -1121,7 +1117,7 @@
       "edits": [
         {
           "find": "const item = await Item.create({ name, price, category, variants });",
-          "replace": "const item = await Item.create({ name: `Missing ${name}`, price, category, variants: [] });"
+          "replace": "const item = await Item.create({ name: \"Unavailable product\", price, category, variants: [] });"
         }
       ]
     },
@@ -1146,12 +1142,12 @@
       "targets": [
         "ecommerce.progression.payment-records.payment-records.623b"
       ],
-      "desc": "The customer state repeats every payment record.",
-      "file": "server/src/progression.ts",
+      "desc": "The order response repeats every payment record.",
+      "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "notifications, scheduledRestocks, ledger, reorderRules, activities, payments,",
-          "replace": "notifications, scheduledRestocks, ledger, reorderRules, activities, payments: [...payments, ...payments],"
+          "find": "payments: (byOrder.get(String(order._id)) ?? []).map(payment => payment.toJSON()),",
+          "replace": "payments: [...(byOrder.get(String(order._id)) ?? []), ...(byOrder.get(String(order._id)) ?? [])].map(payment => payment.toJSON()),"
         }
       ]
     },

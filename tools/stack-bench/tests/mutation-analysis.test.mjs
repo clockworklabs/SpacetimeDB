@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
-  mutationFileEdits, validateMutationBaseline, releaseScenarioCheckKeys, resolveMutationFile,
+  mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
+  releaseScenarioCheckKeys, resolveMutationFile,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -128,6 +129,16 @@ test('a mutation baseline must pass every criterion and contain every declared t
   assert.equal(invalid.ok, false);
   assert.deepEqual(invalid.issues.map(issue => issue.kind),
     ['score_not_full', 'inconclusive', 'missing_target']);
+});
+
+test('only transient baseline failures are retried', () => {
+  assert.equal(isRetryableMutationBaseline([
+    { kind: 'score_not_full' }, { kind: 'setup_failure' }, { kind: 'inconclusive' },
+  ]), true);
+  assert.equal(isRetryableMutationBaseline([
+    { kind: 'score_not_full' }, { kind: 'criterion_failure' },
+  ]), false);
+  assert.equal(isRetryableMutationBaseline([{ kind: 'missing_target' }]), false);
 });
 
 test('only a conclusive failure of the declared criterion is a clean kill', () => {

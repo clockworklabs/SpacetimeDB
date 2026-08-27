@@ -384,8 +384,21 @@ async function broadcastCartsContainingItem(itemId: Types.ObjectId) {
 }
 
 async function broadcastOrders(userId: string) {
+  io.to(`user:${userId}`).emit("orders:update", await ordersForUser(userId));
+}
+
+async function ordersForUser(userId: string | Types.ObjectId) {
   const orders = await Order.find({ userId }).sort({ createdAt: -1 });
-  io.to(`user:${userId}`).emit("orders:update", orders.map((o) => o.toJSON()));
+  const payments = await Payment.find({ orderId: { $in: orders.map(order => order._id) } });
+  const byOrder = new Map<string, typeof payments>();
+  for (const payment of payments) {
+    const key = String(payment.orderId);
+    byOrder.set(key, [...(byOrder.get(key) ?? []), payment]);
+  }
+  return orders.map(order => ({
+    ...order.toJSON(),
+    payments: (byOrder.get(String(order._id)) ?? []).map(payment => payment.toJSON()),
+  }));
 }
 
 async function broadcastRecommendedForUser(userId: string) {
@@ -766,8 +779,7 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 app.get("/api/orders", requireAuth, async (req, res) => {
-  const orders = await Order.find({ userId: (req as any).user._id }).sort({ createdAt: -1 });
-  res.json({ orders: orders.map((o) => o.toJSON()) });
+  res.json({ orders: await ordersForUser((req as any).user._id) });
 });
 
 // Gives every unit an order line reserved back to the exact warehouse it was
@@ -976,7 +988,7 @@ app.get("/api/recommended", async (req, res) => {
 // Error handling
 // ---------------------------------------------------------------------------
 
-installProgressionRoutes(app, io, { jwtSecret: JWT_SECRET });
+installProgressionRoutes(app, io, { jwtSecret: JWT_SECRET, ordersForUser });
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
@@ -1011,8 +1023,7 @@ io.on("connection", async (socket) => {
     socket.emit("recommended:update", await getRecommendedItems(userId));
     if (user) {
       socket.emit("cart:update", await getCartLive(userId!));
-      const orders = await Order.find({ userId }).sort({ createdAt: -1 });
-      socket.emit("orders:update", orders.map((o) => o.toJSON()));
+      socket.emit("orders:update", await ordersForUser(userId!));
     }
     if (user?.isAdmin) socket.emit("admin:update", await getAdminOverview());
     if (user?.isStaff || user?.isAdmin) {

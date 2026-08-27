@@ -28,7 +28,10 @@ function publicUser(user: any) {
 }
 
 export function installProgressionRoutes(app: express.Express, io: SocketIOServer,
-  { jwtSecret }: { jwtSecret: string }) {
+  { jwtSecret, ordersForUser }: {
+    jwtSecret: string;
+    ordersForUser: (userId: string | Types.ObjectId) => Promise<any[]>;
+  }) {
   const router = Router();
   const supportRouter = Router();
   const adminRouter = Router();
@@ -251,8 +254,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     }, { upsert: true });
     await recordActivity(req.progressionUser, "refunded support case", ticket.reference);
     changed(String(order.userId));
-    const ownerOrders = await Order.find({ userId: order.userId }).sort({ createdAt: -1 });
-    io.to(`user:${order.userId}`).emit("orders:update", ownerOrders.map(value => value.toJSON()));
+    io.to(`user:${order.userId}`).emit("orders:update", await ordersForUser(order.userId));
     res.json({ ticket, order });
   });
 
@@ -429,8 +431,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
           { $setOnInsert: { userId: order.userId, key: `delivery:${order._id}`, type: "delivery",
             message: `Delivered ${order.items.map(item => item.name).join(", ")}` } }, { upsert: true });
       }
-      const ownerOrders = await Order.find({ userId: order.userId }).sort({ createdAt: -1 });
-      io.to(`user:${order.userId}`).emit("orders:update", ownerOrders.map(value => value.toJSON()));
+      io.to(`user:${order.userId}`).emit("orders:update", await ordersForUser(order.userId));
     }
 
     const expiredCarts = await Cart.find({ items: { $ne: [] }, inactiveExpiresAt: { $lte: now } });

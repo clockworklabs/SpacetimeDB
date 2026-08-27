@@ -161,6 +161,15 @@ export function validateMutationBaseline(report, mutations) {
   return { ok: issues.length === 0, issues };
 }
 
+export function isRetryableMutationBaseline(issues) {
+  const kinds = new Set((issues ?? []).map(issue => issue.kind));
+  if (!kinds.size) return false;
+  if (kinds.has('empty_report') || kinds.has('missing_target') || kinds.has('criterion_failure')) {
+    return false;
+  }
+  return kinds.has('setup_failure') || kinds.has('harness_failure') || kinds.has('inconclusive');
+}
+
 export function classifyMutationResult(baselineReport, mutantReport, mutation) {
   const baseline = indexMutationReport(baselineReport);
   const mutant = indexMutationReport(mutantReport);

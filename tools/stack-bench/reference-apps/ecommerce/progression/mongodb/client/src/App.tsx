@@ -70,6 +70,7 @@ interface OrderT {
   discount?: number;
   refundTotal?: number;
   createdAt: string;
+  payments?: Array<{ id: string; amount: number; status: string }>;
 }
 
 interface UserT {
@@ -748,10 +749,12 @@ export default function App() {
                 </div>
                 <div data-testid="order-discount">{Number(order.discount || 0).toFixed(2)}</div>
                 <div data-testid="order-refund-total">{Number(order.refundTotal || 0).toFixed(2)}</div>
-                <div data-testid="payment-record">
-                  <span data-testid="payment-status">{order.status === "refunded" ? "refunded" : "paid"}</span>
-                  <span data-testid="payment-amount">{order.total.toFixed(2)}</span>
-                </div>
+                {(order.payments ?? []).map((payment) => (
+                  <div data-testid="payment-record" key={payment.id}>
+                    <span data-testid="payment-status">{payment.status}</span>
+                    <span data-testid="payment-amount">{Number(payment.amount).toFixed(2)}</span>
+                  </div>
+                ))}
                 {order.status === "refunded" && order.items.map(line =>
                   <div data-testid="refund-entry" key={`refund-${line.itemId}`}>{line.name}</div>)}
                 <div className="order-item-actions">
