@@ -112,7 +112,7 @@ export function aggregateRunOutcome(levels) {
 }
 
 export function runExitCode(outcome) {
-  return ['harness_failure', 'ungraded'].includes(outcome?.kind) ? 1 : 0;
+  return ['harness_failure', 'ungraded', 'incomplete'].includes(outcome?.kind) ? 1 : 0;
 }
 
 // A ladder level builds on the source produced by the previous level. If that

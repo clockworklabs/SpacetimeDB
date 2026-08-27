@@ -27,11 +27,13 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { emptyArtifactIdentities, readArtifactPayload, writeRunJson } from "../src/evidence/artifacts.mjs";
+import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
+  writeRunJson } from "../src/evidence/artifacts.mjs";
 import { controlBackend } from "../src/runtime/backend-control.mjs";
 import {
   classifyMutationResult,
@@ -51,6 +53,7 @@ import { fetchStatus } from "../src/runtime/readiness.mjs";
 import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
 import { mutationShard } from "../src/evidence/mutation-shards.mjs";
+import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.mjs";
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.mjs";
 
 // Resolve tooling relative to this file so the runner works from any directory.
@@ -78,6 +81,10 @@ function parseArgs(argv) {
     else if (argv[i] === "--parent-attempt-id") a.parentAttemptId = argv[++i];
     else if (argv[i] === "--mutation-shard-index") a.mutationShardIndex = Number(argv[++i]);
     else if (argv[i] === "--mutation-shard-count") a.mutationShardCount = Number(argv[++i]);
+    else if (argv[i] === "--resume-from") a.resumeFrom = resolve(argv[++i]);
+    else if (argv[i] === "--checkpoint-out") a.checkpointOut = resolve(argv[++i]);
+    else if (argv[i] === "--max-runtime-minutes") a.maxRuntimeMinutes = Number(argv[++i]);
+    else if (argv[i] === "--image-id") a.imageId = argv[++i];
     else {
       console.error(`Unknown arg ${argv[i]}`);
       process.exit(2);
@@ -95,6 +102,12 @@ function parseArgs(argv) {
   if (shardFields.length === 1) {
     throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
   }
+  a.maxRuntimeMinutes ??= 60;
+  if (!Number.isFinite(a.maxRuntimeMinutes) || a.maxRuntimeMinutes < 1
+      || a.maxRuntimeMinutes > 120) {
+    throw new Error('--max-runtime-minutes must be from 1 through 120');
+  }
+  if (a.resumeFrom && !a.checkpointOut) a.checkpointOut = a.resumeFrom;
   return a;
 }
 
@@ -191,6 +204,48 @@ args.mutationAttemptId = `mutation-${new Date().toISOString().replace(/[:.]/g, "
 const artifactPath = (id) =>
   resolve(args.out ?? join(HERE, "..", "results", `${id}.json`));
 let spec;
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function scenarioKey(path) {
+  return relative(resolve(HERE, '..'), path).replaceAll('\\', '/');
+}
+
+function checkpointGroup(path, mutations, selectedCheckKeys) {
+  const scenario = scenarioKey(path);
+  const scenarioSha256 = sha256(readFileSync(path));
+  const mutationSha256 = sha256(JSON.stringify(mutations));
+  const selectionSha256 = sha256(JSON.stringify([...selectedCheckKeys].sort()));
+  return { scenario, scenarioSha256, mutationSha256, selectionSha256,
+    identitySha256: sha256(JSON.stringify({ scenarioSha256, mutationSha256, selectionSha256 })),
+    mutationIds: mutations.map(mutation => mutation.id) };
+}
+
+function checkpointIdentity(groups, shard, track) {
+  return {
+    schemaVersion: 1,
+    engineSha256: currentEngineIdentity().sha256,
+    recipeSha256: args.expectedRecipeSha256,
+    fixtureSha256: spec.fixtureSha256,
+    imageId: args.imageId ?? null,
+    backend: args.backend,
+    track: args.track,
+    level: Number(args.level),
+    trackSha256: sha256(readFileSync(join(track.dir, 'track.json'))),
+    shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
+    groups,
+  };
+}
+
+function resumableEvidence(path, identity) {
+  if (!path || !existsSync(path)) return { results: [], baselines: [] };
+  const prior = readArtifactPayload(path, { expectedKind: 'mutation_control' });
+  const { results, baselines } = reusableMutationEvidence(prior, identity);
+  console.log(`Resuming ${results.length}/${identity.shard.mutationIds.length} completed mutations from ${path}`);
+  return { results, baselines };
+}
 
 function recordHarnessFailure(error) {
   const generatedAt = new Date().toISOString();
@@ -347,13 +402,93 @@ async function main() {
     }
   }
 
-  const results = [];
-  const baselines = [];
-  for (const [scenarioPath, mutations] of groups) {
+  const plans = [...groups].map(([scenarioPath, mutations]) => {
+    const selectedCheckKeys = args.recipeRelease
+      ? releaseScenarioCheckKeys(args.recipeRelease, track.dir, scenarioPath) : [];
+    return { scenarioPath, scenario: scenarioKey(scenarioPath), mutations, selectedCheckKeys,
+      checkpoint: checkpointGroup(scenarioPath, mutations, selectedCheckKeys) };
+  });
+  const checkpoint = checkpointIdentity(plans.map(plan => plan.checkpoint), shard, track);
+  const resumed = resumableEvidence(args.resumeFrom, checkpoint);
+  const results = [...resumed.results];
+  const baselines = [...resumed.baselines];
+  const completedIds = new Set(results.map(result => result.id));
+  if (completedIds.size !== results.length) {
+    throw new Error('mutation checkpoint contains duplicate results');
+  }
+  const outputPath = artifactPath(args.mutationAttemptId);
+  const deadline = startedAt + args.maxRuntimeMinutes * 60_000;
+
+  const createControlArtifact = (status, reason = null) => {
+    const ordered = [...results].sort((left, right) =>
+      shard.mutationIds.indexOf(left.id) - shard.mutationIds.indexOf(right.id));
+    const clean = ordered.filter(result => result.status === 'CAUGHT');
+    const orderedBaselines = plans.map(plan => baselines.find(entry =>
+      entry.scenario === plan.scenario)).filter(Boolean);
+    const remaining = shard.mutationIds.filter(id => !completedIds.has(id));
+    return {
+      id: args.mutationAttemptId,
+      kind: 'mutation_control',
+      startedAt: startedIso,
+      completedAt: status === 'running' ? null : new Date().toISOString(),
+      parentAttemptId: args.parentAttemptId ?? null,
+      identities: emptyArtifactIdentities({
+        fixture: { id: 'source-under-mutation', sha256: spec.fixtureSha256 },
+        recipe: { id: args.recipeRelease.id, version: args.recipeRelease.version,
+          sha256: args.expectedRecipeSha256, state: args.recipeRelease.state },
+        stackAdapter: { id: args.backend },
+      }),
+      durationMs: Date.now() - startedAt,
+      app: resolve(args.app),
+      mutations: resolve(args.mutations),
+      manifestStatus: spec.status,
+      fixtureSha256: spec.fixtureSha256,
+      spec: plans.map(plan => plan.scenario),
+      backend: args.backend,
+      track: args.track,
+      shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
+      baseline: {
+        total: orderedBaselines.reduce((sum, entry) => sum + Number(entry.total), 0),
+        max: orderedBaselines.reduce((sum, entry) => sum + Number(entry.max), 0),
+        scenarios: orderedBaselines,
+      },
+      ok: status === 'complete' && clean.length === ordered.length
+        && ordered.length === shard.mutationIds.length,
+      ...(status === 'complete' ? {} : { outcome: { kind: 'incomplete',
+        phase: 'mutation-control', reason: reason ?? 'mutation batch is in progress' } }),
+      summary: { caught: clean.length, completed: ordered.length,
+        total: shard.mutationIds.length, remaining: remaining.length },
+      results: ordered,
+      checkpoint: { ...checkpoint, status, maxRuntimeMinutes: args.maxRuntimeMinutes,
+        updatedAt: new Date().toISOString() },
+    };
+  };
+  const persist = (status, reason = null) => {
+    assertAppSourceIdentity(args.app, spec.fixtureSha256,
+      'mutation fixture before checkpoint');
+    const artifact = createControlArtifact(status, reason);
+    writeRunJson(outputPath, artifact);
+    if (args.checkpointOut && resolve(args.checkpointOut) !== outputPath) {
+      writeRunJson(args.checkpointOut, artifact);
+    }
+    return artifact;
+  };
+  const stopAtBudget = () => {
+    const artifact = persist('incomplete',
+      `mutation batch reached its ${args.maxRuntimeMinutes} minute limit`);
+    console.log(`\n${artifact.summary.completed}/${artifact.summary.total} mutations completed; `
+      + `${artifact.summary.remaining} remain`);
+    console.log(`checkpoint: ${args.checkpointOut ?? outputPath}`);
+    process.exitCode = 3;
+  };
+
+  for (const plan of plans) {
+    const { scenarioPath, scenario, mutations, selectedCheckKeys } = plan;
+    const pending = mutations.filter(mutation => !completedIds.has(mutation.id));
+    if (pending.length === 0) continue;
+    if (Date.now() >= deadline) return stopAtBudget();
     args.spec = scenarioPath;
-    args.selectedCheckKeys = args.recipeRelease
-      ? releaseScenarioCheckKeys(args.recipeRelease, track.dir, scenarioPath)
-      : [];
+    args.selectedCheckKeys = selectedCheckKeys;
     console.log(`Baseline (unmutated app, ${scenarioPath})...`);
     await waitForApp(args);
     let baseline = await grade(args, reportPath);
@@ -375,9 +510,14 @@ async function main() {
         baseline.features.map((f) => `F${f.id}:${f.score}`).join(" ")
       }\n`,
     );
-    baselines.push({ scenario: scenarioPath, total: baseline.total, max: baseline.max });
+    const baselineEntry = { scenario, identitySha256: plan.checkpoint.identitySha256,
+      total: baseline.total, max: baseline.max };
+    const priorBaseline = baselines.findIndex(entry => entry.scenario === scenario);
+    if (priorBaseline === -1) baselines.push(baselineEntry);
+    else baselines[priorBaseline] = baselineEntry;
 
-    for (const m of mutations) {
+    for (const m of pending) {
+      if (Date.now() >= deadline) return stopAtBudget();
       const byFile = new Map();
       for (const edit of mutationFileEdits(m)) {
         const target = resolveMutationFile(args.app, edit.file);
@@ -431,8 +571,10 @@ async function main() {
       }
 
       const classified = classifyMutationResult(baseline, r, m);
-      results.push({ id: m.id, scenario: scenarioPath,
+      results.push({ id: m.id, scenario,
         targets: mutationTargetKeys(m), ...classified });
+      completedIds.add(m.id);
+      persist('running');
       console.log(
         `${classified.status.padEnd(20)} ${m.id} — expected ${
           classified.targetKeys.join(", ")
@@ -452,38 +594,8 @@ async function main() {
   assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture after worker completion');
 
   rmSync(work, { recursive: true, force: true });
-  const clean = results.filter((result) => result.status === "CAUGHT");
-  const artifact = {
-    id: args.mutationAttemptId,
-    kind: "mutation_control",
-    startedAt: startedIso,
-    completedAt: new Date().toISOString(),
-    parentAttemptId: args.parentAttemptId ?? null,
-    identities: emptyArtifactIdentities({
-      fixture: { id: "source-under-mutation", sha256: spec.fixtureSha256 },
-      stackAdapter: { id: args.backend },
-    }),
-    durationMs: Date.now() - startedAt,
-    app: resolve(args.app),
-    mutations: resolve(args.mutations),
-    manifestStatus: spec.status,
-    fixtureSha256: spec.fixtureSha256,
-    spec: baselines.map(entry => entry.scenario),
-    backend: args.backend,
-    track: args.track,
-    shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
-    baseline: {
-      total: baselines.reduce((sum, entry) => sum + Number(entry.total), 0),
-      max: baselines.reduce((sum, entry) => sum + Number(entry.max), 0),
-      scenarios: baselines,
-    },
-    ok: clean.length === results.length,
-    summary: { caught: clean.length, total: results.length },
-    results,
-  };
-  const outputPath = artifactPath(artifact.id);
-  writeRunJson(outputPath, artifact);
-  console.log(`\n${clean.length}/${results.length} mutations cleanly caught`);
+  const artifact = persist('complete');
+  console.log(`\n${artifact.summary.caught}/${artifact.summary.total} mutations cleanly caught`);
   console.log(`artifact: ${outputPath}`);
   if (!artifact.ok) process.exitCode = 1;
 }

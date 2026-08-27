@@ -29,9 +29,10 @@ test('campaign-bound mutation grading forwards the run level and exact recipe', 
 });
 
 test('mutation control time grows with the declared defect inventory', () => {
-  assert.equal(mutationControlTimeoutMs({ mutations: [] }), 20 * 60_000);
+  assert.equal(mutationControlTimeoutMs({ mutations: [] }), 80 * 60_000);
   assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 35 }, () => ({})) }),
-    5 * 60_000 + 35 * (75_000 + 8_000));
+    80 * 60_000);
+  assert.equal(mutationControlTimeoutMs({ mutations: [] }, 15), 35 * 60_000);
 });
 
 test('mutation shard coordinates reach the mutation runner together', () => {
@@ -44,6 +45,22 @@ test('mutation shard coordinates reach the mutation runner together', () => {
   const index = argv.indexOf('--mutation-shard-index');
   assert.deepEqual(argv.slice(index, index + 4),
     ['--mutation-shard-index', '2', '--mutation-shard-count', '4']);
+});
+
+test('mutation checkpoint controls reach the mutation runner', () => {
+  const manifest = join(ROOT, 'grader', 'mutations', 'mongodb-ecom-l1.json');
+  const args = { out: 'output', mutations: manifest, backend: 'mongodb',
+    track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'resume-attempt',
+    recipe: null, recipeTasks: new Map(), mutationResumeFrom: 'prior.json',
+    mutationCheckpointOut: 'next.json', mutationMaxRuntimeMinutes: 30,
+    mutationImageId: 'sha256:image' };
+  const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
+    loadTrack('ecommerce'));
+  const after = flag => argv[argv.indexOf(flag) + 1];
+  assert.equal(after('--resume-from'), 'prior.json');
+  assert.equal(after('--checkpoint-out'), 'next.json');
+  assert.equal(after('--max-runtime-minutes'), '30');
+  assert.equal(after('--image-id'), 'sha256:image');
 });
 
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {

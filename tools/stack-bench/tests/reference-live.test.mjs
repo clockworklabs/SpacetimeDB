@@ -4,7 +4,8 @@ import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
+import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationArgs,
+  referenceQualificationContext,
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
   parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
   qualificationMutationManifest,
@@ -50,8 +51,14 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--mutations']);
   assert.equal(mutationArgs.mutations, true);
   assert.equal(mutationArgs.timeoutMinutes, 90);
+  assert.equal(mutationArgs.mutationMaxRuntimeMinutes, 60);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
     '--mutations', '--timeout-minutes', '120']).timeoutMinutes, 120);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--mutations', '--timeout-minutes', '60', '--mutation-max-runtime-minutes', '30'])
+    .mutationMaxRuntimeMinutes, 30);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--mutations', '--timeout-minutes', '60']), /plus 20 minutes/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
@@ -101,6 +108,40 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.equal(after('--mutation-shard-count'), '4');
   assert.equal(after('--repetitions'), '1');
   assert.equal(after('--out'), '/results/w3.json');
+  assert.equal(argv.includes('--reference-mutation-only'), true);
+
+  args.mutationCheckpointDir = '/results/checkpoints';
+  const resumable = parallelMutationChildArgv(args,
+    { binding: { release: { id: 'ecommerce.l2-standard', version: '1.5.0' } } },
+    { artifactPath: '/results/w3.json', repetition: 0, workerIndex: 2, workerCount: 4 });
+  assert.equal(resumable[resumable.indexOf('--mutation-checkpoint') + 1]
+    .replaceAll('\\', '/'), '/results/checkpoints/mongodb-worker-3.json');
+  assert.equal(resumable[resumable.indexOf('--mutation-max-runtime-minutes') + 1], '60');
+});
+
+test('mutation-only worker audit requires Docker, caught defects, and released resources', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-worker-audit-'));
+  try {
+    const identities = emptyArtifactIdentities({ stackAdapter: { id: 'mongodb' } });
+    writeArtifact(join(root, 'mutation-control.json'), { kind: 'mutation_control', id: 'control',
+      identities, payload: { fixtureSha256: fixture.imported.sourceSha256, ok: true,
+        baseline: { total: 2, max: 2 }, summary: { caught: 1, completed: 1, total: 1,
+          remaining: 0 }, results: [{ id: 'mutation', status: 'CAUGHT' }] } });
+    writeArtifact(join(root, 'run.json'), { kind: 'benchmark_run', id: 'run', identities,
+      payload: { backend: 'mongodb', track: 'ecommerce', setup: { isolation: {
+        mode: 'container', imageId: 'sha256:image' } }, outcome: { kind: 'passed' },
+        mutationControl: { ok: true }, backendLease: { state: 'released', resources: {
+          buildContainer: { running: false }, locks: [{ key: 'slot', releasedAt: new Date().toISOString() }],
+        } } } });
+    const audited = auditMutationWorkerRun(root, fixture);
+    assert.equal(audited.ok, true);
+    assert.equal(audited.imageId, 'sha256:image');
+
+    const failed = readArtifact(join(root, 'mutation-control.json'));
+    failed.payload.results[0].status = 'SURVIVED';
+    writeFileSync(join(root, 'mutation-control.json'), `${JSON.stringify(failed)}\n`);
+    assert.equal(auditMutationWorkerRun(root, fixture).ok, false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('parallel mutation preflight covers every worker slot and Spacetime listener', () => {

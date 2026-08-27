@@ -56,7 +56,8 @@ function qualificationInputs() {
 export function parseReferenceQualificationArgs(argv) {
   const args = { track: 'ecommerce', level: 1, repetitions: 2,
     runIndex: 0, spacetimePort: null, timeoutMinutes: null, mutations: false,
-    mutationWorkers: 1, mutationShardIndex: null, mutationShardCount: null };
+    mutationWorkers: 1, mutationShardIndex: null, mutationShardCount: null,
+    mutationMaxRuntimeMinutes: 60 };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
     else if (argv[i] === '--track') args.track = argv[++i];
@@ -74,6 +75,12 @@ export function parseReferenceQualificationArgs(argv) {
     else if (argv[i] === '--mutation-workers') args.mutationWorkers = Number(argv[++i]);
     else if (argv[i] === '--mutation-shard-index') args.mutationShardIndex = Number(argv[++i]);
     else if (argv[i] === '--mutation-shard-count') args.mutationShardCount = Number(argv[++i]);
+    else if (argv[i] === '--mutation-checkpoint-dir') args.mutationCheckpointDir = resolve(argv[++i]);
+    else if (argv[i] === '--mutation-checkpoint') args.mutationCheckpoint = resolve(argv[++i]);
+    else if (argv[i] === '--mutation-max-runtime-minutes') {
+      args.mutationMaxRuntimeMinutes = Number(argv[++i]);
+    }
+    else if (argv[i] === '--reference-mutation-only') args.referenceMutationOnly = true;
     else if (argv[i] === '--out') args.out = resolve(argv[++i]);
     else throw new Error(`unknown argument ${argv[i]}`);
   }
@@ -97,6 +104,19 @@ export function parseReferenceQualificationArgs(argv) {
   }
   if (args.mutationWorkers > 1 && !args.mutations) {
     throw new Error('--mutation-workers above 1 requires --mutations');
+  }
+  if ((args.mutationCheckpointDir || args.mutationCheckpoint) && !args.mutations) {
+    throw new Error('mutation checkpoint options require --mutations');
+  }
+  if (args.mutationCheckpoint && args.mutationWorkers !== 1) {
+    throw new Error('--mutation-checkpoint is an internal single-worker option');
+  }
+  if (args.referenceMutationOnly && (!args.mutations || args.mutationWorkers !== 1)) {
+    throw new Error('--reference-mutation-only is an internal single-worker option');
+  }
+  if (!Number.isFinite(args.mutationMaxRuntimeMinutes)
+      || args.mutationMaxRuntimeMinutes < 1 || args.mutationMaxRuntimeMinutes > 120) {
+    throw new Error('--mutation-max-runtime-minutes must be from 1 through 120');
   }
   const shardSupplied = args.mutationShardIndex !== null || args.mutationShardCount !== null;
   if (shardSupplied && (args.mutationShardIndex === null || args.mutationShardCount === null)) {
@@ -124,6 +144,9 @@ export function parseReferenceQualificationArgs(argv) {
   args.timeoutMinutes ??= args.mutations ? 90 : 60;
   if (!Number.isFinite(args.timeoutMinutes) || args.timeoutMinutes < 10 || args.timeoutMinutes > 240) {
     throw new Error('--timeout-minutes must be from 10 through 240');
+  }
+  if (args.mutations && args.timeoutMinutes < args.mutationMaxRuntimeMinutes + 20) {
+    throw new Error('--timeout-minutes must allow the mutation batch plus 20 minutes for setup');
   }
   args.timeoutMs = Math.round(args.timeoutMinutes * 60_000);
   return args;
@@ -356,6 +379,53 @@ export function auditReferenceRun(output, fixture,
     mutations: mutationControl?.summary ?? null };
 }
 
+export function auditMutationWorkerRun(output, fixture) {
+  const runPath = join(output, 'run.json');
+  const controlPath = join(output, 'mutation-control.json');
+  if (!existsSync(runPath) || !existsSync(controlPath)) {
+    return { ok: false, failures: ['run.json or mutation-control.json is missing'] };
+  }
+  const run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
+  const control = readArtifactPayload(controlPath, { expectedKind: 'mutation_control' });
+  const failures = [];
+  if (run.backend !== fixture.backend || run.track !== fixture.track) {
+    failures.push('run identity does not match fixture');
+  }
+  if (run.setup?.isolation?.mode !== 'container') failures.push('run was not isolated in Docker');
+  if (run.outcome?.kind !== 'passed') failures.push(`run outcome is ${run.outcome?.kind ?? 'missing'}`);
+  if (run.mutationControl?.ok !== true || control.ok !== true) {
+    failures.push('mutation control did not pass');
+  }
+  if (control.fixtureSha256 !== fixture.imported.sourceSha256) {
+    failures.push('mutation control targets a different fixture hash');
+  }
+  if (!Array.isArray(control.results) || control.results.length === 0) {
+    failures.push('mutation control recorded no mutants');
+  } else {
+    for (const mutant of control.results) {
+      if (mutant.status !== 'CAUGHT') {
+        failures.push(`${mutant.id ?? '<unnamed mutant>'} is ${mutant.status ?? 'missing a status'}`);
+      }
+    }
+  }
+  if (Number(control.baseline?.total) !== Number(control.baseline?.max)) {
+    failures.push('mutation baseline was not fully passing');
+  }
+  const lease = run.backendLease;
+  if (lease?.state !== 'released') failures.push('backend lease was not released');
+  if (lease?.resources?.buildContainer?.running !== false) {
+    failures.push('leased build container was not recorded as removed');
+  }
+  if (!lease?.resources?.locks?.length
+      || lease.resources.locks.some(lock => !lock.releasedAt)) {
+    failures.push('resource lock release evidence is incomplete');
+  }
+  return { ok: failures.length === 0, failures, runId: run.id,
+    imageId: run.setup?.isolation?.imageId ?? null, outcome: run.outcome?.kind ?? null,
+    mutations: control.summary ?? null, score: null, criteria: null,
+    zeroPointCriteria: null, fingerprint: null, packRuntime: null };
+}
+
 export function referenceQualificationContext(fixture, recipe = null,
   { level = fixture.level, featureCatalog = null } = {}) {
   const track = loadTrack(fixture.track);
@@ -487,6 +557,14 @@ async function runOnce(fixture, args, context, id, repetition) {
         benchArgs.push('--mutation-shard-index', String(args.mutationShardIndex),
           '--mutation-shard-count', String(args.mutationShardCount));
       }
+      if (args.mutationCheckpoint) {
+        if (existsSync(args.mutationCheckpoint)) {
+          benchArgs.push('--mutation-resume-from', args.mutationCheckpoint);
+        }
+        benchArgs.push('--mutation-checkpoint-out', args.mutationCheckpoint);
+      }
+      benchArgs.push('--mutation-max-runtime-minutes', String(args.mutationMaxRuntimeMinutes));
+      if (args.referenceMutationOnly) benchArgs.push('--reference-mutation-only');
     }
     const child = await runBounded(process.execPath, benchArgs,
       { cwd: ROOT, stdio: 'inherit', env, timeoutMs: args.timeoutMs });
@@ -520,12 +598,14 @@ async function runOnce(fixture, args, context, id, repetition) {
       processError = processError ? `${processError}; ${cleanup}` : cleanup;
     }
   }
-  const audit = auditReferenceRun(output, fixture, {
-    requireMutationControl: args.mutations,
-    release: context.binding.release,
-    level: args.level,
-    selectedCheckKeys: context.selectedCheckKeys,
-  });
+  const audit = args.referenceMutationOnly
+    ? auditMutationWorkerRun(output, fixture)
+    : auditReferenceRun(output, fixture, {
+      requireMutationControl: args.mutations,
+      release: context.binding.release,
+      level: args.level,
+      selectedCheckKeys: context.selectedCheckKeys,
+    });
   const harnessAfter = qualificationInputs();
   if (harnessAfter.sha256 !== harnessBefore.sha256) {
     audit.failures.unshift('qualification harness changed while this repetition was running');
@@ -547,6 +627,12 @@ export function parallelMutationChildArgv(args, context,
     '--repetitions', '1', '--run-index', String(runIndex), '--timeout-minutes',
     String(args.timeoutMinutes), '--mutations', '--mutation-shard-index',
     String(workerIndex), '--mutation-shard-count', String(workerCount), '--out', artifactPath];
+  argv.push('--reference-mutation-only');
+  argv.push('--mutation-max-runtime-minutes', String(args.mutationMaxRuntimeMinutes));
+  if (args.mutationCheckpointDir) {
+    argv.push('--mutation-checkpoint', join(args.mutationCheckpointDir,
+      `${args.backend}-worker-${workerIndex + 1}.json`));
+  }
   if (context.featureCatalogRef) argv.push('--feature-catalog', context.featureCatalogRef);
   if (args.spacetimePortExplicit) {
     argv.push('--spacetime-port', String(args.spacetimePort + workerIndex));
@@ -656,8 +742,15 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
   if (!Array.isArray(manifest.mutations) || scenarios.size < args.mutationWorkers) {
     throw new Error(`--mutation-workers cannot exceed ${scenarios.size} mutation scenarios`);
   }
-  preflightParallelMutationResources(args);
   const started = Date.now();
+  const clean = await runOnce(fixture, { ...args, mutations: false, mutationWorkers: 1,
+    referenceMutationOnly: false, mutationCheckpoint: null }, context, id, repetition);
+  if (!clean.ok) {
+    return { ...clean, durationMs: Date.now() - started,
+      failures: clean.failures.map(failure => `clean baseline: ${failure}`),
+      mutations: { caught: 0, total: 0 } };
+  }
+  preflightParallelMutationResources(args);
   const workerRoot = join(args.runsRoot, `r${repetition + 1}-workers`);
   mkdirSync(workerRoot, { recursive: true });
   const cancellation = new AbortController();
@@ -692,14 +785,16 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
   try {
     results = parallelMutationResults(manifest, inspected);
   } catch (error) { failures.push(error.message); }
-  const representative = inspected.find(worker => worker.run)?.run ?? {};
+  const representative = clean;
   const caught = results.filter(result => result.status === 'CAUGHT').length;
   if (results.length && caught !== results.length) failures.push('one or more mutations were not cleanly caught');
-  const fingerprints = new Set(inspected.map(worker => worker.run?.fingerprint).filter(Boolean));
-  const images = new Set(inspected.map(worker => worker.run?.imageId).filter(Boolean));
-  const harnesses = new Set(inspected.flatMap(worker =>
-    [worker.run?.harnessSha256Before, worker.run?.harnessSha256After]).filter(Boolean));
-  if (fingerprints.size !== 1) failures.push('worker baseline fingerprints differ');
+  const fingerprints = new Set([clean.fingerprint].filter(Boolean));
+  const images = new Set([clean.imageId, ...inspected.map(worker => worker.run?.imageId)]
+    .filter(Boolean));
+  const harnesses = new Set([clean.harnessSha256Before, clean.harnessSha256After,
+    ...inspected.flatMap(worker =>
+      [worker.run?.harnessSha256Before, worker.run?.harnessSha256After])].filter(Boolean));
+  if (fingerprints.size !== 1) failures.push('clean baseline fingerprint is missing');
   if (images.size !== 1) failures.push('worker build images differ');
   if (harnesses.size !== 1) failures.push('worker harness identities differ');
   return { repetition: repetition + 1,
@@ -719,6 +814,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
     outcome: failures.length === 0 ? 'passed' : 'harness_failure',
     packRuntime: representative.packRuntime ?? null,
     mutations: { caught, total: results.length },
+    baselineOutput: clean.output,
     workers: inspected.map(worker => ({ index: worker.workerIndex, runIndex: worker.runIndex,
       artifact: relative(args.artifactDirectory, worker.artifactPath).replaceAll('\\', '/'),
       mutationIds: worker.assigned, ok: worker.failures.length === 0,
@@ -750,6 +846,14 @@ async function main() {
   }
   args.artifactDirectory = paths.artifactDirectory;
   args.runsRoot = paths.runsRoot;
+  if (args.mutations) {
+    args.mutationCheckpointDir ??= join(paths.artifactDirectory,
+      `${basename(paths.artifactPath, extname(paths.artifactPath))}.mutation-checkpoints`);
+    mkdirSync(args.mutationCheckpointDir, { recursive: true });
+    if (args.mutationWorkers === 1 && !args.mutationCheckpoint) {
+      args.mutationCheckpoint = join(args.mutationCheckpointDir, `${args.backend}-worker-1.json`);
+    }
+  }
   const selectedReference = context.calibration.references.entries.find(entry =>
     entry.backend === fixture.backend && entry.id === fixture.id);
   const selectedMutation = args.mutations
@@ -795,7 +899,8 @@ async function main() {
   const images = new Set(artifact.runs.map(run => run.imageId).filter(Boolean));
   const harnessHashes = new Set(artifact.runs.flatMap(run =>
     [run.harnessSha256Before, run.harnessSha256After]).filter(Boolean));
-  artifact.stable = complete && fingerprints.size === 1 && artifact.runs.every(run => run.fingerprint);
+  artifact.stable = args.referenceMutationOnly
+    ? complete : complete && fingerprints.size === 1 && artifact.runs.every(run => run.fingerprint);
   artifact.sameImage = complete && images.size === 1 && artifact.runs.every(run => run.imageId);
   artifact.sameHarness = complete && harnessHashes.size === 1;
   artifact.harnessSha256 = artifact.sameHarness ? [...harnessHashes][0] : null;

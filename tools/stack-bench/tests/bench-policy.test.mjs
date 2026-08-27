@@ -89,6 +89,15 @@ test('mutation shard coordinates are paired', () => {
     '--mutation-shard-index', '1']), /must be supplied together/);
 });
 
+test('mutation-only execution is restricted to model-free reference runs', () => {
+  assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--reference-mutation-only']), /requires a mutation-bound reference fixture/);
+  const args = parseArgs(['node', 'bench', '--backend', 'postgres', '--fix-rounds', '0',
+    '--agent-adapter', 'reference-fixture', '--app', 'fixture', '--mutations', 'mutations.json',
+    '--reference-mutation-only']);
+  assert.equal(args.referenceMutationOnly, true);
+});
+
 test('the first repair that makes an unstartable app gradeable is never rolled back', () => {
   const after = { suites: {}, totals: { score: 35, max: 58 } };
   for (const phase of ['application-restart', 'application-seed']) {

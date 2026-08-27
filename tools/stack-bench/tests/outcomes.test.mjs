@@ -25,6 +25,7 @@ test('ungraded and harness-failed runs return a failing process status', () => {
   assert.equal(runExitCode({ kind: 'ungraded' }), 1);
   assert.equal(runExitCode({ kind: 'app_failure' }), 0);
   assert.equal(runExitCode({ kind: 'passed' }), 0);
+  assert.equal(runExitCode({ kind: 'incomplete' }), 1);
 });
 
 test('a ladder stops after an ungraded or harness-failed level', () => {

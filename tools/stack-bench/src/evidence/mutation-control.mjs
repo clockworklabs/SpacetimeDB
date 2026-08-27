@@ -33,12 +33,19 @@ export function mutationControlArgv(args, appDir, url, track) {
       '--mutation-shard-index', String(args.mutationShardIndex),
       '--mutation-shard-count', String(args.mutationShardCount),
     ]),
+    ...(args.mutationResumeFrom ? ['--resume-from', args.mutationResumeFrom] : []),
+    ...(args.mutationCheckpointOut ? ['--checkpoint-out', args.mutationCheckpointOut] : []),
+    ...(args.mutationMaxRuntimeMinutes ? [
+      '--max-runtime-minutes', String(args.mutationMaxRuntimeMinutes),
+    ] : []),
+    ...(args.mutationImageId ? ['--image-id', args.mutationImageId] : []),
     ...(recipe ? ['--recipe', recipe] : [])];
 }
 
-export function mutationControlTimeoutMs(manifest) {
+export function mutationControlTimeoutMs(manifest, maxRuntimeMinutes = 60) {
   const mutations = Array.isArray(manifest?.mutations) ? manifest.mutations : [];
   const measured = MUTATION_BASE_TIMEOUT_MS + mutations.reduce((total, mutation) =>
     total + MUTATION_PROBE_TIMEOUT_MS + 2 * Number(mutation.settleMs ?? 4000), 0);
-  return Math.max(COMMAND_TIMEOUT_MS, measured);
+  const boundedBatch = (Number(maxRuntimeMinutes) + 20) * 60_000;
+  return Math.max(COMMAND_TIMEOUT_MS, measured, boundedBatch);
 }

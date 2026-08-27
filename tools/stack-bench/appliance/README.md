@@ -293,12 +293,19 @@ requires that evidence.
 
 Mutation qualification is serial by default. Use `--mutation-workers N` with
 `--mutations` to split one exact mutation manifest across 1 to 8 isolated
-workers. Each worker receives a separate run slot, source tree, generated app,
-backend lease, ports, logs, and artifact directory. The parent command accepts
-the result only when the workers use the same recipe, calibration, fixture,
-engine, image, harness, and pristine baseline, and their results form the exact
-mutation manifest once. A worker failure does not cancel the other workers.
-An operator interrupt stops all workers and leaves their logs for diagnosis.
+workers. The parent grades the clean fixture once. Each worker then receives a
+separate run slot, source tree, backend lease, ports, logs, and artifact
+directory for its assigned defects. The parent accepts the result only when all
+workers use the same recipe, calibration, fixture, engine, image, and harness,
+and their results form the exact mutation manifest once.
+
+A mutation batch runs for at most 60 minutes by default. It finishes its current
+mutation, saves each completed result atomically, and reports the remaining
+count without qualifying the fixture. Use the same checkpoint directory in a
+later command to continue. A changed engine, recipe, fixture, image, track, or
+worker assignment rejects the checkpoint. A changed scenario or mutation
+reruns that scenario group. Use a new `--out` file for each command so prior
+run evidence is not replaced.
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
@@ -306,12 +313,18 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
   qualify-reference --backend postgres --track ecommerce --level 2 \
   --recipe ecommerce.l2-standard@1.5.0 --mutations \
   --mutation-workers 4 --run-index 8 --repetitions 1 \
+  --mutation-checkpoint-dir /var/lib/stack-bench/results/postgres-l2-checkpoints \
   --out /var/lib/stack-bench/results/postgres-l2-mutations.json
 ```
 
+If the first batch is incomplete, run the same command again with the same
+checkpoint directory and a new output file. Set
+`--mutation-max-runtime-minutes N` from 1 through 120 to change the batch limit.
+`--timeout-minutes` must be at least 20 minutes longer than the batch limit.
+
 The worker count reserves consecutive run slots starting at `--run-index`.
 The command fails before launch if those slots exceed the supported range or
-if the worker count exceeds the number of mutations. Keep top-level
+if the worker count exceeds the number of mutation scenarios. Keep top-level
 qualifications on non-overlapping slot ranges when several stacks run at once.
 
 Before the first qualification of a recipe whose packs still have unmeasured

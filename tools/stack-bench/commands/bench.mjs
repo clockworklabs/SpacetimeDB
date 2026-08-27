@@ -77,7 +77,7 @@ export function parseArgs(argv) {
     guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
     featureIds: [], requestedSpecifications: [], expectedSpecifications: [],
     observedSpecifications: [],
-    behavioralReview: false };
+    behavioralReview: false, mutationMaxRuntimeMinutes: 60 };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
@@ -124,6 +124,10 @@ export function parseArgs(argv) {
       case '--mutations': a.mutations = resolve(argv[++i]); break;
       case '--mutation-shard-index': a.mutationShardIndex = Number(argv[++i]); break;
       case '--mutation-shard-count': a.mutationShardCount = Number(argv[++i]); break;
+      case '--mutation-resume-from': a.mutationResumeFrom = resolve(argv[++i]); break;
+      case '--mutation-checkpoint-out': a.mutationCheckpointOut = resolve(argv[++i]); break;
+      case '--mutation-max-runtime-minutes': a.mutationMaxRuntimeMinutes = Number(argv[++i]); break;
+      case '--reference-mutation-only': a.referenceMutationOnly = true; break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
       // instead of rebuilding the lower level. The correct L1 that scored 51/51
       // is the right foundation for L2 — rebuilding it costs money and adds
@@ -138,6 +142,17 @@ export function parseArgs(argv) {
   if (!a.backend && !a.repairFrom) {
     console.error('Usage: node commands/bench.mjs --backend <b> --levels 1-3 [--fix-rounds 10] [--run-index N]');
     process.exit(2);
+  }
+  if ((a.mutationResumeFrom || a.mutationCheckpointOut) && !a.mutations) {
+    throw new Error('mutation checkpoint options require --mutations');
+  }
+  if (!Number.isFinite(a.mutationMaxRuntimeMinutes) || a.mutationMaxRuntimeMinutes < 1
+      || a.mutationMaxRuntimeMinutes > 120) {
+    throw new Error('--mutation-max-runtime-minutes must be from 1 through 120');
+  }
+  if (a.referenceMutationOnly && (!a.mutations || a.agentAdapter !== 'reference-fixture'
+      || a.fixRounds !== 0 || !a.app || a.campaignFile)) {
+    throw new Error('--reference-mutation-only requires a mutation-bound reference fixture run');
   }
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
@@ -499,14 +514,18 @@ function restartSpecFor(args, appDir, track) {
     probe: track.restartProbe };
 }
 
-function runMutationControl(args, appDir, url, track) {
+function runMutationControl(args, appDir, url, track, imageId) {
   const output = join(args.out, 'mutation-control.json');
-  rmSync(output, { force: true });
+  if (!args.mutationResumeFrom || resolve(args.mutationResumeFrom) !== resolve(output)) {
+    rmSync(output, { force: true });
+  }
+  args.mutationImageId = imageId ?? null;
   const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
   const argv = mutationControlArgv(args, appDir, url, track);
   let processError = null;
   try { sh(process.execPath, argv, {
-    stdio: 'inherit', timeout: mutationControlTimeoutMs(manifest),
+    stdio: 'inherit', timeout: mutationControlTimeoutMs(manifest,
+      args.mutationMaxRuntimeMinutes),
   }); }
   catch (error) { processError = String(error.message).split('\n')[0]; }
   if (!existsSync(output)) {
@@ -1159,6 +1178,18 @@ async function main() {
       }
       run.continuation.resumeSetup.sourceVerified = true;
     }
+    if (args.referenceMutationOnly) {
+      run.levels.push({ level, score: null, max: null, graded: false, contractPass: null,
+        outcome: { kind: 'ungraded', phase: 'reference-mutation-only',
+          reason: 'the parent qualification owns the full clean grade',
+          appFailures: [], inconclusive: [], harnessFailures: [] },
+        buildSession: { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
+          durationMs: build.durationMs, usage: build.usage ?? null,
+          transcript: build.transcript ?? null, provenance: build.provenance ?? null },
+        buildCostUsd: build.costUsd, sessionTotals: summarizeSessions([build]),
+        costUsd: build.costUsd, durationMs: Date.now() - t0 });
+      break;
+    }
     const firstBuildDirectory = continuing ? `baseline-l${level}` : `first-build-l${level}`;
     const firstBuildPath = join(args.out, firstBuildDirectory);
     let firstBuildSource = null;
@@ -1618,9 +1649,10 @@ async function main() {
   if (args.mutations) {
     console.log(`\n================ ${args.backend} mutation control ================`);
     const pristineOutcome = aggregateRunOutcome(run.levels);
-    if (mutationControlEligible(pristineOutcome)) {
+    if (args.referenceMutationOnly || mutationControlEligible(pristineOutcome)) {
       args.parentAttemptId = runId;
-      run.mutationControl = runMutationControl(args, appDir, url, track);
+      run.mutationControl = runMutationControl(args, appDir, url, track,
+        run.setup?.isolation?.imageId ?? null);
     } else {
       console.log(`  skipped: pristine outcome is ${pristineOutcome.kind}`);
       run.mutationControl = { ok: false, skipped: true,
@@ -1660,7 +1692,10 @@ async function main() {
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
   finalizeRunTotals(run, started);
-  run.outcome = aggregateRunOutcome(run.levels);
+  run.outcome = args.referenceMutationOnly && run.mutationControl?.ok
+    ? { kind: 'passed', phase: 'mutation-control', reason: null,
+      appFailures: [], inconclusive: [], harnessFailures: [] }
+    : aggregateRunOutcome(run.levels);
   if (args.repairGrant) {
     run.continuation.cumulativeCostAfterUsd = Number((run.continuation.cumulativeCostBeforeUsd
       + run.totals.costUsd).toFixed(4));
@@ -1669,7 +1704,8 @@ async function main() {
   }
   run.completedAt = new Date().toISOString();
   if (args.mutations && !run.mutationControl?.ok && !run.mutationControl?.skipped) {
-    run.outcome = { kind: 'harness_failure', phase: 'mutation-control',
+    run.outcome = { kind: run.mutationControl?.outcome?.kind === 'incomplete'
+      ? 'incomplete' : 'harness_failure', phase: 'mutation-control',
       reason: run.mutationControl?.outcome?.reason
         ?? run.mutationControl?.processError
         ?? 'one or more declared mutations were not cleanly caught',
