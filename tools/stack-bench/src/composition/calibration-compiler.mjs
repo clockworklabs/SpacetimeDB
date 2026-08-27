@@ -539,7 +539,7 @@ function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
   return { entries: normalized, staleness, buildImage: [...images][0] ?? null };
 }
 
-function mutationExecutionSha256(manifest, mutations = manifest.mutations) {
+export function mutationExecutionSha256(manifest, mutations = manifest.mutations) {
   const { status: _status, mutations: _mutations, ...fields } = manifest;
   const execution = { ...fields, mutations };
   return sha256(canonicalDefinitionJson(canonicalizeDefinition(execution)));

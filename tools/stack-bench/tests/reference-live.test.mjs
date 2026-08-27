@@ -12,7 +12,8 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
   referenceQualificationRelease,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
-  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
+  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded,
+  targetedMutationCheckKeys } from '../src/references/reference-live.mjs';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
   from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
@@ -45,6 +46,25 @@ test('reference qualification runs only the mutations selected by its check scop
   assert.throws(() => qualificationMutationManifest({ ...fixture, id: 'missing-mutation',
     mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb',
       targets: [{ id: 'not-present' }] }] } }), /mutation selection is missing/);
+});
+
+test('targeted mutation diagnostics grade only their scored target checks', () => {
+  const context = { binding: { release: { checkCatalog: [
+    { stableKey: 'check.a', points: 1 },
+    { stableKey: 'check.b', points: 2 },
+    { stableKey: 'check.control', points: 0 },
+    { stableKey: 'check.outside', points: 1 },
+  ] } }, selectedCheckKeys: ['check.a', 'check.b', 'check.control'] };
+  const manifest = { mutations: [
+    { id: 'break-b', targets: ['check.b', 'check.control'] },
+  ] };
+  assert.deepEqual(targetedMutationCheckKeys(context, manifest), ['check.b']);
+  assert.throws(() => targetedMutationCheckKeys(context, { mutations: [
+    { id: 'outside', targets: ['check.outside'] },
+  ] }), /outside the run scope/);
+  assert.throws(() => targetedMutationCheckKeys(context, { mutations: [
+    { id: 'missing', targets: ['check.missing'] },
+  ] }), /unknown checks/);
 });
 
 test('reference qualification requires an explicit valid stack scope', () => {
@@ -364,6 +384,9 @@ test('progression reference qualification follows the catalog check selection', 
   assert.equal(valueAfter('--task-mode')[0], 'upgrade');
   assert.equal(selection.grader.checkKeys.length, 112);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
+  assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
+    [selection.grader.checkKeys[0]]).filter((value, index, argv) =>
+    argv[index - 1] === '--check'), [selection.grader.checkKeys[0]]);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
   assert.equal(scoped.checkCatalog.length, 112);
   assert.throws(() => referenceQualificationRelease(binding.release,

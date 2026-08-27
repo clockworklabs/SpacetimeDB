@@ -23,7 +23,8 @@ import { resolveReferenceSelection } from './reference-selection.mjs';
 import { killTree } from '../runtime/platform.mjs';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
+import { calibrationQualificationIdentity, mutationExecutionSha256,
+  resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { qualificationScopeIdentity } from '../composition/qualification-scope.mjs';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
@@ -36,6 +37,7 @@ import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.mjs';
+import { mutationTargetKeys } from '../evidence/mutation-analysis.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
 
@@ -481,12 +483,14 @@ export function referenceQualificationContext(fixture, recipe = null,
     progressionSelection, selectedCheckKeys, level };
 }
 
-export function referenceQualificationSelectionArgs(binding, progressionSelection = null) {
+export function referenceQualificationSelectionArgs(binding, progressionSelection = null,
+  selectedCheckKeys = null) {
   if (!binding?.release?.checkCatalog?.length) {
     throw new Error('reference qualification requires an exact recipe check catalog');
   }
   const selected = progressionSelection?.grader.selection ?? null;
-  const checkKeys = progressionSelection?.grader.checkKeys
+  const checkKeys = selectedCheckKeys
+    ?? progressionSelection?.grader.checkKeys
     ?? binding.release.checkCatalog.map(check => check.stableKey);
   const args = ['--check', checkKeys.join(',')];
   if (!isModularRecipeRelease(binding.release)) return args;
@@ -556,6 +560,29 @@ export function qualificationMutationManifest(fixture, context, requestedIds = [
   return { ...manifest, mutations: targeted };
 }
 
+export function targetedMutationCheckKeys(context, manifest) {
+  const available = new Map(context.binding.release.checkCatalog.map(check =>
+    [check.stableKey, check]));
+  const allowed = new Set(context.selectedCheckKeys);
+  const requested = new Set(manifest.mutations.flatMap(mutationTargetKeys));
+  const missing = [...requested].filter(key => !available.has(key));
+  if (missing.length) {
+    throw new Error(`targeted mutations name unknown checks: ${missing.sort().join(', ')}`);
+  }
+  const outsideScope = [...requested].filter(key => !allowed.has(key)
+    && Number(available.get(key).points) > 0);
+  if (outsideScope.length) {
+    throw new Error(`targeted mutations name checks outside the run scope: ${
+      outsideScope.sort().join(', ')}`);
+  }
+  const selected = context.binding.release.checkCatalog
+    .filter(check => Number(check.points) > 0 && allowed.has(check.stableKey)
+      && requested.has(check.stableKey))
+    .map(check => check.stableKey);
+  if (selected.length === 0) throw new Error('targeted mutations select no scored checks');
+  return selected;
+}
+
 async function runOnce(fixture, args, context, id, repetition) {
   const workRoot = referenceQualificationWorkRoot();
   mkdirSync(workRoot, { recursive: true });
@@ -578,7 +605,7 @@ async function runOnce(fixture, args, context, id, repetition) {
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--skip-probe', '--no-media'];
     benchArgs.push('--recipe', `${context.binding.release.id}@${context.binding.release.version}`);
     benchArgs.push(...referenceQualificationSelectionArgs(context.binding,
-      context.progressionSelection));
+      context.progressionSelection, context.selectedCheckKeys));
     benchArgs.push('--parent-attempt-id', id);
     if (args.mutations) {
       const manifestPath = join(work, 'selected-mutations.json');
@@ -911,6 +938,11 @@ async function main() {
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture, selection.recipe,
     { level: args.level, featureCatalog: args.featureCatalog });
+  const selectedManifest = args.mutations
+    ? qualificationMutationManifest(fixture, context, args.mutationIds) : null;
+  const runContext = args.mutationIds.length
+    ? { ...context, selectedCheckKeys: targetedMutationCheckKeys(context, selectedManifest) }
+    : context;
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;
@@ -934,10 +966,11 @@ async function main() {
   const selectedReference = context.calibration.references.entries.find(entry =>
     entry.backend === fixture.backend && entry.id === fixture.id);
   const selectedMutation = args.mutations
-    ? context.calibration.mutations.find(entry => entry.backend === fixture.backend)
+    ? { ...context.calibration.mutations.find(entry => entry.backend === fixture.backend),
+      executionSha256: mutationExecutionSha256(selectedManifest) }
     : null;
-  const qualificationRelease = referenceQualificationRelease(context.binding.release,
-    context.selectedCheckKeys);
+  const qualificationRelease = referenceQualificationRelease(runContext.binding.release,
+    runContext.selectedCheckKeys);
   const qualificationScope = qualificationScopeIdentity({
     kind: args.mutations ? 'mutation' : 'reference',
     release: qualificationRelease,
@@ -958,15 +991,15 @@ async function main() {
     startedAt: new Date().toISOString(), isolation: 'docker',
     runner: controllerRunner(), qualificationScope, mutationControl: args.mutations,
     diagnostic: args.mutationIds.length > 0,
-    qualifiedCheckKeys: [...context.selectedCheckKeys].sort(),
-    ...(context.featureCatalog ? { featureCatalog: context.featureCatalog } : {}), runs: [] };
+    qualifiedCheckKeys: [...runContext.selectedCheckKeys].sort(),
+    ...(runContext.featureCatalog ? { featureCatalog: runContext.featureCatalog } : {}), runs: [] };
   const artifactIdentities = artifact.identities;
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
     const run = args.mutationWorkers > 1
-      ? await runParallelMutationRepetition(fixture, args, context, id, repetition,
+      ? await runParallelMutationRepetition(fixture, args, runContext, id, repetition,
         artifactIdentities)
-      : await runOnce(fixture, args, context, id, repetition);
+      : await runOnce(fixture, args, runContext, id, repetition);
     artifact.runs.push(run);
     // Repetition measures stability of a passing baseline. Repeating a setup or
     // infrastructure failure only wastes time and produces duplicate noise.
