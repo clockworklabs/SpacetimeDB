@@ -711,6 +711,7 @@ jobs:
       ARTIFACT_SUFFIX: linux
     steps:
       - *set-cargo-target-dir
+      - *set-spacetime-bin
 
       - *find-git-ref
       - *checkout-sources
@@ -722,7 +723,6 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
-      - *set-spacetime-bin
 
       - name: Build module with latest compatible dependencies
         run: cargo ci module-latest-deps
@@ -1217,6 +1217,7 @@ jobs:
       ARTIFACT_SUFFIX: linux
     steps:
       - *set-cargo-target-dir
+      - *set-spacetime-bin
 
       - *find-git-ref
       - *checkout-sources
@@ -1270,7 +1271,6 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
-      - *set-spacetime-bin
       - *expose-spacetime-cli
 
       - name: Check quickstart-chat bindings are up to date
@@ -1457,6 +1457,7 @@ jobs:
       ARTIFACT_SUFFIX: linux
     steps:
       - *set-cargo-target-dir
+      - *set-spacetime-bin
 
       - *find-git-ref
       - *checkout-sources
@@ -1478,7 +1479,6 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
-      - *set-spacetime-bin
 
       - name: Run TypeScript tests
         run: cargo ci typescript-test
