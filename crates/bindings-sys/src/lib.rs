@@ -883,6 +883,24 @@ pub mod raw {
         pub fn datastore_clear(table_id: TableId, out: *mut u64) -> u16;
     }
 
+    #[link(wasm_import_module = "spacetime_10.6")]
+    unsafe extern "C" {
+        /// Finds the value of the environment variable named by
+        /// the UTF-8 slice at `key_ptr[..key_len]`.
+        /// A `[ByteSourceId]` for the value will be written to `target_ptr`.
+        /// If the variable is not set, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `key_ptr` is NULL or `key` is not in bounds of WASM memory.
+        /// - `key` is not valid UTF-8.
+        /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+        /// - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
+        pub fn env_get(key_ptr: *const u8, key_len: usize, bytes_source_id: *mut BytesSource) -> u16;
+    }
+
     /// What strategy does the database index use?
     ///
     /// See also: <https://www.postgresql.org/docs/current/sql-createindex.html>
@@ -1488,6 +1506,27 @@ pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
 
     if source == raw::BytesSource::INVALID {
         None // No JWT found.
+    } else {
+        Some(source)
+    }
+}
+
+/// Finds the value of the environment variable named `key`.
+/// If the variable is not set, this returns None.
+/// If a value is found, this will return a valid [`raw::BytesSource`].
+///
+/// # Errors
+///
+/// This panics on any error. You can see details about errors in [`raw::env_get`].
+#[inline]
+pub fn env_get(key: &str) -> Option<raw::BytesSource> {
+    let source = unsafe {
+        call(|out| raw::env_get(key.as_ptr(), key.len(), out))
+            .unwrap_or_else(|errno: Errno| panic!("Error getting env var: {errno}"))
+    };
+
+    if source == raw::BytesSource::INVALID {
+        None // Variable not set.
     } else {
         Some(source)
     }

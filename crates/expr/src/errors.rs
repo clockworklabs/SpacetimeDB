@@ -1,4 +1,4 @@
-use super::statement::InvalidVar;
+use super::statement::{EnvValueTooLarge, InvalidEnvKey, InvalidVar};
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
@@ -138,6 +138,10 @@ pub enum TypingError {
     Unresolved(#[from] Unresolved),
     #[error(transparent)]
     InvalidVar(#[from] InvalidVar),
+    #[error(transparent)]
+    InvalidEnvKey(#[from] InvalidEnvKey),
+    #[error(transparent)]
+    EnvValueTooLarge(#[from] EnvValueTooLarge),
     #[error(transparent)]
     InsertValues(#[from] InsertValuesError),
     #[error(transparent)]

@@ -1614,6 +1614,40 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Finds the value of the environment variable named by
+    /// the UTF-8 slice in WASM memory at `key_ptr[..key_len]`.
+    /// A `[ByteSourceId]` for the value will be written to `target_ptr`.
+    /// If the variable is not set, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+    ///
+    /// Reads `st_env` in the current transaction if one is open,
+    /// and in a fresh read-only transaction otherwise.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `key_ptr` is NULL or `key` is not in bounds of WASM memory.
+    /// - `key` is not valid UTF-8.
+    /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+    /// - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
+    pub fn env_get(
+        caller: Caller<'_, Self>,
+        key_ptr: WasmPtr<u8>,
+        key_len: u32,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::EnvGet, target_ptr, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let key = mem.deref_str(key_ptr, key_len)?;
+            let Some(value) = env.instance_env.env_get(key)? else {
+                return Ok(0u32);
+            };
+            let b = bytes::Bytes::from(value.into_boxed_bytes());
+            let source_id = env.create_bytes_source(b)?;
+            Ok(source_id.0)
+        })
+    }
+
     /// Writes the identity of the module into `out = out_ptr[..32]`.
     ///
     /// # Traps

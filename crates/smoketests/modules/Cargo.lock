@@ -757,6 +757,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-env-vars"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-fail-initial-publish-broken"
 version = "0.1.0"
 dependencies = [

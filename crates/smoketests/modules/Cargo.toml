@@ -40,6 +40,7 @@ members = [
     "rls-with-filter",
     "permissions-private",
     "permissions-lifecycle",
+    "env-vars",
 
     # Call/procedure tests
     "call-reducer-procedure",

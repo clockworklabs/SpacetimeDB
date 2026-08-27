@@ -68,6 +68,8 @@ pub enum SqlUnsupported {
     MultiStatement,
     #[error("Multi-table DELETE is not supported")]
     MultiTableDelete,
+    #[error("Malformed DELETE env statement, expected `DELETE env.<KEY>`")]
+    DeleteEnv,
     #[error("Empty SQL query")]
     Empty,
     #[error("Names must be qualified when using joins")]

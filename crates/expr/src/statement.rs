@@ -7,7 +7,7 @@ use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
     ast::{
-        sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
+        sql::{SqlAst, SqlDelete, SqlDeleteEnv, SqlInsert, SqlSelect, SqlSet, SqlSetEnv, SqlShow, SqlUpdate},
         BinOp, SqlIdent, SqlLiteral,
     },
     parser::sql::parse_sql,
@@ -31,6 +31,10 @@ use super::{
 pub enum Statement {
     Select(ProjectList),
     DML(DML),
+    /// SET env.KEY = 'value', upserting a database env var
+    SetEnv(SetEnvVar),
+    /// DELETE env.KEY, removing a database env var
+    DeleteEnv(DeleteEnvVar),
 }
 
 pub enum DML {
@@ -85,6 +89,17 @@ pub struct SetVar {
 
 pub struct ShowVar {
     pub name: String,
+}
+
+/// A typed `SET env.KEY = 'value'` statement
+pub struct SetEnvVar {
+    pub key: Box<str>,
+    pub value: Box<str>,
+}
+
+/// A typed `DELETE env.KEY` statement
+pub struct DeleteEnvVar {
+    pub key: Box<str>,
 }
 
 /// Type check an INSERT statement
@@ -266,6 +281,57 @@ fn is_var_valid(var: &str) -> bool {
 
 const ST_VAR_NAME: &str = "st_var";
 const VALUE_COLUMN: &str = "value";
+
+/// Maximum length of an env var key, in bytes.
+pub const ENV_KEY_MAX_BYTES: usize = 256;
+/// Maximum length of an env var value, in bytes.
+pub const ENV_VALUE_MAX_BYTES: usize = 8192;
+/// Maximum number of env vars per database.
+pub const ENV_MAX_VARS: u64 = 256;
+
+#[derive(Error, Debug)]
+#[error(
+    "`{key}` is not a valid env var key: \
+     keys must match [A-Za-z_][A-Za-z0-9_]* and be at most {ENV_KEY_MAX_BYTES} bytes"
+)]
+pub struct InvalidEnvKey {
+    pub key: Box<str>,
+}
+
+#[derive(Error, Debug)]
+#[error("env var values may be at most {ENV_VALUE_MAX_BYTES} bytes")]
+pub struct EnvValueTooLarge;
+
+fn is_env_key_valid(key: &str) -> bool {
+    let mut bytes = key.bytes();
+    key.len() <= ENV_KEY_MAX_BYTES
+        && bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// Type check a `SET env.KEY = 'value'` statement
+pub fn type_set_env(set: SqlSetEnv) -> TypingResult<SetEnvVar> {
+    let SqlSetEnv { key, value } = set;
+    if !is_env_key_valid(&key) {
+        return Err(InvalidEnvKey { key }.into());
+    }
+    match value {
+        SqlLiteral::Str(value) if value.len() > ENV_VALUE_MAX_BYTES => Err(EnvValueTooLarge.into()),
+        SqlLiteral::Str(value) => Ok(SetEnvVar { key, value }),
+        SqlLiteral::Bool(_) => Err(UnexpectedType::new(&AlgebraicType::String, &AlgebraicType::Bool).into()),
+        SqlLiteral::Num(_) => Err(UnexpectedType::new(&AlgebraicType::String, &AlgebraicType::F64).into()),
+        SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::String, &AlgebraicType::bytes()).into()),
+    }
+}
+
+/// Type check a `DELETE env.KEY` statement
+pub fn type_delete_env(delete: SqlDeleteEnv) -> TypingResult<DeleteEnvVar> {
+    let SqlDeleteEnv { key } = delete;
+    if !is_env_key_valid(&key) {
+        return Err(InvalidEnvKey { key }.into());
+    }
+    Ok(DeleteEnvVar { key })
+}
 
 /// The concept of `SET` only exists in the ast.
 /// We translate it here to an `INSERT` on the `st_var` system table.
@@ -454,6 +520,8 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> T
         SqlAst::Update(update) => Ok(Statement::DML(DML::Update(type_update(update, tx)?))),
         SqlAst::Set(set) => Ok(Statement::DML(DML::Insert(type_and_rewrite_set(set, tx)?))),
         SqlAst::Show(show) => Ok(Statement::Select(type_and_rewrite_show(show, tx)?)),
+        SqlAst::SetEnv(set) => Ok(Statement::SetEnv(type_set_env(set)?)),
+        SqlAst::DeleteEnv(delete) => Ok(Statement::DeleteEnv(type_delete_env(delete)?)),
     }
 }
 
@@ -526,6 +594,60 @@ mod tests {
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn env_statements() {
+        let tx = SchemaViewer(module_def());
+
+        for (sql, key, value) in [
+            ("SET env.MY_KEY = 'v'", "MY_KEY", "v"),
+            // Empty values are allowed and distinct from unset keys
+            ("SET env.MY_KEY = ''", "MY_KEY", ""),
+            // Values may contain arbitrary UTF-8
+            ("SET env._k1 = 'hello, world 🌍'", "_k1", "hello, world 🌍"),
+        ] {
+            match parse_and_type_sql(sql, &tx) {
+                Ok(Statement::SetEnv(set)) => {
+                    assert_eq!(&*set.key, key, "{sql}");
+                    assert_eq!(&*set.value, value, "{sql}");
+                }
+                _ => panic!("unexpected result for {sql}"),
+            }
+        }
+
+        match parse_and_type_sql("DELETE env.MY_KEY", &tx) {
+            Ok(Statement::DeleteEnv(del)) => assert_eq!(&*del.key, "MY_KEY"),
+            _ => panic!("unexpected result for DELETE env.MY_KEY"),
+        }
+
+        let long_key = "k".repeat(257);
+        let max_key = "k".repeat(256);
+        let large_value = "v".repeat(8193);
+        let max_value = "v".repeat(8192);
+
+        // Limits are inclusive
+        assert!(parse_and_type_sql(&format!("SET env.{max_key} = 'v'"), &tx).is_ok());
+        assert!(parse_and_type_sql(&format!("SET env.k = '{max_value}'"), &tx).is_ok());
+
+        for sql in [
+            // Values must be strings
+            "SET env.MY_KEY = 5",
+            "SET env.MY_KEY = true",
+            "SET env.MY_KEY = 0xFF",
+            // Keys must match [A-Za-z_][A-Za-z0-9_]*
+            "SET env.\"1bad\" = 'v'",
+            "SET env.\"has-dash\" = 'v'",
+            "SET env.\"has space\" = 'v'",
+            "DELETE env.\"has-dash\"",
+            // Key too long
+            &format!("SET env.{long_key} = 'v'"),
+            &format!("DELETE env.{long_key}"),
+            // Value too large
+            &format!("SET env.k = '{large_value}'"),
+        ] {
+            assert!(parse_and_type_sql(sql, &tx).is_err(), "{sql}");
         }
     }
 

@@ -72,7 +72,7 @@ webbrowser.workspace = true
 clap-markdown.workspace = true
 git2.workspace = true
 glob.workspace = true
-dialoguer = { workspace = true, features = ["fuzzy-select"] }
+dialoguer = { workspace = true, features = ["fuzzy-select", "password"] }
 rolldown.workspace = true
 rolldown_common.workspace = true
 rolldown_error.workspace = true

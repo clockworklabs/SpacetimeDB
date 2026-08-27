@@ -4,6 +4,7 @@ pub mod db_arg_resolution;
 pub mod delete;
 pub mod describe;
 pub mod dev;
+pub mod env;
 pub mod dns;
 pub mod generate;
 pub mod init;

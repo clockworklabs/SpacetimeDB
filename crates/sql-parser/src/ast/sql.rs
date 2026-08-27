@@ -19,6 +19,10 @@ pub enum SqlAst {
     Set(SqlSet),
     /// SHOW var
     Show(SqlShow),
+    /// SET env.KEY = 'value'
+    SetEnv(SqlSetEnv),
+    /// DELETE env.KEY
+    DeleteEnv(SqlDeleteEnv),
 }
 
 impl SqlAst {
@@ -159,3 +163,16 @@ pub struct SqlSet(pub SqlIdent, pub SqlLiteral);
 /// SHOW var
 #[derive(Debug)]
 pub struct SqlShow(pub SqlIdent);
+
+/// SET env.KEY '=' literal, upserting a database environment variable
+#[derive(Debug)]
+pub struct SqlSetEnv {
+    pub key: Box<str>,
+    pub value: SqlLiteral,
+}
+
+/// DELETE env.KEY, removing a database environment variable
+#[derive(Debug)]
+pub struct SqlDeleteEnv {
+    pub key: Box<str>,
+}

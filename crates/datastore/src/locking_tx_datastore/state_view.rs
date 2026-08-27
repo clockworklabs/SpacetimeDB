@@ -4,11 +4,11 @@ use crate::error::{DatastoreError, TableError};
 use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
-    StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
-    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields,
-    StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
-    StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+    StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEnvFields,
+    StEnvRow, StEventTableFields, StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
+    StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
+    StTableFields, StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_ENV_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
     ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
 };
 use anyhow::anyhow;
@@ -331,6 +331,14 @@ pub trait StateView {
                     )
                 )
             })
+    }
+
+    /// Reads the value of the environment variable `key` from `st_env`, if set.
+    fn get_env_var(&self, key: &str) -> Result<Option<Box<str>>> {
+        self.iter_by_col_eq(ST_ENV_ID, StEnvFields::Key, &key.into())?
+            .next()
+            .map(|row| StEnvRow::try_from(row).map(|r| r.value))
+            .transpose()
     }
 }
 

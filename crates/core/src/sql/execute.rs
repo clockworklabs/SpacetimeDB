@@ -16,12 +16,13 @@ use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_engine::relational_db::RelationalDB;
-use spacetimedb_expr::statement::Statement;
+use spacetimedb_datastore::system_tables::{StEnvFields, StEnvRow, StFields, ST_ENV_ID};
+use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
+use spacetimedb_expr::statement::{DeleteEnvVar, SetEnvVar, Statement, ENV_MAX_VARS};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_lib::{bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use tokio::sync::oneshot;
@@ -141,14 +142,19 @@ fn run_inner<I: WasmInstance>(
                 trapped,
             ))
         }
-        Statement::DML(stmt) => {
-            // An extra layer of auth is required for DML
+        stmt => {
+            // An extra layer of auth is required for DML and env var writes
             if !auth.has_write_access() {
                 return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
 
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| match stmt {
+                Statement::DML(stmt) => execute_dml_stmt(&auth, stmt, tx, &mut metrics),
+                Statement::SetEnv(stmt) => set_env_var(&db, tx, stmt),
+                Statement::DeleteEnv(stmt) => delete_env_var(&db, tx, stmt),
+                Statement::Select(_) => unreachable!("handled above"),
+            })?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -220,6 +226,37 @@ fn run_inner<I: WasmInstance>(
             ))
         }
     }
+}
+
+/// Upserts the env var `stmt.key` in `st_env`.
+fn set_env_var(db: &RelationalDB, tx: &mut MutTx, stmt: SetEnvVar) -> anyhow::Result<()> {
+    let SetEnvVar { key, value } = stmt;
+    let key_val = AlgebraicValue::String(key.clone());
+    let existing: Vec<_> = db
+        .iter_by_col_eq_mut(tx, ST_ENV_ID, StEnvFields::Key.col_id(), &key_val)?
+        .map(|row| row.pointer())
+        .collect();
+    if existing.is_empty() {
+        let count = db.table_row_count_mut(tx, ST_ENV_ID).unwrap_or(0);
+        if count >= ENV_MAX_VARS {
+            anyhow::bail!("cannot set env var `{key}`: limit of {ENV_MAX_VARS} env vars per database reached");
+        }
+    }
+    db.delete(tx, ST_ENV_ID, existing);
+    let row = ProductValue::from(StEnvRow { key, value });
+    db.insert(tx, ST_ENV_ID, &bsatn::to_vec(&row)?)?;
+    Ok(())
+}
+
+/// Removes the env var `stmt.key` from `st_env`, if set. Idempotent.
+fn delete_env_var(db: &RelationalDB, tx: &mut MutTx, stmt: DeleteEnvVar) -> anyhow::Result<()> {
+    let key_val = AlgebraicValue::String(stmt.key);
+    let existing: Vec<_> = db
+        .iter_by_col_eq_mut(tx, ST_ENV_ID, StEnvFields::Key.col_id(), &key_val)?
+        .map(|row| row.pointer())
+        .collect();
+    db.delete(tx, ST_ENV_ID, existing);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1617,6 +1654,82 @@ pub(crate) mod tests {
             tmp_vec.clone()
         )
         .is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_env_vars() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let server = Identity::from_claims("issuer", "server");
+        let client = Identity::from_claims("issuer", "client");
+        let owner_auth = AuthCtx::new(server, server);
+        let non_owner_auth = AuthCtx::new(server, client);
+
+        let rt = db.runtime().expect("runtime should be there");
+        let run = |db, sql: &str, auth| rt.block_on(run(db, sql.to_string(), auth, None, None, &mut vec![]));
+
+        // Set and read back a value.
+        run(db.clone(), "SET env.MY_KEY = 'v1'", owner_auth.clone())?;
+        let rows = run(db.clone(), "SELECT * FROM st_env", owner_auth.clone())?.rows;
+        assert_eq!(rows, vec![product!["MY_KEY", "v1"]]);
+
+        // SET is an upsert.
+        run(db.clone(), "SET env.MY_KEY = 'v2'", owner_auth.clone())?;
+        let rows = run(
+            db.clone(),
+            "SELECT value FROM st_env WHERE key = 'MY_KEY'",
+            owner_auth.clone(),
+        )?
+        .rows;
+        assert_eq!(rows, vec![product!["v2"]]);
+
+        // Keys are case-sensitive.
+        run(db.clone(), "SET env.my_key = 'lower'", owner_auth.clone())?;
+        let rows = run(db.clone(), "SELECT * FROM st_env", owner_auth.clone())?.rows;
+        assert_eq!(rows.len(), 2);
+
+        // Non-owners can neither write nor read st_env.
+        assert!(run(db.clone(), "SET env.MY_KEY = 'v3'", non_owner_auth.clone()).is_err());
+        assert!(run(db.clone(), "DELETE env.MY_KEY", non_owner_auth.clone()).is_err());
+        assert!(run(db.clone(), "SELECT * FROM st_env", non_owner_auth.clone()).is_err());
+
+        // DELETE removes the key and is idempotent.
+        run(db.clone(), "DELETE env.MY_KEY", owner_auth.clone())?;
+        run(db.clone(), "DELETE env.MY_KEY", owner_auth.clone())?;
+        let rows = run(db.clone(), "SELECT * FROM st_env", owner_auth.clone())?.rows;
+        assert_eq!(rows, vec![product!["my_key", "lower"]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_env_var_limit() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let set = |key: &str, value: &str| SetEnvVar {
+            key: key.into(),
+            value: value.into(),
+        };
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            for i in 0..256 {
+                set_env_var(&db, tx, set(&format!("K{i}"), "v")).unwrap();
+            }
+            Ok(())
+        })?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            // The 257th key is rejected.
+            assert!(set_env_var(&db, tx, set("K256", "v")).is_err());
+            // Updating an existing key is still allowed at the limit.
+            set_env_var(&db, tx, set("K0", "v2")).unwrap();
+            // Deleting a key frees a slot.
+            delete_env_var(&db, tx, DeleteEnvVar { key: "K1".into() }).unwrap();
+            set_env_var(&db, tx, set("K256", "v")).unwrap();
+            Ok(())
+        })?;
 
         Ok(())
     }

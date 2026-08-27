@@ -104,6 +104,9 @@ pub struct HandlerContext {
     /// Methods for performing HTTP requests.
     pub http: HttpClient,
 
+    /// Read-only access to the database's environment variables.
+    pub env: crate::EnvVars,
+
     #[cfg(feature = "rand08")]
     pub(crate) rng: OnceCell<StdbRng>,
 
@@ -119,6 +122,7 @@ impl HandlerContext {
         Self {
             timestamp,
             http: HttpClient {},
+            env: crate::EnvVars {},
             #[cfg(feature = "rand08")]
             rng: OnceCell::new(),
             #[cfg(feature = "rand08")]

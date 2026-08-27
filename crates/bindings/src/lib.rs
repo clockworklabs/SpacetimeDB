@@ -919,12 +919,29 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+/// Read-only access to the database's environment variables.
+///
+/// Env vars are set externally, e.g. via the `spacetime env` CLI,
+/// and cannot be written from module code.
+/// An external update is visible on the next transaction.
+pub struct EnvVars {}
+
+impl EnvVars {
+    /// Returns the value of the environment variable `key`,
+    /// or `None` if the variable is not set.
+    pub fn get(&self, key: &str) -> Option<String> {
+        rt::env_get(key)
+    }
+}
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
+    /// Read-only access to the database's environment variables.
+    pub env: EnvVars,
 }
 
 impl Default for AnonymousViewContext {
@@ -932,6 +949,7 @@ impl Default for AnonymousViewContext {
         Self {
             db: LocalReadOnly {},
             from: QueryBuilder {},
+            env: EnvVars {},
         }
     }
 }
@@ -942,6 +960,8 @@ pub struct ViewContext {
     sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
+    /// Read-only access to the database's environment variables.
+    pub env: EnvVars,
 }
 
 impl ViewContext {
@@ -950,6 +970,7 @@ impl ViewContext {
             sender,
             db: LocalReadOnly {},
             from: QueryBuilder {},
+            env: EnvVars {},
         }
     }
 
@@ -1030,6 +1051,9 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
+    /// Read-only access to the database's environment variables.
+    pub env: EnvVars,
+
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
@@ -1043,6 +1067,7 @@ impl ReducerContext {
     pub fn __dummy() -> Self {
         Self {
             db: Local {},
+            env: EnvVars {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
@@ -1058,6 +1083,7 @@ impl ReducerContext {
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
             db,
+            env: EnvVars {},
             sender,
             timestamp,
             connection_id,
@@ -1267,6 +1293,9 @@ pub struct ProcedureContext {
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
+
+    /// Read-only access to the database's environment variables.
+    pub env: EnvVars,
     // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
@@ -1286,6 +1315,7 @@ impl ProcedureContext {
             timestamp,
             connection_id,
             http: http::HttpClient {},
+            env: EnvVars {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -1836,6 +1866,53 @@ impl CtxWithHttp for HandlerContext {
 impl CtxWithHttp for ProcedureContext {
     fn http(&self) -> &HttpClient {
         &self.http
+    }
+}
+
+/// Contexts which provide read access to the database's environment variables.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type.
+///
+/// When operating on a concrete-typed context,
+/// this trait is not necessary, as the context's `env` field provides the same access.
+pub trait CtxWithEnv {
+    fn env(&self) -> &EnvVars;
+}
+
+impl CtxWithEnv for ReducerContext {
+    fn env(&self) -> &EnvVars {
+        &self.env
+    }
+}
+
+impl CtxWithEnv for TxContext {
+    fn env(&self) -> &EnvVars {
+        &self.0.env
+    }
+}
+
+impl CtxWithEnv for ViewContext {
+    fn env(&self) -> &EnvVars {
+        &self.env
+    }
+}
+
+impl CtxWithEnv for AnonymousViewContext {
+    fn env(&self) -> &EnvVars {
+        &self.env
+    }
+}
+
+impl CtxWithEnv for ProcedureContext {
+    fn env(&self) -> &EnvVars {
+        &self.env
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithEnv for HandlerContext {
+    fn env(&self) -> &EnvVars {
+        &self.env
     }
 }
 

@@ -181,6 +181,21 @@ impl ModuleHandle {
         host.module().await.expect("module should be running")
     }
 
+    /// Run `sql` against the database, authorized as the database owner.
+    pub async fn exec_sql(&self, sql: &str) -> anyhow::Result<()> {
+        let database = self
+            .env
+            .get_database_by_identity(&self.db_identity)
+            .await?
+            .expect("database should exist");
+        let module = self.module_host().await;
+        let auth = spacetimedb_lib::identity::AuthCtx::new(database.owner_identity, database.owner_identity);
+        module
+            .call_sql(module.relational_db().clone(), sql.to_string(), auth, None, &mut vec![])
+            .await?;
+        Ok(())
+    }
+
     /// Call a procedure by name with JSON-encoded args, returning the raw `AlgebraicValue` on success.
     pub async fn call_procedure_with_args(&self, procedure: &str, args_json: &str) -> anyhow::Result<AlgebraicValue> {
         let module = self.module_host().await;

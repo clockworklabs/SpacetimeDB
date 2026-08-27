@@ -93,6 +93,50 @@ fn test_calling_a_reducer() {
     test_calling_a_reducer_in_module("module-test");
 }
 
+/// Env vars set via SQL are visible to module code through `ctx.env`
+/// on the next call, and `st_env` is not reachable through datastore syscalls.
+#[test]
+#[serial]
+fn test_env_vars() {
+    init();
+
+    CompiledModule::compile("env-test", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let module = &module;
+            let read_env = |key: &str| {
+                let args = product![key.to_string()];
+                async move { module.call_reducer_json("read_env", &args).await.unwrap() }
+            };
+
+            // Unset key reads as absent.
+            read_env("MY_KEY").await;
+            // A value set externally is visible on the next call.
+            module.exec_sql("SET env.MY_KEY = 'hello'").await.unwrap();
+            read_env("MY_KEY").await;
+            // So are updates and deletes.
+            module.exec_sql("SET env.MY_KEY = 'world'").await.unwrap();
+            read_env("MY_KEY").await;
+            module.exec_sql("DELETE env.MY_KEY").await.unwrap();
+            read_env("MY_KEY").await;
+            // st_env cannot be resolved via datastore syscalls.
+            module.call_reducer_json("probe_st_env", &product![]).await.unwrap();
+
+            assert_eq!(
+                read_logs(module).await,
+                [
+                    "env: MY_KEY is unset",
+                    "env: MY_KEY=hello",
+                    "env: MY_KEY=world",
+                    "env: MY_KEY is unset",
+                    "probe: st_env not found",
+                ]
+                .map(String::from)
+            );
+        },
+    );
+}
+
 #[test]
 #[serial]
 fn test_calling_a_reducer_csharp() {

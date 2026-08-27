@@ -18,6 +18,7 @@ mod cluster {
     mod describe;
     mod dml;
     mod domains;
+    mod env;
     mod fail_initial_publish;
     mod filtering;
     mod http_egress;

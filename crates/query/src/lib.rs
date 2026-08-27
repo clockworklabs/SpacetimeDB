@@ -63,7 +63,7 @@ pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Resu
     }
 
     match parse_and_type_sql(sql, tx, auth)? {
-        stmt @ Statement::DML(_) => Ok(stmt),
+        stmt @ (Statement::DML(_) | Statement::SetEnv(_) | Statement::DeleteEnv(_)) => Ok(stmt),
         Statement::Select(expr) => Ok(Statement::Select(resolve_views_for_sql(tx, expr, auth)?)),
     }
 }

@@ -88,6 +88,8 @@ pub const ST_TABLE_ACCESSOR_ID: TableId = TableId(18);
 pub const ST_INDEX_ACCESSOR_ID: TableId = TableId(19);
 /// The static ID of the table that maps canonical column names to accessor names
 pub const ST_COLUMN_ACCESSOR_ID: TableId = TableId(20);
+/// The static ID of the table that stores database environment variables
+pub const ST_ENV_ID: TableId = TableId(21);
 
 pub(crate) const ST_CONNECTION_CREDENTIALS_NAME: &str = "st_connection_credentials";
 pub const ST_TABLE_NAME: &str = "st_table";
@@ -109,6 +111,7 @@ pub(crate) const ST_EVENT_TABLE_NAME: &str = "st_event_table";
 pub(crate) const ST_TABLE_ACCESSOR_NAME: &str = "st_table_accessor";
 pub(crate) const ST_INDEX_ACCESSOR_NAME: &str = "st_index_accessor";
 pub(crate) const ST_COLUMN_ACCESSOR_NAME: &str = "st_column_accessor";
+pub const ST_ENV_NAME: &str = "st_env";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE`.
@@ -162,7 +165,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StConstraintRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_MODULE_ID | ST_CLIENT_ID | ST_VAR_ID => false,
+        ST_MODULE_ID | ST_CLIENT_ID | ST_VAR_ID | ST_ENV_ID => false,
         ST_SCHEDULED_ID => {
             // We don't have any scheduled system tables as of writing (pgoldman 2025-12-16),
             // but no harm in future-proofing.
@@ -207,7 +210,7 @@ pub enum SystemTable {
     st_event_table = ST_EVENT_TABLE_ID.0 as _,
 }
 
-pub fn system_tables() -> [TableSchema; 20] {
+pub fn system_tables() -> [TableSchema; 21] {
     [
         // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
@@ -230,6 +233,7 @@ pub fn system_tables() -> [TableSchema; 20] {
         st_table_accessor_schema(),
         st_index_accessor_schema(),
         st_column_accessor_schema(),
+        st_env_schema(),
     ]
 }
 
@@ -278,6 +282,7 @@ pub(crate) const ST_EVENT_TABLE_IDX: usize = 16;
 pub(crate) const ST_TABLE_ACCESSOR_IDX: usize = 17;
 pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
+pub(crate) const ST_ENV_IDX: usize = 20;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -450,6 +455,12 @@ st_fields_enum!(enum StColumnAccessorFields {
     "table_name", TableName = 0,
     "col_name", ColName = 1,
     "accessor_name", AccessorName = 2,
+});
+
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StEnvFields {
+    "key", Key = 0,
+    "value", Value = 1,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -670,6 +681,15 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_column_accessor_table_alias_cols)
         .with_index_no_accessor_name(btree(st_column_accessor_table_alias_cols));
 
+    let st_env_type = builder.add_type::<StEnvRow>();
+    builder
+        .build_table(ST_ENV_NAME, *st_env_type.as_ref().expect("should be ref"))
+        .with_type(TableType::System)
+        .with_access(v9::TableAccess::Private)
+        .with_unique_constraint(StEnvFields::Key)
+        .with_index_no_accessor_name(btree(StEnvFields::Key))
+        .with_primary_key(StEnvFields::Key);
+
     let result = builder
         .finish()
         .try_into()
@@ -695,6 +715,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StTableAccessorFields>(&result, ST_TABLE_ACCESSOR_NAME);
     validate_system_table::<StIndexAccessorFields>(&result, ST_INDEX_ACCESSOR_NAME);
     validate_system_table::<StColumnAccessorFields>(&result, ST_COLUMN_ACCESSOR_NAME);
+    validate_system_table::<StEnvFields>(&result, ST_ENV_NAME);
 
     result
 }
@@ -743,6 +764,7 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
         m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
         m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
+        m.insert("st_env_key_key", ConstraintId(26));
         m
     };
 }
@@ -781,6 +803,7 @@ lazy_static::lazy_static! {
         m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
         m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
         m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
+        m.insert("st_env_key_idx_btree", IndexId(30));
         m
     };
 }
@@ -942,6 +965,10 @@ fn st_column_accessor_schema() -> TableSchema {
     st_schema(ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ACCESSOR_ID)
 }
 
+pub fn st_env_schema() -> TableSchema {
+    st_schema(ST_ENV_NAME, ST_ENV_ID)
+}
+
 /// If `table_id` refers to a known system table, return its schema.
 ///
 /// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
@@ -970,6 +997,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_TABLE_ACCESSOR_ID => Some(st_table_accessor_schema()),
         ST_INDEX_ACCESSOR_ID => Some(st_index_accessor_schema()),
         ST_COLUMN_ACCESSOR_ID => Some(st_column_accessor_schema()),
+        ST_ENV_ID => Some(st_env_schema()),
         _ => None,
     }
 }
@@ -1659,6 +1687,32 @@ impl From<StVarRow> for ProductValue {
 impl From<StVarRow> for AlgebraicValue {
     fn from(row: StVarRow) -> Self {
         AlgebraicValue::Product(row.into())
+    }
+}
+
+/// System table [ST_ENV_NAME]
+///
+/// | key       | value    |
+/// |-----------|----------|
+/// | "API_KEY" | "sk-..." |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StEnvRow {
+    pub key: Box<str>,
+    pub value: Box<str>,
+}
+
+impl From<StEnvRow> for ProductValue {
+    fn from(x: StEnvRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+impl TryFrom<RowRef<'_>> for StEnvRow {
+    type Error = DatastoreError;
+
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        read_via_bsatn(row)
     }
 }
 

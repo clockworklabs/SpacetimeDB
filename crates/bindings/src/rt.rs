@@ -1319,6 +1319,17 @@ pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
     Some(std::str::from_utf8(&buf).unwrap().to_string())
 }
 
+/// Look up the value of the environment variable `key`.
+pub(crate) fn env_get(key: &str) -> Option<String> {
+    let mut buf = IterBuf::take();
+    let source = sys::env_get(key)?;
+    if source == BytesSource::INVALID {
+        return None;
+    }
+    read_bytes_source_into(source, &mut buf);
+    Some(std::str::from_utf8(&buf).unwrap().to_string())
+}
+
 /// Read `source` from the host fully into `buf`.
 pub(crate) fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
     const INVALID: i16 = NO_SUCH_BYTES as i16;

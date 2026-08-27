@@ -133,11 +133,13 @@ use sqlparser::{
         Value, Values,
     },
     dialect::PostgreSqlDialect,
+    keywords::Keyword,
     parser::Parser,
+    tokenizer::{Token, Tokenizer},
 };
 
 use crate::ast::{
-    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
+    sql::{SqlAst, SqlDelete, SqlDeleteEnv, SqlInsert, SqlSelect, SqlSet, SqlSetEnv, SqlShow, SqlUpdate, SqlValues},
     SqlIdent,
 };
 
@@ -148,6 +150,10 @@ use super::{
 
 /// Parse a SQL string
 pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
+    // `DELETE env.KEY` is not part of the sqlparser grammar, so recognize it up front.
+    if let Some(result) = parse_delete_env(sql) {
+        return result;
+    }
     let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
     if stmts.len() > 1 {
         return Err(SqlUnsupported::MultiStatement.into());
@@ -216,7 +222,7 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             hivevar: false,
             variable,
             value,
-        } => Ok(SqlAst::Set(parse_set_var(variable, value)?)),
+        } => parse_set_var(variable, value),
         Statement::ShowVariable { variable } => Ok(SqlAst::Show(SqlShow(parse_parts(variable)?))),
         _ => Err(SqlUnsupported::feature(stmt).into()),
     }
@@ -303,21 +309,55 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
 }
 
 /// Parse a SET variable statement
-fn parse_set_var(variable: ObjectName, mut value: Vec<Expr>) -> SqlParseResult<SqlSet> {
-    if value.len() == 1 {
-        Ok(SqlSet(
-            parse_ident(variable)?,
-            parse_literal_expr(value.swap_remove(0), SqlUnsupported::Assignment)?,
-        ))
-    } else {
-        Err(SqlUnsupported::feature(Statement::SetVariable {
+fn parse_set_var(variable: ObjectName, mut value: Vec<Expr>) -> SqlParseResult<SqlAst> {
+    if value.len() != 1 {
+        return Err(SqlUnsupported::feature(Statement::SetVariable {
             local: false,
             hivevar: false,
             variable,
             value,
         })
-        .into())
+        .into());
     }
+    let literal = parse_literal_expr(value.swap_remove(0), SqlUnsupported::Assignment)?;
+    // `SET env.KEY = ...` upserts a database env var rather than a system variable.
+    let ObjectName(parts) = &variable;
+    if let [ns, key] = &parts[..]
+        && ns.quote_style.is_none()
+        && ns.value.eq_ignore_ascii_case("env")
+    {
+        return Ok(SqlAst::SetEnv(SqlSetEnv {
+            key: key.value.clone().into_boxed_str(),
+            value: literal,
+        }));
+    }
+    Ok(SqlAst::Set(SqlSet(parse_ident(variable)?, literal)))
+}
+
+/// Recognize a `DELETE env.KEY` statement, which removes a database env var.
+///
+/// Returns `None` if `sql` does not start with `DELETE env.`,
+/// in which case it should be parsed as a regular statement.
+fn parse_delete_env(sql: &str) -> Option<SqlParseResult<SqlAst>> {
+    let tokens = Tokenizer::new(&PostgreSqlDialect {}, sql).tokenize().ok()?;
+    let mut tokens = tokens.iter().filter(|t| !matches!(t, Token::Whitespace(_)));
+    match (tokens.next()?, tokens.next()?, tokens.next()?) {
+        (Token::Word(delete), Token::Word(ns), Token::Period)
+            if delete.keyword == Keyword::DELETE && ns.quote_style.is_none() && ns.value.eq_ignore_ascii_case("env") => {
+        }
+        _ => return None,
+    }
+    let malformed = || Some(Err(SqlUnsupported::DeleteEnv.into()));
+    let key = match tokens.next() {
+        Some(Token::Word(key)) => key.value.clone().into_boxed_str(),
+        _ => return malformed(),
+    };
+    match tokens.next() {
+        None => {}
+        Some(Token::SemiColon) if tokens.next().is_none() => {}
+        _ => return malformed(),
+    }
+    Some(Ok(SqlAst::DeleteEnv(SqlDeleteEnv { key })))
 }
 
 struct SqlParser;
@@ -461,6 +501,42 @@ mod tests {
             "set y to +2.5",
         ] {
             assert!(parse_sql(sql).is_ok());
+        }
+    }
+
+    #[test]
+    fn env_statements() {
+        use crate::ast::sql::SqlAst;
+
+        // SET env.KEY parses into a dedicated AST node, preserving key case.
+        match parse_sql("SET env.My_Key1 = 'v'").unwrap() {
+            SqlAst::SetEnv(set) => assert_eq!(&*set.key, "My_Key1"),
+            ast => panic!("unexpected ast: {ast:?}"),
+        }
+        // The env prefix is case-insensitive.
+        assert!(matches!(parse_sql("set ENV.K = 'v'").unwrap(), SqlAst::SetEnv(_)));
+        // Regular SET statements are unaffected.
+        assert!(matches!(parse_sql("set row_limit = 5").unwrap(), SqlAst::Set(_)));
+
+        match parse_sql("DELETE env.MY_KEY").unwrap() {
+            SqlAst::DeleteEnv(del) => assert_eq!(&*del.key, "MY_KEY"),
+            ast => panic!("unexpected ast: {ast:?}"),
+        }
+        for sql in ["delete env.MY_KEY;", "delete ENV.k", " DELETE  env.k "] {
+            assert!(matches!(parse_sql(sql).unwrap(), SqlAst::DeleteEnv(_)), "{sql}");
+        }
+        // Regular DELETE statements are unaffected.
+        assert!(matches!(parse_sql("delete from t").unwrap(), SqlAst::Delete(_)));
+
+        // Malformed DELETE env statements are rejected.
+        for sql in [
+            "DELETE env.",
+            "DELETE env.MY_KEY extra",
+            "DELETE env.MY_KEY where a = 1",
+            "DELETE env.'k'",
+            "DELETE env.MY_KEY; select * from t",
+        ] {
+            assert!(parse_sql(sql).is_err(), "{sql}");
         }
     }
 

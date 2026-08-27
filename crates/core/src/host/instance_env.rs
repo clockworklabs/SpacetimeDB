@@ -17,6 +17,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
+use spacetimedb_datastore::system_tables::ST_ENV_ID;
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_metrics::utils::IntGaugeExt;
@@ -268,6 +269,17 @@ impl InstanceEnv {
         self.tx.get()
     }
 
+    /// Rejects module-originated datastore access to `st_env`.
+    ///
+    /// `st_env` holds secrets, so the only module-reachable path into it is `env_get`.
+    /// The table is reported as not found so that its id is not observable from modules.
+    fn reject_st_env(table_id: TableId) -> Result<(), NodesError> {
+        if table_id == ST_ENV_ID {
+            return Err(NodesError::TableNotFound);
+        }
+        Ok(())
+    }
+
     /// True if `self` is holding an open transaction, or false if it is not.
     pub fn in_tx(&self) -> bool {
         self.get_tx().is_ok()
@@ -284,6 +296,24 @@ impl InstanceEnv {
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
         let tx = &mut *self.get_tx()?;
         Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
+    }
+
+    /// Reads the value of the environment variable `key` from `st_env`.
+    ///
+    /// Reads from the current transaction if one is open.
+    /// Otherwise, e.g. in a procedure outside a transaction,
+    /// reads from a fresh read-only transaction.
+    pub(crate) fn env_get(&self, key: &str) -> Result<Option<Box<str>>, NodesError> {
+        if let Ok(mut tx) = self.get_tx() {
+            // Env reads join a view's read set, so that a write to `st_env`
+            // re-evaluates views that depend on env vars.
+            tx.record_table_scan(&self.func_type, ST_ENV_ID);
+            return Ok(tx.get_env_var(key).map_err(DBError::from)?);
+        }
+        let res = self
+            .relational_db()
+            .with_read_only(Workload::Internal, |tx| tx.get_env_var(key));
+        Ok(res.map_err(DBError::from)?)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -356,6 +386,7 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
+        Self::reject_st_env(table_id)?;
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
@@ -434,6 +465,7 @@ impl InstanceEnv {
     }
 
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
+        Self::reject_st_env(table_id)?;
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
@@ -479,6 +511,7 @@ impl InstanceEnv {
 
         // Find all rows in the table to delete.
         let (table_id, _, iter) = stdb.index_scan_point(tx, index_id, point)?;
+        Self::reject_st_env(table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
@@ -499,6 +532,7 @@ impl InstanceEnv {
 
         // Find all rows in the table to delete.
         let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        Self::reject_st_env(table_id)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = match iter {
             IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
@@ -538,6 +572,7 @@ impl InstanceEnv {
     /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(level = "trace", skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
+        Self::reject_st_env(table_id)?;
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
@@ -561,6 +596,7 @@ impl InstanceEnv {
 
     /// Deletes all rows in the table identified by `table_id`.
     pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
+        Self::reject_st_env(table_id)?;
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
@@ -583,8 +619,11 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
-        stdb.table_id_from_name_mut(tx, table_name)?
-            .ok_or(NodesError::TableNotFound)
+        let table_id = stdb
+            .table_id_from_name_mut(tx, table_name)?
+            .ok_or(NodesError::TableNotFound)?;
+        Self::reject_st_env(table_id)?;
+        Ok(table_id)
     }
 
     /// Returns the `index_id` associated with the given `index_name`.
@@ -607,6 +646,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
+        Self::reject_st_env(table_id)?;
         let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
@@ -624,6 +664,7 @@ impl InstanceEnv {
         pool: &mut ChunkPool,
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
+        Self::reject_st_env(table_id)?;
         let tx = &mut *self.get_tx()?;
 
         // Open the iterator.
@@ -652,6 +693,7 @@ impl InstanceEnv {
 
         // Open index iterator
         let (table_id, point, iter) = self.relational_db().index_scan_point(tx, index_id, point)?;
+        Self::reject_st_env(table_id)?;
 
         // Scan the index and serialize rows to BSATN.
         let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
@@ -682,6 +724,7 @@ impl InstanceEnv {
         let (table_id, iter) =
             self.relational_db()
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        Self::reject_st_env(table_id)?;
 
         // Scan the index and serialize rows to BSATN.
         let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
