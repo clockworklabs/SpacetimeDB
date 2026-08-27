@@ -534,11 +534,11 @@ jobs:
 
   smoketest_partitions_windows:
     needs: [smoketest_build_windows]
-    name: Smoketests (Windows ${{ matrix.partition }}/4)
+    name: Smoketests (Windows ${{ matrix.partition }}/8)
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4]
+        partition: [1, 2, 3, 4, 5, 6, 7, 8]
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 30
     env:
@@ -546,7 +546,7 @@ jobs:
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
       ARTIFACT_SUFFIX: windows
-      PARTITION_COUNT: 4
+      PARTITION_COUNT: 8
     steps: *smoketest-partition-steps
 
   # this is a no-op version of the above check with a trivially-passing body.
@@ -560,10 +560,14 @@ jobs:
       matrix:
         include:
           - name: Linux 1/1
-          - name: Windows 1/4
-          - name: Windows 2/4
-          - name: Windows 3/4
-          - name: Windows 4/4
+          - name: Windows 1/8
+          - name: Windows 2/8
+          - name: Windows 3/8
+          - name: Windows 4/8
+          - name: Windows 5/8
+          - name: Windows 6/8
+          - name: Windows 7/8
+          - name: Windows 8/8
     runs-on: ubuntu-latest
     steps:
       - name: Skip duplicate merge queue smoketest
