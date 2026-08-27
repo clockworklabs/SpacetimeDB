@@ -94,8 +94,10 @@ async function probe(action) {
   }
 }
 
-const results = [];
-for (const a of ACTIONS) results.push({ id: a.id, ...(await probe(a)) });
+const results = await Promise.all(ACTIONS.map(async action => ({
+  id: action.id,
+  ...(await probe(action)),
+})));
 
 const missing = results.filter(r => !r.ok);
 if (!args.quiet) {

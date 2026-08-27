@@ -36,8 +36,7 @@
       "desc": "The my_messages view stops restricting rows to conversations the caller belongs to, so every client is sent every message including other people's direct ones. The interface still shows only the open conversation.",
       "find": "    if (!convIds.has(msg.conversationId)) continue;",
       "replace": "    // if (!convIds.has(msg.conversationId)) continue;",
-      "breaks": 109,
-      "settleMs": 25000
+      "breaks": 109
     },
     {
       "id": "anyone-can-remove-a-member",
@@ -46,8 +45,7 @@
       "desc": "The ownership check in the removeMember reducer is dropped. The control stays hidden from non-owners, so nothing visible changes.",
       "find": "    if (!myMembership || !myMembership.isOwner) throw new SenderError('only an owner can remove members');",
       "replace": "    if (false) throw new SenderError('only an owner can remove members');",
-      "breaks": 108,
-      "settleMs": 25000
+      "breaks": 108
     }
   ]
 }
