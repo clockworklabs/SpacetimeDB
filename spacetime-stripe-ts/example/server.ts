@@ -3,16 +3,17 @@ import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
 import {
+  discardStoredServerToken,
+  exampleUiAssetsDir,
+  grantServerIdentity,
+  loadServerToken,
+  saveServerToken,
+} from '@spacetimedb/example-ui/server';
+import {
   DbConnection,
   tables,
   type ErrorContext,
 } from './src/module_bindings/app';
-import {
-  discardStoredServerToken,
-  grantServerIdentity,
-  loadServerToken,
-  saveServerToken,
-} from '../../tools/example-server-identity';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -191,6 +192,7 @@ async function configureStripeFromEnv(): Promise<
 
 const app = express();
 app.use(express.json({ limit: '512kb' }));
+app.use('/assets', express.static(exampleUiAssetsDir, staticOptions()));
 app.use(express.static(path.join(__dirname, 'public'), staticOptions()));
 
 function staticOptions() {

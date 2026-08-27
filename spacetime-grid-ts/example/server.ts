@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
+import { exampleUiAssetsDir } from '@spacetimedb/example-ui/server';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,6 +146,7 @@ app.use('/auth', async (req, res) => {
   }
 });
 
+app.use('/assets', express.static(exampleUiAssetsDir));
 app.use(express.static(PUBLIC_DIR));
 
 app.get('/api/health', (_req: Request, res: Response) => {

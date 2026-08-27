@@ -1,5 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+export const exampleUiAssetsDir = fileURLToPath(
+  new URL('../assets/', import.meta.url)
+);
 
 export type StoredServerToken = {
   token: string | undefined;

@@ -635,6 +635,9 @@ importers:
 
   spacetime-cron-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -763,6 +766,9 @@ importers:
 
   spacetime-files-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       '@spacetimedb/files':
         specifier: workspace:*
         version: link:..
@@ -902,6 +908,9 @@ importers:
 
   spacetime-lobby-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -967,6 +976,9 @@ importers:
 
   spacetime-posthog-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -1125,6 +1137,9 @@ importers:
 
   spacetime-rate-limit-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -1213,6 +1228,9 @@ importers:
 
   spacetime-resend-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -1331,6 +1349,9 @@ importers:
 
   spacetime-stripe-ts/example:
     dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -10397,11 +10418,6 @@ packages:
   fs-minipass@3.0.3:
     resolution: {integrity: sha512-XUBA9XClHbnJWSfBzjkm6RvPsyg3sryZt06BEQoXcF7EK/xpGaQYJgQKDJSUH5SGZ76Y7pFx1QBnXz09rU5Fbw==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
-
-  fsevents@2.3.2:
-    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
-    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
-    os: [darwin]
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -26929,9 +26945,6 @@ snapshots:
   fs-minipass@3.0.3:
     dependencies:
       minipass: 7.1.2
-
-  fsevents@2.3.2:
-    optional: true
 
   fsevents@2.3.3:
     optional: true

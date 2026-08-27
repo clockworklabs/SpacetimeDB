@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
+import { exampleUiAssetsDir } from '@spacetimedb/example-ui/server';
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ const DB_NAME =
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
+app.use('/assets', express.static(exampleUiAssetsDir));
 app.use(
   express.static(path.join(__dirname, 'public'), {
     etag: false,

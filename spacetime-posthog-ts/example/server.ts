@@ -4,14 +4,15 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { DbConnection, tables, type ErrorContext } from './src/module_bindings';
-import { PRODUCTS, SCENARIOS } from './catalog/catalog';
 import {
   discardStoredServerToken,
+  exampleUiAssetsDir,
   grantServerIdentity,
   loadServerToken,
   saveServerToken,
-} from '../../tools/example-server-identity';
+} from '@spacetimedb/example-ui/server';
+import { DbConnection, tables, type ErrorContext } from './src/module_bindings';
+import { PRODUCTS, SCENARIOS } from './catalog/catalog';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -203,6 +204,7 @@ function posthogAppUrl(): string {
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
+app.use('/assets', express.static(exampleUiAssetsDir));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req: Request, res: Response) => {

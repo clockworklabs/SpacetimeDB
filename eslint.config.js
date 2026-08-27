@@ -65,6 +65,7 @@ export default tseslint.config(
           './tsconfig.json',
           './crates/bindings-typescript/tsconfig.json',
           './crates/bindings-typescript/test-app/tsconfig.json',
+          './spacetime-example-ui-ts/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/money-exchange-react-ts/tsconfig.json',
@@ -73,9 +74,7 @@ export default tseslint.config(
           './templates/angular-ts/tsconfig.app.json',
           './docs/tsconfig.json',
         ],
-        projectService: {
-          allowDefaultProject: ['tools/example-server-identity.ts'],
-        },
+        projectService: true,
         tsconfigRootDir: __dirname,
       },
     },

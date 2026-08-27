@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./src/server.ts"
+    },
     "./styles.css": "./src/styles/index.css"
   },
   "scripts": {
