@@ -335,7 +335,10 @@ impl Repo for Fs {
         // NOTE: We previously used `O_APPEND`, but Windows demands `write(true)`
         // so that we can truncate trailing garbage in [super::resume_segment_writer].
         let mut file = File::options().read(true).write(true).open(self.segment_path(offset))?;
+        // Ensure any outstanding writes from a crashed process are durable.
+        file.sync_data()?;
         file.seek(io::SeekFrom::End(0))?;
+
         Ok(file)
     }
 
@@ -346,7 +349,11 @@ impl Repo for Fs {
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
         let path = self.segment_path(offset);
         debug!("fs: open segment at {}", path.display());
-        let file = File::open(&path)?;
+        // NOTE: Write access is required for `sync_data` on Windows .
+        let file = File::options().read(true).write(true).open(&path)?;
+        // Ensure any outstanding writes from a crashed process are durable.
+        file.sync_data()?;
+
         let len = file.metadata()?.len();
         CompressReader::new(file).map(|inner| ReadOnlySegment { inner, len })
     }
