@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -7,6 +8,7 @@ import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/tracks.mjs';
 import { PACK_BUDGET_POLICY } from '../src/composition/pack-budget.mjs';
+import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
 export function parseQualificationArgs(argv) {
   const args = { command: argv[2], track: null, level: null };
@@ -44,6 +46,25 @@ function evidencePlan(calibration) {
     evidence.push({ kind: 'null', stack: null, repetition });
   }
   return evidence;
+}
+
+export function mutationWorkerCount(calibration, stack,
+  readManifest = path => JSON.parse(readFileSync(resolve(STACK_BENCH_ROOT, path), 'utf8'))) {
+  const entry = calibration.mutations.find(candidate => candidate.backend === stack);
+  if (!entry) return 1;
+  const manifest = readManifest(entry.path);
+  const selectedIds = new Set(entry.targets.map(target => target.id));
+  const selectedMutations = (manifest.mutations ?? []).filter(mutation =>
+    selectedIds.delete(mutation.id));
+  if (selectedIds.size) {
+    throw new Error(`${stack} calibration selects missing mutations: ${[...selectedIds].sort().join(', ')}`);
+  }
+  return Math.min(4, Math.max(1, selectedMutations.length));
+}
+
+function mutationWorkerOption(calibration, stack) {
+  const workers = mutationWorkerCount(calibration, stack);
+  return workers > 1 ? ` --mutation-workers ${workers}` : '';
 }
 
 function defectCheckCoverage(release, calibration) {
@@ -177,7 +198,7 @@ export function qualificationReadiness(trackName, level, recipe = null) {
     commands: [
       ...stacks.flatMap(stack => [
         `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations${mutationWorkerOption(calibration, stack)} --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
       ]),
       `qualify-null --track ${trackName} --level ${level}${recipeOption} --out ${output}/${trackName}-l${level}-null.json`,
     ],

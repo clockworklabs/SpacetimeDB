@@ -22,14 +22,16 @@ test('mutation workers reserve one consecutive proven run slot each', () => {
   }
 });
 
-test('mutation partitioning keeps scenarios together and permits empty trailing shards', () => {
-  assert.deepEqual(mutationShard(mutations, { index: 0, count: 3 }).mutationIds, ['a', 'c']);
+test('mutation partitioning balances individual defects and permits empty trailing shards', () => {
+  assert.deepEqual(mutationShard(mutations, { index: 0, count: 3 }).mutationIds, ['a', 'd']);
   assert.deepEqual(mutationShard(mutations, { index: 1, count: 3 }).mutationIds, ['b', 'e']);
-  assert.deepEqual(mutationShard(mutations, { index: 2, count: 3 }).mutationIds, ['d']);
+  assert.deepEqual(mutationShard(mutations, { index: 2, count: 3 }).mutationIds, ['c']);
   assert.deepEqual(mutationShard([{ id: 'a', scenario: 'one' }],
     { index: 2, count: 3 }).mutationIds, []);
   assert.deepEqual(mutationShard([{ id: 'a' }, { id: 'b' }],
-    { index: 0, count: 2, defaultScenario: 'shared' }).mutationIds, ['a', 'b']);
+    { index: 0, count: 2, defaultScenario: 'shared' }).mutationIds, ['a']);
+  assert.deepEqual(mutationShard([{ id: 'a' }, { id: 'b' }],
+    { index: 1, count: 2, defaultScenario: 'shared' }).mutationIds, ['b']);
 });
 
 test('mutation shard merging restores manifest order and rejects incomplete unions', () => {

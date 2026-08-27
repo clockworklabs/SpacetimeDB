@@ -32,25 +32,14 @@ export function mutationWorkerSlots({ workerCount, runIndex, maxRunIndex }) {
 }
 
 function shardAssignments(mutations, count, defaultScenario) {
-  const groups = new Map();
+  const workers = Array.from({ length: count }, () => []);
   mutations.forEach((mutation, position) => {
     const scenario = mutation.scenario ?? defaultScenario;
     if (typeof scenario !== 'string' || !scenario.trim()) {
       fail(`mutation ${mutation.id} has no scenario`);
     }
-    if (!groups.has(scenario)) groups.set(scenario, { first: position, positions: [] });
-    groups.get(scenario).positions.push(position);
+    workers[position % count].push(position);
   });
-  const workers = Array.from({ length: count }, () => ({ size: 0, positions: [] }));
-  const groupsBySize = [...groups.values()].sort((a, b) =>
-    b.positions.length - a.positions.length || a.first - b.first);
-  for (const group of groupsBySize) {
-    const worker = workers.reduce((best, candidate) =>
-      candidate.size < best.size ? candidate : best, workers[0]);
-    worker.positions.push(...group.positions);
-    worker.size += group.positions.length;
-  }
-  for (const worker of workers) worker.positions.sort((a, b) => a - b);
   return workers;
 }
 
@@ -60,7 +49,7 @@ export function mutationShard(mutations, { index, count, defaultScenario = null 
   if (!Number.isInteger(index) || index < 0 || index >= count) {
     fail(`shard index must be from 0 through ${count - 1}`);
   }
-  const positions = shardAssignments(mutations, count, defaultScenario)[index].positions;
+  const positions = shardAssignments(mutations, count, defaultScenario)[index];
   return {
     index,
     count,

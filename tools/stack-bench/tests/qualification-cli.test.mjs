@@ -1,12 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseQualificationArgs, qualificationReadiness } from '../commands/qualification-cli.mjs';
+import { mutationWorkerCount, parseQualificationArgs, qualificationReadiness }
+  from '../commands/qualification-cli.mjs';
 
 function assertQualificationIsCurrent(status) {
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
 }
+
+test('mutation worker count uses only mutations selected by calibration', () => {
+  const calibration = { mutations: [{ backend: 'postgres', path: 'manifest.json',
+    targets: [{ id: 'selected' }] }] };
+  const manifest = { mutations: [
+    { id: 'selected', scenario: 'one.json' },
+    { id: 'not-selected-a', scenario: 'two.json' },
+    { id: 'not-selected-b', scenario: 'three.json' },
+    { id: 'not-selected-c', scenario: 'four.json' },
+  ] };
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 1);
+  assert.throws(() => mutationWorkerCount({ mutations: [{ ...calibration.mutations[0],
+    targets: [{ id: 'missing' }] }] }, 'postgres', () => manifest), /missing mutations/);
+});
+
+test('mutation workers split defects even when they use one scenario', () => {
+  const calibration = { mutations: [{ backend: 'postgres', path: 'manifest.json',
+    targets: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id })) }] };
+  const manifest = { scenario: 'shared.json',
+    mutations: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id })) };
+  assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 4);
+});
 
 test('qualification status lists exact evidence and launch readiness without writing', () => {
   const status = qualificationReadiness('ecommerce', 1);
@@ -52,6 +75,8 @@ test('qualification status uses the exact progression check subset', () => {
     && stack.coveredPoints === 199 && stack.missingChecks.length === 0));
   assert(status.commands.filter(command => command.startsWith('qualify-reference'))
     .every(command => command.includes('--feature-catalog ecommerce.questlines@1.0.0')));
+  assert(status.commands.filter(command => command.includes('--mutations'))
+    .every(command => command.includes('--mutation-workers 4')));
   assert.equal(status.promotion.blockers.some(blocker =>
     blocker.code === 'defect_check_coverage_incomplete'), false);
 });
