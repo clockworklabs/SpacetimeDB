@@ -38,7 +38,8 @@ const definition = () => ({
   questlines: [{ id: 'identity', title: 'Identity' }],
 });
 const splitIdentities = progression => {
-  const { policy: _policy, strikes, ...catalogDefinition } = progression.definition;
+  const { policy: _policy, strikes, unchangedFailureLimit: _limit,
+    ...catalogDefinition } = progression.definition;
   const featureCatalog = compileFeatureCatalogInput({ ...catalogDefinition,
     schemaVersion: 1, kind: 'feature-catalog' });
   const dependencyPolicy = compileDependencyPolicyInput({ levels: strikes.levels }, featureCatalog);
@@ -212,7 +213,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
         validation: { ladder: { policy: 'dependency-gated', requestedLevels: [1],
           completedLevels: [1], stoppedAfterLevel: null, blockedLevels: [] } },
         levels: [{ level: 1, selection: selected.grader.selection,
-          graded: true, score: 1, max: 1 }],
+          graded: true, score: 1, max: 1, outcome: { kind: 'passed' } }],
         totals: { costUsd: 0 },
         outcome: { kind: 'passed' },
       },

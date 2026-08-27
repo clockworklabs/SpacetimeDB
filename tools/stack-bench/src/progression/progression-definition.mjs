@@ -7,7 +7,8 @@ import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
-  DEPENDENCY_MODE_SCHEMA_VERSION, FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.mjs';
+  DEFAULT_UNCHANGED_FAILURE_LIMIT, DEPENDENCY_MODE_SCHEMA_VERSION,
+  FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.mjs';
 import { progressionEngine } from './progression-engine.mjs';
 
 export const PROGRESSION_DEFINITION_SCHEMA_VERSION = 2;
@@ -283,7 +284,8 @@ function selectedCatalogDefinition(featureCatalog, selectedLevels) {
 }
 
 export function compileDependencyPolicyInput(strikes, featureCatalog,
-  selectedLevels = progressionLevels(featureCatalog)) {
+  selectedLevels = progressionLevels(featureCatalog),
+  unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT) {
   const catalog = validateFeatureCatalogInput(featureCatalog);
   const selected = selectedCatalogDefinition(catalog, selectedLevels);
   const runtimeDefinition = compileDependencyMode({
@@ -292,14 +294,16 @@ export function compileDependencyPolicyInput(strikes, featureCatalog,
     kind: 'progression-mode',
     policy: DEPENDENCY_MODE_POLICY,
     strikes,
+    unchangedFailureLimit,
   });
   const definition = canonicalizeDefinition({
     schemaVersion: 1,
     kind: 'dependency-policy',
     id: DEPENDENCY_MODE_POLICY,
-    version: '1.0.0',
+    version: '1.1.0',
     levels: selected.levels,
     strikes: runtimeDefinition.strikes,
+    unchangedFailureLimit: runtimeDefinition.unchangedFailureLimit,
   });
   return canonicalizeDefinition({
     definition,
@@ -316,7 +320,8 @@ export function validateDependencyPolicyInput(input, featureCatalog) {
   }
   const compiled = compileDependencyPolicyInput({
     levels: input.definition?.strikes?.levels ?? {},
-  }, featureCatalog, input.definition?.levels);
+  }, featureCatalog, input.definition?.levels,
+  input.definition?.unchangedFailureLimit);
   if (canonicalDefinitionJson(input) !== canonicalDefinitionJson(compiled)) {
     throw new Error('dependency policy identity does not match its compiled definition');
   }
@@ -333,6 +338,7 @@ export function dependencyRuntimeDefinition(featureCatalog, dependencyPolicy) {
     kind: 'progression-mode',
     policy: policy.definition.id,
     strikes: { levels: policy.definition.strikes.levels },
+    unchangedFailureLimit: policy.definition.unchangedFailureLimit,
   });
 }
 

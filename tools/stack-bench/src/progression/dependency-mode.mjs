@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 export const DEPENDENCY_MODE_SCHEMA_VERSION = 2;
 export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
 export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
+export const DEFAULT_UNCHANGED_FAILURE_LIMIT = 2;
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
@@ -109,7 +111,7 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
   const definition = structuredClone(input);
   const fields = ['schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes',
     'questlines'];
-  if (!catalogOnly) fields.push('policy', 'strikes');
+  if (!catalogOnly) fields.push('policy', 'strikes', 'unchangedFailureLimit');
   strictObject(definition, source, new Set(fields));
   const expectedSchema = catalogOnly ? FEATURE_CATALOG_SCHEMA_VERSION : DEPENDENCY_MODE_SCHEMA_VERSION;
   const expectedKind = catalogOnly ? 'feature-catalog' : 'progression-mode';
@@ -125,6 +127,12 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
   nonEmptyString(definition.title, `${source}.title`);
   if (!catalogOnly && definition.policy !== DEPENDENCY_MODE_POLICY) {
     fail(`${source}.policy`, `must be ${JSON.stringify(DEPENDENCY_MODE_POLICY)}`);
+  }
+  if (!catalogOnly) {
+    definition.unchangedFailureLimit = positiveInteger(
+      definition.unchangedFailureLimit ?? DEFAULT_UNCHANGED_FAILURE_LIMIT,
+      `${source}.unchangedFailureLimit`,
+    );
   }
   if (!Array.isArray(definition.nodes) || definition.nodes.length === 0) {
     fail(`${source}.nodes`, 'must be a non-empty array');
@@ -409,6 +417,7 @@ function initialDependencyState(definition) {
     nodes: Object.fromEntries(definition.nodes.map(node => [node.id, {
       status: 'locked',
       exhaustedAtLevel: null,
+      unchangedFailure: { fingerprint: null, count: 0 },
       checks: Object.fromEntries(node.gradingChecks.map(check => [check.id, null])),
     }])),
     strikes: Object.fromEntries(Object.entries(definition.strikes.levels).map(([level, budget]) =>
@@ -454,7 +463,12 @@ function assertState(state) {
   }
   for (const node of definition.nodes) {
     const nodeState = state.nodes[node.id];
+    const unchangedFailure = nodeState?.unchangedFailure;
     if (!object(nodeState) || !NODE_STATUSES.has(nodeState.status) || !object(nodeState.checks)
+      || !object(unchangedFailure)
+      || !Number.isSafeInteger(unchangedFailure.count) || unchangedFailure.count < 0
+      || (unchangedFailure.fingerprint !== null && !HASH.test(unchangedFailure.fingerprint))
+      || (unchangedFailure.count === 0) !== (unchangedFailure.fingerprint === null)
       || (nodeState.exhaustedAtLevel !== null
         && (!Number.isInteger(nodeState.exhaustedAtLevel)
           || !definition.strikes.levels[String(nodeState.exhaustedAtLevel)]))
@@ -549,6 +563,71 @@ function validateConclusiveResult(state, result) {
   return actualNodes;
 }
 
+function activeFeatureSets(state) {
+  const nodesById = new Map(state.definition.nodes.map(node => [node.id, node]));
+  const collect = (nodeId, selected) => {
+    selected.add(nodeId);
+    for (const parentId of nodesById.get(nodeId).dependencies) {
+      if (state.nodes[parentId].status === 'regressed') collect(parentId, selected);
+    }
+  };
+  return nodesAt(state.definition, state.level)
+    .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status))
+    .map(node => {
+      const selected = new Set();
+      collect(node.id, selected);
+      return { targetId: node.id, nodeIds: [...selected].sort() };
+    });
+}
+
+function failureFingerprint(state, nodeIds) {
+  const failedChecks = nodeIds.map(nodeId => ({
+    nodeId,
+    checks: Object.entries(state.nodes[nodeId].checks)
+      .filter(([, outcome]) => outcome === 'fail')
+      .map(([checkId]) => checkId)
+      .sort(),
+  })).filter(node => node.checks.length > 0);
+  return createHash('sha256').update(JSON.stringify(failedChecks)).digest('hex');
+}
+
+function stopUnchangedFeatureSets(state) {
+  const featureSets = activeFeatureSets(state).map(featureSet => ({
+    ...featureSet,
+    fingerprint: failureFingerprint(state, featureSet.nodeIds),
+  }));
+  const exhausted = new Set();
+  for (const featureSet of featureSets) {
+    const prior = state.nodes[featureSet.targetId].unchangedFailure;
+    const count = prior.fingerprint === featureSet.fingerprint ? prior.count + 1 : 1;
+    state.nodes[featureSet.targetId].unchangedFailure = {
+      fingerprint: featureSet.fingerprint,
+      count,
+    };
+    if (count >= state.definition.unchangedFailureLimit) {
+      featureSet.nodeIds.forEach(nodeId => exhausted.add(nodeId));
+    }
+  }
+
+  // A branch cannot continue after one of its required features stops.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const featureSet of featureSets) {
+      if (exhausted.has(featureSet.targetId)) continue;
+      const node = state.definition.nodes.find(candidate => candidate.id === featureSet.targetId);
+      if (node.dependencies.some(parentId => exhausted.has(parentId))) {
+        exhausted.add(featureSet.targetId);
+        changed = true;
+      }
+    }
+  }
+  for (const nodeId of exhausted) {
+    state.nodes[nodeId].status = 'exhausted';
+    state.nodes[nodeId].exhaustedAtLevel = state.level;
+  }
+}
+
 function applyDependencyResult(inputState, inputResult) {
   if (inputState.phase !== 'active') throw new Error('cannot record a result after progression terminates');
   const result = structuredClone(inputResult);
@@ -615,6 +694,7 @@ function applyDependencyResult(inputState, inputResult) {
     state.nodes[nodeId].exhaustedAtLevel = null;
     if (checksPass && dependenciesPass) {
       state.nodes[nodeId].status = 'passed';
+      state.nodes[nodeId].unchangedFailure = { fingerprint: null, count: 0 };
     } else if (node.level < state.level || state.nodes[nodeId].status === 'passed') {
       state.nodes[nodeId].status = 'regressed';
     } else {
@@ -627,11 +707,18 @@ function applyDependencyResult(inputState, inputResult) {
     ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
     ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
 
-  const unresolved = nodesAt(state.definition, state.level)
+  let unresolved = nodesAt(state.definition, state.level)
     .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status));
   if (unresolved.length > 0) {
     const counter = state.strikes[String(state.level)];
     counter.used += 1;
+    stopUnchangedFeatureSets(state);
+    unresolved = nodesAt(state.definition, state.level)
+      .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status));
+    if (unresolved.length === 0) {
+      openLevel(state, state.level + 1);
+      return state;
+    }
     if (counter.used < counter.budget) return state;
     for (const nodeId of currentPromptNodeIds(state)) {
       state.nodes[nodeId].status = 'exhausted';
@@ -672,6 +759,7 @@ function applyStrikeGrant(inputState, inputGrant) {
   for (const node of eligible) {
     state.nodes[node.id].status = node.level < grant.level ? 'regressed' : 'active';
     state.nodes[node.id].exhaustedAtLevel = null;
+    state.nodes[node.id].unchangedFailure = { fingerprint: null, count: 0 };
   }
   for (const node of state.definition.nodes.filter(node => node.level > grant.level)) {
     const nodeState = state.nodes[node.id];

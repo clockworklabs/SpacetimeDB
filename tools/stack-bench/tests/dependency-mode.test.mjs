@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { compileDependencyMode } from '../src/progression/dependency-mode.mjs';
+import { compileDependencyPolicyInput, compileFeatureCatalogInput }
+  from '../src/progression/progression-definition.mjs';
 import { createProgressionEngine, progressionEngine } from '../src/progression/progression-engine.mjs';
 
 const node = (id, dependencies, questline, points = [1]) => ({
@@ -68,6 +70,26 @@ test('a valid graph compiles in deterministic level and id order', () => {
   assert.deepEqual(compiled.questlines.find(item => item.id === 'identity').nodes,
     ['accounts', 'ownership', 'recovery']);
   assert.deepEqual(compiled.strikes, { levels: { 1: 2, 2: 1, 3: 2 } });
+  assert.equal(compiled.unchangedFailureLimit, 2);
+});
+
+test('the unchanged failure limit is part of the versioned dependency policy identity', () => {
+  const runtime = compileDependencyMode(fixture());
+  const { policy: _policy, strikes, unchangedFailureLimit: _limit,
+    ...catalogDefinition } = runtime;
+  const catalog = compileFeatureCatalogInput({
+    ...catalogDefinition,
+    schemaVersion: 1,
+    kind: 'feature-catalog',
+  });
+  const first = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
+    undefined, 2);
+  const second = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
+    undefined, 3);
+  assert.equal(first.definition.version, '1.1.0');
+  assert.equal(first.definition.unchangedFailureLimit, 2);
+  assert.equal(second.definition.unchangedFailureLimit, 3);
+  assert.notEqual(first.identity.sha256, second.identity.sha256);
 });
 
 test('invalid graphs, questlines, and strike budgets fail before execution', async t => {
@@ -81,6 +103,8 @@ test('invalid graphs, questlines, and strike budgets fail before execution', asy
     ['authored level', value => { value.nodes[0].level = 1; }, /compiled level and dependency reasons/],
     ['invalid default strikes', value => { value.strikes.default = 0; }, /positive integer/],
     ['invalid level strikes', value => { value.strikes.levels[2] = -1; }, /positive integer/],
+    ['invalid unchanged failure limit', value => { value.unchangedFailureLimit = 0; },
+      /positive integer/],
     ['negative check points', value => { value.nodes[0].gradingChecks[0].points = -1; }, /positive integer/],
     ['zero-point gate check', value => {
       value.nodes[0].gradingChecks[0].points = 0;
@@ -186,6 +210,35 @@ test('one failed branch stops while passed branches continue through any number 
   assert.deepEqual(progressionEngine.nextAction(state), {
     type: 'terminal', outcome: { kind: 'partial', reason: 'graph-complete', level: 3 },
   });
+});
+
+test('an unchanged branch stops without stopping a branch whose failures changed', () => {
+  const value = fixture();
+  value.strikes.default = 4;
+  value.unchangedFailureLimit = 2;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'first-failures', {
+    accounts: { 'check.accounts.1': 'fail', 'check.accounts.2': 'pass' },
+    catalog: 'fail',
+  }));
+  state = progressionEngine.recordResult(state, conclusive(state, 'changed-accounts', {
+    accounts: { 'check.accounts.1': 'pass', 'check.accounts.2': 'fail' },
+    catalog: 'fail',
+  }));
+
+  assert.equal(state.nodes.catalog.status, 'exhausted');
+  assert.equal(state.nodes.catalog.unchangedFailure.count, 2);
+  assert.equal(state.nodes.accounts.status, 'active');
+  assert.equal(state.nodes.accounts.unchangedFailure.count, 1);
+  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts']);
+
+  state = progressionEngine.recordResult(state, conclusive(state, 'accounts-pass', {
+    accounts: 'pass',
+  }));
+  assert.equal(state.nodes.accounts.status, 'passed');
+  assert.equal(state.nodes.catalog.status, 'exhausted');
+  assert.equal(state.nodes.ownership.status, 'active');
+  assert.equal(state.nodes.search.status, 'blocked');
 });
 
 test('no passed node at a level stops progression', () => {
