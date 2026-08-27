@@ -25,6 +25,9 @@ test('database provenance accepts the leased environment and rejects an unrelate
     const wrong = checkDatabaseProvenance({ app: root, backend: 'postgres' });
     assert.equal(wrong.ok, false);
     assert.match(wrong.reason, /benchmark database is on port 6532/);
+    writeFileSync(join(server, 'db.ts'),
+      'export const connectionString = "postgresql://user:pass@localhost:5433/wrong?note=:6532/";\n');
+    assert.equal(checkDatabaseProvenance({ app: root, backend: 'postgres' }).ok, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
