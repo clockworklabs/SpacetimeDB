@@ -76,16 +76,18 @@ copy fixture passwords, prompt contents, or the full executable grader plan.
 
 | Alias | Exact release | Catalog state | Current qualification status |
 |---|---|---|---|
-| L1 | `ecommerce.l1-modular@2.5.0` | promoted | qualified; 46/46 scored checks have exact defect definitions on MongoDB, PostgreSQL, and SpacetimeDB |
-| L2 | `ecommerce.l2-standard@1.5.0` | promoted | qualified; 74/74 scored checks have exact defect definitions on MongoDB, PostgreSQL, and SpacetimeDB |
-| Previous L2 | `ecommerce.l2-standard@1.4.0` | retired | its source-bound qualification evidence remains verifiable |
+| L1 | `ecommerce.l1-modular@2.5.0` | promoted | 46/46 scored checks have exact defect definitions; current qualification evidence is pending |
+| L2 | `ecommerce.l2-standard@1.6.0` | promoted | 74/74 scored checks have exact defect definitions; current qualification evidence is pending |
+| Previous L2 | `ecommerce.l2-standard@1.5.0` | retired | its source-bound qualification evidence remains verifiable |
+| L3 | `ecommerce.l3-standard@1.0.0` | candidate | not qualified or promoted |
+| Dependency progression | `ecommerce.progression-catalog@1.0.0` | candidate | draft L1-L5 catalog; not qualified or promoted |
 
-The L2 1.5 calibration binds one reference run and one mutation run for each
+The L2 1.6 calibration requires one reference run and one mutation run for each
 supported stack, plus one null-control run. Check the compiler-owned status:
 
 ```text
 node commands/qualification-cli.mjs status --track ecommerce --level 1 --recipe ecommerce.l1-modular@2.5.0
-node commands/qualification-cli.mjs status --track ecommerce --level 2 --recipe ecommerce.l2-standard@1.5.0
+node commands/qualification-cli.mjs status --track ecommerce --level 2 --recipe ecommerce.l2-standard@1.6.0
 ```
 
 Specification treatment is independent from feature selection:

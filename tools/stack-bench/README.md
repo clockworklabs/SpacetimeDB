@@ -42,6 +42,7 @@ and dashboard-started work remains fully operable from the CLI. See
 - `dashboard/README.md` — optional web control room
 - `grader/README.md` — grader architecture and evidence model
 - `tracks/ecommerce/composition/README.md` — packs, recipes, and release composition
+- `docs/dependency-graph.html` — generated ecommerce feature dependency graph
 - `docs/stack-bench.html` - Stack Bench presentation
 
 Working notes, generated reports, and run artifacts are local operator material
@@ -73,6 +74,15 @@ off by default so campaign cost and token accounting never omit an unrecorded mo
 call. The model-free friction report remains automatic.
 
 ## Run it
+
+The supported v1 deployment is the Docker appliance on a dedicated Linux
+runner. Follow `appliance/README.md` to build or verify the controller image,
+configure credentials, run preflight, and start a campaign.
+
+### Local harness development
+
+The commands in this section run from a source checkout. Use them to develop
+and qualify the harness. They are not the distributable appliance workflow.
 
 Install the locked harness dependencies and browser once per checkout:
 
@@ -183,16 +193,16 @@ executor boundary. Actions run through independent registered executors with
 capability-scoped access; concurrency, browser lifecycle, backend/app control,
 and direct database writes use the same typed contract as browser observations.
 
-Bring up the databases first; the SpacetimeDB backend needs `spacetime start`
-instead:
+For local harness development, bring up the database services first. The
+SpacetimeDB adapter starts its own dedicated run host:
 
 ```bash
 docker compose -f tools/stack-bench/docker-compose.yaml up -d
 ```
 
-Requires the Claude Code CLI, Node and Docker. The services use their own ports
-(6532 Postgres, 6537 MongoDB), container names and volumes, so a run never shares
-state with anything else on the machine.
+Local development requires the Claude Code CLI, Node, and Docker. The services
+use their own ports (6532 Postgres, 6537 MongoDB), container names, and volumes.
+A run does not share their state with other services on the machine.
 
 A run owns only what it starts, and stops it again when finished or interrupted.
 A SpacetimeDB host that was already running belongs to whoever started it, so the
@@ -226,7 +236,11 @@ npm run pack -- validate tracks/ecommerce/composition/packs/identity-access-1.0.
 npm run recipe -- validate tracks/ecommerce/composition/recipes/l1-standard-1.0.0.json --track ecommerce
 npm run recipe -- show tracks/ecommerce/composition/recipes/smoke-1.0.0.json --track ecommerce --pack ecommerce.identity-access
 npm run recipe -- diff <old-recipe.json> <new-recipe.json> --track ecommerce
+npm run graph
 ```
+
+`npm run graph` rebuilds `docs/dependency-graph.html` from the versioned
+ecommerce progression definition.
 
 `recipe diff` reports meaning, scoring, fixture, execution, and metadata changes
 separately, names requirement/contract fragments added or removed, then names the calibration bindings and evidence repetitions that
@@ -259,10 +273,11 @@ Tracks are isolated by a port offset and a name slug, so two can run at the same
 ## Levels
 
 The five-level ladder below is the production target. Ecommerce L1 2.5 and L2
-1.5 are the current qualified releases. L2 1.5 contains 74 scored checks. Each
-scored check has an exact known-defect test on all three supported stacks. Chat
-definitions remain available through L2, but their reference fixtures must be
-rebuilt before chat is presented as a current qualified comparison.
+1.6 are the promoted recipes. L2 1.6 contains 74 scored checks. Each scored
+check has an exact known-defect test on all three supported stacks. Their saved
+qualification evidence must be refreshed after a harness identity change before
+a new campaign can launch. Chat definitions remain available through L2, but
+their reference fixtures must also be rebuilt before use.
 
 Every artifact records the exact levels and recipe that ran. A level without a
 launchable catalog release fails instead of falling back to another level.

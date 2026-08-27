@@ -9,9 +9,9 @@ base release.
 
 | Level | Product scope | Release status |
 |---|---|---|
-| L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.5.0` is promoted and qualified |
-| L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.5.0` is promoted and qualified |
-| L3 | reservations and scheduled work | modular checks exist; no qualified release |
+| L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.5.0` is promoted; current evidence must be refreshed |
+| L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.6.0` is promoted; current evidence must be refreshed |
+| L3 | reservations and scheduled work | `ecommerce.l3-standard@1.0.0` is a candidate; no qualified release |
 | L4 | not yet defined as a cumulative release | design target only |
 | L5 | not yet defined as a cumulative release | design target only |
 
@@ -54,19 +54,19 @@ L2 adds staff and administrative operations over the L1 store:
 - cross-account authorization, refund accounting, and transfer-versus-purchase
   conservation.
 
-The promoted L2 1.5 release rebases these checks onto exact L1 2.4. It retains
+The promoted L2 1.6 release rebases these checks onto exact L1 2.5. It retains
 all 48 L1 checks and adds 28 L2 checks, for 76 checks and 117 points. Its source-
 bound defect definitions cover every scored check on MongoDB, PostgreSQL, and
-SpacetimeDB. Its exact reference, mutation, and null-control artifacts are bound
-to its qualified calibration.
+SpacetimeDB. A new campaign still requires exact reference, mutation, and
+null-control artifacts from the current harness.
 
 ## L3 — Deferred work
 
 The L3 product target covers reservations, scheduled restocks, order-state
 transitions, abandoned carts, and work that must survive process restarts and
-execute exactly once. Its modular check definitions are draft inputs. L3 has no
-candidate recipe, reference evidence, mutation evidence, or qualified release.
-It must not be reported as benchmark data yet.
+execute exactly once. Its recipe, reference apps, and mutation definitions are
+candidates. L3 has no accepted qualification evidence or promoted release. It
+must not be reported as benchmark data yet.
 
 ## Later cumulative releases
 
@@ -78,6 +78,8 @@ does not force all work into one fixed release sequence.
 The draft dependency model is defined in
 `progression/ecommerce-1.0.0.json`. Its levels are calculated from feature
 prerequisites. They are separate from the cumulative recipe labels above.
+Run `npm run graph` from `tools/stack-bench` to regenerate the public view at
+`docs/dependency-graph.html`.
 
 Dependency Level 4 currently contains cart expiration, order delivery,
 order-linked support, personalized recommendations, price history, promotion
