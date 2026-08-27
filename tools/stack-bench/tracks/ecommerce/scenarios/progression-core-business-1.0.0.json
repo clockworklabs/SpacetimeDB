@@ -139,7 +139,10 @@
         { "do": "signIn", "actor": "owner", "name": "payment-record" },
         { "do": "click", "actor": "owner", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
         { "do": "click", "actor": "owner", "testid": "cart-toggle" },
-        { "do": "recordNumber", "actor": "owner", "testid": "cart-total", "as": "payment-total" }
+        { "do": "recordNumber", "actor": "owner", "testid": "cart-total", "as": "payment-total" },
+        { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
+        { "do": "expectCallOutcomes", "accepted": 1 },
+        { "do": "click", "actor": "owner", "testid": "orders-toggle" }
       ],
       "criteria": [
         {
@@ -148,9 +151,6 @@
           "points": 3,
           "statedBy": "Checkout records the amount paid on the order.",
           "steps": [
-            { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
-            { "do": "expectCallOutcomes", "accepted": 1 },
-            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
             { "do": "expect", "actor": "owner", "testid": "payment-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "contains": "paid", "within": 10000 },
             { "do": "expectNumber", "actor": "owner", "testid": "payment-amount", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "relativeTo": "payment-total", "plus": 0 }
           ]
@@ -161,9 +161,6 @@
           "points": 2,
           "statedBy": "A checkout does not create duplicate payments.",
           "steps": [
-            { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
-            { "do": "expectCallOutcomes", "accepted": 1 },
-            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
             { "do": "expectElementCount", "actor": "owner", "testid": "payment-record", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 1, "within": 10000 }
           ]
         }

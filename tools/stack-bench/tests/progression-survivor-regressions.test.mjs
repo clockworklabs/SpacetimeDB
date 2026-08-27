@@ -46,10 +46,12 @@ test('stock-alert uniqueness waits for the second restock update before counting
 test('the duplicate-payment mutation remains visible through the payment view', () => {
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
     'progression-core-business-1.0.0.json');
-  const steps = criterion(scenario, '623b').steps;
-  assert.equal(steps[0].do, 'callConcurrently');
-  assert.equal(steps[1].do, 'expectCallOutcomes');
-  assert.equal(steps[2].testid, 'orders-toggle');
+  const feature = scenario.features.find(candidate => candidate.id === 623);
+  assert.equal(feature.setup.at(-3).do, 'callConcurrently');
+  assert.equal(feature.setup.at(-2).do, 'expectCallOutcomes');
+  assert.equal(feature.setup.at(-1).testid, 'orders-toggle');
+  assert.equal(criterion(scenario, '623a').steps.some(step => step.do === 'callConcurrently'), false);
+  assert.equal(criterion(scenario, '623b').steps.some(step => step.do === 'callConcurrently'), false);
 
   const manifest = readJson('grader', 'mutations', 'spacetime-ecom-progression-1.0.0.json');
   const mutation = manifest.mutations.find(candidate =>
