@@ -151,9 +151,9 @@ PREINIT(10, startup) {
 
   ffi_class = mono_wasm_assembly_find_class(
       mono_wasm_assembly_load("StdbModule.dll"),
-      "SpacetimeDB", "ModuleRegistration");
+      "", "ModuleRegistration");
   assert(ffi_class &&
-         "FFI export class (SpacetimeDB.ModuleRegistration) not found");
+         "FFI export class (ModuleRegistration) not found");
 }
 
 #define EXPORT_WITH_MONO_RES(ret, res_code, name, params, args...)            \
