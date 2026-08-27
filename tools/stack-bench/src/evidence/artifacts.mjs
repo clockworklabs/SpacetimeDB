@@ -680,9 +680,9 @@ export function currentEngineIdentity() {
   ]);
   const executable = hashDirectory(ROOT, { exclude: (name, entry) => {
     const parts = name.split('/');
-    if (parts[0].startsWith('.') || excludedRoots.has(parts[0])
+    if (parts.some(part => part.startsWith('.')) || excludedRoots.has(parts[0])
       || parts.includes('node_modules')
-      || parts.some(part => part.startsWith('.spacetime-data'))) return true;
+    ) return true;
     if (entry.isDirectory()) return false;
     // Generated while assembling the controller image. It describes the packaged
     // dependency volume; it is not executable harness source and does not exist

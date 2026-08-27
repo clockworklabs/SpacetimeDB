@@ -263,6 +263,18 @@ test('engine identity ignores hidden runtime work directories', () => {
   } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });
 
+test('engine identity ignores nested hidden runtime files', () => {
+  const copy = writableEngineRoot();
+  const before = freshEngineIdentity(copy.root);
+  try {
+    const hidden = join(copy.root, 'grader', '.generated');
+    mkdirSync(hidden, { recursive: true });
+    writeFileSync(join(hidden, 'candidate.mjs'), 'generated candidate\n');
+    writeFileSync(join(copy.root, 'grader', '.generated-report.json'), '{"generated":true}\n');
+    assert.deepEqual(freshEngineIdentity(copy.root), before);
+  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
+});
+
 test('engine identity excludes the inert historical archive', () => {
   const copy = writableEngineRoot();
   const before = freshEngineIdentity(copy.root);
