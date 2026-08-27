@@ -23,7 +23,8 @@ function freshEngineIdentity(root = BENCH_ROOT) {
 function writableEngineRoot() {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-engine-'));
   const root = join(temp, 'stack-bench');
-  const excluded = new Set(['archive', 'node_modules', 'reference-apps', 'results', 'tests', 'tracks']);
+  const excluded = new Set(['archive', 'local-notes', 'media', 'node_modules',
+    'qualification-evidence', 'reference-apps', 'results', 'tests', 'tracks', 'transcripts']);
   cpSync(BENCH_ROOT, root, { recursive: true, filter: source => {
     if (source === BENCH_ROOT) return true;
     return !excluded.has(relative(BENCH_ROOT, source).split(/[\\/]/)[0]);
@@ -269,6 +270,20 @@ test('engine identity excludes the inert historical archive', () => {
   const runtime = mkdtempSync(join(copy.root, 'archive', '.engine-runtime-'));
   try {
     writeFileSync(join(runtime, 'historical.mjs'), 'archived generated code is not the active harness\n');
+    assert.deepEqual(freshEngineIdentity(copy.root), before);
+  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
+});
+
+test('engine identity excludes local records and qualification evidence', () => {
+  const copy = writableEngineRoot();
+  const before = freshEngineIdentity(copy.root);
+  try {
+    for (const directory of ['local-notes', 'media', 'qualification-evidence', 'transcripts']) {
+      const path = join(copy.root, directory);
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, 'generated.json'), JSON.stringify({ changed: Date.now() }));
+      writeFileSync(join(path, 'generated.mjs'), 'local record, not executable harness source\n');
+    }
     assert.deepEqual(freshEngineIdentity(copy.root), before);
   } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });

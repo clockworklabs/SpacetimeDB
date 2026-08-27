@@ -667,7 +667,17 @@ export function emptyArtifactIdentities(overrides = {}) {
 
 export function currentEngineIdentity() {
   if (cachedEngineIdentity) return structuredClone(cachedEngineIdentity);
-  const excludedRoots = new Set(['archive', 'reference-apps', 'results', 'tests', 'tracks']);
+  const excludedRoots = new Set([
+    'archive',
+    'local-notes',
+    'media',
+    'qualification-evidence',
+    'reference-apps',
+    'results',
+    'tests',
+    'tracks',
+    'transcripts',
+  ]);
   const executable = hashDirectory(ROOT, { exclude: (name, entry) => {
     const parts = name.split('/');
     if (parts[0].startsWith('.') || excludedRoots.has(parts[0])
