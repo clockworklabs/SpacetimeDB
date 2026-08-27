@@ -36,6 +36,7 @@ import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
+import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -365,7 +366,9 @@ const claudeWrapper = 'record="$1"; shift; start="$(awk \'{print $22}\' /proc/$$
 let credentialBroker = null;
 try {
   credentialBroker = startCredentialBroker(auth,
-    { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS });
+    { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS, model,
+      maxBudgetUsd: maxBudgetUsd === null ? null : Number(maxBudgetUsd),
+      pricingRates: maxBudgetUsd === null ? null : claudeRatesForModel(model) });
 } catch (error) {
   console.error(`run-build.mjs: ${error.message}`);
   process.exit(2);

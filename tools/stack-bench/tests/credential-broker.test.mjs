@@ -28,7 +28,8 @@ function send(port, { method = 'POST', path = '/v1/messages', headers = {}, body
   });
 }
 
-async function withBroker(mode, body) {
+async function withBroker(mode, body, config = {}) {
+  const { upstreamBody = '{"ok":true}', ...brokerConfig } = config;
   const seen = [];
   const upstreamServer = createServer((request, response) => {
     const chunks = [];
@@ -37,13 +38,14 @@ async function withBroker(mode, body) {
       seen.push({ method: request.method, url: request.url, headers: request.headers,
         body: Buffer.concat(chunks).toString('utf8') });
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end('{"ok":true}');
+      response.end(upstreamBody);
     });
   });
   const upstreamPort = await listen(upstreamServer);
   const sessionToken = 'session-token-value-1234567890';
   const credential = 'provider-secret-value-1234567890';
-  const { server, stats } = createCredentialBroker({ mode, credential, sessionToken }, {
+  const { server, stats } = createCredentialBroker({ mode, credential, sessionToken,
+    model: 'test-model', maxOutputTokens: 4096, ...brokerConfig }, {
     requestUpstream: httpRequest,
     upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort },
   });
@@ -56,6 +58,8 @@ test('credential broker rejects unauthorized and unsupported requests before ups
   await withBroker('api-key', async ({ brokerPort, sessionToken, seen, stats }) => {
     assert.equal((await send(brokerPort)).status, 401);
     assert.equal((await send(brokerPort, { method: 'GET',
+      headers: { authorization: `Bearer ${sessionToken}` }, body: '' })).status, 404);
+    assert.equal((await send(brokerPort, { path: '/v1/complete',
       headers: { authorization: `Bearer ${sessionToken}` } })).status, 404);
     assert.equal(seen.length, 0);
     assert.equal(stats().acceptedRequests, 0);
@@ -68,12 +72,12 @@ for (const mode of ['api-key', 'subscription-token']) {
       const result = await send(brokerPort, {
         path: '/v1/messages?beta=true',
         headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' },
-        body: '{"model":"test"}',
+        body: '{"model":"test-model","max_tokens":1024}',
       });
       assert.deepEqual(result, { status: 200, body: '{"ok":true}' });
       assert.equal(seen.length, 1);
       assert.equal(seen[0].url, '/v1/messages?beta=true');
-      assert.equal(seen[0].body, '{"model":"test"}');
+      assert.equal(seen[0].body, '{"model":"test-model","max_tokens":1024}');
       if (mode === 'api-key') {
         assert.equal(seen[0].headers['x-api-key'], credential);
         assert.equal(seen[0].headers.authorization, undefined);
@@ -96,18 +100,21 @@ test('credential broker enforces request size and count limits', async () => {
   const upstreamPort = await listen(upstreamServer);
   const sessionToken = 'session-token-value-1234567890';
   const { server } = createCredentialBroker({ mode: 'api-key',
-    credential: 'provider-secret-value-1234567890', sessionToken }, {
+    credential: 'provider-secret-value-1234567890', sessionToken,
+    model: 'test-model', maxOutputTokens: 4096 }, {
     requestUpstream: httpRequest,
     upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort },
     maxRequests: 2,
-    maxRequestBytes: 4,
+    maxRequestBytes: 64,
   });
   const brokerPort = await listen(server);
   const headers = { authorization: `Bearer ${sessionToken}` };
   try {
-    assert.equal((await send(brokerPort, { headers, body: '12345' })).status, 413);
-    assert.equal((await send(brokerPort, { headers, body: '1' })).status, 200);
-    assert.equal((await send(brokerPort, { headers, body: '1' })).status, 429);
+    assert.equal((await send(brokerPort, { headers, body: 'x'.repeat(65) })).status, 413);
+    assert.equal((await send(brokerPort, { headers,
+      body: '{"model":"test-model","max_tokens":1}' })).status, 200);
+    assert.equal((await send(brokerPort, { headers,
+      body: '{"model":"test-model","max_tokens":1}' })).status, 429);
     assert.deepEqual(seen, ['/v1/messages']);
   } finally {
     await close(server);
@@ -115,11 +122,44 @@ test('credential broker enforces request size and count limits', async () => {
   }
 });
 
+test('credential broker enforces model, output token, and session cost limits', async () => {
+  const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
+  await withBroker('api-key', async ({ brokerPort, sessionToken, seen, stats }) => {
+    const headers = { authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json' };
+    assert.equal((await send(brokerPort, { headers,
+      body: '{"model":"other-model","max_tokens":1}' })).status, 400);
+    assert.equal((await send(brokerPort, { headers,
+      body: '{"model":"test-model","max_tokens":4097}' })).status, 400);
+    assert.equal((await send(brokerPort, { headers,
+      body: '{"model":"test-model","max_tokens":1000}' })).status, 402);
+    assert.equal(seen.length, 0);
+    assert.deepEqual(stats(), { acceptedRequests: 3, spentUsd: 0, reservedUsd: 0 });
+  }, { maxBudgetUsd: 0.01, pricingRates: rates });
+});
+
+test('credential broker charges reported usage and reserves enough for the next request', async () => {
+  const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
+  const upstreamBody = JSON.stringify({ usage: { input_tokens: 100, output_tokens: 100,
+    cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
+  await withBroker('api-key', async ({ brokerPort, sessionToken, seen, stats }) => {
+    const request = { headers: { authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json' },
+    body: '{"model":"test-model","max_tokens":1000}' };
+    assert.equal((await send(brokerPort, request)).status, 200);
+    assert.equal((await send(brokerPort, request)).status, 200);
+    assert.equal((await send(brokerPort, request)).status, 200);
+    assert.equal((await send(brokerPort, request)).status, 402);
+    assert.equal(seen.length, 3);
+    assert.deepEqual(stats(), { acceptedRequests: 4, spentUsd: 0.0054, reservedUsd: 0 });
+  }, { maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
+});
+
 test('credential broker lifecycle creates only an attempt-scoped session credential', async () => {
   const providerCredential = 'provider-secret-value-1234567890';
   const broker = startCredentialBroker({ mode: 'api-key',
     environment: { name: 'ANTHROPIC_API_KEY', value: providerCredential }, mount: null },
-  { networkMode: 'host', deadlineMs: 10_000 });
+  { networkMode: 'host', deadlineMs: 10_000, model: 'test-model' });
   try {
     assert.equal(existsSync(broker.root), true);
     assert.equal(broker.listenHost, '127.0.0.1');
