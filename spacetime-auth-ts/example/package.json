@@ -13,7 +13,7 @@
     "dev": "pnpm run build && tsx server.ts"
   },
   "dependencies": {
-    "@spacetimedb/example-ui": "workspace:*",
+    "@spacetimedb/submodule-shared": "workspace:*",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "spacetimedb": "workspace:*"

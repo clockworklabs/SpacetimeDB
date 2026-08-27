@@ -2,8 +2,8 @@ import {
   authUrlState,
   clearAuthResultParams,
   mountAuthPanel,
-} from '@spacetimedb/example-ui';
-import '@spacetimedb/example-ui/styles.css';
+} from '@spacetimedb/submodule-shared';
+import '@spacetimedb/submodule-shared/styles.css';
 import {
   DbConnection,
   tables,

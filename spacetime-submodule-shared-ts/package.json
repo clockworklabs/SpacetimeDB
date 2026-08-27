@@ -1,6 +1,6 @@
 {
-  "name": "@spacetimedb/example-ui",
-  "description": "Shared interface primitives for SpacetimeDB submodule examples.",
+  "name": "@spacetimedb/submodule-shared",
+  "description": "Shared UI and server utilities for SpacetimeDB submodule examples.",
   "version": "0.1.0",
   "private": true,
   "type": "module",

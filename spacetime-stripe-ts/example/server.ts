@@ -8,7 +8,7 @@ import {
   grantServerIdentity,
   loadServerToken,
   saveServerToken,
-} from '@spacetimedb/example-ui/server';
+} from '@spacetimedb/submodule-shared/server';
 import {
   DbConnection,
   tables,

@@ -10,7 +10,7 @@ import {
   grantServerIdentity,
   loadServerToken,
   saveServerToken,
-} from '@spacetimedb/example-ui/server';
+} from '@spacetimedb/submodule-shared/server';
 import { DbConnection, tables, type ErrorContext } from './src/module_bindings';
 import { PRODUCTS, SCENARIOS } from './catalog/catalog';
 

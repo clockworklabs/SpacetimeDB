@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { exampleUiAssetsDir } from '@spacetimedb/example-ui/server';
+import { exampleUiAssetsDir } from '@spacetimedb/submodule-shared/server';
 
 dotenv.config();
 
