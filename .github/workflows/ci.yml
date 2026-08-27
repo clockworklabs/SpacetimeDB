@@ -35,13 +35,9 @@ jobs:
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
-        # If planning cannot check out the repository, leave `skip` unset and run normal CI.
-        continue-on-error: true
 
       - name: Compare merge queue commit to PR head
         id: compare
-        # If the trees cannot be compared, fall back to normal CI.
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
@@ -82,14 +78,10 @@ jobs:
       # The merge queue coordinator is part of cargo ci and needs the repository's pinned Rust toolchain.
       - uses: dsherret/rust-toolchain-file@v1
         if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
-        # If setup fails, let the reuse attempt fall back to normal CI.
-        continue-on-error: true
 
       - name: Reuse merge queue run
         id: reuse
         if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
-        # Coordinator errors leave `reuse` unset and run normal CI; a reused CI failure is reported below.
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci other-workflows coordinate merge-queue-reuse
