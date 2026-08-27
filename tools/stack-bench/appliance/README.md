@@ -321,6 +321,8 @@ If the first batch is incomplete, run the same command again with the same
 checkpoint directory and a new output file. Set
 `--mutation-max-runtime-minutes N` from 1 through 120 to change the batch limit.
 `--timeout-minutes` must be at least 20 minutes longer than the batch limit.
+It caps the complete clean-plus-mutation repetition and cannot exceed 180
+minutes for mutation qualification.
 
 The worker count reserves consecutive run slots starting at `--run-index`.
 The command fails before launch if those slots exceed the supported range or

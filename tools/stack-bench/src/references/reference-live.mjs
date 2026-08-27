@@ -141,9 +141,11 @@ export function parseReferenceQualificationArgs(argv) {
   if (!Number.isInteger(args.spacetimePort) || args.spacetimePort < 1024 || args.spacetimePort > 65535) {
     throw new Error('--spacetime-port must be an integer from 1024 through 65535');
   }
-  args.timeoutMinutes ??= args.mutations ? 90 : 60;
-  if (!Number.isFinite(args.timeoutMinutes) || args.timeoutMinutes < 10 || args.timeoutMinutes > 240) {
-    throw new Error('--timeout-minutes must be from 10 through 240');
+  args.timeoutMinutes ??= args.mutations ? 120 : 60;
+  const maximumTimeoutMinutes = args.mutations ? 180 : 240;
+  if (!Number.isFinite(args.timeoutMinutes) || args.timeoutMinutes < 10
+      || args.timeoutMinutes > maximumTimeoutMinutes) {
+    throw new Error(`--timeout-minutes must be from 10 through ${maximumTimeoutMinutes}`);
   }
   if (args.mutations && args.timeoutMinutes < args.mutationMaxRuntimeMinutes + 20) {
     throw new Error('--timeout-minutes must allow the mutation batch plus 20 minutes for setup');
@@ -750,6 +752,13 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       failures: clean.failures.map(failure => `clean baseline: ${failure}`),
       mutations: { caught: 0, total: 0 } };
   }
+  const remainingMs = started + args.timeoutMs - Date.now();
+  if (remainingMs <= 0) {
+    return { ...clean, ok: false, durationMs: Date.now() - started,
+      processError: 'mutation qualification exhausted its repetition deadline after the clean baseline',
+      failures: ['mutation qualification exhausted its repetition deadline after the clean baseline'],
+      outcome: 'incomplete', mutations: { caught: 0, total: 0 } };
+  }
   preflightParallelMutationResources(args);
   const workerRoot = join(args.runsRoot, `r${repetition + 1}-workers`);
   mkdirSync(workerRoot, { recursive: true });
@@ -766,7 +775,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       const argv = parallelMutationChildArgv(args, context,
         { artifactPath, repetition, workerIndex, workerCount: args.mutationWorkers });
       const processResult = await runBounded(process.execPath, argv,
-        { cwd: ROOT, env: process.env, timeoutMs: args.timeoutMs + 5 * 60_000, logs,
+        { cwd: ROOT, env: process.env, timeoutMs: remainingMs, logs,
           signal: cancellation.signal });
       return { workerIndex, runIndex: args.runIndex + workerIndex, artifactPath, logs, processResult };
     }));
