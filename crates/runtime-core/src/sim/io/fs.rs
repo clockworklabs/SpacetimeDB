@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
-    cmp,
+    cmp, fmt,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -52,6 +52,12 @@ impl Page {
 pub struct File {
     pages: Arc<spin::Mutex<BTreeMap<PageIndex, Arc<Page>>>>,
     len: Arc<AtomicU64>,
+}
+
+impl fmt::Debug for File {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("File").field("len", &self.len).finish()
+    }
 }
 
 impl File {

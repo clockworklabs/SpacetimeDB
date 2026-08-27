@@ -1,26 +1,33 @@
-use alloc::{
-    boxed::Box,
-    collections::{BTreeMap, VecDeque},
-    sync::Arc,
-};
+use alloc::{boxed::Box, sync::Arc};
 use core::{
-    num::NonZeroUsize,
     pin::Pin,
     result::Result,
     task::{Context, Poll},
+    time::Duration,
 };
 use futures_channel::oneshot;
+use slab::Slab;
 
 use crate::{
-    io::{AlignedBytes, ErrorWith, SpacetimeIO},
+    io::{AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx},
     sim::Rng,
 };
 
+mod executor;
+use executor::{Cqe, Executor, Sqe};
+
 mod fs;
-pub mod op;
+pub use fs::File;
 
 pub use crate::io::SECTOR_SIZE;
-pub use fs::File;
+
+/// Simulated clock measurement.
+///
+/// In simulated time, an instant is actually a [Duration] since the time
+/// instance was instantiated. To avoid confusion, we use the name "instant" to
+/// convey that its semantics are that of the standard library type of the same
+/// name.
+pub type Instant = Duration;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -37,6 +44,8 @@ pub enum Error {
     /// Injected by the I/O driver.
     #[error("operation cancelled")]
     Cancelled,
+    #[error("submission queue overflow")]
+    SubmissionQueueOverflow,
 }
 
 impl From<fs::Error> for Error {
@@ -47,90 +56,200 @@ impl From<fs::Error> for Error {
 
 #[derive(Clone, Default)]
 pub struct SimulatorIO {
-    // TODO: We make `SimulatorIO` `Send + Sync` for now, because
-    // [crate::sim::executor::Handle] is just `Arc<Executor>`. This means that a
-    // future carrying a handle can't be `spawn`ed, because spawning requires
-    // the future to be `Send`.
-    //
-    // We should fix this at some point, so below can become `Rc<RefCell<_>>`.
-    inner: Arc<spin::Mutex<SimulatorIOInner>>,
+    inner: Arc<SimulatorInner>,
 }
 
 impl SimulatorIO {
-    /// Returns `true` if there are entries in either the submission or
-    /// completion queues.
-    pub fn pending(&self) -> bool {
-        let inner = self.inner.lock();
-        inner.submissions.len() + inner.completions.len() > 0
-    }
+    pub fn tick(&self, rng: &Rng, now: Instant) -> bool {
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let mut buffers = self.inner.buffers.lock();
 
-    /// Number of entries in the submission queue.
-    pub fn pending_submissions(&self) -> usize {
-        self.inner.lock().submissions.len()
-    }
+        let mut progress = executor.tick(rng, now);
+        for cqe in executor.completed() {
+            let completion = pending.remove(cqe.user_data().unwrap());
+            match cqe {
+                Cqe::Write { result, .. } => {
+                    let CompletionHandle::Write { tx, buf_key } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let erased_buf = buffers.remove(buf_key);
+                    let result = match result {
+                        Ok(_written) => Ok(erased_buf),
+                        Err(error) => Err(ErrorWith {
+                            error,
+                            with: erased_buf,
+                        }),
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Read { result, .. } => {
+                    let CompletionHandle::Read { tx, buf_key } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let erased_buf = buffers.remove(buf_key);
+                    let result = match result {
+                        Ok(_written) => Ok(erased_buf),
+                        Err(error) => Err(ErrorWith {
+                            error,
+                            with: erased_buf,
+                        }),
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Open { result, .. } => {
+                    let CompletionHandle::Open { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Create { result, .. } => {
+                    let CompletionHandle::Create { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Stat { result, .. } => {
+                    let CompletionHandle::Stat { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Fallocate { result, .. } => {
+                    let CompletionHandle::Fallocate { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Fsync { result, .. } => {
+                    let CompletionHandle::Fsync { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Fdatasync { result, .. } => {
+                    let CompletionHandle::Fdatasync { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+                Cqe::Noop { result, .. } => {
+                    let CompletionHandle::Noop { tx } = completion else {
+                        unreachable!("invalid cqe / completion pairing")
+                    };
+                    let _ = tx.send(result);
+                }
+            }
 
-    /// Number of entries in the completion queue.
-    pub fn pending_completions(&self) -> usize {
-        self.inner.lock().completions.len()
-    }
+            progress |= true;
+        }
 
-    /// Run the submission at the front of the queue (if any), and complete the
-    /// completion at the front of the queue (if any).
-    pub fn tick(&self) -> bool {
-        self.inner.lock().tick()
+        progress
     }
+}
 
-    /// Execute `sqe`.
-    pub fn execute(&self, sqe: Box<dyn op::Submission>) {
-        self.inner.lock().execute(sqe);
-    }
+struct SimulatorInner {
+    executor: spin::Mutex<Executor<32, usize>>,
+    pending: spin::Mutex<Slab<CompletionHandle>>,
+    buffers: Arc<spin::Mutex<Slab<ErasedBox>>>,
+}
 
-    /// Remove and return the submission at the front of the queue, if any.
-    pub fn next_submission(&self) -> Option<Box<dyn op::Submission>> {
-        self.inner.lock().next_submission()
-    }
-
-    /// Remove and return a random submission, or `None` if the queue is empty.
-    pub fn random_submission(&self, rng: &Rng) -> Option<Box<dyn op::Submission>> {
-        self.inner.lock().random_submission(rng)
-    }
-
-    /// Remove and return the completion at the front of the queue, if any.
-    pub fn next_completion(&self) -> Option<Box<dyn op::Completion>> {
-        self.inner.lock().next_completion()
-    }
-
-    /// Remove and return a random completion, or `None` if the queue is empty.
-    pub fn random_completion(&self, rng: &Rng) -> Option<Box<dyn op::Completion>> {
-        self.inner.lock().random_completion(rng)
-    }
-
-    fn submit<T>(&self, op: impl FnOnce(oneshot::Sender<T>) -> Box<dyn op::Submission>) -> Completion<T> {
-        let (tx, rx) = oneshot::channel();
-        self.inner.lock().submit(op(tx));
-        Completion(rx)
-    }
-
-    fn submit_all<T, I: Iterator<Item = Box<dyn op::Submission>>>(
-        &self,
-        ops: impl FnOnce(oneshot::Sender<T>) -> I,
-    ) -> Completion<T> {
-        let (tx, rx) = oneshot::channel();
-        let mut inner = self.inner.lock();
-        ops(tx).for_each(|op| inner.submit(op));
-        Completion(rx)
+impl Default for SimulatorInner {
+    fn default() -> Self {
+        Self {
+            executor: spin::Mutex::new(Executor::with_capacity(128)),
+            pending: <_>::default(),
+            buffers: <_>::default(),
+        }
     }
 }
 
 #[must_use = "completions must be polled to completion"]
-pub struct Completion<T>(oneshot::Receiver<T>);
+pub struct Completion<T>(CompletionInner<T>);
+
+impl<T> Completion<T> {
+    pub fn mapped(
+        rx: oneshot::Receiver<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        map: fn(Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> T,
+    ) -> Self {
+        Self(CompletionInner::Mapped { rx, map })
+    }
+}
+
+impl<T> From<oneshot::Receiver<T>> for Completion<T> {
+    fn from(rx: oneshot::Receiver<T>) -> Self {
+        Self(CompletionInner::Direct { rx })
+    }
+}
 
 impl<T> Future for Completion<T> {
     type Output = T;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.as_mut().0).poll(cx).map(Result::unwrap)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        Pin::new(&mut this.0).poll(cx)
     }
+}
+
+enum CompletionInner<T> {
+    Direct {
+        rx: oneshot::Receiver<T>,
+    },
+    Mapped {
+        rx: oneshot::Receiver<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        map: fn(Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> T,
+    },
+}
+
+impl<T> Future for CompletionInner<T> {
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        match this {
+            Self::Direct { rx } => Pin::new(rx)
+                .poll(cx)
+                .map(|result| result.expect("lost completion sender")),
+            Self::Mapped { rx, map } => Pin::new(rx).poll(cx).map(|result| {
+                let result = result.expect("lost completion sender");
+                map(result)
+            }),
+        }
+    }
+}
+
+enum CompletionHandle {
+    Write {
+        tx: oneshot::Sender<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        buf_key: usize,
+    },
+    Read {
+        tx: oneshot::Sender<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        buf_key: usize,
+    },
+    Open {
+        tx: oneshot::Sender<Result<fs::File, Error>>,
+    },
+    Create {
+        tx: oneshot::Sender<Result<fs::File, Error>>,
+    },
+    Stat {
+        tx: oneshot::Sender<Result<Statx, Error>>,
+    },
+    Fallocate {
+        tx: oneshot::Sender<Result<(), Error>>,
+    },
+    Fsync {
+        tx: oneshot::Sender<Result<(), Error>>,
+    },
+    Fdatasync {
+        tx: oneshot::Sender<Result<(), Error>>,
+    },
+    // TODO: We may use this for timeouts.
+    #[allow(unused)]
+    Noop {
+        tx: oneshot::Sender<Result<(), Error>>,
+    },
 }
 
 impl SpacetimeIO for SimulatorIO {
@@ -139,11 +258,37 @@ impl SpacetimeIO for SimulatorIO {
     type Completion<T> = Completion<T>;
 
     fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        self.submit(op::open_file(path))
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([Sqe::open(path).attach(pending_entry.key())]) {
+            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
+            Ok(()) => {
+                pending_entry.insert(CompletionHandle::Open { tx });
+            }
+        }
+
+        rx.into()
     }
 
-    fn create_file(&self, path: &str, len: u64) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        self.submit(op::create_file(path, len))
+    fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([Sqe::create(path).attach(pending_entry.key())]) {
+            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
+            Ok(()) => {
+                pending_entry.insert(CompletionHandle::Create { tx });
+            }
+        }
+
+        rx.into()
     }
 
     fn write_all_at<B: AlignedBytes + Send + 'static>(
@@ -152,16 +297,29 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        let () = B::ASSERT_VALID_LAYOUT;
+        let (tx, rx) = oneshot::channel();
 
-        if !offset.is_multiple_of(SECTOR_SIZE as _) {
-            self.submit(op::ready(Err(ErrorWith {
-                error: fs::Error::UnalignedOffset.into(),
-                with: buf,
-            })))
-        } else {
-            self.submit_all(op::write_at(fd, buf, offset))
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        let erased_buf = ErasedBox::from_aligned(buf);
+        let buf_ptr = erased_buf.as_ptr();
+
+        match executor.submit([Sqe::write(fd, buf_ptr, offset).attach(pending_entry.key())]) {
+            Err(_sqe) => tx
+                .send(Err(ErrorWith {
+                    error: Error::SubmissionQueueOverflow,
+                    with: erased_buf,
+                }))
+                .unwrap_or_else(|_| unreachable!("rx is still alive")),
+            Ok(()) => {
+                let buf_key = self.inner.buffers.lock().insert(erased_buf);
+                pending_entry.insert(CompletionHandle::Write { tx, buf_key });
+            }
         }
+
+        Completion::mapped(rx, reify)
     }
 
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
@@ -170,106 +328,151 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        let () = B::ASSERT_VALID_LAYOUT;
+        let (tx, rx) = oneshot::channel();
 
-        if !offset.is_multiple_of(SECTOR_SIZE as _) {
-            self.submit(op::ready(Err(ErrorWith {
-                error: fs::Error::UnalignedOffset.into(),
-                with: buf,
-            })))
-        } else {
-            self.submit_all(op::read_at(fd, buf, offset))
-        }
-    }
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
 
-    fn fsync(&self, _fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
-        self.submit(op::ready(Ok(())))
-    }
+        let erased_buf = ErasedBox::from_aligned(buf);
+        let buf_ptr = erased_buf.as_ptr();
 
-    fn fdatasync(&self, _fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
-        self.submit(op::ready(Ok(())))
-    }
-
-    fn reserve(&self, fd: Self::Fd, total: u64) -> Self::Completion<Result<(), Self::Error>> {
-        assert!(total >= fd.len());
-        self.submit(op::set_len(fd, total))
-    }
-
-    fn length(&self, fd: Self::Fd) -> Self::Completion<Result<u64, Self::Error>> {
-        self.submit(op::get_len(fd))
-    }
-}
-
-#[derive(Default)]
-struct SimulatorIOInner {
-    files: BTreeMap<Box<str>, fs::File>,
-    submissions: VecDeque<Box<dyn op::Submission>>,
-    completions: VecDeque<Box<dyn op::Completion>>,
-}
-
-impl SimulatorIOInner {
-    fn tick(&mut self) -> bool {
-        let mut progress = false;
-        if let Some(sqe) = self.submissions.pop_front() {
-            if let Some(cqe) = sqe.execute(&mut self.files) {
-                self.completions.push_back(cqe);
+        match executor.submit([Sqe::read(fd, buf_ptr, offset).attach(pending_entry.key())]) {
+            Err(_sqe) => tx
+                .send(Err(ErrorWith {
+                    error: Error::SubmissionQueueOverflow,
+                    with: erased_buf,
+                }))
+                .unwrap_or_else(|_| unreachable!("rx is still alive")),
+            Ok(()) => {
+                let buf_key = self.inner.buffers.lock().insert(erased_buf);
+                pending_entry.insert(CompletionHandle::Read { tx, buf_key });
             }
-            progress = true;
-        }
-        if let Some(cqe) = self.completions.pop_front() {
-            cqe.complete();
-            progress = true;
         }
 
-        progress
+        Completion::mapped(rx, reify)
     }
 
-    fn execute(&mut self, sqe: Box<dyn op::Submission>) {
-        if let Some(cqe) = sqe.execute(&mut self.files) {
-            self.completions.push_back(cqe);
+    fn fsync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([Sqe::fsync(fd).attach(pending_entry.key())]) {
+            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
+            Ok(()) => {
+                pending_entry.insert(CompletionHandle::Fsync { tx });
+            }
         }
+
+        rx.into()
     }
 
-    fn next_submission(&mut self) -> Option<Box<dyn op::Submission>> {
-        self.submissions.pop_front()
+    fn fdatasync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([Sqe::fdatasync(fd).attach(pending_entry.key())]) {
+            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
+            Ok(()) => {
+                pending_entry.insert(CompletionHandle::Fdatasync { tx });
+            }
+        }
+
+        rx.into()
     }
 
-    fn random_submission(&mut self, rng: &Rng) -> Option<Box<dyn op::Submission>> {
-        let len = NonZeroUsize::new(self.submissions.len())?;
-        self.submissions.remove(rng.index(len.get()))
+    fn reserve(&self, fd: Self::Fd, total_size: u64) -> Self::Completion<Result<(), Self::Error>> {
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([Sqe::fallocate(fd, total_size).attach(pending_entry.key())]) {
+            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
+            Ok(()) => {
+                pending_entry.insert(CompletionHandle::Fallocate { tx });
+            }
+        }
+
+        rx.into()
     }
 
-    fn next_completion(&mut self) -> Option<Box<dyn op::Completion>> {
-        self.completions.pop_front()
-    }
+    fn statx(&self, fd: Self::Fd) -> Self::Completion<Result<Statx, Self::Error>> {
+        let (tx, rx) = oneshot::channel();
 
-    fn random_completion(&mut self, rng: &Rng) -> Option<Box<dyn op::Completion>> {
-        let len = NonZeroUsize::new(self.completions.len())?;
-        self.completions.remove(rng.index(len.get()))
-    }
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
 
-    fn submit(&mut self, op: Box<dyn op::Submission>) {
-        self.submissions.push_back(op);
+        match executor.submit([Sqe::stat(fd).attach(pending_entry.key())]) {
+            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
+            Ok(()) => {
+                pending_entry.insert(CompletionHandle::Stat { tx });
+            }
+        }
+
+        rx.into()
+    }
+}
+
+fn reify<T: AlignedBytes + 'static>(
+    result: Result<ErasedBox, ErrorWith<Error, ErasedBox>>,
+) -> Result<T, ErrorWith<Error, T>> {
+    match result {
+        Ok(erased) => Ok(erased.into_aligned::<T>()),
+        Err(ErrorWith { error, with }) => Err(ErrorWith {
+            error,
+            with: with.into_aligned::<T>(),
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::sim::{Runtime, RuntimeConfig};
+    use crate::sim::{time::TimeHandle, GlobalRng};
 
     use super::*;
 
-    #[test]
-    fn create_file() {
-        let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
-        let io = rt.io().cloned().unwrap();
-
-        let fd = rt
-            .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
-            .unwrap();
-        assert_eq!(fd.len(), 2 * SECTOR_SIZE as u64);
+    struct Runtime {
+        rt: tokio::runtime::LocalRuntime,
+        io: SimulatorIO,
+        rng: Rng,
+        time: TimeHandle,
     }
 
+    impl Runtime {
+        fn new() -> Self {
+            Self {
+                rt: tokio::runtime::Builder::new_current_thread()
+                    .build_local(<_>::default())
+                    .unwrap(),
+                io: SimulatorIO::default(),
+                rng: GlobalRng::new(0),
+                time: TimeHandle::default(),
+            }
+        }
+
+        fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
+            let fut = self.rt.spawn_local(f(&self.io));
+            while self.io.tick(&self.rng, self.time.now()) {}
+            self.rt.block_on(fut).unwrap()
+        }
+    }
+
+    #[test]
+    fn create_file() {
+        let rt = Runtime::new();
+        rt.run(|io| io.create_file("/data/test")).unwrap();
+    }
+
+    #[derive(Debug)]
     #[repr(C, align(4096))]
     struct Buf([u8; 2 * SECTOR_SIZE]);
 
@@ -298,21 +501,14 @@ mod tests {
 
     #[test]
     fn write_read_roundtrip() {
-        let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
-        let io = rt.io().cloned().unwrap();
+        let rt = Runtime::new();
 
-        let fd = rt
-            .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
-            .unwrap();
+        let fd = rt.run(|io| io.create_file("/data/test")).unwrap();
         let mut buf = rt
-            .block_on(io.write_all_at(fd.clone(), Buf([22; 2 * SECTOR_SIZE]), 0))
-            .map_err(|ErrorWith { error, .. }| error)
+            .run(|io| io.write_all_at(fd.clone(), Buf([22; 2 * SECTOR_SIZE]), 0))
             .unwrap();
         buf.clear();
-        let buf = rt
-            .block_on(io.read_exact_at(fd, buf, 0))
-            .map_err(|ErrorWith { error, .. }| error)
-            .unwrap();
+        let buf = rt.run(|io| io.read_exact_at(fd, buf, 0)).unwrap();
 
         assert!(buf.0.iter().all(|&b| b == 22));
     }

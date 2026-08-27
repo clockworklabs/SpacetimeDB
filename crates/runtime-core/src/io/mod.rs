@@ -1,72 +1,25 @@
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+mod buf;
+pub use buf::AlignedBytes;
+#[cfg(feature = "alloc")]
+pub use buf::{ErasedBox, ErasedBoxPtr};
+
+mod error;
+pub use error::ErrorWith;
 
 /// Size in bytes of a disk sector.
 pub const SECTOR_SIZE: usize = 4096;
 
-/// Types that can be safely converted to and from sector-aligned byte slices.
-pub trait AlignedBytes: Sized {
-    /// Assert that the type' size is a multiple of [SECTOR_SIZE] and has the
-    /// right aligment.
-    ///
-    /// NOTE: Associated constants are evaluated lazily -- add a free
-    ///
-    /// `const _: () = <T as AlignedBytes>::ASSERT_VALID_LAYOUT;`
-    ///
-    /// for each `T` that is supposed to be used as an `AlignedBytes`.
-    const ASSERT_VALID_LAYOUT: () = {
-        assert!(align_of::<Self>() == SECTOR_SIZE);
-        assert!(size_of::<Self>().is_multiple_of(SECTOR_SIZE));
-    };
-
-    /// Reinterpret `self` as a byte slice.
-    ///
-    /// The returned slice will be of length `size_of::<Self>()`.
-    fn as_bytes(&self) -> &[u8];
-
-    /// Reinterpret `self` as a mutable byte slice.
-    ///
-    /// The returned slice will be of length `size_of::<Self>()`.
-    fn as_bytes_mut(&mut self) -> &mut [u8];
-
-    /// Reinterpret a byte slice as `Self`.
-    ///
-    /// The slice must be of length `size_of::<Self>()`.
-    ///
-    /// NOTE: Any slice of the right size, but consisting of only `0` (zero)
-    /// bytes can be converted to `Self`. It is the caller's responsibility to
-    /// validate the returned type as per the application's invariants.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `b.len() != size_of::<Self>()`.
-    fn from_bytes(b: &[u8]) -> Self;
-}
-
-impl<T: FromBytes + IntoBytes + KnownLayout + Immutable> AlignedBytes for T {
-    fn as_bytes(&self) -> &[u8] {
-        <T as IntoBytes>::as_bytes(self)
-    }
-
-    fn as_bytes_mut(&mut self) -> &mut [u8] {
-        <T as IntoBytes>::as_mut_bytes(self)
-    }
-
-    fn from_bytes(b: &[u8]) -> Self {
-        Self::read_from_bytes(b).unwrap()
-    }
-}
-
-/// An error `E`, along with auxiliary data `T`.
-///
-/// `T` is usually a buffer of type [AlignedBytes], whose ownership is
-/// transferred back to the caller when an error occurs.
-///
-/// As this type signifies an error condition, the contents of `T` are
-/// unspecified.
+/// Subset of the `statx` metadata.
 #[derive(Debug)]
-pub struct ErrorWith<E, T> {
-    pub error: E,
-    pub with: T,
+#[non_exhaustive]
+pub struct Statx {
+    pub size: u64,
+}
+
+impl Statx {
+    pub fn from_size(size: u64) -> Self {
+        Self { size }
+    }
 }
 
 /// The canonical, low-level I/O API.
@@ -98,15 +51,17 @@ pub trait SpacetimeIO {
     /// from being `no_std`.
     ///
     /// [alloc_io]: https://github.com/rust-lang/rust/issues/154046
-    type Error;
+    type Error: core::error::Error;
+    /// The completion [Future] of all methods in this trait.
+    type Completion<T>: Future<Output = T> + Unpin;
 
     /// Open the file at `path`.
     fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>>;
 
-    /// Create the file at `path` and allocate `len` bytes.
+    /// Create the file at `path`.
     ///
     /// Returns an error if the file already exists.
-    fn create_file(&self, path: &str, len: u64) -> Self::Completion<Result<Self::Fd, Self::Error>>;
+    fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>>;
 
     /// Write `buf` to `fd` at `offset`.
     ///
@@ -143,11 +98,15 @@ pub trait SpacetimeIO {
     /// Call `fdatasync(2)` on `fd`.
     fn fdatasync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>>;
 
-    /// Allocate `additional` bytes for the file `fd`.
-    fn reserve(&self, fd: Self::Fd, additional: u64) -> Self::Completion<Result<(), Self::Error>>;
+    /// Allocate `total` bytes for the file `fd`.
+    ///
+    /// Implementations must ensure that attempts to shrink the file result in
+    /// an error. The operation should succeed if the file's size is already
+    /// `total`.
+    fn reserve(&self, fd: Self::Fd, total: u64) -> Self::Completion<Result<(), Self::Error>>;
 
     /// Determine the length of the file `fd`.
     ///
     /// This should not depend on `fsync`, i.e. `statx`. See `std::io::Seek::stream_len`.
-    fn length(&self, fd: Self::Fd) -> Self::Completion<Result<u64, Self::Error>>;
+    fn statx(&self, fd: Self::Fd) -> Self::Completion<Result<Statx, Self::Error>>;
 }

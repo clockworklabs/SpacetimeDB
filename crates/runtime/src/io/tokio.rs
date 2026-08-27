@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::{io, marker::PhantomData, rc::Rc, sync::Arc};
 
-use spacetimedb_runtime_core::io::{AlignedBytes, ErrorWith, SpacetimeIO};
+use spacetimedb_runtime_core::io::{AlignedBytes, ErrorWith, SpacetimeIO, Statx};
 use static_assertions::assert_not_impl_any;
 use tokio::runtime;
 
@@ -80,15 +80,13 @@ impl SpacetimeIO for TokioIO {
             .into()
     }
 
-    fn create_file(&self, path: &str, len: u64) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+    fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
         let path = PathBuf::from(path);
         self.rt
             .spawn_blocking(move || {
                 let mut open_options = std::fs::File::options();
                 open_options.read(true).write(true).create_new(true);
-                let file = platform::open_with_direct_io(open_options, path)?;
-                file.set_len(len)?;
-                Ok(Arc::new(file))
+                platform::open_with_direct_io(open_options, path).map(Arc::new)
             })
             .into()
     }
@@ -140,11 +138,11 @@ impl SpacetimeIO for TokioIO {
             .into()
     }
 
-    fn length(&self, fd: Self::Fd) -> Self::Completion<Result<u64, Self::Error>> {
+    fn statx(&self, fd: Self::Fd) -> Self::Completion<Result<Statx, Self::Error>> {
         self.rt
             .spawn_blocking(move || {
                 let mut fd = fd.try_clone()?;
-                file_length(&mut fd)
+                file_length(&mut fd).map(Statx::from_size)
             })
             .into()
     }

@@ -10,11 +10,7 @@ use core::{
 
 use spin::Mutex;
 
-use crate::sim::io::SimulatorIO;
-
 use super::{time::TimeHandle, Rng};
-
-mod io;
 
 mod task;
 use task::Abortable;
@@ -25,23 +21,11 @@ type Runnable = async_task::Runnable<NodeId>;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeConfig {
     pub seed: u64,
-    pub io: Option<io::Config>,
 }
 
 impl RuntimeConfig {
     pub const fn new(seed: u64) -> Self {
-        Self { seed, io: None }
-    }
-
-    pub fn enable_io(self) -> Self {
-        Self {
-            io: Some(self.io.unwrap_or_default()),
-            ..self
-        }
-    }
-
-    pub fn with_io_config(self, io: Option<io::Config>) -> Self {
-        Self { io, ..self }
+        Self { seed }
     }
 }
 
@@ -159,12 +143,6 @@ impl Runtime {
         Self {
             executor: Arc::new(Executor::new(config)),
         }
-    }
-
-    // TODO: This is a stopgap to allow submission of I/O tasks. We probably
-    // want the user-facing API to hide this.
-    pub fn io(&self) -> Option<&SimulatorIO> {
-        self.executor.io.as_ref().map(|driver| driver.io())
     }
 
     /// Drive a top-level future to completion on the simulation executor.
@@ -382,7 +360,6 @@ struct Executor {
     next_node: AtomicU64,
     rng: Rng,
     time: TimeHandle,
-    io: Option<io::Driver>,
 }
 
 impl Executor {
@@ -398,7 +375,6 @@ impl Executor {
             next_node: AtomicU64::new(1),
             rng: Rng::new(config.seed),
             time: TimeHandle::new(),
-            io: config.io.map(io::Driver::new),
         }
     }
 
@@ -515,7 +491,6 @@ impl Executor {
 
         loop {
             self.run_all_ready();
-            let pending_io = self.drive_io();
             if task.is_finished() {
                 let waker = Waker::noop();
                 return match Pin::new(&mut task).poll(&mut Context::from_waker(waker)) {
@@ -524,7 +499,7 @@ impl Executor {
                 };
             }
 
-            if self.time.wake_next_timer() || pending_io {
+            if self.time.wake_next_timer() {
                 continue;
             }
 
@@ -549,14 +524,6 @@ impl Executor {
             // Using the runtime RNG keeps overhead deterministic by seed.
             let nanos = 100 + (self.rng.next_u64() % 901);
             self.time.advance(Duration::from_nanos(nanos));
-        }
-    }
-
-    fn drive_io(&self) -> bool {
-        if let Some(io) = &self.io {
-            io.tick(&self.rng)
-        } else {
-            false
         }
     }
 
