@@ -454,9 +454,6 @@ input { font-family: var(--font-source); }
 .sn.dim { fill: var(--muted); }
 /* the single-stack dependency graph: dots on real prerequisite edges, named
  * only where something needs attention */
-.fail-line { margin: 6px 2px 0; color: var(--muted); font: 11.5px/1.6 var(--font-source); }
-.fail-line b { color: var(--red); font-weight: 400; }
-.fail-line i { color: var(--yellow); font-style: normal; }
 .de { fill: none; stroke: var(--line-bright); stroke-width: 1.1; opacity: 0.45; }
 .de.lit { stroke: var(--green); opacity: 0.55; }
 .de.cut { stroke: var(--red); stroke-dasharray: 3 4; opacity: 0.55; }

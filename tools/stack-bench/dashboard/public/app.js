@@ -657,6 +657,12 @@ function questlineLanes(dependency) {
 
 // exhausted is terminal — the strikes are gone — so it reads as red. A
 // regression is a live fight, so it keeps the warning yellow.
+// Display aliases only: the definition's titles are identity-hashed into the
+// qualification calibration, so a label that must fit one line is shortened
+// here, never in the artifact.
+const QUESTLINE_SHORT = { operations: 'Staff Ops & Insights', 'catalog-pricing': 'Catalog & Pricing' };
+const laneTitle = lane => QUESTLINE_SHORT[lane.id] ?? lane.title;
+
 const NODE_CLASS = { passed: 'pass', active: 'act', exhausted: 'fail', regressed: 'warn',
   blocked: 'off', locked: 'off' };
 
@@ -713,7 +719,8 @@ function questlineStrip(columns, lanes) {
   const height = TOP + columns.length * ROWH + 2;
 
   const headers = groups.map(group => {
-    const short = group.lane.title.length > 15 ? `${group.lane.title.slice(0, 14)}…` : group.lane.title;
+    const display = laneTitle(group.lane);
+    const short = display.length > 15 ? `${display.slice(0, 14)}…` : display;
     return `<g><text class="gq" x="${group.x + 2}" y="${TOP - 14}" transform="rotate(-30 ${group.x + 2} ${TOP - 14})">${escapeHtml(short)}</text>`
       + `<title>${escapeHtml(group.lane.title)}</title></g>`
       + `<line class="gq-rule" x1="${group.x}" y1="${TOP - 8}" x2="${group.x + group.width}" y2="${TOP - 8}"/>`;
@@ -838,22 +845,12 @@ function questlineSingle(column, lanes) {
     const laneScore = scores.get(band.lane.id);
     const laneValue = laneScore?.percentage ?? (laneScore?.availablePoints
       ? Math.round(100 * laneScore.passedPoints / laneScore.availablePoints) : null);
-    const words = band.lane.title.split(' ');
-    const label = band.lane.title.length <= 20 || words.length < 2
-      ? `<text class="cq" x="${LABEL - 14}" y="${laneY + 3}" text-anchor="end">${escapeHtml(band.lane.title)}</text>`
-      : `<text class="cq" x="${LABEL - 14}" y="${laneY - 2}" text-anchor="end">${escapeHtml(words.slice(0, Math.ceil(words.length / 2)).join(' '))}</text>`
-        + `<text class="cq" x="${LABEL - 14}" y="${laneY + 9}" text-anchor="end">${escapeHtml(words.slice(Math.ceil(words.length / 2)).join(' '))}</text>`;
+    const label = `<text class="cq" x="${LABEL - 14}" y="${laneY + 3}" text-anchor="end">${escapeHtml(laneTitle(band.lane))}</text>`;
     return label + `<text class="lq${laneValue === 100 ? ' full' : ''}" x="${width - 10}" y="${laneY + 3}" text-anchor="end">${laneValue == null ? '—' : `${laneValue}%`}</text>`;
   }).join('');
 
-  // the graph's only prose: what is red and what is yellow, by full name
-  const exhausted = nodes.filter(node => node.status === 'exhausted').map(node => node.title);
-  const regressed = nodes.filter(node => node.status === 'regressed').map(node => node.title);
-  const failLine = exhausted.length || regressed.length
-    ? `<p class="fail-line">${exhausted.length ? `<b>Out of strikes:</b> ${escapeHtml(exhausted.join(', '))}` : ''}${exhausted.length && regressed.length ? ' · ' : ''}${regressed.length ? `<i>Regressed:</i> ${escapeHtml(regressed.join(', '))}` : ''}</p>`
-    : '';
   return `<svg viewBox="0 0 ${width} ${height}" width="${width}" role="img"
-    aria-label="${escapeHtml(`${title(column.stack)} dependency graph`)}">${head}${sides}${edges.join('')}${pills.join('')}</svg>${failLine}`;
+    aria-label="${escapeHtml(`${title(column.stack)} dependency graph`)}">${head}${sides}${edges.join('')}${pills.join('')}</svg>`;
 }
 
 // The section only appears on dependency-mode campaigns with recorded state.
@@ -877,16 +874,8 @@ function dependencyConstellation(campaign) {
     width: 14 + (maxStations - 1) * 26 + 14 + 40 };
   const width = LABEL + columns.length * (layout.width + 10);
   const height = layout.top + lanes.length * layout.laneH + 2;
-  const labels = lanes.map((lane, index) => {
-    const y = layout.top + index * layout.laneH;
-    const words = lane.title.split(' ');
-    if (lane.title.length <= 20 || words.length < 2) {
-      return `<text class="cq" x="${LABEL - 14}" y="${y + 3}" text-anchor="end">${escapeHtml(lane.title)}</text>`;
-    }
-    const middle = Math.ceil(words.length / 2);
-    return `<text class="cq" x="${LABEL - 14}" y="${y - 2}" text-anchor="end">${escapeHtml(words.slice(0, middle).join(' '))}</text>`
-      + `<text class="cq" x="${LABEL - 14}" y="${y + 9}" text-anchor="end">${escapeHtml(words.slice(middle).join(' '))}</text>`;
-  }).join('');
+  const labels = lanes.map((lane, index) =>
+    `<text class="cq" x="${LABEL - 14}" y="${layout.top + index * layout.laneH + 3}" text-anchor="end">${escapeHtml(laneTitle(lane))}</text>`).join('');
   const heads = columns.map(({ stack, attempt }, index) => {
     const x = LABEL + index * (layout.width + 10);
     const score = attempt.dependency.score;
