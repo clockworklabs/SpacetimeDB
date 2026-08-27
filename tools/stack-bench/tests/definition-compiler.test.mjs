@@ -47,6 +47,26 @@ test('all current definitions compile deterministically without source mutation'
   }
 });
 
+test('authored waits and observation windows fit inside their action deadlines', () => {
+  const visit = (step, source) => {
+    const deadline = ACTION_REGISTRY.get(step.do).deadline.timeoutMs;
+    if (step.do === 'wait') {
+      assert(deadline > step.ms, `${source}: ${step.do} ${step.ms}ms exceeds its deadline`);
+    }
+    if (step.within !== undefined) {
+      assert(deadline > step.within, `${source}: ${step.do} ${step.within}ms exceeds its deadline`);
+    }
+    if (step.do === 'race') step.branches.flat().forEach(child => visit(child, source));
+  };
+  for (const definition of currentDefinitions().filter(item => item.kind === 'scenario')) {
+    const compiled = compileScenarioDefinition(definition.value, { source: definition.source });
+    for (const feature of compiled.features) {
+      [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)]
+        .forEach(step => visit(step, definition.source));
+    }
+  }
+});
+
 test('legacy suite inheritance is normalized once while schema v1 requires an explicit policy', () => {
   const legacy = { title: 'Example', validatedThrough: 1, plannedThrough: 1,
     portOffset: 500, restartProbe: '/ready', suites: { 1: [

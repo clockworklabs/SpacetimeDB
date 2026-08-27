@@ -1446,7 +1446,7 @@
       "edits": [
         {
           "find": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  if (promo) {",
-          "replace": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  if (promo) {"
+          "replace": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total + 0.01, status: 'paid' });\n  if (promo) {"
         }
       ]
     },

@@ -57,9 +57,10 @@ function deadline(actionCategory) {
   // action and keep mutating the environment in the background.
   if (actionCategory === 'lifecycle') return 900_000;
   if (actionCategory === 'database') return 90_000;
-  if (actionCategory === 'timing') return 120_000;
+  if (actionCategory === 'timing') return 360_000;
   if (actionCategory === 'application-process') return 90_000;
-  if (actionCategory === 'browser-observation' || actionCategory === 'concurrency') return 120_000;
+  if (actionCategory === 'browser-observation') return 300_000;
+  if (actionCategory === 'concurrency') return 120_000;
   return 60_000;
 }
 

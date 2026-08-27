@@ -582,14 +582,19 @@ function identityKey(identity) {
 
 export function readParallelMutationWorker(path, processResult, expected, manifest) {
   const failures = [];
+  const assigned = mutationShard(manifest.mutations, { index: expected.workerIndex,
+    count: expected.workerCount, defaultScenario: manifest.scenario }).mutationIds;
   if (!processResult.ok) {
     failures.push(processResult.timedOut ? 'worker timed out'
       : processResult.error?.message ?? `worker exited ${processResult.code ?? processResult.signal}`);
   }
-  if (!existsSync(path)) return { failures: [...failures, 'worker artifact is missing'] };
+  if (!existsSync(path)) return { artifact: null, payload: null, run: null, control: null,
+    assigned, shardVerified: false, failures: [...failures, 'worker artifact is missing'] };
   let artifact;
   try { artifact = readArtifact(path); }
-  catch (error) { return { failures: [...failures, `worker artifact is invalid: ${error.message}`] }; }
+  catch (error) { return { artifact: null, payload: null, run: null, control: null,
+    assigned, shardVerified: false,
+    failures: [...failures, `worker artifact is invalid: ${error.message}`] }; }
   if (artifact.kind !== 'reference_qualification') failures.push('worker artifact has the wrong kind');
   const payload = artifact.payload;
   if (payload?.mutationControl !== true || payload?.requiredRepetitions !== 1
@@ -615,15 +620,33 @@ export function readParallelMutationWorker(path, processResult, expected, manife
       catch (error) { failures.push(`worker mutation artifact is invalid: ${error.message}`); }
     }
   } else failures.push('worker run output is missing');
-  const assigned = mutationShard(manifest.mutations, { index: expected.workerIndex,
-    count: expected.workerCount, defaultScenario: manifest.scenario }).mutationIds;
-  if (control && (control.shard?.index !== expected.workerIndex
-      || control.shard?.count !== expected.workerCount
-      || JSON.stringify(control.shard?.mutationIds) !== JSON.stringify(assigned))) {
+  const shardVerified = control?.shard?.index === expected.workerIndex
+    && control.shard.count === expected.workerCount
+    && JSON.stringify(control.shard.mutationIds) === JSON.stringify(assigned);
+  if (control?.shard && !shardVerified) {
     failures.push('worker mutation shard does not match its assignment');
   }
+  if (control?.results && !control.shard) {
+    failures.push('worker mutation results do not bind their shard assignment');
+  }
   if (control?.ok !== true) failures.push('worker mutation control did not pass');
-  return { artifact, payload, run, control, failures };
+  return { artifact, payload, run, control, assigned, shardVerified, failures };
+}
+
+export function parallelMutationResults(manifest, workers) {
+  const completed = workers.filter(worker =>
+    worker.shardVerified && Array.isArray(worker.control?.results));
+  if (completed.length !== workers.length) {
+    const byId = new Map(completed.flatMap(worker => worker.control.results)
+      .map(result => [result.id, result]));
+    return manifest.mutations.map(mutation => byId.get(mutation.id)).filter(Boolean);
+  }
+  return mergeMutationShards(manifest.mutations, completed.map(worker => ({
+    index: worker.control.shard.index,
+    count: worker.control.shard.count,
+    mutationIds: worker.control.shard.mutationIds,
+    results: worker.control.results,
+  })), { defaultScenario: manifest.scenario });
 }
 
 async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
@@ -667,12 +690,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
   if (cancellation.signal.aborted) failures.unshift('parallel mutation qualification was interrupted');
   let results = [];
   try {
-    results = mergeMutationShards(manifest.mutations, inspected.map(worker => ({
-      index: worker.control?.shard?.index,
-      count: worker.control?.shard?.count,
-      mutationIds: worker.control?.shard?.mutationIds,
-      results: worker.control?.results,
-    })), { defaultScenario: manifest.scenario });
+    results = parallelMutationResults(manifest, inspected);
   } catch (error) { failures.push(error.message); }
   const representative = inspected.find(worker => worker.run)?.run ?? {};
   const caught = results.filter(result => result.status === 'CAUGHT').length;
@@ -703,7 +721,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
     mutations: { caught, total: results.length },
     workers: inspected.map(worker => ({ index: worker.workerIndex, runIndex: worker.runIndex,
       artifact: relative(args.artifactDirectory, worker.artifactPath).replaceAll('\\', '/'),
-      mutationIds: worker.control?.shard?.mutationIds ?? [], ok: worker.failures.length === 0,
+      mutationIds: worker.assigned, ok: worker.failures.length === 0,
       logs: Object.fromEntries(Object.entries(worker.processResult.logs ?? {})
         .map(([name, log]) => [name, relative(args.artifactDirectory, log.path).replaceAll('\\', '/')])) })),
   };

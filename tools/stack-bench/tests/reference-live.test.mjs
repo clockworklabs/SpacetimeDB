@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
-  readParallelMutationWorker, referenceQualificationPaths,
+  parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
   qualificationMutationManifest,
   referenceQualificationRelease,
   referenceQualificationRunner,
@@ -166,6 +166,61 @@ test('parallel worker evidence is read only from its exact contained output', ()
       { scenario: 'shared', mutations: mutationIds.map(id => ({ id })) });
     assert(rejected.failures.includes('worker run output escapes its artifact directory'));
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('parallel mutation accounting keeps the expected assignment when a worker stops early', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-worker-failure-'));
+  try {
+    const artifactPath = join(root, 'w2.json');
+    const output = join(root, 'w2.runs', 'r1');
+    mkdirSync(output, { recursive: true });
+    const identities = emptyArtifactIdentities({
+      fixture: { id: 'fixture', sha256: 'a'.repeat(64), state: 'candidate' },
+      recipe: { id: 'recipe', version: '1.0.0', sha256: 'b'.repeat(64), state: 'candidate' },
+      calibration: { id: 'calibration', version: '1.0.0', sha256: 'c'.repeat(64), state: 'draft' },
+      stackAdapter: { id: 'mongodb' },
+    });
+    const manifest = { mutations: [
+      { id: 'first', scenario: 'a' }, { id: 'second', scenario: 'b' },
+      { id: 'third', scenario: 'c' }, { id: 'fourth', scenario: 'd' },
+    ] };
+    writeArtifact(join(output, 'mutation-control.json'), { kind: 'mutation_control', id: 'control',
+      payload: { ok: false, outcome: { kind: 'harness_failure', phase: 'mutation-control',
+        reason: 'baseline deadline exceeded' } } });
+    writeArtifact(artifactPath, { kind: 'reference_qualification', id: 'worker', identities,
+      payload: { mutationControl: true, requiredRepetitions: 1, ok: false,
+        runs: [{ ok: false, output: 'w2.runs/r1' }] } });
+
+    const inspected = readParallelMutationWorker(artifactPath, { ok: false, code: 2 },
+      { ...identities, workerIndex: 1, workerCount: 2 }, manifest);
+    assert.deepEqual(inspected.assigned, ['second', 'fourth']);
+    assert.equal(inspected.shardVerified, false);
+    assert.equal(inspected.failures.includes('worker mutation shard does not match its assignment'), false);
+
+    const missing = readParallelMutationWorker(join(root, 'missing.json'), { ok: false, code: 2 },
+      { ...identities, workerIndex: 1, workerCount: 2 }, manifest);
+    assert.deepEqual(missing.assigned, ['second', 'fourth']);
+    assert(missing.failures.includes('worker artifact is missing'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('partial parallel mutation accounting preserves completed shard results', () => {
+  const manifest = { mutations: [
+    { id: 'first', scenario: 'a' }, { id: 'second', scenario: 'b' },
+    { id: 'third', scenario: 'c' }, { id: 'fourth', scenario: 'd' },
+  ] };
+  const completed = { shardVerified: true, control: { shard: {
+    index: 0, count: 2, mutationIds: ['first', 'third'],
+  }, results: [{ id: 'third', status: 'CAUGHT' }, { id: 'first', status: 'SURVIVED' }] } };
+  const failed = { shardVerified: false, control: { ok: false } };
+
+  assert.deepEqual(parallelMutationResults(manifest, [completed, failed])
+    .map(result => result.id), ['first', 'third']);
+  assert.deepEqual(parallelMutationResults(manifest, [completed, {
+    shardVerified: true, control: { shard: {
+      index: 1, count: 2, mutationIds: ['second', 'fourth'],
+    }, results: [{ id: 'fourth', status: 'CAUGHT' }, { id: 'second', status: 'CAUGHT' }] },
+  }]).map(result => result.id), ['first', 'second', 'third', 'fourth']);
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {

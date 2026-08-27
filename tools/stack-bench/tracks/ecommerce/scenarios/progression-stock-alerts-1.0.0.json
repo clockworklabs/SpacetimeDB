@@ -31,7 +31,7 @@
             { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" },
             { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 },
             { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] } },
-            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "containsAll": ["Mirrorless Camera", "East"] }, "settleMs": 1500 },
             { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Mirrorless Camera", "equals": 1, "within": 10000 }
           ]
         },

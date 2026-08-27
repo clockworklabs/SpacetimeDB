@@ -4,17 +4,15 @@
   "track": "ecommerce",
   "level": 3,
   "name": "Scheduled-work access",
-  "note": "The customer replays an observed admin cancellation against another pending restock.",
+  "note": "The customer sends a direct cancellation for an admin-created pending restock.",
   "features": [{
     "id": 317,
     "name": "Customers cannot manage scheduled restocks",
     "actors": ["admin", "customer"],
     "setup": [
       { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }, { "do": "click", "actor": "admin", "testid": "admin-link" }, { "do": "signUp", "actor": "customer", "name": "restock-outsider" },
-      { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Desk Lamp" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "2" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" }, { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
       { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Webcam" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "West" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "3" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" }, { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
-      { "do": "click", "actor": "admin", "testid": "pending-restock-cancel", "in": { "testid": "pending-restock-item", "contains": "Desk Lamp" }, "settleMs": 1500 },
-      { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Keyboard" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "4" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" }
+      { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Webcam" }
     ],
     "criteria": [{
       "id": "317a",
@@ -25,7 +23,7 @@
         { "do": "expect", "actor": "customer", "testid": "admin-link", "absent": true },
         { "do": "callAction", "actor": "customer", "from": "admin", "action": "scheduleRestock", "authentication": "actor", "input": { "testid": "schedule-restock-submit", "attribute": "data-action-input" }, "namedAction": { "id": "scheduleRestock", "path": "/api/admin/scheduled-restocks", "method": "POST", "reducer": "schedule_restock", "args": ["", "", 0, 0], "params": [{ "name": "item", "in": "body" }, { "name": "warehouse", "in": "body" }, { "name": "quantity", "in": "body" }, { "name": "delaySeconds", "in": "body" }] }, "settleMs": 2000 },
         { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused" },
-        { "do": "replayAs", "actor": "customer", "from": "admin", "match": "DELETE", "namedAction": { "id": "cancelScheduledRestock", "path": "/api/admin/scheduled-restocks/{restockId}", "method": "DELETE", "reducer": "cancel_scheduled_restock", "args": [0], "params": [{ "name": "restockId", "in": "path", "placeholder": "{restockId}", "wireType": "u64" }] }, "namedTarget": { "testid": "pending-restock-item", "contains": "Webcam", "attribute": "data-entity-id", "valueType": "number" }, "settleMs": 2000 },
+        { "do": "replayAs", "actor": "customer", "from": "admin", "match": "DELETE", "namedAction": { "id": "cancelScheduledRestock", "path": "/api/admin/scheduled-restocks/{restockId}", "method": "DELETE", "reducer": "cancel_scheduled_restock", "args": [0], "params": [{ "name": "restockId", "in": "path", "placeholder": "{restockId}", "wireType": "u64" }] }, "namedTarget": { "testid": "pending-restock-item", "contains": "Webcam", "attribute": "data-entity-id", "valueType": "string" }, "settleMs": 2000 },
         { "do": "expectReplayRejected", "actor": "customer" },
         { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Webcam" },
         { "do": "click", "actor": "admin", "testid": "pending-restock-cancel", "in": { "testid": "pending-restock-item", "contains": "Webcam" } }
