@@ -161,6 +161,9 @@
           "points": 2,
           "statedBy": "A checkout does not create duplicate payments.",
           "steps": [
+            { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
+            { "do": "expectCallOutcomes", "accepted": 1 },
+            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
             { "do": "expectElementCount", "actor": "owner", "testid": "payment-record", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 1, "within": 10000 }
           ]
         }
