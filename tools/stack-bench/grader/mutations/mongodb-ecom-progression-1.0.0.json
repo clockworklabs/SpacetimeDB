@@ -1098,18 +1098,32 @@
       ]
     },
     {
-      "id": "catalog-product-is-not-created",
+      "id": "catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-core-business-1.0.0.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622a"
+      ],
+      "desc": "The public product card omits the submitted name while retaining the product and its variants.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "      <div className=\"item-name\" data-testid=\"item-name\">\n        {item.name}\n      </div>",
+          "replace": "      <div className=\"item-name\" data-testid=\"item-name\">\n        {item.name === \"Travel Mug\" ? \"\" : item.name}\n      </div>"
+        }
+      ]
+    },
+    {
+      "id": "catalog-variants-are-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-core-business-1.0.0.json",
+      "targets": [
         "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
-      "desc": "Catalog management stores the wrong product name and drops its variants.",
+      "desc": "Catalog management stores the submitted product without its named variants.",
       "file": "server/src/progression.ts",
       "edits": [
         {
           "find": "const item = await Item.create({ name, price, category, variants });",
-          "replace": "const item = await Item.create({ name: \"Unavailable product\", price, category, variants: [] });"
+          "replace": "const item = await Item.create({ name, price, category, variants: [] });"
         }
       ]
     },

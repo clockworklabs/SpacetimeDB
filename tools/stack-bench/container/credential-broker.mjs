@@ -33,6 +33,9 @@ function validateConfig(value) {
   if (value.expiresAt !== undefined && (!Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now())) {
     fail('expiresAt is invalid');
   }
+  if (value.listenHost !== undefined && !['127.0.0.1', '0.0.0.0'].includes(value.listenHost)) {
+    fail('listenHost is invalid');
+  }
   return value;
 }
 
@@ -131,9 +134,10 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
     const configPath = join(root, 'config.json');
     const readyPath = join(root, 'ready.json');
     const sessionToken = randomBytes(32).toString('hex');
+    const listenHost = networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
     writeFileSync(configPath, `${JSON.stringify({ schemaVersion: 1,
       mode: selectedAuth.mode, credential, sessionToken, readyPath, parentPid: process.pid,
-      expiresAt: Date.now() + deadlineMs + 60_000 })}\n`, { flag: 'wx', mode: 0o600 });
+      expiresAt: Date.now() + deadlineMs + 60_000, listenHost })}\n`, { flag: 'wx', mode: 0o600 });
     child = spawn(process.execPath, [resolve(import.meta.dirname, 'credential-broker.mjs'),
       '--config', configPath], {
       stdio: ['ignore', 'ignore', 'inherit'],
@@ -155,8 +159,10 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
     if (!Number.isInteger(ready.port) || ready.port < 1 || ready.port > 65535) {
       throw new Error('credential broker returned an invalid port');
     }
+    if (ready.host !== listenHost) throw new Error('credential broker returned an invalid host');
     const host = networkMode === 'host' ? '127.0.0.1' : 'host.docker.internal';
-    return { child, root, sessionToken, baseUrl: `http://${host}:${ready.port}` };
+    return { child, root, sessionToken, baseUrl: `http://${host}:${ready.port}`,
+      listenHost: ready.host };
   } catch (error) {
     if (child?.pid) killTree(child.pid);
     rmSync(root, { recursive: true, force: true });
@@ -186,10 +192,10 @@ async function main() {
     process.stderr.write(`credential broker: ${error.message}\n`);
     process.exitCode = 1;
   });
-  server.listen(0, '0.0.0.0', () => {
+  server.listen(0, config.listenHost ?? '127.0.0.1', () => {
     const address = server.address();
     if (!address || typeof address === 'string') fail('listener address is unavailable');
-    writeFileSync(config.readyPath, `${JSON.stringify({ port: address.port })}\n`,
+    writeFileSync(config.readyPath, `${JSON.stringify({ host: address.address, port: address.port })}\n`,
       { flag: 'wx', mode: 0o600 });
   });
   let stopping = false;

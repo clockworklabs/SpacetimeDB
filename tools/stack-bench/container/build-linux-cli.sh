@@ -22,9 +22,9 @@ OUT="$HERE/bin"
 # somewhere wrong.
 export MSYS_NO_PATHCONV=1
 
-# The toolchain is whatever rust-toolchain.toml pins; rustup in the image reads
-# it and fetches that channel, so this does not need updating when the pin moves.
-IMAGE="${STACK_BENCH_RUST_IMAGE:-rust:1.93-slim-bookworm}"
+# This digest is the linux/amd64 manifest for rust:1.93-slim-bookworm. Update it
+# with rust-toolchain.toml and the expected image in binary-provenance.mjs.
+IMAGE="rust:1.93-slim-bookworm@sha256:8f8609d448e821fbc0e44241bc5ca4ce49663cc6306ff1a17f655a0e2a7cd084"
 
 # Cargo's target directory is a named volume, not a path in the repo. A Rust
 # build against a Windows bind mount is many times slower, and it would also sit
@@ -32,13 +32,17 @@ IMAGE="${STACK_BENCH_RUST_IMAGE:-rust:1.93-slim-bookworm}"
 # so container runs cannot silently execute a stale or host-platform binary.
 VOLUME="${STACK_BENCH_CARGO_VOLUME:-stack-bench-cargo-target}"
 
+SOURCE_RECORD="$(mktemp)"
+trap 'rm -f "$SOURCE_RECORD"' EXIT
+node "$HERE/binary-provenance.mjs" source --repo "$REPO" >"$SOURCE_RECORD"
+
 mkdir -p "$OUT"
 docker volume create "$VOLUME" >/dev/null
 
 echo "building spacetimedb-cli for linux (image $IMAGE, target volume $VOLUME)"
 echo "  first build compiles the whole workspace and takes a while; later ones reuse the volume"
 
-docker run --rm \
+docker run --rm --platform linux/amd64 \
   -v "$REPO:/src" \
   -v "$VOLUME:/target" \
   -v "$OUT:/out" \
@@ -68,3 +72,5 @@ file "$OUT/spacetimedb-cli" 2>/dev/null || true
 file "$OUT/spacetimedb-standalone" 2>/dev/null || true
 docker run --rm -v "$OUT:/deps:ro" "${STACK_BENCH_IMAGE:-stack-bench-build:2.1.226}" \
   sh -c 'test -x /deps/spacetimedb-standalone && /deps/spacetimedb-cli --version'
+
+node "$HERE/binary-provenance.mjs" record --repo "$REPO" --source-file "$SOURCE_RECORD"

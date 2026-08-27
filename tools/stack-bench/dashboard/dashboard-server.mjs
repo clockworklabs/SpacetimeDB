@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { randomBytes, randomUUID } from 'node:crypto';
-import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -31,6 +31,34 @@ const STATIC = new Map([
 
 function loopbackHost(value) {
   return /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(String(value ?? ''));
+}
+
+function loadControlSecret(options, allowLaunch) {
+  if (!allowLaunch) return null;
+  const file = options.controlSecretFile
+    ?? process.env.STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE;
+  let value = options.controlSecret;
+  if (value === undefined && file) {
+    try { value = readFileSync(resolve(file), 'utf8').trim(); }
+    catch { throw new Error('dashboard run controls require a readable operator control secret file'); }
+  }
+  if (typeof value !== 'string' || value.length < 32 || value.length > 4096 || /[\r\n]/.test(value)) {
+    throw new Error('dashboard run controls require a valid operator control secret file');
+  }
+  return value;
+}
+
+function sameSecret(actual, expected) {
+  if (typeof actual !== 'string' || typeof expected !== 'string') return false;
+  const left = Buffer.from(actual);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function controlAuthorized(request, host, csrfToken, controlSecret) {
+  return request.headers.origin === `http://${host}`
+    && sameSecret(request.headers['x-stack-bench-token'], csrfToken)
+    && sameSecret(request.headers['x-stack-bench-control-secret'], controlSecret);
 }
 
 export function parseDashboardArgs(argv, env = process.env) {
@@ -124,6 +152,7 @@ export function createDashboardServer(options) {
   const plansRoot = resolve(options.plansRoot);
   const allowLaunch = options.allowLaunch ?? process.env.STACK_BENCH_APPLIANCE === '1';
   const token = options.token ?? randomBytes(24).toString('base64url');
+  const controlSecret = loadControlSecret(options, allowLaunch);
   const feed = options.feed ?? createOperationFeed(resultsRoot);
   const launch = options.launch ?? launchCampaign;
   const plans = options.plans ?? (() => discoverPlans(plansRoot));
@@ -156,9 +185,8 @@ export function createDashboardServer(options) {
       const resumeRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/resume$/);
       if (request.method === 'POST' && resumeRoute) {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the StackBench appliance.' });
-        const expectedOrigin = `http://${request.headers.host}`;
-        if (request.headers.origin !== expectedOrigin || request.headers['x-stack-bench-token'] !== token) {
-          return json(response, 403, { error: 'The run request did not come from this dashboard session.' });
+        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+          return json(response, 403, { error: 'The run request is not authorized.' });
         }
         const key = decodeURIComponent(resumeRoute[1]);
         if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
@@ -228,9 +256,8 @@ export function createDashboardServer(options) {
       }
       if (request.method === 'POST' && url.pathname === '/api/campaigns') {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the StackBench appliance.' });
-        const expectedOrigin = `http://${request.headers.host}`;
-        if (request.headers.origin !== expectedOrigin || request.headers['x-stack-bench-token'] !== token) {
-          return json(response, 403, { error: 'The run request did not come from this dashboard session.' });
+        if (!controlAuthorized(request, request.headers.host, token, controlSecret)) {
+          return json(response, 403, { error: 'The run request is not authorized.' });
         }
         if (!String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
           return json(response, 415, { error: 'Run requests must use JSON.' });

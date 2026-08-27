@@ -14,7 +14,8 @@ function repository() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));
   const files = ['licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
     'crates/bindings-typescript/package.json', 'skills/typescript-server/SKILL.md',
-    'tools/stack-bench/commands/bench.mjs'];
+    'tools/stack-bench/commands/bench.mjs',
+    'tools/stack-bench/container/spacetimedb-binaries.json'];
   for (const path of files) {
     const absolute = join(root, ...path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
@@ -46,6 +47,11 @@ test('release source identity hashes only the exact tracked build inputs', () =>
     assert.equal(before.paths.includes('.gitattributes'), false);
     writeFileSync(join(root, 'tools', 'stack-bench', 'JOURNAL.local.md'), 'different local notes\n');
     assert.deepEqual(releaseSourceIdentity(root, { runGit: git(files) }), before);
+    writeFileSync(join(root, 'tools', 'stack-bench', 'container',
+      'spacetimedb-binaries.json'), 'changed provenance\n');
+    const provenanceChanged = releaseSourceIdentity(root, { runGit: git(files) });
+    assert.notEqual(provenanceChanged.sha256, before.sha256);
+    assert.equal(provenanceChanged.binarySourceSha256, before.binarySourceSha256);
     writeFileSync(join(root, 'tools', 'stack-bench', 'commands', 'bench.mjs'), 'changed tracked input\n');
     assert.notEqual(releaseSourceIdentity(root, { runGit: git(files) }).sha256, before.sha256);
   } finally { rmSync(root, { recursive: true, force: true }); }

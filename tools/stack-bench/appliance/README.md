@@ -40,8 +40,15 @@ docker build --platform linux/amd64 `
   -f tools/stack-bench/appliance/Controller.Dockerfile `
   --build-arg SOURCE_REVISION=$($source.revision) `
   --build-arg SOURCE_SHA256=$($source.sha256) `
+  --build-arg BINARY_SOURCE_SHA256=$($source.binarySourceSha256) `
   -t stack-bench-controller:development .
 ```
+
+The controller build accepts only Linux CLI and standalone binaries recorded in
+`container/spacetimedb-binaries.json`. From a clean checkout, run
+`bash tools/stack-bench/container/build-linux-cli.sh`, review the updated
+provenance file, and commit it. The binary files stay ignored. Build them again
+after a recorded binary source input changes.
 
 This creates a local development candidate only. A distributable release still
 requires registry digests, generated SBOMs, signatures/attestations, and a
@@ -76,6 +83,9 @@ the downloaded bundle.
    example image values with exact `@sha256:` references from the release
    manifest, and copy that manifest to the configured path below
    `/var/lib/stack-bench`.
+   If you use the dashboard, write at least 32 random characters to
+   `/var/lib/stack-bench/secrets/dashboard_control_secret` and set the file to
+   mode `0600`. The browser asks for this secret when you start or resume a run.
 4. Pull and verify every manifest image before starting any service.
 5. Render the Compose file and run the exact requested preflight.
 

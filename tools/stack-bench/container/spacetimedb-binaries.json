@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "status": "unbuilt",
+  "reason": "Run tools/stack-bench/container/build-linux-cli.sh from a clean checkout."
+}

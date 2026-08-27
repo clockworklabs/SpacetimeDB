@@ -44,8 +44,8 @@ The controller runs with:
 - `/var/run/docker.sock`, read-write;
 - `/var/lib/stack-bench`, bind-mounted at the identical host/container path;
 - a read-only release-dependency volume after initialization;
-- provider credentials as Compose secrets, never environment entries in the
-  Compose file;
+- provider credential files below the private appliance state root, never
+  secret values in the Compose file or process environment;
 - no registry credential mount. The host pulls images before the controller
   starts.
 
@@ -94,6 +94,10 @@ log, transcript path, or long-lived environment block. The controller still
 has the long-lived credential and root-equivalent Docker access. V1 therefore
 requires a dedicated disposable runner and a credential scoped to the
 campaign. A shared or persistent host is not supported.
+
+Coding containers drop all Linux capabilities, use `no-new-privileges`, and
+have a finite process limit. This prevents a host-network coding session from
+using raw sockets to inspect loopback traffic.
 
 Developer-home credential mounts are not part of the appliance. They remain a
 local-development convenience only. Adding another provider requires its agent

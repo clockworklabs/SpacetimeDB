@@ -746,18 +746,32 @@
       ]
     },
     {
-      "id": "progression-catalog-product-values-are-corrupted",
+      "id": "progression-catalog-product-name-is-not-published",
       "scenario": "tracks/ecommerce/scenarios/progression-core-business-1.0.0.json",
       "targets": [
-        "ecommerce.progression.catalog-management.catalog-management.622a",
+        "ecommerce.progression.catalog-management.catalog-management.622a"
+      ],
+      "desc": "The public product card omits the submitted name while retaining the product and its variants.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "        <span className=\"item-name\" data-testid=\"item-name\">{item.name}</span>",
+          "replace": "        <span className=\"item-name\" data-testid=\"item-name\">{item.name === \"Travel Mug\" ? \"\" : item.name}</span>"
+        }
+      ]
+    },
+    {
+      "id": "progression-catalog-variants-are-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-core-business-1.0.0.json",
+      "targets": [
         "ecommerce.progression.catalog-management.catalog-management.622b"
       ],
-      "desc": "Store the wrong product name and discard its variants.",
+      "desc": "Store the submitted product without its named variants.",
       "file": "server/src/progression.ts",
       "edits": [
         {
           "find": "        [name, category, price.toFixed(2), variants],",
-          "replace": "        [\"Unavailable product\", category, price.toFixed(2), []],"
+          "replace": "        [name, category, price.toFixed(2), []],"
         }
       ]
     },
@@ -1211,8 +1225,7 @@
       "id": "progression-concurrent-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
       "targets": [
-        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
-        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
       ],
       "desc": "Keep the old cart quantity during concurrent adds.",
       "file": "server/src/progression.ts",

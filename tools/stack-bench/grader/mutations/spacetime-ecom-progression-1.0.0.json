@@ -556,8 +556,7 @@
       "id": "existing-cart-line-does-not-increment",
       "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
       "targets": [
-        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
-        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
       ],
       "desc": "The existing cart row is written back without increasing its quantity.",
       "file": "backend/spacetimedb/src/index.ts",

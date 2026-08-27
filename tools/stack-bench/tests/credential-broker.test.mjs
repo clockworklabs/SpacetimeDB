@@ -122,6 +122,7 @@ test('credential broker lifecycle creates only an attempt-scoped session credent
   { networkMode: 'host', deadlineMs: 10_000 });
   try {
     assert.equal(existsSync(broker.root), true);
+    assert.equal(broker.listenHost, '127.0.0.1');
     assert.doesNotMatch(broker.baseUrl, new RegExp(providerCredential));
     assert.match(broker.sessionToken, /^[a-f0-9]{64}$/);
     assert.equal((await send(new URL(broker.baseUrl).port)).status, 401);

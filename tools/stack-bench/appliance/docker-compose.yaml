@@ -69,6 +69,8 @@ services:
       service: controller
     profiles: ["dashboard"]
     network_mode: bridge
+    environment:
+      STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE: ${STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE:-/var/lib/stack-bench/secrets/dashboard_control_secret}
     ports:
       - "127.0.0.1:7331:7331"
     command: ["dashboard", "--host", "0.0.0.0", "--port", "7331", "--allow-container-bind"]
@@ -77,7 +79,7 @@ services:
     image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
     platform: linux/amd64
     container_name: stack-bench-postgres
-    ports: ["6532:5432"]
+    ports: ["127.0.0.1:6532:5432"]
     environment:
       POSTGRES_USER: stackbench
       POSTGRES_PASSWORD: stackbench
@@ -94,7 +96,7 @@ services:
     image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
     platform: linux/amd64
     container_name: stack-bench-mongodb
-    ports: ["6537:27017"]
+    ports: ["127.0.0.1:6537:27017"]
     volumes:
       - mongodata:/data/db
     healthcheck:

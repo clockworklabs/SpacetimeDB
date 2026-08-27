@@ -43,19 +43,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecom-progression-1.0.0.json",
-      "sha256": "7cb4e1ec3c25fb0a152bfe62030bbdcf5cff8195317dc15e9d12ea9093828ad2",
+      "sha256": "c87a112143f7d2107bcda4fdd3fa79c0a57595f076b1125011538a8d49c6c0c8",
       "referenceId": "ecommerce-progression-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecom-progression-1.0.0.json",
-      "sha256": "b8802acb7fd87538a7e2dd388908ea8ed82bf934f70fed50b25029577168c464",
+      "sha256": "3087eab2f80df32d9c1c8db92fd4d6f1cf594cdb8252cda737b68a63e72f39a4",
       "referenceId": "ecommerce-progression-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-progression-1.0.0.json",
-      "sha256": "d1ea9028aaf2f3d1e89492fec581e092a21fb8595204fa9dda40a960419da53a",
+      "sha256": "f90b61a3d6cbfabc497cec9419e30ea2bb298cf3c519f8d84dc6f1eb5318184c",
       "referenceId": "ecommerce-progression-spacetime"
     }
   ],

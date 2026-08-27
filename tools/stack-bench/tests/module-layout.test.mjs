@@ -5,8 +5,8 @@ import test from 'node:test';
 
 const ROOT = join(import.meta.dirname, '..');
 const SOURCE_AREAS = [
-  'actions', 'agents', 'campaigns', 'composition', 'evidence', 'references',
-  'releases', 'runtime', 'stacks',
+  'actions', 'agents', 'campaigns', 'composition', 'evidence', 'grading',
+  'progression', 'references', 'releases', 'runtime', 'stacks',
 ];
 const SKIPPED_DIRECTORIES = new Set([
   'archive', 'local-notes', 'node_modules', 'results', 'tests',
@@ -113,9 +113,23 @@ test('local and appliance compose files pin the same images but isolate resource
     assert.match(image(local, service) ?? '', /@sha256:[a-f0-9]{64}$/);
     assert.equal(image(local, service), image(appliance, service));
   }
+  for (const port of ['6532:5432', '6537:27017']) {
+    assert.match(local, new RegExp(`127\\.0\\.0\\.1:${port}`));
+    assert.match(appliance, new RegExp(`127\\.0\\.0\\.1:${port}`));
+  }
+  assert.match(appliance,
+    /STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE: \$\{STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE:-\/var\/lib\/stack-bench\/secrets\/dashboard_control_secret\}/);
+  assert.doesNotMatch(appliance, /STACK_BENCH_DASHBOARD_CONTROL_SECRET:/);
   for (const resource of ['postgres', 'mongodb', 'pgdata', 'mongodata']) {
     assert.match(local, new RegExp(`stack-bench-dev-${resource}`));
     assert.match(appliance, new RegExp(`stack-bench-(?:appliance-)?${resource}`));
     assert.doesNotMatch(appliance, new RegExp(`stack-bench-dev-${resource}`));
   }
+});
+
+test('coding containers cannot inspect host-network traffic or gain privileges', () => {
+  const source = readFileSync(join(ROOT, 'container', 'run-build.mjs'), 'utf8');
+  assert.match(source, /'--cap-drop', 'ALL'/);
+  assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
+  assert.match(source, /'--pids-limit', '512'/);
 });

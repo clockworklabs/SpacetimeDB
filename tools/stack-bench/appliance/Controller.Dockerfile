@@ -35,22 +35,30 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 
 ARG SOURCE_REVISION
 ARG SOURCE_SHA256
+ARG BINARY_SOURCE_SHA256
 RUN printf '%s' "$SOURCE_REVISION" | grep -Eq '^[0-9a-f]{40}([0-9a-f]{24})?$' \
-    && printf '%s' "$SOURCE_SHA256" | grep -Eq '^[0-9a-f]{64}$'
+    && printf '%s' "$SOURCE_SHA256" | grep -Eq '^[0-9a-f]{64}$' \
+    && printf '%s' "$BINARY_SOURCE_SHA256" | grep -Eq '^[0-9a-f]{64}$'
 LABEL org.opencontainers.image.title="Stack Bench controller" \
-      org.opencontainers.image.revision="$SOURCE_REVISION"
+      org.opencontainers.image.revision="$SOURCE_REVISION" \
+      io.spacetimedb.stack-bench.binary-source-sha256="$BINARY_SOURCE_SHA256"
 ENV STACK_BENCH_SOURCE_REVISION=$SOURCE_REVISION \
-    STACK_BENCH_SOURCE_SHA256=$SOURCE_SHA256
+    STACK_BENCH_SOURCE_SHA256=$SOURCE_SHA256 \
+    STACK_BENCH_BINARY_SOURCE_SHA256=$BINARY_SOURCE_SHA256
 
 COPY tools/stack-bench/ ./
 COPY skills/ /skills/
 COPY crates/bindings-typescript/ /opt/stack-bench-embedded-deps/bindings-typescript/
 COPY --from=sdk-build /workspace/crates/bindings-typescript/dist/ /opt/stack-bench-embedded-deps/bindings-typescript/dist/
 COPY licenses/BSL.txt /opt/stack-bench-embedded-deps/BSL.txt
-COPY tools/stack-bench/container/bin/spacetimedb-cli /opt/stack-bench-embedded-deps/spacetimedb-cli
-COPY tools/stack-bench/container/bin/spacetimedb-standalone /opt/stack-bench-embedded-deps/spacetimedb-standalone
 
-RUN rm /opt/stack-bench-embedded-deps/bindings-typescript/LICENSE.txt \
+RUN node container/binary-provenance.mjs verify \
+      --root /opt/stack-bench --source-sha256 "$BINARY_SOURCE_SHA256" \
+    && install -m 0555 container/bin/spacetimedb-cli \
+      /opt/stack-bench-embedded-deps/spacetimedb-cli \
+    && install -m 0555 container/bin/spacetimedb-standalone \
+      /opt/stack-bench-embedded-deps/spacetimedb-standalone \
+    && rm /opt/stack-bench-embedded-deps/bindings-typescript/LICENSE.txt \
     && mv /opt/stack-bench-embedded-deps/BSL.txt \
       /opt/stack-bench-embedded-deps/bindings-typescript/LICENSE.txt \
     && chmod 0444 /opt/stack-bench-embedded-deps/bindings-typescript/LICENSE.txt \

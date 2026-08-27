@@ -107,3 +107,51 @@ test('SpacetimeDB reservation and catalog mutants affect only their owned checks
     'the product variants must remain public for their separate check');
   assert.deepEqual(syntaxErrors(unpublished, catalogEdit.file), []);
 });
+
+test('catalog and duplicate-checkout mutants keep independent check ownership', () => {
+  const catalogCases = [
+    { backend: 'mongodb', nameId: 'catalog-product-name-is-not-published',
+      variantsId: 'catalog-variants-are-discarded' },
+    { backend: 'postgres', nameId: 'progression-catalog-product-name-is-not-published',
+      variantsId: 'progression-catalog-variants-are-discarded' },
+  ];
+  for (const item of catalogCases) {
+    const fixture = fixtures.get(item.backend);
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations',
+      `${item.backend}-ecom-progression-1.0.0.json`), 'utf8'));
+    const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+    const name = mutations.get(item.nameId);
+    const variants = mutations.get(item.variantsId);
+    assert.deepEqual(name.targets,
+      ['ecommerce.progression.catalog-management.catalog-management.622a']);
+    assert.deepEqual(variants.targets,
+      ['ecommerce.progression.catalog-management.catalog-management.622b']);
+
+    for (const mutation of [name, variants]) {
+      const edit = mutationFileEdits(mutation)[0];
+      const file = join(ROOT, fixture.targetPath, ...edit.file.split('/'));
+      const source = readFileSync(file, 'utf8');
+      assert.equal(source.split(edit.find).length - 1, 1,
+        `${mutation.id} anchor must match once`);
+      assert.deepEqual(syntaxErrors(source.replace(edit.find, edit.replace), edit.file), []);
+    }
+    assert.match(mutationFileEdits(name)[0].replace, /Travel Mug/);
+    assert.doesNotMatch(mutationFileEdits(variants)[0].replace, /Unavailable product/);
+  }
+
+  const cartCases = [
+    { backend: 'postgres', incrementId: 'progression-concurrent-cart-line-does-not-increment',
+      checkoutId: 'progression-concurrent-checkout-leaves-cart-lines' },
+    { backend: 'spacetime', incrementId: 'existing-cart-line-does-not-increment',
+      checkoutId: 'checkout-does-not-empty-cart' },
+  ];
+  for (const item of cartCases) {
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations',
+      `${item.backend}-ecom-progression-1.0.0.json`), 'utf8'));
+    const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+    assert.deepEqual(mutations.get(item.incrementId).targets,
+      ['ecommerce.spec.concurrency-safety.duplicate-checkout.203a']);
+    assert.deepEqual(mutations.get(item.checkoutId).targets,
+      ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b']);
+  }
+});

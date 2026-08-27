@@ -13,7 +13,8 @@ const MIN_REPETITIONS = 3;
 // other is the record.
 const ARCHIVE_AFTER_MS = 72 * 3600 * 1000;
 
-const state = { overview: null, csrfToken: null, selectedPlan: null, showArchived: false,
+const state = { overview: null, csrfToken: null, controlSecret: null,
+  selectedPlan: null, showArchived: false,
   openCampaign: null, expanded: new Set(), collapsed: new Set(),
   lastRefreshAt: null, prevScores: new Map() };
 
@@ -74,9 +75,26 @@ async function request(path, options) {
   try {
     const response = await fetch(path, options);
     const value = await response.json();
-    if (!response.ok) throw new Error(value.error ?? `Request failed (${response.status})`);
+    if (!response.ok) {
+      const error = new Error(value.error ?? `Request failed (${response.status})`);
+      error.status = response.status;
+      throw error;
+    }
     return value;
   } finally { trackLoading(-1); }
+}
+
+async function controlRequest(path, options) {
+  state.controlSecret ??= window.prompt('Enter the Stack Bench control secret');
+  if (!state.controlSecret) throw new Error('A control secret is required.');
+  try {
+    return await request(path, { ...options, headers: { ...options.headers,
+      'x-stack-bench-token': state.csrfToken,
+      'x-stack-bench-control-secret': state.controlSecret } });
+  } catch (error) {
+    if (error.status === 403) state.controlSecret = null;
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------- measurement
@@ -819,9 +837,8 @@ document.addEventListener('click', event => {
   const resume = event.target.closest('[data-resume]');
   if (resume?.dataset.resume) {
     resume.disabled = true;
-    request(`/api/campaigns/${encodeURIComponent(resume.dataset.resume)}/resume`, {
-      method: 'POST', headers: { 'content-type': 'application/json',
-        'x-stack-bench-token': state.csrfToken }, body: '{}' },
+    controlRequest(`/api/campaigns/${encodeURIComponent(resume.dataset.resume)}/resume`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
     ).then(() => { closeDetail(); return refresh(); })
       .catch(error => { resume.disabled = false; resume.title = error.message; });
     return;
@@ -861,8 +878,8 @@ $('#start-run').addEventListener('click', async () => {
   message.textContent = '';
   $('#start-run').disabled = true;
   try {
-    await request('/api/campaigns', { method: 'POST', headers: { 'content-type': 'application/json',
-      'x-stack-bench-token': state.csrfToken }, body: JSON.stringify({ planId: $('#plan-select').value,
+    await controlRequest('/api/campaigns', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ planId: $('#plan-select').value,
       outputName: $('#output-name').value }) });
     $('#run-dialog').close();
     await refresh();

@@ -218,6 +218,8 @@ if (existing) {
 if (!existing) {
   const create = [
     'run', '-d', '--init', '--name', containerName,
+    '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
+    '--pids-limit', '512',
     '-v', `${resolve(appDir)}:/app`,
   ];
   create.push('--network', expectedNetworkMode);

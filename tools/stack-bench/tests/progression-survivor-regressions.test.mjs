@@ -92,11 +92,15 @@ test('PostgreSQL cart live-update mutation changes the route used by the owned c
   assert.match(source, /await reserveCartItem\(accountId, itemId, qty\);[\s\S]*?io\.to\(`account:\$\{accountId\}:mutation`\)\.emit\("cart:update", state\);/);
 });
 
-test('PostgreSQL catalog corruption removes the requested product name and variants', () => {
-  const source = postgresMutationSource('progression-catalog-product-values-are-corrupted',
+test('PostgreSQL catalog mutations isolate product name and variant failures', () => {
+  const nameSource = postgresMutationSource('progression-catalog-product-name-is-not-published',
+    'client/src/App.tsx');
+  assert.match(nameSource, /item\.name === "Travel Mug" \? "" : item\.name/);
+  assert.match(nameSource, /item\.variants\?\.map/);
+
+  const variantsSource = postgresMutationSource('progression-catalog-variants-are-discarded',
     'server/src/progression.ts');
-  assert.match(source,
-    /\["Unavailable product", category, price\.toFixed\(2\), \[\]\]/);
+  assert.match(variantsSource, /\[name, category, price\.toFixed\(2\), \[\]\]/);
 });
 
 test('staff role check reloads the saved value on each progression reference', () => {

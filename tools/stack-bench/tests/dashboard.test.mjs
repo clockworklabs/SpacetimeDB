@@ -278,7 +278,7 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   assert.equal((await fetch(`${origin}/api/campaigns/evidence-run/artifacts/${forbidden}`)).status, 404);
 });
 
-test('dashboard serves real state and protects campaign launch with its local session token', async t => {
+test('dashboard serves real state and protects campaign launch with a separate operator secret', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-'));
   const plansRoot = join(root, 'plans');
   mkdirSync(plansRoot, { recursive: true });
@@ -310,7 +310,8 @@ test('dashboard serves real state and protects campaign launch with its local se
   }, { now: '2026-08-25T12:00:01.000Z', retries: 1, retryOn: ['harness_failure'] });
   writeCampaign(campaignDirectory, storedPlan, storedState);
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
-    token: 'test-session-token', feed, plans: () => [frozenPlan],
+    token: 'test-session-token', controlSecret: 'test-control-secret-value-1234567890',
+    feed, plans: () => [frozenPlan],
     launch(input) { launches.push(input); const child = new EventEmitter(); child.pid = 1234;
       return child; } });
   await new Promise((resolveListen, reject) => {
@@ -323,7 +324,7 @@ test('dashboard serves real state and protects campaign launch with its local se
   const page = await fetch(origin);
   assert.equal(page.status, 200);
   const pageHtml = await page.text();
-  assert.match(pageHtml, /StackBench Control Room/);
+  assert.match(pageHtml, /Stack Bench Control Room/);
   assert.match(pageHtml, /id="campaign-list"/);
   assert.match(pageHtml, /class="primary topbar-run"/);
   assert.doesNotMatch(pageHtml, /Controller activity/);
@@ -335,6 +336,7 @@ test('dashboard serves real state and protects campaign launch with its local se
   const overview = await (await fetch(`${origin}/api/overview`)).json();
   assert.equal(overview.canStart, true);
   assert.equal(overview.csrfToken, 'test-session-token');
+  assert.doesNotMatch(JSON.stringify(overview), /test-control-secret-value/);
   assert.deepEqual(overview.plans.map(plan => plan.id), [frozenPlan.id]);
 
   const reboundStatus = await new Promise((resolveStatus, reject) => {
@@ -346,14 +348,24 @@ test('dashboard serves real state and protects campaign launch with its local se
   assert.equal(reboundStatus, 421);
 
   const rejected = await fetch(`${origin}/api/campaigns`, { method: 'POST',
-    headers: { origin, 'content-type': 'application/json' },
+    headers: { origin, 'content-type': 'application/json',
+      'x-stack-bench-token': 'test-session-token' },
     body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
   assert.equal(rejected.status, 403);
   assert.equal(launches.length, 0);
 
+  const wrongOperator = await fetch(`${origin}/api/campaigns`, { method: 'POST',
+    headers: { origin, 'content-type': 'application/json',
+      'x-stack-bench-token': 'test-session-token',
+      'x-stack-bench-control-secret': 'wrong-control-secret-value-1234567890' },
+    body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
+  assert.equal(wrongOperator.status, 403);
+  assert.equal(launches.length, 0);
+
   const accepted = await fetch(`${origin}/api/campaigns`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token' },
+      'x-stack-bench-token': 'test-session-token',
+      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' },
     body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
   assert.equal(accepted.status, 202);
   assert.equal(launches.length, 1);
@@ -365,14 +377,16 @@ test('dashboard serves real state and protects campaign launch with its local se
 
   const resumed = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token' }, body: '{}' });
+      'x-stack-bench-token': 'test-session-token',
+      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
   assert.equal(resumed.status, 202);
   assert.equal(launches.length, 2);
   assert.equal(launches[1].output, campaignDirectory);
   assert.equal((await resumed.json()).type, 'campaign.resume');
   const duplicate = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
-      'x-stack-bench-token': 'test-session-token' }, body: '{}' });
+      'x-stack-bench-token': 'test-session-token',
+      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
   assert.equal(duplicate.status, 409);
   assert.equal(launches.length, 2);
 });
