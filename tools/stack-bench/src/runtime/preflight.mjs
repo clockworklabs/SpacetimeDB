@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
-import { parseImageId } from './container-image.mjs';
+import { isExactImageReference, parseImageId } from './container-image.mjs';
 import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.mjs';
 import { dockerMountArguments } from './container-mount.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
@@ -274,6 +274,23 @@ export function runPreflight(request, dependencies = {}) {
   add('host.node', nodeMajor >= 22 ? 'pass' : 'fail', `Node ${process.versions.node}`,
     nodeMajor >= 22 ? null : 'Install Node 22 or newer.');
   const appliance = env.STACK_BENCH_APPLIANCE === '1';
+  if (appliance) {
+    const controllerReference = env.STACK_BENCH_CONTROLLER_IMAGE;
+    const controllerPinned = isExactImageReference(controllerReference);
+    const buildPinned = isExactImageReference(request.image);
+    add('image.controller-reference', controllerPinned ? 'pass' : 'fail',
+      controllerPinned
+        ? `Controller image is digest-pinned: ${controllerReference}`
+        : 'Controller image is not digest-pinned',
+      controllerPinned ? null
+        : 'Set STACK_BENCH_CONTROLLER_IMAGE to an exact image@sha256 digest reference.');
+    add('image.build-reference', buildPinned ? 'pass' : 'fail',
+      buildPinned
+        ? `Build image is digest-pinned: ${request.image}`
+        : 'Build image is not digest-pinned',
+      buildPinned ? null
+        : 'Set STACK_BENCH_IMAGE to an exact image@sha256 digest reference.');
+  }
   const supportedHost = appliance
     ? process.platform === 'linux' && process.arch === 'x64'
     : ['win32', 'linux'].includes(process.platform) && ['x64', 'arm64'].includes(process.arch);

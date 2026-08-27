@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { request as httpRequest, createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { createCredentialBroker, startCredentialBroker,
+import { createCredentialBroker, readCredentialBrokerLedger,
+  reconcileCredentialBrokerReceipt, startCredentialBroker,
   stopCredentialBroker } from '../container/credential-broker.mjs';
 
 const listen = server => new Promise((resolve, reject) => {
@@ -134,7 +137,8 @@ test('credential broker enforces model, output token, and session cost limits', 
     assert.equal((await send(brokerPort, { headers,
       body: '{"model":"test-model","max_tokens":1000}' })).status, 402);
     assert.equal(seen.length, 0);
-    assert.deepEqual(stats(), { acceptedRequests: 3, spentUsd: 0, reservedUsd: 0 });
+    assert.deepEqual(stats(), { acceptedRequests: 3, billableRequests: 0,
+      completedBillableRequests: 0, spentUsd: 0, reservedUsd: 0 });
   }, { maxBudgetUsd: 0.01, pricingRates: rates });
 });
 
@@ -151,15 +155,95 @@ test('credential broker charges reported usage and reserves enough for the next 
     assert.equal((await send(brokerPort, request)).status, 200);
     assert.equal((await send(brokerPort, request)).status, 402);
     assert.equal(seen.length, 3);
-    assert.deepEqual(stats(), { acceptedRequests: 4, spentUsd: 0.0054, reservedUsd: 0 });
+    assert.deepEqual(stats(), { acceptedRequests: 4, billableRequests: 3,
+      completedBillableRequests: 3, spentUsd: 0.0054, reservedUsd: 0 });
   }, { maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
+});
+
+test('credential broker atomically records all direct requests without credentials', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-ledger-test-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
+  const upstreamBody = JSON.stringify({ usage: { input_tokens: 100, output_tokens: 100,
+    cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } });
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken, credential }) => {
+      const request = { headers: { authorization: `Bearer ${sessionToken}`,
+        'content-type': 'application/json' },
+      body: '{"model":"test-model","max_tokens":1000}' };
+      assert.equal((await send(brokerPort, request)).status, 200);
+      assert.equal((await send(brokerPort, request)).status, 200);
+      const ledger = readCredentialBrokerLedger(ledgerPath,
+        { model: 'test-model', maxBudgetUsd: 0.02 });
+      assert.equal(ledger.complete, true);
+      assert.equal(ledger.billableRequests, 2);
+      assert.equal(ledger.completedBillableRequests, 2);
+      assert.equal(ledger.spentUsd, 0.0036);
+      const text = readFileSync(ledgerPath, 'utf8');
+      assert.doesNotMatch(text, new RegExp(sessionToken));
+      assert.doesNotMatch(text, new RegExp(credential));
+      assert.deepEqual(readdirSync(root), ['ledger.json']);
+    }, { ledgerPath, maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('broker receipt is authoritative and direct request spend causes fail-closed mismatch', () => {
+  const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
+    spentUsd: 0.0036, reservedUsd: 0, complete: true,
+    updatedAt: new Date().toISOString() };
+  const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018 },
+    model: 'test-model', maxBudgetUsd: 1 });
+  assert.equal(reconciled.ok, false);
+  assert.equal(reconciled.result.is_error, true);
+  assert.equal(reconciled.result.total_cost_usd, 0.0036);
+  assert.equal(reconciled.receipt.source, 'credential-broker');
+  assert.match(reconciled.receipt.error, /does not match CLI receipt/);
+});
+
+test('missing or incomplete broker ledgers fail closed with a conservative receipt', () => {
+  const missing = reconcileCredentialBrokerReceipt({ ledger: null,
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.25 },
+    model: 'test-model', maxBudgetUsd: 1 });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.result.total_cost_usd, 1);
+  assert.equal(missing.result.stack_bench_cost_receipt.complete, false);
+
+  const incomplete = reconcileCredentialBrokerReceipt({ ledger: {
+    schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
+    spentUsd: 0.1, reservedUsd: 0.4, complete: false,
+    updatedAt: new Date().toISOString(),
+  }, cliResult: { type: 'result', is_error: false, total_cost_usd: 0.1 },
+  model: 'test-model', maxBudgetUsd: 1 });
+  assert.equal(incomplete.ok, false);
+  assert.equal(incomplete.result.total_cost_usd, 0.5);
+  assert.match(incomplete.receipt.error, /incomplete/);
+});
+
+test('matching broker and CLI receipts preserve a successful result', () => {
+  const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    spentUsd: 0.0018, reservedUsd: 0, complete: true,
+    updatedAt: new Date().toISOString() };
+  const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018 },
+    model: 'test-model', maxBudgetUsd: 1 });
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.result.is_error, false);
+  assert.equal(reconciled.result.total_cost_usd, 0.0018);
+  assert.equal(reconciled.result.stack_bench_cost_receipt.reconciled, true);
 });
 
 test('credential broker lifecycle creates only an attempt-scoped session credential', async () => {
   const providerCredential = 'provider-secret-value-1234567890';
+  const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
   const broker = startCredentialBroker({ mode: 'api-key',
     environment: { name: 'ANTHROPIC_API_KEY', value: providerCredential }, mount: null },
-  { networkMode: 'host', deadlineMs: 10_000, model: 'test-model' });
+  { networkMode: 'host', deadlineMs: 10_000, model: 'test-model',
+    maxBudgetUsd: 1, pricingRates: rates });
+  let ledger;
   try {
     assert.equal(existsSync(broker.root), true);
     assert.equal(broker.listenHost, '127.0.0.1');
@@ -167,7 +251,9 @@ test('credential broker lifecycle creates only an attempt-scoped session credent
     assert.match(broker.sessionToken, /^[a-f0-9]{64}$/);
     assert.equal((await send(new URL(broker.baseUrl).port)).status, 401);
   } finally {
-    stopCredentialBroker(broker);
+    ledger = stopCredentialBroker(broker);
   }
   assert.equal(existsSync(broker.root), false);
+  assert.equal(ledger.complete, true);
+  assert.equal(ledger.spentUsd, 0);
 });

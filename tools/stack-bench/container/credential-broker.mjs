@@ -3,7 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync,
+  writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -17,6 +18,8 @@ const MAX_REQUESTS = 512;
 const MAX_OUTPUT_TOKENS = 128_000;
 const ALLOWED_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
 const PRICE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
+const LEDGER_SCHEMA_VERSION = 1;
+const COST_TOLERANCE_USD = 0.0001;
 
 function fail(message) {
   throw new Error(`credential broker: ${message}`);
@@ -40,6 +43,8 @@ function validateConfig(value) {
   if (value.listenHost !== undefined && !['127.0.0.1', '0.0.0.0'].includes(value.listenHost)) {
     fail('listenHost is invalid');
   }
+  if (value.ledgerPath !== undefined && (typeof value.ledgerPath !== 'string'
+    || !value.ledgerPath)) fail('ledgerPath is invalid');
   if (typeof value.model !== 'string' || !value.model) fail('model is invalid');
   if (!Number.isInteger(value.maxOutputTokens) || value.maxOutputTokens < 1
     || value.maxOutputTokens > MAX_OUTPUT_TOKENS) fail('maxOutputTokens is invalid');
@@ -56,6 +61,98 @@ function validateConfig(value) {
     }
   }
   return value;
+}
+
+function validateLedger(value, { model = null, maxBudgetUsd = undefined } = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('spend ledger is invalid');
+  const fields = new Set(['schemaVersion', 'model', 'maxBudgetUsd', 'acceptedRequests',
+    'billableRequests', 'completedBillableRequests', 'spentUsd', 'reservedUsd',
+    'complete', 'updatedAt']);
+  for (const key of Object.keys(value)) if (!fields.has(key)) fail(`spend ledger.${key} is unknown`);
+  if (value.schemaVersion !== LEDGER_SCHEMA_VERSION) fail('spend ledger schema is invalid');
+  if (typeof value.model !== 'string' || !value.model) fail('spend ledger model is invalid');
+  if (model !== null && value.model !== model) fail('spend ledger model does not match');
+  if (value.maxBudgetUsd !== null
+    && (!Number.isFinite(value.maxBudgetUsd) || value.maxBudgetUsd <= 0)) {
+    fail('spend ledger budget is invalid');
+  }
+  if (maxBudgetUsd !== undefined && value.maxBudgetUsd !== maxBudgetUsd) {
+    fail('spend ledger budget does not match');
+  }
+  for (const field of ['acceptedRequests', 'billableRequests', 'completedBillableRequests']) {
+    if (!Number.isSafeInteger(value[field]) || value[field] < 0) {
+      fail(`spend ledger.${field} is invalid`);
+    }
+  }
+  if (value.completedBillableRequests > value.billableRequests) {
+    fail('spend ledger completed request count is invalid');
+  }
+  for (const field of ['spentUsd', 'reservedUsd']) {
+    if (!Number.isFinite(value[field]) || value[field] < 0) fail(`spend ledger.${field} is invalid`);
+  }
+  const complete = value.reservedUsd === 0
+    && value.completedBillableRequests === value.billableRequests;
+  if (value.complete !== complete) fail('spend ledger completion state is invalid');
+  if (typeof value.updatedAt !== 'string' || Number.isNaN(Date.parse(value.updatedAt))) {
+    fail('spend ledger timestamp is invalid');
+  }
+  return value;
+}
+
+function writeLedger(path, value) {
+  if (!path) return;
+  const ledger = validateLedger(value);
+  const temporary = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(ledger)}\n`, { flag: 'wx', mode: 0o600 });
+  try { renameSync(temporary, path); }
+  catch (error) { rmSync(temporary, { force: true }); throw error; }
+}
+
+export function readCredentialBrokerLedger(path, expected = {}) {
+  return validateLedger(JSON.parse(readFileSync(path, 'utf8')), expected);
+}
+
+export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, maxBudgetUsd,
+  toleranceUsd = COST_TOLERANCE_USD } = {}) {
+  if (typeof model !== 'string' || !model) fail('receipt model is invalid');
+  if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) fail('receipt budget is invalid');
+  if (!Number.isFinite(toleranceUsd) || toleranceUsd < 0) fail('receipt tolerance is invalid');
+  let verifiedLedger = null;
+  let issue = null;
+  try { verifiedLedger = validateLedger(ledger, { model, maxBudgetUsd }); }
+  catch (error) { issue = error.message; }
+  const brokerCost = verifiedLedger
+    ? Math.min(maxBudgetUsd, verifiedLedger.spentUsd + verifiedLedger.reservedUsd)
+    : maxBudgetUsd;
+  const cliCost = Number(cliResult?.total_cost_usd);
+  if (!issue && verifiedLedger.complete !== true) issue = 'credential broker spend ledger is incomplete';
+  if (!issue && (!Number.isFinite(cliCost) || cliCost < 0)) {
+    issue = 'coding session did not return a usable cost receipt';
+  }
+  if (!issue && Math.abs(cliCost - brokerCost) > toleranceUsd) {
+    issue = `credential broker spend $${brokerCost.toFixed(6)} does not match CLI receipt $${cliCost.toFixed(6)}`;
+  }
+  const receipt = {
+    schemaVersion: 1,
+    source: 'credential-broker',
+    model,
+    costUsd: Number(brokerCost.toFixed(6)),
+    cliCostUsd: Number.isFinite(cliCost) && cliCost >= 0 ? Number(cliCost.toFixed(6)) : null,
+    complete: verifiedLedger?.complete === true,
+    reconciled: issue === null,
+    error: issue,
+  };
+  const result = cliResult && typeof cliResult === 'object' && !Array.isArray(cliResult)
+    ? structuredClone(cliResult) : { type: 'result', is_error: true, result: '' };
+  result.total_cost_usd = receipt.costUsd;
+  result.stack_bench_cost_receipt = receipt;
+  if (issue) {
+    result.is_error = true;
+    result.terminal_reason = 'cost_receipt_error';
+    result.result = [typeof result.result === 'string' ? result.result.trim() : '', issue]
+      .filter(Boolean).join('\n');
+  }
+  return { ok: issue === null, result, receipt };
 }
 
 function clientAuthorized(request, sessionToken) {
@@ -157,8 +254,23 @@ export function createCredentialBroker(configInput, {
 } = {}) {
   const config = validateConfig(configInput);
   let acceptedRequests = 0;
+  let billableRequests = 0;
+  let completedBillableRequests = 0;
   let spentUsd = 0;
   let reservedUsd = 0;
+  const recordLedger = () => writeLedger(config.ledgerPath, {
+    schemaVersion: LEDGER_SCHEMA_VERSION,
+    model: config.model,
+    maxBudgetUsd: config.maxBudgetUsd ?? null,
+    acceptedRequests,
+    billableRequests,
+    completedBillableRequests,
+    spentUsd: Number(spentUsd.toFixed(6)),
+    reservedUsd: Number(reservedUsd.toFixed(6)),
+    complete: reservedUsd === 0 && completedBillableRequests === billableRequests,
+    updatedAt: new Date().toISOString(),
+  });
+  recordLedger();
   const server = createServer((request, response) => {
     if (!clientAuthorized(request, config.sessionToken)) {
       rejectRequest(request, response, 401, 'unauthorized');
@@ -170,6 +282,7 @@ export function createCredentialBroker(configInput, {
       return;
     }
     acceptedRequests += 1;
+    recordLedger();
     if (acceptedRequests > maxRequests) {
       rejectRequest(request, response, 429, 'session request limit reached');
       return;
@@ -207,7 +320,9 @@ export function createCredentialBroker(configInput, {
         response.end('session cost limit reached');
         return;
       }
+      if (billable) billableRequests += 1;
       reservedUsd += costCeiling;
+      recordLedger();
       const headers = upstreamHeaders(request, config);
       for (const name of ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer',
         'transfer-encoding', 'upgrade']) delete headers[name];
@@ -232,21 +347,26 @@ export function createCredentialBroker(configInput, {
           response.end();
           if (!billable) return;
           reservedUsd -= costCeiling;
-          if ((upstreamResponse.statusCode ?? 502) < 200
-            || (upstreamResponse.statusCode ?? 502) >= 300) return;
-          const usage = responseBytes <= maxRequestBytes
-            ? responseUsage(Buffer.concat(responseChunks)) : null;
-          if (!usage) spentUsd += costCeiling;
-          else {
-            try { spentUsd += priceClaudeUsage(usage, config.pricingRates); }
-            catch { spentUsd += costCeiling; }
+          completedBillableRequests += 1;
+          if ((upstreamResponse.statusCode ?? 502) >= 200
+            && (upstreamResponse.statusCode ?? 502) < 300) {
+            const usage = responseBytes <= maxRequestBytes
+              ? responseUsage(Buffer.concat(responseChunks)) : null;
+            if (!usage) spentUsd += costCeiling;
+            else {
+              try { spentUsd += priceClaudeUsage(usage, config.pricingRates); }
+              catch { spentUsd += costCeiling; }
+            }
           }
+          recordLedger();
         });
       });
       upstreamRequest.on('error', () => {
         if (billable) {
           reservedUsd -= costCeiling;
           spentUsd += costCeiling;
+          completedBillableRequests += 1;
+          recordLedger();
         }
         if (!response.headersSent) response.writeHead(502, { 'content-type': 'text/plain' });
         response.end('upstream request failed');
@@ -255,6 +375,7 @@ export function createCredentialBroker(configInput, {
     });
   });
   return { server, stats: () => ({ acceptedRequests,
+    billableRequests, completedBillableRequests,
     spentUsd: Number(spentUsd.toFixed(6)), reservedUsd: Number(reservedUsd.toFixed(6)) }) };
 }
 
@@ -270,11 +391,12 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
     chmodSync(root, 0o700);
     const configPath = join(root, 'config.json');
     const readyPath = join(root, 'ready.json');
+    const ledgerPath = join(root, 'spend-ledger.json');
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
     const config = validateConfig({ schemaVersion: 1,
       mode: selectedAuth.mode, credential, sessionToken, readyPath, parentPid: process.pid,
-      expiresAt: Date.now() + deadlineMs + 60_000, listenHost, model, maxOutputTokens,
+      expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath, model, maxOutputTokens,
       maxBudgetUsd, pricingRates });
     writeFileSync(configPath, `${JSON.stringify(config)}\n`, { flag: 'wx', mode: 0o600 });
     child = spawn(process.execPath, [resolve(import.meta.dirname, 'credential-broker.mjs'),
@@ -300,8 +422,8 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
     }
     if (ready.host !== listenHost) throw new Error('credential broker returned an invalid host');
     const host = networkMode === 'host' ? '127.0.0.1' : 'host.docker.internal';
-    return { child, root, sessionToken, baseUrl: `http://${host}:${ready.port}`,
-      listenHost: ready.host };
+    return { child, root, ledgerPath, model, maxBudgetUsd: maxBudgetUsd ?? null,
+      sessionToken, baseUrl: `http://${host}:${ready.port}`, listenHost: ready.host };
   } catch (error) {
     if (child?.pid) killTree(child.pid);
     rmSync(root, { recursive: true, force: true });
@@ -310,9 +432,15 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
 }
 
 export function stopCredentialBroker(broker) {
-  if (!broker) return;
+  if (!broker) return null;
   killTree(broker.child.pid);
-  rmSync(broker.root, { recursive: true, force: true });
+  let ledger = null;
+  try {
+    ledger = readCredentialBrokerLedger(broker.ledgerPath,
+      { model: broker.model, maxBudgetUsd: broker.maxBudgetUsd });
+  } catch { /* The caller treats a missing or invalid ledger as a full-cap receipt. */ }
+  finally { rmSync(broker.root, { recursive: true, force: true }); }
+  return ledger;
 }
 
 function parseArgs(argv) {

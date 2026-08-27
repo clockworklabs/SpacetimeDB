@@ -5,11 +5,13 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../src/runtime/preflight.mjs';
+import { isExactImageReference } from '../src/runtime/container-image.mjs';
 import { createArtifact, validateArtifact } from '../src/evidence/artifacts.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
+const EXACT_IMAGE = `registry.example/stack-bench/build@${IMAGE_ID}`;
 const progressionCampaign = join(import.meta.dirname, '..', 'appliance',
   'campaign.ecommerce-progression-reference.json');
 
@@ -62,6 +64,31 @@ test('preflight validates exact scope and a model-free container/result-volume s
       'host.docker.internal:host-gateway');
     const artifact = createArtifact({ kind: 'preflight', id: 'preflight-test', payload: report });
     assert.equal(validateArtifact(artifact).payload.ok, true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('appliance preflight rejects mutable controller and build image references', () => {
+  assert.equal(isExactImageReference(EXACT_IMAGE), true);
+  assert.equal(isExactImageReference('stack-bench-controller:latest'), false);
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-images-'));
+  try {
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const report = runPreflight({ ...request(root), image: 'stack-bench-build:latest' }, {
+      run, now: Date.parse('2026-08-12T12:00:00.100Z'),
+      env: { STACK_BENCH_APPLIANCE: '1',
+        STACK_BENCH_CONTROLLER_IMAGE: 'stack-bench-controller:latest' },
+      home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
+    });
+    assert.equal(report.checks.find(check => check.id === 'image.controller-reference').status,
+      'fail');
+    assert.equal(report.checks.find(check => check.id === 'image.build-reference').status, 'fail');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

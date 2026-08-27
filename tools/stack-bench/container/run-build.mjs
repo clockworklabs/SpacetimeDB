@@ -31,7 +31,8 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.mjs';
 import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.mjs';
-import { startCredentialBroker, stopCredentialBroker } from './credential-broker.mjs';
+import { reconcileCredentialBrokerReceipt, startCredentialBroker,
+  stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
@@ -404,6 +405,7 @@ function terminateClaude(child) {
 }
 
 let res;
+let brokerLedger = null;
 try {
   res = await runTranscriptAwareProcess({ command: 'docker', args,
     input: promptInput,
@@ -418,10 +420,33 @@ try {
     terminate: terminateClaude,
   });
 } finally {
-  stopCredentialBroker(credentialBroker);
+  brokerLedger = stopCredentialBroker(credentialBroker);
   spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
+}
+
+if (maxBudgetUsd !== null) {
+  let cliResult = null;
+  const stdout = String(res.stdout ?? '').trim();
+  try { cliResult = JSON.parse(stdout); }
+  catch {
+    for (const line of stdout.split(/\r?\n/).reverse()) {
+      try { cliResult = JSON.parse(line); break; } catch { /* Keep looking. */ }
+    }
+  }
+  const reconciled = reconcileCredentialBrokerReceipt({
+    ledger: brokerLedger,
+    cliResult,
+    model,
+    maxBudgetUsd: Number(maxBudgetUsd),
+  });
+  res.stdout = `${JSON.stringify(reconciled.result)}\n`;
+  if (!reconciled.ok) {
+    res.status = res.status === 0 ? 3 : res.status ?? 3;
+    res.stderr = `${res.stderr ?? ''}${res.stderr ? '\n' : ''}`
+      + `run-build.mjs: ${reconciled.receipt.error}\n`;
+  }
 }
 
 if ((res.status ?? 1) !== 0) {

@@ -181,7 +181,8 @@ export function parseReferenceQualificationArgs(argv) {
 }
 
 export function runBounded(command, argv,
-  { cwd, env, stdio = 'inherit', timeoutMs, terminate = killTree, logs = null, signal = null }) {
+  { cwd, env, stdio = 'inherit', timeoutMs, terminate = killTree, logs = null, signal = null,
+    gracefulCancellationMs = 0 }) {
   return new Promise(resolveRun => {
     const maximum = logs?.maxBytes ?? 4 * 1024 * 1024;
     if (logs && (!Number.isInteger(maximum) || maximum <= 0)) {
@@ -226,11 +227,19 @@ export function runBounded(command, argv,
     let timedOut = false;
     let cancelled = false;
     let spawnError = null;
+    let forceTimer = null;
     const stop = () => {
       terminate(child.pid);
       try { child.kill('SIGKILL'); } catch { /* already exited */ }
     };
-    const cancel = () => { cancelled = true; stop(); };
+    const cancel = () => {
+      cancelled = true;
+      if (gracefulCancellationMs > 0) {
+        try { child.kill('SIGTERM'); } catch { /* already exited */ }
+        forceTimer = setTimeout(stop, gracefulCancellationMs);
+        forceTimer.unref();
+      } else stop();
+    };
     if (signal) {
       if (signal.aborted) cancel();
       else signal.addEventListener('abort', cancel, { once: true });
@@ -244,6 +253,7 @@ export function runBounded(command, argv,
     child.once('error', error => { spawnError = error; });
     child.once('close', (code, childSignal) => {
       clearTimeout(timer);
+      if (forceTimer) clearTimeout(forceTimer);
       signal?.removeEventListener('abort', cancel);
       const captured = streams ? Object.fromEntries(Object.entries(streams).map(([name, state]) => {
         closeSync(state.fd);
@@ -544,6 +554,17 @@ export function companionReferenceArtifactPath(mutationArtifactPath) {
   return join(dirname(mutationArtifactPath), `${referenceStem}${extension}`);
 }
 
+export function assertReleaseCandidateRepetitions(args, calibration) {
+  if (!args.releaseCandidate) return;
+  const required = calibration?.qualification?.mutationRepetitions;
+  if (!Number.isInteger(required) || required < 1) {
+    throw new Error('release calibration has no valid mutation repetition count');
+  }
+  if (args.repetitions !== required) {
+    throw new Error(`--release-candidate requires exactly ${required} mutation repetition(s)`);
+  }
+}
+
 export function referenceQualificationWorkRoot(env = process.env) {
   return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
 }
@@ -602,6 +623,10 @@ async function runOnce(fixture, args, context, id, repetition) {
   const supervisorState = join(work, 'supervisor-state.json');
   const started = Date.now();
   const harnessBefore = qualificationInputs();
+  const cancellation = new AbortController();
+  const cancel = () => cancellation.abort();
+  process.once('SIGINT', cancel);
+  process.once('SIGTERM', cancel);
   let processError = null;
   let cleanupPending = false;
   try {
@@ -646,10 +671,12 @@ async function runOnce(fixture, args, context, id, repetition) {
       if (args.referenceMutationOnly) benchArgs.push('--reference-mutation-only');
     }
     const child = await runBounded(process.execPath, benchArgs,
-      { cwd: ROOT, stdio: 'inherit', env, timeoutMs: args.timeoutMs });
+      { cwd: ROOT, stdio: 'inherit', env, timeoutMs: args.timeoutMs,
+        signal: cancellation.signal });
     if (!child.ok) {
       const reason = child.timedOut
         ? `benchmark exceeded ${args.timeoutMinutes} minute repetition deadline`
+        : child.cancelled ? 'benchmark was interrupted'
         : child.error?.message ?? `benchmark exited ${child.code ?? child.signal ?? 'without status'}`;
       try { rescueSupervisedLease(supervisorState, output); }
       catch (cleanupError) {
@@ -662,6 +689,8 @@ async function runOnce(fixture, args, context, id, repetition) {
   } catch (error) {
     processError = `${error.message}`;
   } finally {
+    process.removeListener('SIGINT', cancel);
+    process.removeListener('SIGTERM', cancel);
     // This wrapper created exactly this mkdtemp directory. bench.mjs owns and
     // removes its leased container before returning; deleting the caller-owned
     // source copy here cannot target another run.
@@ -825,7 +854,8 @@ export function mutationWorkerRequiresSiblingAbort(processResult, worker) {
   return !completed;
 }
 
-async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
+async function runParallelMutationRepetition(fixture, args, context, id, repetition,
+  artifactIdentities, onCleanBaseline = null) {
   const manifest = qualificationMutationManifest(fixture, context, args.mutationIds);
   if (!Array.isArray(manifest.mutations)
       || manifest.mutations.length < args.mutationWorkers) {
@@ -847,6 +877,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       failures: [`clean baseline bundle is missing: ${baselineBundle}`],
       outcome: 'incomplete', mutations: { caught: 0, total: 0 } };
   }
+  if (onCleanBaseline) onCleanBaseline(clean);
   const remainingMs = started + args.timeoutMs - Date.now();
   if (remainingMs <= 0) {
     return { ...clean, ok: false, durationMs: Date.now() - started,
@@ -876,7 +907,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
           workerCount: args.mutationWorkers });
       const processResult = await runBounded(process.execPath, argv,
         { cwd: ROOT, env: process.env, timeoutMs: remainingMs, logs,
-          signal: cancellation.signal });
+          signal: cancellation.signal, gracefulCancellationMs: 10_000 });
       const worker = { workerIndex, runIndex: args.runIndex + workerIndex,
         artifactPath, logs, processResult };
       const inspected = readParallelMutationWorker(worker.artifactPath, processResult,
@@ -930,6 +961,8 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
     mutations: { caught, total: results.length },
     baselineDurationMs: clean.durationMs,
     baselineOutput: clean.output,
+    baselineHarnessSha256Before: clean.harnessSha256Before,
+    baselineHarnessSha256After: clean.harnessSha256After,
     workers: inspected.map(worker => ({ index: worker.workerIndex, runIndex: worker.runIndex,
       artifact: relative(args.artifactDirectory, worker.artifactPath).replaceAll('\\', '/'),
       mutationIds: worker.assigned, ok: worker.failures.length === 0,
@@ -948,8 +981,10 @@ export function referenceRunFromMutationBaseline(artifactDirectory, mutationRun,
     output,
     durationMs: mutationRun.baselineDurationMs ?? mutationRun.durationMs,
     processError: null,
-    harnessSha256Before: mutationRun.harnessSha256Before,
-    harnessSha256After: mutationRun.harnessSha256After,
+    harnessSha256Before: mutationRun.baselineHarnessSha256Before
+      ?? mutationRun.harnessSha256Before,
+    harnessSha256After: mutationRun.baselineHarnessSha256After
+      ?? mutationRun.harnessSha256After,
     ...audit,
   };
 }
@@ -972,6 +1007,10 @@ function finalizeQualificationArtifact(artifact, { referenceMutationOnly = false
   return artifact;
 }
 
+export function qualificationArtifactsOk(artifact, companion = null) {
+  return artifact?.ok === true && (companion === null || companion?.ok === true);
+}
+
 async function main() {
   const args = parseReferenceQualificationArgs(process.argv);
   const registry = loadReferenceRegistry();
@@ -983,6 +1022,7 @@ async function main() {
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture, selection.recipe,
     { level: args.level, featureCatalog: args.featureCatalog });
+  assertReleaseCandidateRepetitions(args, context.calibration);
   const selectedManifest = args.mutations
     ? qualificationMutationManifest(fixture, context, args.mutationIds) : null;
   const runContext = args.mutationIds.length
@@ -1058,18 +1098,22 @@ async function main() {
   const artifactIdentities = artifact.identities;
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
-    const run = args.mutationWorkers > 1
+    let companionCaptured = false;
+    const captureCompanion = cleanRun => {
+      if (!companion || companionCaptured) return;
+      companion.runs.push(referenceRunFromMutationBaseline(args.artifactDirectory, cleanRun,
+        fixture, { release: context.binding.release, level: args.level,
+          selectedCheckKeys: runContext.selectedCheckKeys }));
+      finalizeQualificationArtifact(companion);
+      writeRunJson(companionPath, companion);
+      companionCaptured = true;
+    };
+    const run = args.releaseCandidate || args.mutationWorkers > 1
       ? await runParallelMutationRepetition(fixture, args, runContext, id, repetition,
-        artifactIdentities)
+        artifactIdentities, captureCompanion)
       : await runOnce(fixture, args, runContext, id, repetition);
     artifact.runs.push(run);
-    if (companion) {
-      companion.runs.push(referenceRunFromMutationBaseline(args.artifactDirectory, run, fixture, {
-        release: context.binding.release,
-        level: args.level,
-        selectedCheckKeys: runContext.selectedCheckKeys,
-      }));
-    }
+    captureCompanion(run);
     // Repetition measures stability of a passing baseline. Repeating a setup or
     // infrastructure failure only wastes time and produces duplicate noise.
     if (!run.ok) break;
@@ -1081,13 +1125,14 @@ async function main() {
     finalizeQualificationArtifact(companion);
     writeRunJson(companionPath, companion);
   }
-  console.log(JSON.stringify({ ok: artifact.ok, artifact: paths.artifactPath, stable: artifact.stable,
+  const ok = qualificationArtifactsOk(artifact, companion);
+  console.log(JSON.stringify({ ok, artifact: paths.artifactPath, stable: artifact.stable,
     sameImage: artifact.sameImage, sameHarness: artifact.sameHarness, diagnostic: artifact.diagnostic,
     ...(companion ? { referenceArtifact: companionPath, referenceOk: companion.ok } : {}),
     runs: artifact.runs.map(({ repetition, ok, score, criteria,
       zeroPointCriteria, mutations, failures }) => ({ repetition, ok, score, criteria, zeroPointCriteria,
       mutations, failures })) }, null, 2));
-  if (!artifact.ok) process.exitCode = 1;
+  if (!ok) process.exitCode = 1;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

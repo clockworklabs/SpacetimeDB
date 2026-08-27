@@ -10,6 +10,8 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
   parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
   qualificationMutationManifest,
   companionReferenceArtifactPath,
+  assertReleaseCandidateRepetitions,
+  qualificationArtifactsOk,
   referenceQualificationRelease,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
@@ -411,6 +413,23 @@ test('release mutation evidence gives its clean baseline a separate reference pa
     join(root, 'custom-reference.json'));
 });
 
+test('release mutation evidence requires the calibrated repetition count', () => {
+  const calibration = { qualification: { mutationRepetitions: 2 } };
+  assert.doesNotThrow(() => assertReleaseCandidateRepetitions(
+    { releaseCandidate: true, repetitions: 2 }, calibration));
+  assert.throws(() => assertReleaseCandidateRepetitions(
+    { releaseCandidate: true, repetitions: 1 }, calibration), /exactly 2/);
+  assert.doesNotThrow(() => assertReleaseCandidateRepetitions(
+    { releaseCandidate: false, repetitions: 1 }, calibration));
+});
+
+test('release qualification fails when either required artifact fails', () => {
+  assert.equal(qualificationArtifactsOk({ ok: true }, { ok: true }), true);
+  assert.equal(qualificationArtifactsOk({ ok: true }, { ok: false }), false);
+  assert.equal(qualificationArtifactsOk({ ok: false }, { ok: true }), false);
+  assert.equal(qualificationArtifactsOk({ ok: true }), true);
+});
+
 test('reference qualification uses the daemon-visible appliance work root', () => {
   assert.equal(referenceQualificationWorkRoot({ STACK_BENCH_WORK_DIR: '/var/lib/stack-bench/work' }),
     resolve('/var/lib/stack-bench/work'));
@@ -502,8 +521,10 @@ test('a mutation run reuses its stored clean baseline as reference evidence', ()
       baselineOutput: 'clean',
       durationMs: 200,
       baselineDurationMs: 100,
-      harnessSha256Before: 'a'.repeat(64),
-      harnessSha256After: 'a'.repeat(64),
+      harnessSha256Before: 'b'.repeat(64),
+      harnessSha256After: 'b'.repeat(64),
+      baselineHarnessSha256Before: 'a'.repeat(64),
+      baselineHarnessSha256After: 'a'.repeat(64),
     }, fixture, { release, level: 1,
       selectedCheckKeys: release.checkCatalog.map(check => check.stableKey) });
     assert.equal(run.ok, true);
@@ -511,6 +532,8 @@ test('a mutation run reuses its stored clean baseline as reference evidence', ()
     assert.equal(run.durationMs, 100);
     assert.equal(run.score, '2/2');
     assert.equal(run.mutations, null);
+    assert.equal(run.harnessSha256Before, 'a'.repeat(64));
+    assert.equal(run.harnessSha256After, 'a'.repeat(64));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -593,6 +616,22 @@ test('parallel qualification cancellation terminates every bounded child', async
   assert.equal(result.cancelled, true);
   assert.equal(result.timedOut, false);
 });
+
+test('parallel qualification gives a worker time to release resources on cancellation',
+  { skip: process.platform === 'win32' }, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-graceful-cancel-test-'));
+    const marker = join(root, 'released');
+    const cancellation = new AbortController();
+    setTimeout(() => cancellation.abort(), 50);
+    try {
+      const result = await runBounded(process.execPath,
+        ['-e', `process.on('SIGTERM',()=>{require('fs').writeFileSync(${JSON.stringify(marker)},'ok');process.exit(0)});setInterval(()=>{},1000)`],
+        { cwd: root, env: process.env, stdio: 'ignore', timeoutMs: 10_000,
+          signal: cancellation.signal, gracefulCancellationMs: 2_000 });
+      assert.equal(result.cancelled, true);
+      assert.equal(readFileSync(marker, 'utf8'), 'ok');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 
 test('bounded execution tees useful tails and caps durable process logs', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-process-log-'));
