@@ -757,7 +757,7 @@
       "edits": [
         {
           "find": "        [name, category, price.toFixed(2), variants],",
-          "replace": "        [`${name} unavailable`, category, price.toFixed(2), []],"
+          "replace": "        [\"Unavailable product\", category, price.toFixed(2), []],"
         }
       ]
     },
@@ -1137,8 +1137,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "async function broadcastCart(accountId: number) {\n  const state = await buildCartState(accountId);\n  io.to(`account:${accountId}`).emit(\"cart:update\", state);\n}",
-          "replace": "async function broadcastCart(accountId: number) {\n  const state = await buildCartState(accountId);\n  io.to(`account:${accountId}:mutation`).emit(\"cart:update\", state);\n}"
+          "find": "    try {\n      await reserveCartItem(accountId, itemId, qty);\n    } catch (error) {\n      res.status(409).json({ error: error instanceof Error ? error.message : \"could not reserve stock\" });\n      return;\n    }\n    const state = await buildCartState(accountId);\n    io.to(`account:${accountId}`).emit(\"cart:update\", state);",
+          "replace": "    try {\n      await reserveCartItem(accountId, itemId, qty);\n    } catch (error) {\n      res.status(409).json({ error: error instanceof Error ? error.message : \"could not reserve stock\" });\n      return;\n    }\n    const state = await buildCartState(accountId);\n    io.to(`account:${accountId}:mutation`).emit(\"cart:update\", state);"
         }
       ]
     },
@@ -1336,7 +1336,7 @@
       "edits": [
         {
           "find": "      `UPDATE stock SET quantity = quantity - $1 WHERE item_id = $2 AND warehouse_id = $3`,\n      [take, itemId, row.warehouse_id],",
-          "replace": "      `UPDATE stock SET quantity = quantity WHERE item_id = $2 AND warehouse_id = $3`,\n      [take, itemId, row.warehouse_id],"
+          "replace": "      `UPDATE stock SET quantity = quantity + ($1 * 0) WHERE item_id = $2 AND warehouse_id = $3`,\n      [take, itemId, row.warehouse_id],"
         }
       ]
     },

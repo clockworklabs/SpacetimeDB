@@ -73,3 +73,37 @@ for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     }
   });
 }
+
+test('SpacetimeDB reservation and catalog mutants affect only their owned checks', () => {
+  const fixture = fixtures.get('spacetime');
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations',
+    'spacetime-ecom-progression-1.0.0.json'), 'utf8'));
+  const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+
+  const renewal = mutations.get('renewed-reservation-expires-too-soon');
+  assert.deepEqual(renewal.targets, ['ecommerce.l3.reservations.reservations.308a']);
+  const renewalEdit = mutationFileEdits(renewal)[0];
+  const renewalPath = join(ROOT, fixture.targetPath, ...renewalEdit.file.split('/'));
+  const renewalSource = readFileSync(renewalPath, 'utf8');
+  assert.equal(renewalSource.split(renewalEdit.find).length - 1, 1);
+  const renewed = renewalSource.replace(renewalEdit.find, renewalEdit.replace);
+  assert.notEqual(renewed, renewalSource);
+  assert.match(renewed, /const expiresMicros = nowMicros\(ctx\) \+ 90n \* SECOND/,
+    'initial reservations must keep their 90-second window');
+  assert.match(renewed, /for \(const renewed of findReservations/,
+    'only the replacement path should shorten the renewed reservation');
+  assert.deepEqual(syntaxErrors(renewed, renewalEdit.file), []);
+
+  const catalog = mutations.get('catalog-product-is-not-published');
+  assert.deepEqual(catalog.targets,
+    ['ecommerce.progression.catalog-management.catalog-management.622a']);
+  const catalogEdit = mutationFileEdits(catalog)[0];
+  const catalogPath = join(ROOT, fixture.targetPath, ...catalogEdit.file.split('/'));
+  const catalogSource = readFileSync(catalogPath, 'utf8');
+  assert.equal(catalogSource.split(catalogEdit.find).length - 1, 1);
+  const unpublished = catalogSource.replace(catalogEdit.find, catalogEdit.replace);
+  assert.notEqual(unpublished, catalogSource);
+  assert.match(unpublished, /variants\.map\(variant =>/,
+    'the product variants must remain public for their separate check');
+  assert.deepEqual(syntaxErrors(unpublished, catalogEdit.file), []);
+});

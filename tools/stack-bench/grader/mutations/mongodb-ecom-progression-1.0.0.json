@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "812ba1ed7ffd656824995d26137234025b23d0ae9931a28186543b3090836c5c",
+  "fixtureSha256": "af82e6c4c5118d554abef79240535b6191a0a3677db0957024455cd5a224c9dd",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "MongoDB mutation candidate for the ecommerce progression catalog through L3. It uses the complete L5 reference app and owns defects by stable check key, independent of run mode and level.",
@@ -290,16 +290,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
-          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let ignoreCartCatchup = false;\n    socket.on(\"disconnect\", () => { ignoreCartCatchup = true; });"
-        },
-        {
-          "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });",
-          "replace": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token && !ignoreCartCatchup) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });"
-        },
-        {
-          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
-          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!ignoreCartCatchup) setCart(data); });"
+          "find": "  useEffect(() => {\n    const socket = io({ auth: token ? { token } : {} });",
+          "replace": "  useEffect(() => {\n    const clearAccountOffline = () => {\n      setCurrentUser(null);\n      setCart({ items: [], total: 0 });\n    };\n    window.addEventListener(\"offline\", clearAccountOffline, { once: true });\n    const socket = io({ auth: token ? { token } : {} });"
         }
       ]
     },
@@ -1031,17 +1023,17 @@
       ]
     },
     {
-      "id": "scheduled-restock-countdown-runs-ten-times-longer",
+      "id": "scheduled-restock-countdown-is-fixed",
       "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks-1.0.0.json",
       "targets": [
         "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a"
       ],
-      "desc": "Scheduled restock delay is multiplied by ten.",
-      "file": "server/src/progression.ts",
+      "desc": "The pending restock UI shows a fixed countdown.",
+      "file": "client/src/ProgressionPanel.tsx",
       "edits": [
         {
-          "find": "quantity, dueAt: new Date(Date.now() + delaySeconds * 1000) });",
-          "replace": "quantity, dueAt: new Date(Date.now() + delaySeconds * 10_000) });"
+          "find": "{Math.max(0, Math.ceil((new Date(entry.dueAt).getTime() - Date.now()) / 1000))}",
+          "replace": "{90}"
         }
       ]
     },
@@ -1494,8 +1486,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  const userId = (req as any).user._id.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);",
-          "replace": "  const userId = (await Cart.findOne())!.userId.toString();\n  const reservedWarehouseIds = await reserveStock(item._id, qty);"
+          "find": "    const incResult = await Cart.updateOne(\n      { userId, \"items.itemId\": itemId },",
+          "replace": "    const incResult = await Cart.updateOne(\n      { \"items.itemId\": itemId },"
         }
       ]
     },
@@ -1577,17 +1569,17 @@
       ]
     },
     {
-      "id": "restock-race-overwrites-purchase-with-stale-stock",
+      "id": "purchase-does-not-reserve-stock-restock-race",
       "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
       "targets": [
         "ecommerce.spec.concurrency-safety.restock-race.202a"
       ],
-      "desc": "Restock reads stock before the race and overwrites concurrent purchases with that stale value.",
-      "file": "server/src/index.ts",
+      "desc": "Purchases create orders without reducing stock, so the rush loses all three purchase decrements.",
+      "file": "server/src/stock-reservations.ts",
       "edits": [
         {
-          "find": "  await Stock.findOneAndUpdate(\n    { item_id: item._id, warehouse_id: warehouse._id },\n    { $inc: { quantity: qty } },\n    { upsert: true }\n  );",
-          "replace": "  const staleStock = await Stock.findOne({ item_id: item._id, warehouse_id: warehouse._id });\n  await new Promise(resolveDelay => setTimeout(resolveDelay, 1000));\n  await Stock.findOneAndUpdate(\n    { item_id: item._id, warehouse_id: warehouse._id },\n    { $set: { quantity: Number(staleStock?.quantity || 0) + qty } },\n    { upsert: true }\n  );"
+          "find": "      { $inc: { quantity: -1 } },",
+          "replace": "      { $inc: { quantity: 0 } },"
         }
       ]
     },

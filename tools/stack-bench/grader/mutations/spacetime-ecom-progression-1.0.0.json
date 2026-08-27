@@ -1181,12 +1181,12 @@
       "targets": [
         "ecommerce.l3.reservations.reservations.308a"
       ],
-      "desc": "Every reservation receives only a twenty-second window, including renewed quantities.",
+      "desc": "Renewed quantities receive only a twenty-second reservation window.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "const expiresMicros = nowMicros(ctx) + 90n * SECOND;",
-          "replace": "const expiresMicros = nowMicros(ctx) + 20n * SECOND;"
+          "find": "reserveUnits(ctx, accountId, itemId, quantity);",
+          "replace": "reserveUnits(ctx, accountId, itemId, quantity);\n  for (const renewed of findReservations(ctx, accountId, itemId)) {\n    ctx.db.reservation.id.update({ ...renewed, expiresMicros: nowMicros(ctx) + 20n * SECOND });\n  }"
         }
       ]
     },
@@ -1271,12 +1271,12 @@
       "targets": [
         "ecommerce.progression.catalog-management.catalog-management.622a"
       ],
-      "desc": "Catalog management stores the new product without its submitted public name.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "desc": "The public product card omits the submitted name.",
+      "file": "client/src/components/ItemCard.tsx",
       "edits": [
         {
-          "find": "const product = ctx.db.item.insert({ id: 0n, name: name.trim(), price });",
-          "replace": "const product = ctx.db.item.insert({ id: 0n, name: '', price });"
+          "find": "{item.name}",
+          "replace": "{item.name === 'Travel Mug' ? '' : item.name}"
         }
       ]
     },

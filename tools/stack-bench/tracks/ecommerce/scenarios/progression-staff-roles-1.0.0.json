@@ -24,7 +24,10 @@
             { "do": "click", "actor": "admin", "testid": "staff-link" },
             { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
             { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
-            { "do": "expect", "actor": "admin", "testid": "staff-role-row", "contains": "inventory", "within": 10000 }
+            { "do": "reload", "actor": "admin", "settleMs": 2500 },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "expect", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "value": "inventory", "within": 10000 }
           ]
         },
         {

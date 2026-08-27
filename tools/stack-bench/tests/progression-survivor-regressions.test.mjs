@@ -8,6 +8,19 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 const ROOT = join(import.meta.dirname, '..');
 const readJson = (...parts) => JSON.parse(readFileSync(join(ROOT, ...parts), 'utf8'));
 
+function postgresMutationSource(id, file) {
+  const manifest = readJson('grader', 'mutations', 'postgres-ecom-progression-1.0.0.json');
+  const mutation = manifest.mutations.find(candidate => candidate.id === id);
+  assert(mutation, `missing PostgreSQL mutation ${id}`);
+  let source = readFileSync(join(ROOT, 'reference-apps', 'ecommerce', 'progression',
+    'postgres', ...file.split('/')), 'utf8');
+  for (const edit of mutation.edits.filter(candidate => (candidate.file ?? mutation.file) === file)) {
+    assert.equal(source.split(edit.find).length - 1, 1, `${id} anchor must match once`);
+    source = source.replace(edit.find, edit.replace);
+  }
+  return source;
+}
+
 function criterion(source, id) {
   const scenario = compileScenarioDefinition(source);
   return scenario.features.flatMap(feature => feature.criteria)
@@ -71,4 +84,53 @@ test('cart expiration waits for the durable expiration state after restart', () 
   assert.equal(steps[2].within, 220000);
   assert.equal(steps[3].testid, 'cart-expired-notice');
   assert.equal(steps[4].testid, 'item-stock');
+});
+
+test('PostgreSQL cart live-update mutation changes the route used by the owned check', () => {
+  const source = postgresMutationSource('progression-cart-update-uses-wrong-room',
+    'server/src/index.ts');
+  assert.match(source, /await reserveCartItem\(accountId, itemId, qty\);[\s\S]*?io\.to\(`account:\$\{accountId\}:mutation`\)\.emit\("cart:update", state\);/);
+});
+
+test('PostgreSQL catalog corruption removes the requested product name and variants', () => {
+  const source = postgresMutationSource('progression-catalog-product-values-are-corrupted',
+    'server/src/progression.ts');
+  assert.match(source,
+    /\["Unavailable product", category, price\.toFixed\(2\), \[\]\]/);
+});
+
+test('staff role check reloads the saved value on each progression reference', () => {
+  const scenario = readJson('tracks', 'ecommerce', 'scenarios',
+    'progression-staff-roles-1.0.0.json');
+  const steps = criterion(scenario, '621a').steps;
+  assert.equal(steps.at(-4).do, 'reload');
+  assert.deepEqual(steps.at(-1), {
+    do: 'expect', actor: 'admin', testid: 'staff-role-select',
+    in: { testid: 'staff-role-row', contains: 'staff' },
+    value: 'inventory', within: 10000,
+  });
+
+  const mongoPanel = readFileSync(join(ROOT, 'reference-apps', 'ecommerce', 'progression',
+    'mongodb', 'client', 'src', 'ProgressionPanel.tsx'), 'utf8');
+  assert.match(mongoPanel, /roles\[entry\.username\] \?\? entry\.roles\?\.join\(", "\) \?\? ""/);
+
+  const postgresPanel = readFileSync(join(ROOT, 'reference-apps', 'ecommerce', 'progression',
+    'postgres', 'client', 'src', 'ProgressionPanel.tsx'), 'utf8');
+  assert.match(postgresPanel, /defaultValue=\{role\.role\}/);
+
+  const spacetimePanel = readFileSync(join(ROOT, 'reference-apps', 'ecommerce', 'progression',
+    'spacetime', 'client', 'src', 'components', 'ProgressionWorkbench.tsx'), 'utf8');
+  assert.match(spacetimePanel, /defaultValue=\{row\.role\}/);
+
+  const source = postgresMutationSource('progression-staff-role-update-is-disabled',
+    'server/src/progression.ts');
+  assert.doesNotMatch(source, /app\.put\("\/api\/staff\/:id\/role",/);
+  assert.match(source, /app\.put\("\/api\/mutation-disabled-staff\/:id\/role",/);
+});
+
+test('PostgreSQL reservation mutation remains valid SQL and changes only stock reduction', () => {
+  const source = postgresMutationSource('progression-reservation-does-not-reduce-stock',
+    'server/src/progression.ts');
+  assert.match(source,
+    /UPDATE stock SET quantity = quantity \+ \(\$1 \* 0\) WHERE item_id = \$2 AND warehouse_id = \$3`,[\s\S]*?\[take, itemId, row\.warehouse_id\]/);
 });

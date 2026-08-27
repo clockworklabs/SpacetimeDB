@@ -10,9 +10,9 @@
     "path": "../recipes/progression-catalog-1.0.0.json",
     "id": "ecommerce.progression-catalog",
     "version": "1.0.0",
-    "meaningSha256": "2e72099f9ec09bfc4d8b264b995c8391bfe51777e1afb2c1f21e346456cfb2ad",
-    "executionSha256": "3082d08b4d8afb2bd5106d2088049afea33afc58742cf44447431f927492e7f2",
-    "contentSha256": "7b74b3c647710ade13463f3cb9cf0be562e25d6165d6992d9d8b5bee66d8fae2"
+    "meaningSha256": "18ec656cc206f648e3fa5e102119e07c047b0d889bb5ebf0e9f393740e2a2bc7",
+    "executionSha256": "2f01e70f48238ddd46732f239de6f0d8006810686742523b33c040984269ec14",
+    "contentSha256": "7a2cf0fcf8e34dacae099ce8efbe09de1e51304e4a1947102b0be95da0a531df"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -25,7 +25,7 @@
       {
         "backend": "mongodb",
         "id": "ecommerce-progression-mongodb",
-        "sourceSha256": "812ba1ed7ffd656824995d26137234025b23d0ae9931a28186543b3090836c5c"
+        "sourceSha256": "af82e6c4c5118d554abef79240535b6191a0a3677db0957024455cd5a224c9dd"
       },
       {
         "backend": "postgres",
@@ -43,19 +43,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecom-progression-1.0.0.json",
-      "sha256": "0c31825ba86a64a6c5271367caab53a4de768ac64104c5eea87559f602b6a072",
+      "sha256": "7cb4e1ec3c25fb0a152bfe62030bbdcf5cff8195317dc15e9d12ea9093828ad2",
       "referenceId": "ecommerce-progression-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecom-progression-1.0.0.json",
-      "sha256": "27a724805d5a93fbd22158712dd0cd4db198fe034e4f0e6abffc4d1cc01d7596",
+      "sha256": "b8802acb7fd87538a7e2dd388908ea8ed82bf934f70fed50b25029577168c464",
       "referenceId": "ecommerce-progression-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-progression-1.0.0.json",
-      "sha256": "e70805dbdd3747245c21f3a354dee25a36c5495ea43355e76101670e07ff9270",
+      "sha256": "d1ea9028aaf2f3d1e89492fec581e092a21fb8595204fa9dda40a960419da53a",
       "referenceId": "ecommerce-progression-spacetime"
     }
   ],

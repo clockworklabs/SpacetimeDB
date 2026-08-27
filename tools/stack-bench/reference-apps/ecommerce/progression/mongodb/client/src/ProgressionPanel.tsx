@@ -226,7 +226,8 @@ function StaffTools({ token, user, state, items, orders, act, refresh, onRefresh
       <h3>Staff roles</h3>
       {(state.staffUsers || []).map((entry: any) => <div data-testid="staff-role-row" data-account-id={entry.id} key={entry.username}>
         <span>{entry.username} {entry.roles?.join(", ")}</span>
-        <input data-testid="staff-role-select" value={roles[entry.username] || ""}
+        <input data-testid="staff-role-select"
+          value={roles[entry.username] ?? entry.roles?.join(", ") ?? ""}
           onChange={event => setRoles(value => ({ ...value, [entry.username]: event.target.value }))} />
         <button data-testid="staff-role-save" onClick={() => act("/api/progression/staff/roles", {
           method: "POST", body: JSON.stringify({ username: entry.username,

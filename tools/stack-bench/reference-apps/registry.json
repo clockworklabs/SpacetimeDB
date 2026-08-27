@@ -16,7 +16,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/mongodb",
-        "sourceSha256": "812ba1ed7ffd656824995d26137234025b23d0ae9931a28186543b3090836c5c"
+        "sourceSha256": "af82e6c4c5118d554abef79240535b6191a0a3677db0957024455cd5a224c9dd"
       },
       "mutationManifests": [
         "grader/mutations/mongodb-ecom-progression-1.0.0.json"
