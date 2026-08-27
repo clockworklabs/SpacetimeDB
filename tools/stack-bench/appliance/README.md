@@ -262,8 +262,9 @@ only the `report` directory and running the command again produces the same
 report identity and bytes.
 
 Qualification is also an explicit appliance operation. Select one validated
-track/level and backend; reference and mutation evidence are separate retained
-artifacts, while the null gate is stack-independent:
+track/level and backend. A full mutation command retains its verified clean
+baseline as a separate sibling reference artifact, so the same clean grade is
+not repeated. The null gate is stack-independent:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \

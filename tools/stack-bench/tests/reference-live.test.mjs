@@ -9,10 +9,12 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
   parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
   qualificationMutationManifest,
+  companionReferenceArtifactPath,
   referenceQualificationRelease,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
-  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded,
+  referenceQualificationWorkRoot, referenceRunFromMutationBaseline,
+  rescueSupervisedLease, runBounded,
   targetedMutationCheckKeys } from '../src/references/reference-live.mjs';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
   from '../src/evidence/artifacts.mjs';
@@ -401,6 +403,14 @@ test('reference qualification keeps underlying runs beside the requested artifac
   assert.equal(paths.runsRoot, join(root, 'postgres-reference.runs'));
 });
 
+test('release mutation evidence gives its clean baseline a separate reference path', () => {
+  const root = join(tmpdir(), 'stack-bench-companion-path-test');
+  assert.equal(companionReferenceArtifactPath(join(root, 'ecommerce-l3-postgres-mutation.json')),
+    join(root, 'ecommerce-l3-postgres-reference.json'));
+  assert.equal(companionReferenceArtifactPath(join(root, 'custom.json')),
+    join(root, 'custom-reference.json'));
+});
+
 test('reference qualification uses the daemon-visible appliance work root', () => {
   assert.equal(referenceQualificationWorkRoot({ STACK_BENCH_WORK_DIR: '/var/lib/stack-bench/work' }),
     resolve('/var/lib/stack-bench/work'));
@@ -478,6 +488,29 @@ test('reference qualification reports the exact level score', () => {
     const audit = auditReferenceRun(root, fixture, { release });
     assert.equal(audit.ok, true);
     assert.equal(audit.score, '2/2');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a mutation run reuses its stored clean baseline as reference evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const baseline = join(root, 'clean');
+    const release = writeEvidence(baseline, { id: '901a', points: 2, passed: true });
+    const run = referenceRunFromMutationBaseline(root, {
+      repetition: 1,
+      output: 'workers',
+      baselineOutput: 'clean',
+      durationMs: 200,
+      baselineDurationMs: 100,
+      harnessSha256Before: 'a'.repeat(64),
+      harnessSha256After: 'a'.repeat(64),
+    }, fixture, { release, level: 1,
+      selectedCheckKeys: release.checkCatalog.map(check => check.stableKey) });
+    assert.equal(run.ok, true);
+    assert.equal(run.output, 'clean');
+    assert.equal(run.durationMs, 100);
+    assert.equal(run.score, '2/2');
+    assert.equal(run.mutations, null);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -535,6 +535,15 @@ export function referenceQualificationPaths(args, id) {
   };
 }
 
+export function companionReferenceArtifactPath(mutationArtifactPath) {
+  const extension = extname(mutationArtifactPath) || '.json';
+  const stem = basename(mutationArtifactPath, extension);
+  const referenceStem = stem.endsWith('-mutation')
+    ? `${stem.slice(0, -'-mutation'.length)}-reference`
+    : `${stem}-reference`;
+  return join(dirname(mutationArtifactPath), `${referenceStem}${extension}`);
+}
+
 export function referenceQualificationWorkRoot(env = process.env) {
   return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
 }
@@ -919,6 +928,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
     outcome: failures.length === 0 ? 'passed' : 'harness_failure',
     packRuntime: representative.packRuntime ?? null,
     mutations: { caught, total: results.length },
+    baselineDurationMs: clean.durationMs,
     baselineOutput: clean.output,
     workers: inspected.map(worker => ({ index: worker.workerIndex, runIndex: worker.runIndex,
       artifact: relative(args.artifactDirectory, worker.artifactPath).replaceAll('\\', '/'),
@@ -926,6 +936,40 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       logs: Object.fromEntries(Object.entries(worker.processResult.logs ?? {})
         .map(([name, log]) => [name, relative(args.artifactDirectory, log.path).replaceAll('\\', '/')])) })),
   };
+}
+
+export function referenceRunFromMutationBaseline(artifactDirectory, mutationRun, fixture,
+  { release, level, selectedCheckKeys }) {
+  const output = mutationRun.baselineOutput ?? mutationRun.output;
+  const audit = auditReferenceRun(resolve(artifactDirectory, output), fixture,
+    { release, level, selectedCheckKeys });
+  return {
+    repetition: mutationRun.repetition,
+    output,
+    durationMs: mutationRun.baselineDurationMs ?? mutationRun.durationMs,
+    processError: null,
+    harnessSha256Before: mutationRun.harnessSha256Before,
+    harnessSha256After: mutationRun.harnessSha256After,
+    ...audit,
+  };
+}
+
+function finalizeQualificationArtifact(artifact, { referenceMutationOnly = false } = {}) {
+  const complete = artifact.runs.length === artifact.requiredRepetitions;
+  const fingerprints = new Set(artifact.runs.map(run => run.fingerprint).filter(Boolean));
+  const images = new Set(artifact.runs.map(run => run.imageId).filter(Boolean));
+  const harnessHashes = new Set(artifact.runs.flatMap(run =>
+    [run.harnessSha256Before, run.harnessSha256After]).filter(Boolean));
+  artifact.stable = referenceMutationOnly
+    ? complete : complete && fingerprints.size === 1 && artifact.runs.every(run => run.fingerprint);
+  artifact.sameImage = complete && images.size === 1 && artifact.runs.every(run => run.imageId);
+  artifact.sameHarness = complete && harnessHashes.size === 1;
+  artifact.harnessSha256 = artifact.sameHarness ? [...harnessHashes][0] : null;
+  artifact.ok = complete
+    && artifact.runs.every(run => run.ok) && artifact.stable && artifact.sameImage
+    && artifact.sameHarness;
+  artifact.completedAt = new Date().toISOString();
+  return artifact;
 }
 
 async function main() {
@@ -953,6 +997,12 @@ async function main() {
   }
   if (existsSync(paths.runsRoot)) {
     throw new Error(`refusing to reuse existing qualification run directory: ${paths.runsRoot}`);
+  }
+  const companionPath = args.releaseCandidate && args.mutations
+    && context.calibration.qualification.referenceRepetitions === args.repetitions
+    ? companionReferenceArtifactPath(paths.artifactPath) : null;
+  if (companionPath && existsSync(companionPath)) {
+    throw new Error(`refusing to replace existing companion reference artifact: ${companionPath}`);
   }
   args.artifactDirectory = paths.artifactDirectory;
   args.runsRoot = paths.runsRoot;
@@ -994,6 +1044,17 @@ async function main() {
     diagnostic: args.mutationIds.length > 0,
     qualifiedCheckKeys: [...runContext.selectedCheckKeys].sort(),
     ...(runContext.featureCatalog ? { featureCatalog: runContext.featureCatalog } : {}), runs: [] };
+  const companion = companionPath ? {
+    ...artifact,
+    id: `${id}-reference`,
+    qualificationScope: qualificationScopeIdentity({
+      kind: 'reference', release: qualificationRelease, stack: fixture.backend,
+      reference: selectedReference, stackBenchRoot: ROOT,
+    }),
+    mutationControl: false,
+    diagnostic: false,
+    runs: [],
+  } : null;
   const artifactIdentities = artifact.identities;
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
@@ -1002,26 +1063,27 @@ async function main() {
         artifactIdentities)
       : await runOnce(fixture, args, runContext, id, repetition);
     artifact.runs.push(run);
+    if (companion) {
+      companion.runs.push(referenceRunFromMutationBaseline(args.artifactDirectory, run, fixture, {
+        release: context.binding.release,
+        level: args.level,
+        selectedCheckKeys: runContext.selectedCheckKeys,
+      }));
+    }
     // Repetition measures stability of a passing baseline. Repeating a setup or
     // infrastructure failure only wastes time and produces duplicate noise.
     if (!run.ok) break;
   }
-  const complete = artifact.runs.length === args.repetitions;
-  const fingerprints = new Set(artifact.runs.map(run => run.fingerprint).filter(Boolean));
-  const images = new Set(artifact.runs.map(run => run.imageId).filter(Boolean));
-  const harnessHashes = new Set(artifact.runs.flatMap(run =>
-    [run.harnessSha256Before, run.harnessSha256After]).filter(Boolean));
-  artifact.stable = args.referenceMutationOnly
-    ? complete : complete && fingerprints.size === 1 && artifact.runs.every(run => run.fingerprint);
-  artifact.sameImage = complete && images.size === 1 && artifact.runs.every(run => run.imageId);
-  artifact.sameHarness = complete && harnessHashes.size === 1;
-  artifact.harnessSha256 = artifact.sameHarness ? [...harnessHashes][0] : null;
-  artifact.ok = complete
-    && artifact.runs.every(run => run.ok) && artifact.stable && artifact.sameImage && artifact.sameHarness;
-  artifact.completedAt = new Date().toISOString();
+  finalizeQualificationArtifact(artifact,
+    { referenceMutationOnly: args.referenceMutationOnly });
   writeRunJson(paths.artifactPath, artifact);
+  if (companion) {
+    finalizeQualificationArtifact(companion);
+    writeRunJson(companionPath, companion);
+  }
   console.log(JSON.stringify({ ok: artifact.ok, artifact: paths.artifactPath, stable: artifact.stable,
     sameImage: artifact.sameImage, sameHarness: artifact.sameHarness, diagnostic: artifact.diagnostic,
+    ...(companion ? { referenceArtifact: companionPath, referenceOk: companion.ok } : {}),
     runs: artifact.runs.map(({ repetition, ok, score, criteria,
       zeroPointCriteria, mutations, failures }) => ({ repetition, ok, score, criteria, zeroPointCriteria,
       mutations, failures })) }, null, 2));

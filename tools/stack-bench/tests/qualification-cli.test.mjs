@@ -35,7 +35,7 @@ test('qualification status lists exact evidence and launch readiness without wri
   const status = qualificationReadiness('ecommerce', 1);
   assert.match(status.scope.calibration.sha256, /^[a-f0-9]{64}$/);
   assert.equal(status.requiredEvidence.length, 7);
-  assert.equal(status.commands.length, 7);
+  assert.equal(status.commands.length, 4);
   assert.equal(status.budgetPreparation.required, false);
   assert.deepEqual(status.budgetPreparation.commands, []);
   assert.equal(status.launch.ok, true);
@@ -78,6 +78,7 @@ test('qualification status uses the exact progression check subset', () => {
   assert(status.commands.filter(command => command.includes('--mutations'))
     .every(command => command.includes('--mutation-workers 4')
       && command.includes('--release-candidate')));
+  assert.equal(status.commands.filter(command => command.startsWith('qualify-reference')).length, 3);
   assert.equal(status.promotion.blockers.some(blocker =>
     blocker.code === 'defect_check_coverage_incomplete'), false);
 });

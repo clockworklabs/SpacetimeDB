@@ -176,6 +176,8 @@ export function qualificationReadiness(trackName, level, recipe = null) {
   const featureCatalog = calibration.qualification.featureCatalog;
   const featureCatalogOption = featureCatalog
     ? ` --feature-catalog ${featureCatalog.id}@${featureCatalog.version}` : '';
+  const combinedReferenceEvidence = calibration.qualification.referenceRepetitions
+    === calibration.qualification.mutationRepetitions;
   return {
     qualificationSchemaVersion: 1,
     scope: { track: trackName, level, recipe: { id: binding.release.id,
@@ -197,7 +199,9 @@ export function qualificationReadiness(trackName, level, recipe = null) {
     defectChecks,
     commands: [
       ...stacks.flatMap(stack => [
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
+        ...(!combinedReferenceEvidence ? [
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
+        ] : []),
         `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --release-candidate${mutationWorkerOption(calibration, stack)} --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
       ]),
       `qualify-null --track ${trackName} --level ${level}${recipeOption} --out ${output}/${trackName}-l${level}-null.json`,
