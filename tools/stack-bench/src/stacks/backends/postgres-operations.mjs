@@ -20,22 +20,25 @@ export function resetPostgres({ lease, exec = execFileSync }) {
   return `reset postgres database ${lease.resources.database}`;
 }
 
-export function provePostgresUse({ lease, exec = execFileSync }) {
+export function provePostgresUse({ lease, marker, exec = execFileSync }) {
+  if (typeof marker !== 'string' || !marker) {
+    throw new Error('PostgreSQL provenance requires a non-empty application marker');
+  }
   assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
     'database provenance');
-  const sql = "SELECT format('SELECT %L WHERE EXISTS (SELECT 1 FROM %I.%I LIMIT 1);', "
-    + "schemaname || '.' || tablename, schemaname, tablename) "
-    + "FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename\n\\gexec\n";
+  const sql = "SELECT format('SELECT %L WHERE EXISTS (SELECT 1 FROM %I.%I WHERE %I::text = %L LIMIT 1);', "
+    + "table_schema || '.' || table_name || '.' || column_name, table_schema, table_name, "
+    + `column_name, ${sqlString(marker)}) FROM information_schema.columns `
+    + "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position\n\\gexec\n";
   const output = exec('docker', ['exec', '-i', lease.resources.container.name,
     'psql', '-U', 'stackbench', '-d', lease.resources.database,
     '-v', 'ON_ERROR_STOP=1', '-At'],
   { encoding: 'utf8', input: sql, stdio: 'pipe', timeout: RESET_TIMEOUT_MS }).trim();
-  const populatedTables = output ? output.split(/\r?\n/).filter(Boolean) : [];
-  return { ok: populatedTables.length > 0, verified: true,
-    populatedTables: populatedTables.length,
-    reason: populatedTables.length
-      ? `${populatedTables.length} leased PostgreSQL table(s) contain startup data`
-      : 'the leased PostgreSQL database remained empty after application startup' };
+  const matches = output ? output.split(/\r?\n/).filter(Boolean) : [];
+  return { ok: matches.length > 0, verified: true, matches: matches.length,
+    reason: matches.length
+      ? 'the application marker exists in the leased PostgreSQL database'
+      : 'the application marker is absent from the leased PostgreSQL database' };
 }
 
 export function setPostgresStock({ item, warehouse, quantity, dbName, exec = execFileSync,

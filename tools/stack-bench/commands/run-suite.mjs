@@ -90,7 +90,7 @@ export function clearPreviousGradeOutputs(output) {
   const generated = existsSync(output) ? readdirSync(output).filter(name =>
     /^grading-.+\.json$/.test(name) || /^grader-.+\.(?:stdout|stderr)\.log$/.test(name)) : [];
   for (const name of ['bundle.json', 'contract-lint.json', 'actions.json', 'media', 'failure-media',
-    ...generated]) {
+    'database-provenance', ...generated]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }
 }
@@ -358,17 +358,42 @@ export function checkDatabaseProvenance(args) {
     reason: ok ? 'ok' : `app targets ${urls[0]} but the benchmark database is on port ${expected}` };
 }
 
-export function checkRuntimeDatabaseProvenance(args) {
+export function applicationDatabaseMarker(report, definition) {
+  if (!report || !definition) return null;
+  const markers = [];
+  for (const feature of report.features ?? []) {
+    for (const criterion of feature.criteria ?? []) {
+      if (criterion.stableKey !== definition.check) continue;
+      const action = criterionEvidence(criterion).actions.find(entry =>
+        entry.evidence?.action?.id === definition.action
+        && evidencePassed(entry.evidence));
+      const marker = action?.evidence?.observation?.[definition.observationField];
+      if (typeof marker === 'string' && marker) markers.push(marker);
+    }
+  }
+  return new Set(markers).size === 1 ? markers[0] : null;
+}
+
+export function databaseProvenanceFailure(error) {
+  return { kind: 'harness_failure', phase: 'database-provenance',
+    reason: `runtime database provenance failed: ${error.message}` };
+}
+
+export function checkRuntimeDatabaseProvenance(args, marker = null) {
   if (!['mongodb', 'postgres'].includes(args.backend)) {
-    return { ok: true, verified: true,
-      reason: 'this stack does not use a separate database service' };
+    return { ok: null, verified: false,
+      reason: 'exact runtime database marker proof is not implemented for this stack' };
   }
   if (!args.databaseLease) {
     return { ok: null, verified: false,
       reason: 'standalone grading has no authenticated database lease' };
   }
+  if (typeof marker !== 'string' || !marker) {
+    return { ok: null, verified: false,
+      reason: 'the application action did not produce a database marker' };
+  }
   return executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-    'database', 'prove-use', { lease: args.databaseLease });
+    'database', 'prove-use', { lease: args.databaseLease, marker });
 }
 
 // Report the application size and direct runtime dependency count.
@@ -496,9 +521,11 @@ function checkActions(args) {
   return r;
 }
 
-function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks = []) {
+function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks = [],
+  { recordSelection = true, captureMedia = true, outputDirectory = args.out } = {}) {
   process.stdout.write(`  ${suite.id.padEnd(10)} ... `);
-  const out = join(args.out, `grading-${suite.id}.json`);
+  mkdirSync(outputDirectory, { recursive: true });
+  const out = join(outputDirectory, `grading-${suite.id}.json`);
   rmSync(out, { force: true });
   const argv = [join(ROOT, 'grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
     '--label', `${args.label}-${suite.id}`, '--out', out];
@@ -509,7 +536,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
     ? `${args.recipeTask.recipe.id}@${args.recipeTask.recipe.version}` : null);
   if (requestedRecipe) argv.push('--recipe', requestedRecipe);
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
-  if (args.selection?.sha256) {
+  if (recordSelection && args.selection?.sha256) {
     argv.push('--selection-sha256', args.selection.evaluationSha256 ?? args.selection.sha256);
   }
   argv.push('--parent-attempt-id', bundleArtifactId);
@@ -522,9 +549,9 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   // The systems criteria run scripts the app itself ships (back-office writes),
   // so the grader has to know where the app lives.
   if (args.app) argv.push('--app', args.app);
-  if (args.media) argv.push('--media', join(args.out, 'media'), '--trace');
-  else argv.push('--failure-media', join(args.out, 'failure-media'));
-  const child = runGraderChild(argv, args.out, suite.id);
+  if (captureMedia && args.media) argv.push('--media', join(outputDirectory, 'media'), '--trace');
+  else if (captureMedia) argv.push('--failure-media', join(outputDirectory, 'failure-media'));
+  const child = runGraderChild(argv, outputDirectory, suite.id);
   const { stdout, failure } = child;
   if (!existsSync(out)) {
     console.log('NO REPORT');
@@ -560,6 +587,16 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
     for (const u of uiOnly) console.log(`            ${u} — server-side check not runnable on this backend`);
   }
   return r;
+}
+
+function databaseProvenanceChecks(definition, recipeBinding) {
+  if (!definition || !recipeBinding) return [];
+  const check = recipeBinding.release.checkCatalog.find(candidate =>
+    candidate.stableKey === definition.check);
+  if (!check) {
+    throw new Error(`database provenance check is absent from the bound recipe: ${definition.check}`);
+  }
+  return [check];
 }
 
 async function main() {
@@ -814,29 +851,66 @@ async function main() {
       console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);
     }
-    try {
-      const runtime = checkRuntimeDatabaseProvenance(args);
-      bundle.provenance.runtime = runtime;
-      console.log(`  db runtime  ... ${runtime.verified
-        ? runtime.ok ? runtime.reason : `WRONG DATABASE — ${runtime.reason}`
-        : runtime.reason}`);
-      if (runtime.ok === false) {
-        bundle.error = `app did not repopulate the benchmark database: ${runtime.reason}`;
-        bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
-          appFailures: ['database-provenance'] };
-        recordApplicationAbort();
-        markRemainingNotRun('run aborted because runtime database provenance failed');
+    let runtime = checkRuntimeDatabaseProvenance(args);
+    let proofError = null;
+    const proof = track.databaseProvenance;
+    const requiresRuntimeProof = ['mongodb', 'postgres'].includes(args.backend)
+      && args.databaseLease && args.reset;
+    if (requiresRuntimeProof && !proof) {
+      proofError = new Error(`${args.track} does not define a runtime database provenance check`);
+    } else if (requiresRuntimeProof) {
+      try {
+        const checks = databaseProvenanceChecks(proof, recipeBinding);
+        const report = gradeSuite(args, { id: 'database-provenance', spec: proof.scenario },
+          track, recipeBinding, bundleArtifactId, checks,
+          { recordSelection: false, captureMedia: false,
+            outputDirectory: join(args.out, 'database-provenance') });
+        const marker = applicationDatabaseMarker(report, proof);
+        runtime = marker
+          ? checkRuntimeDatabaseProvenance(args, marker)
+          : { ok: false, verified: false,
+              reason: 'the configured application action did not produce one database marker' };
+      } catch (error) {
+        proofError = error;
+      }
+
+      // The proof writes unique data through the application. Remove it before
+      // linting and scored grading so the proof cannot change the result.
+      if (!(await freshen())) {
+        bundle.error = freshenFailureMessage();
+        bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
+        if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
+        markRemainingNotRun(`run aborted: ${bundle.error}`);
         writeBundle();
-        console.log('\nABORTED: application data came from outside the benchmark database.');
+        console.log(`\nABORTED: ${bundle.error}`);
         process.exit(1);
       }
-    } catch (error) {
-      bundle.error = `runtime database provenance failed: ${error.message}`;
-      bundle.outcome = { kind: 'harness_failure', phase: 'database-provenance',
-        reason: bundle.error };
+    } else if (['mongodb', 'postgres'].includes(args.backend) && !args.reset) {
+      runtime = { ok: null, verified: false,
+        reason: 'runtime marker proof requires database reset to isolate its write' };
+    }
+
+    if (proofError) {
+      bundle.outcome = databaseProvenanceFailure(proofError);
+      bundle.error = bundle.outcome.reason;
       markRemainingNotRun('run aborted because runtime database provenance could not be verified');
       writeBundle();
       console.log(`\nABORTED: ${bundle.error}`);
+      process.exit(1);
+    }
+
+    bundle.provenance.runtime = runtime;
+    console.log(`  db runtime  ... ${runtime.verified
+      ? runtime.ok ? runtime.reason : `WRONG DATABASE — ${runtime.reason}`
+      : runtime.reason}`);
+    if (runtime.ok === false) {
+      bundle.error = `app did not write its marker to the benchmark database: ${runtime.reason}`;
+      bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
+        appFailures: ['database-provenance'] };
+      recordApplicationAbort();
+      markRemainingNotRun('run aborted because runtime database provenance failed');
+      writeBundle();
+      console.log('\nABORTED: application data came from outside the benchmark database.');
       process.exit(1);
     }
     bundle.suites.lint = lint(args);

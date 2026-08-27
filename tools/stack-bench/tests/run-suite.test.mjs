@@ -8,8 +8,10 @@ import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selectio
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
+  applicationDatabaseMarker, checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
   databaseContainerForGrading, runGraderChild, verifyReseedProbe, waitForReseedProbe }
   from '../commands/run-suite.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
@@ -136,6 +138,60 @@ test('database provenance parses the port instead of accepting a matching substr
   }
 });
 
+function provenanceEvidence(marker, actionStatus = 'passed') {
+  const startedAtMs = 10;
+  const completedAtMs = 20;
+  return createCheckEvidence({
+    status: actionStatus === 'passed' ? 'passed' : 'failed',
+    code: actionStatus === 'passed' ? 'check.passed' : 'check.failed',
+    phase: 'assertion',
+    startedAtMs,
+    completedAtMs,
+    actions: [{ actor: 'shopper', evidence: {
+      schemaVersion: 1,
+      action: { id: 'signUp', version: '1' },
+      status: actionStatus,
+      type: 'browser',
+      code: actionStatus === 'passed' ? 'action.passed' : 'action.failed',
+      phase: 'assertion',
+      summary: null,
+      observation: { user: marker },
+      expected: null,
+      retryable: false,
+      timing: { startedAtMs, completedAtMs, durationMs: 10, deadlineMs: 1_000 },
+      attachments: [],
+      sensitivity: [],
+    } }],
+  });
+}
+
+test('application database marker comes only from the configured successful action', () => {
+  const definition = { check: 'accounts.create', action: 'signUp', observationField: 'user' };
+  const report = { features: [{ criteria: [{
+    id: '1a', stableKey: 'accounts.create', evidence: provenanceEvidence('ann-proof'),
+  }] }] };
+  assert.equal(applicationDatabaseMarker(report, definition), 'ann-proof');
+
+  report.features[0].criteria[0].evidence = provenanceEvidence('ann-proof', 'failed');
+  assert.equal(applicationDatabaseMarker(report, definition), null);
+});
+
+test('runtime database proof reports command failures as harness failures', () => {
+  assert.deepEqual(databaseProvenanceFailure(new Error('docker command failed')), {
+    kind: 'harness_failure',
+    phase: 'database-provenance',
+    reason: 'runtime database provenance failed: docker command failed',
+  });
+});
+
+test('SpacetimeDB runtime database proof stays explicitly unverified', () => {
+  assert.deepEqual(checkRuntimeDatabaseProvenance({ backend: 'spacetime' }), {
+    ok: null,
+    verified: false,
+    reason: 'exact runtime database marker proof is not implemented for this stack',
+  });
+});
+
 test('generated layout and restart defects are repairable app failures, not harness failures', () => {
   const application = Object.assign(new Error('server/package.json has no dev or start script'),
     { code: 'generated_app_not_restartable' });
@@ -230,6 +286,7 @@ test('a new grade removes every prior grade output but keeps operator records', 
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-cleanup-'));
   try {
     mkdirSync(join(root, 'failure-media'), { recursive: true });
+    mkdirSync(join(root, 'database-provenance'), { recursive: true });
     writeFileSync(join(root, 'bundle.json'), 'old');
     writeFileSync(join(root, 'grading-features.json'), 'old');
     writeFileSync(join(root, 'grader-features.stdout.log'), 'old');
@@ -245,6 +302,7 @@ test('a new grade removes every prior grade output but keeps operator records', 
     assert.equal(existsSync(join(root, 'grading-account-create@L1.json')), false);
     assert.equal(existsSync(join(root, 'grader-account-create@L1.stdout.log')), false);
     assert.equal(existsSync(join(root, 'failure-media')), false);
+    assert.equal(existsSync(join(root, 'database-provenance')), false);
     assert.equal(readFileSync(join(root, 'operator-notes.txt'), 'utf8'), 'keep');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

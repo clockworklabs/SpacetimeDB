@@ -375,11 +375,12 @@ export function compileScenarioDefinition(input, { source = '<scenario>', expect
 }
 
 const TRACK_FIELDS = new Set([
-  'schemaVersion', 'actions', 'internal', 'plannedThrough', 'portOffset', 'reseedOnReset',
+  'schemaVersion', 'actions', 'databaseProvenance', 'internal', 'plannedThrough', 'portOffset', 'reseedOnReset',
   'reseedProbeExpectation', 'restartProbe', 'slug', 'suites', 'title', 'validatedThrough',
 ]);
 const SUITE_FIELDS = new Set(['id', 'inherit', 'spec']);
 const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'params', 'path', 'reducer']);
+const DATABASE_PROVENANCE_FIELDS = new Set(['action', 'check', 'observationField', 'scenario']);
 const RESEED_PROBE_EXPECTATION_FIELDS = new Set(['jsonPath', 'minCount']);
 // Legacy v0 inferred persistence from these suite names. Keep that inference
 // in exactly one compatibility boundary; schema-v1 manifests must say what
@@ -417,6 +418,18 @@ export function compileTrackManifest(input, { source = '<track>' } = {}) {
     }
     if (manifest.reseedOnReset !== true) {
       fail(`${source}.reseedProbeExpectation`, 'requires reseedOnReset: true');
+    }
+  }
+  if (manifest.databaseProvenance !== undefined) {
+    strictObject(manifest.databaseProvenance, `${source}.databaseProvenance`,
+      DATABASE_PROVENANCE_FIELDS);
+    for (const field of ['action', 'check', 'observationField']) {
+      if (!nonEmptyString(manifest.databaseProvenance[field])) {
+        fail(`${source}.databaseProvenance.${field}`, 'must be a non-empty string');
+      }
+    }
+    if (!relativePath(manifest.databaseProvenance.scenario)) {
+      fail(`${source}.databaseProvenance.scenario`, 'must be a contained relative path');
     }
   }
   if (!object(manifest.suites) || Object.keys(manifest.suites).length === 0) {

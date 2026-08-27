@@ -64,6 +64,10 @@ export function loadTrack(name = DEFAULT_TRACK) {
     // Readiness alone is insufficient: a healthy server can still expose an
     // empty application after reset.
     reseedProbeExpectation: m.reseedProbeExpectation ?? null,
+    databaseProvenance: m.databaseProvenance ? {
+      ...m.databaseProvenance,
+      scenario: join(dir, m.databaseProvenance.scenario),
+    } : null,
     suites: m.suites ?? {},
     actions: m.actions ?? [],
     prompts: join(dir, 'prompts'),

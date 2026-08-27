@@ -91,48 +91,95 @@ test('PostgreSQL per-check reset clears rows without removing the app schema', (
   assert.equal(reset.args[reset.args.indexOf('-d') + 1], lease.resources.database);
 });
 
-test('PostgreSQL runtime provenance requires data in the exact leased container', () => {
+test('PostgreSQL runtime provenance finds an application marker in the exact leased database', () => {
   const lease = { resources: { database: 'stackbench_ecom_run0',
     container: { name: 'postgres-service', id: 'a'.repeat(64) } } };
   const calls = [];
   const exec = (command, args, options) => {
     calls.push({ command, args, options });
     if (args[0] === 'inspect') return `${lease.resources.container.id}\n`;
-    return 'public.item\n';
+    return 'public.account.username\n';
   };
 
-  assert.deepEqual(provePostgresUse({ lease, exec }), {
+  assert.deepEqual(provePostgresUse({ lease, marker: "ann'proof", exec }), {
     ok: true,
     verified: true,
-    populatedTables: 1,
-    reason: '1 leased PostgreSQL table(s) contain startup data',
+    matches: 1,
+    reason: 'the application marker exists in the leased PostgreSQL database',
   });
   const proof = calls.at(-1);
   assert.deepEqual(proof.args.slice(0, 3), ['exec', '-i', 'postgres-service']);
   assert.equal(proof.args.includes('ON_ERROR_STOP=1'), true);
-  assert.match(proof.options.input, /ORDER BY tablename\n\\gexec/);
-  assert.doesNotMatch(proof.options.input, /ORDER BY tablename;\n\\gexec/);
+  assert.match(proof.options.input, /FROM information_schema\.columns/);
+  assert.match(proof.options.input, /ann''proof/);
+  assert.match(proof.options.input, /ORDER BY table_name, ordinal_position\n\\gexec/);
 
   const emptyExec = (command, args) => args[0] === 'inspect'
     ? `${lease.resources.container.id}\n` : '';
-  assert.equal(provePostgresUse({ lease, exec: emptyExec }).ok, false);
+  assert.equal(provePostgresUse({ lease, marker: 'missing', exec: emptyExec }).ok, false);
+  assert.throws(() => provePostgresUse({ lease, marker: '', exec }),
+    /requires a non-empty application marker/);
 });
 
-test('MongoDB runtime provenance requires data in the exact leased container', () => {
+test('MongoDB runtime provenance finds an application marker in the exact leased database', () => {
   const lease = { resources: { database: 'stackbench_ecom_run0',
     container: { name: 'mongodb-service', id: 'b'.repeat(64) } } };
-  const execWith = output => (command, args) => args[0] === 'inspect'
-    ? `${lease.resources.container.id}\n` : output;
+  const calls = [];
+  const execWith = output => (command, args) => {
+    calls.push({ command, args });
+    return args[0] === 'inspect' ? `${lease.resources.container.id}\n` : output;
+  };
 
-  assert.deepEqual(proveMongoDbUse({ lease, exec: execWith('2\n') }), {
+  assert.deepEqual(proveMongoDbUse({ lease, marker: 'ann-proof', exec: execWith('2\n') }), {
     ok: true,
     verified: true,
-    populatedCollections: 2,
-    reason: '2 leased MongoDB collection(s) contain startup data',
+    matches: 2,
+    reason: 'the application marker exists in the leased MongoDB database',
   });
-  assert.equal(proveMongoDbUse({ lease, exec: execWith('0\n') }).ok, false);
-  assert.throws(() => proveMongoDbUse({ lease, exec: execWith('not-a-count\n') }),
+  const script = calls.at(-1).args.at(-1);
+  assert.match(script, /const marker = "ann-proof"/);
+  assert.match(script, /containsMarker/);
+  assert.equal(proveMongoDbUse({ lease, marker: 'missing', exec: execWith('0\n') }).ok, false);
+  assert.throws(() => proveMongoDbUse({ lease, marker: 'proof', exec: execWith('not-a-count\n') }),
     /invalid count/);
+  assert.throws(() => proveMongoDbUse({ lease, marker: '', exec: execWith('0\n') }),
+    /requires a non-empty application marker/);
+});
+
+test('runtime database provenance works against the Docker services', {
+  skip: process.env.STACK_BENCH_DATABASE_PROVENANCE_SMOKE !== '1',
+}, () => {
+  const suffix = `${process.pid}_${Date.now()}`;
+  const marker = `stackbench-proof-${suffix}`;
+  const postgresDatabase = `stackbench_proof_${suffix}`;
+  const mongoDatabase = `stackbench_proof_${suffix}`;
+  const docker = (args, options = {}) => execFileSync('docker', args,
+    { encoding: 'utf8', stdio: 'pipe', timeout: 120_000, ...options });
+  const container = name => ({ name,
+    id: docker(['inspect', '--format', '{{.Id}}', name]).trim() });
+  try {
+    docker(['exec', 'stack-bench-postgres', 'psql', '-U', 'stackbench', '-d', 'postgres',
+      '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${postgresDatabase} OWNER stackbench;`]);
+    docker(['exec', 'stack-bench-postgres', 'psql', '-U', 'stackbench', '-d', postgresDatabase,
+      '-v', 'ON_ERROR_STOP=1', '-c',
+      `CREATE TABLE account (username text NOT NULL); INSERT INTO account VALUES ('${marker}');`]);
+    docker(['exec', 'stack-bench-mongodb', 'mongosh', mongoDatabase, '--quiet', '--eval',
+      `db.account.insertOne({ username: ${JSON.stringify(marker)} })`]);
+
+    assert.equal(provePostgresUse({ lease: { resources: { database: postgresDatabase,
+      container: container('stack-bench-postgres') } }, marker }).ok, true);
+    assert.equal(proveMongoDbUse({ lease: { resources: { database: mongoDatabase,
+      container: container('stack-bench-mongodb') } }, marker }).ok, true);
+  } finally {
+    try {
+      docker(['exec', 'stack-bench-postgres', 'psql', '-U', 'stackbench', '-d', 'postgres',
+        '-v', 'ON_ERROR_STOP=1', '-c', `DROP DATABASE IF EXISTS ${postgresDatabase} WITH (FORCE);`]);
+    } catch { /* keep the original test failure */ }
+    try {
+      docker(['exec', 'stack-bench-mongodb', 'mongosh', mongoDatabase, '--quiet', '--eval',
+        'db.dropDatabase()']);
+    } catch { /* keep the original test failure */ }
+  }
 });
 
 test('PostgreSQL reset preserves schema and does not touch another lease database', {

@@ -11,6 +11,12 @@
     "jsonPath": "items",
     "minCount": 1
   },
+  "databaseProvenance": {
+    "scenario": "scenarios/01-account-create-2.4.0.json",
+    "check": "ecommerce.feature.accounts.accounts.1a",
+    "action": "signUp",
+    "observationField": "user"
+  },
   "suites": {
     "1": [
       {
