@@ -91,6 +91,9 @@ function parseArgs(argv) {
     else if (argv[i] === "--resume-from") a.resumeFrom = resolve(argv[++i]);
     else if (argv[i] === "--checkpoint-out") a.checkpointOut = resolve(argv[++i]);
     else if (argv[i] === "--baseline-bundle") a.baselineBundle = resolve(argv[++i]);
+    else if (argv[i] === "--expected-calibration-json") {
+      a.expectedCalibrationIdentity = JSON.parse(argv[++i]);
+    }
     else if (argv[i] === "--max-runtime-minutes") a.maxRuntimeMinutes = Number(argv[++i]);
     else if (argv[i] === "--image-id") a.imageId = argv[++i];
     else {
@@ -441,6 +444,9 @@ async function main() {
   const cleanBaselineBundle = args.baselineBundle
     ? readArtifactPayload(args.baselineBundle, { expectedKind: 'grade_bundle' })
     : null;
+  if (cleanBaselineBundle && !args.expectedCalibrationIdentity) {
+    throw new Error('a reusable clean baseline requires its expected calibration identity');
+  }
   const checkpoint = checkpointIdentity(plans.map(plan => plan.checkpoint), shard, track);
   const resumed = resumableEvidence(args.resumeFrom, checkpoint);
   const results = [...resumed.results];
@@ -531,6 +537,11 @@ async function main() {
         fixtureSha256: spec.fixtureSha256,
         recipe: { id: args.recipeRelease.id, version: args.recipeRelease.version,
           sha256: args.expectedRecipeSha256 },
+        identities: {
+          engine: currentEngineIdentity(),
+          calibration: args.expectedCalibrationIdentity,
+          stackAdapter: { id: args.backend },
+        },
         selectedCheckKeys,
       });
       if (!reused.ok) {

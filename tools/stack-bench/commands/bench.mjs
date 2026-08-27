@@ -130,6 +130,9 @@ export function parseArgs(argv) {
       case '--mutation-resume-from': a.mutationResumeFrom = resolve(argv[++i]); break;
       case '--mutation-checkpoint-out': a.mutationCheckpointOut = resolve(argv[++i]); break;
       case '--mutation-baseline-bundle': a.mutationBaselineBundle = resolve(argv[++i]); break;
+      case '--expected-mutation-calibration-json': {
+        a.expectedMutationCalibration = JSON.parse(argv[++i]); break;
+      }
       case '--mutation-max-runtime-minutes': a.mutationMaxRuntimeMinutes = Number(argv[++i]); break;
       case '--reference-mutation-only': a.referenceMutationOnly = true; break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
@@ -150,6 +153,9 @@ export function parseArgs(argv) {
   if ((a.mutationResumeFrom || a.mutationCheckpointOut || a.mutationBaselineBundle)
       && !a.mutations) {
     throw new Error('mutation control options require --mutations');
+  }
+  if (a.expectedMutationCalibration && !a.mutations) {
+    throw new Error('--expected-mutation-calibration-json requires --mutations');
   }
   if (!Number.isFinite(a.mutationMaxRuntimeMinutes) || a.mutationMaxRuntimeMinutes < 1
       || a.mutationMaxRuntimeMinutes > 120) {

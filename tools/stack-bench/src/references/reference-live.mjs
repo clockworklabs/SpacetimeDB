@@ -571,6 +571,12 @@ async function runOnce(fixture, args, context, id, repetition) {
         benchArgs.push('--mutation-checkpoint-out', args.mutationCheckpoint);
       }
       benchArgs.push('--mutation-max-runtime-minutes', String(args.mutationMaxRuntimeMinutes));
+      benchArgs.push('--expected-mutation-calibration-json', JSON.stringify({
+        id: context.calibration.id,
+        version: context.calibration.version,
+        sha256: context.calibration.contentSha256,
+        state: context.calibration.state,
+      }));
       if (args.mutationBaselineBundle) {
         benchArgs.push('--mutation-baseline-bundle', args.mutationBaselineBundle);
       }

@@ -48,6 +48,9 @@ export function mutationControlArgv(args, appDir, url, track) {
     ...(args.mutationResumeFrom ? ['--resume-from', args.mutationResumeFrom] : []),
     ...(args.mutationCheckpointOut ? ['--checkpoint-out', args.mutationCheckpointOut] : []),
     ...(args.mutationBaselineBundle ? ['--baseline-bundle', args.mutationBaselineBundle] : []),
+    ...(args.expectedMutationCalibration ? [
+      '--expected-calibration-json', JSON.stringify(args.expectedMutationCalibration),
+    ] : []),
     ...(args.mutationMaxRuntimeMinutes ? [
       '--max-runtime-minutes', String(args.mutationMaxRuntimeMinutes),
     ] : []),

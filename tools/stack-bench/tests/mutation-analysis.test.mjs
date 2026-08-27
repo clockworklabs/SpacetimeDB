@@ -33,10 +33,17 @@ test('a clean scenario report is reused only for the exact run identity and chec
     backend: 'postgres', track: 'ecommerce', level: 3,
     source: { sha256: 'fixture' },
     recipeRelease: { id: 'recipe', version: '1.0.0', contentSha256: 'recipe-sha' },
+    artifactEnvelope: { identities: {
+      engine: { id: 'stack-bench', version: null, sha256: 'engine', state: null },
+      calibration: { id: 'calibration', version: '1.0.0', sha256: 'calibration-sha',
+        state: 'qualified' },
+      stackAdapter: { id: 'postgres', version: null, sha256: null, state: null },
+    } },
     suites: { scenario, another: { selection: { checks: [{ stableKey: 'check.c' }] } } },
   };
   const expected = { backend: 'postgres', track: 'ecommerce', level: 3,
     fixtureSha256: 'fixture', recipe: { id: 'recipe', version: '1.0.0', sha256: 'recipe-sha' },
+    identities: structuredClone(bundle.artifactEnvelope.identities),
     selectedCheckKeys: ['check.b', 'check.a'] };
 
   assert.deepEqual(reusableMutationBaseline(bundle, expected), { ok: true, report: scenario });
@@ -44,6 +51,14 @@ test('a clean scenario report is reused only for the exact run identity and chec
     /fixture/);
   assert.match(reusableMutationBaseline(bundle, { ...expected,
     selectedCheckKeys: ['check.a'] }).reason, /0 exact scenario matches/);
+  assert.match(reusableMutationBaseline(bundle, { ...expected, identities: {
+    ...expected.identities,
+    engine: { ...expected.identities.engine, sha256: 'new-engine' },
+  } }).reason, /engine/);
+  assert.match(reusableMutationBaseline(bundle, { ...expected, identities: {
+    ...expected.identities,
+    calibration: { ...expected.identities.calibration, sha256: 'new-calibration' },
+  } }).reason, /calibration/);
 });
 
 test('mutation definitions name exact criteria and contain real edits', () => {

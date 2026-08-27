@@ -88,7 +88,9 @@ test('mutation checkpoint controls reach the mutation runner', () => {
     track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'resume-attempt',
     recipe: null, recipeTasks: new Map(), mutationResumeFrom: 'prior.json',
     mutationCheckpointOut: 'next.json', mutationMaxRuntimeMinutes: 30,
-    mutationImageId: 'sha256:image', mutationBaselineBundle: 'baseline.json' };
+    mutationImageId: 'sha256:image', mutationBaselineBundle: 'baseline.json',
+    expectedMutationCalibration: { id: 'calibration', version: '1.0.0',
+      sha256: 'calibration-sha', state: 'qualified' } };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
   const after = flag => argv[argv.indexOf(flag) + 1];
@@ -97,6 +99,8 @@ test('mutation checkpoint controls reach the mutation runner', () => {
   assert.equal(after('--max-runtime-minutes'), '30');
   assert.equal(after('--image-id'), 'sha256:image');
   assert.equal(after('--baseline-bundle'), 'baseline.json');
+  assert.deepEqual(JSON.parse(after('--expected-calibration-json')),
+    args.expectedMutationCalibration);
 });
 
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {

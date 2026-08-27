@@ -9,6 +9,19 @@ function criteria(bundle) {
       }))));
 }
 
+function cleanupFailureKeys(bundle) {
+  return Object.entries(bundle?.suites ?? {}).flatMap(([suiteId, suite]) => {
+    const keys = suite?.cleanupEvidence?.status === 'harness_failure'
+      ? [`${suiteId}/cleanup`] : [];
+    for (const feature of suite?.features ?? []) {
+      if (feature?.cleanupEvidence?.status === 'harness_failure') {
+        keys.push(`${suiteId}/${feature.id ?? feature.name}/cleanup`);
+      }
+    }
+    return keys;
+  });
+}
+
 function selectedScoreMismatch(bundle, all) {
   const selection = bundle?.selection;
   if (!Array.isArray(selection?.checks) || !Array.isArray(selection?.reportedChecks)
@@ -58,6 +71,13 @@ function selectedScoreMismatch(bundle, all) {
 export function classifyBundle(bundle) {
   if (!bundle) return { kind: 'ungraded', phase: 'grading', reason: 'no grading bundle was produced',
     appFailures: [], inconclusive: [], harnessFailures: [] };
+  const cleanupFailures = cleanupFailureKeys(bundle);
+  if (cleanupFailures.length) {
+    return { kind: 'harness_failure', phase: 'grading-cleanup',
+      reason: 'grader cleanup did not complete',
+      appFailures: bundle.outcome?.appFailures ?? [], inconclusive: [],
+      harnessFailures: cleanupFailures };
+  }
   if (bundle.outcome?.kind === 'harness_failure') {
     return { ...bundle.outcome, appFailures: [], inconclusive: [], harnessFailures: [] };
   }

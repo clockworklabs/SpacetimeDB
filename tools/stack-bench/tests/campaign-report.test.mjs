@@ -91,6 +91,22 @@ test('correction metrics separate successful cost from unresolved spend', () => 
   assert.equal(unaided.correctionSpendUsd, null);
 });
 
+test('dependency campaign final score uses the terminal questline average', () => {
+  const metrics = campaignRunMetrics({
+    progressionStatus: { phase: 'terminal', score: { averagePercentage: 62.5 } },
+    levels: [{ firstBuild: { score: 4, max: 10 }, score: 10, max: 10 }],
+    totals: { score: 30, max: 30 },
+  });
+  assert.equal(metrics.finalScoreRate, 0.625);
+
+  const active = campaignRunMetrics({
+    progressionStatus: { phase: 'active', score: { averagePercentage: null } },
+    levels: [{ firstBuild: { score: 4, max: 10 }, score: 10, max: 10 }],
+    totals: { score: 30, max: 30 },
+  });
+  assert.equal(active.finalScoreRate, null);
+});
+
 test('score rates keep inconclusive points separate from measurement coverage', () => {
   const inconclusive = { kind: 'inconclusive', inconclusive: ['contention/203/203b'],
     harnessFailures: [] };

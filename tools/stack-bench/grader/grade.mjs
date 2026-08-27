@@ -20,7 +20,8 @@ import { chromium } from 'playwright';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { harnessBrowserFailure, harnessProcessFailure } from '../src/evidence/harness-errors.mjs';
+import { harnessBrowserFailure, harnessProcessFailure,
+  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
@@ -630,12 +631,16 @@ async function gradeFeature(browser, feature, args, runCtx) {
     for (const name of feature.actors) {
       // Isolated storage per actor. Video is per-context, so each actor gets its
       // own recording — you can watch what every participant saw, side by side.
-      const context = await browser.newContext(
-        args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
-      );
+      const context = await runBrowserInfrastructureOperation('context creation', () =>
+        browser.newContext(
+          args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
+        ));
       contexts.push({ context, name, page: null });
-      if (args.trace) await context.tracing.start({ screenshots: true, snapshots: true });
-      const page = await context.newPage();
+      if (args.trace) {
+        await runBrowserInfrastructureOperation('trace start', () =>
+          context.tracing.start({ screenshots: true, snapshots: true }));
+      }
+      const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1].page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
       await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });

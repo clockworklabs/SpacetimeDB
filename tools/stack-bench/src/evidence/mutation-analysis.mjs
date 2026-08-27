@@ -145,8 +145,18 @@ function stableKeys(report) {
   return (report?.selection?.checks ?? []).map(check => check.stableKey).sort();
 }
 
+function identityFields(identity) {
+  return {
+    id: identity?.id ?? null,
+    version: identity?.version ?? null,
+    sha256: identity?.sha256 ?? null,
+    state: identity?.state ?? null,
+  };
+}
+
 export function reusableMutationBaseline(bundle, expected) {
   const release = bundle?.recipeRelease;
+  const identities = bundle?.artifactEnvelope?.identities ?? {};
   const mismatches = [];
   if (bundle?.backend !== expected.backend) mismatches.push('backend');
   if (bundle?.track !== expected.track) mismatches.push('track');
@@ -154,6 +164,10 @@ export function reusableMutationBaseline(bundle, expected) {
   if (bundle?.source?.sha256 !== expected.fixtureSha256) mismatches.push('fixture');
   if (release?.id !== expected.recipe.id || release?.version !== expected.recipe.version
       || release?.contentSha256 !== expected.recipe.sha256) mismatches.push('recipe');
+  for (const key of ['engine', 'calibration', 'stackAdapter']) {
+    if (JSON.stringify(identityFields(identities[key]))
+        !== JSON.stringify(identityFields(expected.identities?.[key]))) mismatches.push(key);
+  }
   if (mismatches.length) {
     return { ok: false, reason: `clean baseline identity differs: ${mismatches.join(', ')}` };
   }

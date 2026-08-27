@@ -114,9 +114,15 @@ export function campaignRunMetrics(run) {
   const finalMeasuredMaxima = levels.map(level => number(level.max));
   const finalDeclaredMaxima = levels.map(level => declaredMax(level.max, level.outcome,
     level.selection));
+  const progressionScore = run.progressionStatus === undefined
+    ? undefined
+    : run.progressionStatus?.phase === 'terminal'
+      ? number(run.progressionStatus?.score?.averagePercentage) : null;
   return {
     firstBuildScoreRate: ratio(firstScore, firstMax),
-    finalScoreRate: ratio(number(run.totals?.score), number(run.totals?.max)),
+    finalScoreRate: progressionScore === undefined
+      ? ratio(number(run.totals?.score), number(run.totals?.max))
+      : ratio(progressionScore, 100),
     firstBuildCoverageRate: firstDeclaredMaxima.length
       && firstDeclaredMaxima.every(Number.isFinite)
       ? ratio(firstMax, firstDeclaredMaxima.reduce((total, value) => total + value, 0)) : null,

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { closeActorContexts } from '../grader/grade.mjs';
+import { harnessBrowserFailure,
+  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.mjs';
 
 test('grader context cleanup records browser failures instead of throwing away the report', async () => {
   const context = {
@@ -27,4 +29,15 @@ test('grader context cleanup stays silent when cleanup succeeds', async () => {
     { context, name: 'buyer', page: { video: () => null } },
   ], { trace: true, media: '/tmp/media', slug: 'account-create' });
   assert.deepEqual(failures, []);
+});
+
+test('browser setup operations are harness failures but app navigation is not', async () => {
+  let infrastructure;
+  try {
+    await runBrowserInfrastructureOperation('page creation', async () => {
+      throw new Error('page allocation failed');
+    });
+  } catch (error) { infrastructure = error; }
+  assert.match(harnessBrowserFailure(infrastructure), /browser page creation failed/);
+  assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
 });

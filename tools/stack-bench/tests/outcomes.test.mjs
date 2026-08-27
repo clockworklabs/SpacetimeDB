@@ -93,6 +93,17 @@ test('typed harness failures outrank prose and application failures', () => {
   assert.deepEqual(outcome.appFailures, ['feature/f/app']);
 });
 
+test('grader cleanup failures invalidate the bundle', () => {
+  const scoped = bundle([typed('works', 'passed', null)]);
+  scoped.suites.feature.features[0].cleanupEvidence = {
+    status: 'harness_failure', failures: [{ stage: 'context-close' }],
+  };
+  const outcome = classifyBundle(scoped);
+  assert.equal(outcome.kind, 'harness_failure');
+  assert.equal(outcome.phase, 'grading-cleanup');
+  assert.deepEqual(outcome.harnessFailures, ['feature/f/cleanup']);
+});
+
 test('a fully reported zero-point selection is graded rather than mistaken for missing output', () => {
   const scoped = {
     totals: { score: 0, max: 0 },
