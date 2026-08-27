@@ -1227,12 +1227,12 @@
       "targets": [
         "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
       ],
-      "desc": "Keep the old cart quantity during concurrent adds.",
-      "file": "server/src/progression.ts",
+      "desc": "Render the old cart quantity after concurrent adds.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = CASE WHEN cart_item.expired THEN excluded.quantity ELSE cart_item.quantity + excluded.quantity END,",
-          "replace": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity,"
+          "find": "                    value={line.quantity}",
+          "replace": "                    value={1}"
         }
       ]
     },

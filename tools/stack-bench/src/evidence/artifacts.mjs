@@ -90,7 +90,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   reference_build: new Set(['isolation', 'image', 'fixtures', 'ok']),
   reference_qualification: new Set(['fixture', 'fixtureSha256', 'requiredRepetitions', 'isolation',
     'runner', 'qualificationScope', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness',
-    'harnessSha256', 'qualifiedCheckKeys', 'featureCatalog', 'ok']),
+    'harnessSha256', 'qualifiedCheckKeys', 'featureCatalog', 'diagnostic', 'ok']),
   recovery: new Set(['schemaVersion', 'status', 'runId', 'backend', 'reason', 'cleanup',
     'resources', 'instructions']),
   source_checkpoint: new Set(['schemaVersion', 'track', 'backend', 'level', 'source',

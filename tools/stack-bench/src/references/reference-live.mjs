@@ -57,7 +57,7 @@ export function parseReferenceQualificationArgs(argv) {
   const args = { track: 'ecommerce', level: 1, repetitions: 2,
     runIndex: 0, spacetimePort: null, timeoutMinutes: null, mutations: false,
     mutationWorkers: 1, mutationShardIndex: null, mutationShardCount: null,
-    mutationMaxRuntimeMinutes: 60 };
+    mutationMaxRuntimeMinutes: 60, mutationIds: [] };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
     else if (argv[i] === '--track') args.track = argv[++i];
@@ -73,6 +73,7 @@ export function parseReferenceQualificationArgs(argv) {
     else if (argv[i] === '--timeout-minutes') args.timeoutMinutes = Number(argv[++i]);
     else if (argv[i] === '--mutations') args.mutations = true;
     else if (argv[i] === '--release-candidate') args.releaseCandidate = true;
+    else if (argv[i] === '--mutation-id') args.mutationIds.push(argv[++i]);
     else if (argv[i] === '--mutation-workers') args.mutationWorkers = Number(argv[++i]);
     else if (argv[i] === '--mutation-shard-index') args.mutationShardIndex = Number(argv[++i]);
     else if (argv[i] === '--mutation-shard-count') args.mutationShardCount = Number(argv[++i]);
@@ -120,7 +121,18 @@ export function parseReferenceQualificationArgs(argv) {
   if (args.releaseCandidate && !args.mutations) {
     throw new Error('--release-candidate requires --mutations');
   }
-  if (args.mutations && !args.referenceMutationOnly && !args.releaseCandidate) {
+  if (args.mutationIds.some(id => typeof id !== 'string' || !id.trim())
+      || new Set(args.mutationIds).size !== args.mutationIds.length) {
+    throw new Error('--mutation-id values must be unique non-empty strings');
+  }
+  if (args.mutationIds.length && !args.mutations) {
+    throw new Error('--mutation-id requires --mutations');
+  }
+  if (args.releaseCandidate && args.mutationIds.length) {
+    throw new Error('--release-candidate cannot select individual mutations');
+  }
+  if (args.mutations && !args.referenceMutationOnly && !args.releaseCandidate
+      && args.mutationIds.length === 0) {
     throw new Error('full mutation qualification requires --release-candidate');
   }
   if (args.mutationBaselineBundle && !args.referenceMutationOnly) {
@@ -522,7 +534,7 @@ export function referenceQualificationWorkRoot(env = process.env) {
   return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
 }
 
-export function qualificationMutationManifest(fixture, context) {
+export function qualificationMutationManifest(fixture, context, requestedIds = []) {
   if (fixture.mutationManifests.length !== 1) {
     throw new Error(`${fixture.id} must own exactly one mutation manifest for live mutation qualification`);
   }
@@ -535,7 +547,13 @@ export function qualificationMutationManifest(fixture, context) {
     throw new Error(`${fixture.id} mutation selection is missing: ${[...selectedIds].sort().join(', ')}`);
   }
   if (mutations.length === 0) throw new Error(`${fixture.id} mutation selection is empty`);
-  return { ...manifest, mutations };
+  if (requestedIds.length === 0) return { ...manifest, mutations };
+  const requested = new Set(requestedIds);
+  const targeted = mutations.filter(mutation => requested.delete(mutation.id));
+  if (requested.size) {
+    throw new Error(`${fixture.id} targeted mutation selection is missing: ${[...requested].sort().join(', ')}`);
+  }
+  return { ...manifest, mutations: targeted };
 }
 
 async function runOnce(fixture, args, context, id, repetition) {
@@ -564,7 +582,8 @@ async function runOnce(fixture, args, context, id, repetition) {
     benchArgs.push('--parent-attempt-id', id);
     if (args.mutations) {
       const manifestPath = join(work, 'selected-mutations.json');
-      writeFileSync(manifestPath, `${JSON.stringify(qualificationMutationManifest(fixture, context),
+      writeFileSync(manifestPath, `${JSON.stringify(qualificationMutationManifest(fixture, context,
+        args.mutationIds),
         null, 2)}\n`);
       benchArgs.push('--mutations', manifestPath);
       if (args.mutationShardCount !== null) {
@@ -658,6 +677,7 @@ export function parallelMutationChildArgv(args, context,
       `${args.backend}-worker-${workerIndex + 1}.json`));
   }
   if (context.featureCatalogRef) argv.push('--feature-catalog', context.featureCatalogRef);
+  for (const mutationId of args.mutationIds) argv.push('--mutation-id', mutationId);
   if (args.spacetimePortExplicit) {
     argv.push('--spacetime-port', String(args.spacetimePort + workerIndex));
   }
@@ -769,7 +789,7 @@ export function mutationWorkerRequiresSiblingAbort(processResult, worker) {
 }
 
 async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
-  const manifest = qualificationMutationManifest(fixture, context);
+  const manifest = qualificationMutationManifest(fixture, context, args.mutationIds);
   if (!Array.isArray(manifest.mutations)
       || manifest.mutations.length < args.mutationWorkers) {
     throw new Error(`--mutation-workers cannot exceed ${manifest.mutations?.length ?? 0} mutations`);
@@ -937,6 +957,7 @@ async function main() {
     fixtureSha256: fixture.imported.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
     runner: controllerRunner(), qualificationScope, mutationControl: args.mutations,
+    diagnostic: args.mutationIds.length > 0,
     qualifiedCheckKeys: [...context.selectedCheckKeys].sort(),
     ...(context.featureCatalog ? { featureCatalog: context.featureCatalog } : {}), runs: [] };
   const artifactIdentities = artifact.identities;
@@ -966,7 +987,7 @@ async function main() {
   artifact.completedAt = new Date().toISOString();
   writeRunJson(paths.artifactPath, artifact);
   console.log(JSON.stringify({ ok: artifact.ok, artifact: paths.artifactPath, stable: artifact.stable,
-    sameImage: artifact.sameImage, sameHarness: artifact.sameHarness,
+    sameImage: artifact.sameImage, sameHarness: artifact.sameHarness, diagnostic: artifact.diagnostic,
     runs: artifact.runs.map(({ repetition, ok, score, criteria,
       zeroPointCriteria, mutations, failures }) => ({ repetition, ok, score, criteria, zeroPointCriteria,
       mutations, failures })) }, null, 2));

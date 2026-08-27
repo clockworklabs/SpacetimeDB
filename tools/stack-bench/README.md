@@ -349,7 +349,8 @@ live-update assertion and retry it, so "real-time" means real-time.
   verifies every source edit is present exactly once before a Docker run.
   During development, validate only the mutation definitions affected by the
   change. The complete mutation set is a release-candidate gate. Live full-set
-  qualification requires the explicit `--release-candidate` option.
+  qualification requires the explicit `--release-candidate` option. A targeted
+  live check uses `--mutation-id <id>` and cannot become promotion evidence.
 - **Null controls.** A blank application must not earn points or produce
   inconclusive scored evidence.
 - **State isolation.** The database is reset before each suite, and each run

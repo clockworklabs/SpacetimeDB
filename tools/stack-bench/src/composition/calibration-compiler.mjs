@@ -419,6 +419,9 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     { id: reference.id, version: null, sha256: reference.sourceSha256 }, `${at}.fixture`);
   if (artifact.identities?.stackAdapter?.id !== entry.stack) evidenceFailure(at, 'has wrong stack adapter');
   const payload = artifact.payload;
+  if (payload.diagnostic === true) {
+    evidenceFailure(at, 'is targeted diagnostic evidence, not qualification evidence');
+  }
   if (calibration.qualification.checks !== undefined) {
     const actualChecks = [...(payload.qualifiedCheckKeys ?? [])].sort();
     const expectedChecks = release.checkCatalog.map(check => check.stableKey).sort();

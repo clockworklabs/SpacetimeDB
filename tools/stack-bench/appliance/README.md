@@ -305,7 +305,8 @@ Mutation qualification is serial by default. Use `--mutation-workers N` with
 `--mutations` to distribute individual defects across 1 to 8 isolated workers.
 The complete mutation set is a release-candidate gate and requires
 `--release-candidate`. During development, run only the definitions affected
-by the change.
+by the change. Add one `--mutation-id <id>` option for each affected defect.
+Targeted output is diagnostic evidence and cannot satisfy a promotion gate.
 Defects from one scenario may run on different workers. The parent grades the
 clean fixture once. Each worker then receives a separate run slot, source tree,
 backend lease, ports, logs, and artifact directory. The parent accepts the

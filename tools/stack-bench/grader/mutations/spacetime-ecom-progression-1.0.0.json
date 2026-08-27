@@ -558,12 +558,12 @@
       "targets": [
         "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
       ],
-      "desc": "The existing cart row is written back without increasing its quantity.",
-      "file": "backend/spacetimedb/src/index.ts",
+      "desc": "Render the old cart quantity after concurrent adds.",
+      "file": "client/src/components/CartPanel.tsx",
       "edits": [
         {
-          "find": "ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity + 1 });",
-          "replace": "ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity });"
+          "find": "                value={line.quantity}",
+          "replace": "                value={1}"
         }
       ]
     },

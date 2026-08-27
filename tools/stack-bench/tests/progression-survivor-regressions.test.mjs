@@ -103,6 +103,18 @@ test('PostgreSQL catalog mutations isolate product name and variant failures', (
   assert.match(variantsSource, /\[name, category, price\.toFixed\(2\), \[\]\]/);
 });
 
+test('concurrent cart quantity mutations do not change checkout state', () => {
+  const postgres = readJson('grader', 'mutations', 'postgres-ecom-progression-1.0.0.json')
+    .mutations.find(candidate => candidate.id === 'progression-concurrent-cart-line-does-not-increment');
+  assert.equal(postgres.file, 'client/src/App.tsx');
+  assert.equal(postgres.edits[0].replace.trim(), 'value={1}');
+
+  const spacetime = readJson('grader', 'mutations', 'spacetime-ecom-progression-1.0.0.json')
+    .mutations.find(candidate => candidate.id === 'existing-cart-line-does-not-increment');
+  assert.equal(spacetime.file, 'client/src/components/CartPanel.tsx');
+  assert.equal(spacetime.edits[0].replace.trim(), 'value={1}');
+});
+
 test('staff role check reloads the saved value on each progression reference', () => {
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
     'progression-staff-roles-1.0.0.json');

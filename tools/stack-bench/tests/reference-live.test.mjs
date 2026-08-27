@@ -35,6 +35,13 @@ test('reference qualification runs only the mutations selected by its check scop
       targets: ids.map(id => ({ id })) }] } });
 
   assert.deepEqual(selected.mutations.map(mutation => mutation.id), ids);
+  assert.deepEqual(qualificationMutationManifest({ ...fixture, id: 'targeted-mutation',
+    mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb',
+      targets: ids.map(id => ({ id })) }] } }, [ids[1]])
+    .mutations.map(mutation => mutation.id), [ids[1]]);
+  assert.throws(() => qualificationMutationManifest({ ...fixture, id: 'missing-target',
+    mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb',
+      targets: ids.map(id => ({ id })) }] } }, ['not-selected']), /targeted mutation selection is missing/);
   assert.throws(() => qualificationMutationManifest({ ...fixture, id: 'missing-mutation',
     mutationManifests: [path] }, { calibration: { mutations: [{ backend: 'mongodb',
       targets: [{ id: 'not-present' }] }] } }), /mutation selection is missing/);
@@ -56,6 +63,15 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--backend', 'postgres', '--mutations']), /requires --release-candidate/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--release-candidate']), /requires --mutations/);
+  const targeted = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--mutations', '--mutation-id', 'one-defect']);
+  assert.deepEqual(targeted.mutationIds, ['one-defect']);
+  assert.equal(targeted.releaseCandidate, undefined);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--mutation-id', 'one-defect']), /requires --mutations/);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--mutations', '--release-candidate', '--mutation-id', 'one-defect']),
+  /cannot select individual mutations/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
     '--mutations', '--release-candidate', '--timeout-minutes', '120']).timeoutMinutes, 120);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
@@ -118,6 +134,13 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.equal(argv.includes('--reference-mutation-only'), true);
   assert.equal(after('--mutation-baseline-bundle').replaceAll('\\', '/'),
     '/results/clean/bundle.json');
+
+  args.mutationIds = ['one-defect'];
+  const targetedArgv = parallelMutationChildArgv(args,
+    { binding: { release: { id: 'ecommerce.l2-standard', version: '1.5.0' } } },
+    { artifactPath: '/results/w3.json', baselineBundle: '/results/clean/bundle.json',
+      repetition: 0, workerIndex: 2, workerCount: 4 });
+  assert.equal(targetedArgv[targetedArgv.indexOf('--mutation-id') + 1], 'one-defect');
 
   args.mutationCheckpointDir = '/results/checkpoints';
   const resumable = parallelMutationChildArgv(args,
