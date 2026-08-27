@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli -- build",
-    "generate-ts": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-cli -- generate --lang typescript --out-dir ts-codegen",
-    "publish": "cargo run -p spacetimedb-cli -- publish"
+    "build": "cargo spacetime build",
+    "generate-ts": "cargo spacetime generate --lang typescript --out-dir ts-codegen",
+    "publish": "cargo spacetime publish"
   },
   "keywords": [],
   "author": "",
