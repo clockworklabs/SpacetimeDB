@@ -1038,7 +1038,6 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
-      - *set-spacetime-bin
 
       - &expose-spacetime-cli
         name: Expose SpacetimeDB CLI on PATH
