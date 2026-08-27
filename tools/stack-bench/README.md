@@ -1,9 +1,9 @@
 # Stack Bench
 
-A machine-verified benchmark for LLM agents building real-time backend
-applications. The agent builds an app from a fixed prompt; the harness verifies
-it by driving real clients, hands back anything that failed, and lets the agent
-fix it — recording score, cost, tokens, fix rounds and wall time.
+A machine-verified benchmark for coding agents that build real-time
+applications. Each run uses versioned product work, stack guidance, grading,
+and budget inputs. The harness drives real clients, returns failed checks for
+correction, and records score, cost, tokens, correction rounds, and wall time.
 
 Correction rounds are a declared budget, not a promise that the first retry
 will improve the score. The harness keeps trying through a flat or rejected
@@ -25,8 +25,8 @@ budget, an operator can grant a finite number of additional rounds from that
 exact checkpoint. The new work is stored as a linked continuation; the original
 result is never rewritten. Campaign `retry` still means a fresh execution.
 
-Backends are interchangeable, so the model can be held fixed while the backend
-varies.
+Stack adapters are interchangeable. The model and requested work can remain
+fixed while the stack changes.
 
 The optional local dashboard is another client of the same controller, not a
 replacement for the CLI. It reads the same durable campaign artifacts and
@@ -39,7 +39,7 @@ and dashboard-started work remains fully operable from the CLI. See
 - `SETUP.md` — local prerequisites and first-run setup
 - `APPLIANCE-DESIGN.md` — appliance boundaries and execution model
 - `appliance/README.md` — Docker appliance operation
-- `dashboard/README.md` — optional web control room
+- `dashboard/README.md` — optional web dashboard
 - `grader/README.md` — grader architecture and evidence model
 - `tracks/ecommerce/composition/README.md` — packs, recipes, and release composition
 - `docs/dependency-graph.html` — generated ecommerce feature dependency graph
@@ -59,6 +59,8 @@ presentations belong in `docs/`.
 | `src/campaigns/` | campaign compilation, scheduling, locking, and reports |
 | `src/composition/` | tracks, packs, recipes, definitions, and calibration |
 | `src/evidence/` | artifacts, scoring, provenance, and evidence states |
+| `src/grading/` | grader execution and isolated check workers |
+| `src/progression/` | feature graphs, dependency state, strikes, and progression scoring |
 | `src/references/` | reference fixture selection and qualification |
 | `src/releases/` | release source, bundle, and signature verification |
 | `src/runtime/` | leases, containers, snapshots, recovery, and platform control |

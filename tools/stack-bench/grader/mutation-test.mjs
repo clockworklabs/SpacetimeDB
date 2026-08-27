@@ -261,6 +261,7 @@ function checkpointIdentity(groups, shard, track) {
     engineSha256: currentEngineIdentity().sha256,
     recipeSha256: args.expectedRecipeSha256,
     fixtureSha256: spec.fixtureSha256,
+    calibrationSha256: args.expectedCalibrationIdentity?.sha256 ?? null,
     imageId: args.imageId ?? null,
     backend: args.backend,
     track: args.track,

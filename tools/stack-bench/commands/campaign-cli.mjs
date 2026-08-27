@@ -126,8 +126,20 @@ async function main() {
   }
   if (['trial', 'run', 'resume'].includes(args.command)) {
     if (args.command === 'resume') validateResumeCampaign(args.path, args.directory);
-    const state = await executeCampaign(args.path, args.directory,
-      { mode: args.command === 'trial' ? 'model-free-trial' : 'frozen' });
+    const cancellation = new AbortController();
+    const cancel = () => cancellation.abort();
+    process.on('SIGINT', cancel);
+    process.on('SIGTERM', cancel);
+    let state;
+    try {
+      state = await executeCampaign(args.path, args.directory, {
+        mode: args.command === 'trial' ? 'model-free-trial' : 'frozen',
+        signal: cancellation.signal,
+      });
+    } finally {
+      process.off('SIGINT', cancel);
+      process.off('SIGTERM', cancel);
+    }
     console.log(JSON.stringify(campaignStateSummary(plan, state), null, 2));
     const audit = auditCompletedReferenceCampaign(args.directory, plan, state);
     if (audit !== null) console.log(formatProgressionReferenceCampaignAudit(audit));

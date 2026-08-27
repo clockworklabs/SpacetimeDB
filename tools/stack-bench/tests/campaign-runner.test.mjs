@@ -666,6 +666,30 @@ test('model-free campaign execution checkpoints an authorized retry and every co
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('campaign cancellation stops new claims and reaches the active process tree', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-cancel-'));
+  const cancellation = new AbortController();
+  let calls = 0;
+  try {
+    const state = await executeCampaign(example, root, { mode: 'model-free-trial',
+      signal: cancellation.signal,
+      admit: () => ({ id: 'cancel-admission', payload: { ok: true } }),
+      execute: async (_command, _argv, options) => {
+        calls += 1;
+        assert.equal(options.signal, cancellation.signal);
+        cancellation.abort();
+        return { code: null, signal: 'SIGTERM', timedOut: false, cancelled: true };
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(state.summary.executions, 1);
+    assert.equal(state.summary.running, 0);
+    assert.equal(state.summary.invalid, 1);
+    assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+    assert.match(state.attempts[0].executions[0].reason, /cancellation requested/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('one campaign runs multiple attempts of the same stack concurrently in isolated slots', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-parallel-'));
   try {

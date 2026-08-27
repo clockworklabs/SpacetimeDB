@@ -459,6 +459,11 @@ function readAttemptResult(plan, attempt, output, processResult) {
     retryAuthority: campaignRetryAuthority(result.run, {
       recoveryClean: publicRecoveryProvesCleanup(output, attempt.stack),
     }) });
+  if (processResult.cancelled === true) {
+    return withRetryAuthority({ exitCode: processResult.code, timedOut: false,
+      run: { outcome: { kind: 'scheduler_interrupted',
+        reason: 'campaign cancellation requested' } } });
+  }
   const runPath = join(output, 'run.json');
   let run = null;
   let artifactError = null;
@@ -738,7 +743,7 @@ export function reconcileCampaign(campaignFile, directory,
 
 export async function executeCampaign(campaignFile, directory,
   { mode = 'frozen', env = process.env, execute = runBounded,
-    admit = runCampaignAdmission, rescue = rescueSupervisedLease } = {}) {
+    admit = runCampaignAdmission, rescue = rescueSupervisedLease, signal = null } = {}) {
   const plan = compileCampaignFile(resolve(campaignFile));
   if (!['frozen', 'model-free-trial'].includes(mode)) {
     throw new Error(`unknown campaign execution mode ${JSON.stringify(mode)}`);
@@ -797,6 +802,7 @@ export async function executeCampaign(campaignFile, directory,
           stdio: 'inherit',
           logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
           timeoutMs: plan.definition.budgets.attemptTimeoutMinutes * 60_000,
+          signal,
         });
         processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
       } catch (error) {
@@ -848,9 +854,9 @@ export async function executeCampaign(campaignFile, directory,
     };
     const active = new Map();
     const invalidAtStart = state.summary.invalid;
-    let stopLaunching = false;
+    let stopLaunching = signal?.aborted === true;
     while (true) {
-      while (!stopLaunching && active.size < plan.summary.parallelism) {
+      while (!stopLaunching && !signal?.aborted && active.size < plan.summary.parallelism) {
         const next = claimNextAttempt(state, { admissionId: admission.id });
         state = next.state;
         if (!next.claim) break;
@@ -864,6 +870,7 @@ export async function executeCampaign(campaignFile, directory,
       if (!active.size) return state;
       const completed = await Promise.race(active.values());
       active.delete(completed.claim.executionId);
+      if (signal?.aborted) stopLaunching = true;
       if (completed.result.cleanupRequired === true) {
         // Keep the execution running in durable state. Its private supervisor
         // authority still exists, so reconcile can retry exact-owned cleanup.

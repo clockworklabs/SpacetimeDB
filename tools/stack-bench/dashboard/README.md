@@ -1,6 +1,6 @@
 # Stack Bench dashboard
 
-The dashboard is an optional local view and control surface over the existing
+The dashboard is an optional local view and interface for the existing
 Stack Bench CLI. It does not schedule attempts, grade applications, operate
 Docker, or repair source itself. Campaign plans, durable campaign state, run
 artifacts, and controller commands remain the source of truth.

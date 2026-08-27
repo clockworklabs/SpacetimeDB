@@ -66,8 +66,8 @@ the hashes are the proof:
   capabilities, evidence modes, and budgets;
 - `contentSha256` binds those two fingerprints into one exact recipe identity;
 - `sourceManifestSha256` separately binds track-relative source names and raw
-  bytes, so formatting-only source changes remain visible without creating a
-  false semantic cohort.
+  bytes, so formatting-only source changes remain visible without changing the
+  semantic identity.
 
 Saved releases include source digests and the compact check catalog. They do not
 copy fixture passwords, prompt contents, or the full executable grader plan.

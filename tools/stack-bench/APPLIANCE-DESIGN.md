@@ -13,7 +13,7 @@ The first distributable release supports one environment deliberately:
 V1 is not a general workstation installation. The controller needs the Docker
 socket to create, identify, and remove exact per-run containers. That socket is
 effectively root access to the runner. Host networking is also required so the
-controller, build containers, browser grader, dynamic lint server, databases,
+controller, build containers, grader, dynamic lint server, databases,
 and dedicated SpacetimeDB host keep the already-qualified address model. Those
 permissions are acceptable only because the supported runner is disposable and
 contains no unrelated data.
@@ -34,7 +34,7 @@ scenarios, recipes, calibration, or results. It receives only:
 - the exact selected stack dependencies, read-only;
 - its per-run provider transcript directory, read-write;
 - its per-run SpacetimeDB CLI configuration when that stack is selected;
-- the selected provider credential in the narrow form declared by its adapter.
+- a short-lived token for the controller-owned provider broker.
 
 ## V1 topology
 
@@ -44,7 +44,7 @@ The controller runs with:
 - `/var/run/docker.sock`, read-write;
 - `/var/lib/stack-bench`, bind-mounted at the identical host/container path;
 - a read-only release-dependency volume after initialization;
-- provider API keys as Compose secrets, never environment entries in the
+- provider credentials as Compose secrets, never environment entries in the
   Compose file;
 - no registry credential mount. The host pulls images before the controller
   starts.
@@ -83,18 +83,17 @@ release is unsupported if host networking or the fixed state path is changed.
 ## Secrets
 
 The release contains a template naming required secrets but no secret values.
-For the first live adapter, the operator supplies an API key file through
-Compose secrets. The controller reads it only to launch the selected coding
-container; it must not write it to an artifact, command log, transcript path,
-or long-lived environment block. Coding containers can read their own provider
-credential, which remains a declared residual risk.
+The operator supplies the selected provider credential as a secret file. The
+controller reads it and starts a provider broker for each coding session. The
+coding container receives a random session token and the broker URL. It does
+not receive the provider credential or credential file. The broker stops when
+the coding session ends.
 
-The coding process and every command it launches can read that credential and
-has outbound network access. V1 therefore requires a dedicated disposable
-runner and a credential scoped to the campaign and rotated immediately after
-use. It is not safe to supply a reusable developer credential. A credential
-broker that exchanges short-lived, attempt-bound grants is required before the
-appliance can run on a shared or persistent host.
+The controller must not write the provider credential to an artifact, command
+log, transcript path, or long-lived environment block. The controller still
+has the long-lived credential and root-equivalent Docker access. V1 therefore
+requires a dedicated disposable runner and a credential scoped to the
+campaign. A shared or persistent host is not supported.
 
 Developer-home credential mounts are not part of the appliance. They remain a
 local-development convenience only. Adding another provider requires its agent

@@ -213,6 +213,10 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
 
 export function classifyCampaignExecution({ exitCode = null, timedOut = false, run = null } = {}) {
   if (timedOut) return { status: 'invalid', outcome: 'timed_out', reason: 'attempt deadline expired' };
+  if (run?.outcome?.kind === 'scheduler_interrupted') {
+    return { status: 'invalid', outcome: 'scheduler_interrupted',
+      reason: run.outcome?.reason ?? 'scheduler was interrupted' };
+  }
   if (exitCode !== 0 && run?.outcome?.kind === 'harness_failure') {
     return { status: 'invalid', outcome: 'harness_failure',
       reason: `attempt process exited ${exitCode ?? 'without a code'}: ${run.outcome.reason ?? 'harness failed'}` };
@@ -223,8 +227,6 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
   if (run.contaminated === true) return { status: 'invalid', outcome: 'contaminated',
     reason: run.contamination?.verdict ?? 'run was contaminated' };
   const outcome = run.outcome?.kind ?? 'ungraded';
-  if (outcome === 'scheduler_interrupted') return { status: 'invalid', outcome,
-    reason: run.outcome?.reason ?? 'scheduler was interrupted' };
   if (TERMINAL_OUTCOMES.has(outcome)) return { status: 'completed', outcome, reason: null };
   if (INVALID_OUTCOMES.has(outcome)) return { status: 'invalid', outcome,
     reason: run.outcome?.reason ?? (outcome === 'inconclusive'

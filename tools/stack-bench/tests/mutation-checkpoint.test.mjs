@@ -9,6 +9,7 @@ function identity() {
     engineSha256: 'a'.repeat(64),
     recipeSha256: 'b'.repeat(64),
     fixtureSha256: 'c'.repeat(64),
+    calibrationSha256: '8'.repeat(64),
     imageId: 'sha256:image',
     backend: 'mongodb',
     track: 'ecommerce',
@@ -41,8 +42,8 @@ test('mutation checkpoints reuse only unchanged scenario groups', () => {
 });
 
 test('mutation checkpoints fail closed when a global identity changes', () => {
-  for (const field of ['engineSha256', 'recipeSha256', 'fixtureSha256', 'imageId',
-    'backend', 'track', 'level', 'trackSha256']) {
+  for (const field of ['engineSha256', 'recipeSha256', 'fixtureSha256',
+    'calibrationSha256', 'imageId', 'backend', 'track', 'level', 'trackSha256']) {
     const current = identity();
     current[field] = `changed-${field}`;
     assert.throws(() => reusableMutationEvidence(evidence(), current),

@@ -78,10 +78,7 @@ if [ -z "${STACK_BENCH_IN_CONTAINER:-}" ] && [ "$BACKEND" != "spacetime" ]; then
     # Git Bash rewrites a container-side /app into a Windows path before docker
     # ever sees it.
     export MSYS_NO_PATHCONV=1
-    # `tr -d '\r'`: this file is checked out with CRLF on Windows (git reports
-    # i/lf w/crlf). Git Bash tolerates that; the container's Linux bash does not
-    # — it reads `set -euo pipefail\r` and rejects "pipefail\r" as an option
-    # name, so the script dies on line 21 and the restart silently does nothing.
+    # Normalize the stream before the Linux container reads the script.
     tr -d '\r' < "$0" | docker exec -i -e STACK_BENCH_IN_CONTAINER=1 "$NAME" \
       bash -s -- "$BACKEND" /app "$PORT" "$PROBE" "$MODE"
     exit $?

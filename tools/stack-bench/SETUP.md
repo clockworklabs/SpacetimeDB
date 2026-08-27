@@ -53,9 +53,12 @@ current Claude Code adapter supports three mutually exclusive modes:
 - the explicit local recovery mode at `~/.claude/.credentials.json`.
 
 Select one mode. Conflicting sources fail closed. Secret values are not written
-to run artifacts or Docker command arguments. The coding container can read the
-credential selected for it, so production runs belong on a dedicated runner
-without unrelated data or credentials.
+to run artifacts or Docker command arguments. The controller exchanges the
+selected credential for a short-lived session token through its local provider
+broker. The coding container receives that token and never receives the
+provider credential or credential file. Production runs still belong on a
+dedicated runner because the controller holds the credential and has
+root-equivalent Docker access.
 
 ## Validate before model spend
 

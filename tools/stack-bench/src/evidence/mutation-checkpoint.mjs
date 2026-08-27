@@ -7,8 +7,8 @@ export function reusableMutationEvidence(prior, identity) {
   if (!checkpoint || checkpoint.schemaVersion !== 1) {
     throw new Error('mutation checkpoint is not resumable');
   }
-  for (const field of ['engineSha256', 'recipeSha256', 'fixtureSha256', 'imageId',
-    'backend', 'track', 'level', 'trackSha256', 'shard']) {
+  for (const field of ['engineSha256', 'recipeSha256', 'fixtureSha256',
+    'calibrationSha256', 'imageId', 'backend', 'track', 'level', 'trackSha256', 'shard']) {
     if (!sameValue(checkpoint[field], identity[field])) {
       throw new Error(`mutation checkpoint ${field} does not match the current run`);
     }

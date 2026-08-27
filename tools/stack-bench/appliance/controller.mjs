@@ -63,6 +63,15 @@ export function controllerChildEnvironment(source = process.env, { requireAgentA
   return env;
 }
 
+export function forwardControllerSignals(child, source = process) {
+  const listeners = new Map(['SIGINT', 'SIGTERM'].map(signal =>
+    [signal, () => child.kill(signal)]));
+  for (const [signal, listener] of listeners) source.on(signal, listener);
+  return () => {
+    for (const [signal, listener] of listeners) source.off(signal, listener);
+  };
+}
+
 function help() {
   process.stdout.write('Stack Bench controller\n\n'
     + 'Commands:\n'
@@ -96,11 +105,14 @@ async function main(argv) {
   const child = spawn(resolved.executable, resolved.args,
     { stdio: 'inherit', env: controllerChildEnvironment(process.env,
       { requireAgentAuth: controllerCommandRequiresAgentAuth(command, argv.slice(3)) }) });
-  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => child.kill(signal));
-  const outcome = await new Promise((resolveExit, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => resolveExit({ code, signal }));
-  });
+  const stopForwardingSignals = forwardControllerSignals(child);
+  let outcome;
+  try {
+    outcome = await new Promise((resolveExit, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolveExit({ code, signal }));
+    });
+  } finally { stopForwardingSignals(); }
   if (outcome.signal) process.kill(process.pid, outcome.signal);
   process.exitCode = outcome.code ?? 1;
 }

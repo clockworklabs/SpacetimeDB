@@ -118,6 +118,11 @@ export function campaignRunMetrics(run) {
     ? undefined
     : run.progressionStatus?.phase === 'terminal'
       ? number(run.progressionStatus?.score?.averagePercentage) : null;
+  const progressionCoverage = run.progressionStatus === undefined
+    ? undefined
+    : run.progressionStatus?.phase === 'terminal'
+      ? ratio(number(run.progressionStatus?.score?.uniqueChecks?.gradedPoints),
+        number(run.progressionStatus?.score?.uniqueChecks?.availablePoints)) : null;
   return {
     firstBuildScoreRate: ratio(firstScore, firstMax),
     finalScoreRate: progressionScore === undefined
@@ -126,10 +131,12 @@ export function campaignRunMetrics(run) {
     firstBuildCoverageRate: firstDeclaredMaxima.length
       && firstDeclaredMaxima.every(Number.isFinite)
       ? ratio(firstMax, firstDeclaredMaxima.reduce((total, value) => total + value, 0)) : null,
-    finalCoverageRate: finalMeasuredMaxima.length
-      && finalMeasuredMaxima.every(Number.isFinite) && finalDeclaredMaxima.every(Number.isFinite)
-      ? ratio(finalMeasuredMaxima.reduce((total, value) => total + value, 0),
-        finalDeclaredMaxima.reduce((total, value) => total + value, 0)) : null,
+    finalCoverageRate: progressionCoverage === undefined
+      ? finalMeasuredMaxima.length
+        && finalMeasuredMaxima.every(Number.isFinite) && finalDeclaredMaxima.every(Number.isFinite)
+        ? ratio(finalMeasuredMaxima.reduce((total, value) => total + value, 0),
+          finalDeclaredMaxima.reduce((total, value) => total + value, 0)) : null
+      : progressionCoverage,
     totalCostUsd: number(run.totals?.costUsd),
     totalDurationMs: number(run.totals?.durationSec) === null ? null : run.totals.durationSec * 1000,
     fixRounds: number(run.totals?.fixRounds),

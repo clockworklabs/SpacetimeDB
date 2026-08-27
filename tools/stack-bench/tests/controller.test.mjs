@@ -1,8 +1,21 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
 import { controllerChildEnvironment, controllerCommandRequiresAgentAuth,
-  resolveControllerCommand } from '../appliance/controller.mjs';
+  forwardControllerSignals, resolveControllerCommand } from '../appliance/controller.mjs';
+
+test('controller forwards repeated stop signals until its child exits', () => {
+  const source = new EventEmitter();
+  const received = [];
+  const stop = forwardControllerSignals({ kill: signal => received.push(signal) }, source);
+  source.emit('SIGINT');
+  source.emit('SIGINT');
+  source.emit('SIGTERM');
+  stop();
+  source.emit('SIGTERM');
+  assert.deepEqual(received, ['SIGINT', 'SIGINT', 'SIGTERM']);
+});
 
 test('controller exposes a small explicit operator command surface', () => {
   assert.equal(resolveControllerCommand([]), null);
