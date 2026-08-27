@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{ensure, Result};
-use ci_common::pnpm;
+use ci_common::{cargo, pnpm};
 use clap::Parser;
 use duct::cmd;
 
@@ -34,8 +34,7 @@ fn main() -> Result<()> {
 
     // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
     // Smoketests have their own dedicated command: `cargo ci smoketests`
-    cmd!(
-        "cargo",
+    cargo([
         "test",
         "-vv",
         "--all",
@@ -48,14 +47,13 @@ fn main() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
-    )
+        "unreal",
+    ])
     .run()?;
     // Bindings snapshot tests rely on the unstable feature,
     // as they compile and test APIs which are gated behind that feature,
     // e.g. procedures, HTTP handlers.
-    cmd!(
-        "cargo",
+    cargo([
         "test",
         "-vv",
         "-p",
@@ -64,13 +62,12 @@ fn main() -> Result<()> {
         "unstable",
         "--",
         "--test-threads=2",
-    )
+    ])
     .run()?;
     // The SDK test harness uses the same child-process server guard as smoketests,
     // which expects release CLI/standalone binaries to already exist.
     if !cli.no_build {
-        cmd!(
-            "cargo",
+        cargo([
             "build",
             "-vv",
             "--release",
@@ -80,12 +77,11 @@ fn main() -> Result<()> {
             "spacetimedb-standalone",
             "--features",
             "spacetimedb-standalone/allow_loopback_http_for_tests",
-        )
+        ])
         .run()?;
     }
     // SDK procedure tests intentionally make localhost HTTP requests.
-    cmd!(
-        "cargo",
+    cargo([
         "test",
         "-vv",
         "-p",
@@ -95,12 +91,11 @@ fn main() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
-    )
+        "unreal",
+    ])
     .run()?;
     // Run the same SDK suite against wasm/browser test clients.
-    cmd!(
-        "cargo",
+    cargo([
         "test",
         "-vv",
         "-p",
@@ -110,16 +105,15 @@ fn main() -> Result<()> {
         "--",
         "--test-threads=2",
         "--skip",
-        "unreal"
-    )
+        "unreal",
+    ])
     .run()?;
     // TODO: This should check for a diff at the start. If there is one, we should alert the user
     // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
     // if they want those checks.
 
     // The fallocate tests have been flakely when running in parallel
-    cmd!(
-        "cargo",
+    cargo([
         "test",
         "-vv",
         "-p",
@@ -128,18 +122,17 @@ fn main() -> Result<()> {
         "fallocate",
         "--",
         "--test-threads=1",
-    )
+    ])
     .run()?;
     cmd!("bash", "tools/check-diff.sh").run()?;
-    cmd!(
-        "cargo",
+    cargo([
         "run",
         "-vv",
         "-p",
         "spacetimedb-codegen",
         "--example",
         "regen-csharp-moduledef",
-    )
+    ])
     .run()?;
     cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
     cmd!("dotnet", "test", "-warnaserror")

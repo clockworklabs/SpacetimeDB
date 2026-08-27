@@ -4,6 +4,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub fn ensure_repo_root() -> Result<()> {
     if !Path::new("Cargo.toml").exists() {
@@ -57,11 +58,29 @@ where
     S: AsRef<OsStr>,
 {
     let args: Vec<std::ffi::OsString> = args.into_iter().map(|a| a.as_ref().to_os_string()).collect();
-    if cfg!(windows) {
+    let expression = if cfg!(windows) {
         let mut full: Vec<std::ffi::OsString> = vec!["/c".into(), "pnpm".into()];
         full.extend(args);
         cmd("cmd", full)
     } else {
         cmd("pnpm", args)
-    }
+    };
+    expression.env_remove("CARGO_MANIFEST_DIR")
+}
+
+/// Launch Cargo without package-specific variables inherited from a parent
+/// process that Cargo itself built and ran.
+pub fn cargo<I, S>(args: I) -> Expression
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let args: Vec<std::ffi::OsString> = args.into_iter().map(|a| a.as_ref().to_os_string()).collect();
+    cmd("cargo", args).env_remove("CARGO_MANIFEST_DIR")
+}
+
+pub fn cargo_command() -> Command {
+    let mut command = Command::new("cargo");
+    command.env_remove("CARGO_MANIFEST_DIR");
+    command
 }

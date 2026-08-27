@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{ensure, Result};
+use ci_common::cargo;
 use clap::Parser;
 use duct::cmd;
 use std::{env, path::PathBuf};
@@ -33,7 +34,7 @@ fn main() -> Result<()> {
             env::var_os("SPACETIME_BIN").is_none(),
             "SPACETIME_BIN requires --no-build"
         );
-        cmd!("cargo", "build", "-vv", "-p", "spacetimedb-cli").run()?;
+        cargo(["build", "-vv", "-p", "spacetimedb-cli"]).run()?;
         target_dir()
             .join("debug/spacetimedb-cli")
             .with_extension(env::consts::EXE_EXTENSION)
@@ -41,7 +42,7 @@ fn main() -> Result<()> {
 
     // A fresh module gets the latest versions permitted by its dependency constraints rather
     // than the exact versions pinned in this repository's committed lockfile.
-    cmd!("cargo", "update", "-vv").run()?;
+    cargo(["update", "-vv"]).run()?;
     cmd!(cli_path, "build", "--module-path", "modules/module-test").run()?;
 
     Ok(())

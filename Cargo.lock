@@ -985,6 +985,7 @@ name = "ci-run-spacetime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "duct",
 ]
 
@@ -1029,6 +1030,7 @@ name = "ci-update-flow"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "clap 4.5.50",
  "duct",
  "tempfile",
@@ -1039,6 +1041,7 @@ name = "ci-version-upgrade-check"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "clap 4.5.50",
  "duct",
 ]

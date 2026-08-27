@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Context, Result};
-use ci_common::{ensure_repo_root, pnpm};
+use ci_common::{cargo, ensure_repo_root, pnpm};
 use clap::Parser;
 use duct::cmd;
 use serde_json::Value;
@@ -305,8 +305,7 @@ fn main() -> Result<()> {
         args.extend(batch.iter().map(|path| path.as_os_str().to_os_string()));
         cmd("rustfmt", args).run()?;
     }
-    cmd!(
-        "cargo",
+    cargo([
         "clippy",
         "-vv",
         "--timings",
@@ -316,10 +315,9 @@ fn main() -> Result<()> {
         "--",
         "-D",
         "warnings",
-    )
+    ])
     .run()?;
-    cmd!(
-        "cargo",
+    cargo([
         "clippy",
         "-vv",
         "--timings",
@@ -331,23 +329,23 @@ fn main() -> Result<()> {
         "--",
         "-D",
         "warnings",
-    )
+    ])
     .run()?;
     cmd!("dotnet", "tool", "restore").dir("crates/bindings-csharp").run()?;
     cmd!("dotnet", "csharpier", "--check", ".")
         .dir("crates/bindings-csharp")
         .run()?;
     pnpm(["lint"]).run()?;
-    cmd!("cargo", "test", "-vv", "--doc", "--target", "wasm32-unknown-unknown")
+    cargo(["test", "-vv", "--doc", "--target", "wasm32-unknown-unknown"])
         .dir("crates/bindings")
         .run()?;
-    cmd!("cargo", "test", "-vv", "--doc").dir("crates/bindings").run()?;
+    cargo(["test", "-vv", "--doc"]).dir("crates/bindings").run()?;
     // `bindings` is the only crate we care strongly about documenting,
     // since we link to its docs.rs from our website.
     // We won't pass `--no-deps`, though,
     // since we want everything reachable through it to also work.
     // This includes `sats` and `lib`.
-    cmd!("cargo", "doc", "-vv")
+    cargo(["doc", "-vv"])
         .dir("crates/bindings")
         // Make `cargo doc` exit with error on warnings, most notably broken links
         .env("RUSTDOCFLAGS", "--deny warnings")

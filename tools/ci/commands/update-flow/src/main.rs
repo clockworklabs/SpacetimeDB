@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
+use ci_common::cargo;
 use clap::Parser;
 use duct::cmd;
 
@@ -38,8 +39,7 @@ fn main() -> Result<()> {
         common_args.push("github-token-auth");
     }
 
-    cmd(
-        "cargo",
+    cargo(
         ["build", "-vv", "-p", "spacetimedb-update"]
             .into_iter()
             .chain(common_args.clone()),
@@ -51,8 +51,7 @@ fn main() -> Result<()> {
     let root_dir = tempfile::tempdir()?;
     let root_dir_string = root_dir.path().to_string_lossy().to_string();
     let root_arg = format!("--root-dir={}", root_dir_string);
-    cmd(
-        "cargo",
+    cargo(
         ["run", "-vv", "-p", "spacetimedb-update"]
             .into_iter()
             .chain(common_args.clone())

@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
+use ci_common::cargo_command;
 use clap::{Parser, Subcommand, ValueEnum};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
@@ -119,13 +120,13 @@ fn main() -> Result<()> {
 }
 
 fn build_cli() -> Result<()> {
-    let mut cmd = Command::new("cargo");
+    let mut cmd = cargo_command();
     cmd.args(["build", "-vv", "--timings", "--release", "-p", "spacetimedb-cli"]);
     run_binary_build(cmd, "Failed to build CLI")
 }
 
 fn build_standalone() -> Result<()> {
-    let mut cmd = Command::new("cargo");
+    let mut cmd = cargo_command();
     cmd.args([
         "build",
         "-vv",
@@ -174,7 +175,7 @@ fn build_precompiled_modules() -> Result<()> {
 
     eprintln!("Building pre-compiled smoketest modules...");
 
-    let status = Command::new("cargo")
+    let status = cargo_command()
         .args([
             "build",
             "-vv",
@@ -195,7 +196,7 @@ fn build_precompiled_modules() -> Result<()> {
 fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> {
     build_precompiled_modules()?;
 
-    let status = Command::new("cargo")
+    let status = cargo_command()
         .args(["nextest", "archive", "--timings", "-p", "spacetimedb-smoketests"])
         .args(suite.cargo_args())
         .arg("--archive-file")
@@ -220,7 +221,7 @@ fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
     let base_config_dir = prepare_base_config(&cli_path, None, None)?;
     let base_config_path = base_config_dir.path().join("config.toml");
 
-    let mut cmd = Command::new("cargo");
+    let mut cmd = cargo_command();
     set_env(&mut cmd, None, true, false, &base_config_path);
     cmd.args(["nextest", "run", "--archive-file"])
         .arg(archive_file)
@@ -270,7 +271,7 @@ fn run_smoketest(
     let base_config_path = base_config_dir.path().join("config.toml");
 
     // 4. Detect whether to use nextest or cargo test
-    let use_nextest = Command::new("cargo")
+    let use_nextest = cargo_command()
         .args(["nextest", "--version"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -285,7 +286,7 @@ fn run_smoketest(
     // 5. Run tests with appropriate runner (release mode for faster execution)
     let mut cmd = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
-        let mut cmd = Command::new("cargo");
+        let mut cmd = cargo_command();
         set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
         cmd.args(["nextest", "run", "--release", "-p", "spacetimedb-smoketests"])
             .args(suite.cargo_args())
@@ -302,7 +303,7 @@ fn run_smoketest(
         cmd
     } else {
         eprintln!("Running smoketests with cargo test...\n");
-        let mut cmd = Command::new("cargo");
+        let mut cmd = cargo_command();
         set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"])
             .args(suite.cargo_args());

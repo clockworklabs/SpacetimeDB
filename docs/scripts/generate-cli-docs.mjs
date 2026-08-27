@@ -13,12 +13,15 @@ function getRepoRoot() {
 function runCargoAndAppend({ cwd, outFilePath }) {
   return new Promise((resolve, reject) => {
     const outStream = createWriteStream(outFilePath, { flags: 'a' });
+    const env = { ...process.env };
+    delete env.CARGO_MANIFEST_DIR;
 
     const child = spawn(
       'cargo',
-      ['run', '--features', 'markdown-docs', '-p', 'spacetimedb-cli'],
+      ['run', '-vv', '--timings', '--features', 'markdown-docs', '-p', 'spacetimedb-cli'],
       {
         cwd,
+        env,
         stdio: ['ignore', 'pipe', 'inherit'],
       },
     );

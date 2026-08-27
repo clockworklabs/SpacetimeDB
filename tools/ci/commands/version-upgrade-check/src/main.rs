@@ -1,23 +1,22 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
+use ci_common::cargo;
 use clap::Parser;
-use duct::cmd;
 
 /// Verifies that the repository version upgrade tool still works.
 #[derive(Parser)]
 struct Cli {}
 
 fn run_version_upgrade_check() -> Result<()> {
-    cmd!(
-        "cargo",
+    cargo([
         "bump-versions",
         "123.456.789",
         "--rust-and-cli",
         "--csharp",
         "--typescript",
         "--cpp",
-        "--accept-snapshots"
-    )
+        "--accept-snapshots",
+    ])
     .run()?;
     Ok(())
 }
