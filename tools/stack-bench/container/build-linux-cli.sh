@@ -18,10 +18,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 OUT="$HERE/bin"
 
-# Git Bash rewrites container-side paths into Windows ones and every mount lands
-# somewhere wrong.
-export MSYS_NO_PATHCONV=1
-
 # This digest is the linux/amd64 manifest for rust:1.93-slim-bookworm. Update it
 # with rust-toolchain.toml and the expected image in binary-provenance.mjs.
 IMAGE="rust:1.93-slim-bookworm@sha256:8f8609d448e821fbc0e44241bc5ca4ce49663cc6306ff1a17f655a0e2a7cd084"
@@ -42,7 +38,9 @@ docker volume create "$VOLUME" >/dev/null
 echo "building spacetimedb-cli for linux (image $IMAGE, target volume $VOLUME)"
 echo "  first build compiles the whole workspace and takes a while; later ones reuse the volume"
 
-docker run --rm --platform linux/amd64 \
+# Git Bash must not rewrite container-side paths in this Docker command. Keep
+# the setting local so host-side Node paths still convert normally.
+MSYS_NO_PATHCONV=1 docker run --rm --platform linux/amd64 \
   -v "$REPO:/src" \
   -v "$VOLUME:/target" \
   -v "$OUT:/out" \
@@ -70,7 +68,7 @@ docker run --rm --platform linux/amd64 \
 echo ""
 file "$OUT/spacetimedb-cli" 2>/dev/null || true
 file "$OUT/spacetimedb-standalone" 2>/dev/null || true
-docker run --rm -v "$OUT:/deps:ro" "${STACK_BENCH_IMAGE:-stack-bench-build:2.1.226}" \
+MSYS_NO_PATHCONV=1 docker run --rm -v "$OUT:/deps:ro" "${STACK_BENCH_IMAGE:-stack-bench-build:2.1.226}" \
   sh -c 'test -x /deps/spacetimedb-standalone && /deps/spacetimedb-cli --version'
 
 node "$HERE/binary-provenance.mjs" record --repo "$REPO" --source-file "$SOURCE_RECORD"
