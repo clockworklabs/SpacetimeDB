@@ -159,9 +159,6 @@ jobs:
         name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: print dir
-        run: pwd -P
-
       - name: Build CLI and standalone
         shell: bash
         run: |
