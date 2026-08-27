@@ -45,6 +45,10 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
         id,
         title: definition.title,
         level: definition.level,
+        // The questline and the dependency ids let a view draw the graph the
+        // engine walks, instead of re-deriving structure from prose.
+        questline: definition.questline,
+        dependencies: definition.dependencies.map(dependency => dependency.id),
         status: node.status,
         checks: {
           passed: checks.filter(value => value === 'pass').length,
@@ -71,6 +75,11 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
           || node.checks.failed > 0),
         locked: nodes.filter(node => ['locked', 'blocked'].includes(node.status)),
       },
+      questlines: state.definition.questlines.map(questline => ({
+        id: questline.id, title: questline.title,
+        // the declared, ordered membership — a view must never re-derive it
+        nodes: [...questline.nodes] })),
+      nodes,
       score: progressionEngine.score(state),
       evidence: state.attempts.map((item, index) => ({
         attempt: index + 1,

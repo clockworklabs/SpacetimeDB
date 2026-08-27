@@ -415,6 +415,55 @@ input { font-family: var(--font-source); }
 .form-message { min-height: 18px; margin-top: 12px; color: var(--yellow); font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
+/* ------------------------------------------------------- constellation
+ * The dependency graph, one column per stack on one shared layout. Hue keeps
+ * its one meaning: green is a feature that holds, yellow is one that stopped,
+ * dim never unlocked. */
+.constellation { overflow-x: auto; padding: 14px 4px 6px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--panel); }
+.constellation svg { display: block; }
+.constellation text { font-family: var(--font-source); }
+.cq { font-size: 10px; fill: var(--muted); }
+.ch-name { font-size: 11px; fill: var(--copy); letter-spacing: 0.4px; }
+.ch-score { font-size: 15px; fill: var(--green); font-variant-numeric: tabular-nums; }
+.ch-score.prov { fill: var(--copy); }
+.ch-sub { font-size: 9px; fill: var(--muted); }
+.ls { stroke: var(--line-bright); stroke-width: 1.4; }
+.ls.lit { stroke: var(--green); opacity: 0.6; }
+.lq { font-size: 10px; fill: var(--copy); font-variant-numeric: tabular-nums; }
+.cn { fill: none; stroke: var(--line-bright); stroke-width: 1.4; }
+.cn.pass { fill: var(--green); stroke: var(--green); }
+.cn.act { stroke: var(--green); animation: cn-pulse 1.6s ease-in-out infinite; }
+.cn.warn { fill: var(--yellow); stroke: var(--yellow); }
+.cn.fail { fill: var(--red); stroke: var(--red); }
+.cn.off { stroke: var(--line-bright); }
+@keyframes cn-pulse { 0%, 100% { stroke-opacity: 0.35; } 50% { stroke-opacity: 1; } }
+.constellation-note { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ql-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+.ql-head h3 { margin-bottom: 0; }
+.ql-toggle { display: flex; gap: 2px; }
+.ql-toggle button {
+  all: unset; cursor: pointer; padding: 4px 9px;
+  color: var(--muted); font: 11px var(--font-source); letter-spacing: 0.4px;
+  border-radius: var(--radius);
+}
+.ql-toggle button:hover { color: var(--copy); }
+.ql-toggle button.on { color: var(--ink); background: var(--raised); }
+.ql-toggle button:focus-visible { outline: 2px solid var(--green); }
+.gq { font-size: 9px; fill: var(--muted); }
+.sn { font-size: 9px; fill: var(--copy); }
+.sn.dim { fill: var(--muted); }
+/* the single-stack dependency graph: dots on real prerequisite edges, named
+ * only where something needs attention */
+.fail-line { margin: 6px 2px 0; color: var(--muted); font: 11.5px/1.6 var(--font-source); }
+.fail-line b { color: var(--red); font-weight: 400; }
+.fail-line i { color: var(--yellow); font-style: normal; }
+.de { fill: none; stroke: var(--line-bright); stroke-width: 1.1; opacity: 0.45; }
+.de.lit { stroke: var(--green); opacity: 0.55; }
+.de.cut { stroke: var(--red); stroke-dasharray: 3 4; opacity: 0.55; }
+.de.cut.warn { stroke: var(--yellow); }
+.lq.full { fill: var(--green); }
+.gq-rule { stroke: var(--line-bright); stroke-width: 1; }
+
 /* ------------------------------------------------------------------ detail */
 
 .detail-block { margin-top: 20px; }

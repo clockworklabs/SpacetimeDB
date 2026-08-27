@@ -13,7 +13,7 @@ const MIN_REPETITIONS = 3;
 // other is the record.
 const ARCHIVE_AFTER_MS = 72 * 3600 * 1000;
 
-const state = { overview: null, csrfToken: null, controlSecret: null,
+const state = { questlineView: 'questlines', overview: null, csrfToken: null, controlSecret: null,
   selectedPlan: null, showArchived: false,
   openCampaign: null, expanded: new Set(), collapsed: new Set(),
   lastRefreshAt: null, prevScores: new Map() };
@@ -623,6 +623,305 @@ function levelTable(attempt) {
   </table></div>`;
 }
 
+
+// ------------------------------------------------------------- questlines
+
+// A questline reads as a journey: its stations in order, lit as far as the run
+// got. The dependency edges stay in the engine and the tooltips — drawing all
+// of them made the picture about the compiler instead of the product.
+function questlineLanes(dependency) {
+  const nodes = dependency.nodes ?? [];
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const depths = new Map();
+  const depthOf = id => {
+    if (depths.has(id)) return depths.get(id);
+    depths.set(id, 0);
+    const node = byId.get(id);
+    const parents = (node?.dependencies ?? []).filter(parent => byId.has(parent));
+    const value = parents.length ? 1 + Math.max(...parents.map(depthOf)) : 0;
+    depths.set(id, value);
+    return value;
+  };
+  nodes.forEach(node => depthOf(node.id));
+  // the definition declares each questline's order; sorting by depth is only a
+  // fallback for state written before the ordered lists were exposed
+  return (dependency.questlines ?? []).map(questline => ({
+    id: questline.id,
+    title: questline.title,
+    stations: Array.isArray(questline.nodes) && questline.nodes.length
+      ? questline.nodes.map(id => byId.get(id)).filter(Boolean)
+      : nodes.filter(node => node.questline === questline.id)
+        .sort((a, b) => depthOf(a.id) - depthOf(b.id) || a.id.localeCompare(b.id)),
+  })).filter(lane => lane.stations.length);
+}
+
+// exhausted is terminal — the strikes are gone — so it reads as red. A
+// regression is a live fight, so it keeps the warning yellow.
+const NODE_CLASS = { passed: 'pass', active: 'act', exhausted: 'fail', regressed: 'warn',
+  blocked: 'off', locked: 'off' };
+
+// Why a station is dark, in its own words: the first unmet prerequisite.
+function stationTip(node, byId) {
+  const state = statusLabel(node.status) ?? node.status;
+  if (node.status === 'blocked' || node.status === 'locked') {
+    const missing = (node.dependencies ?? []).map(id => byId.get(id))
+      .find(parent => parent && parent.status !== 'passed');
+    if (missing) return `${node.title} — waiting on ${missing.title}`;
+  }
+  return `${node.title} — ${state}`
+    + (node.checks.total ? ` · ${node.checks.passed}/${node.checks.total} checks` : '');
+}
+
+function questlineColumn(lanes, dependency, layout, offsetX) {
+  const byId = new Map((dependency.nodes ?? []).map(node => [node.id, node]));
+  const scores = new Map((dependency.score?.questlines ?? [])
+    .map(questline => [questline.id, questline]));
+  const parts = lanes.map((lane, index) => {
+    const y = layout.top + index * layout.laneH;
+    const stations = lane.stations.map(node => byId.get(node.id) ?? node);
+    const pieces = [];
+    for (let i = 0; i < stations.length - 1; i += 1) {
+      const lit = stations[i].status === 'passed' && stations[i + 1].status === 'passed';
+      pieces.push(`<line class="ls${lit ? ' lit' : ''}" x1="${layout.x0 + i * layout.step}" y1="${y}" x2="${layout.x0 + (i + 1) * layout.step}" y2="${y}"/>`);
+    }
+    stations.forEach((node, i) => {
+      pieces.push(`<g><circle class="cn ${NODE_CLASS[node.status] ?? 'off'}" cx="${layout.x0 + i * layout.step}" cy="${y}" r="4"/>`
+        + `<title>${escapeHtml(stationTip(node, byId))}</title></g>`);
+    });
+    const score = scores.get(lane.id);
+    const value = score?.percentage ?? (score?.availablePoints
+      ? Math.round(100 * score.passedPoints / score.availablePoints) : null);
+    pieces.push(`<text class="lq" x="${layout.width - 8}" y="${y + 3}" text-anchor="end">${value == null ? '—' : `${value}%`}</text>`);
+    return pieces.join('');
+  });
+  return `<g transform="translate(${offsetX} 0)">${parts.join('')}</g>`;
+}
+
+// The same journeys transposed: one row per stack, every questline in one
+// strip, so three stacks compare down a single page of three lines.
+function questlineStrip(columns, lanes) {
+  const LEFT = 118, STEP = 12, PAD = 5, GAP = 12, TOP = 58, ROWH = 34;
+  const groups = [];
+  let x = LEFT;
+  for (const lane of lanes) {
+    const width = PAD * 2 + (lane.stations.length - 1) * STEP;
+    groups.push({ lane, x, width });
+    x += width + GAP;
+  }
+  const statsX = x + 4;
+  const width = statsX + 96;
+  const height = TOP + columns.length * ROWH + 2;
+
+  const headers = groups.map(group => {
+    const short = group.lane.title.length > 15 ? `${group.lane.title.slice(0, 14)}…` : group.lane.title;
+    return `<g><text class="gq" x="${group.x + 2}" y="${TOP - 14}" transform="rotate(-30 ${group.x + 2} ${TOP - 14})">${escapeHtml(short)}</text>`
+      + `<title>${escapeHtml(group.lane.title)}</title></g>`
+      + `<line class="gq-rule" x1="${group.x}" y1="${TOP - 8}" x2="${group.x + group.width}" y2="${TOP - 8}"/>`;
+  }).join('');
+
+  const rows = columns.map(({ stack, attempt }, index) => {
+    const y = TOP + index * ROWH + 14;
+    const byId = new Map((attempt.dependency.nodes ?? []).map(node => [node.id, node]));
+    const pieces = [];
+    for (const group of groups) {
+      const stations = group.lane.stations.map(node => byId.get(node.id) ?? node);
+      for (let i = 0; i < stations.length - 1; i += 1) {
+        const lit = stations[i].status === 'passed' && stations[i + 1].status === 'passed';
+        pieces.push(`<line class="ls${lit ? ' lit' : ''}" x1="${group.x + PAD + i * STEP}" y1="${y}" x2="${group.x + PAD + (i + 1) * STEP}" y2="${y}"/>`);
+      }
+      stations.forEach((node, i) => {
+        pieces.push(`<g><circle class="cn ${NODE_CLASS[node.status] ?? 'off'}" cx="${group.x + PAD + i * STEP}" cy="${y}" r="3.4"/>`
+          + `<title>${escapeHtml(`${group.lane.title}: ${stationTip(node, byId)}`)}</title></g>`);
+      });
+    }
+    const score = attempt.dependency.score;
+    const final = score?.status === 'final';
+    const unique = score?.uniqueChecks;
+    const value = final && score.averagePercentage != null ? Math.round(score.averagePercentage)
+      : unique?.availablePoints ? Math.round(100 * unique.passedPoints / unique.availablePoints) : null;
+    const spend = attemptSpend(attempt);
+    return `<g>
+      <text class="ch-name" x="${LEFT - 14}" y="${y - 4}" text-anchor="end">${escapeHtml(title(stack))}</text>
+      <text class="ch-sub" x="${LEFT - 14}" y="${y + 9}" text-anchor="end">${spend == null ? '' : escapeHtml(money(spend))}</text>
+      <text class="ch-score${final ? '' : ' prov'}" x="${statsX}" y="${y + 5}">${value == null ? '—' : `${value}%`}</text>
+      ${pieces.join('')}
+    </g>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" role="img"
+    aria-label="one row per stack, every questline as a strip of stations">${headers}${rows}</svg>`;
+}
+
+// One stack with the panel to itself: the real dependency graph, every node
+// named, every edge a declared prerequisite. Columns are dependency depth,
+// bands are questlines, and a failed node visibly cuts the branch it blocks.
+function questlineSingle(column, lanes) {
+  const { attempt } = column;
+  const nodes = attempt.dependency.nodes ?? [];
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const scores = new Map((attempt.dependency.score?.questlines ?? [])
+    .map(questline => [questline.id, questline]));
+  const depths = new Map();
+  const depthOf = id => {
+    if (depths.has(id)) return depths.get(id);
+    depths.set(id, 0);
+    const node = byId.get(id);
+    const parents = (node?.dependencies ?? []).filter(parent => byId.has(parent));
+    const value = parents.length ? 1 + Math.max(...parents.map(depthOf)) : 0;
+    depths.set(id, value);
+    return value;
+  };
+  nodes.forEach(node => depthOf(node.id));
+  const maxDepth = Math.max(0, ...depths.values());
+
+  // the columns spread to the panel rather than huddling at a fixed step —
+  // without node labels the width is free, and longer edges cross less steeply
+  const LABEL = 148, ROWH = 26, BANDPAD = 12, TOP = 56, WIDTH = 800;
+  const STEP = Math.floor((WIDTH - LABEL - 20 - 40 - 54) / Math.max(1, maxDepth));
+  const colX = depth => LABEL + 20 + depth * STEP;
+  const width = WIDTH;
+
+  // band layout: within a questline, stack nodes that share a depth
+  const positions = new Map();
+  let y = TOP;
+  const bands = lanes.map(lane => {
+    const slots = new Map();
+    let rows = 1;
+    for (const station of lane.stations) {
+      const depth = depthOf(station.id);
+      const slot = slots.get(depth) ?? 0;
+      slots.set(depth, slot + 1);
+      rows = Math.max(rows, slot + 1);
+      positions.set(station.id, { x: colX(depth), y: y + 6 + slot * ROWH });
+    }
+    const band = { lane, top: y, rows };
+    y += rows * ROWH + BANDPAD;
+    return band;
+  });
+  const height = y - BANDPAD + 8;
+
+  const score = attempt.dependency.score;
+  const final = score?.status === 'final';
+  const unique = score?.uniqueChecks;
+  const value = final && score.averagePercentage != null ? Math.round(score.averagePercentage)
+    : unique?.availablePoints ? Math.round(100 * unique.passedPoints / unique.availablePoints) : null;
+  const spend = attemptSpend(attempt);
+  const passed = nodes.filter(node => node.status === 'passed').length;
+  const head = `<text class="ch-name" x="${LABEL}" y="16">${escapeHtml(title(column.stack))}</text>
+    <text class="ch-score${final ? '' : ' prov'}" x="${LABEL}" y="38">${value == null ? '—' : `${value}%`}</text>
+    <text class="ch-sub" x="${width - 10}" y="38" text-anchor="end">${escapeHtml(`${passed}/${nodes.length}${spend == null ? '' : ` · ${money(spend)}`}`)}</text>`;
+
+  // edges under nodes: a lit edge joins two passes; a cut edge leaves a node
+  // that conclusively failed, and carries the blockage story
+  const edges = nodes.flatMap(node => (node.dependencies ?? [])
+    .filter(parent => positions.has(parent) && positions.has(node.id)).map(parent => {
+      const from = positions.get(parent), to = positions.get(node.id);
+      const x1 = from.x + 6, y1 = from.y;
+      const x2 = to.x - 6, y2 = to.y;
+      const parentStatus = byId.get(parent)?.status;
+      const cls = parentStatus === 'passed' && node.status === 'passed' ? ' lit'
+        : parentStatus === 'exhausted' ? ' cut'
+        : parentStatus === 'regressed' ? ' cut warn' : '';
+      const bend = Math.max(14, (x2 - x1) / 2);
+      return `<path class="de${cls}" d="M${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}"/>`;
+    }));
+
+  // dots and edges only — a label floating in a graph always finds something
+  // to collide with, so the names of the broken nodes live below the drawing
+  const pills = nodes.filter(node => positions.has(node.id)).map(node => {
+    const point = positions.get(node.id);
+    return `<g><circle class="cn ${NODE_CLASS[node.status] ?? 'off'}" cx="${point.x}" cy="${point.y}" r="5.5"/>`
+      + `<title>${escapeHtml(stationTip(node, byId))}</title></g>`;
+  });
+
+  const sides = bands.map(band => {
+    const laneY = band.top + 6 + ((band.rows - 1) * ROWH) / 2;
+    const laneScore = scores.get(band.lane.id);
+    const laneValue = laneScore?.percentage ?? (laneScore?.availablePoints
+      ? Math.round(100 * laneScore.passedPoints / laneScore.availablePoints) : null);
+    const words = band.lane.title.split(' ');
+    const label = band.lane.title.length <= 20 || words.length < 2
+      ? `<text class="cq" x="${LABEL - 14}" y="${laneY + 3}" text-anchor="end">${escapeHtml(band.lane.title)}</text>`
+      : `<text class="cq" x="${LABEL - 14}" y="${laneY - 2}" text-anchor="end">${escapeHtml(words.slice(0, Math.ceil(words.length / 2)).join(' '))}</text>`
+        + `<text class="cq" x="${LABEL - 14}" y="${laneY + 9}" text-anchor="end">${escapeHtml(words.slice(Math.ceil(words.length / 2)).join(' '))}</text>`;
+    return label + `<text class="lq${laneValue === 100 ? ' full' : ''}" x="${width - 10}" y="${laneY + 3}" text-anchor="end">${laneValue == null ? '—' : `${laneValue}%`}</text>`;
+  }).join('');
+
+  // the graph's only prose: what is red and what is yellow, by full name
+  const exhausted = nodes.filter(node => node.status === 'exhausted').map(node => node.title);
+  const regressed = nodes.filter(node => node.status === 'regressed').map(node => node.title);
+  const failLine = exhausted.length || regressed.length
+    ? `<p class="fail-line">${exhausted.length ? `<b>Out of strikes:</b> ${escapeHtml(exhausted.join(', '))}` : ''}${exhausted.length && regressed.length ? ' · ' : ''}${regressed.length ? `<i>Regressed:</i> ${escapeHtml(regressed.join(', '))}` : ''}</p>`
+    : '';
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" role="img"
+    aria-label="${escapeHtml(`${title(column.stack)} dependency graph`)}">${head}${sides}${edges.join('')}${pills.join('')}</svg>${failLine}`;
+}
+
+// The section only appears on dependency-mode campaigns with recorded state.
+// Every stack is drawn to the same rules; what differs is how far each journey
+// got before the strikes ran out.
+function dependencyConstellation(campaign) {
+  if (campaign.mode !== 'dependency') return '';
+  const columns = STACK_ORDER.flatMap(stack => {
+    const best = (campaign.attempts ?? [])
+      .filter(attempt => attempt.stack === stack && attempt.dependency?.nodes?.length)
+      .sort((left, right) => (right.dependency.attempts?.total ?? 0)
+        - (left.dependency.attempts?.total ?? 0))[0];
+    return best ? [{ stack, attempt: best }] : [];
+  });
+  if (!columns.length) return '';
+  const lanes = questlineLanes(columns[0].attempt.dependency);
+  if (!lanes.length) return '';
+  const maxStations = Math.max(...lanes.map(lane => lane.stations.length));
+  const LABEL = 150;
+  const layout = { x0: 14, step: 26, top: 56, laneH: 27,
+    width: 14 + (maxStations - 1) * 26 + 14 + 40 };
+  const width = LABEL + columns.length * (layout.width + 10);
+  const height = layout.top + lanes.length * layout.laneH + 2;
+  const labels = lanes.map((lane, index) => {
+    const y = layout.top + index * layout.laneH;
+    const words = lane.title.split(' ');
+    if (lane.title.length <= 20 || words.length < 2) {
+      return `<text class="cq" x="${LABEL - 14}" y="${y + 3}" text-anchor="end">${escapeHtml(lane.title)}</text>`;
+    }
+    const middle = Math.ceil(words.length / 2);
+    return `<text class="cq" x="${LABEL - 14}" y="${y - 2}" text-anchor="end">${escapeHtml(words.slice(0, middle).join(' '))}</text>`
+      + `<text class="cq" x="${LABEL - 14}" y="${y + 9}" text-anchor="end">${escapeHtml(words.slice(middle).join(' '))}</text>`;
+  }).join('');
+  const heads = columns.map(({ stack, attempt }, index) => {
+    const x = LABEL + index * (layout.width + 10);
+    const score = attempt.dependency.score;
+    const final = score?.status === 'final';
+    const unique = score?.uniqueChecks;
+    const value = final && score.averagePercentage != null ? Math.round(score.averagePercentage)
+      : unique?.availablePoints ? Math.round(100 * unique.passedPoints / unique.availablePoints) : null;
+    const spend = attemptSpend(attempt);
+    const passed = (attempt.dependency.nodes ?? []).filter(node => node.status === 'passed').length;
+    const scoreText = value == null ? '—' : `${value}%`;
+    return `<g transform="translate(${x} 0)">
+      <text class="ch-name" x="12" y="15">${escapeHtml(title(stack))}</text>
+      <text class="ch-score${final ? '' : ' prov'}" x="12" y="37">${scoreText}</text>
+      <text class="ch-sub" x="${layout.width - 8}" y="37" text-anchor="end">${escapeHtml(`${passed}/${(attempt.dependency.nodes ?? []).length}${spend == null ? '' : ` · ${money(spend)}`}`)}</text>
+    </g>`;
+  }).join('');
+  const graphs = columns.map(({ attempt }, index) =>
+    questlineColumn(lanes, attempt.dependency, layout, LABEL + index * (layout.width + 10))).join('');
+  const views = ['questlines', 'stacks', ...columns.map(column => column.stack)];
+  const active = views.includes(state.questlineView) ? state.questlineView : 'questlines';
+  const button = (view, label) =>
+    `<button type="button" data-qlview="${escapeHtml(view)}"${active === view ? ' class="on"' : ''}>${escapeHtml(label)}</button>`;
+  return `<section class="detail-block">
+    <div class="ql-head"><h3>Questlines</h3>
+      <div class="ql-toggle" role="group" aria-label="Questline view">
+        ${button('questlines', 'By questline')}${button('stacks', 'By stack')}${columns.map(column => button(column.stack, title(column.stack))).join('')}
+      </div></div>
+    <div class="constellation" data-qlpanel="questlines"${active === 'questlines' ? '' : ' hidden'}><svg viewBox="0 0 ${width} ${height}" width="${width}" role="img"
+      aria-label="each questline as a journey per stack: stations light as they pass">${labels}${heads}${graphs}</svg></div>
+    <div class="constellation" data-qlpanel="stacks"${active === 'stacks' ? '' : ' hidden'}>${questlineStrip(columns, lanes)}</div>
+    ${columns.map(column => `<div class="constellation" data-qlpanel="${escapeHtml(column.stack)}"${active === column.stack ? '' : ' hidden'}>${questlineSingle(column, lanes)}</div>`).join('')}
+    <p class="constellation-note">Each row is one product journey, its features in unlock order. A filled dot passed every check; red ran out of strikes; yellow regressed after passing; a dim ring is waiting on a prerequisite — hover it to see which. The percentage is that journey's score, and the headline is their equal-weight average, grey while the run is still in flight.</p>
+  </section>`;
+}
+
 function dependencyWork(attempt) {
   const progress = attempt.dependency;
   if (!progress) return '';
@@ -726,6 +1025,7 @@ async function showDetail(key) {
         && (campaign.summary?.executions ?? 0) > 0
         ? `<p class="detail-actions"><button class="primary" type="button" data-resume="${escapeHtml(campaign.key)}">Resume campaign</button></p>` : '')
       + factsBlock(campaign)
+      + dependencyConstellation(campaign)
       + (graded ? `<section class="detail-block"><h3>Comparison</h3>${comparisonTable(campaign)}</section>` : '');
     const files = campaign.package?.campaign ?? [];
     const campaignPackage = files.length ? `<section class="detail-block file-row">
@@ -845,6 +1145,15 @@ document.addEventListener('click', event => {
   }
   const detail = event.target.closest('[data-campaign]');
   if (detail?.dataset.campaign) { showDetail(detail.dataset.campaign); return; }
+  const qlview = event.target.closest('[data-qlview]');
+  if (qlview) {
+    state.questlineView = qlview.dataset.qlview;
+    document.querySelectorAll('[data-qlview]').forEach(button =>
+      button.classList.toggle('on', button.dataset.qlview === state.questlineView));
+    document.querySelectorAll('[data-qlpanel]').forEach(panel =>
+      panel.hidden = panel.dataset.qlpanel !== state.questlineView);
+    return;
+  }
   const toggle = event.target.closest('[data-toggles]');
   if (toggle?.dataset.toggles) {
     const key = toggle.dataset.toggles;
