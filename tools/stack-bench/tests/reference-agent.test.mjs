@@ -98,11 +98,15 @@ test('reference deployment restores canonical source while retaining generated b
     const bindings = join(app, 'client', 'src', 'module_bindings', 'index.ts');
     mkdirSync(join(app, 'client', 'src', 'module_bindings'), { recursive: true });
     writeFileSync(bindings, 'export const generated = true;\n');
+    const viteCache = join(app, 'client', 'node_modules', '.vite', 'deps_temp', 'package.json');
+    mkdirSync(join(app, 'client', 'node_modules', '.vite', 'deps_temp'), { recursive: true });
+    writeFileSync(viteCache, '{"type":"module"}\n');
 
     const restored = restoreReferenceSourceIdentity(prepared.fixture, app);
     assert.equal(restored.sha256, prepared.sourceSha256);
     assert.equal(readFileSync(lock, 'utf8'), canonicalLock);
     assert.equal(readFileSync(bindings, 'utf8'), 'export const generated = true;\n');
+    assert.equal(readFileSync(viteCache, 'utf8'), '{"type":"module"}\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

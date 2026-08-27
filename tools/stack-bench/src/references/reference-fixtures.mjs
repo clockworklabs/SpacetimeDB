@@ -6,7 +6,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashDirectory } from '../evidence/provenance.mjs';
-import { seedAppSource } from '../runtime/source-snapshot.mjs';
+import { hashAppSource, seedAppSource } from '../runtime/source-snapshot.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
@@ -242,7 +242,7 @@ export function prepareReferenceFixtureSource(fixture, destination, { root = ROO
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, source.files.get(edit.path));
   }
-  return hashDirectory(destination);
+  return hashAppSource(destination);
 }
 
 export function assertPlainReferenceSourceTree(source) {
