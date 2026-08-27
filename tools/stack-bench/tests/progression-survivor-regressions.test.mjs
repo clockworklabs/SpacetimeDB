@@ -66,8 +66,9 @@ test('cart expiration waits for the durable expiration state after restart', () 
     '03-deferred-durability-1.0.0.json');
   const steps = criterion(scenario, '316a').steps;
   assert.equal(steps[0].do, 'reload');
-  assert.equal(steps[1].testid, 'cart-expired-notice');
-  assert.equal(steps[1].within, 220000);
-  assert.equal(steps[2].testid, 'cart-count');
-  assert.equal(steps[3].testid, 'item-stock');
+  assert.equal(steps[1].testid, 'cart-toggle');
+  assert.equal(steps[2].testid, 'cart-expired-notice');
+  assert.equal(steps[2].within, 220000);
+  assert.equal(steps[3].testid, 'cart-count');
+  assert.equal(steps[4].testid, 'item-stock');
 });
