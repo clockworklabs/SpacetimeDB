@@ -55,6 +55,8 @@ import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
 import { mutationShard } from "../src/evidence/mutation-shards.mjs";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.mjs";
+import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
+  from "../src/evidence/mutation-control.mjs";
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.mjs";
 
 // Resolve tooling relative to this file so the runner works from any directory.
@@ -166,7 +168,9 @@ async function reset(a) {
   }
 }
 
-async function grade(a, reportPath) {
+class MutationBatchDeadlineError extends Error {}
+
+async function grade(a, reportPath, deadlineMs = null) {
   await reset(a);
   if (existsSync(reportPath)) unlinkSync(reportPath);
   const gradeArgs = [
@@ -196,11 +200,22 @@ async function grade(a, reportPath) {
   for (const stableKey of a.selectedCheckKeys ?? []) {
     gradeArgs.push("--selected-check", stableKey);
   }
-  execFileSync(process.execPath, gradeArgs, {
-    stdio: "pipe",
-    encoding: "utf8",
-    timeout: 15 * 60_000,
-  });
+  const timeout = deadlineMs === null
+    ? MUTATION_GRADE_MAX_TIMEOUT_MS
+    : mutationGradeTimeoutMs(deadlineMs);
+  if (timeout === 0) throw new MutationBatchDeadlineError('mutation batch deadline reached');
+  try {
+    execFileSync(process.execPath, gradeArgs, {
+      stdio: "pipe",
+      encoding: "utf8",
+      timeout,
+    });
+  } catch (error) {
+    if (error?.code === 'ETIMEDOUT' && timeout < MUTATION_GRADE_MAX_TIMEOUT_MS) {
+      throw new MutationBatchDeadlineError('mutation grade reached the remaining batch deadline');
+    }
+    throw error;
+  }
   if (!existsSync(reportPath)) {
     throw new Error("grader completed without producing its report");
   }
@@ -520,11 +535,21 @@ async function main() {
       console.log(`Baseline (verified clean evidence, ${scenarioPath})...`);
     } else {
       console.log(`Baseline (unmutated app, ${scenarioPath})...`);
-      baseline = await grade(args, reportPath);
+      try {
+        baseline = await grade(args, reportPath, deadline);
+      } catch (error) {
+        if (error instanceof MutationBatchDeadlineError) return stopAtBudget();
+        throw error;
+      }
       let validation = validateMutationBaseline(baseline, mutations);
       if (!validation.ok && isRetryableMutationBaseline(validation.issues)) {
         console.log('  transient baseline failure; retrying once');
-        baseline = await grade(args, reportPath);
+        try {
+          baseline = await grade(args, reportPath, deadline);
+        } catch (error) {
+          if (error instanceof MutationBatchDeadlineError) return stopAtBudget();
+          throw error;
+        }
       }
     }
     const baselineValidation = validateMutationBaseline(baseline, mutations);
@@ -564,6 +589,7 @@ async function main() {
       const files = [...byFile.values()];
       const backedUp = [];
       let r;
+      let deadlineReached = false;
       try {
         for (const file of files) {
           copyFileSync(file.target, file.backup);
@@ -575,7 +601,10 @@ async function main() {
               file.original));
         }
         await restartAfterSourceChange(args);
-        r = await grade(args, reportPath);
+        r = await grade(args, reportPath, deadline);
+      } catch (error) {
+        if (error instanceof MutationBatchDeadlineError) deadlineReached = true;
+        else throw error;
       } finally {
         const restoreFailures = [];
         for (const file of backedUp) {
@@ -602,6 +631,7 @@ async function main() {
           await reset(args);
         }
       }
+      if (deadlineReached) return stopAtBudget();
 
       const classified = classifyMutationResult(baseline, r, m);
       results.push({ id: m.id, scenario,

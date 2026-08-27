@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
+import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationControlArgv, mutationControlTimeoutMs,
+  mutationGradeTimeoutMs } from '../src/evidence/mutation-control.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +36,16 @@ test('mutation control timeout follows its explicit runtime budget', () => {
   assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 1_000 }, () => ({})) }),
     80 * 60_000);
   assert.equal(mutationControlTimeoutMs({ mutations: [] }, 15), 35 * 60_000);
+});
+
+test('each mutation grade uses only the remaining batch time', () => {
+  const now = 1_000_000;
+  assert.equal(mutationGradeTimeoutMs(now + 30_000, now), 30_000);
+  assert.equal(mutationGradeTimeoutMs(now + MUTATION_GRADE_MAX_TIMEOUT_MS + 1, now),
+    MUTATION_GRADE_MAX_TIMEOUT_MS);
+  assert.equal(mutationGradeTimeoutMs(now, now), 0);
+  assert.equal(mutationGradeTimeoutMs(now - 1, now), 0);
+  assert.throws(() => mutationGradeTimeoutMs(Number.NaN, now), /must be finite/);
 });
 
 test('mutation shard coordinates reach the mutation runner together', () => {

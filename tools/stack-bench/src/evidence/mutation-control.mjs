@@ -5,6 +5,16 @@ import { portsFor } from '../composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../project-paths.mjs';
 
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
+export const MUTATION_GRADE_MAX_TIMEOUT_MS = 15 * 60_000;
+
+export function mutationGradeTimeoutMs(deadlineMs, nowMs = Date.now()) {
+  if (!Number.isFinite(deadlineMs) || !Number.isFinite(nowMs)) {
+    throw new Error('mutation grade deadline must be finite');
+  }
+  const remainingMs = Math.floor(deadlineMs - nowMs);
+  if (remainingMs <= 0) return 0;
+  return Math.min(MUTATION_GRADE_MAX_TIMEOUT_MS, remainingMs);
+}
 
 function restartSpecFor(args, appDir, track) {
   const port = portsFor(track, args.backend, args.runIndex).express ?? null;
