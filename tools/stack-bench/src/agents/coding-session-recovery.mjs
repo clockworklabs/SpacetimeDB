@@ -9,6 +9,7 @@ function text(value) {
 // immediate resume against a throttled account fails in milliseconds and a
 // nine-way campaign burns every retry it has while the window is still closed.
 const THROTTLE_STATUSES = new Set([429, 529]);
+const TRANSIENT_API_STATUSES = new Set([500, 502, 503, 504]);
 // Escalating waits, then a steady 15-minute probe. A subscription usage window
 // can stay closed for hours; the budget below bounds the total, not the count.
 const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
@@ -50,8 +51,9 @@ export function codingSessionInterruption(error, result) {
       recoverStoppedContainer: false, terminalReason: 'api_error',
       providerStatus: result.api_error_status };
   }
-  if (result?.terminal_reason === 'api_error' && typeof result.session_id === 'string'
-    && result.session_id) {
+  if (result?.terminal_reason === 'api_error'
+    && TRANSIENT_API_STATUSES.has(result.api_error_status ?? null)
+    && typeof result.session_id === 'string' && result.session_id) {
     return { kind: 'provider-api-error', resumeSession: result.session_id,
       recoverStoppedContainer: false, terminalReason: 'api_error',
       providerStatus: result.api_error_status ?? null };
@@ -163,6 +165,16 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
     if (result) sessionResults.push(result);
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
+    const hasCostReceipt = result !== null
+      && Object.hasOwn(result, 'total_cost_usd')
+      && Number.isFinite(Number(result.total_cost_usd))
+      && Number(result.total_cost_usd) >= 0;
+    if (maxBudgetUsd !== null && interruption && !hasCostReceipt) {
+      interruptions.push({ ...interruption, invocation: invocation + 1,
+        sessionId: result?.session_id ?? null, costUsd: null });
+      spawnError = 'coding session was interrupted without a provider cost receipt; automatic recovery is disabled';
+      break;
+    }
     if (interruption?.kind === 'provider-throttled') {
       const delay = THROTTLE_DELAYS_MS[Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)]
         + throttleJitterMs;

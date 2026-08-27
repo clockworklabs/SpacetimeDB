@@ -130,19 +130,19 @@ export function validateCampaignState(input) {
           if (!INVALID_OUTCOMES.has(execution.outcome)) fail(`${executionAt}.outcome is not invalid`);
           if (execution.retry !== undefined) {
             if (!object(execution.retry)) fail(`${executionAt}.retry must be an object`);
-            const retryFields = new Set(['requested', 'transient', 'recoveryClean', 'scheduled',
+            const retryFields = new Set(['requested', 'transient', 'recoveryClean', 'budgetKnown', 'scheduled',
               'cause', 'reason']);
             for (const key of Object.keys(execution.retry)) {
               if (!retryFields.has(key)) fail(`${executionAt}.retry.${key} is unknown`);
             }
-            for (const key of ['requested', 'transient', 'recoveryClean', 'scheduled']) {
+            for (const key of ['requested', 'transient', 'recoveryClean', 'budgetKnown', 'scheduled']) {
               if (typeof execution.retry[key] !== 'boolean') fail(`${executionAt}.retry.${key} must be boolean`);
             }
             if (execution.retry.cause !== null) string(execution.retry.cause, `${executionAt}.retry.cause`);
             string(execution.retry.reason, `${executionAt}.retry.reason`);
             if (execution.retry.scheduled
               && (!execution.retry.requested || !execution.retry.transient
-                || !execution.retry.recoveryClean)) {
+                || !execution.retry.recoveryClean || !execution.retry.budgetKnown)) {
               fail(`${executionAt}.retry is scheduled without transient clean-recovery authority`);
             }
           }
@@ -198,6 +198,7 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
   if (!attempt) return { state, claim: null, capacityFull: false };
   const previous = attempt.executions.at(-1) ?? null;
   const resumeFrom = previous?.retry?.scheduled === true ? previous.output : null;
+  const priorOutputs = attempt.executions.map(execution => execution.output);
   const ordinal = attempt.executions.length + 1;
   const id = `${attempt.plan.id}-execution${ordinal}`;
   const output = `attempts/${attempt.plan.id}/execution-${ordinal}`;
@@ -207,7 +208,7 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
     admissionId, runIndex });
   return { state: validateCampaignState(recalculate(state, now)),
     claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex,
-      resumeFrom },
+      resumeFrom, priorOutputs },
     capacityFull: false };
 }
 
@@ -254,14 +255,16 @@ export function finishCampaignExecution(input, executionId, result,
     const requested = retryOn.includes(classified.outcome);
     const transient = authority.transient === true;
     const recoveryClean = authority.recoveryClean === true;
+    const budgetKnown = authority.budgetKnown === true;
     const budgetAvailable = attempt.executions.length <= retries;
-    const scheduled = requested && transient && recoveryClean && budgetAvailable;
+    const scheduled = requested && transient && recoveryClean && budgetKnown && budgetAvailable;
     execution.retry = {
-      requested, transient, recoveryClean, scheduled,
+      requested, transient, recoveryClean, budgetKnown, scheduled,
       cause: typeof authority.cause === 'string' && authority.cause ? authority.cause : null,
       reason: !requested ? 'outcome is not configured for retry'
         : !transient ? 'failure is not explicitly transient'
           : !recoveryClean ? 'clean recovery was not proven'
+            : !budgetKnown ? 'prior provider spend is unknown'
             : !budgetAvailable ? 'retry budget is exhausted' : 'transient failure has clean recovery proof',
     };
     attempt.status = scheduled ? 'pending' : 'invalid';
@@ -282,7 +285,7 @@ export function markInterruptedExecution(input, executionId,
   execution.outcome = 'scheduler_interrupted';
   execution.reason = string(reason, 'interruption reason');
   execution.retry = { requested: retryOn.includes(execution.outcome), transient: false,
-    recoveryClean: false, scheduled: false, cause: null,
+    recoveryClean: false, budgetKnown: false, scheduled: false, cause: null,
     reason: 'operator reconciliation is required after scheduler interruption' };
   attempt.status = 'invalid';
   return validateCampaignState(recalculate(state, now));

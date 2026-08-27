@@ -306,7 +306,8 @@ test('dashboard serves real state and protects campaign launch with a separate o
   const storedState = finishCampaignExecution(claimed.state, claimed.claim.executionId, {
     exitCode: 1,
     run: { outcome: { kind: 'harness_failure', reason: 'controller stopped' } },
-    retryAuthority: { transient: true, recoveryClean: true, cause: 'controller stopped' },
+    retryAuthority: { transient: true, recoveryClean: true, budgetKnown: true,
+      cause: 'controller stopped' },
   }, { now: '2026-08-25T12:00:01.000Z', retries: 1, retryOn: ['harness_failure'] });
   writeCampaign(campaignDirectory, storedPlan, storedState);
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,

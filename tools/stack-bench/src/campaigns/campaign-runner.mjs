@@ -46,7 +46,7 @@ function contained(root, path, label) {
 }
 
 export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = null,
-  progressionResumeFrom = null, campaignAdmissionId = null) {
+  progressionResumeFrom = null, campaignAdmissionId = null, maxBudgetUsd = undefined) {
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
@@ -117,8 +117,14 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
   for (const pack of plan.definition.selection.packs ?? []) args.push('--pack', pack);
   for (const check of plan.definition.selection.checks ?? []) args.push('--check', check);
   if (!dependencyMode) args.push('--skills-json', JSON.stringify(attempt.skills));
-  if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
-    args.push('--max-budget-usd', String(plan.definition.budgets.maxCostUsdPerAttempt));
+  const plannedBudget = plan.definition.budgets.maxCostUsdPerAttempt;
+  const executionBudget = maxBudgetUsd === undefined ? plannedBudget : maxBudgetUsd;
+  if (executionBudget !== null) {
+    if (!Number.isFinite(executionBudget) || executionBudget <= 0
+      || (plannedBudget !== null && executionBudget > plannedBudget)) {
+      throw new Error(`attempt ${attempt.id} has an invalid remaining cost budget`);
+    }
+    args.push('--max-budget-usd', String(Number(executionBudget.toFixed(6))));
   }
   return args;
 }
@@ -440,16 +446,19 @@ export function validateCampaignRun(plan, attempt, run, {
 
 const TRANSIENT_PROVIDER_STATUSES = new Set([500, 502, 503, 504, 529]);
 
-export function campaignRetryAuthority(run, { recoveryClean = false } = {}) {
+export function campaignRetryAuthority(run, { recoveryClean = false, requireCostReceipt = false } = {}) {
   const outcome = run?.outcome;
   const providerStatus = outcome?.provider?.providerStatus;
   const transient = outcome?.kind === 'harness_failure'
     && outcome.phase === 'coding-session'
     && outcome.reason !== 'provider-throttle-exhausted'
     && TRANSIENT_PROVIDER_STATUSES.has(providerStatus);
+  const budgetKnown = !requireCostReceipt || (run?.totals?.costComplete === true
+    && Number.isFinite(run?.totals?.costUsd) && run.totals.costUsd >= 0);
   return {
     transient,
     recoveryClean: recoveryClean === true,
+    budgetKnown,
     cause: transient ? `provider-http-${providerStatus}` : null,
   };
 }
@@ -458,6 +467,7 @@ function readAttemptResult(plan, attempt, output, processResult) {
   const withRetryAuthority = result => ({ ...result,
     retryAuthority: campaignRetryAuthority(result.run, {
       recoveryClean: publicRecoveryProvesCleanup(output, attempt.stack),
+      requireCostReceipt: plan.definition.budgets.maxCostUsdPerAttempt !== null,
     }) });
   if (processResult.cancelled === true) {
     return withRetryAuthority({ exitCode: processResult.code, timedOut: false,
@@ -490,6 +500,29 @@ function readAttemptResult(plan, attempt, output, processResult) {
       kind: 'harness_failure', reason: detail || 'attempt ended before producing run.json' } } });
   }
   return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut, run });
+}
+
+export function remainingAttemptCostBudget(plan, claim, directory) {
+  const cap = plan.definition.budgets.maxCostUsdPerAttempt;
+  if (cap === null) return null;
+  let spent = 0;
+  for (const output of claim.priorOutputs ?? []) {
+    const runPath = join(contained(directory, output, 'prior attempt output'), 'run.json');
+    if (!existsSync(runPath)) {
+      throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
+    }
+    const run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
+    if (run.totals?.costComplete !== true || !Number.isFinite(run.totals?.costUsd)
+      || run.totals.costUsd < 0) {
+      throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
+    }
+    spent += run.totals.costUsd;
+  }
+  const remaining = Number((cap - spent).toFixed(6));
+  if (remaining <= 0) {
+    throw new Error(`cannot retry ${claim.attempt.id}: its $${cap} cost cap is exhausted`);
+  }
+  return remaining;
 }
 
 export function processFailureDetail(processResult) {
@@ -791,11 +824,12 @@ export async function executeCampaign(campaignFile, directory,
         join('.private', `${claim.executionId}.supervisor.json`), 'supervisor state');
       let processResult;
       try {
+        const remainingBudget = remainingAttemptCostBudget(plan, claim, initialized.paths.root);
         processResult = await execute(process.execPath,
         attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan,
           claim.attempt.mode?.id !== 'dependency' || claim.resumeFrom === null ? null
             : contained(initialized.paths.root, claim.resumeFrom,
-              'progression resume directory'), admission.id), {
+              'progression resume directory'), admission.id, remainingBudget), {
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },

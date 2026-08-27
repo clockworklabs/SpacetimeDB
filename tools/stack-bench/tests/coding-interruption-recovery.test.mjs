@@ -13,11 +13,14 @@ import { recoverStoppedBuildContainer } from '../container/recover-build-contain
 test('provider mid-response errors resume the exact paid session', () => {
   const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7a';
   const result = parseCodingSessionResult(`${JSON.stringify({ type: 'result', is_error: true,
-    terminal_reason: 'api_error', session_id: sessionId, total_cost_usd: 3.25 })}\n`);
+    terminal_reason: 'api_error', api_error_status: 503,
+    session_id: sessionId, total_cost_usd: 3.25 })}\n`);
   assert.deepEqual(codingSessionInterruption(Object.assign(new Error('exit'), { status: 1 }), result), {
     kind: 'provider-api-error', resumeSession: sessionId, recoverStoppedContainer: false,
-    terminalReason: 'api_error', providerStatus: null,
+    terminalReason: 'api_error', providerStatus: 503,
   });
+  assert.equal(codingSessionInterruption(null, { terminal_reason: 'api_error',
+    api_error_status: 401, session_id: sessionId }), null);
 });
 
 test('a provider throttle is classified as waitable, with or without a session', () => {
@@ -172,7 +175,7 @@ test('the retry loop resumes in place and deducts the failed call from the cost 
       calls.push(request);
       if (calls.length === 1) {
         const output = JSON.stringify({ is_error: true, terminal_reason: 'api_error',
-          session_id: sessionId, total_cost_usd: 3.5, num_turns: 4,
+          api_error_status: 503, session_id: sessionId, total_cost_usd: 3.5, num_turns: 4,
           usage: { input_tokens: 1, output_tokens: 2, cache_creation_input_tokens: 3,
             cache_read_input_tokens: 4 } });
         throw Object.assign(new Error('provider interrupted'), { status: 1, stdout: output });
@@ -190,6 +193,20 @@ test('the retry loop resumes in place and deducts the failed call from the cost 
   assert.equal(calls[1].maxBudgetUsd, 6.5);
   assert.match(calls[1].input, /Continue the same task/);
   assert.equal(coding.interruptions[0].kind, 'provider-api-error');
+});
+
+test('a capped session does not retry without a provider cost receipt', () => {
+  let calls = 0;
+  const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 2,
+    maxBudgetUsd: 10,
+    invoke() {
+      calls += 1;
+      return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+        api_error_status: 503, session_id: 'paid-session' });
+    } });
+  assert.equal(calls, 1);
+  assert.match(coding.spawnError, /without a provider cost receipt/);
+  assert.equal(coding.interruptions[0].costUsd, null);
 });
 
 test('a non-OOM kill recovers the container without pretending to resume a missing session', () => {

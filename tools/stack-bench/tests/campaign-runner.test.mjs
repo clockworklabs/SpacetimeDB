@@ -9,7 +9,7 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../src/evidence/artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
-  expectedDependencyRunOutcomeKind, processFailureDetail,
+  expectedDependencyRunOutcomeKind, processFailureDetail, remainingAttemptCostBudget,
   validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
@@ -144,6 +144,32 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
   const admitted = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
     '/campaign/plan.json', null, 'admission-1');
   assert.equal(admitted[admitted.indexOf('--campaign-admission-id') + 1], 'admission-1');
+  const capped = structuredClone(plan);
+  capped.definition.budgets.maxCostUsdPerAttempt = 10;
+  const resumed = attemptArgv(capped, capped.attempts[0], '/campaign/attempt', 0,
+    '/campaign/plan.json', null, 'admission-1', 6.5);
+  assert.equal(resumed[resumed.indexOf('--max-budget-usd') + 1], '6.5');
+  assert.throws(() => attemptArgv(capped, capped.attempts[0], '/campaign/attempt', 0,
+    '/campaign/plan.json', null, 'admission-1', 10.5), /invalid remaining cost budget/);
+});
+
+test('campaign retry budget subtracts every prior execution cost', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-cost-'));
+  try {
+    const output = join(root, 'attempts', 'one', 'execution-1');
+    mkdirSync(output, { recursive: true });
+    writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: 'prior-run',
+      payload: { totals: { costUsd: 3.25, costComplete: true } } });
+    const campaign = { definition: { budgets: { maxCostUsdPerAttempt: 10 } } };
+    const claim = { attempt: { id: 'one' }, priorOutputs: ['attempts/one/execution-1'] };
+    assert.equal(remainingAttemptCostBudget(campaign, claim, root), 6.75);
+
+    const artifact = readArtifact(join(output, 'run.json'));
+    artifact.payload.totals.costComplete = false;
+    writeFileSync(join(output, 'run.json'), `${JSON.stringify(artifact)}\n`);
+    assert.throws(() => remainingAttemptCostBudget(campaign, claim, root),
+      /prior provider spend is unknown/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('dependency attempts pass separate catalog and policy identities with no level range', () => {
@@ -572,8 +598,15 @@ test('only explicit transient provider failures receive campaign retry authority
   assert.deepEqual(campaignRetryAuthority({ outcome: { kind: 'harness_failure',
     phase: 'coding-session', reason: 'coding-session-failed',
     provider: { providerStatus: 503 } } }, clean), {
-    transient: true, recoveryClean: true, cause: 'provider-http-503',
+    transient: true, recoveryClean: true, budgetKnown: true, cause: 'provider-http-503',
   });
+  assert.equal(campaignRetryAuthority({ outcome: { kind: 'harness_failure',
+    phase: 'coding-session', reason: 'coding-session-failed',
+    provider: { providerStatus: 503 } } }, { ...clean, requireCostReceipt: true }).budgetKnown, false);
+  assert.equal(campaignRetryAuthority({ outcome: { kind: 'harness_failure',
+    phase: 'coding-session', reason: 'coding-session-failed', provider: { providerStatus: 503 } },
+    totals: { costUsd: 1.25, costComplete: true } },
+  { ...clean, requireCostReceipt: true }).budgetKnown, true);
   for (const outcome of [
     { kind: 'harness_failure', phase: 'coding-session', reason: 'coding-process-killed',
       provider: { providerStatus: null } },

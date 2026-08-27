@@ -70,24 +70,39 @@ test('invalid executions remain visible and retries append rather than overwrite
   const executionId = first.attempts[0].executions[0].id;
   const retryable = finishCampaignExecution(first, executionId, {
     exitCode: 1, run: { outcome: { kind: 'harness_failure', reason: 'provider overloaded' } },
-    retryAuthority: { transient: true, recoveryClean: true, cause: 'provider-http-503' },
+    retryAuthority: { transient: true, recoveryClean: true, budgetKnown: true,
+      cause: 'provider-http-503' },
   }, { retries: 1, retryOn: ['harness_failure'], now: '2026-08-12T00:02:00.000Z' });
   assert.equal(retryable.attempts[0].status, 'pending');
   assert.equal(retryable.attempts[0].executions[0].status, 'invalid');
   assert.deepEqual(retryable.attempts[0].executions[0].retry, {
-    requested: true, transient: true, recoveryClean: true, scheduled: true,
+    requested: true, transient: true, recoveryClean: true, budgetKnown: true, scheduled: true,
     cause: 'provider-http-503', reason: 'transient failure has clean recovery proof',
   });
   const second = claimNextAttempt(retryable, { now: '2026-08-12T00:03:00.000Z',
     admissionId: 'admission-1' });
   assert.equal(second.claim.executionId, `${campaign.attempts[0].id}-execution2`);
   assert.equal(second.claim.resumeFrom, retryable.attempts[0].executions[0].output);
+  assert.deepEqual(second.claim.priorOutputs, [retryable.attempts[0].executions[0].output]);
   const complete = finishCampaignExecution(second.state, second.claim.executionId, {
     exitCode: 0, run: { outcome: { kind: 'passed' } },
   }, { retries: 1, retryOn: ['harness_failure'], now: '2026-08-12T00:04:00.000Z' });
   assert.equal(complete.attempts[0].status, 'completed');
   assert.deepEqual(complete.attempts[0].executions.map(item => item.status), ['invalid', 'completed']);
   assert.equal(complete.summary.executions, 2);
+});
+
+test('a retry is blocked when prior provider spend is unknown', () => {
+  const active = claimed();
+  const state = finishCampaignExecution(active.state, active.claim.executionId, {
+    exitCode: 1,
+    run: { outcome: { kind: 'harness_failure', reason: 'provider overloaded' } },
+    retryAuthority: { transient: true, recoveryClean: true, budgetKnown: false,
+      cause: 'usage-receipt-missing' },
+  }, { retries: 1, retryOn: ['harness_failure'], now: '2026-08-12T00:04:00.000Z' });
+  assert.equal(state.attempts[0].status, 'invalid');
+  assert.equal(state.attempts[0].executions[0].retry.scheduled, false);
+  assert.equal(state.attempts[0].executions[0].retry.reason, 'prior provider spend is unknown');
 });
 
 test('an inconclusive measurement requires operator review instead of spending another attempt', () => {
@@ -112,7 +127,7 @@ test('deterministic harness failures and unproven cleanup never retry', () => {
   }, { retries: 3, retryOn: ['harness_failure'], now: '2026-08-12T00:04:00.000Z' });
   assert.equal(stopped.attempts[0].status, 'invalid');
   assert.deepEqual(stopped.attempts[0].executions[0].retry, {
-    requested: true, transient: false, recoveryClean: false, scheduled: false,
+    requested: true, transient: false, recoveryClean: false, budgetKnown: false, scheduled: false,
     cause: null, reason: 'failure is not explicitly transient',
   });
 
