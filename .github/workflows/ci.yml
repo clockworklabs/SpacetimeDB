@@ -391,6 +391,15 @@ jobs:
           tar -C "${CARGO_TARGET_DIR}" -xzf build-artifacts/build-support.tar.gz
           test -f "${CARGO_TARGET_DIR}/release/spacetimedb-cli${exe_suffix}"
           test -f "${CARGO_TARGET_DIR}/release/spacetimedb-standalone${exe_suffix}"
+
+      - &set-spacetime-bin
+        name: Set SpacetimeDB binary path
+        shell: bash
+        run: |
+          exe_suffix=""
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            exe_suffix=".exe"
+          fi
           echo "SPACETIME_BIN=${CARGO_TARGET_DIR}/release/spacetimedb-cli${exe_suffix}" >>"${GITHUB_ENV}"
 
       - name: Download smoketest build
@@ -510,6 +519,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - *download-build-artifacts
       - *extract-build-artifacts
+      - *set-spacetime-bin
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
@@ -712,6 +722,7 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
+      - *set-spacetime-bin
 
       - name: Build module with latest compatible dependencies
         run: cargo ci module-latest-deps
@@ -1026,6 +1037,7 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
+      - *set-spacetime-bin
 
       - &expose-spacetime-cli
         name: Expose SpacetimeDB CLI on PATH
@@ -1147,6 +1159,7 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
+      - *set-spacetime-bin
       - *expose-spacetime-cli
 
       - name: Generate client bindings
@@ -1259,6 +1272,7 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
+      - *set-spacetime-bin
       - *expose-spacetime-cli
 
       - name: Check quickstart-chat bindings are up to date
@@ -1466,6 +1480,7 @@ jobs:
 
       - *download-build-artifacts
       - *extract-build-artifacts
+      - *set-spacetime-bin
 
       - name: Run TypeScript tests
         run: cargo ci typescript-test
