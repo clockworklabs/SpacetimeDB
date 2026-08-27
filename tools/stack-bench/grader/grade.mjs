@@ -779,24 +779,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
   return result;
 }
 
-async function countExistingRooms(browser, args, runId) {
-  const context = await browser.newContext();
-  try {
-    const page = await context.newPage();
-    page.setDefaultTimeout(DEFAULT_WITHIN);
-    await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await page.locator(tid('name-input')).first().fill(`preflight-${runId}`);
-    await page.locator(tid('name-submit')).first().click();
-    await page.locator(tid('room-list')).first().waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
-    await page.waitForTimeout(1500);
-    return await page.locator(tid('room-item')).count();
-  } catch {
-    return -1;                                     // couldn't determine
-  } finally {
-    await context.close().catch(() => {});
-  }
-}
-
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -876,16 +858,6 @@ async function main() {
   const checkByCriterion = new Map(selectedChecks.map(check => [
     `${String(check.featureId)}\0${String(check.criterionId)}`, check,
   ]));
-
-  // Preflight: grading a dirty database silently biases scores downward (a long
-  // room/user list breaks assertions that pass on a clean app), so surface it
-  // rather than letting it look like a real failure.
-  report.environment = { preexistingRooms: await countExistingRooms(browser, args, runId) };
-  if (report.environment.preexistingRooms > 0) {
-    console.log(`WARNING: app already has ${report.environment.preexistingRooms} room(s) — ` +
-      `scores are not comparable. Reset the database first ` +
-      `(stack-bench/reset-db.sh <backend> <app-dir>).\n`);
-  }
 
   for (const feature of features) {
     process.stdout.write(`Feature ${feature.id}: ${feature.name} ... `);

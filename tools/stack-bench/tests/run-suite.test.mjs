@@ -7,13 +7,31 @@ import test from 'node:test';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
-  applicationFailureTotals, resetFailureOutcome, suitesForRecipe,
+  applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   databaseContainerForGrading, runGraderChild, verifyReseedProbe, waitForReseedProbe }
   from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
+
+test('code metrics count each package manifest once when server code is at the app root', () => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-code-metrics-'));
+  try {
+    mkdirSync(join(temp, 'client'), { recursive: true });
+    writeFileSync(join(temp, 'index.js'), 'export const app = true;\n');
+    writeFileSync(join(temp, 'package.json'), JSON.stringify({
+      dependencies: { express: '1', mongodb: '1' },
+    }));
+    writeFileSync(join(temp, 'client', 'package.json'), JSON.stringify({
+      dependencies: { react: '1' },
+    }));
+
+    assert.equal(codeMetrics({ app: temp, backend: 'mongodb' }).runtimeDeps, 3);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
 
 test('mutation backup scanning ignores volatile build caches and tolerates their removal', () => {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-scan-'));
@@ -97,11 +115,25 @@ test('database grading uses the exact container from the authenticated run lease
   });
   assert.equal(container, 'stack-bench-mongodb');
   assert.deepEqual(calls, [{ path: 'private/lease.json',
-    expected: { token: 'secret-token', backend: 'mongodb' } }]);
+    expected: { token: 'secret-token', backend: 'mongodb', active: true } }]);
   assert.throws(() => databaseContainerForGrading('postgres', {
     STACK_BENCH_LEASE: 'private/lease.json',
   }), /both lease path and lease token/);
   assert.equal(databaseContainerForGrading('spacetime', {}), null);
+});
+
+test('database provenance parses the port instead of accepting a matching substring', () => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-database-provenance-'));
+  try {
+    writeFileSync(join(temp, 'server.js'),
+      "const url = 'mongodb://localhost:6537/stackbench_ecom_run0';\n");
+    assert.equal(checkDatabaseProvenance({ app: temp, backend: 'mongodb' }).ok, true);
+    writeFileSync(join(temp, 'server.js'),
+      "const url = 'mongodb://localhost:16537/stackbench_ecom_run0';\n");
+    assert.equal(checkDatabaseProvenance({ app: temp, backend: 'mongodb' }).ok, false);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test('generated layout and restart defects are repairable app failures, not harness failures', () => {

@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { resetBackend } from '../src/stacks/backend-reset.mjs';
-import { resetPostgres } from '../src/stacks/stack-backend-operations.mjs';
+import { proveMongoDbUse, provePostgresUse,
+  resetPostgres } from '../src/stacks/stack-backend-operations.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../src/runtime/spacetime-layout.mjs';
 
@@ -88,6 +89,50 @@ test('PostgreSQL per-check reset clears rows without removing the app schema', (
   assert.doesNotMatch(sql, /DROP SCHEMA/);
   assert.equal(reset.args[reset.args.indexOf('-v') + 1], 'ON_ERROR_STOP=1');
   assert.equal(reset.args[reset.args.indexOf('-d') + 1], lease.resources.database);
+});
+
+test('PostgreSQL runtime provenance requires data in the exact leased container', () => {
+  const lease = { resources: { database: 'stackbench_ecom_run0',
+    container: { name: 'postgres-service', id: 'a'.repeat(64) } } };
+  const calls = [];
+  const exec = (command, args, options) => {
+    calls.push({ command, args, options });
+    if (args[0] === 'inspect') return `${lease.resources.container.id}\n`;
+    return 'public.item\n';
+  };
+
+  assert.deepEqual(provePostgresUse({ lease, exec }), {
+    ok: true,
+    verified: true,
+    populatedTables: 1,
+    reason: '1 leased PostgreSQL table(s) contain startup data',
+  });
+  const proof = calls.at(-1);
+  assert.deepEqual(proof.args.slice(0, 3), ['exec', '-i', 'postgres-service']);
+  assert.equal(proof.args.includes('ON_ERROR_STOP=1'), true);
+  assert.match(proof.options.input, /ORDER BY tablename\n\\gexec/);
+  assert.doesNotMatch(proof.options.input, /ORDER BY tablename;\n\\gexec/);
+
+  const emptyExec = (command, args) => args[0] === 'inspect'
+    ? `${lease.resources.container.id}\n` : '';
+  assert.equal(provePostgresUse({ lease, exec: emptyExec }).ok, false);
+});
+
+test('MongoDB runtime provenance requires data in the exact leased container', () => {
+  const lease = { resources: { database: 'stackbench_ecom_run0',
+    container: { name: 'mongodb-service', id: 'b'.repeat(64) } } };
+  const execWith = output => (command, args) => args[0] === 'inspect'
+    ? `${lease.resources.container.id}\n` : output;
+
+  assert.deepEqual(proveMongoDbUse({ lease, exec: execWith('2\n') }), {
+    ok: true,
+    verified: true,
+    populatedCollections: 2,
+    reason: '2 leased MongoDB collection(s) contain startup data',
+  });
+  assert.equal(proveMongoDbUse({ lease, exec: execWith('0\n') }).ok, false);
+  assert.throws(() => proveMongoDbUse({ lease, exec: execWith('not-a-count\n') }),
+    /invalid count/);
 });
 
 test('PostgreSQL reset preserves schema and does not touch another lease database', {

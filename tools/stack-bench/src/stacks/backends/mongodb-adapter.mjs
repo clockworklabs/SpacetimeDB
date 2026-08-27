@@ -6,7 +6,8 @@ import { deployMongoDbReference } from '../stack-reference-operations.mjs';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
 import { stopHostedHost } from '../stack-teardown-operations.mjs';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
-import { prepareMongoDbDatabase, resetMongoDb, setMongoDbStock } from './mongodb-operations.mjs';
+import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
+  setMongoDbStock } from './mongodb-operations.mjs';
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.mjs';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.mjs';
@@ -19,7 +20,8 @@ mongodbAdapter = defineStackAdapter('mongodb', stackLeaseCapability('mongodb'), 
   lifecycle: operationProvider('mongodb', 'lifecycle',
     { activate: activateHosted, control: input => controlHostedFor(mongodbAdapter, input) }),
   diagnostics: operationProvider('mongodb', 'diagnostics', { capture: captureHostedDiagnostics }),
-  database: operationProvider('mongodb', 'database', { prepare: prepareMongoDbDatabase }),
+  database: operationProvider('mongodb', 'database',
+    { prepare: prepareMongoDbDatabase, 'prove-use': proveMongoDbUse }),
   grading: operationProvider('mongodb', 'grading', { context: createHttpGradingContext }),
   'named-action': operationProvider('mongodb', 'named-action', { request: httpNamedActionRequest }),
   teardown: operationProvider('mongodb', 'teardown', { host: stopHostedHost }),

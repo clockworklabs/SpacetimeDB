@@ -20,6 +20,24 @@ export function resetPostgres({ lease, exec = execFileSync }) {
   return `reset postgres database ${lease.resources.database}`;
 }
 
+export function provePostgresUse({ lease, exec = execFileSync }) {
+  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
+    'database provenance');
+  const sql = "SELECT format('SELECT %L WHERE EXISTS (SELECT 1 FROM %I.%I LIMIT 1);', "
+    + "schemaname || '.' || tablename, schemaname, tablename) "
+    + "FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename\n\\gexec\n";
+  const output = exec('docker', ['exec', '-i', lease.resources.container.name,
+    'psql', '-U', 'stackbench', '-d', lease.resources.database,
+    '-v', 'ON_ERROR_STOP=1', '-At'],
+  { encoding: 'utf8', input: sql, stdio: 'pipe', timeout: RESET_TIMEOUT_MS }).trim();
+  const populatedTables = output ? output.split(/\r?\n/).filter(Boolean) : [];
+  return { ok: populatedTables.length > 0, verified: true,
+    populatedTables: populatedTables.length,
+    reason: populatedTables.length
+      ? `${populatedTables.length} leased PostgreSQL table(s) contain startup data`
+      : 'the leased PostgreSQL database remained empty after application startup' };
+}
+
 export function setPostgresStock({ item, warehouse, quantity, dbName, exec = execFileSync,
   containers = {} }) {
   const container = containers.postgres ?? databaseContainerName('postgres');

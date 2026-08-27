@@ -13,6 +13,24 @@ export function resetMongoDb({ lease, exec = execFileSync }) {
   return `reset mongodb database ${lease.resources.database}`;
 }
 
+export function proveMongoDbUse({ lease, exec = execFileSync }) {
+  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
+    'database provenance');
+  const script = 'print(db.getCollectionNames().reduce((count, name) => '
+    + 'count + (db.getCollection(name).findOne() ? 1 : 0), 0))';
+  const output = exec('docker', ['exec', lease.resources.container.name,
+    'mongosh', lease.resources.database, '--quiet', '--eval', script],
+  { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS }).trim();
+  const populatedCollections = Number(output.split(/\r?\n/).at(-1));
+  if (!Number.isSafeInteger(populatedCollections) || populatedCollections < 0) {
+    throw new Error(`MongoDB provenance returned an invalid count: ${output.slice(-120)}`);
+  }
+  return { ok: populatedCollections > 0, verified: true, populatedCollections,
+    reason: populatedCollections
+      ? `${populatedCollections} leased MongoDB collection(s) contain startup data`
+      : 'the leased MongoDB database remained empty after application startup' };
+}
+
 export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = execFileSync,
   containers = {} }) {
   const container = containers.mongodb ?? databaseContainerName('mongodb');

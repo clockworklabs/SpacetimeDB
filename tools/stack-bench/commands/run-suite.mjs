@@ -118,14 +118,23 @@ export function databaseContainerForGrading(backend, env = process.env, {
   readLease = readBackendLease,
 } = {}) {
   if (!['mongodb', 'postgres'].includes(backend)) return null;
+  const lease = databaseLeaseForGrading(backend, env, { readLease });
+  if (lease) return String(lease.resources.container.name);
+  return databaseContainerName(backend, env);
+}
+
+export function databaseLeaseForGrading(backend, env = process.env, {
+  readLease = readBackendLease,
+} = {}) {
+  if (!['mongodb', 'postgres'].includes(backend)) return null;
   const path = String(env.STACK_BENCH_LEASE ?? '').trim();
   const token = String(env.STACK_BENCH_LEASE_TOKEN ?? '').trim();
-  if (!path && !token) return databaseContainerName(backend, env);
+  if (!path && !token) return null;
   if (!path || !token) throw new Error('database grading requires both lease path and lease token');
-  const lease = readLease(path, { token, backend });
+  const lease = readLease(path, { token, backend, active: true });
   const container = String(lease.resources?.container?.name ?? '').trim();
   if (!container) throw new Error(`active ${backend} lease has no database container`);
-  return container;
+  return lease;
 }
 
 function parseArgs(argv) {
@@ -340,15 +349,30 @@ export function checkDatabaseProvenance(args) {
   }
   if (!urls.length) return { ok: false,
     reason: 'app neither reads process.env.DATABASE_URL nor contains a database connection string' };
-  const ok = urls.some(u => u.includes(`:${expected}/`));
+  const matchesExpectedPort = value => {
+    try { return Number(new URL(value).port) === Number(expected); }
+    catch { return false; }
+  };
+  const ok = urls.some(matchesExpectedPort);
   return { ok, url: urls[0],
     reason: ok ? 'ok' : `app targets ${urls[0]} but the benchmark database is on port ${expected}` };
 }
 
-// Same features for less code is a structural property of the platform, not a
-// property of the model that happened to write it — unlike build cost, which
-// inverted between Sonnet 4.6 and Sonnet 5.
-function codeMetrics(args) {
+export function checkRuntimeDatabaseProvenance(args) {
+  if (!['mongodb', 'postgres'].includes(args.backend)) {
+    return { ok: true, verified: true,
+      reason: 'this stack does not use a separate database service' };
+  }
+  if (!args.databaseLease) {
+    return { ok: null, verified: false,
+      reason: 'standalone grading has no authenticated database lease' };
+  }
+  return executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
+    'database', 'prove-use', { lease: args.databaseLease });
+}
+
+// Report the application size and direct runtime dependency count.
+export function codeMetrics(args) {
   // Also a prescribed-stack assumption: under minimal guidance an app may put
   // its server anywhere, and a missing `server/` reported 0 LOC in 0 files
   // rather than admitting it had not found the code. Fall back to everything
@@ -380,8 +404,12 @@ function codeMetrics(args) {
     : walk(join(args.app, SERVER_DIR));
 
   let deps = 0;
-  for (const pj of ['package.json', join(SERVER_DIR, 'package.json'), 'client/package.json']) {
-    const p = join(args.app, pj);
+  const packageFiles = new Set([
+    resolve(args.app, 'package.json'),
+    resolve(args.app, SERVER_DIR, 'package.json'),
+    resolve(args.app, 'client/package.json'),
+  ]);
+  for (const p of packageFiles) {
     if (!existsSync(p)) continue;
     try { deps += Object.keys(JSON.parse(readFileSync(p, 'utf8')).dependencies ?? {}).length; } catch { /* ignore */ }
   }
@@ -512,8 +540,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
       throw new Error(`grader report scope differs from requested suite scope for ${suite.id}`);
     }
   }
-  const dirty = r.environment?.preexistingRooms > 0 ? r.environment.preexistingRooms : 0;
-  console.log(`${r.total}/${r.max}${dirty ? `  [DIRTY: ${dirty} rooms — not comparable]` : ''}`);
+  console.log(`${r.total}/${r.max}`);
   for (const f of r.features) {
     for (const c of f.criteria.filter(c => !evidencePassed(criterionEvidence(c)))) {
       console.log(`      ${renderEvidenceConsoleLine(criterionEvidence(c), `${f.name} / ${c.id}`, {
@@ -538,7 +565,9 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
 async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
-  args.databaseContainer = databaseContainerForGrading(args.backend);
+  args.databaseLease = databaseLeaseForGrading(args.backend);
+  args.databaseContainer = args.databaseLease?.resources.container.name
+    ?? (['mongodb', 'postgres'].includes(args.backend) ? databaseContainerName(args.backend) : null);
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, args.level, args.recipeTask?.recipe ?? args.recipe);
   if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {
@@ -785,6 +814,31 @@ async function main() {
       console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);
     }
+    try {
+      const runtime = checkRuntimeDatabaseProvenance(args);
+      bundle.provenance.runtime = runtime;
+      console.log(`  db runtime  ... ${runtime.verified
+        ? runtime.ok ? runtime.reason : `WRONG DATABASE — ${runtime.reason}`
+        : runtime.reason}`);
+      if (runtime.ok === false) {
+        bundle.error = `app did not repopulate the benchmark database: ${runtime.reason}`;
+        bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
+          appFailures: ['database-provenance'] };
+        recordApplicationAbort();
+        markRemainingNotRun('run aborted because runtime database provenance failed');
+        writeBundle();
+        console.log('\nABORTED: application data came from outside the benchmark database.');
+        process.exit(1);
+      }
+    } catch (error) {
+      bundle.error = `runtime database provenance failed: ${error.message}`;
+      bundle.outcome = { kind: 'harness_failure', phase: 'database-provenance',
+        reason: bundle.error };
+      markRemainingNotRun('run aborted because runtime database provenance could not be verified');
+      writeBundle();
+      console.log(`\nABORTED: ${bundle.error}`);
+      process.exit(1);
+    }
     bundle.suites.lint = lint(args);
     bundle.actions = checkActions(args);
   }
@@ -844,7 +898,6 @@ async function main() {
     }
     if (suite.inherited) { regTotal += r.total; regMax += r.max; }
     else { total += r.total; max += r.max; }
-    if (r.environment?.preexistingRooms > 0) dirty = true;
   }
 
   bundle.totals = {

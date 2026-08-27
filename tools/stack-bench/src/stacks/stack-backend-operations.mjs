@@ -1,6 +1,6 @@
-export { prepareMongoDbDatabase, resetMongoDb, setMongoDbStock }
+export { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb, setMongoDbStock }
   from './backends/mongodb-operations.mjs';
-export { preparePostgresDatabase, resetPostgres, setPostgresStock }
+export { preparePostgresDatabase, provePostgresUse, resetPostgres, setPostgresStock }
   from './backends/postgres-operations.mjs';
 export { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock }
   from './backends/spacetime-operations.mjs';

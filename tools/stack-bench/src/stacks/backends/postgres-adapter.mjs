@@ -6,7 +6,8 @@ import { deployPostgresReference } from '../stack-reference-operations.mjs';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
 import { stopHostedHost } from '../stack-teardown-operations.mjs';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
-import { preparePostgresDatabase, resetPostgres, setPostgresStock } from './postgres-operations.mjs';
+import { preparePostgresDatabase, provePostgresUse, resetPostgres,
+  setPostgresStock } from './postgres-operations.mjs';
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.mjs';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.mjs';
@@ -19,7 +20,8 @@ postgresAdapter = defineStackAdapter('postgres', stackLeaseCapability('postgres'
   lifecycle: operationProvider('postgres', 'lifecycle',
     { activate: activateHosted, control: input => controlHostedFor(postgresAdapter, input) }),
   diagnostics: operationProvider('postgres', 'diagnostics', { capture: captureHostedDiagnostics }),
-  database: operationProvider('postgres', 'database', { prepare: preparePostgresDatabase }),
+  database: operationProvider('postgres', 'database',
+    { prepare: preparePostgresDatabase, 'prove-use': provePostgresUse }),
   grading: operationProvider('postgres', 'grading', { context: createHttpGradingContext }),
   'named-action': operationProvider('postgres', 'named-action', { request: httpNamedActionRequest }),
   teardown: operationProvider('postgres', 'teardown', { host: stopHostedHost }),
