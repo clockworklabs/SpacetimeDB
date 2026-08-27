@@ -38,7 +38,6 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
     let out = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
-        .stderr(Stdio::inherit())
         .output()
         .with_context(|| format!("Failed to start {cmd}"))?;
     if !out.status.success() {
