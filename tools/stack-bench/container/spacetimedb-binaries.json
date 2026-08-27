@@ -1,5 +1,20 @@
 {
   "schemaVersion": 1,
-  "status": "unbuilt",
-  "reason": "Run tools/stack-bench/container/build-linux-cli.sh from a clean checkout."
+  "platform": "linux/amd64",
+  "builderImage": "rust:1.93-slim-bookworm@sha256:8f8609d448e821fbc0e44241bc5ca4ce49663cc6306ff1a17f655a0e2a7cd084",
+  "source": {
+    "revision": "13b3a9d8c10386b3c7dcb1605533a947dbb11106",
+    "sha256": "9a1996e87a5b28147d159e76613815be97e447e1d485a54a19b6dac014de823c",
+    "files": 2587
+  },
+  "binaries": {
+    "spacetimedb-cli": {
+      "sha256": "69619c0699830a8fe4dceaa334a1a20ccfba0791b6ffb9a0a47d0bdcb6654179",
+      "size": 46981824
+    },
+    "spacetimedb-standalone": {
+      "sha256": "d53a8cbc4325bb87024748b725d13d5984f85bb0600ace3cea646a7ff6c5dce2",
+      "size": 134334152
+    }
+  }
 }
