@@ -45,7 +45,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn local_cli() -> Result<PathBuf> {
-    cmd!("cargo", "build", "-vv", "-p", CLI_NAME, "-p", STANDALONE_NAME).run()?;
+    cmd!("cargo", "build", "-p", CLI_NAME, "-p", STANDALONE_NAME).run()?;
 
     let target_dir = env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)

@@ -162,7 +162,7 @@ jobs:
       - name: Build CLI and standalone
         shell: bash
         run: |
-          cargo build -vv --timings --release \
+          cargo build --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
@@ -195,7 +195,7 @@ jobs:
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
-    if: false
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
@@ -233,7 +233,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo run -vv --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+          cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -552,7 +552,7 @@ jobs:
 
           INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
           if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
-            cargo install -vv --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
           fi
 
           wasm-bindgen --version
@@ -573,7 +573,7 @@ jobs:
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
-    if: false
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Index Scan Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
@@ -606,7 +606,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Run index scan benchmark regression check
-        run: cargo run -vv --release -p spacetimedb-index-scan-gate
+        run: cargo run --release -p spacetimedb-index-scan-gate
 
   lints:
     needs: [merge_queue_noop]
@@ -898,7 +898,7 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test -vv -- --test-threads=1
+              cargo test -- --test-threads=1
             '
 
   cli_docs:
@@ -962,7 +962,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: false
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
       checks: write

@@ -59,7 +59,7 @@ fn main() -> Result<()> {
         .unwrap();
 
     // 1) Build prerequisite
-    run_inherit("cargo", &["build", "-vv"], Some(workspace_dir))?;
+    run_inherit("cargo", &["build"], Some(workspace_dir))?;
 
     // 2) Get schema to a temp file (auto-cleaned)
     let mut tmp_schema = NamedTempFile::new().context("create temp schema file")?;
@@ -67,7 +67,6 @@ fn main() -> Result<()> {
         "cargo",
         &[
             "run",
-            "-vv",
             "-p",
             "spacetimedb-client-api-messages",
             "--example",
