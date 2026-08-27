@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationArgs,
-  referenceQualificationContext,
+  mutationWorkerRequiresSiblingAbort, referenceQualificationContext,
   parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
   parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
   qualificationMutationManifest,
@@ -123,6 +123,20 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.equal(resumable[resumable.indexOf('--mutation-checkpoint') + 1]
     .replaceAll('\\', '/'), '/results/checkpoints/mongodb-worker-3.json');
   assert.equal(resumable[resumable.indexOf('--mutation-max-runtime-minutes') + 1], '60');
+});
+
+test('parallel mutation workers stop siblings only for unusable failures', () => {
+  const complete = { assigned: ['one'], control: {
+    checkpoint: { status: 'complete' }, results: [{ id: 'one', status: 'SURVIVED' }],
+  } };
+  assert.equal(mutationWorkerRequiresSiblingAbort({ ok: false }, complete), false,
+    'a conclusive survivor is usable mutation evidence');
+  assert.equal(mutationWorkerRequiresSiblingAbort({ ok: false }, {
+    assigned: ['one'], control: { outcome: { kind: 'harness_failure' } },
+  }), true);
+  assert.equal(mutationWorkerRequiresSiblingAbort({ ok: false }, {
+    assigned: ['one'], control: null,
+  }), true);
 });
 
 test('mutation-only worker audit requires Docker, caught defects, and released resources', () => {

@@ -752,6 +752,15 @@ export function parallelMutationResults(manifest, workers) {
   })), { defaultScenario: manifest.scenario });
 }
 
+export function mutationWorkerRequiresSiblingAbort(processResult, worker) {
+  if (worker.control?.outcome?.kind === 'harness_failure') return true;
+  if (processResult.ok) return false;
+  const completed = worker.control?.checkpoint?.status === 'complete'
+    && Array.isArray(worker.control?.results)
+    && worker.control.results.length === worker.assigned.length;
+  return !completed;
+}
+
 async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
   const manifest = qualificationMutationManifest(fixture, context);
   if (!Array.isArray(manifest.mutations)
@@ -785,7 +794,11 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
   const workerRoot = join(args.runsRoot, `r${repetition + 1}-workers`);
   mkdirSync(workerRoot, { recursive: true });
   const cancellation = new AbortController();
-  const cancel = () => cancellation.abort();
+  let cancellationReason = null;
+  const cancel = () => {
+    cancellationReason ??= 'parallel mutation qualification was interrupted';
+    cancellation.abort();
+  };
   process.once('SIGINT', cancel);
   process.once('SIGTERM', cancel);
   let workers;
@@ -800,19 +813,24 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       const processResult = await runBounded(process.execPath, argv,
         { cwd: ROOT, env: process.env, timeoutMs: remainingMs, logs,
           signal: cancellation.signal });
-      return { workerIndex, runIndex: args.runIndex + workerIndex, artifactPath, logs, processResult };
+      const worker = { workerIndex, runIndex: args.runIndex + workerIndex,
+        artifactPath, logs, processResult };
+      const inspected = readParallelMutationWorker(worker.artifactPath, processResult,
+        { ...artifactIdentities, workerIndex, workerCount: args.mutationWorkers }, manifest);
+      if (mutationWorkerRequiresSiblingAbort(processResult, inspected)) {
+        cancellationReason ??= `worker ${workerIndex + 1} failed before usable mutation evidence`;
+        cancellation.abort();
+      }
+      return { ...worker, ...inspected };
     }));
   } finally {
     process.removeListener('SIGINT', cancel);
     process.removeListener('SIGTERM', cancel);
   }
-  const inspected = workers.map(worker => ({ ...worker, ...readParallelMutationWorker(
-    worker.artifactPath, worker.processResult,
-    { ...artifactIdentities, workerIndex: worker.workerIndex,
-      workerCount: args.mutationWorkers }, manifest) }));
+  const inspected = workers;
   const failures = inspected.flatMap(worker => worker.failures
     .map(failure => `worker ${worker.workerIndex + 1}: ${failure}`));
-  if (cancellation.signal.aborted) failures.unshift('parallel mutation qualification was interrupted');
+  if (cancellation.signal.aborted) failures.unshift(cancellationReason);
   let results = [];
   try {
     results = parallelMutationResults(manifest, inspected);
