@@ -5,8 +5,6 @@ import { portsFor } from '../composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../project-paths.mjs';
 
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
-const MUTATION_BASE_TIMEOUT_MS = 5 * 60_000;
-const MUTATION_PROBE_TIMEOUT_MS = 75_000;
 
 function restartSpecFor(args, appDir, track) {
   const port = portsFor(track, args.backend, args.runIndex).express ?? null;
@@ -35,6 +33,7 @@ export function mutationControlArgv(args, appDir, url, track) {
     ]),
     ...(args.mutationResumeFrom ? ['--resume-from', args.mutationResumeFrom] : []),
     ...(args.mutationCheckpointOut ? ['--checkpoint-out', args.mutationCheckpointOut] : []),
+    ...(args.mutationBaselineBundle ? ['--baseline-bundle', args.mutationBaselineBundle] : []),
     ...(args.mutationMaxRuntimeMinutes ? [
       '--max-runtime-minutes', String(args.mutationMaxRuntimeMinutes),
     ] : []),
@@ -43,9 +42,9 @@ export function mutationControlArgv(args, appDir, url, track) {
 }
 
 export function mutationControlTimeoutMs(manifest, maxRuntimeMinutes = 60) {
-  const mutations = Array.isArray(manifest?.mutations) ? manifest.mutations : [];
-  const measured = MUTATION_BASE_TIMEOUT_MS + mutations.reduce((total, mutation) =>
-    total + MUTATION_PROBE_TIMEOUT_MS + 2 * Number(mutation.settleMs ?? 4000), 0);
+  if (!Array.isArray(manifest?.mutations)) {
+    throw new Error('mutation control timeout requires a mutation manifest');
+  }
   const boundedBatch = (Number(maxRuntimeMinutes) + 20) * 60_000;
-  return Math.max(COMMAND_TIMEOUT_MS, measured, boundedBatch);
+  return Math.max(COMMAND_TIMEOUT_MS, boundedBatch);
 }

@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { finalizeRunTotals, gradeArgv, levelGradeIsUsable, parseArgs, repairHistoryEntry, repairProgressState }
+import { finalizeRunTotals, gradeArgv, levelGradeIsUsable, parseArgs, pristineMutationBaselinePath,
+  repairHistoryEntry, repairProgressState }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -94,8 +95,22 @@ test('mutation-only execution is restricted to model-free reference runs', () =>
     '--reference-mutation-only']), /requires a mutation-bound reference fixture/);
   const args = parseArgs(['node', 'bench', '--backend', 'postgres', '--fix-rounds', '0',
     '--agent-adapter', 'reference-fixture', '--app', 'fixture', '--mutations', 'mutations.json',
-    '--reference-mutation-only']);
+    '--reference-mutation-only', '--mutation-baseline-bundle', 'baseline.json']);
   assert.equal(args.referenceMutationOnly, true);
+  assert.match(args.mutationBaselineBundle, /baseline\.json$/);
+  assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--mutation-baseline-bundle', 'baseline.json']), /require --mutations/);
+  assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--mutations', 'mutations.json', '--mutation-baseline-bundle', 'baseline.json']),
+  /internal reference mutation option/);
+});
+
+test('mutation control reuses the existing clean grade when it is present', () => {
+  const args = { out: 'results/run', levelList: [1, 3] };
+  assert.equal(pristineMutationBaselinePath(args, () => true),
+    join('results/run', 'first-build-l3-grading', 'bundle.json'));
+  assert.equal(pristineMutationBaselinePath(args, () => false), null);
+  assert.equal(pristineMutationBaselinePath({ ...args, referenceMutationOnly: true }), null);
 });
 
 test('the first repair that makes an unstartable app gradeable is never rolled back', () => {

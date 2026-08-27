@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
   mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
-  releaseScenarioCheckKeys, resolveMutationFile,
+  releaseScenarioCheckKeys, resolveMutationFile, reusableMutationBaseline,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -24,6 +24,27 @@ const report = (criteria, setupError = null) => ({
   }],
 });
 const mutation = { id: 'break-b', targets: ['check.b'] };
+
+test('a clean scenario report is reused only for the exact run identity and check set', () => {
+  const scenario = { total: 2, max: 2, selection: { checks: [
+    { stableKey: 'check.a' }, { stableKey: 'check.b' },
+  ] }, features: [] };
+  const bundle = {
+    backend: 'postgres', track: 'ecommerce', level: 3,
+    source: { sha256: 'fixture' },
+    recipeRelease: { id: 'recipe', version: '1.0.0', contentSha256: 'recipe-sha' },
+    suites: { scenario, another: { selection: { checks: [{ stableKey: 'check.c' }] } } },
+  };
+  const expected = { backend: 'postgres', track: 'ecommerce', level: 3,
+    fixtureSha256: 'fixture', recipe: { id: 'recipe', version: '1.0.0', sha256: 'recipe-sha' },
+    selectedCheckKeys: ['check.b', 'check.a'] };
+
+  assert.deepEqual(reusableMutationBaseline(bundle, expected), { ok: true, report: scenario });
+  assert.match(reusableMutationBaseline(bundle, { ...expected, fixtureSha256: 'other' }).reason,
+    /fixture/);
+  assert.match(reusableMutationBaseline(bundle, { ...expected,
+    selectedCheckKeys: ['check.a'] }).reason, /0 exact scenario matches/);
+});
 
 test('mutation definitions name exact criteria and contain real edits', () => {
   const valid = { ...mutation, file: 'src/app.ts', find: 'correct', replace: 'broken' };

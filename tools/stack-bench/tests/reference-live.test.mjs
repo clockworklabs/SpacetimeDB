@@ -103,7 +103,8 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
 
   const argv = parallelMutationChildArgv(args,
     { binding: { release: { id: 'ecommerce.l2-standard', version: '1.5.0' } } },
-    { artifactPath: '/results/w3.json', repetition: 0, workerIndex: 2, workerCount: 4 });
+    { artifactPath: '/results/w3.json', baselineBundle: '/results/clean/bundle.json',
+      repetition: 0, workerIndex: 2, workerCount: 4 });
   const after = flag => argv[argv.indexOf(flag) + 1];
   assert.equal(after('--run-index'), '10');
   assert.equal(after('--mutation-shard-index'), '2');
@@ -111,11 +112,14 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.equal(after('--repetitions'), '1');
   assert.equal(after('--out'), '/results/w3.json');
   assert.equal(argv.includes('--reference-mutation-only'), true);
+  assert.equal(after('--mutation-baseline-bundle').replaceAll('\\', '/'),
+    '/results/clean/bundle.json');
 
   args.mutationCheckpointDir = '/results/checkpoints';
   const resumable = parallelMutationChildArgv(args,
     { binding: { release: { id: 'ecommerce.l2-standard', version: '1.5.0' } } },
-    { artifactPath: '/results/w3.json', repetition: 0, workerIndex: 2, workerCount: 4 });
+    { artifactPath: '/results/w3.json', baselineBundle: '/results/clean/bundle.json',
+      repetition: 0, workerIndex: 2, workerCount: 4 });
   assert.equal(resumable[resumable.indexOf('--mutation-checkpoint') + 1]
     .replaceAll('\\', '/'), '/results/checkpoints/mongodb-worker-3.json');
   assert.equal(resumable[resumable.indexOf('--mutation-max-runtime-minutes') + 1], '60');

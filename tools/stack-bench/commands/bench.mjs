@@ -126,6 +126,7 @@ export function parseArgs(argv) {
       case '--mutation-shard-count': a.mutationShardCount = Number(argv[++i]); break;
       case '--mutation-resume-from': a.mutationResumeFrom = resolve(argv[++i]); break;
       case '--mutation-checkpoint-out': a.mutationCheckpointOut = resolve(argv[++i]); break;
+      case '--mutation-baseline-bundle': a.mutationBaselineBundle = resolve(argv[++i]); break;
       case '--mutation-max-runtime-minutes': a.mutationMaxRuntimeMinutes = Number(argv[++i]); break;
       case '--reference-mutation-only': a.referenceMutationOnly = true; break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
@@ -143,8 +144,9 @@ export function parseArgs(argv) {
     console.error('Usage: node commands/bench.mjs --backend <b> --levels 1-3 [--fix-rounds 10] [--run-index N]');
     process.exit(2);
   }
-  if ((a.mutationResumeFrom || a.mutationCheckpointOut) && !a.mutations) {
-    throw new Error('mutation checkpoint options require --mutations');
+  if ((a.mutationResumeFrom || a.mutationCheckpointOut || a.mutationBaselineBundle)
+      && !a.mutations) {
+    throw new Error('mutation control options require --mutations');
   }
   if (!Number.isFinite(a.mutationMaxRuntimeMinutes) || a.mutationMaxRuntimeMinutes < 1
       || a.mutationMaxRuntimeMinutes > 120) {
@@ -153,6 +155,9 @@ export function parseArgs(argv) {
   if (a.referenceMutationOnly && (!a.mutations || a.agentAdapter !== 'reference-fixture'
       || a.fixRounds !== 0 || !a.app || a.campaignFile)) {
     throw new Error('--reference-mutation-only requires a mutation-bound reference fixture run');
+  }
+  if (a.mutationBaselineBundle && !a.referenceMutationOnly) {
+    throw new Error('--mutation-baseline-bundle is an internal reference mutation option');
   }
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
@@ -512,6 +517,15 @@ function restartSpecFor(args, appDir, track) {
   const port = portsFor(track, args.backend, args.runIndex).express ?? null;
   return { backend: args.backend, app: appDir, port: port == null ? null : Number(port),
     probe: track.restartProbe };
+}
+
+export function pristineMutationBaselinePath(args, exists = existsSync) {
+  if (args.referenceMutationOnly) return args.mutationBaselineBundle ?? null;
+  if (args.mutationBaselineBundle) return args.mutationBaselineBundle;
+  const level = args.levelList?.at(-1);
+  if (!Number.isSafeInteger(level) || level < 1 || !args.out) return null;
+  const candidate = join(args.out, `first-build-l${level}-grading`, 'bundle.json');
+  return exists(candidate) ? candidate : null;
 }
 
 function runMutationControl(args, appDir, url, track, imageId) {
@@ -1651,6 +1665,7 @@ async function main() {
     const pristineOutcome = aggregateRunOutcome(run.levels);
     if (args.referenceMutationOnly || mutationControlEligible(pristineOutcome)) {
       args.parentAttemptId = runId;
+      args.mutationBaselineBundle = pristineMutationBaselinePath(args);
       run.mutationControl = runMutationControl(args, appDir, url, track,
         run.setup?.isolation?.imageId ?? null);
     } else {

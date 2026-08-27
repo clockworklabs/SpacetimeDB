@@ -137,6 +137,32 @@ export function indexMutationReport(report) {
   return { criteria, setupFailures: [...setupFailures.values()] };
 }
 
+function stableKeys(report) {
+  return (report?.selection?.checks ?? []).map(check => check.stableKey).sort();
+}
+
+export function reusableMutationBaseline(bundle, expected) {
+  const release = bundle?.recipeRelease;
+  const mismatches = [];
+  if (bundle?.backend !== expected.backend) mismatches.push('backend');
+  if (bundle?.track !== expected.track) mismatches.push('track');
+  if (Number(bundle?.level) !== Number(expected.level)) mismatches.push('level');
+  if (bundle?.source?.sha256 !== expected.fixtureSha256) mismatches.push('fixture');
+  if (release?.id !== expected.recipe.id || release?.version !== expected.recipe.version
+      || release?.contentSha256 !== expected.recipe.sha256) mismatches.push('recipe');
+  if (mismatches.length) {
+    return { ok: false, reason: `clean baseline identity differs: ${mismatches.join(', ')}` };
+  }
+
+  const requested = [...expected.selectedCheckKeys].sort();
+  const candidates = Object.values(bundle?.suites ?? {}).filter(suite =>
+    JSON.stringify(stableKeys(suite)) === JSON.stringify(requested));
+  if (candidates.length !== 1) {
+    return { ok: false, reason: `clean baseline has ${candidates.length} exact scenario matches` };
+  }
+  return { ok: true, report: candidates[0] };
+}
+
 export function validateMutationBaseline(report, mutations) {
   const indexed = indexMutationReport(report);
   const issues = [];

@@ -77,6 +77,7 @@ export function parseReferenceQualificationArgs(argv) {
     else if (argv[i] === '--mutation-shard-count') args.mutationShardCount = Number(argv[++i]);
     else if (argv[i] === '--mutation-checkpoint-dir') args.mutationCheckpointDir = resolve(argv[++i]);
     else if (argv[i] === '--mutation-checkpoint') args.mutationCheckpoint = resolve(argv[++i]);
+    else if (argv[i] === '--mutation-baseline-bundle') args.mutationBaselineBundle = resolve(argv[++i]);
     else if (argv[i] === '--mutation-max-runtime-minutes') {
       args.mutationMaxRuntimeMinutes = Number(argv[++i]);
     }
@@ -105,14 +106,18 @@ export function parseReferenceQualificationArgs(argv) {
   if (args.mutationWorkers > 1 && !args.mutations) {
     throw new Error('--mutation-workers above 1 requires --mutations');
   }
-  if ((args.mutationCheckpointDir || args.mutationCheckpoint) && !args.mutations) {
-    throw new Error('mutation checkpoint options require --mutations');
+  if ((args.mutationCheckpointDir || args.mutationCheckpoint || args.mutationBaselineBundle)
+      && !args.mutations) {
+    throw new Error('mutation control options require --mutations');
   }
   if (args.mutationCheckpoint && args.mutationWorkers !== 1) {
     throw new Error('--mutation-checkpoint is an internal single-worker option');
   }
   if (args.referenceMutationOnly && (!args.mutations || args.mutationWorkers !== 1)) {
     throw new Error('--reference-mutation-only is an internal single-worker option');
+  }
+  if (args.mutationBaselineBundle && !args.referenceMutationOnly) {
+    throw new Error('--mutation-baseline-bundle is an internal mutation-worker option');
   }
   if (!Number.isFinite(args.mutationMaxRuntimeMinutes)
       || args.mutationMaxRuntimeMinutes < 1 || args.mutationMaxRuntimeMinutes > 120) {
@@ -566,6 +571,9 @@ async function runOnce(fixture, args, context, id, repetition) {
         benchArgs.push('--mutation-checkpoint-out', args.mutationCheckpoint);
       }
       benchArgs.push('--mutation-max-runtime-minutes', String(args.mutationMaxRuntimeMinutes));
+      if (args.mutationBaselineBundle) {
+        benchArgs.push('--mutation-baseline-bundle', args.mutationBaselineBundle);
+      }
       if (args.referenceMutationOnly) benchArgs.push('--reference-mutation-only');
     }
     const child = await runBounded(process.execPath, benchArgs,
@@ -621,7 +629,7 @@ async function runOnce(fixture, args, context, id, repetition) {
 }
 
 export function parallelMutationChildArgv(args, context,
-  { artifactPath, repetition, workerIndex, workerCount }) {
+  { artifactPath, baselineBundle, repetition, workerIndex, workerCount }) {
   const runIndex = args.runIndex + workerIndex;
   const argv = [fileURLToPath(import.meta.url), '--backend', args.backend,
     '--track', args.track, '--level', String(args.level), '--recipe',
@@ -631,6 +639,7 @@ export function parallelMutationChildArgv(args, context,
     String(workerIndex), '--mutation-shard-count', String(workerCount), '--out', artifactPath];
   argv.push('--reference-mutation-only');
   argv.push('--mutation-max-runtime-minutes', String(args.mutationMaxRuntimeMinutes));
+  argv.push('--mutation-baseline-bundle', baselineBundle);
   if (args.mutationCheckpointDir) {
     argv.push('--mutation-checkpoint', join(args.mutationCheckpointDir,
       `${args.backend}-worker-${workerIndex + 1}.json`));
@@ -739,10 +748,9 @@ export function parallelMutationResults(manifest, workers) {
 
 async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
   const manifest = qualificationMutationManifest(fixture, context);
-  const scenarios = new Set((manifest.mutations ?? [])
-    .map(mutation => mutation.scenario ?? manifest.scenario).filter(Boolean));
-  if (!Array.isArray(manifest.mutations) || scenarios.size < args.mutationWorkers) {
-    throw new Error(`--mutation-workers cannot exceed ${scenarios.size} mutation scenarios`);
+  if (!Array.isArray(manifest.mutations)
+      || manifest.mutations.length < args.mutationWorkers) {
+    throw new Error(`--mutation-workers cannot exceed ${manifest.mutations?.length ?? 0} mutations`);
   }
   const started = Date.now();
   const clean = await runOnce(fixture, { ...args, mutations: false, mutationWorkers: 1,
@@ -751,6 +759,14 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
     return { ...clean, durationMs: Date.now() - started,
       failures: clean.failures.map(failure => `clean baseline: ${failure}`),
       mutations: { caught: 0, total: 0 } };
+  }
+  const baselineBundle = resolve(args.artifactDirectory, clean.output,
+    `first-build-l${args.level}-grading`, 'bundle.json');
+  if (!existsSync(baselineBundle)) {
+    return { ...clean, ok: false, durationMs: Date.now() - started,
+      processError: `clean baseline bundle is missing: ${baselineBundle}`,
+      failures: [`clean baseline bundle is missing: ${baselineBundle}`],
+      outcome: 'incomplete', mutations: { caught: 0, total: 0 } };
   }
   const remainingMs = started + args.timeoutMs - Date.now();
   if (remainingMs <= 0) {
@@ -773,7 +789,8 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
       const logs = { stdout: join(workerRoot, `w${workerIndex + 1}.stdout.log`),
         stderr: join(workerRoot, `w${workerIndex + 1}.stderr.log`) };
       const argv = parallelMutationChildArgv(args, context,
-        { artifactPath, repetition, workerIndex, workerCount: args.mutationWorkers });
+        { artifactPath, baselineBundle, repetition, workerIndex,
+          workerCount: args.mutationWorkers });
       const processResult = await runBounded(process.execPath, argv,
         { cwd: ROOT, env: process.env, timeoutMs: remainingMs, logs,
           signal: cancellation.signal });

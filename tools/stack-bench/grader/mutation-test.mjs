@@ -42,6 +42,7 @@ import {
   mutationFileEdits,
   mutationTargetKeys,
   releaseScenarioCheckKeys,
+  reusableMutationBaseline,
   resolveMutationFile,
   validateMutationBaseline,
   validateMutationDefinitions,
@@ -83,6 +84,7 @@ function parseArgs(argv) {
     else if (argv[i] === "--mutation-shard-count") a.mutationShardCount = Number(argv[++i]);
     else if (argv[i] === "--resume-from") a.resumeFrom = resolve(argv[++i]);
     else if (argv[i] === "--checkpoint-out") a.checkpointOut = resolve(argv[++i]);
+    else if (argv[i] === "--baseline-bundle") a.baselineBundle = resolve(argv[++i]);
     else if (argv[i] === "--max-runtime-minutes") a.maxRuntimeMinutes = Number(argv[++i]);
     else if (argv[i] === "--image-id") a.imageId = argv[++i];
     else {
@@ -136,9 +138,17 @@ async function waitForApp(a, seconds = 120) {
   while (Date.now() < deadline) {
     const status = await fetchStatus(probe, { timeoutMs: 3000 });
     if (status !== null && status < 500) return; // 401/404 still means it is serving
-    await sleep(2000);
+    await sleep(250);
   }
   throw new Error(`app did not answer at ${probe} within ${seconds}s`);
+}
+
+async function restartAfterSourceChange(a) {
+  if (!a.restartSpec) {
+    throw new Error('mutation testing requires a lease-authenticated --restart-spec');
+  }
+  await controlBackend(a.restartSpec, "restart");
+  await waitForApp(a);
 }
 
 // Grading a dirty database silently lowers scores, and this compares scores
@@ -408,6 +418,9 @@ async function main() {
     return { scenarioPath, scenario: scenarioKey(scenarioPath), mutations, selectedCheckKeys,
       checkpoint: checkpointGroup(scenarioPath, mutations, selectedCheckKeys) };
   });
+  const cleanBaselineBundle = args.baselineBundle
+    ? readArtifactPayload(args.baselineBundle, { expectedKind: 'grade_bundle' })
+    : null;
   const checkpoint = checkpointIdentity(plans.map(plan => plan.checkpoint), shard, track);
   const resumed = resumableEvidence(args.resumeFrom, checkpoint);
   const results = [...resumed.results];
@@ -489,15 +502,32 @@ async function main() {
     if (Date.now() >= deadline) return stopAtBudget();
     args.spec = scenarioPath;
     args.selectedCheckKeys = selectedCheckKeys;
-    console.log(`Baseline (unmutated app, ${scenarioPath})...`);
-    await waitForApp(args);
-    let baseline = await grade(args, reportPath);
-    let baselineValidation = validateMutationBaseline(baseline, mutations);
-    if (!baselineValidation.ok && isRetryableMutationBaseline(baselineValidation.issues)) {
-      console.log('  transient baseline failure; retrying once');
+    let baseline;
+    if (cleanBaselineBundle) {
+      const reused = reusableMutationBaseline(cleanBaselineBundle, {
+        backend: args.backend,
+        track: args.track,
+        level: Number(args.level),
+        fixtureSha256: spec.fixtureSha256,
+        recipe: { id: args.recipeRelease.id, version: args.recipeRelease.version,
+          sha256: args.expectedRecipeSha256 },
+        selectedCheckKeys,
+      });
+      if (!reused.ok) {
+        throw new Error(`cannot reuse clean baseline for ${scenarioPath}: ${reused.reason}`);
+      }
+      baseline = reused.report;
+      console.log(`Baseline (verified clean evidence, ${scenarioPath})...`);
+    } else {
+      console.log(`Baseline (unmutated app, ${scenarioPath})...`);
       baseline = await grade(args, reportPath);
-      baselineValidation = validateMutationBaseline(baseline, mutations);
+      let validation = validateMutationBaseline(baseline, mutations);
+      if (!validation.ok && isRetryableMutationBaseline(validation.issues)) {
+        console.log('  transient baseline failure; retrying once');
+        baseline = await grade(args, reportPath);
+      }
     }
+    const baselineValidation = validateMutationBaseline(baseline, mutations);
     if (!baselineValidation.ok) {
       throw new Error(
         `reference baseline is not known-good for ${scenarioPath}: ${
@@ -544,7 +574,7 @@ async function main() {
             file.edits.reduce((src, edit) => src.replace(edit.find, edit.replace),
               file.original));
         }
-        await sleep(m.settleMs ?? 4000); // let the watcher notice the edit
+        await restartAfterSourceChange(args);
         r = await grade(args, reportPath);
       } finally {
         const restoreFailures = [];
@@ -565,9 +595,12 @@ async function main() {
             throw new Error(`mutation restore verification failed for ${file.target}`);
           }
         }
-        await sleep(m.settleMs ?? 4000);
-        await reset(args);
-        await waitForApp(args); // healthy again before the next probe
+        // The next mutation restarts the app after it edits the restored source.
+        // If grading aborted, restore the clean runtime before the worker exits.
+        if (!r) {
+          await restartAfterSourceChange(args);
+          await reset(args);
+        }
       }
 
       const classified = classifyMutationResult(baseline, r, m);
@@ -592,6 +625,9 @@ async function main() {
 
   // Detect any source change outside the files restored above.
   assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture after worker completion');
+  // Restore the clean runtime and database before releasing the worker lease.
+  await restartAfterSourceChange(args);
+  await reset(args);
 
   rmSync(work, { recursive: true, force: true });
   const artifact = persist('complete');

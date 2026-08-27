@@ -28,9 +28,11 @@ test('campaign-bound mutation grading forwards the run level and exact recipe', 
     loadTrack('ecommerce')), /does not match bound task/);
 });
 
-test('mutation control time grows with the declared defect inventory', () => {
+test('mutation control timeout follows its explicit runtime budget', () => {
   assert.equal(mutationControlTimeoutMs({ mutations: [] }), 80 * 60_000);
   assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 35 }, () => ({})) }),
+    80 * 60_000);
+  assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 1_000 }, () => ({})) }),
     80 * 60_000);
   assert.equal(mutationControlTimeoutMs({ mutations: [] }, 15), 35 * 60_000);
 });
@@ -53,7 +55,7 @@ test('mutation checkpoint controls reach the mutation runner', () => {
     track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'resume-attempt',
     recipe: null, recipeTasks: new Map(), mutationResumeFrom: 'prior.json',
     mutationCheckpointOut: 'next.json', mutationMaxRuntimeMinutes: 30,
-    mutationImageId: 'sha256:image' };
+    mutationImageId: 'sha256:image', mutationBaselineBundle: 'baseline.json' };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
   const after = flag => argv[argv.indexOf(flag) + 1];
@@ -61,6 +63,7 @@ test('mutation checkpoint controls reach the mutation runner', () => {
   assert.equal(after('--checkpoint-out'), 'next.json');
   assert.equal(after('--max-runtime-minutes'), '30');
   assert.equal(after('--image-id'), 'sha256:image');
+  assert.equal(after('--baseline-bundle'), 'baseline.json');
 });
 
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {
