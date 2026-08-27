@@ -400,7 +400,8 @@ export function auditReferenceRun(output, fixture,
     }
   }
   const fingerprint = createHash('sha256').update(JSON.stringify(criteria)).digest('hex');
-  return { ok: failures.length === 0, failures, runId: run.id, score: level ? `${level.score}/${level.max}` : null,
+  return { ok: failures.length === 0, failures, runId: run.id,
+    score: levelResult ? `${levelResult.score}/${levelResult.max}` : null,
     imageId: run.setup?.isolation?.imageId ?? null, criteria: criteria.length,
     zeroPointCriteria: criteria.filter(criterion => criterion.points === 0).length, fingerprint,
     outcome: run.outcome?.kind ?? null, packRuntime: bundle.packRuntime ?? null,

@@ -471,6 +471,16 @@ test('reference qualification audits zero-point criteria and teardown evidence',
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('reference qualification reports the exact level score', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 2, passed: true });
+    const audit = auditReferenceRun(root, fixture, { release });
+    assert.equal(audit.ok, true);
+    assert.equal(audit.score, '2/2');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('reference qualification rejects a failed zero-point criterion', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
   try {
