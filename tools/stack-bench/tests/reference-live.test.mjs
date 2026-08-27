@@ -48,19 +48,23 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.equal(args.mutations, false);
   assert.equal(args.timeoutMinutes, 60);
   const mutationArgs = parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
-    '--mutations']);
+    '--mutations', '--release-candidate']);
   assert.equal(mutationArgs.mutations, true);
   assert.equal(mutationArgs.timeoutMinutes, 120);
   assert.equal(mutationArgs.mutationMaxRuntimeMinutes, 60);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--mutations']), /requires --release-candidate/);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--release-candidate']), /requires --mutations/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
-    '--mutations', '--timeout-minutes', '120']).timeoutMinutes, 120);
+    '--mutations', '--release-candidate', '--timeout-minutes', '120']).timeoutMinutes, 120);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
-    '--mutations', '--timeout-minutes', '60', '--mutation-max-runtime-minutes', '30'])
+    '--mutations', '--release-candidate', '--timeout-minutes', '60', '--mutation-max-runtime-minutes', '30'])
     .mutationMaxRuntimeMinutes, 30);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
-    '--backend', 'postgres', '--mutations', '--timeout-minutes', '60']), /plus 20 minutes/);
+    '--backend', 'postgres', '--mutations', '--release-candidate', '--timeout-minutes', '60']), /plus 20 minutes/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
-    '--backend', 'postgres', '--mutations', '--timeout-minutes', '181']), /through 180/);
+    '--backend', 'postgres', '--mutations', '--release-candidate', '--timeout-minutes', '181']), /through 180/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
@@ -93,12 +97,12 @@ test('parallel Spacetime qualification derives an isolated listener port from th
 
 test('parallel mutation qualification reserves bounded slots and exact child shards', () => {
   const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
-    '--backend', 'mongodb', '--mutations', '--mutation-workers', '4', '--run-index', '8']);
+    '--backend', 'mongodb', '--mutations', '--release-candidate', '--mutation-workers', '4', '--run-index', '8']);
   assert.equal(args.mutationWorkers, 4);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'mongodb', '--mutation-workers', '2']), /requires --mutations/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
-    '--backend', 'mongodb', '--mutations', '--mutation-workers', '2', '--run-index', '20']),
+    '--backend', 'mongodb', '--mutations', '--release-candidate', '--mutation-workers', '2', '--run-index', '20']),
   /run-index cap/);
 
   const argv = parallelMutationChildArgv(args,
@@ -166,7 +170,7 @@ test('mutation-only worker audit requires Docker, caught defects, and released r
 
 test('parallel mutation preflight covers every worker slot and Spacetime listener', () => {
   const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
-    '--backend', 'spacetime', '--track', 'ecommerce', '--mutations',
+    '--backend', 'spacetime', '--track', 'ecommerce', '--mutations', '--release-candidate',
     '--mutation-workers', '3', '--run-index', '8']);
   const keys = parallelMutationResourceLockKeys(args);
   assert.deepEqual(keys, [

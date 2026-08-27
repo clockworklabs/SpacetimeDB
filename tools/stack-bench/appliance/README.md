@@ -303,6 +303,9 @@ requires that evidence.
 
 Mutation qualification is serial by default. Use `--mutation-workers N` with
 `--mutations` to distribute individual defects across 1 to 8 isolated workers.
+The complete mutation set is a release-candidate gate and requires
+`--release-candidate`. During development, run only the definitions affected
+by the change.
 Defects from one scenario may run on different workers. The parent grades the
 clean fixture once. Each worker then receives a separate run slot, source tree,
 backend lease, ports, logs, and artifact directory. The parent accepts the
@@ -321,7 +324,7 @@ each command so prior run evidence is not replaced.
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
   qualify-reference --backend postgres --track ecommerce --level 2 \
-  --recipe ecommerce.l2-standard@1.6.0 --mutations \
+  --recipe ecommerce.l2-standard@1.6.0 --mutations --release-candidate \
   --mutation-workers 4 --run-index 8 --repetitions 1 \
   --mutation-checkpoint-dir /var/lib/stack-bench/results/postgres-l2-checkpoints \
   --out /var/lib/stack-bench/results/postgres-l2-mutations.json

@@ -72,6 +72,7 @@ export function parseReferenceQualificationArgs(argv) {
     }
     else if (argv[i] === '--timeout-minutes') args.timeoutMinutes = Number(argv[++i]);
     else if (argv[i] === '--mutations') args.mutations = true;
+    else if (argv[i] === '--release-candidate') args.releaseCandidate = true;
     else if (argv[i] === '--mutation-workers') args.mutationWorkers = Number(argv[++i]);
     else if (argv[i] === '--mutation-shard-index') args.mutationShardIndex = Number(argv[++i]);
     else if (argv[i] === '--mutation-shard-count') args.mutationShardCount = Number(argv[++i]);
@@ -115,6 +116,12 @@ export function parseReferenceQualificationArgs(argv) {
   }
   if (args.referenceMutationOnly && (!args.mutations || args.mutationWorkers !== 1)) {
     throw new Error('--reference-mutation-only is an internal single-worker option');
+  }
+  if (args.releaseCandidate && !args.mutations) {
+    throw new Error('--release-candidate requires --mutations');
+  }
+  if (args.mutations && !args.referenceMutationOnly && !args.releaseCandidate) {
+    throw new Error('full mutation qualification requires --release-candidate');
   }
   if (args.mutationBaselineBundle && !args.referenceMutationOnly) {
     throw new Error('--mutation-baseline-bundle is an internal mutation-worker option');

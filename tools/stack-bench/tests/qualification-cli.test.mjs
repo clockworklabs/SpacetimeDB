@@ -76,7 +76,8 @@ test('qualification status uses the exact progression check subset', () => {
   assert(status.commands.filter(command => command.startsWith('qualify-reference'))
     .every(command => command.includes('--feature-catalog ecommerce.questlines@1.0.0')));
   assert(status.commands.filter(command => command.includes('--mutations'))
-    .every(command => command.includes('--mutation-workers 4')));
+    .every(command => command.includes('--mutation-workers 4')
+      && command.includes('--release-candidate')));
   assert.equal(status.promotion.blockers.some(blocker =>
     blocker.code === 'defect_check_coverage_incomplete'), false);
 });
