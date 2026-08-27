@@ -17,7 +17,7 @@ test('campaign-bound mutation grading forwards the run level and exact recipe', 
     recipe: { id: 'ecommerce.l1-modular', version: '2.2.0' },
     selection: {}, task: {} };
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
-    track: 'ecommerce', level: 1, runIndex: 0, parentAttemptId: 'campaign-attempt',
+    track: 'ecommerce', levelList: [1], runIndex: 0, parentAttemptId: 'campaign-attempt',
     recipe: null, recipeTasks: new Map([[1, { request: recipeTask }]]) };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
@@ -37,7 +37,7 @@ test('mutation control time grows with the declared defect inventory', () => {
 test('mutation shard coordinates reach the mutation runner together', () => {
   const manifest = join(ROOT, 'grader', 'mutations', 'mongodb-ecom-l1.json');
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
-    track: 'ecommerce', level: 1, runIndex: 4, parentAttemptId: 'parallel-attempt',
+    track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'parallel-attempt',
     recipe: null, recipeTasks: new Map(), mutationShardIndex: 2, mutationShardCount: 4 };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));

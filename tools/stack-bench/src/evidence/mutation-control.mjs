@@ -15,14 +15,18 @@ function restartSpecFor(args, appDir, track) {
 }
 
 export function mutationControlArgv(args, appDir, url, track) {
+  const level = args.levelList?.at(-1) ?? args.level;
+  if (!Number.isSafeInteger(level) || level < 1) {
+    throw new Error('mutation control requires a positive integer run level');
+  }
   const output = join(args.out, 'mutation-control.json');
-  const recipeTask = args.recipeTasks?.get(Number(args.level))?.agentRequest
-    ?? args.recipeTasks?.get(Number(args.level))?.request ?? null;
+  const recipeTask = args.recipeTasks?.get(level)?.agentRequest
+    ?? args.recipeTasks?.get(level)?.request ?? null;
   const recipe = agentRecipeIdentity(args.recipe, recipeTask);
   return [join(STACK_BENCH_ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
     '--url', url, '--mutations', args.mutations, '--backend', args.backend,
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
-    '--level', String(args.level),
+    '--level', String(level),
     '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
     '--parent-attempt-id', args.parentAttemptId,
     ...(args.mutationShardCount === undefined ? [] : [
