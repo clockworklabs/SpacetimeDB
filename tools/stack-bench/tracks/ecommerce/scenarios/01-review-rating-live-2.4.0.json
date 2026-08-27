@@ -17,6 +17,7 @@
         { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
         { "do": "click", "actor": "author", "testid": "orders-toggle" },
         { "do": "expect", "actor": "author", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 },
+        { "do": "pressKey", "actor": "author", "key": "Escape" },
         { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
         { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
         { "do": "fill", "actor": "author", "testid": "review-input", "text": "works for travel" },
@@ -25,7 +26,8 @@
         { "do": "fill", "actor": "other", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
         { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
         { "do": "click", "actor": "other", "testid": "orders-toggle" },
-        { "do": "expect", "actor": "other", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 }
+        { "do": "expect", "actor": "other", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 },
+        { "do": "pressKey", "actor": "other", "key": "Escape" }
       ],
       "criteria": [
         {

@@ -11,8 +11,8 @@
     "id": "ecommerce.progression-catalog",
     "version": "1.0.0",
     "meaningSha256": "21f9d750b33c28d9a8a1e1c88834afd9ba8a599f78b75cf7795707d48ca860ea",
-    "executionSha256": "b8b47cff8e8d91905b24eef48706a603e2ee31efe509a15ead5b585343a195d7",
-    "contentSha256": "9e69b217c4e7e8c6e48f83727c3da40dda59cd886418bb58f0363fa2f4deb9f3"
+    "executionSha256": "a8d6d3c80c6aa5bc06396b541ae9dc9fe2109d931f0e928ebf18e520fb5b6dc2",
+    "contentSha256": "ca09298bd5770df9ab67b333d097889d774d015566544b8c653eb0260cabf941"
   },
   "fixture": {
     "id": "ecommerce.operations",
