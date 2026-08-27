@@ -205,7 +205,7 @@ export function ProgressionPanel({
             delaySeconds: Number(restock.delaySeconds),
           })} onClick={() => run(() =>
             request("/api/admin/scheduled-restocks", "POST", { ...restock, quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds) }))}>Schedule</button>
-          {(state?.pendingRestocks ?? []).map((item: any) => <div data-testid="pending-restock-item" key={item.id}>
+          {(state?.pendingRestocks ?? []).map((item: any) => <div data-testid="pending-restock-item" data-entity-id={String(item.id)} key={item.id}>
             <span>{item.item}</span>
             <span data-testid="pending-restock-remaining">{Math.max(0, Math.ceil((new Date(item.dueAt).valueOf() - Date.now()) / 1000))}</span>
             <button data-testid="pending-restock-cancel" onClick={() => run(() => request(`/api/admin/scheduled-restocks/${item.id}`, "DELETE"))}>Cancel</button>

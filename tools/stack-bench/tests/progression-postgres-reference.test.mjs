@@ -53,3 +53,9 @@ test('support order choices expose product names as separate actions', () => {
   assert.match(client, /order\.items\?\.map\(\(item\) => item\.name\)/);
   assert.doesNotMatch(client, /<select data-testid="support-order-option"/);
 });
+
+test('scheduled restocks expose the identifier used by access-control replay', () => {
+  const client = read('client', 'src', 'ProgressionPanel.tsx');
+  assert.match(client,
+    /data-testid="pending-restock-item" data-entity-id=\{String\(item\.id\)\}/);
+});
