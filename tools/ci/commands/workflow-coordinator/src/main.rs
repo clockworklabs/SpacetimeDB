@@ -494,7 +494,7 @@ fn previous_equivalent_run() -> Result<Option<WorkflowRun>> {
 
 fn coordinate_merge_queue_reuse() -> Result<()> {
     let Some(run) = previous_equivalent_run()? else {
-        write_github_output("reuse", false)?;
+        write_github_output("reused", false)?;
         return Ok(());
     };
     println!("Found equivalent merge queue run: {}", run.html_url);
@@ -502,8 +502,8 @@ fn coordinate_merge_queue_reuse() -> Result<()> {
     if should_rerun_failed_jobs(&selected) {
         selected = wait_for_completion(PUBLIC_REPO, rerun_failed_jobs(PUBLIC_REPO, &selected)?)?;
     }
-    write_github_output("reuse_failed", selected.conclusion.as_deref() != Some("success"))?;
-    write_github_output("reuse", true)?;
+    write_github_output("failed", selected.conclusion.as_deref() != Some("success"))?;
+    write_github_output("reused", true)?;
     Ok(())
 }
 
