@@ -551,11 +551,15 @@ function validatePayload(kind, payload) {
         fail('mutation_control payload.shard.mutationIds must contain unique non-empty strings');
       }
       const resultIds = (payload.results ?? []).map(result => result?.id);
-      if (resultIds.length !== mutationIds.length
-        || resultIds.some(id => typeof id !== 'string' || !id)
+      if (resultIds.some(id => typeof id !== 'string' || !id)
         || new Set(resultIds).size !== resultIds.length
         || resultIds.some(id => !mutationIds.includes(id))) {
-        fail('mutation_control payload.shard.mutationIds must match the exact result set');
+        fail('mutation_control payload.results must be a unique subset of the assigned mutation IDs');
+      }
+      const checkpointStatus = payload.checkpoint?.status;
+      const partial = checkpointStatus === 'running' || checkpointStatus === 'incomplete';
+      if (!partial && resultIds.length !== mutationIds.length) {
+        fail('complete mutation_control payload.shard.mutationIds must match the exact result set');
       }
     }
   }

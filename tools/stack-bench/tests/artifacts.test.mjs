@@ -194,7 +194,19 @@ test('mutation shard artifacts bind exact coordinates to the exact result set', 
   } }), /coordinates are invalid/);
   assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'wrong-result', payload: {
     shard: { index: 1, count: 3, mutationIds: ['other'] }, results: [results[0]],
-  } }), /match the exact result set/);
+  } }), /unique subset of the assigned mutation IDs/);
+  assert.doesNotThrow(() => createArtifact({ kind: 'mutation_control', id: 'partial-shard', payload: {
+    shard: { index: 1, count: 3, mutationIds: ['broken-auth', 'broken-owner'] },
+    results: [results[0]], checkpoint: { status: 'incomplete' },
+  } }));
+  assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'partial-marked-complete', payload: {
+    shard: { index: 1, count: 3, mutationIds: ['broken-auth', 'broken-owner'] },
+    results: [results[0]], checkpoint: { status: 'complete' },
+  } }), /complete mutation_control.*match the exact result set/);
+  assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'duplicate-partial-result', payload: {
+    shard: { index: 1, count: 3, mutationIds: ['broken-auth', 'broken-owner'] },
+    results: [results[0], results[0]], checkpoint: { status: 'incomplete' },
+  } }), /unique subset of the assigned mutation IDs/);
   assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'unknown-shard-field', payload: {
     shard: { index: 1, count: 3, mutationIds: ['broken-auth'], worker: true }, results: [results[0]],
   } }), /worker is unknown/);
