@@ -21,8 +21,8 @@ const COMMANDS: &[Command] = &[
         package: "ci-lint",
     },
     Command {
-        path: &["wasm-bindings"],
-        package: "ci-wasm-bindings",
+        path: &["module-latest-deps"],
+        package: "ci-module-latest-deps",
     },
     Command {
         path: &["smoketests"],
@@ -79,6 +79,10 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "watch"],
         package: "ci-workflow-watch",
+    },
+    Command {
+        path: &["other-workflows", "run-spacetime"],
+        package: "ci-run-spacetime",
     },
 ];
 

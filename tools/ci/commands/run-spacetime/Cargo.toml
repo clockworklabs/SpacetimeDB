@@ -1,10 +1,11 @@
 [package]
-name = "ci-wasm-bindings"
+name = "ci-run-spacetime"
 version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
 duct.workspace = true
-ci-common = { path = "../../common" }
+
+[lints]
+workspace = true
