@@ -48,7 +48,8 @@ export function releaseScenarioCheckKeys(release, trackDir, scenarioPath) {
   }
   const selectedScenario = resolve(scenarioPath);
   const keys = release.checkCatalog
-    .filter(check => resolve(trackDir, check.source) === selectedScenario)
+    .filter(check => Number(check.points) > 0
+      && resolve(trackDir, check.source) === selectedScenario)
     .map(check => check.stableKey);
   if (keys.length === 0) {
     throw new Error(`mutation scenario ${scenarioPath} has no checks in the exact recipe release`);
