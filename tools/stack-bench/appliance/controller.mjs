@@ -21,8 +21,8 @@ const COMMANDS = Object.freeze({
   'repair': [join(RUNTIME_ROOT, 'commands', 'repair-cli.mjs')],
   'run': [join(RUNTIME_ROOT, 'commands', 'bench.mjs')],
   'verify-release': [join(RUNTIME_ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],
-  'recover': [join(RUNTIME_ROOT, 'commands', 'recovery.mjs'), 'recover'],
-  'recover-lease': [join(RUNTIME_ROOT, 'commands', 'recovery.mjs'), 'recover-lease'],
+  'recover': [join(RUNTIME_ROOT, 'commands', 'recovery.js'), 'recover'],
+  'recover-lease': [join(RUNTIME_ROOT, 'commands', 'recovery.js'), 'recover-lease'],
 });
 
 const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'dashboard', 'run']);
