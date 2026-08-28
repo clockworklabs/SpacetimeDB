@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -55,7 +54,18 @@ namespace SpacetimeDB
         /// <summary>
         /// Return the count WITH multiplicities.
         /// </summary>
-        public readonly uint Count => RawDict.Select(item => item.Value.Multiplicity).Aggregate(0u, (a, b) => a + b);
+        public readonly uint Count
+        {
+            get
+            {
+                uint count = 0;
+                foreach (var item in RawDict)
+                {
+                    count += item.Value.Multiplicity;
+                }
+                return count;
+            }
+        }
 
         /// <summary>
         /// Add a key-value-pair to the multidictionary.
@@ -113,7 +123,8 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
-        public uint Multiplicity(TKey key) => RawDict.ContainsKey(key) ? RawDict[key].Multiplicity : 0;
+        public uint Multiplicity(TKey key) =>
+            RawDict.TryGetValue(key, out var result) ? result.Multiplicity : 0;
 
         /// <summary>
         /// The value associated with a key.
@@ -171,8 +182,10 @@ namespace SpacetimeDB
         {
             get
             {
-
-                return RawDict.Select(item => item.Value.Value);
+                foreach (var item in RawDict)
+                {
+                    yield return item.Value.Value;
+                }
             }
         }
 
@@ -180,7 +193,10 @@ namespace SpacetimeDB
         {
             get
             {
-                return RawDict.Select(item => new KeyValuePair<TKey, TValue>(item.Key, item.Value.Value));
+                foreach (var item in RawDict)
+                {
+                    yield return new KeyValuePair<TKey, TValue>(item.Key, item.Value.Value);
+                }
             }
         }
 
@@ -191,31 +207,32 @@ namespace SpacetimeDB
         /// <returns></returns>
         public readonly IEnumerable<KeyValuePair<TKey, TValue>> WillRemove(MultiDictionaryDelta<TKey, TValue> delta)
         {
-            var self = this;
-            return delta.Entries.Where(their =>
+            foreach (var their in delta.Entries)
             {
                 if (their.Value.IsValueChange)
                 {
                     // Value changes are translated to Updates, not removals.
-                    return false;
+                    continue;
                 }
                 var theirNonValueChange = their.Value.NonValueChange;
                 if (theirNonValueChange.Delta >= 0)
                 {
                     // Adds can't result in removals.
-                    return false;
+                    continue;
                 }
-                if (self.RawDict.TryGetValue(their.Key, out var mine))
+                if (RawDict.TryGetValue(their.Key, out var mine))
                 {
                     var resultMultiplicity = (int)mine.Multiplicity + theirNonValueChange.Delta;
-                    return resultMultiplicity <= 0; // if < 0, we have a problem, but that's caught in Apply.
+                    if (resultMultiplicity <= 0) // if < 0, we have a problem, but that's caught in Apply.
+                    {
+                        yield return new KeyValuePair<TKey, TValue>(their.Key, theirNonValueChange.Value);
+                    }
                 }
                 else
                 {
                     Log.Warn($"Want to remove row with key {their.Key}, but it doesn't exist!");
-                    return false;
                 }
-            }).Select(entry => new KeyValuePair<TKey, TValue>(entry.Key, entry.Value.NonValueChange.Value));
+            }
         }
 
         /// <summary>
