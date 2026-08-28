@@ -64,7 +64,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "f7ac870b215cf835d4544c0fe6f15faf2021d46abf989754d9c512a94c803cb0",
+      "executableSha256": "98c450c7fbb109a3f1c0ef6ff28f68504ada8a4bc1aa663c6ca1d1fc67aadddd",
       "kind": "reference",
       "mutationSha256": null,
       "recipe": {
@@ -81,7 +81,7 @@
         },
         "version": "1.2.0"
       },
-      "sha256": "8821677133f1d7b4192548452c34c5796849d911c73b94920458e022b9884f29"
+      "sha256": "78eb48e99608939f714f4705b912b2aaafda86cc67e15e94182f62cdf8b0dfdd"
     },
     "mutationControl": false,
     "diagnostic": false,
