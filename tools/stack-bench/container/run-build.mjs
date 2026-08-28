@@ -239,6 +239,11 @@ if (!existing) {
     'run', '-d', '--init', '--name', containerName,
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
     '--pids-limit', '512',
+    // The agent may write the app, its own home directory, and temporary files.
+    // It must not replace system binaries or libraries used by later grading.
+    '--read-only',
+    '--tmpfs', '/tmp:rw,nosuid,nodev',
+    '--tmpfs', '/root:rw,nosuid,nodev',
     '-v', `${resolve(appDir)}:/app`,
   ];
   create.push('--network', expectedNetworkMode);

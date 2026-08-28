@@ -433,6 +433,13 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       { encoding: 'utf8', env, timeout: 180_000 });
     assert.equal(first.status, 0, first.stderr);
     const firstResult = JSON.parse(first.stdout);
+    const hostConfigResult = docker(['inspect', '--format', '{{json .HostConfig}}',
+      firstResult.containerName]);
+    assert.equal(hostConfigResult.status, 0, hostConfigResult.stderr);
+    const hostConfig = JSON.parse(hostConfigResult.stdout);
+    assert.equal(hostConfig.ReadonlyRootfs, true);
+    assert.equal(hostConfig.Tmpfs['/tmp'], 'rw,nosuid,nodev');
+    assert.equal(hostConfig.Tmpfs['/root'], 'rw,nosuid,nodev');
     writeFileSync(join(app, 'preserved.txt'), 'preserved\n');
     const stopped = docker(['stop', firstResult.containerName]);
     assert.equal(stopped.status, 0, stopped.stderr);

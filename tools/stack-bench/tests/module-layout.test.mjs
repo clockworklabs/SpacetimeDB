@@ -132,4 +132,7 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(source, /'--cap-drop', 'ALL'/);
   assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
   assert.match(source, /'--pids-limit', '512'/);
+  assert.match(source, /'--read-only'/);
+  assert.match(source, /'--tmpfs', '\/tmp:rw,nosuid,nodev'/);
+  assert.match(source, /'--tmpfs', '\/root:rw,nosuid,nodev'/);
 });
