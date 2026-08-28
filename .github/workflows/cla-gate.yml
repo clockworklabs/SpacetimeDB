@@ -37,7 +37,7 @@ jobs:
             const { execFileSync } = require("child_process");
 
             function claStatus(args) {
-              const command = ["ci", "cla-assistant", "status", ...args];
+              const command = ["ci", "other-workflows", "cla-assistant", "status", ...args];
               core.info(`Running cargo ${command.join(" ")}`);
               const output = execFileSync("cargo", command, {
                 encoding: "utf8",

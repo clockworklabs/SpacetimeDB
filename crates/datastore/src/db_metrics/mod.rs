@@ -225,6 +225,13 @@ An individual HTTP response's size in bytes is the sum of the sizes of the heade
         #[labels(db: Identity)]
         pub procedure_http_response_size_bytes: IntCounterVec,
 
+        #[name = spacetime_http_response_size_bytes_total]
+        #[help = "Total logical bytes sent in HTTP responses for routes scoped to a specific database.
+
+An individual HTTP response's size in bytes is the sum of the sizes of the header names, header values and body."]
+        #[labels(db: Identity)]
+        pub http_response_size_bytes: IntCounterVec,
+
         #[name = spacetime_procedure_num_http_requests]
         #[help = "Number of HTTP requests performed by procedures running in databases.
 

@@ -6,8 +6,13 @@ import type {
 } from './event_context';
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModule } from './spacetime_module';
-import { isRowTypedQuery, toSql, type RowTypedQuery } from '../lib/query';
-import type { Values } from '../lib/type_util';
+import {
+  isRowTypedQuery,
+  toSql,
+  type NamespacedQueryBuilder,
+  type RowTypedQuery,
+} from '../lib/query';
+import type { UntypedSchemaDef } from '../lib/schema';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -86,9 +91,14 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   subscribe(
     query_sql: Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule>;
+  /**
+   * @param queryFn - Receives the query builder for all tables (root and namespaced), e.g.
+   *   `tables => tables.players.build()` or, for a submodule table,
+   *   `tables => tables.inventory.items.build()`. May return multiple queries as an array.
+   */
   subscribe(
     queryFn: (
-      tables: Values<RemoteModule['tables']>
+      tables: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDef>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
@@ -100,8 +110,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   ): SubscriptionHandleImpl<RemoteModule> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
-      const tablesMap = this.db.getTablesMap?.();
-      const result = query_sql(tablesMap);
+      const tables = this.db.getFromBuilder<RemoteModule & UntypedSchemaDef>();
+      const result = query_sql(tables);
       queries = Array.isArray(result) ? result : [result];
     } else {
       queries = Array.isArray(query_sql) ? query_sql : [query_sql];

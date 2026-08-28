@@ -3,7 +3,7 @@ use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::buffer::DecodeError;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 use spacetimedb_snapshot::SnapshotError;
@@ -40,7 +40,7 @@ pub enum DatastoreError {
 #[derive(Error, Debug)]
 pub enum ViewError {
     #[error("view '{0}' not found")]
-    NotFound(RawIdentifier),
+    NotFound(RawNamespacedIdentifier),
     #[error("Table backing View '{0}' not found")]
     TableNotFound(ViewId),
     #[error("failed to deserialize view arguments from row")]

@@ -794,14 +794,16 @@ impl ModuleSubscriptions {
             )
         };
 
-        let mut subscriptions = self.subscriptions.write();
+        let queries = {
+            let mut subscriptions = self.subscriptions.write();
+            return_on_err!(
+                subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
+                // Apparently we ignore errors sending messages.
+                send_err_msg,
+                None
+            )
+        };
 
-        let queries = return_on_err!(
-            subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
-            // Apparently we ignore errors sending messages.
-            send_err_msg,
-            None
-        );
         // This is technically a bug, since this could be empty if the client has another duplicate subscription.
         // This whole function should be removed soon, so I don't think we need to fix it.
         let [query] = &*queries else {
@@ -1714,7 +1716,7 @@ impl ModuleSubscriptions {
         // TODO(perf): Removing a subscriber is currently O(subscribed_queries).
         // Instead we should maintain an index to make this O(subscribed_views).
         if let Err(err) = self.unsubscribe_views(&removed_queries, client_id.identity) {
-            log::error!(
+            log::warn!(
                 "failed to unsubscribe views for disconnected client ({}, {}): {err}",
                 client_id.identity,
                 client_id.connection_id
@@ -1826,7 +1828,7 @@ impl ModuleSubscriptions {
             };
             for (client_id, query_set_id) in failed_v2_subscriptions {
                 if let Err(err) = subscriptions.remove_subscription_v2(client_id, query_set_id) {
-                    tracing::warn!(?client_id, ?query_set_id, "failed to remove v2 subscription: {err}");
+                    tracing::debug!(?client_id, ?query_set_id, "failed to remove v2 subscription: {err}");
                 }
             }
         }

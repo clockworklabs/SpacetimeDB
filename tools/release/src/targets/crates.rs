@@ -78,7 +78,7 @@ impl CratesRelease {
 
         loop {
             let mut cmd = Command::new("cargo");
-            cmd.args(["info", &spec]);
+            cmd.args(["info", "--registry", "crates-io", &spec]);
             util::print_command(&cmd);
 
             let output = cmd

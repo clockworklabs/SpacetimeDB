@@ -1,14 +1,14 @@
 Write a SpacetimeDB backend module in Rust that defines a user table and a stats table, with a reducer that counts total users and active users without collecting into a Vec.
 
 TABLES
-- user
+- user (private)
   - Struct: User
   - Fields:
     - id: u64 (primary key, auto_inc)
     - name: String
     - active: bool
 
-- user_stats
+- user_stats (private)
   - Struct: UserStats
   - Fields:
     - key: String (primary key)

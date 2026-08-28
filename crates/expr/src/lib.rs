@@ -17,6 +17,7 @@ use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{from_hex_pad, AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, Parameter, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
@@ -59,9 +60,13 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
             Ok(ProjectList::Name(vec![ProjectName::Some(input, var)]))
         }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
-        ast::Project::Count(SqlIdent(alias)) => {
-            Ok(ProjectList::Agg(vec![input], AggType::Count, alias, AlgebraicType::U64))
-        }
+        ast::Project::Count(SqlIdent(alias)) => Ok(ProjectList::Agg(
+            vec![input],
+            AggType::Count,
+            // A column alias is always a single SQL identifier, never a qualified name.
+            RawIdentifier::new(&*alias),
+            AlgebraicType::U64,
+        )),
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
             let mut names = HashSet::new();
@@ -72,7 +77,8 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
 
                 if let Expr::Field(p) = type_expr(vars, expr.into(), None)? {
-                    projections.push((alias, p));
+                    // A column alias is always a single SQL identifier, never a qualified name.
+                    projections.push((RawIdentifier::new(&*alias), p));
                 }
             }
 

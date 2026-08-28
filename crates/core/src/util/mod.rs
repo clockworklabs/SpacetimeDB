@@ -18,6 +18,16 @@ pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
     }
 }
 
+pub(crate) fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    if let Some(message) = payload.downcast_ref::<&'static str>() {
+        message
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.as_str()
+    } else {
+        "<non-string panic payload>"
+    }
+}
+
 #[tracing::instrument(level = "trace", skip_all)]
 pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) -> impl Future<Output = R> {
     let span = tracing::Span::current();
@@ -25,8 +35,11 @@ pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) ->
     rayon::spawn(|| {
         let _entered = span.entered();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-        if let Err(Err(_panic)) = tx.send(result) {
-            tracing::warn!("uncaught panic on threadpool")
+        if let Err(Err(panic)) = tx.send(result) {
+            tracing::error!(
+                "uncaught panic on threadpool: {}",
+                panic_payload_message(panic.as_ref())
+            )
         }
     });
     rx.map(|res| res.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err)))
@@ -64,4 +77,22 @@ pub async fn also_poll<Fut: Future>(fut: Fut, also: impl Future<Output = ()>) ->
         fut.poll_unpin(cx)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::panic_payload_message;
+    use std::any::Any;
+
+    #[test]
+    fn formats_panic_payload_message() {
+        let static_str: Box<dyn Any + Send> = Box::new("static str panic");
+        assert_eq!(panic_payload_message(static_str.as_ref()), "static str panic");
+
+        let string: Box<dyn Any + Send> = Box::new(String::from("String panic"));
+        assert_eq!(panic_payload_message(string.as_ref()), "String panic");
+
+        let unknown: Box<dyn Any + Send> = Box::new(42_u32);
+        assert_eq!(panic_payload_message(unknown.as_ref()), "<non-string panic payload>");
+    }
 }

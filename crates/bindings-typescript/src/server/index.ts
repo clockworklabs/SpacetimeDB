@@ -33,5 +33,6 @@ export {
   type ResponseInit,
 } from './http';
 export type { HandlerContext, HttpHandlerExport } from './http';
+export { ScheduleAt } from '../lib/schedule_at';
 
 import './polyfills'; // Ensure polyfills are loaded

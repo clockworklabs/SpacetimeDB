@@ -22,10 +22,11 @@ To declare a table as an event table, add the `event` attribute to the table def
 
 ```typescript
 const damageEvent = table({
+  name: 'damage_event',
   public: true,
   event: true,
 }, {
-  entity_id: t.identity(),
+  entityId: t.identity(),
   damage: t.u32(),
   source: t.string(),
 });
@@ -92,13 +93,13 @@ To publish an event, simply insert a row into the event table from within a redu
 
 ```typescript
 export const attack = spacetimedb.reducer(
-  { target_id: t.identity(), damage: t.u32() },
-  (ctx, { target_id, damage }) => {
+  { targetId: t.identity(), damage: t.u32() },
+  (ctx, { targetId, damage }) => {
     // Game logic...
 
     // Publish the event
     ctx.db.damageEvent.insert({
-      entity_id: target_id,
+      entityId: targetId,
       damage,
       source: "melee_attack",
     });
@@ -174,7 +175,7 @@ This behavior follows naturally from the fact that event table rows are never me
 
 ## Subscribing to Events
 
-On the client side, event tables are subscribed to in the same way as regular tables. The important difference is that event table rows are never stored in the client cache. Calling `count()` on an event table always returns 0, and `iter()` always yields no rows. Instead, you observe events through `on_insert` callbacks, which fire for each row that was inserted during the transaction.
+On the client side, event tables are subscribed to like regular tables: either through subscribe-all helpers such as `subscribeToAllTables`, `SubscribeToAllTables`, and `subscribe_to_all_tables`, or through explicit typed queries. Once subscribed, event table rows are never stored in the client cache. Calling `count()` on an event table always returns 0, and `iter()` always yields no rows. Instead, you observe events through `on_insert` callbacks, which fire for each row that was inserted during the transaction.
 
 Because event table rows are ephemeral, only `on_insert` callbacks are available. There are no `on_delete`, `on_update`, or `on_before_delete` callbacks, since rows are never present in the client state to be deleted or updated.
 

@@ -25,7 +25,7 @@ use pgwire::tokio::process_socket;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
-use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
+use spacetimedb_client_api::routes::database::SqlQueryParams;
 use spacetimedb_client_api::{Authorization, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::DatabaseName;
@@ -124,7 +124,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
         err => {
             let res = err.into_response();
             if res.status() == StatusCode::NOT_FOUND {
-                log::error!("PG: Database not found: {database}");
+                log::debug!("PG: Database not found: {database}");
                 return Err(PgWireError::UserError(Box::new(ErrorInfo::new(
                     "FATAL".to_string(),
                     "3D000".to_string(),
@@ -136,7 +136,8 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
-            log::error!("PG: Error for database {database}: {err}");
+            // TODO: Review log level after client SQL errors can be distinguished from internal database failures.
+            log::warn!("PG: Error for database {database}: {err}");
             Err(PgError::Sql(format!("{err}")))
         }
     }
@@ -154,14 +155,25 @@ where
 {
     async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
         let params = self.cached.lock().await.clone().unwrap();
-        let db = SqlParams {
-            name_or_identity: database::NameOrIdentity::Name(DatabaseName(params.database.clone())),
-        };
+        let name_or_identity = database::NameOrIdentity::Name(DatabaseName(params.database.clone()));
+        let database_identity = response(name_or_identity.resolve(&self.ctx).await, &params.database).await?;
+        let database = response(
+            self.ctx
+                .get_database_by_identity(&database_identity)
+                .await
+                .map_err(|err| {
+                    log::warn!("PG: unable to load database {database_identity}: {err:#}");
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into()
+                })
+                .and_then(|database| database.ok_or_else(|| database::NO_SUCH_DATABASE.into())),
+            &params.database,
+        )
+        .await?;
 
         let sql = match response(
             database::sql_direct(
                 self.ctx.clone(),
-                db,
+                database,
                 SqlQueryParams { confirmed: Some(true) },
                 params.caller_identity,
                 params.caller_auth.clone(),
@@ -271,7 +283,8 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 let claims = match validate_token(&self.ctx, &pwd.password).await {
                     Ok(claims) => claims,
                     Err(err) => {
-                        log::error!(
+                        // TODO: Do not log the supplied password/token; then classify credential errors separately from provider failures.
+                        log::warn!(
                             "PG: Authentication failed for identity `{}` on database {database}: {err}",
                             pwd.password
                         );
@@ -378,12 +391,13 @@ where
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
                             process_socket(stream, None, factory_ref).await.inspect_err(|err|{
-                                log::error!("PG: Error processing socket: {err:?}");
+                                // TODO: Review log level after client/disconnect errors can be distinguished from internal failures.
+                                log::warn!("PG: Error processing socket: {err:?}");
                             })
                         });
                     }
                     Err(e) => {
-                       log::error!("PG: Accept error: {e}");
+                       log::warn!("PG: Accept error: {e}");
                     }
                 }
             }

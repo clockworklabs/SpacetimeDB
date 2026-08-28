@@ -24,12 +24,12 @@ use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
 use spacetimedb_schema::def::{
     BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
     TableSchema,
@@ -250,7 +250,7 @@ pub trait StFields: Copy + Sized {
     /// Returns the column name of the system table field as a [`RawIdentifier`].
     #[inline]
     fn col_name(self) -> Identifier {
-        Identifier::new_assume_valid(self.name().into())
+        Identifier::new_unsafe_assume_valid(self.name().into())
     }
 
     /// Return all fields of this type, in order.
@@ -1197,7 +1197,8 @@ pub struct StViewArgRow {
 pub struct StIndexRow {
     pub index_id: IndexId,
     pub table_id: TableId,
-    pub index_name: RawIdentifier,
+    /// Namespaced for submodule tables (e.g. `"lib.sessions_id_idx_btree"`).
+    pub index_name: RawNamespacedIdentifier,
     pub index_algorithm: StIndexAlgorithm,
 }
 
@@ -1298,7 +1299,8 @@ impl From<IndexSchema> for StIndexRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StSequenceRow {
     pub sequence_id: SequenceId,
-    pub sequence_name: RawIdentifier,
+    /// Namespaced for submodule tables (e.g. `"lib.sessions_id_seq"`).
+    pub sequence_name: RawNamespacedIdentifier,
     pub table_id: TableId,
     pub col_pos: ColId,
     pub increment: i128,
@@ -1349,7 +1351,8 @@ impl From<StSequenceRow> for SequenceSchema {
 #[sats(crate = spacetimedb_lib)]
 pub struct StConstraintRow {
     pub(crate) constraint_id: ConstraintId,
-    pub(crate) constraint_name: RawIdentifier,
+    /// Namespaced for submodule tables.
+    pub(crate) constraint_name: RawNamespacedIdentifier,
     pub table_id: TableId,
     pub(crate) constraint_data: StConstraintData,
 }
@@ -1746,7 +1749,9 @@ pub struct StScheduledRow {
     /// Note that, despite the column name, this may refer to either a reducer or a procedure.
     /// We cannot change the schema of existing system tables,
     /// so we are unable to rename this column.
-    pub(crate) reducer_name: Identifier,
+    /// Namespaced for submodule tables (e.g. `"lib.library_scheduled_procedure"`),
+    /// since that is how the scheduler resolves it.
+    pub(crate) reducer_name: NamespacedIdentifier,
     pub(crate) schedule_name: Identifier,
     pub(crate) at_column: ColId,
 }
@@ -1808,7 +1813,8 @@ impl From<StEventTableRow> for ProductValue {
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableAccessorRow {
     pub table_name: TableName,
-    pub accessor_name: Identifier,
+    /// Namespaced for submodule tables, matching `table_name`.
+    pub accessor_name: NamespacedIdentifier,
 }
 
 impl TryFrom<RowRef<'_>> for StTableAccessorRow {
@@ -1828,8 +1834,9 @@ impl From<StTableAccessorRow> for ProductValue {
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StIndexAccessorRow {
-    pub index_name: RawIdentifier,
-    pub accessor_name: RawIdentifier,
+    /// Namespaced for submodule tables.
+    pub index_name: RawNamespacedIdentifier,
+    pub accessor_name: RawNamespacedIdentifier,
 }
 
 impl TryFrom<RowRef<'_>> for StIndexAccessorRow {

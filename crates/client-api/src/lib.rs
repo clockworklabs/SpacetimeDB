@@ -146,7 +146,7 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::info!(sql = body);
+        tracing::debug!(sql = body);
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
@@ -164,6 +164,7 @@ impl Host {
         )
         .await
         .map_err(|e| {
+            // TODO: Review log level after user SQL errors can be distinguished from internal database failures.
             log::warn!("{e}");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
@@ -638,7 +639,8 @@ impl<T: Authorization> Authorization for Arc<T> {
     }
 }
 
+// TODO: Review each caller and split this helper by the appropriate log severity.
 pub fn log_and_500(e: impl std::fmt::Display) -> ErrorResponse {
-    log::error!("internal error: {e:#}");
+    log::warn!("internal error: {e:#}");
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into()
 }

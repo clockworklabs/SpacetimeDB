@@ -1,0 +1,12 @@
+{
+  "name": "spacetimedb-plugins",
+  "interface": { "displayName": "SpacetimeDB" },
+  "plugins": [
+    {
+      "name": "spacetimedb",
+      "source": { "source": "local", "path": "./plugins/spacetimedb" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_USE" },
+      "category": "Developer Tools"
+    }
+  ]
+}

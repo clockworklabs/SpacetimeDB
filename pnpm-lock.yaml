@@ -51,6 +51,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
+  codex-plugin/scripts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.18.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   crates/bindings-typescript:
     dependencies:
       base64-js:
@@ -313,12 +322,6 @@ importers:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
 
-  modules/sdk-test-view-pk-ts:
-    dependencies:
-      spacetimedb:
-        specifier: workspace:^
-        version: link:../../crates/bindings-typescript
-
   modules/sdk-test-procedure-ts:
     dependencies:
       spacetimedb:
@@ -326,6 +329,12 @@ importers:
         version: link:../../crates/bindings-typescript
 
   modules/sdk-test-ts:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
+
+  modules/sdk-test-view-pk-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^

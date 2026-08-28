@@ -172,6 +172,10 @@ namespace SpacetimeDB
                 {
                     return value.ToString()?.ToLower()!;
                 }
+                if (value is float f)
+                {
+                    return $"{f.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}F";
+                }
                 var str = value.ToString();
                 if (value is string)
                 {

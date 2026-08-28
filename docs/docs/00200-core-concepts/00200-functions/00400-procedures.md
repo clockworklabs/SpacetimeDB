@@ -139,7 +139,7 @@ const myTable = table(
 const spacetimedb = schema({ myTable });
 export default spacetimedb;
 
-export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
+export const insertAValue = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
         ctx.db.myTable.insert({ a, b });
     });
@@ -323,7 +323,7 @@ Avoid capturing mutable state within functions passed to `with_tx`.
 For fallible database operations, you can throw an error inside the transaction function:
 
 ```typescript
-export const maybe_insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.string() }, t.unit(), (ctx, { a, b }) => {
+export const maybeInsertAValue = spacetimedb.procedure({ a: t.u32(), b: t.string() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
         if (a < 10) {
             throw new SenderError("a is less than 10!");
@@ -1203,7 +1203,7 @@ const aiMessage = table(
 const spacetimedb = schema({ aiMessage });
 export default spacetimedb;
 
-export const ask_ai = spacetimedb.procedure(
+export const askAi = spacetimedb.procedure(
   { prompt: t.string(), apiKey: t.string() },
   t.string(),
   (ctx, { prompt, apiKey }) => {

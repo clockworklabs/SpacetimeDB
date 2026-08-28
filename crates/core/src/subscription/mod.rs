@@ -12,6 +12,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_physical_plan::plan::ParamResolver;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::bsatn::ToBsatn;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::Serialize;
 use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
@@ -126,7 +127,8 @@ fn table_update_from_rows<F: BuildableWebsocketFormat>(
     (
         ws_v1::TableUpdate::new(
             table_id,
-            table_name.into(),
+            // The v1 wire type takes a plain `RawIdentifier`; see `execute_one_off_query`.
+            RawIdentifier::new(&*table_name),
             ws_v1::SingleQueryUpdate { update, num_rows },
         ),
         metrics,

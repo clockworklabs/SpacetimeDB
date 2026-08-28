@@ -1,10 +1,7 @@
 use std::fmt::Display;
 
 use sqlparser::{
-    ast::{
-        BinaryOperator, Expr, Function, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
-        Value,
-    },
+    ast::{BinaryOperator, Expr, Function, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins, Value},
     parser::ParserError,
 };
 use thiserror::Error;
@@ -59,8 +56,6 @@ pub enum SqlUnsupported {
     DeleteTable(TableWithJoins),
     #[error("Unsupported column/variable assignment expression: {0}")]
     Assignment(Expr),
-    #[error("Multi-part names are not supported: {0}")]
-    MultiPartName(ObjectName),
     #[error("Unsupported: {0}")]
     Feature(String),
     #[error("Non-inner joins are not supported")]

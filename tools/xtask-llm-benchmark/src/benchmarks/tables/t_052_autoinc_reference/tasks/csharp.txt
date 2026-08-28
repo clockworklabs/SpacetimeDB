@@ -1,0 +1,16 @@
+Write a SpacetimeDB backend module in C# that safely creates related rows with an auto-incremented parent ID.
+
+TABLES
+- Parent (public, accessor Parent)
+  - Fields:
+    - Id: ulong (primary key, auto-increment)
+    - Name: string
+- Child (public, accessor Child)
+  - Fields:
+    - Id: ulong (primary key, auto-increment)
+    - ParentId: ulong (btree index by_parent)
+    - Name: string
+
+REDUCERS
+- CreateFamily(parentName: string, childNames: List<string>)
+  - Insert the Parent, then insert every Child using the Id actually assigned to that Parent

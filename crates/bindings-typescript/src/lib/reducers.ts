@@ -98,6 +98,12 @@ export interface JwtClaims {
   readonly fullPayload: JsonObject;
 }
 
+export type AliasViews<SchemaDef extends UntypedSchemaDef> = SchemaDef extends {
+  namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+}
+  ? { readonly [K in keyof NS]: ReducerCtx<NS[K]> }
+  : {};
+
 /**
  * Reducer context parametrized by the inferred Schema
  */
@@ -113,4 +119,5 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
   random: Random;
+  as: AliasViews<SchemaDef>;
 }>;

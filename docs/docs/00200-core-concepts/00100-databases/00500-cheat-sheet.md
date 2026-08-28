@@ -405,7 +405,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: (): any => send_reminder },
+  { name: 'reminder' },
   {
     id: t.u64().primaryKey().autoInc(),
     message: t.string(),
@@ -413,9 +413,14 @@ const reminder = table(
   }
 );
 
-export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (ctx, { arg }) => {
-  console.log(`Reminder: ${arg.message}`);
-});
+// `onSchedule` binds the reducer to the schedule table
+export const send_reminder = spacetimedb.reducer(
+  { onSchedule: reminder },
+  { arg: reminder.rowType },
+  (ctx, { arg }) => {
+    console.log(`Reminder: ${arg.message}`);
+  }
+);
 ```
 
 </TabItem>
@@ -775,7 +780,7 @@ SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousView
 ```typescript
 ctx.db                  // Database access
 ctx.sender              // Identity of caller
-ctx.connectionId        // ConnectionId | undefined
+ctx.connectionId        // ConnectionId | null
 ctx.timestamp           // Timestamp
 ctx.databaseIdentity    // Module's identity
 ```

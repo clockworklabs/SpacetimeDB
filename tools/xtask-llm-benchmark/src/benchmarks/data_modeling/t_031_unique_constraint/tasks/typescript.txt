@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines a table with a unique constraint on a non-primary-key column and a reducer that inserts rows.
 
 TABLES
-- account
+- account (private)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - email: string (unique)

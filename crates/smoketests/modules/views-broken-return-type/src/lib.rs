@@ -8,6 +8,6 @@ pub enum ABC {
 }
 
 #[spacetimedb::view(accessor = person, public)]
-pub fn person(ctx: &ViewContext) -> Option<ABC> {
+pub fn person(_ctx: &ViewContext) -> Option<ABC> {
     None
 }

@@ -5,6 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+#if UNITY_5_3_OR_NEWER
+using UnityEngine;
+#endif
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
@@ -132,6 +135,12 @@ namespace SpacetimeDB
         where DbConnection : DbConnectionBase<DbConnection, Tables, Reducer>, new()
         where Tables : RemoteTablesBase
     {
+        /// <remarks>
+        /// This isn't reset since [RuntimeInitializeOnLoadMethod] methods cannot be in generic types
+        /// We assume that the user will reset this if needed; Unity will give an error about this field not being reset.
+        /// One way we can get around this in the future is using <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/Unity.Scripting.LifecycleManagement.AutoStaticsCleanupAttribute.html">AutoStaticsCleanup</see>
+        /// But that requires Unity 6.5
+        /// </remarks>
         internal static bool IsTesting { get; set; } = false;
 
         public static DbConnectionBuilder<DbConnection> Builder() => new();
@@ -184,6 +193,8 @@ namespace SpacetimeDB
 
         private void FailPendingOperations(Exception error)
         {
+            stats.ClearRequestsAwaitingResponse();
+
             foreach (var (requestId, _) in waitingOneOffQueries.ToArray())
             {
                 if (waitingOneOffQueries.TryRemove(requestId, out var resultSource))
@@ -312,7 +323,7 @@ namespace SpacetimeDB
         };
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-        internal IEnumerator ParseMessages()
+        internal System.Collections.IEnumerator ParseMessages()
 #else
         internal void ParseMessages()
 #endif
@@ -752,6 +763,8 @@ namespace SpacetimeDB
                             {
                                 Log.Exception(e);
                             }
+
+                            subscriptions.Remove(subscriptionError.QuerySetId.Id);
                         }
                         else
                         {
@@ -943,15 +956,31 @@ namespace SpacetimeDB
 
         async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
         {
+            if (!webSocket.IsConnected)
+            {
+                var error = "Cannot run one-off query, not connected to server!";
+                Log.Error(error);
+                throw new InvalidOperationException(error);
+            }
+
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
             var resultSource = new TaskCompletionSource<OneOffQueryResult>();
             waitingOneOffQueries[requestId] = resultSource;
 
-            webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
+            try
             {
-                RequestId = requestId,
-                QueryString = query,
-            }));
+                webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
+                {
+                    RequestId = requestId,
+                    QueryString = query,
+                }));
+            }
+            catch
+            {
+                waitingOneOffQueries.TryRemove(requestId, out _);
+                stats.OneOffRequestTracker.RemoveRequestAwaitingResponse(requestId);
+                throw;
+            }
 
             var result = await resultSource.Task;
 

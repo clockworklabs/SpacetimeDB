@@ -17,6 +17,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::table_name::TableName;
 use std::sync::Arc;
 use std::time::Instant;
@@ -608,7 +609,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -621,7 +622,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -639,7 +640,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
@@ -652,7 +653,7 @@ impl ToProtocol for SubscriptionMessage {
                             query_id,
                             rows: ws_v1::SubscribeRows {
                                 table_id: result.table_id,
-                                table_name: result.table_name.into(),
+                                table_name: RawIdentifier::new(&*result.table_name),
                                 table_rows,
                             },
                         }
