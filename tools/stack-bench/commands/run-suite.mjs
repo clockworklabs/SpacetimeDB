@@ -771,19 +771,11 @@ async function main() {
     };
     if (track.reseedOnReset && (args.restartSpec || args.restartCmd) && requiresReseed) {
       process.stdout.write('  reseed      ... ');
-      // The restart script leaves the new server running, and on Windows that
-      // child keeps a handle open long after the script's own work is done — so
-      // waiting for the command to exit waits forever. What matters is whether
-      // the server is answering, so that is what we wait for, and the command
-      // itself is given a deadline rather than the benefit of the doubt.
+      // Judge restart success with the readiness probe. The restart command can
+      // leave a long-running server process behind, so the command also needs a deadline.
       try {
-        // stdio 'ignore' is what makes the timeout mean anything. The restart
-        // script leaves a server running as a backgrounded descendant, and that
-        // grandchild inherits the pipe: execFileSync then blocks reading a pipe
-        // nobody will ever close, and the timeout does not rescue it because the
-        // wait is on the pipe rather than the process. A re-baseline sat here
-        // for eight hours with its server up and answering. grade.mjs already
-        // does this for exactly the same command — see restartBackend.
+        // Do not give a background server an inherited pipe that keeps the
+        // synchronous restart command open.
         if (args.restartSpec) {
           await controlBackend(args.restartSpec, controlledRestart ? 'start' : 'restart');
         }

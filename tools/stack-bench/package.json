@@ -36,5 +36,8 @@
   },
   "dependencies": {
     "playwright": "1.62.1"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
   }
 }

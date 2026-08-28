@@ -152,10 +152,7 @@ export function parseArgs(argv) {
       }
       case '--mutation-max-runtime-minutes': a.mutationMaxRuntimeMinutes = Number(argv[++i]); break;
       case '--reference-mutation-only': a.referenceMutationOnly = true; break;
-      // Start from an existing built app (a preserved L1 source) and UPGRADE it,
-      // instead of rebuilding the lower level. The correct L1 that scored 51/51
-      // is the right foundation for L2 — rebuilding it costs money and adds
-      // variance that confounds the L1->L2 comparison.
+      // Reuse an existing lower-level build when the run plan requires an upgrade.
       case '--seed-from': a.seedFrom = argv[++i]; break;
       case '--parent-attempt-id': a.parentAttemptId = argv[++i]; break;
       case '--repair-from': a.repairFrom = resolve(argv[++i]); break;

@@ -12,7 +12,7 @@ import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
-  readCampaignArtifactBody, resolveCampaignArtifact, summarizeCampaign,
+  readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from '../dashboard/dashboard-model.mjs';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
@@ -49,6 +49,16 @@ test('dashboard run progress reports only completed grades while the next repair
   assert.equal(progress.level, 1);
   assert.deepEqual(progress.repair, { round: 2, budget: 3 });
   assert.equal(progress.phase, 'Grading L1 after repair 2 of 3');
+});
+
+test('dashboard operation feed ignores only a truncated final write', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-feed-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, 'operations.jsonl');
+  writeFileSync(path, '{"id":"complete"}\n{"id":"partial"');
+  assert.deepEqual(readJsonLines(path), [{ id: 'complete' }]);
+  writeFileSync(path, '{broken}\n{"id":"complete"}\n');
+  assert.throws(() => readJsonLines(path), /line 1/);
 });
 
 test('dashboard follows the actual level when a completed L1 advances to the first L2 grade', () => {
@@ -377,6 +387,13 @@ test('dashboard serves real state and protects campaign launch with a separate o
   assert.equal(feed.list()[0].status, 'running');
   assert.equal(feed.list()[0].pid, 1234);
   assert.equal(feed.list()[0].campaignSha256, frozenPlan.sha256);
+  const duplicateStart = await fetch(`${origin}/api/campaigns`, { method: 'POST',
+    headers: { origin, 'content-type': 'application/json',
+      'x-stack-bench-token': 'test-session-token',
+      'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' },
+    body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
+  assert.equal(duplicateStart.status, 409);
+  assert.equal(launches.length, 1);
 
   const resumed = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',

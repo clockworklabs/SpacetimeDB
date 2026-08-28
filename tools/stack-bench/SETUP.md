@@ -132,17 +132,10 @@ it does not replace the CLI or define a second run format.
 
 ## Comparing results
 
-Compare runs with:
-
-```bash
-npm run compare -- <run-directory> <run-directory>
-```
-
-Only compare results that identify compatible engine, recipe, selection,
-grader, image, model, effort, and prompt treatment. The comparison command
-reports the common measured check set separately from checks that were not
-measured in every run. Never treat a missing, inconclusive, contaminated, or
-harness-failed check as a pass.
+Use `npm run campaign -- report <campaign-directory>` to summarize a completed
+campaign. Only compare attempts with compatible engine, recipe, selection,
+grader, image, model, effort, and prompt treatment. Never treat a missing,
+inconclusive, contaminated, or harness-failed check as a pass.
 
 Raw artifacts are the source of truth. Generated summaries and dashboard views
 must remain reproducible from those retained artifacts.

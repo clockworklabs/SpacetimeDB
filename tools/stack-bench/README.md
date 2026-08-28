@@ -270,10 +270,10 @@ its own deterministic selection hash, bound to the source recipe hash. The same
 flags on `npm run bench` run that scope. Packs and individual checks are combined as
 a union. Run, bundle, and grade artifacts record the request, the exact checks
 it resolved to, which checks were attempted, and any checks not run with their
-reason. A subset can be an intentional benchmark run. `npm run compare` refuses
-different recipe or selection identities and refuses any run whose scope cannot
-be proven. Working notes and superseded local artifacts are not part of the
-public source tree and must not be presented as benchmark results.
+reason. A subset can be an intentional benchmark run. Compare only results with
+the same recipe and selection identities. Working notes and superseded local
+artifacts are not part of the public source tree and must not be presented as
+benchmark results.
 
 Packs own ordered public requirement fragments, testing-hook fragments, and
 their checks; recipes retain global framing and choose exact pack versions.

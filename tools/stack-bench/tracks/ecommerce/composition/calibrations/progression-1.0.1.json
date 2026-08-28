@@ -43,19 +43,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecom-progression-1.0.0.json",
-      "sha256": "c87a112143f7d2107bcda4fdd3fa79c0a57595f076b1125011538a8d49c6c0c8",
+      "sha256": "f085b5a8031e60f7d518441975062bbfbb9ebde6fe3d160e099662830b69cab5",
       "referenceId": "ecommerce-progression-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecom-progression-1.0.0.json",
-      "sha256": "dea5a98ac4e71d96d782d8ec1cd352579238a10042cc2e2c40f3b0dcc414086e",
+      "sha256": "63872e8cf2f5d3d6c25fa6a00ae92051350eec383ea9c71db8d1dde608a5fcf4",
       "referenceId": "ecommerce-progression-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-progression-1.0.0.json",
-      "sha256": "d56296c48d6289ddd43bd9a15c011f74595065f201af6327df649336aa1ea809",
+      "sha256": "f76b81ef63b8aa0e36705a853def763f975c0950d685069282acb7005e7c18ec",
       "referenceId": "ecommerce-progression-spacetime"
     }
   ],
@@ -213,7 +213,7 @@
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/candidates.json",
-    "catalogSha256": "7d2c235e067d1afba46a9d0f27b9962b4490c150802cc765abe8c7e3dc8a98d4",
+    "catalogSha256": "23503616f17656d2139234ab3fa6e756d2286a14fbd5a0a96811f0e31a3004f2",
     "alias": "L3",
     "status": "candidate"
   }

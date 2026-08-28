@@ -408,7 +408,9 @@ export function canReuseQualificationScope({ actual, expected, artifact, calibra
     contentSha256: reuse.sourceRecipe.contentSha256 };
   const sourceArtifactRecipe = { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
     sha256: reuse.sourceRecipe.contentSha256 };
-  return actual.executableSha256 === decision.fromExecutableSha256
+  return actual.schemaVersion === expected.schemaVersion
+    && actual.kind === expected.kind
+    && actual.executableSha256 === decision.fromExecutableSha256
     && expected.executableSha256 === decision.toExecutableSha256
     && evidenceIdentityMatches(artifact.identities?.recipe, sourceArtifactRecipe)
     && evidenceIdentityMatches(artifact.identities?.calibration, reuse.sourceCalibration)

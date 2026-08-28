@@ -106,7 +106,7 @@ Compile and inspect a campaign without starting model work:
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
-  campaign show /var/lib/stack-bench/plans/campaign.json
+  campaign show /var/lib/stack-bench/results/plans/campaign.json
 ```
 
 The campaign file is caller-owned under `/var/lib/stack-bench`. A draft can be
@@ -151,7 +151,7 @@ non-billable adapters and declares zero pricing for every selected model:
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
   campaign trial /opt/stack-bench/appliance/campaign.product-brief-reference.json \
-  --out /var/lib/stack-bench/results/product-brief-reference-trial
+  --out /var/lib/stack-bench/results/campaigns/product-brief-reference-trial
 ```
 
 `campaign trial` refuses paid adapters and frozen plans. It exists to validate
@@ -165,7 +165,7 @@ audit exists. Repeat the evidence replay without rerunning the campaign:
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
-  campaign audit /var/lib/stack-bench/results/ecommerce-progression-reference-trial
+  campaign audit /var/lib/stack-bench/results/campaigns/product-brief-reference-trial
 ```
 
 Run counts and concurrency are explicit campaign inputs. `repetitions` is the
@@ -200,16 +200,16 @@ plan (or resume its remaining attempts) from the same persistent directory:
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
-  campaign prepare /var/lib/stack-bench/plans/campaign.json \
-  --out /var/lib/stack-bench/results/campaign-001
+  campaign prepare /var/lib/stack-bench/results/plans/campaign.json \
+  --out /var/lib/stack-bench/results/campaigns/campaign-001
 
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
-  campaign run /var/lib/stack-bench/plans/campaign.json \
-  --out /var/lib/stack-bench/results/campaign-001
+  campaign run /var/lib/stack-bench/results/plans/campaign.json \
+  --out /var/lib/stack-bench/results/campaigns/campaign-001
 ```
 
-`campaign status /var/lib/stack-bench/results/campaign-001` prints a compact
+`campaign status /var/lib/stack-bench/results/campaigns/campaign-001` prints a compact
 summary. Add `--full` only when you need the complete durable state. Two controllers
 cannot own the directory at once. Failed harness or
 inconclusive measurement attempts remain visible and retries append new
@@ -245,7 +245,7 @@ stored evidence:
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
-  campaign report /var/lib/stack-bench/results/campaign-001
+  campaign report /var/lib/stack-bench/results/campaigns/campaign-001
 ```
 
 This writes `report/report.json` and self-contained `report/report.html`. The

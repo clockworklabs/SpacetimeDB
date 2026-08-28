@@ -1,10 +1,6 @@
 # The image a generated app is built in.
 #
-# It exists so the harness that grades a build is not on the filesystem the
-# build can see. A fix round once read the scenario file defining the criteria
-# it was failing, read grade.mjs, and ran the grader — 23 accesses, all through
-# Bash, which the permission system does not govern. Denying paths is a
-# blocklist; absence is not.
+# The generated app must not see the harness, grader, or test definitions.
 #
 # Nothing from tools/stack-bench is copied in or mounted at run time. The only
 # repository paths a container sees are the two artifacts actually under test,

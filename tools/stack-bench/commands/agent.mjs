@@ -276,17 +276,8 @@ const dbUrl = (backend, runIndex, dbPort, track) => executeStackCapability(
   STACK_ADAPTER_REGISTRY.get(backend), 'agent', 'connection-url',
   { dbPort, database: dbName(track, runIndex), hostUrl });
 
-// Per-run databases must exist before the app connects, or the agent will go
-// looking for one that does — which has led to apps silently using a foreign
-// instance.
-//
-// A `build` also WIPES it, schema included. The between-suite reset truncates,
-// because the app is running and its tables must survive; that left one run's
-// schema in place for the next, and a build opened on another app's tables —
-// "different column names like `qty` instead of `quantity`, missing columns,
-// extra tables". It spent real turns diagnosing and clearing someone else's
-// leftovers, and those turns land in the cost figure this benchmark exists to
-// measure. Mongo already dropped its whole database; postgres only truncated.
+// Create the leased database before the app connects. A build clears its schema.
+// A reset between suites preserves the schema required by the running app.
 export function ensureDatabase(backend, runIndex, dbPort, track, wipe = false,
   { exec = execFileSync, stdbBin = STDB_BIN } = {}) {
   const { lease } = leaseFromEnv(process.env, { backend, active: true });

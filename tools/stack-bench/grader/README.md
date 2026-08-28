@@ -81,7 +81,8 @@ A grader that passes everything is worthless; one that fails the wrong thing is 
 notices at the exact declared criterion, without collateral failures:
 
 ```bash
-node mutation-test.mjs --app <app-dir> --url <url> --mutations mutations/spacetime-l1.json
+node mutation-test.mjs --app <app-dir> --url <url> \
+  --mutations mutations/spacetime-ecom-progression-1.0.0.json
 ```
 
 Backend, track, level and scenario come from the mutation manifest. The runner

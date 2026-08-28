@@ -272,6 +272,11 @@ export function createDashboardServer(options) {
         const path = join(plansRoot, plan.file);
         const output = join(resultsRoot, 'campaigns', input.outputName);
         if (existsSync(output)) return json(response, 409, { error: 'That run output already exists.' });
+        const reservation = `output:${input.outputName}`;
+        if (launchReservations.has(reservation)) {
+          return json(response, 409, { error: 'That run output already has an active controller.' });
+        }
+        launchReservations.add(reservation);
         const now = new Date().toISOString();
         const operation = { schemaVersion: 1, id: randomUUID(), type: 'campaign.run', status: 'running',
           createdAt: now, updatedAt: now, actor: 'local-operator', campaignId: plan.id,
@@ -280,8 +285,15 @@ export function createDashboardServer(options) {
         try {
           const child = launch({ plan: { ...plan, path }, output, operationId: operation.id,
             resultsRoot, feed, env: process.env });
+          if (typeof child?.once === 'function') {
+            child.once('error', () => launchReservations.delete(reservation));
+            child.once('exit', () => launchReservations.delete(reservation));
+          } else {
+            launchReservations.delete(reservation);
+          }
           feed.append({ ...operation, pid: child?.pid ?? null });
         } catch (error) {
+          launchReservations.delete(reservation);
           feed.append({ schemaVersion: 1, id: operation.id, status: 'failed',
             updatedAt: new Date().toISOString(), error: error.message });
           throw error;

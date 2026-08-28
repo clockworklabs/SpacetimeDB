@@ -466,8 +466,17 @@ export function campaignDetail(resultsRoot, key, { controllerActive = campaignLo
 
 export function readJsonLines(path) {
   if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8').split(/\r?\n/).filter(Boolean).map((line, index) => {
-    try { return JSON.parse(line); }
-    catch { throw new Error(`dashboard operation feed line ${index + 1} is invalid JSON`); }
-  });
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/);
+  const last = lines.findLastIndex(line => line.trim() !== '');
+  const events = [];
+  for (let index = 0; index <= last; index += 1) {
+    const line = lines[index];
+    if (!line.trim()) continue;
+    try { events.push(JSON.parse(line)); }
+    catch {
+      if (index === last) break;
+      throw new Error(`dashboard operation feed line ${index + 1} is invalid JSON`);
+    }
+  }
+  return events;
 }

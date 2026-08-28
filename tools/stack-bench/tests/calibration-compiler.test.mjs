@@ -383,7 +383,7 @@ test('qualification reuse accepts only the declared source and unchanged grading
       sha256: sourceRecipe.contentSha256 },
     calibration: { ...sourceCalibration },
   } };
-  const actual = { executableSha256: '4'.repeat(64),
+  const actual = { schemaVersion: 2, kind: 'mutation', executableSha256: '4'.repeat(64),
     recipe: { id: sourceRecipe.id, version: sourceRecipe.version,
       contentSha256: sourceRecipe.contentSha256 },
     checksSha256: '7'.repeat(64), stack: { id: 'mongodb', version: '1.0.0',
@@ -399,6 +399,8 @@ test('qualification reuse accepts only the declared source and unchanged grading
     value => { value.actual.checksSha256 = 'b'.repeat(64); },
     value => { value.actual.mutationSha256 = 'b'.repeat(64); },
     value => { value.actual.stack.reference.sourceSha256 = 'b'.repeat(64); },
+    value => { value.actual.schemaVersion += 1; },
+    value => { value.actual.kind = 'reference'; },
     value => { value.expected.executableSha256 = 'b'.repeat(64); },
     value => { value.artifact.identities.calibration.sha256 = 'b'.repeat(64); },
   ]) {
