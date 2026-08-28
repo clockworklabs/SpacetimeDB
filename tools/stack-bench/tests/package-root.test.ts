@@ -14,3 +14,15 @@ test('compiled modules resolve the Stack Bench package and repository roots', ()
   assert.equal(join(REPOSITORY_ROOT, 'tools', 'stack-bench'), STACK_BENCH_ROOT);
   assert.equal(findStackBenchRoot(import.meta.url), STACK_BENCH_ROOT);
 });
+
+test('staged JavaScript modules resolve the source package root from dist', async () => {
+  const legacyModuleUrl = new URL('../src/project-paths.mjs', import.meta.url);
+  const legacy = await import(legacyModuleUrl.href) as {
+    REPOSITORY_ROOT: string;
+    STACK_BENCH_ROOT: string;
+    findStackBenchRoot(moduleUrl?: string | URL): string;
+  };
+  assert.equal(legacy.STACK_BENCH_ROOT, STACK_BENCH_ROOT);
+  assert.equal(legacy.REPOSITORY_ROOT, REPOSITORY_ROOT);
+  assert.equal(legacy.findStackBenchRoot(import.meta.url), STACK_BENCH_ROOT);
+});
