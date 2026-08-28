@@ -4,6 +4,8 @@ import { applyCredentialAliases } from './credential-aliases.mjs';
 // public application requirements and stable interface names.
 export function agentVisibleContractText(value, credentialAliases = {}) {
   return applyCredentialAliases(value, credentialAliases)
+    .replace(/\bso (?:Stack Bench|the grader) can verify that\b/gi, 'so that')
+    .replace(/\bso Stack Bench can verify\b/gi, 'to support')
     .replace(/The app is graded by an automated harness that locates elements \*\*only\*\* via\s+/gi,
       'Expose ')
     .replace(/What the harness needs/gi, 'Run configuration')
@@ -38,7 +40,9 @@ export function agentVisibleContractText(value, credentialAliases = {}) {
     .replace(/`data-testid` attributes/gi, '`id` attributes')
     .replace(/data-testid/gi, 'id')
     .replace(/harness/gi, 'runtime')
-    .replace(/benchmark/gi, 'runtime');
+    .replace(/benchmark/gi, 'runtime')
+    .replace(/\bStack Bench\b/gi, 'the application runtime')
+    .replace(/\bgrader|grading\b/gi, 'runtime');
 }
 
 // Contract fragments use backticks for stable element IDs. Passwords

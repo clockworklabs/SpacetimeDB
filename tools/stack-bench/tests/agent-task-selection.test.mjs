@@ -38,6 +38,13 @@ test('agent-visible contracts do not disclose grading or test execution', () => 
   assert.match(visible, /Application interface/i);
   assert.equal(agentVisibleContractText('Keep the contest action. Expose the test action.'),
     'Keep the contest action. Expose the application action.');
+  const futureFeature = agentVisibleContractText([
+    'Use 1.00 so the grader can verify that a non-admin is refused.',
+    'Expose the testing calls below so Stack Bench can verify server authorization.',
+  ].join('\n'));
+  assert.doesNotMatch(futureFeature, /Stack Bench|benchmark|grader|grading|tests?|testing/i);
+  assert.match(futureFeature, /so that a non-admin is refused/);
+  assert.match(futureFeature, /to support server authorization/);
 });
 
 function printPrompt(app, request, extraArgs = []) {
