@@ -14,7 +14,7 @@
     "executionSha256": "d728eff6c9e10769352ff510eaa722caeba05b377d65db36c066ea29a234c67f"
   },
   "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-  "reason": "The selected checks, points, reference sources, mutation definitions, and model-free grading inputs are unchanged. The current executable also preserves declared contract hook order. Focused tests cover this change.",
+  "reason": "The selected checks, points, reference sources, mutation definitions, and model-free grading inputs are unchanged. The runtime change only fixes transcript access and cost accounting after coding sessions. Focused tests and preserved-session audits cover the change.",
   "verification": [
     {
       "command": "node --test --test-name-pattern=qualification reuse tools/stack-bench/tests/calibration-compiler.test.mjs",
@@ -27,6 +27,14 @@
     {
       "command": "node --test tools/stack-bench/tests/linter-coverage.test.mjs",
       "result": "6 passed"
+    },
+    {
+      "command": "node --test tools/stack-bench/tests/module-layout.test.mjs",
+      "result": "9 passed"
+    },
+    {
+      "command": "node --test --test-name-pattern=credential broker clears different concurrent reservations tools/stack-bench/tests/credential-broker.test.mjs",
+      "result": "1 passed"
     }
   ],
   "scopes": [
@@ -34,42 +42,42 @@
       "kind": "reference",
       "stack": "mongodb",
       "fromExecutableSha256": "98c450c7fbb109a3f1c0ef6ff28f68504ada8a4bc1aa663c6ca1d1fc67aadddd",
-      "toExecutableSha256": "c46509f2b165b0f02f82bce8aa78a3b4425f59bf8f2d3e5c98aca5cc46897f99"
+      "toExecutableSha256": "7bcf7599d52c3b64fb20e1103297d1d29f36d4be89976794b37b78a2f91db63e"
     },
     {
       "kind": "mutation",
       "stack": "mongodb",
       "fromExecutableSha256": "bcd2b116b0d7602f79efd503076964eeee68b69733b9e97882fa0cb5fbfe8edb",
-      "toExecutableSha256": "08c670ebe142dc5c63fbecaec606f605ffddd70072ab8d7e174d92a8875278eb"
+      "toExecutableSha256": "1b545a68cf2a128a5dc7f22416c618c86ded5792c8d7e88e9194a6a0472b7141"
     },
     {
       "kind": "reference",
       "stack": "postgres",
       "fromExecutableSha256": "0669dc8a90aaca4d41146c6aaf767b193b8e347ac487a47f4357653f461b5c69",
-      "toExecutableSha256": "3a3e281439ef1ccbc58a707b96f84482bad8def96256b9b8fde64ab1ecf99239"
+      "toExecutableSha256": "0206282a2726df8f45f72f776476788341cb4e130f8b3831320b19266a25df2e"
     },
     {
       "kind": "mutation",
       "stack": "postgres",
       "fromExecutableSha256": "aabc9df6193a8aa48534afaab9356cf1d01473973ce1de2456dc4e5c42af0b58",
-      "toExecutableSha256": "d7700e1577b1c67935e447526a78bba5eae338a6bed102ec3c7d97877b734978"
+      "toExecutableSha256": "32183d1c7e3ac227d43a71266002507e20cbc36e11882e169afeb5cdd2907146"
     },
     {
       "kind": "reference",
       "stack": "spacetime",
       "fromExecutableSha256": "9d4033ad1a4a6b5992c4e5f9a0014c58a3d5793f5a36f65470c29c2a85bb0a41",
-      "toExecutableSha256": "758a503cd517076cdf80cae205a34abebed3ee02498c4e9b7fdf1f308f776a4f"
+      "toExecutableSha256": "97c54faaa6a88effa24ca6a54a6088f81a01243b4f20e03d55c6ec5f5c5d940a"
     },
     {
       "kind": "mutation",
       "stack": "spacetime",
       "fromExecutableSha256": "72868eeb2c8b3aa07e233b7403788dd6b1797a5854779c66cabc2e2d7cf389a6",
-      "toExecutableSha256": "21cc98abdd71aec18f29f1b2398709f8c5dbf490b708f9e28c2bf9added84f28"
+      "toExecutableSha256": "443a12abef4212ceaae88d1e4641522130789f7b2c253f6ec625b7421071b3c7"
     },
     {
       "kind": "null",
       "fromExecutableSha256": "a6a1f2a23c385275242edc1ecda29662301a67582449b1d7c2fa5e0e83ab2393",
-      "toExecutableSha256": "6e3413d009b1c6ed4d33f5c1f31964a8d6d97ac803dde05910f2f14da4503d1e"
+      "toExecutableSha256": "db3f88db95d788eea40081ad2db2d49e19537fff043229efa0694107aa0ce92a"
     }
   ]
 }
