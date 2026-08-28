@@ -2,7 +2,6 @@
 use anyhow::{bail, Result};
 use ci_common::pnpm;
 use clap::Parser;
-use duct::cmd;
 
 /// Runs TypeScript workspace tests and template build checks.
 #[derive(Parser)]
@@ -10,11 +9,14 @@ struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();
+    if std::env::var_os("SPACETIME_BIN").is_some() {
+        ci_common::require_runtime()?;
+    }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;
     pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
-    let diff_status = cmd!(
+    let diff_status = duct::cmd!(
         "bash",
         "tools/check-diff.sh",
         "templates/chat-react-ts/src/module_bindings"
