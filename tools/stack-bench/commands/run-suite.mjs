@@ -17,7 +17,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
+import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { answers as hostAnswers } from '../src/runtime/platform.mjs';
 import { controlBackend } from '../src/runtime/backend-control.mjs';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
@@ -138,6 +138,13 @@ export function databaseLeaseForGrading(backend, env = process.env, {
   const container = String(lease.resources?.container?.name ?? '').trim();
   if (!container) throw new Error(`active ${backend} lease has no database container`);
   return lease;
+}
+
+export function databaseNameForGrading(track, runIndex, lease = null) {
+  if (!lease) return dbName(track, runIndex);
+  const database = String(lease.resources?.database ?? '').trim();
+  if (!database) throw new Error('active database lease has no database name');
+  return database;
 }
 
 function parseArgs(argv) {
@@ -558,7 +565,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   argv.push('--parent-attempt-id', bundleArtifactId);
   // The out-of-band write goes straight to this run's database, with no
   // app code in the loop; only the harness knows which one that is.
-  argv.push('--db-name', `stackbench${track.slug ? '_' + track.slug : ''}_run${args.runIndex ?? 0}`);
+  argv.push('--db-name', databaseNameForGrading(track, args.runIndex ?? 0, args.databaseLease));
   if (args.databaseContainer) argv.push('--database-container', args.databaseContainer);
   if (args.restartSpec) argv.push('--restart-spec', JSON.stringify(args.restartSpec));
   else if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);

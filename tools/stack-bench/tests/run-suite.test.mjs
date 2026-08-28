@@ -9,7 +9,8 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   applicationDatabaseMarker, checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
-  contractLintArgv, databaseContainerForGrading, runGraderChild, verifyReseedProbe, waitForReseedProbe }
+  contractLintArgv, databaseContainerForGrading, databaseNameForGrading, runGraderChild,
+  verifyReseedProbe, waitForReseedProbe }
   from '../commands/run-suite.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -154,6 +155,16 @@ test('database grading uses the exact container from the authenticated run lease
     STACK_BENCH_LEASE: 'private/lease.json',
   }), /both lease path and lease token/);
   assert.equal(databaseContainerForGrading('spacetime', {}), null);
+});
+
+test('database grading uses the exact database from the authenticated run lease', () => {
+  const track = { slug: 'ecom' };
+  assert.equal(databaseNameForGrading(track, 3), 'app_ecom_run3');
+  assert.equal(databaseNameForGrading(track, 3, {
+    resources: { database: 'leased_database' },
+  }), 'leased_database');
+  assert.throws(() => databaseNameForGrading(track, 3, { resources: {} }),
+    /active database lease has no database name/);
 });
 
 test('database provenance parses the port instead of accepting a matching substring', () => {
