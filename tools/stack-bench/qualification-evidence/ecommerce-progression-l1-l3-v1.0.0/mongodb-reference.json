@@ -64,7 +64,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "4c4234a03bc0b8baef31cded097e738c6f160aa11c35d2092e1ce5020ec2504c",
+      "executableSha256": "f7ac870b215cf835d4544c0fe6f15faf2021d46abf989754d9c512a94c803cb0",
       "kind": "reference",
       "mutationSha256": null,
       "recipe": {
@@ -72,7 +72,7 @@
         "id": "ecommerce.progression-l1-l3",
         "version": "1.0.0"
       },
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "stack": {
         "id": "mongodb",
         "reference": {
@@ -81,7 +81,7 @@
         },
         "version": "1.2.0"
       },
-      "sha256": "16c3084ec4498ff93a84702c8227eadfa2f5f0679ae77e1feea1c7897c784f01"
+      "sha256": "8821677133f1d7b4192548452c34c5796849d911c73b94920458e022b9884f29"
     },
     "mutationControl": false,
     "diagnostic": false,

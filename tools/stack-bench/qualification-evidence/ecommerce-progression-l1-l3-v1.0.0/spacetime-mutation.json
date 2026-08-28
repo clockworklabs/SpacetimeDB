@@ -64,7 +64,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "24a204bd40b4561708888e4398185c8dcd54a8af9f62197e5974441dc17c90ed",
+      "executableSha256": "56f65b13412787807f43684bb484775228efa665c20177be89f7022a2fa12797",
       "kind": "mutation",
       "mutationSha256": "8df335ba588db2a2b8a466578b62b2a2edc17ce3b4f7be5db8a3c4796a8db886",
       "recipe": {
@@ -72,7 +72,7 @@
         "id": "ecommerce.progression-l1-l3",
         "version": "1.0.0"
       },
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "stack": {
         "id": "spacetime",
         "reference": {
@@ -81,7 +81,7 @@
         },
         "version": "1.0.0"
       },
-      "sha256": "72f0b1c36832f3017e65a603afddb60499e8f22fd28bdd8e16a6f74a74f6da09"
+      "sha256": "9a481bab9c309bb8f28a53093802450693af52bb7f903ff9409c0991f6fa0940"
     },
     "mutationControl": true,
     "diagnostic": false,

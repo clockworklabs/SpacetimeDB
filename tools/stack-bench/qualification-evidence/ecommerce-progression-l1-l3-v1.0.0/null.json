@@ -51,7 +51,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "310e6b13b6f5f48cc55337669e87e589e31a5fb6e2eb044c0594f57cb95b53c7",
+      "executableSha256": "a6a1f2a23c385275242edc1ecda29662301a67582449b1d7c2fa5e0e83ab2393",
       "kind": "null",
       "mutationSha256": null,
       "recipe": {
@@ -59,9 +59,9 @@
         "id": "ecommerce.progression-l1-l3",
         "version": "1.0.0"
       },
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "stack": null,
-      "sha256": "2e9f517ba264979b70583abdfe0c222b8a81af9059dec2fc07dbd9fff1f94cd1"
+      "sha256": "a30908663ca20ba86b7c97a460257bb792b7411454648b245708afb235742e25"
     },
     "tracks": [
       "ecommerce"

@@ -64,7 +64,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "ff50b15212cdfce8e61259b95793f0ba80a527a5510a9a98578f2bd73c25950c",
+      "executableSha256": "31b9326cd6d1712da6a875099efd8f2a1b09c3e5fbc4bb5fa6a2372a178698fc",
       "kind": "mutation",
       "mutationSha256": "f287bdb8276ff55af1bac601d67f6f8ffd5436fe1f2f541002efcd86533c06dc",
       "recipe": {
@@ -72,7 +72,7 @@
         "id": "ecommerce.progression-l1-l3",
         "version": "1.0.0"
       },
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "stack": {
         "id": "mongodb",
         "reference": {
@@ -81,7 +81,7 @@
         },
         "version": "1.2.0"
       },
-      "sha256": "de98192ab4fd9c311dbbc077bcad25e3fa5c5297b62cb6d39ddc3a3570085d80"
+      "sha256": "c4a4cbecf9ec708c6e7e512a81b8a988dcab3cab977ce516f30ba3a500bb4574"
     },
     "mutationControl": true,
     "diagnostic": false,

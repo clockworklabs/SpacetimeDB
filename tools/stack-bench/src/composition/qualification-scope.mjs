@@ -5,7 +5,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-pl
 import { hashFiles, sha256 } from '../evidence/provenance.mjs';
 import { stackAdapterVersion } from '../stacks/stack-identities.mjs';
 
-export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 1;
+export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 2;
 
 const KINDS = new Set(['reference', 'mutation', 'null']);
 const KIND_ENTRYPOINTS = Object.freeze({
@@ -16,7 +16,6 @@ const KIND_ENTRYPOINTS = Object.freeze({
 const CHILD_ENTRYPOINTS = Object.freeze({
   'commands/bench.mjs': ['commands/run-suite.mjs'],
   'src/references/reference-live.mjs': ['src/references/reference-agent.mjs'],
-  'src/references/reference-agent.mjs': ['container/run-build.mjs'],
   'commands/run-suite.mjs': [
     'commands/check-actions.mjs',
     'commands/reset-backend.mjs',

@@ -64,7 +64,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "a03dd89c67af3845ce3da9757501222605ec84aed18b5462b9c36a9f1c409a28",
+      "executableSha256": "6fa4e5874eab7445561780b8aa1763185e0f92b51dc700bbfff4aecbcb494a15",
       "kind": "reference",
       "mutationSha256": null,
       "recipe": {
@@ -72,7 +72,7 @@
         "id": "ecommerce.progression-l1-l3",
         "version": "1.0.0"
       },
-      "schemaVersion": 1,
+      "schemaVersion": 2,
       "stack": {
         "id": "postgres",
         "reference": {
@@ -81,7 +81,7 @@
         },
         "version": "1.3.0"
       },
-      "sha256": "a7593b6b15804d41d9d23e881d88507c6d40e026ee2eba5ad13c68b1f0e07d89"
+      "sha256": "87b281a458fd71776586c46643811111fda2d54b64d1ff92a66b358744b45fc0"
     },
     "mutationControl": false,
     "diagnostic": false,
