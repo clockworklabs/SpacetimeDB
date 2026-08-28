@@ -325,8 +325,8 @@
   },
   "promotion": {
     "catalogPath": "composition/candidates.json",
-    "catalogSha256": "6aa63aa4c688a803cb647bad1fd4099de3eb185992dddb65ae2b43f3e2e3b40c",
+    "catalogSha256": "23503616f17656d2139234ab3fa6e756d2286a14fbd5a0a96811f0e31a3004f2",
     "alias": "L3",
-    "status": "candidate"
+    "status": "promoted"
   }
 }
