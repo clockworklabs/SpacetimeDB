@@ -173,7 +173,7 @@ test('shared grading changes invalidate every affected scope while mutation-only
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('reference deployment changes invalidate qualification but coding-container changes do not', () => {
+test('reference deployment and its container launcher invalidate qualification', () => {
   const root = fixture();
   try {
     const beforeReference = scoped(root, 'reference', 'mongodb');
@@ -181,13 +181,15 @@ test('reference deployment changes invalidate qualification but coding-container
     const beforeNull = scoped(root, 'null');
 
     write(root, 'container/run-build.mjs', 'changed coding container\n');
-    assert.deepEqual(scoped(root, 'reference', 'mongodb'), beforeReference);
-    assert.deepEqual(scoped(root, 'mutation', 'mongodb'), beforeMutation);
-    assert.deepEqual(scoped(root, 'null'), beforeNull);
-
-    write(root, 'src/references/reference-agent.mjs', 'changed reference agent\n');
     assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, beforeReference.sha256);
     assert.notEqual(scoped(root, 'mutation', 'mongodb').sha256, beforeMutation.sha256);
+    assert.deepEqual(scoped(root, 'null'), beforeNull);
+
+    const afterLauncherReference = scoped(root, 'reference', 'mongodb');
+    const afterLauncherMutation = scoped(root, 'mutation', 'mongodb');
+    write(root, 'src/references/reference-agent.mjs', 'changed reference agent\n');
+    assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, afterLauncherReference.sha256);
+    assert.notEqual(scoped(root, 'mutation', 'mongodb').sha256, afterLauncherMutation.sha256);
     assert.deepEqual(scoped(root, 'null'), beforeNull);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

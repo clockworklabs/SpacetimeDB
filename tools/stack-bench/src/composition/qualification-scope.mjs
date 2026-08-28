@@ -16,6 +16,7 @@ const KIND_ENTRYPOINTS = Object.freeze({
 const CHILD_ENTRYPOINTS = Object.freeze({
   'commands/bench.mjs': ['commands/run-suite.mjs'],
   'src/references/reference-live.mjs': ['src/references/reference-agent.mjs'],
+  'src/references/reference-agent.mjs': ['container/run-build.mjs'],
   'commands/run-suite.mjs': [
     'commands/check-actions.mjs',
     'commands/reset-backend.mjs',
