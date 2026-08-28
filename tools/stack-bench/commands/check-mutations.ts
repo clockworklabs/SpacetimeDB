@@ -2,10 +2,10 @@
 // Verify that a mutation file can apply to its reference app without grading.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { mutationFileEdits, resolveMutationFile, validateMutationDefinitions }
+  from '../src/evidence/mutation-analysis.mjs';
+import type { MutationDefinition } from '../src/evidence/mutation-analysis.mjs';
 
 interface CliArgs {
   app: string;
@@ -13,31 +13,9 @@ interface CliArgs {
   quiet: boolean;
 }
 
-interface MutationEdit {
-  file: string;
-  find: string;
-}
-
-interface MutationDefinition {
-  id?: unknown;
-}
-
 interface MutationSpec {
   anchoredTo?: unknown;
   mutations?: MutationDefinition[];
-}
-
-interface MutationValidationIssue {
-  kind: string;
-  mutation?: string;
-}
-
-interface MutationAnalysis {
-  mutationFileEdits: (mutation: MutationDefinition) => MutationEdit[];
-  resolveMutationFile: (appDirectory: string, relativePath: string) => string;
-  validateMutationDefinitions: (mutations: MutationDefinition[] | undefined) => {
-    issues: MutationValidationIssue[];
-  };
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -61,32 +39,12 @@ function parseArgs(argv: string[]): CliArgs {
   return { app, mutations, quiet };
 }
 
-async function loadMutationAnalysis(): Promise<MutationAnalysis> {
-  const sourceUrl = pathToFileURL(join(
-    STACK_BENCH_ROOT,
-    'src',
-    'evidence',
-    'mutation-analysis.mjs',
-  )).href;
-  const module: unknown = await import(sourceUrl);
-  if (typeof module !== 'object' || module === null
-    || !('mutationFileEdits' in module) || typeof module.mutationFileEdits !== 'function'
-    || !('resolveMutationFile' in module) || typeof module.resolveMutationFile !== 'function'
-    || !('validateMutationDefinitions' in module)
-    || typeof module.validateMutationDefinitions !== 'function') {
-    throw new Error('mutation analysis is unavailable');
-  }
-  return module as MutationAnalysis;
-}
-
 const args = parseArgs(process.argv);
 const parsed: unknown = JSON.parse(readFileSync(args.mutations, 'utf8'));
 if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
   throw new Error('mutation manifest must be an object');
 }
 const spec = parsed as MutationSpec;
-const { mutationFileEdits, resolveMutationFile, validateMutationDefinitions }
-  = await loadMutationAnalysis();
 const say = (...message: unknown[]): void => { if (!args.quiet) console.log(...message); };
 
 say(`mutations : ${args.mutations}`);
