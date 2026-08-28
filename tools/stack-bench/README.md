@@ -347,7 +347,7 @@ live-update assertion and retry it, so "real-time" means real-time.
 | `commands/bench.mjs` | runs everything for one backend, unattended |
 | `commands/agent.mjs` | drives one headless coding session (build, upgrade, fix) |
 | `commands/run-suite.mjs` | grades one app: reset, lint, then each suite |
-| `commands/report-bugs.mjs` | turns failed checks into a repair report for the agent |
+| `commands/report-bugs.ts` | turns failed checks into a repair report for the agent |
 | `grader/grade.mjs` | executes scenarios against real clients |
 | `grader/mutation-test.mjs` | validates the grader by injecting known defects |
 | `linter/lint.mjs` | checks the app exposes the contract's test ids |

@@ -1389,7 +1389,7 @@ async function main() {
     const priorRepairRounds = resumedRepair
       ? Math.max(0, conclusiveProgressionAttempts() - 1) : 0;
     if (resumedRepair) {
-      sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
+      sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
         '--history-json', '[]', '--archive', join(args.out, 'repair-reports',
           `bug-report-l${level}-resume.md`)], { stdio: 'pipe' });
       clearPrivateGradingEvidence(appDir);
@@ -1648,7 +1648,7 @@ async function main() {
       && (args.progression || fixRounds < args.fixRounds)) {
       let wroteReport = true;
       try {
-        sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
+        sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
           '--history-json', JSON.stringify(repairHistory),
           '--archive', join(args.out, 'repair-reports',
             `bug-report-l${level}-round${fixRounds + 1}.md`)], { stdio: 'pipe' });

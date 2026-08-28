@@ -7,12 +7,22 @@ import test from 'node:test';
 
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 
-const CLI = join(import.meta.dirname, '..', 'commands', 'report-bugs.mjs');
+const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
 
-function writeGrade(app, status, summary, { grading = join(app, 'stack-bench'),
-  feature = 'Accounts', points = 1 } = {}) {
+type EvidenceStatus = 'passed' | 'failed' | 'inconclusive' | 'harness_failure';
+
+interface WriteGradeOptions {
+  grading?: string;
+  feature?: string;
+  points?: number;
+}
+
+function writeGrade(app: string, status: EvidenceStatus, summary: string,
+  { grading = join(app, 'stack-bench'), feature = 'Accounts', points = 1 }:
+    WriteGradeOptions = {}): void {
   mkdirSync(grading, { recursive: true });
   const setupEvidence = createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
     startedAtMs: 1, completedAtMs: 2 });
@@ -172,7 +182,7 @@ test('contract feedback reports the clean-state observation without claiming the
     const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /clean test state/);
+    assert.match(repair, /clean application state/);
     assert.match(repair, /review-average/);
     assert.match(repair, /no element matching/);
     assert.doesNotMatch(repair, /These elements exist/);
@@ -204,7 +214,7 @@ test('repair feedback states clean authority and summarizes earlier failed round
     assert.match(repair, /Round 2: 4\/6 to 4\/6/);
     assert.match(repair, /1 older or duplicate result/);
     assert.match(repair, /accounts\/owner/);
-    assert.match(repair, /warm local check/);
+    assert.match(repair, /existing local state/);
     assert.equal(readFileSync(archive, 'utf8'), repair);
   } finally {
     rmSync(root, { recursive: true, force: true });

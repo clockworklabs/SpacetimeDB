@@ -63,5 +63,5 @@ current L5 workload is qualified.
 
 Use the package entrypoints documented in the primary `README.md`: `bench` runs
 the build/grade/correction loop, `run-suite.mjs` grades a prepared app, and
-`report-bugs.mjs` produces structured correction input. New scored checks require
+The bug report command produces structured correction input. New scored checks require
 reference, null-control, and defect-detection evidence before promotion.
