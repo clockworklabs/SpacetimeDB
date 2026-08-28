@@ -63,6 +63,11 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
   if (!guidanceDocument) {
     throw new Error(`attempt ${attempt.id} has no guidance document for ${attempt.stack}`);
   }
+  const plannedPricing = { unit: plan.definition.pricing.unit,
+    rates: plan.definition.pricing.models[attempt.model] };
+  if (canonicalDefinitionJson(attempt.pricing) !== canonicalDefinitionJson(plannedPricing)) {
+    throw new Error(`attempt ${attempt.id} pricing does not match its campaign`);
+  }
   const args = [BENCH,
     '--backend', attempt.stack,
     '--track', plan.definition.track];
@@ -105,6 +110,7 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
     '--out', output,
     '--agent-adapter', attempt.agentAdapter,
     '--model', attempt.model,
+    '--pricing-json', JSON.stringify(attempt.pricing),
     '--guidance', attempt.guidance,
     '--fix-rounds', String(plan.definition.budgets.fixRounds),
     '--parent-attempt-id', attempt.id,
@@ -167,6 +173,8 @@ export function validateCampaignRun(plan, attempt, run, {
   mismatch(run.track !== plan.definition.track, 'track');
   mismatch(run.backend !== attempt.stack, 'backend');
   mismatch(run.model !== attempt.model, 'model');
+  mismatch(canonicalDefinitionJson(run.pricing ?? null)
+    !== canonicalDefinitionJson(attempt.pricing), 'pricing');
   mismatch(run.guidance !== attempt.guidance, 'guidance');
   mismatch(!condition || canonicalDefinitionJson(run.condition)
     !== canonicalDefinitionJson(attempt.condition), 'condition');

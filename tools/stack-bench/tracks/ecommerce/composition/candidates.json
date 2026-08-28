@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "promotion-catalog",
   "id": "ecommerce.recipe-candidates",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "state": "draft",
   "title": "Ecommerce recipe candidates",
   "entries": [
@@ -14,6 +14,21 @@
         "id": "ecommerce.l3-standard",
         "version": "1.0.0"
       }
+    },
+    {
+      "alias": "L1",
+      "status": "candidate",
+      "recipe": { "path": "recipes/progression-l1-l3-1.0.0.json", "id": "ecommerce.progression-l1-l3", "version": "1.0.0" }
+    },
+    {
+      "alias": "L2",
+      "status": "candidate",
+      "recipe": { "path": "recipes/progression-l1-l3-1.0.0.json", "id": "ecommerce.progression-l1-l3", "version": "1.0.0" }
+    },
+    {
+      "alias": "L3",
+      "status": "candidate",
+      "recipe": { "path": "recipes/progression-l1-l3-1.0.0.json", "id": "ecommerce.progression-l1-l3", "version": "1.0.0" }
     },
     {
       "alias": "L1",

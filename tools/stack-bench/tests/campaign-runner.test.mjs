@@ -128,7 +128,8 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
     '--campaign-attempt-id', plan.attempts[0].id,
     '--levels', '1-1', '--run-index', '0',
     '--out', '/campaign/attempt', '--agent-adapter', 'deterministic',
-    '--model', 'deterministic', '--guidance', 'prescribed',
+    '--model', 'deterministic', '--pricing-json', JSON.stringify(plan.attempts[0].pricing),
+    '--guidance', 'prescribed',
     '--fix-rounds', '3', '--parent-attempt-id', plan.attempts[0].id, '--no-media',
     '--guidance-document-json', JSON.stringify(plan.attempts[0].condition.guidance.documents[
       plan.attempts[0].stack]),
@@ -140,6 +141,10 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
     ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,
       documents: {} },
   } }, '/campaign/attempt', 0, '/campaign/plan.json'), /has no guidance document/);
+  assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], pricing: {
+    ...plan.attempts[0].pricing,
+    rates: { ...plan.attempts[0].pricing.rates, input: 1 },
+  } }, '/campaign/attempt', 0, '/campaign/plan.json'), /pricing does not match/);
   assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
   const admitted = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
     '/campaign/plan.json', null, 'admission-1');
@@ -210,6 +215,7 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  pricing: attempt.pricing,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -262,6 +268,7 @@ test('campaign validation accepts a zero-level interrupted run without invented 
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  pricing: attempt.pricing,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, levels: [],
@@ -307,6 +314,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
         identities: emptyArtifactIdentities({ engine: plan.identities.engine,
           experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
       mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+      pricing: attempt.pricing,
       guidance: attempt.guidance, condition: attempt.condition,
       selectionRequest: plan.definition.selection, featureCatalog: attempt.featureCatalog,
       dependencyPolicy: attempt.dependencyPolicy,
@@ -333,6 +341,7 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  pricing: attempt.pricing,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -381,6 +390,7 @@ test('campaign validation requires complete first-build and final measurement co
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  pricing: attempt.pricing,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -449,6 +459,7 @@ test('campaign validation binds observed-only evidence to its exact first-build 
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  pricing: attempt.pricing,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
@@ -518,10 +529,9 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
     }), /admission failed/);
 
     const paid = JSON.parse(readFileSync(example, 'utf8'));
-    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.15.0', model: 'claude-sonnet-5' }];
+    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.16.0', model: 'claude-sonnet-5' }];
     paid.pricing.models = { 'claude-sonnet-5': {
-      inputPerMillion: 0, outputPerMillion: 0,
-      cacheWritePerMillion: 0, cacheReadPerMillion: 0,
+      input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0,
     } };
     const paidPath = join(root, 'paid.json');
     writeFileSync(paidPath, `${JSON.stringify(paid, null, 2)}\n`);
@@ -531,7 +541,7 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
     }), /requires non-billable agent adapters/);
 
     const priced = JSON.parse(readFileSync(example, 'utf8'));
-    priced.pricing.models.deterministic.inputPerMillion = 1;
+    priced.pricing.models.deterministic.input = 1;
     const pricedPath = join(root, 'priced.json');
     writeFileSync(pricedPath, `${JSON.stringify(priced, null, 2)}\n`);
     await assert.rejects(() => executeCampaign(pricedPath, join(root, 'priced'), {
@@ -646,7 +656,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
               agentAdapter: agent.identity,
               stackAdapter: stack }),
             mode: attempt.mode, track: planned.definition.track,
-            backend: attempt.stack, model: attempt.model,
+            backend: attempt.stack, model: attempt.model, pricing: attempt.pricing,
             guidance: attempt.guidance, condition: attempt.condition,
             selectionRequest: planned.definition.selection,
             skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
@@ -670,7 +680,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
             agentAdapter: agent.identity,
             stackAdapter: stack }),
           mode: attempt.mode, track: planned.definition.track,
-          backend: attempt.stack, model: attempt.model,
+          backend: attempt.stack, model: attempt.model, pricing: attempt.pricing,
           guidance: attempt.guidance, condition: attempt.condition,
           selectionRequest: planned.definition.selection,
           skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
@@ -763,7 +773,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
             agentAdapter: agent.identity,
             stackAdapter: stack }),
           mode: attempt.mode, track: planned.definition.track,
-          backend: attempt.stack, model: attempt.model,
+          backend: attempt.stack, model: attempt.model, pricing: attempt.pricing,
           guidance: attempt.guidance, condition: attempt.condition,
           selectionRequest: planned.definition.selection, skills: attempt.skills,
           runtime: { buildImage: options.env.STACK_BENCH_IMAGE }, totals: { costUsd: 0 },

@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "kind": "calibration-manifest",
-  "id": "ecommerce.progression-calibration",
+  "id": "ecommerce.progression-l1-l3-calibration",
   "version": "1.0.0",
   "state": "draft",
   "title": "Ecommerce progression L1-L3 calibration",
   "track": "ecommerce",
   "recipe": {
-    "path": "../recipes/progression-catalog-1.0.0.json",
-    "id": "ecommerce.progression-catalog",
+    "path": "../recipes/progression-l1-l3-1.0.0.json",
+    "id": "ecommerce.progression-l1-l3",
     "version": "1.0.0",
-    "meaningSha256": "18ec656cc206f648e3fa5e102119e07c047b0d889bb5ebf0e9f393740e2a2bc7",
-    "executionSha256": "2f01e70f48238ddd46732f239de6f0d8006810686742523b33c040984269ec14",
-    "contentSha256": "7a2cf0fcf8e34dacae099ce8efbe09de1e51304e4a1947102b0be95da0a531df"
+    "meaningSha256": "386ae643a5028c20143e44f802a8eb42da2e0440ddabda18f6f01a617e4fb239",
+    "executionSha256": "d728eff6c9e10769352ff510eaa722caeba05b377d65db36c066ea29a234c67f",
+    "contentSha256": "5f0041c2d21925ec88e2f786294ba9e5b9e5e71a8b95ee36ba6dd36d06a88a2d"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -185,8 +185,8 @@
     ],
     "featureCatalog": {
       "id": "ecommerce.questlines",
-      "version": "1.0.0",
-      "sha256": "fade707dea52dc63d1dcea29a9a253ed1f13cb9adca22eee41446d6739913d0e"
+      "version": "1.1.0",
+      "sha256": "6ee12eae91afcdb8a83293dd4218fcbaac24982b6b22648a4859881a0c9f9aee"
     },
     "runner": {
       "schemaVersion": 1,
@@ -213,7 +213,7 @@
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/candidates.json",
-    "catalogSha256": "3d451690be01b0a592a2c34bec8d00d2bf0ac62d7535a08263506af94e674fdc",
+    "catalogSha256": "7d2c235e067d1afba46a9d0f27b9962b4490c150802cc765abe8c7e3dc8a98d4",
     "alias": "L3",
     "status": "candidate"
   }

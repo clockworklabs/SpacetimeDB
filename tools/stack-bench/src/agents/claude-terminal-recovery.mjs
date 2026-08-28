@@ -5,6 +5,7 @@ import { basename, join, sep } from 'node:path';
 
 import { claudeRatesForModel, normalizeClaudeUsage,
   priceClaudeUsage } from '../evidence/claude-usage-cost.mjs';
+import { validatePricingRates } from '../evidence/pricing-authority.mjs';
 
 const UUID_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.jsonl$/i;
 
@@ -86,7 +87,9 @@ function hasCompletionMarker(directory, snapshot, marker, resumeSession) {
 }
 
 export function recoverClaudeTerminalResult({ directory, snapshot, marker, model,
-  resumeSession = null }) {
+  pricingRates = null, resumeSession = null }) {
+  const requestedRates = pricingRates === null ? null
+    : validatePricingRates(pricingRates, { at: 'terminal recovery pricing rates' });
   const normalizedResume = resumeSession?.toLowerCase() ?? null;
   const candidates = candidateTranscriptPaths(directory, snapshot, resumeSession);
   const matches = [];
@@ -124,7 +127,7 @@ export function recoverClaudeTerminalResult({ directory, snapshot, marker, model
     const pricedModels = new Set();
     for (const record of billed.values()) {
       const actualModel = record.message?.model ?? model;
-      const rates = claudeRatesForModel(actualModel);
+      const rates = requestedRates ?? claudeRatesForModel(actualModel);
       if (!rates) {
         throw Object.assign(
           new Error(`terminal recovery has no recorded pricing for model ${actualModel}`),
@@ -155,6 +158,7 @@ export function recoverClaudeTerminalResult({ directory, snapshot, marker, model
 
 export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs,
   transcriptDirectory, transcriptSnapshot, marker, model, resumeSession = null,
+  pricingRates = null,
   exitGraceMs = 15_000, pollMs = 250, maxBuffer = 256 * 1024 * 1024,
   terminate }) {
   return new Promise(resolve => {
@@ -198,7 +202,7 @@ export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs
           return;
         }
         const found = recoverClaudeTerminalResult({ directory: transcriptDirectory,
-          snapshot: transcriptSnapshot, marker, model, resumeSession });
+          snapshot: transcriptSnapshot, marker, model, pricingRates, resumeSession });
         if (!found) return;
         if (terminalSeenAt === null) terminalSeenAt = Date.now();
         if (Date.now() - terminalSeenAt >= exitGraceMs) {

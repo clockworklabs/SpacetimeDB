@@ -72,7 +72,7 @@ test('progression null qualification grades only the checks selected for its lev
   const track = loadTrack('ecommerce');
   const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@1.0.0');
   const calibration = JSON.parse(readFileSync(join(track.dir, 'composition', 'calibrations',
-    'progression-1.0.0.json'), 'utf8'));
+    'progression-1.0.1.json'), 'utf8'));
   const selectedBinding = selectNullQualificationBinding(binding, calibration);
   const checks = nullControlSuites(track, 3, selectedBinding)
     .flatMap(suite => suite.checks);

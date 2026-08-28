@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -14,7 +14,7 @@ import { sha256 } from '../src/evidence/provenance.mjs';
 
 function definition(overrides = {}) {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     kind: 'campaign-manifest',
     id: 'ecommerce-l1-comparison',
     version: '1.0.0',
@@ -39,9 +39,10 @@ function definition(overrides = {}) {
       excludeFromAnalysis: ['contaminated', 'harness_failure', 'inconclusive', 'ungraded'] },
     runtime: { releaseManifestSha256: null, controllerImage: null, buildImage: null,
       platform: 'linux/amd64' },
-    pricing: { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
+    pricing: { currency: 'USD', unit: 'USD-per-million-tokens',
+      capturedAt: '2026-08-12T00:00:00.000Z',
       source: 'offline deterministic adapter', models: { deterministic: {
-        inputPerMillion: 0, outputPerMillion: 0, cacheWritePerMillion: 0, cacheReadPerMillion: 0,
+        input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0,
       } } },
     analysis: { primaryMetric: 'firstBuildScoreRate',
       secondaryMetrics: ['finalScoreRate', 'totalCostUsd', 'totalDurationMs', 'correctionSuccessRate',
@@ -140,6 +141,9 @@ test('campaign compilation binds exact inputs and expands a balanced immutable a
   }
   assert.equal(new Set(plan.attempts.filter(attempt => attempt.order === 1)
     .map(attempt => attempt.stack)).size, 3, 'each stack must lead one repetition');
+  assert(plan.attempts.every(attempt => canonicalDefinitionJson(attempt.pricing)
+    === canonicalDefinitionJson({ unit: plan.definition.pricing.unit,
+      rates: plan.definition.pricing.models[attempt.model] })));
 });
 
 test('dependency campaigns bind separate catalog and policy identities in every attempt', () => {
@@ -158,6 +162,35 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
   assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
     /levels.*feature catalog/);
+});
+
+test('dependency campaign plans bind only the selected feature catalog levels', () => {
+  const value = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'appliance',
+    'campaign.ecommerce-progression-reference.json'), 'utf8'));
+  value.levels = [1, 2, 3];
+  value.selection.levels = value.selection.levels.filter(entry => entry.level <= 3);
+  const plan = compile(value);
+
+  assert.deepEqual([...new Set(plan.featureCatalog.definition.nodes.map(node => node.level))],
+    [1, 2, 3]);
+  assert(plan.featureCatalog.definition.nodes.every(node => node.level <= 3));
+  assert(plan.featureCatalog.definition.questlines.every(questline => questline.nodes.every(nodeId =>
+    plan.featureCatalog.definition.nodes.some(node => node.id === nodeId))));
+  assert.equal(plan.featureCatalog.definition.state, 'draft');
+  assert.deepEqual(plan.dependencyPolicy.definition.levels, [1, 2, 3]);
+  assert.equal(plan.featureCatalog.identity.sha256,
+    sha256(canonicalDefinitionJson(plan.featureCatalog.definition)));
+  assert(plan.attempts.every(attempt => canonicalDefinitionJson(attempt.featureCatalog)
+    === canonicalDefinitionJson(plan.featureCatalog.identity)));
+  assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
+});
+
+test('campaign graph version must match its recipe calibration', () => {
+  const value = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'appliance',
+    'campaign.ecommerce-progression-reference.json'), 'utf8'));
+  value.featureCatalog = 'ecommerce.questlines@1.1.0';
+  assert.throws(() => compile(value),
+    /L1 calibration qualifies ecommerce\.questlines@1\.0\.0, not ecommerce\.questlines@1\.1\.0/);
 });
 
 test('sequential campaigns can use the same feature catalog without dependency gating', () => {
@@ -197,6 +230,7 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
     const attempt = plan.attempts[0];
     const argv = attemptArgv(plan, attempt, join(root, 'result'), 0, planPath);
     const args = parseArgs(['node', ...argv]);
+    assert.deepEqual(args.pricing, attempt.pricing);
     assert.deepEqual(args.runMode, attempt.mode);
     assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
     assert.deepEqual(args.featureCatalog, plan.featureCatalog);
@@ -421,6 +455,14 @@ test('campaigns freeze independent stack counts and bounded parallel capacity', 
 
 test('campaign validation rejects ambiguity, silent fallback, and incomplete analysis policy', () => {
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
+  assert.throws(() => validateCampaignDefinition({ ...definition(), pricing: {
+    ...definition().pricing, unit: 'USD-per-token',
+  } }), /pricing\.unit/);
+  assert.throws(() => validateCampaignDefinition({ ...definition(), pricing: {
+    ...definition().pricing, models: { deterministic: {
+      inputPerMillion: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0,
+    } },
+  } }), /inputPerMillion.*unknown/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: undefined }), /mode must be an object/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'unknown', version: '1.0.0',
@@ -456,11 +498,12 @@ test('frozen campaigns require exact runtime images', () => {
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.15.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.16.0',
     model: 'claude-sonnet-5' }];
-  const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
+  const claudePricing = { currency: 'USD', unit: 'USD-per-million-tokens',
+    capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {
-      inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
+      input: 1, output: 1, cacheWrite5m: 1, cacheWrite1h: 1, cacheRead: 1,
     } } };
   const frozen = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     agents: claudeAgent, pricing: claudePricing,
@@ -483,11 +526,12 @@ test('frozen campaigns accept a resolved qualification result for every selected
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.15.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.16.0',
     model: 'claude-sonnet-5' }];
-  const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
+  const claudePricing = { currency: 'USD', unit: 'USD-per-million-tokens',
+    capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {
-      inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
+      input: 1, output: 1, cacheWrite5m: 1, cacheWrite1h: 1, cacheRead: 1,
     } } };
   const l1l2 = definition({ state: 'frozen', levels: [1, 2], runtime,
     agents: claudeAgent, pricing: claudePricing,
@@ -506,6 +550,32 @@ test('frozen campaigns require the build image used for qualification', () => {
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
   assert.throws(() => compile(frozen, resolvedQualificationOptions),
     /buildImage does not match the qualified build image/);
+});
+
+test('frozen dependency campaigns require calibration coverage for every selected check', () => {
+  const value = dependencyDefinition();
+  value.state = 'frozen';
+  value.budgets.maxCostUsdPerAttempt = 25;
+  value.runtime = {
+    releaseManifestSha256: 'a'.repeat(64),
+    controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
+    buildImage: `registry.example/stack-bench-build@${QUALIFIED_BUILD_IMAGE}`,
+    platform: 'linux/amd64',
+  };
+  const calibrationResolver = release => {
+    const calibration = resolvedQualification(release);
+    calibration.qualification.checks = [];
+    return calibration;
+  };
+  assert.throws(() => compile(value, { calibrationResolver }),
+    /calibration does not cover 1 selected checks/);
+
+  const coveredResolver = release => {
+    const calibration = resolvedQualification(release);
+    calibration.qualification.checks = ['ecommerce.feature.accounts.accounts.1a'];
+    return calibration;
+  };
+  assert.equal(compile(value, { calibrationResolver: coveredResolver }).state, 'frozen');
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {

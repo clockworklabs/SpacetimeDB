@@ -7,6 +7,9 @@ import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agen
 
 const request = { mode: 'build', level: 1, app: 'C:\\bench\\app', backend: 'stub',
   track: 'loop', runIndex: 0, model: 'deterministic', guidance: 'prescribed', skills: null };
+const pricing = { unit: 'USD-per-million-tokens', rates: {
+  input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3,
+} };
 
 test('built-in agent adapters are statically registered and content identified', () => {
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.ids,
@@ -14,7 +17,7 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    const expectedVersion = id === 'claude-code' ? '1.15.0'
+    const expectedVersion = id === 'claude-code' ? '1.16.0'
       : id === 'reference-fixture' ? '1.3.0'
       : id === 'deterministic' ? '1.2.0' : '1.1.0';
     assert.equal(identity.version, expectedVersion);
@@ -42,6 +45,9 @@ test('requests are normalized and unsupported modes fail before launch', () => {
   assert.deepEqual(agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('claude-code'),
     { ...request, maxBudgetUsd: 12.5 }).slice(-2),
     ['--max-budget-usd', '12.5']);
+  const priced = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('claude-code'),
+    { ...request, pricing, maxBudgetUsd: 12.5 });
+  assert.equal(priced[priced.indexOf('--pricing-json') + 1], JSON.stringify(pricing));
   const guidanceDocument = { path: 'backends/stub.md', sha256: 'a'.repeat(64), bytes: 12 };
   const withDocument = agentRequestArgv(deterministic, { ...request, guidanceDocument });
   assert.equal(withDocument[withDocument.indexOf('--guidance-document-json') + 1],
@@ -76,18 +82,52 @@ test('a campaign-bound task supplies the exact recipe when no direct CLI recipe 
 });
 
 test('completion validation rejects wrong identity and malformed usage', () => {
+  const nativeRequest = { ...request, adapterCostLimit: 'native', maxBudgetUsd: 1, pricing };
+  const receipt = { schemaVersion: 2, source: 'credential-broker', model: request.model,
+    maxBudgetUsd: 1, costUsd: 0.0018, cliCostUsd: 0.0018, calculatedCostUsd: 0.0018,
+    usage: { input: 100, output: 100, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+    pricingRates: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6,
+      cacheRead: 0.3 },
+    complete: true, reconciled: true, error: null };
   const valid = { appDir: request.app, mode: 'build', level: 1, ok: true,
-    sessionId: 'session-1', costUsd: 0, tokens: 3, outputTokens: 1, turns: 1,
+    sessionId: 'session-1', costUsd: 0.0018, tokens: 3, outputTokens: 1, turns: 1,
     promptBytes: 20, durationMs: 10, setup: { isolation: { mode: 'test' } },
-    usage: { input: 1, output: 1, cacheWrite: 1, cacheRead: 0 } };
-  const normalized = validateAgentResult(valid, request);
+    usage: { input: 1, output: 1, cacheWrite: 1, cacheRead: 0 },
+    costReceipts: [{ invocation: 1, receipt }] };
+  const normalized = validateAgentResult(valid, nativeRequest);
   assert.equal(normalized.backend, request.backend);
   assert.equal(normalized.model, request.model);
   assert.deepEqual(normalized.transcript, { kind: 'provider-session', id: 'session-1' });
-  assert.throws(() => validateAgentResult({ ...valid, appDir: 'C:\\other' }, request), /appDir/);
-  assert.throws(() => validateAgentResult({ ...valid, usage: { ...valid.usage, input: -1 } }, request),
+  assert.deepEqual(normalized.costReceipts, valid.costReceipts);
+  assert.equal(normalized.costComplete, true);
+  assert.throws(() => validateAgentResult({ ...valid, appDir: 'C:\\other' }, nativeRequest), /appDir/);
+  assert.throws(() => validateAgentResult({ ...valid, usage: { ...valid.usage, input: -1 } }, nativeRequest),
     /usage.input/);
-  assert.throws(() => validateAgentResult({ ...valid, sessionId: undefined }, request), /sessionId/);
+  assert.throws(() => validateAgentResult({ ...valid, sessionId: undefined }, nativeRequest), /sessionId/);
+  assert.throws(() => validateAgentResult({ ...valid,
+    costReceipts: [{ invocation: 1, receipt: { ...receipt, model: 'wrong' } }] }, nativeRequest),
+  /costReceipts/);
+  assert.throws(() => validateAgentResult({ ...valid, costReceipts: [] }, nativeRequest),
+    /requires complete reconciled broker cost proof/);
+  assert.doesNotThrow(() => validateAgentResult({ ...valid, costUsd: 0.00185 }, nativeRequest));
+  assert.throws(() => validateAgentResult({ ...valid, costUsd: 0.01 }, nativeRequest),
+    /requires complete reconciled broker cost proof/);
+  assert.throws(() => validateAgentResult(valid, { ...nativeRequest,
+    pricing: { ...pricing, rates: { ...pricing.rates, output: 12 } } }),
+  /requires complete reconciled broker cost proof/);
+  assert.throws(() => validateAgentResult({ ...valid,
+    costReceipts: [{ invocation: 1, receipt: { ...receipt, complete: false,
+      reconciled: false, error: 'incomplete' } }] }, nativeRequest),
+  /complete reconciled broker cost proof/);
+  const failed = validateAgentResult({ ...valid, ok: false,
+    costReceipts: [{ invocation: 1, receipt: { ...receipt, complete: false,
+      reconciled: false, error: 'incomplete' } }] }, nativeRequest);
+  assert.equal(failed.costComplete, false);
+  assert.equal(failed.costReceipts[0].receipt.error, 'incomplete');
+  assert.doesNotThrow(() => validateAgentResult({ ...valid, costUsd: 0, costReceipts: [] },
+    { ...request, adapterCostLimit: 'non-billable' }));
+  assert.equal(validateAgentResult({ ...valid, costUsd: 0, costReceipts: [] },
+    { ...request, adapterCostLimit: 'unsupported' }).costComplete, false);
 });
 
 test('an unsuccessful provider session is a harness failure even when it has an id', () => {

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-example",
   "version": "2.0.0",
@@ -86,14 +86,16 @@
   },
   "pricing": {
     "currency": "USD",
+    "unit": "USD-per-million-tokens",
     "capturedAt": "2026-08-12T00:00:00.000Z",
     "source": "deterministic adapter makes no billable provider calls",
     "models": {
       "deterministic": {
-        "inputPerMillion": 0,
-        "outputPerMillion": 0,
-        "cacheWritePerMillion": 0,
-        "cacheReadPerMillion": 0
+        "input": 0,
+        "output": 0,
+        "cacheWrite5m": 0,
+        "cacheWrite1h": 0,
+        "cacheRead": 0
       }
     }
   },

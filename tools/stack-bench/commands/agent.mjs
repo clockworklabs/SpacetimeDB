@@ -36,6 +36,9 @@ import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS,
   runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.mjs';
+import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
+import { PRICING_UNIT, validatePricingAuthority }
+  from '../src/evidence/pricing-authority.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const REPO = resolve(ROOT, '..', '..');
@@ -224,6 +227,7 @@ function parseArgs(argv) {
       case '--app': a.app = argv[++i]; break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--model': a.model = argv[++i]; break;
+      case '--pricing-json': a.pricing = JSON.parse(argv[++i]); break;
       // --stack is the accurate name: the only thing this varies is whether the
       // stack is prescribed, not how much help the model gets. Everything else
       // (harness ports, branding, the level spec, the contract appendix) is
@@ -255,6 +259,16 @@ function parseArgs(argv) {
   }
   if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
+  }
+  if (a.pricing !== undefined) {
+    a.pricing = validatePricingAuthority(a.pricing, { at: '--pricing-json' });
+  } else if (a.maxBudgetUsd !== undefined) {
+    const rates = claudeRatesForModel(a.model);
+    if (!rates) throw new Error(`no default pricing is recorded for model ${a.model}`);
+    a.pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
+      { at: 'default pricing' });
+  } else {
+    a.pricing = null;
   }
   return a;
 }
@@ -744,6 +758,7 @@ async function main() {
           '--image', imageIdentity.id,
           '--effort', EFFORT,
           '--model', args.model,
+          ...(args.pricing ? ['--pricing-json', JSON.stringify(args.pricing)] : []),
           '--completion-marker', args.mode === 'fix' ? 'FIX_COMPLETE'
             : args.mode === 'upgrade' ? 'UPGRADE_COMPLETE'
               : args.mode === 'resume' ? 'RESUME_COMPLETE' : 'DEPLOY_COMPLETE',
@@ -843,7 +858,8 @@ async function main() {
       node: { orchestrator: process.version, codingContainer: imageNodeVersion(imageIdentity.id) },
       platform: process.platform,
     },
-    costUsd: Number((result.total_cost_usd ?? 0).toFixed(4)),
+    costUsd: Number((result.total_cost_usd ?? 0).toFixed(6)),
+    costReceipts: result.stack_bench_cost_receipts ?? [],
     tokens: input + output + cacheWrite + cacheRead,
     outputTokens: output,
     usage: { input, output, cacheWrite, cacheRead },

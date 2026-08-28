@@ -23,7 +23,7 @@ export function summarizeSessions(sessions) {
 
   return {
     sessions: present.length,
-    costUsd: Number(present.reduce((total, session) => total + number(session.costUsd), 0).toFixed(4)),
+    costUsd: Number(present.reduce((total, session) => total + number(session.costUsd), 0).toFixed(6)),
     tokens: present.reduce((total, session) => total + number(session.tokens), 0),
     outputTokens: present.reduce((total, session) => total + number(session.outputTokens), 0),
     turns: present.reduce((total, session) => total + number(session.turns), 0),

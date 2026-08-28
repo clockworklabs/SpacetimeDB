@@ -33,7 +33,7 @@ test('terminal recovery reads only records appended by the active invocation', (
     assert.equal(result.num_turns, 1);
     assert.deepEqual(result.usage, { input_tokens: 10, output_tokens: 20,
       cache_creation_input_tokens: 30, cache_read_input_tokens: 40 });
-    assert.equal(result.total_cost_usd, 0.00045450000000000004);
+    assert.equal(result.total_cost_usd, 0.000303);
     assert.equal(result.terminal_recovery.costSource, 'transcript-usage');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -55,6 +55,12 @@ test('terminal recovery rejects old markers, tool turns, sidechains, and unknown
     assert.throws(() => recoverClaudeTerminalResult({ directory: root, snapshot,
       marker: 'FIX_COMPLETE', model: 'claude-unknown', resumeSession: sessionId }),
     /no recorded pricing/);
+    const exactRates = { input: 1, output: 1, cacheWrite5m: 1,
+      cacheWrite1h: 1, cacheRead: 1 };
+    const recovered = recoverClaudeTerminalResult({ directory: root, snapshot,
+      marker: 'FIX_COMPLETE', model: 'claude-unknown', pricingRates: exactRates,
+      resumeSession: sessionId });
+    assert.equal(recovered.total_cost_usd, 0.0002);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

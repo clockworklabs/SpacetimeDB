@@ -68,6 +68,9 @@ import { campaignAdmissionSmokeReuse, readCampaignAdmission }
   from '../src/campaigns/campaign-admission.mjs';
 import { gradingRunTimeoutMs, selectedGradingSourceCount }
   from '../src/runtime/grading-timeout.mjs';
+import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
+import { PRICING_UNIT, validatePricingAuthority }
+  from '../src/evidence/pricing-authority.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -96,6 +99,7 @@ export function parseArgs(argv) {
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--model': a.model = argv[++i]; break;
+      case '--pricing-json': a.pricing = JSON.parse(argv[++i]); break;
       case '--fix-rounds': a.fixRounds = Number(argv[++i]); break;
       case '--max-stalled-repairs': a.maxStalledRepairs = Number(argv[++i]); break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
@@ -216,6 +220,8 @@ export function parseArgs(argv) {
     }
     if (!attempt || attempt.stack !== a.backend || attempt.agentAdapter !== a.agentAdapter
       || attempt.model !== a.model
+      || canonicalDefinitionJson(attempt.pricing)
+        !== canonicalDefinitionJson(a.pricing)
       || plan.definition.track !== a.track || attempt.guidance !== a.guidance
       || canonicalDefinitionJson(attempt.condition) !== canonicalDefinitionJson(a.condition)
       || canonicalDefinitionJson(attempt.skills) !== canonicalDefinitionJson(a.skills)
@@ -410,6 +416,7 @@ function runAgent(args, adapter, mode, level, appDir) {
     guidanceDocument: args.guidanceDocument,
     recipeTask,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
+  request.pricing = args.pricing;
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
     throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
@@ -447,16 +454,37 @@ function runAgent(args, adapter, mode, level, appDir) {
   });
 }
 
+export function runSessionRecord(session, round = null) {
+  return {
+    ...(round === null ? {} : { round }),
+    sessionId: session.sessionId ?? null,
+    costUsd: session.costUsd,
+    durationMs: session.durationMs,
+    usage: session.usage ?? null,
+    costReceipts: session.costReceipts ?? [],
+    costComplete: session.costComplete === true,
+    providerThrottle: session.setup?.providerThrottle ?? null,
+    tokens: session.tokens ?? null,
+    outputTokens: session.outputTokens ?? null,
+    turns: session.turns ?? null,
+    promptBytes: session.promptBytes ?? null,
+    thinking: session.thinking ?? null,
+    transcript: session.transcript ?? null,
+    provenance: session.provenance ?? null,
+    providerMetadata: session.providerMetadata ?? null,
+  };
+}
+
 export function finalizeRunTotals(run, started, { now = Date.now(), costComplete = true } = {}) {
   const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
   const currentLevels = run.levels.filter(level => !inherited.has(level.level));
   const currentExecutionCostUsd = Number(currentLevels.reduce((n, level) => n
     + (level.buildCostUsd ?? level.resumeCostUsd ?? 0)
-    + (level.fixCostUsd ?? 0), 0).toFixed(4));
+    + (level.fixCostUsd ?? 0), 0).toFixed(6));
   const priorExecutionCostUsd = run.progressionResume?.priorTotals?.costUsd ?? null;
   const cumulativeCostUsd = run.progressionResume
     ? (typeof priorExecutionCostUsd === 'number'
-      ? Number((priorExecutionCostUsd + currentExecutionCostUsd).toFixed(4)) : null)
+      ? Number((priorExecutionCostUsd + currentExecutionCostUsd).toFixed(6)) : null)
     : currentExecutionCostUsd;
   run.totals = {
     score: run.levels.reduce((n, level) => n + (level.score ?? 0), 0),
@@ -672,6 +700,16 @@ async function main() {
   }
   resolveAgentCredential(args, agentAdapter);
   args.model ??= agentAdapter.defaultModel;
+  if (args.pricing !== undefined) {
+    args.pricing = validatePricingAuthority(args.pricing, { at: '--pricing-json' });
+  } else if (args.maxBudgetUsd != null && agentAdapter.costLimit === 'native') {
+    const rates = claudeRatesForModel(args.model);
+    if (!rates) throw new Error(`no default pricing is recorded for model ${args.model}`);
+    args.pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
+      { at: 'default pricing' });
+  } else {
+    args.pricing = null;
+  }
   if (args.retainBackend
     && !executeStackCapability(stackAdapter, 'run-policy', 'retain-host-supported')) {
     throw new Error(`stack adapter ${args.backend} does not support --retain-backend`);
@@ -1047,6 +1085,7 @@ async function main() {
     }),
     mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential', version: '1.0.0' },
     track: args.track, backend: args.backend, model: args.model,
+    pricing: args.pricing,
     guidance: args.guidance, condition: args.condition ?? null,
     stack: args.guidance === 'minimal' ? 'free' : args.guidance,
     skills: args.skills ?? [],
@@ -1130,9 +1169,13 @@ async function main() {
 
   const recordProgressionGrade = input => progressionExecution?.record(input) ?? null;
 
+  let runCostComplete = true;
+
   const runAgentForLevel = async (mode, level) => {
     try {
-      return await runAgent(args, agentAdapter, mode, level, appDir);
+      const result = await runAgent(args, agentAdapter, mode, level, appDir);
+      if (result.costComplete !== true) runCostComplete = false;
+      return result;
     } catch (error) {
       const reason = String(error?.message ?? error).split(/\r?\n/)[0];
       run.outcome = { kind: 'harness_failure', phase: `agent-${mode}`,
@@ -1210,11 +1253,7 @@ async function main() {
     const buildFailure = agentSessionFailure(build);
     if (buildFailure) {
       console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, 'run.json')}`);
-      const failedSession = { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
-        durationMs: build.durationMs, usage: build.usage ?? null,
-        providerThrottle: build.setup?.providerThrottle ?? null,
-        transcript: build.transcript ?? null, provenance: build.provenance ?? null,
-        providerMetadata: build.providerMetadata ?? null };
+      const failedSession = runSessionRecord(build);
       run.levels.push({ level, score: null, max: null, error: buildFailure.reason,
         outcome: buildFailure,
         ...(continuing
@@ -1242,9 +1281,7 @@ async function main() {
         outcome: { kind: 'ungraded', phase: 'reference-mutation-only',
           reason: 'the parent qualification owns the full clean grade',
           appFailures: [], inconclusive: [], harnessFailures: [] },
-        buildSession: { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
-          durationMs: build.durationMs, usage: build.usage ?? null,
-          transcript: build.transcript ?? null, provenance: build.provenance ?? null },
+        buildSession: runSessionRecord(build),
         buildCostUsd: build.costUsd, sessionTotals: summarizeSessions([build]),
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
@@ -1359,14 +1396,8 @@ async function main() {
 
     let fixRounds = resumedRepair ? 1 : 0;
     let fixCost = resumedRepair ? build.costUsd : 0;
-    const fixSessions = resumedRepair ? [{ round: priorRepairRounds + 1,
-      sessionId: build.sessionId ?? null, costUsd: build.costUsd,
-      durationMs: build.durationMs, usage: build.usage ?? null,
-      providerThrottle: build.setup?.providerThrottle ?? null,
-      tokens: build.tokens ?? null, outputTokens: build.outputTokens ?? null,
-      turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
-      thinking: build.thinking ?? null, transcript: build.transcript ?? null,
-      provenance: build.provenance ?? null, providerMetadata: build.providerMetadata ?? null }] : [];
+    const fixSessions = resumedRepair
+      ? [runSessionRecord(build, priorRepairRounds + 1)] : [];
     const repairHistory = [];
     let regressed = false;
     let repairStopReason = null;
@@ -1466,13 +1497,7 @@ async function main() {
       console.log(`--- fix round ${fixRounds}/${displayedRepairBudget} ---`);
       const fix = await runAgentForLevel('fix', level);
       fixCost += fix.costUsd;
-      fixSessions.push({ round: priorRepairRounds + fixRounds, sessionId: fix.sessionId ?? null,
-        costUsd: fix.costUsd, durationMs: fix.durationMs, usage: fix.usage ?? null,
-        providerThrottle: fix.setup?.providerThrottle ?? null,
-        tokens: fix.tokens ?? null, outputTokens: fix.outputTokens ?? null,
-        turns: fix.turns ?? null, promptBytes: fix.promptBytes ?? null,
-        thinking: fix.thinking ?? null, transcript: fix.transcript ?? null,
-        provenance: fix.provenance ?? null, providerMetadata: fix.providerMetadata ?? null });
+      fixSessions.push(runSessionRecord(fix, priorRepairRounds + fixRounds));
 
       const fixFailure = agentSessionFailure(fix);
       if (fixFailure) {
@@ -1619,13 +1644,7 @@ async function main() {
       console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
         `Score is unknown, not zero; re-grade this level before using the run.`);
     }
-    const buildSession = { sessionId: build.sessionId, costUsd: build.costUsd,
-      durationMs: build.durationMs, usage: build.usage ?? null,
-      providerThrottle: build.setup?.providerThrottle ?? null,
-      tokens: build.tokens ?? null, outputTokens: build.outputTokens ?? null,
-      turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
-      thinking: build.thinking ?? null, transcript: build.transcript ?? null,
-      provenance: build.provenance ?? null, providerMetadata: build.providerMetadata ?? null };
+    const buildSession = runSessionRecord(build);
     const sessionTotals = summarizeSessions(resumedRepair ? fixSessions
       : [buildSession, ...fixSessions]);
     run.levels.push({
@@ -1646,7 +1665,7 @@ async function main() {
         : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
-      fixCostUsd: Number(fixCost.toFixed(4)),
+      fixCostUsd: Number(fixCost.toFixed(6)),
       fixSessions,
       repairHistory,
       sessionTotals,
@@ -1755,7 +1774,7 @@ async function main() {
       { stdio: 'pipe' });
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
-  finalizeRunTotals(run, started);
+  finalizeRunTotals(run, started, { costComplete: runCostComplete });
   run.outcome = args.referenceMutationOnly && run.mutationControl?.ok
     ? { kind: 'passed', phase: 'mutation-control', reason: null,
       appFailures: [], inconclusive: [], harnessFailures: [] }

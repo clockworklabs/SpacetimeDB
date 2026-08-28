@@ -8,6 +8,7 @@ import { finalizeRunTotals } from '../commands/bench.mjs';
 import { checkDatabaseProvenance } from '../commands/run-suite.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS, CODING_SESSION_TIMEOUT_MS }
   from '../src/agents/coding-session-timeouts.mjs';
+import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
 
 test('database provenance accepts the leased environment and rejects an unrelated literal', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-database-provenance-'));
@@ -47,4 +48,12 @@ test('an interrupted later level keeps completed totals and marks cost incomplet
     sessions: 2, tokens: 100, outputTokens: 20, turns: 8, modelDurationMs: 900,
     durationSec: 10, ungraded: [],
   });
+});
+
+test('session and run totals keep receipt precision', () => {
+  const sessions = [{ costUsd: 0.123456 }, { costUsd: 0.234567 }, { costUsd: 0.345678 }];
+  assert.equal(summarizeSessions(sessions).costUsd, 0.703701);
+  const run = { levels: [{ level: 1, buildCostUsd: 0.123456, fixCostUsd: 0.234567 },
+    { level: 2, buildCostUsd: 0.345678, fixCostUsd: 0 }] };
+  assert.equal(finalizeRunTotals(run, 0, { now: 1 }).costUsd, 0.703701);
 });

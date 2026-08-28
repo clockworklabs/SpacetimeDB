@@ -1,4 +1,8 @@
+import { pricingRatesEqual, validatePricingAuthority }
+  from '../evidence/pricing-authority.mjs';
+
 export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
+export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
   'defaultModel', 'apiKeyEnvironmentVariable', 'credentialEnvironmentVariables',
@@ -7,13 +11,53 @@ const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes',
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
-  'providerMetadata', 'transcript']);
+  'providerMetadata', 'transcript', 'costReceipts']);
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
 const SANDBOX_PROBES = new Set(['direct-cli', 'none']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const RECEIPT_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
+
+function validateCostReceipts(value, model) {
+  if (!Array.isArray(value)) throw new Error('agent result costReceipts must be an array');
+  value.forEach((entry, index) => {
+    if (!object(entry) || !Number.isSafeInteger(entry.invocation) || entry.invocation !== index + 1
+      || !object(entry.receipt)) {
+      throw new Error(`agent result costReceipts[${index}] is invalid`);
+    }
+    const receipt = entry.receipt;
+    const fields = new Set(['schemaVersion', 'source', 'model', 'maxBudgetUsd', 'costUsd',
+      'cliCostUsd', 'calculatedCostUsd', 'usage', 'pricingRates', 'complete', 'reconciled',
+      'error']);
+    if (Object.keys(receipt).some(key => !fields.has(key)) || receipt.schemaVersion !== 2
+      || receipt.source !== 'credential-broker' || receipt.model !== model
+      || !Number.isFinite(receipt.maxBudgetUsd) || receipt.maxBudgetUsd <= 0
+      || !Number.isFinite(receipt.costUsd) || receipt.costUsd < 0
+      || ![receipt.cliCostUsd, receipt.calculatedCostUsd]
+        .every(cost => cost === null || (Number.isFinite(cost) && cost >= 0))
+      || typeof receipt.complete !== 'boolean' || typeof receipt.reconciled !== 'boolean'
+      || (receipt.error !== null && (typeof receipt.error !== 'string' || !receipt.error))
+      || receipt.reconciled !== (receipt.error === null)) {
+      throw new Error(`agent result costReceipts[${index}].receipt is invalid`);
+    }
+    for (const field of ['usage', 'pricingRates']) {
+      const values = receipt[field];
+      if (values === null) continue;
+      if (!object(values) || Object.keys(values).some(key => !RECEIPT_USAGE_FIELDS.includes(key))
+        || RECEIPT_USAGE_FIELDS.some(key => !Number.isFinite(values[key]) || values[key] < 0)) {
+        throw new Error(`agent result costReceipts[${index}].receipt.${field} is invalid`);
+      }
+    }
+    if (receipt.reconciled && (!receipt.complete || receipt.error !== null
+      || receipt.usage === null || receipt.pricingRates === null
+      || receipt.cliCostUsd === null || receipt.calculatedCostUsd === null)) {
+      throw new Error(`agent result costReceipts[${index}].receipt is incomplete`);
+    }
+  });
+  return value;
+}
 
 export function defineAgentAdapter(value) {
   if (!object(value)) throw new Error('agent adapter must be an object');
@@ -150,6 +194,23 @@ export function validateAgentResult(value, request) {
   const usage = Object.fromEntries(['input', 'output', 'cacheWrite', 'cacheRead']
     .map(key => [key, finite(value.usage[key], `usage.${key}`)]));
   const costUsd = finite(value.costUsd, 'costUsd');
+  const costReceipts = validateCostReceipts(
+    value.costReceipts === undefined ? [] : value.costReceipts, request.model);
+  const pricing = request.pricing == null ? null
+    : validatePricingAuthority(request.pricing, { at: 'agent request pricing' });
+  const cappedNative = request.adapterCostLimit === 'native' && request.maxBudgetUsd != null;
+  if (cappedNative && pricing === null) {
+    throw new Error('agent request pricing is required for a native cost limit');
+  }
+  const receiptCostUsd = costReceipts.reduce((sum, { receipt }) => sum + receipt.costUsd, 0);
+  const costComplete = request.adapterCostLimit === 'non-billable'
+    || (cappedNative && costReceipts.length > 0
+      && costReceipts.every(({ receipt }) => receipt.complete && receipt.reconciled
+        && receipt.error === null && pricingRatesEqual(receipt.pricingRates, pricing?.rates))
+      && Math.abs(receiptCostUsd - costUsd) <= AGENT_COST_RECEIPT_TOLERANCE_USD);
+  if (value.ok && cappedNative && !costComplete) {
+    throw new Error('successful agent result requires complete reconciled broker cost proof');
+  }
   if (request.maxBudgetUsd != null && request.adapterCostLimit === 'unsupported') {
     throw new Error('agent result came from an adapter that cannot enforce a cost limit');
   }
@@ -166,6 +227,8 @@ export function validateAgentResult(value, request) {
     promptBytes: finite(value.promptBytes, 'promptBytes'),
     durationMs: finite(value.durationMs, 'durationMs'),
     usage,
+    costReceipts,
+    costComplete,
     transcript: value.transcript ?? (value.sessionId
       ? { kind: 'provider-session', id: value.sessionId }
       : null),
@@ -214,6 +277,9 @@ export function agentRequestArgv(adapter, request) {
       ? ['--skills-json', JSON.stringify(request.skills)] : []),
     ...(request.recipeTask
       ? ['--recipe-task-json', JSON.stringify(request.recipeTask)] : []),
+    ...(request.pricing
+      ? ['--pricing-json', JSON.stringify(validatePricingAuthority(request.pricing,
+        { at: 'agent request pricing' }))] : []),
     ...(request.maxBudgetUsd != null && adapter.costLimit === 'native'
       ? ['--max-budget-usd', String(request.maxBudgetUsd)] : [])];
 }

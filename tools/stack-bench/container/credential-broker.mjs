@@ -12,18 +12,25 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
-import { priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
+import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
+import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
+  from '../src/evidence/pricing-authority.mjs';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const MAX_REQUESTS = 512;
 const MAX_OUTPUT_TOKENS = 128_000;
 const ALLOWED_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
-const PRICE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
+const PRICE_FIELDS = PRICING_RATE_FIELDS;
 const LEDGER_SCHEMA_VERSION = 1;
 const COST_TOLERANCE_USD = 0.0001;
 
 function fail(message) {
   throw new Error(`credential broker: ${message}`);
+}
+
+function validatePricingRates(value) {
+  try { return validateSharedPricingRates(value, { at: 'pricingRates' }); }
+  catch (error) { fail(error.message); }
 }
 
 function validateConfig(value) {
@@ -53,13 +60,7 @@ function validateConfig(value) {
     if (!Number.isFinite(value.maxBudgetUsd) || value.maxBudgetUsd <= 0) {
       fail('maxBudgetUsd is invalid');
     }
-    if (!value.pricingRates || typeof value.pricingRates !== 'object'
-      || Array.isArray(value.pricingRates)) fail('pricingRates are required with maxBudgetUsd');
-    for (const field of PRICE_FIELDS) {
-      if (!Number.isFinite(value.pricingRates[field]) || value.pricingRates[field] < 0) {
-        fail(`pricingRates.${field} is invalid`);
-      }
-    }
+    validatePricingRates(value.pricingRates);
   }
   return value;
 }
@@ -114,31 +115,50 @@ export function readCredentialBrokerLedger(path, expected = {}) {
 }
 
 export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, maxBudgetUsd,
-  toleranceUsd = COST_TOLERANCE_USD } = {}) {
+  pricingRates, toleranceUsd = COST_TOLERANCE_USD } = {}) {
   if (typeof model !== 'string' || !model) fail('receipt model is invalid');
   if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) fail('receipt budget is invalid');
   if (!Number.isFinite(toleranceUsd) || toleranceUsd < 0) fail('receipt tolerance is invalid');
   let verifiedLedger = null;
+  let verifiedRates = null;
+  let usage = null;
+  let calculatedCostUsd = null;
   let issue = null;
   try { verifiedLedger = validateLedger(ledger, { model, maxBudgetUsd }); }
   catch (error) { issue = error.message; }
+  if (!issue && verifiedLedger.complete !== true) {
+    issue = 'credential broker spend ledger is incomplete';
+  }
+  try { verifiedRates = validatePricingRates(pricingRates); }
+  catch (error) { if (!issue) issue = error.message; }
+  try {
+    usage = normalizeClaudeUsage(cliResult?.usage);
+    if (verifiedRates) calculatedCostUsd = priceClaudeUsage(cliResult.usage, verifiedRates);
+  } catch (error) { if (!issue) issue = error.message; }
   const brokerCost = verifiedLedger
     ? Math.min(maxBudgetUsd, verifiedLedger.spentUsd + verifiedLedger.reservedUsd)
     : maxBudgetUsd;
   const cliCost = Number(cliResult?.total_cost_usd);
-  if (!issue && verifiedLedger.complete !== true) issue = 'credential broker spend ledger is incomplete';
   if (!issue && (!Number.isFinite(cliCost) || cliCost < 0)) {
     issue = 'coding session did not return a usable cost receipt';
   }
   if (!issue && Math.abs(cliCost - brokerCost) > toleranceUsd) {
     issue = `credential broker spend $${brokerCost.toFixed(6)} does not match CLI receipt $${cliCost.toFixed(6)}`;
   }
+  if (!issue && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
+    issue = `usage-priced spend $${calculatedCostUsd.toFixed(6)} does not match credential broker spend $${brokerCost.toFixed(6)}`;
+  }
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: 'credential-broker',
     model,
+    maxBudgetUsd,
     costUsd: Number(brokerCost.toFixed(6)),
     cliCostUsd: Number.isFinite(cliCost) && cliCost >= 0 ? Number(cliCost.toFixed(6)) : null,
+    calculatedCostUsd: calculatedCostUsd === null
+      ? null : Number(calculatedCostUsd.toFixed(6)),
+    usage,
+    pricingRates: verifiedRates,
     complete: verifiedLedger?.complete === true,
     reconciled: issue === null,
     error: issue,

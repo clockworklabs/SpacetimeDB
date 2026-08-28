@@ -104,7 +104,7 @@ export function campaignRunMetrics(run) {
   const completeCorrectionSpend = correctionNeeded === true
     && levels.every(level => number(level.fixCostUsd) !== null);
   const correctionSpendUsd = completeCorrectionSpend
-    ? Number(levels.reduce((total, level) => total + level.fixCostUsd, 0).toFixed(4)) : null;
+    ? Number(levels.reduce((total, level) => total + level.fixCostUsd, 0).toFixed(6)) : null;
   const correctionSuccessRate = correctionNeeded !== true ? null
     : run.outcome?.kind === 'passed' ? 1
       : run.outcome?.kind === 'app_failure' ? 0 : null;

@@ -11,6 +11,8 @@ import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
+import { progressionLevels, selectFeatureCatalogLevels }
+  from '../progression/progression-definition.mjs';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
 
@@ -642,13 +644,15 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
   });
   if (calibration.qualification.featureCatalog) {
     const declared = calibration.qualification.featureCatalog;
-    const catalog = resolveFeatureCatalog(`${declared.id}@${declared.version}`,
+    const fullCatalog = resolveFeatureCatalog(`${declared.id}@${declared.version}`,
       { dir: root, name: release.track });
+    const qualificationLevel = Number(calibration.promotion.alias.slice(1));
+    const levels = progressionLevels(fullCatalog).filter(level => level <= qualificationLevel);
+    const catalog = selectFeatureCatalogLevels(fullCatalog, levels);
     if (catalog.identity.sha256 !== declared.sha256) {
       fail(`${source}.qualification.featureCatalog.sha256`, 'is stale');
     }
-    const qualificationLevel = Number(calibration.promotion.alias.slice(1));
-    const catalogChecks = catalog.definition.nodes.filter(node => node.level <= qualificationLevel)
+    const catalogChecks = catalog.definition.nodes
       .flatMap(node => node.gradingChecks.map(check => check.id)).sort();
     const selectedChecks = [...(calibration.qualification.checks ?? [])].sort();
     if (canonicalDefinitionJson(catalogChecks) !== canonicalDefinitionJson(selectedChecks)) {

@@ -7,10 +7,12 @@ import { resolveCalibrationForRelease } from '../composition/calibration-compile
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
 import { currentEngineIdentity } from '../evidence/artifacts.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
+import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
+  from '../evidence/pricing-authority.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,
-  validateDependencyPolicyInput, validateFeatureCatalogInput }
+  selectFeatureCatalogLevels, validateDependencyPolicyInput, validateFeatureCatalogInput }
   from '../progression/progression-definition.mjs';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.mjs';
@@ -20,7 +22,7 @@ import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs'
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
 import { validateCampaignMode } from './campaign-mode.mjs';
 
-export const CAMPAIGN_SCHEMA_VERSION = 4;
+export const CAMPAIGN_SCHEMA_VERSION = 5;
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
@@ -38,9 +40,8 @@ const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
 const BUDGET_FIELDS = new Set(['fixRounds', 'attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
-const PRICING_FIELDS = new Set(['currency', 'capturedAt', 'source', 'models']);
-const PRICE_MODEL_FIELDS = new Set(['inputPerMillion', 'outputPerMillion',
-  'cacheWritePerMillion', 'cacheReadPerMillion']);
+const PRICING_FIELDS = new Set(['currency', 'unit', 'capturedAt', 'source', 'models']);
+const PRICE_MODEL_FIELDS = new Set(PRICING_RATE_FIELDS);
 const ANALYSIS_FIELDS = new Set(['primaryMetric', 'secondaryMetrics', 'dispersion',
   'invalidAttempts', 'missingData', 'comparisonUnit']);
 const RUNTIME_FIELDS = new Set(['releaseManifestSha256', 'controllerImage', 'buildImage', 'platform']);
@@ -244,6 +245,9 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
 
   strict(value.pricing, `${source}.pricing`, PRICING_FIELDS);
   if (value.pricing.currency !== 'USD') fail(`${source}.pricing.currency`, 'must be USD');
+  if (value.pricing.unit !== PRICING_UNIT) {
+    fail(`${source}.pricing.unit`, `must be ${PRICING_UNIT}`);
+  }
   if (typeof value.pricing.capturedAt !== 'string' || !ISO.test(value.pricing.capturedAt)
     || Number.isNaN(Date.parse(value.pricing.capturedAt))) {
     fail(`${source}.pricing.capturedAt`, 'must be an ISO-8601 timestamp');
@@ -255,7 +259,13 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   for (const [model, rates] of Object.entries(value.pricing.models)) {
     string(model, `${source}.pricing.models key`);
     strict(rates, `${source}.pricing.models.${model}`, PRICE_MODEL_FIELDS);
-    for (const field of PRICE_MODEL_FIELDS) finite(rates[field], `${source}.pricing.models.${model}.${field}`);
+    try {
+      value.pricing.models[model] = validatePricingRates(rates,
+        { at: `${source}.pricing.models.${model}` });
+    } catch (error) {
+      fail(`${source}.pricing.models.${model}`, error.message
+        .replace(`${source}.pricing.models.${model} `, ''));
+    }
   }
   const selectedModels = new Set(value.agents.map(agent => agent.model));
   for (const model of selectedModels) {
@@ -351,6 +361,8 @@ function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dep
         stack: stack.id,
         agentAdapter: agent.adapter,
         model: agent.model,
+        pricing: { unit: definition.pricing.unit,
+          rates: definition.pricing.models[agent.model] },
         condition: { id: condition.id, version: condition.version, sha256: condition.sha256,
           requested: condition.requested, guidance: condition.guidance,
           repair: condition.repair },
@@ -374,17 +386,21 @@ function resolveCampaignInputs(definition, {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
   const track = loadTrack(definition.track);
-  let featureCatalog = null;
+  let resolvedFeatureCatalog = null;
   try {
-    featureCatalog = definition.featureCatalog
+    resolvedFeatureCatalog = definition.featureCatalog
       ? resolveFeatureCatalog(definition.featureCatalog, track) : null;
   } catch (error) { fail('featureCatalog', error.message.replace(/^feature catalog /, '')); }
-  if (featureCatalog && definition.levels.some(level => !progressionLevels(featureCatalog).includes(level))) {
+  if (resolvedFeatureCatalog
+    && definition.levels.some(level => !progressionLevels(resolvedFeatureCatalog).includes(level))) {
     fail('levels', 'must exist in feature catalog');
   }
-  if (featureCatalog && definition.levels[0] !== progressionLevels(featureCatalog)[0]) {
+  if (resolvedFeatureCatalog
+    && definition.levels[0] !== progressionLevels(resolvedFeatureCatalog)[0]) {
     fail('levels', 'must start at the first feature catalog level');
   }
+  const featureCatalog = resolvedFeatureCatalog
+    ? selectFeatureCatalogLevels(resolvedFeatureCatalog, definition.levels) : null;
   const modularLevels = new Map((definition.selection.levels ?? [])
     .map(selection => [selection.level, selection]));
   const bindingRecords = definition.levels.map(level => {
@@ -412,10 +428,21 @@ function resolveCampaignInputs(definition, {
         contractIds: selectedTask.task.contractIds,
       } : null,
     };
-    return { level, modular, binding, publicBinding,
+    return { level, modular, binding, calibration, publicBinding,
       qualificationStaleness: calibration?.qualificationStaleness ?? [] };
   });
   const bindings = bindingRecords.map(record => record.publicBinding);
+  if (featureCatalog) {
+    for (const record of bindingRecords) {
+      const qualifiedCatalog = record.calibration?.qualification.featureCatalog;
+      if (qualifiedCatalog && (qualifiedCatalog.id !== resolvedFeatureCatalog.identity.id
+        || qualifiedCatalog.version !== resolvedFeatureCatalog.identity.version)) {
+        fail('featureCatalog', `L${record.level} calibration qualifies `
+          + `${qualifiedCatalog.id}@${qualifiedCatalog.version}, not `
+          + `${resolvedFeatureCatalog.identity.id}@${resolvedFeatureCatalog.identity.version}`);
+      }
+    }
+  }
   let progressionSelections = null;
   if (featureCatalog) {
     validateProgressionRecipeBindings(featureCatalog, bindingRecords, { levels: definition.levels });
@@ -424,6 +451,18 @@ function resolveCampaignInputs(definition, {
         featureCatalog, record.level, { cumulative: definition.mode.id === 'dependency' })]));
   }
   if (definition.state === 'frozen') {
+    if (progressionSelections) {
+      for (const record of bindingRecords) {
+        const selected = progressionSelections.get(record.level).grader.checkKeys;
+        const qualified = new Set(record.calibration?.qualification.checks
+          ?? record.binding.release.checkCatalog.map(check => check.stableKey));
+        const missing = selected.filter(check => !qualified.has(check));
+        if (missing.length > 0) {
+          fail('state', `cannot freeze L${record.level}: calibration does not cover `
+            + `${missing.length} selected checks`);
+        }
+      }
+    }
     for (const binding of bindings) {
       if (binding.recipe.state !== 'qualified' || binding.promotion.status !== 'promoted'
         || binding.fixture.state !== 'qualified' || binding.calibration?.state !== 'qualified') {

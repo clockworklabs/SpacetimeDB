@@ -283,6 +283,12 @@ function selectedCatalogDefinition(featureCatalog, selectedLevels) {
   return { catalog, levels, definition: { ...catalog.definition, nodes, questlines } };
 }
 
+export function selectFeatureCatalogLevels(featureCatalog, selectedLevels) {
+  return compileFeatureCatalogInput(
+    selectedCatalogDefinition(featureCatalog, selectedLevels).definition,
+  );
+}
+
 export function compileDependencyPolicyInput(strikes, featureCatalog,
   selectedLevels = progressionLevels(featureCatalog),
   unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT) {

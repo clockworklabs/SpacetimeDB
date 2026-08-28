@@ -1,3 +1,5 @@
+import { AGENT_COST_RECEIPT_TOLERANCE_USD } from './agent-adapter-contract.mjs';
+
 function text(value) {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
 }
@@ -14,6 +16,7 @@ const TRANSIENT_API_STATUSES = new Set([500, 502, 503, 504]);
 // can stay closed for hours; the budget below bounds the total, not the count.
 const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
 export const DEFAULT_THROTTLE_MAX_WAIT_MS = 300 * 60_000;
+const BROKER_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
 
 // Synchronous by design: the surrounding loop drives execFileSync invocations,
 // and each chunk is at most 15 minutes so a pending SIGTERM is honoured at the
@@ -38,6 +41,29 @@ function codingProcessDiagnostic(error) {
   if (!line) return null;
   try { return JSON.parse(line.slice('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '.length)); }
   catch { return null; }
+}
+
+function completeBrokerReceiptCost(result) {
+  const receipt = result?.stack_bench_cost_receipt;
+  const resultCostUsd = result?.total_cost_usd;
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)
+    || receipt.schemaVersion !== 2 || receipt.source !== 'credential-broker'
+    || typeof receipt.model !== 'string' || !receipt.model
+    || !Number.isFinite(receipt.maxBudgetUsd) || receipt.maxBudgetUsd <= 0
+    || !Number.isFinite(receipt.costUsd) || receipt.costUsd < 0
+    || !Number.isFinite(receipt.cliCostUsd) || receipt.cliCostUsd < 0
+    || !Number.isFinite(receipt.calculatedCostUsd) || receipt.calculatedCostUsd < 0
+    || receipt.complete !== true || receipt.reconciled !== true || receipt.error !== null
+    || !Number.isFinite(resultCostUsd) || resultCostUsd < 0) return null;
+  for (const field of ['usage', 'pricingRates']) {
+    const values = receipt[field];
+    if (!values || typeof values !== 'object' || Array.isArray(values)
+      || BROKER_USAGE_FIELDS.some(key => !Number.isFinite(values[key]) || values[key] < 0)) {
+      return null;
+    }
+  }
+  return Math.abs(receipt.costUsd - resultCostUsd) <= AGENT_COST_RECEIPT_TOLERANCE_USD
+    ? receipt.costUsd : null;
 }
 
 export function codingSessionInterruption(error, result) {
@@ -90,6 +116,10 @@ export function aggregateCodingSessionResults(results) {
     total_cost_usd: sessions.reduce((sum, item) => sum + Number(item.total_cost_usd ?? 0), 0),
     num_turns: sessions.reduce((sum, item) => sum + Number(item.num_turns ?? 0), 0),
     usage,
+    stack_bench_cost_receipts: sessions.flatMap((item, index) =>
+      item.stack_bench_cost_receipt
+        ? [{ invocation: index + 1, receipt: structuredClone(item.stack_bench_cost_receipt) }]
+        : []),
   };
 }
 
@@ -165,14 +195,11 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
     if (result) sessionResults.push(result);
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
-    const hasCostReceipt = result !== null
-      && Object.hasOwn(result, 'total_cost_usd')
-      && Number.isFinite(Number(result.total_cost_usd))
-      && Number(result.total_cost_usd) >= 0;
-    if (maxBudgetUsd !== null && interruption && !hasCostReceipt) {
+    const receiptCostUsd = completeBrokerReceiptCost(result);
+    if (maxBudgetUsd !== null && interruption && receiptCostUsd === null) {
       interruptions.push({ ...interruption, invocation: invocation + 1,
         sessionId: result?.session_id ?? null, costUsd: null });
-      spawnError = 'coding session was interrupted without a provider cost receipt; automatic recovery is disabled';
+      spawnError = 'coding session was interrupted without a complete reconciled broker cost receipt; automatic recovery is disabled';
       break;
     }
     if (interruption?.kind === 'provider-throttled') {

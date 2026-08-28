@@ -38,6 +38,8 @@ import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
+import { PRICING_UNIT, validatePricingAuthority }
+  from '../src/evidence/pricing-authority.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -67,6 +69,21 @@ const model = opt('--model', 'claude-sonnet-5');
 const maxBudgetUsd = opt('--max-budget-usd');
 if (maxBudgetUsd !== null && (!Number.isFinite(Number(maxBudgetUsd)) || Number(maxBudgetUsd) <= 0)) {
   console.error('run-build.mjs: --max-budget-usd must be a positive number');
+  process.exit(2);
+}
+let pricing = null;
+try {
+  const supplied = opt('--pricing-json');
+  if (supplied !== null) {
+    pricing = validatePricingAuthority(JSON.parse(supplied), { at: '--pricing-json' });
+  } else if (maxBudgetUsd !== null) {
+    const rates = claudeRatesForModel(model);
+    if (!rates) throw new Error(`no default pricing is recorded for model ${model}`);
+    pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
+      { at: 'default pricing' });
+  }
+} catch (error) {
+  console.error(`run-build.mjs: ${error.message}`);
   process.exit(2);
 }
 const resumeSession = opt('--resume-session');
@@ -369,7 +386,7 @@ try {
   credentialBroker = startCredentialBroker(auth,
     { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS, model,
       maxBudgetUsd: maxBudgetUsd === null ? null : Number(maxBudgetUsd),
-      pricingRates: maxBudgetUsd === null ? null : claudeRatesForModel(model) });
+      pricingRates: maxBudgetUsd === null ? null : pricing.rates });
 } catch (error) {
   console.error(`run-build.mjs: ${error.message}`);
   process.exit(2);
@@ -416,6 +433,7 @@ try {
     transcriptSnapshot,
     marker: completionMarker,
     model,
+    pricingRates: pricing?.rates ?? null,
     resumeSession,
     terminate: terminateClaude,
   });
@@ -440,6 +458,7 @@ if (maxBudgetUsd !== null) {
     cliResult,
     model,
     maxBudgetUsd: Number(maxBudgetUsd),
+    pricingRates: pricing.rates,
   });
   res.stdout = `${JSON.stringify(reconciled.result)}\n`;
   if (!reconciled.ok) {

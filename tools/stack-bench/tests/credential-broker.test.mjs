@@ -10,6 +10,15 @@ import { createCredentialBroker, readCredentialBrokerLedger,
   reconcileCredentialBrokerReceipt, startCredentialBroker,
   stopCredentialBroker } from '../container/credential-broker.mjs';
 
+const PRICING_RATES = {
+  input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3,
+};
+const ONE_REQUEST_USAGE = { input_tokens: 100, output_tokens: 100,
+  cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+const DETAILED_USAGE = { input_tokens: 100, output_tokens: 100,
+  cache_read_input_tokens: 50, cache_creation_input_tokens: 30,
+  cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 10 } };
+
 const listen = server => new Promise((resolve, reject) => {
   server.once('error', reject);
   server.listen(0, '127.0.0.1', () => resolve(server.address().port));
@@ -216,8 +225,9 @@ test('broker receipt is authoritative and direct request spend causes fail-close
     spentUsd: 0.0036, reservedUsd: 0, complete: true,
     updatedAt: new Date().toISOString() };
   const reconciled = reconcileCredentialBrokerReceipt({ ledger,
-    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018 },
-    model: 'test-model', maxBudgetUsd: 1 });
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018,
+      usage: ONE_REQUEST_USAGE },
+    model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
   assert.equal(reconciled.ok, false);
   assert.equal(reconciled.result.is_error, true);
   assert.equal(reconciled.result.total_cost_usd, 0.0036);
@@ -228,7 +238,7 @@ test('broker receipt is authoritative and direct request spend causes fail-close
 test('missing or incomplete broker ledgers fail closed with a conservative receipt', () => {
   const missing = reconcileCredentialBrokerReceipt({ ledger: null,
     cliResult: { type: 'result', is_error: false, total_cost_usd: 0.25 },
-    model: 'test-model', maxBudgetUsd: 1 });
+    model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
   assert.equal(missing.ok, false);
   assert.equal(missing.result.total_cost_usd, 1);
   assert.equal(missing.result.stack_bench_cost_receipt.complete, false);
@@ -239,7 +249,7 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
     spentUsd: 0.1, reservedUsd: 0.4, complete: false,
     updatedAt: new Date().toISOString(),
   }, cliResult: { type: 'result', is_error: false, total_cost_usd: 0.1 },
-  model: 'test-model', maxBudgetUsd: 1 });
+  model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
   assert.equal(incomplete.ok, false);
   assert.equal(incomplete.result.total_cost_usd, 0.5);
   assert.match(incomplete.receipt.error, /incomplete/);
@@ -248,15 +258,34 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
 test('matching broker and CLI receipts preserve a successful result', () => {
   const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    spentUsd: 0.00195, reservedUsd: 0, complete: true,
+    updatedAt: new Date().toISOString() };
+  const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.00195,
+      usage: DETAILED_USAGE },
+    model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.result.is_error, false);
+  assert.equal(reconciled.result.total_cost_usd, 0.00195);
+  assert.equal(reconciled.result.stack_bench_cost_receipt.reconciled, true);
+  assert.deepEqual(reconciled.receipt.usage, {
+    input: 100, output: 100, cacheRead: 50, cacheWrite5m: 20, cacheWrite1h: 10,
+  });
+  assert.deepEqual(reconciled.receipt.pricingRates, PRICING_RATES);
+  assert.equal(reconciled.receipt.calculatedCostUsd, 0.00195);
+});
+
+test('receipt reconciliation rejects usage that cannot reproduce broker spend', () => {
+  const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
     spentUsd: 0.0018, reservedUsd: 0, complete: true,
     updatedAt: new Date().toISOString() };
   const reconciled = reconcileCredentialBrokerReceipt({ ledger,
-    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018 },
-    model: 'test-model', maxBudgetUsd: 1 });
-  assert.equal(reconciled.ok, true);
-  assert.equal(reconciled.result.is_error, false);
-  assert.equal(reconciled.result.total_cost_usd, 0.0018);
-  assert.equal(reconciled.result.stack_bench_cost_receipt.reconciled, true);
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018,
+      usage: { ...ONE_REQUEST_USAGE, output_tokens: 0 } },
+    model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+  assert.equal(reconciled.ok, false);
+  assert.match(reconciled.receipt.error, /usage-priced spend/);
 });
 
 test('credential broker lifecycle creates only an attempt-scoped session credential', async () => {

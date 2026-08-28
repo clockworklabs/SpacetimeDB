@@ -10,6 +10,15 @@ import { aggregateCodingSessionResults, codingSessionInterruption,
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { recoverStoppedBuildContainer } from '../container/recover-build-container.mjs';
 
+function brokerReceipt(costUsd, maxBudgetUsd = 10) {
+  return { schemaVersion: 2, source: 'credential-broker', model: 'claude-sonnet-5',
+    maxBudgetUsd, costUsd, cliCostUsd: costUsd, calculatedCostUsd: costUsd,
+    usage: { input: 1, output: 1, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+    pricingRates: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6,
+      cacheRead: 0.3 },
+    complete: true, reconciled: true, error: null };
+}
+
 test('provider mid-response errors resume the exact paid session', () => {
   const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7a';
   const result = parseCodingSessionResult(`${JSON.stringify({ type: 'result', is_error: true,
@@ -153,9 +162,11 @@ test('a bounded coding-session timeout continues from the existing app', () => {
 test('retry accounting includes every paid invocation', () => {
   const combined = aggregateCodingSessionResults([
     { is_error: true, session_id: 'first', total_cost_usd: 3.8464, num_turns: 94,
+      stack_bench_cost_receipt: { id: 'first-receipt' },
       usage: { input_tokens: 1, output_tokens: 2, cache_creation_input_tokens: 3,
         cache_read_input_tokens: 4 } },
     { is_error: false, session_id: 'first', total_cost_usd: 1.25, num_turns: 5,
+      stack_bench_cost_receipt: { id: 'second-receipt' },
       usage: { input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 30,
         cache_read_input_tokens: 40 } },
   ]);
@@ -163,6 +174,10 @@ test('retry accounting includes every paid invocation', () => {
   assert.equal(combined.num_turns, 99);
   assert.deepEqual(combined.usage, { input_tokens: 11, output_tokens: 22,
     cache_creation_input_tokens: 33, cache_read_input_tokens: 44 });
+  assert.deepEqual(combined.stack_bench_cost_receipts, [
+    { invocation: 1, receipt: { id: 'first-receipt' } },
+    { invocation: 2, receipt: { id: 'second-receipt' } },
+  ]);
   assert.equal(combined.is_error, false);
 });
 
@@ -176,11 +191,13 @@ test('the retry loop resumes in place and deducts the failed call from the cost 
       if (calls.length === 1) {
         const output = JSON.stringify({ is_error: true, terminal_reason: 'api_error',
           api_error_status: 503, session_id: sessionId, total_cost_usd: 3.5, num_turns: 4,
+          stack_bench_cost_receipt: brokerReceipt(3.5),
           usage: { input_tokens: 1, output_tokens: 2, cache_creation_input_tokens: 3,
             cache_read_input_tokens: 4 } });
         throw Object.assign(new Error('provider interrupted'), { status: 1, stdout: output });
       }
       return JSON.stringify({ is_error: false, session_id: sessionId, total_cost_usd: 1.25,
+        stack_bench_cost_receipt: brokerReceipt(1.25, 6.5),
         num_turns: 2, usage: { input_tokens: 5, output_tokens: 6,
           cache_creation_input_tokens: 7, cache_read_input_tokens: 8 } });
     } });
@@ -195,17 +212,33 @@ test('the retry loop resumes in place and deducts the failed call from the cost 
   assert.equal(coding.interruptions[0].kind, 'provider-api-error');
 });
 
-test('a capped session does not retry without a provider cost receipt', () => {
+test('a capped session does not treat a numeric cost as a broker receipt', () => {
   let calls = 0;
   const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 2,
     maxBudgetUsd: 10,
     invoke() {
       calls += 1;
       return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
-        api_error_status: 503, session_id: 'paid-session' });
+        api_error_status: 503, session_id: 'paid-session', total_cost_usd: 2 });
     } });
   assert.equal(calls, 1);
-  assert.match(coding.spawnError, /without a provider cost receipt/);
+  assert.match(coding.spawnError, /without a complete reconciled broker cost receipt/);
+  assert.equal(coding.interruptions[0].costUsd, null);
+});
+
+test('a capped session does not retry with an unreconciled broker receipt', () => {
+  let calls = 0;
+  const receipt = { ...brokerReceipt(2), reconciled: false, error: 'cost mismatch' };
+  const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 2,
+    maxBudgetUsd: 10,
+    invoke() {
+      calls += 1;
+      return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+        api_error_status: 503, session_id: 'paid-session', total_cost_usd: 2,
+        stack_bench_cost_receipt: receipt });
+    } });
+  assert.equal(calls, 1);
+  assert.match(coding.spawnError, /without a complete reconciled broker cost receipt/);
   assert.equal(coding.interruptions[0].costUsd, null);
 });
 

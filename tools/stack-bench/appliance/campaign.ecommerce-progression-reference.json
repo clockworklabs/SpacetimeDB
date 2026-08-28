@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "kind": "campaign-manifest",
   "id": "ecommerce-progression-reference",
   "version": "1.0.0",
@@ -68,14 +68,16 @@
   },
   "pricing": {
     "currency": "USD",
+    "unit": "USD-per-million-tokens",
     "capturedAt": "2026-08-25T00:00:00.000Z",
     "source": "Reference fixtures make no provider calls.",
     "models": {
       "reference-fixture": {
-        "inputPerMillion": 0,
-        "outputPerMillion": 0,
-        "cacheWritePerMillion": 0,
-        "cacheReadPerMillion": 0
+        "input": 0,
+        "output": 0,
+        "cacheWrite5m": 0,
+        "cacheWrite1h": 0,
+        "cacheRead": 0
       }
     }
   },

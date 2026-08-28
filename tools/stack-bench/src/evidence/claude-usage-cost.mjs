@@ -1,9 +1,11 @@
+import { validatePricingRates } from './pricing-authority.mjs';
+
 export const CLAUDE_SONNET_RATES = Object.freeze({
-  input: 3.00,
-  output: 15.00,
-  cacheWrite5m: 3.75,
-  cacheWrite1h: 6.00,
-  cacheRead: 0.30,
+  input: 2.00,
+  output: 10.00,
+  cacheWrite5m: 2.50,
+  cacheWrite1h: 4.00,
+  cacheRead: 0.20,
 });
 
 export function claudeRatesForModel(model) {
@@ -34,7 +36,7 @@ export function normalizeClaudeUsage(usage) {
 }
 
 export function priceClaudeUsage(usage, rates = CLAUDE_SONNET_RATES) {
-  if (!rates) throw new Error('Claude pricing rates are required');
+  rates = validatePricingRates(rates, { at: 'Claude pricing rates' });
   const values = normalizeClaudeUsage(usage);
   return values.input * rates.input / 1e6
     + values.output * rates.output / 1e6
