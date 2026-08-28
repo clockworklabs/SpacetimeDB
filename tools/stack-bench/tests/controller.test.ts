@@ -1,13 +1,22 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { controllerChildEnvironment, controllerCommandRequiresAgentAuth,
-  forwardControllerSignals, resolveControllerCommand } from '../appliance/controller.mjs';
+  forwardControllerSignals, resolveControllerCommand } from '../appliance/controller.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+
+function command(argv: string[]) {
+  const resolved = resolveControllerCommand(argv);
+  assert.ok(resolved);
+  return resolved;
+}
 
 test('controller forwards repeated stop signals until its child exits', () => {
   const source = new EventEmitter();
-  const received = [];
+  const received: NodeJS.Signals[] = [];
   const stop = forwardControllerSignals({ kill: signal => received.push(signal) }, source);
   source.emit('SIGINT');
   source.emit('SIGINT');
@@ -20,42 +29,43 @@ test('controller forwards repeated stop signals until its child exits', () => {
 test('controller exposes a small explicit operator command surface', () => {
   assert.equal(resolveControllerCommand([]), null);
   assert.equal(resolveControllerCommand(['--help']), null);
-  assert.match(resolveControllerCommand(['preflight']).args[0], /preflight\.js$/);
-  const run = resolveControllerCommand(['run', '--backend', 'postgres', '--levels', '1-2']);
+  assert.match(command(['preflight']).args[0] ?? '', /preflight\.js$/);
+  const run = command(['run', '--backend', 'postgres', '--levels', '1-2']);
   assert.equal(run.executable, process.execPath);
-  assert.match(run.args[0], /[\\/]dist[\\/]commands[\\/]/);
-  assert.match(run.args[0], /bench\.mjs$/);
+  assert.match(run.args[0] ?? '', /[\\/]dist[\\/]commands[\\/]/);
+  assert.match(run.args[0] ?? '', /bench\.mjs$/);
   assert.deepEqual(run.args.slice(1), ['--backend', 'postgres', '--levels', '1-2']);
-  const recovery = resolveControllerCommand(['recover', '/private/supervisor.json']);
-  assert.match(recovery.args[0], /recovery\.js$/);
+  const recovery = command(['recover', '/private/supervisor.json']);
+  assert.match(recovery.args[0] ?? '', /recovery\.js$/);
   assert.deepEqual(recovery.args.slice(1), ['recover', '/private/supervisor.json']);
-  const leaseRecovery = resolveControllerCommand([
+  const leaseRecovery = command([
     'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
-  assert.match(leaseRecovery.args[0], /recovery\.js$/);
+  assert.match(leaseRecovery.args[0] ?? '', /recovery\.js$/);
   assert.deepEqual(leaseRecovery.args.slice(1), [
     'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
-  const campaign = resolveControllerCommand(['campaign', 'show', '/plans/campaign.json']);
-  assert.match(campaign.args[0], /campaign-cli\.mjs$/);
+  const campaign = command(['campaign', 'show', '/plans/campaign.json']);
+  assert.match(campaign.args[0] ?? '', /campaign-cli\.mjs$/);
   assert.deepEqual(campaign.args.slice(1), ['show', '/plans/campaign.json']);
-  const campaignRun = resolveControllerCommand(['campaign', 'run', '/plans/campaign.json',
+  const campaignRun = command(['campaign', 'run', '/plans/campaign.json',
     '--out', '/results/campaign-001']);
   assert.deepEqual(campaignRun.args.slice(1), ['run', '/plans/campaign.json',
     '--out', '/results/campaign-001']);
-  const dashboard = resolveControllerCommand(['dashboard', '--port', '7331']);
-  assert.match(dashboard.args[0], /dashboard[\\/]dashboard-server\.mjs$/);
+  const dashboard = command(['dashboard', '--port', '7331']);
+  assert.match(dashboard.args[0] ?? '', /dashboard[\\/]dashboard-server\.mjs$/);
   assert.deepEqual(dashboard.args.slice(1), ['--port', '7331']);
-  const reference = resolveControllerCommand(['qualify-reference', '--backend', 'postgres',
-    '--track', 'ecommerce', '--level', '1']);
-  assert.match(reference.args[0], /reference-live\.mjs$/);
-  const nullControl = resolveControllerCommand(['qualify-null', '--track', 'ecommerce', '--level', '1']);
-  assert.match(nullControl.args[0], /null-control\.mjs$/);
-  const qualification = resolveControllerCommand(['qualification', 'status',
-    '--track', 'ecommerce', '--level', '1']);
-  assert.match(qualification.args[0], /qualification-cli\.mjs$/);
-  const budget = resolveControllerCommand(['pack-budget', 'recommend', '--track', 'ecommerce',
-    '--level', '1', '--evidence', '/results/mongodb.json', '--out', '/results/budgets.json']);
-  assert.match(budget.args[0], /pack-budget\.mjs$/);
+  assert.match(command(['qualify-reference']).args[0] ?? '', /reference-live\.mjs$/);
+  assert.match(command(['qualify-null']).args[0] ?? '', /null-control\.mjs$/);
+  assert.match(command(['qualification']).args[0] ?? '', /qualification-cli\.mjs$/);
+  assert.match(command(['pack-budget']).args[0] ?? '', /pack-budget\.mjs$/);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
+});
+
+test('controller image starts the compiled entry point', () => {
+  const dockerfile = readFileSync(join(STACK_BENCH_ROOT, 'appliance', 'Controller.Dockerfile'),
+    'utf8');
+  assert.match(dockerfile,
+    /ENTRYPOINT \["node", "\/opt\/stack-bench\/dist\/appliance\/controller\.js"\]/);
+  assert.doesNotMatch(dockerfile, /ENTRYPOINT .*controller\.mjs/);
 });
 
 test('controller selects exactly one explicit agent credential mode', () => {
@@ -87,18 +97,23 @@ test('dependency setup does not require or forward agent credentials', () => {
 });
 
 test('read-only and model-free controller commands do not require agent credentials', () => {
-  for (const [command, args] of [
+  const modelFree: Array<[string, string[]]> = [
     ['init-deps', []], ['verify-deps', []], ['test', []],
     ['qualify-reference', []], ['qualify-null', []], ['qualification', ['status']],
     ['pack-budget', ['recommend']], ['campaign', ['validate']], ['campaign', ['show']],
     ['campaign', ['prepare']], ['campaign', ['trial']], ['campaign', ['status']],
     ['campaign', ['report']], ['campaign', ['reconcile']], ['repair', ['status']],
     ['repair', ['grant']], ['verify-release', []], ['recover', []],
-  ]) assert.equal(controllerCommandRequiresAgentAuth(command, args), false,
-    `${command} ${args[0] ?? ''}`);
-  for (const [command, args] of [['run', []], ['preflight', []], ['dashboard', []],
-    ['campaign', ['run']]]) {
-    assert.equal(controllerCommandRequiresAgentAuth(command, args), true,
-      `${command} ${args[0] ?? ''}`);
+  ];
+  for (const [name, args] of modelFree) {
+    assert.equal(controllerCommandRequiresAgentAuth(name, args), false,
+      `${name} ${args[0] ?? ''}`);
+  }
+  const paid: Array<[string, string[]]> = [
+    ['run', []], ['preflight', []], ['dashboard', []], ['campaign', ['run']],
+  ];
+  for (const [name, args] of paid) {
+    assert.equal(controllerCommandRequiresAgentAuth(name, args), true,
+      `${name} ${args[0] ?? ''}`);
   }
 });

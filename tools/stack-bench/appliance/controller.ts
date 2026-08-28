@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const RUNTIME_ROOT = join(STACK_BENCH_ROOT, 'dist');
 
@@ -23,23 +23,33 @@ const COMMANDS = Object.freeze({
   'verify-release': [join(RUNTIME_ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],
   'recover': [join(RUNTIME_ROOT, 'commands', 'recovery.js'), 'recover'],
   'recover-lease': [join(RUNTIME_ROOT, 'commands', 'recovery.js'), 'recover-lease'],
-});
+} satisfies Record<string, readonly string[]>);
 
 const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'dashboard', 'run']);
 
-export function controllerCommandRequiresAgentAuth(command, args = []) {
-  if (COMMANDS_REQUIRING_AGENT_AUTH.has(command)) return true;
+export function controllerCommandRequiresAgentAuth(command: string | undefined,
+  args: string[] = []): boolean {
+  if (command && COMMANDS_REQUIRING_AGENT_AUTH.has(command)) return true;
   return command === 'campaign' && args[0] === 'run';
 }
 
-export function resolveControllerCommand(argv) {
-  const [command, ...rest] = argv;
-  if (!command || command === '--help' || command === 'help') return null;
-  if (!Object.hasOwn(COMMANDS, command)) throw new Error(`unknown controller command ${JSON.stringify(command)}`);
-  return { executable: process.execPath, args: [...COMMANDS[command], ...rest] };
+export interface ResolvedControllerCommand {
+  executable: string;
+  args: string[];
 }
 
-export function controllerChildEnvironment(source = process.env, { requireAgentAuth = true } = {}) {
+export function resolveControllerCommand(argv: string[]): ResolvedControllerCommand | null {
+  const [command, ...rest] = argv;
+  if (!command || command === '--help' || command === 'help') return null;
+  if (!Object.hasOwn(COMMANDS, command)) {
+    throw new Error(`unknown controller command ${JSON.stringify(command)}`);
+  }
+  return { executable: process.execPath,
+    args: [...COMMANDS[command as keyof typeof COMMANDS], ...rest] };
+}
+
+export function controllerChildEnvironment(source: NodeJS.ProcessEnv = process.env,
+  { requireAgentAuth = true }: { requireAgentAuth?: boolean } = {}): NodeJS.ProcessEnv {
   const env = { ...source };
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_API_KEY_FILE;
@@ -54,7 +64,7 @@ export function controllerChildEnvironment(source = process.env, { requireAgentA
     const path = source.STACK_BENCH_ANTHROPIC_API_KEY_FILE?.trim();
     if (!path) throw new Error('api-key auth requires STACK_BENCH_ANTHROPIC_API_KEY_FILE');
     env.ANTHROPIC_API_KEY_FILE = path;
-  } else if (mode === 'subscription-token') {
+  } else {
     const path = source.STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE?.trim();
     if (!path) {
       throw new Error('subscription-token auth requires STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE');
@@ -64,16 +74,27 @@ export function controllerChildEnvironment(source = process.env, { requireAgentA
   return env;
 }
 
-export function forwardControllerSignals(child, source = process) {
-  const listeners = new Map(['SIGINT', 'SIGTERM'].map(signal =>
-    [signal, () => child.kill(signal)]));
+interface SignalChild {
+  kill(signal: NodeJS.Signals): unknown;
+}
+
+interface SignalSource {
+  on(signal: NodeJS.Signals, listener: () => void): unknown;
+  off(signal: NodeJS.Signals, listener: () => void): unknown;
+}
+
+export function forwardControllerSignals(child: SignalChild,
+  source: SignalSource = process): () => void {
+  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+  const listeners = new Map<NodeJS.Signals, () => void>(signals.map(signal =>
+    [signal, () => { child.kill(signal); }]));
   for (const [signal, listener] of listeners) source.on(signal, listener);
   return () => {
     for (const [signal, listener] of listeners) source.off(signal, listener);
   };
 }
 
-function help() {
+function help(): void {
   process.stdout.write('Stack Bench controller\n\n'
     + 'Commands:\n'
     + '  preflight <exact run options>  verify the runner without a model call\n'
@@ -98,7 +119,12 @@ function help() {
     + '  init-deps | verify-deps        initialize or verify the release dependency volume\n');
 }
 
-async function main(argv) {
+interface ChildOutcome {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+async function main(argv: string[]): Promise<void> {
   const command = argv[2];
   const resolved = resolveControllerCommand(argv.slice(2));
   if (!resolved) { help(); return; }
@@ -106,11 +132,11 @@ async function main(argv) {
     { stdio: 'inherit', env: controllerChildEnvironment(process.env,
       { requireAgentAuth: controllerCommandRequiresAgentAuth(command, argv.slice(3)) }) });
   const stopForwardingSignals = forwardControllerSignals(child);
-  let outcome;
+  let outcome: ChildOutcome;
   try {
-    outcome = await new Promise((resolveExit, reject) => {
+    outcome = await new Promise<ChildOutcome>((resolveExit, reject) => {
       child.once('error', reject);
-      child.once('exit', (code, signal) => resolveExit({ code, signal }));
+      child.once('exit', (code, signal) => { resolveExit({ code, signal }); });
     });
   } finally { stopForwardingSignals(); }
   if (outcome.signal) process.kill(process.pid, outcome.signal);
@@ -118,8 +144,8 @@ async function main(argv) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  main(process.argv).catch(error => {
-    console.error(`stack-bench-controller: ${error.message}`);
+  main(process.argv).catch((error: unknown) => {
+    console.error(`stack-bench-controller: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 2;
   });
 }

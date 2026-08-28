@@ -87,5 +87,5 @@ RUN node container/binary-provenance.mjs verify \
       --manifest /opt/stack-bench/dependency-manifest.json \
     && rm -rf results .spacetime-data .loop-test archive/pre-v1/results
 
-ENTRYPOINT ["node", "/opt/stack-bench/appliance/controller.mjs"]
+ENTRYPOINT ["node", "/opt/stack-bench/dist/appliance/controller.js"]
 CMD ["--help"]
