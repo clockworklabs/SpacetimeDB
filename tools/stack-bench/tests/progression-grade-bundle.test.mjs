@@ -38,6 +38,7 @@ const runArtifact = () => createArtifact({ kind: 'benchmark_run', id: 'run-1',
 
 const action = () => ({
   type: 'repair',
+  prompt: { nodeIds: ['accounts', 'catalog'] },
   grading: {
     nodeIds: ['accounts', 'catalog'],
     checks: [
@@ -158,7 +159,7 @@ test('typed grader failures do not consume a progression strike as a zero score'
     reason: 'browser worker stopped' });
 });
 
-test('a typed application abort fails the selected checks instead of becoming inconclusive', () => {
+test('a typed application abort charges current work but not earlier regression guards', () => {
   const failed = bundle();
   failed.outcome = { kind: 'app_failure', phase: 'application-start',
     reason: 'the generated application did not start' };
@@ -168,9 +169,17 @@ test('a typed application abort fails the selected checks instead of becoming in
     stableKey: check.stableKey, reason: failed.outcome.reason,
   }));
   failed.totals = { score: 0, max: 3, regression: null };
+  const selected = action();
+  selected.prompt.nodeIds = ['catalog'];
   const result = gradeBundleToProgressionResult(artifact(failed, 'app-failure'),
-    action(), conversion);
-  assert(result.nodes.every(node => node.checks.every(check => check.outcome === 'fail')));
+    selected, conversion);
+  assert.deepEqual(result.applicationFailure, {
+    phase: 'application-start', reason: 'the generated application did not start',
+  });
+  assert.deepEqual(result.nodes, [
+    { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'not-run' }] },
+    { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
+  ]);
   const incomplete = structuredClone(failed);
   incomplete.selection.notRun.pop();
   assert.throws(() => gradeBundleToProgressionResult(artifact(incomplete, 'bad-abort'),

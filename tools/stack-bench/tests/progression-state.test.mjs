@@ -30,7 +30,7 @@ const progression = () => compileProgressionInput({
 const stateIdentities = Object.freeze({
   featureCatalogIdentity: { id: 'persisted-runner', version: '1.0.0',
     sha256: 'c'.repeat(64), state: 'draft' },
-  dependencyPolicyIdentity: { id: 'dependency-gated', version: '2.0.0',
+  dependencyPolicyIdentity: { id: 'dependency-gated', version: '2.1.0',
     sha256: 'd'.repeat(64) },
 });
 const owner = () => ({ schemaVersion: 1,
@@ -159,6 +159,9 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
     assert.equal(granted.state.nodes.account.strikes.granted, 2);
     assert.deepEqual(granted.state.events.map(event => event.type),
       ['attempt-recorded', 'strikes-granted']);
+    assert.equal(granted.resume.source.directory, 'app');
+    assert.equal(granted.resume.source.sha256, sourceSha256);
+    assert.match(granted.resume.actionSha256, /^[a-f0-9]{64}$/);
     assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const version = 1;\n');
     assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,

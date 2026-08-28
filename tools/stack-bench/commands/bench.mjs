@@ -1151,7 +1151,7 @@ async function main() {
       stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
     mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential',
-      version: args.progression ? '2.0.0' : '1.0.0' },
+      version: args.progression ? '2.1.0' : '1.0.0' },
     track: args.track, backend: args.backend, model: args.model,
     pricing: args.pricing,
     guidance: args.guidance, condition: args.condition ?? null,

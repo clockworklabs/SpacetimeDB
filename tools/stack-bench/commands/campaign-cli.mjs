@@ -9,6 +9,8 @@ import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
   from '../src/campaigns/campaign-runner.mjs';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.mjs';
 import { generateCampaignReport } from '../src/campaigns/campaign-report.mjs';
+import { grantCampaignDependencyStrikes }
+  from '../src/campaigns/campaign-progression-grant.mjs';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.mjs';
 
@@ -50,7 +52,7 @@ export function validateResumeCampaignState(requested, existing) {
   const executions = existing.state.attempts.reduce((total, attempt) =>
     total + attempt.executions.length, 0);
   if (existing.state.status !== 'prepared' || executions < 1) {
-    throw new Error('resume requires an interrupted dependency campaign that is ready');
+    throw new Error('resume requires a dependency campaign with scheduled work');
   }
   return existing;
 }
@@ -72,13 +74,39 @@ export function parseCampaignArgs(argv) {
   if (['inspect', 'report', 'audit'].includes(command) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
+  if (command === 'grant-strikes' && path) {
+    const values = { command, directory: resolve(path), nodeIds: [] };
+    const seen = new Set();
+    for (let index = 0; index < rest.length; index += 2) {
+      const flag = rest[index];
+      const value = rest[index + 1];
+      if (!['--attempt', '--grant-id', '--level', '--feature', '--strikes'].includes(flag)
+        || value === undefined || (flag !== '--feature' && seen.has(flag))) {
+        throw new Error(`invalid or duplicate grant-strikes option ${String(flag)}`);
+      }
+      seen.add(flag);
+      if (flag === '--attempt') values.attemptId = value;
+      else if (flag === '--grant-id') values.grantId = value;
+      else if (flag === '--level') values.level = Number(value);
+      else if (flag === '--strikes') values.strikes = Number(value);
+      else values.nodeIds.push(value);
+    }
+    if (!values.attemptId || !values.grantId || !Number.isSafeInteger(values.level)
+      || !Number.isSafeInteger(values.strikes) || values.nodeIds.length === 0) {
+      throw new Error('grant-strikes requires --attempt, --grant-id, --level, '
+        + 'one or more --feature values, and --strikes');
+    }
+    return values;
+  }
   if (['prepare', 'trial', 'run', 'resume', 'reconcile'].includes(command)
     && path && rest.length === 2 && rest[0] === '--out') {
     return { command, path: resolve(path), directory: resolve(rest[1]) };
   }
   throw new Error('usage: campaign-cli.mjs modes | validate|show <campaign.json> '
     + '| prepare|trial|run|resume|reconcile <campaign.json> --out <directory> '
-    + '| status <directory> [--full] | inspect|report|audit <directory>');
+    + '| status <directory> [--full] | inspect|report|audit <directory> '
+    + '| grant-strikes <directory> --attempt <id> --grant-id <id> --level <N> '
+    + '--feature <id> [--feature <id> ...] --strikes <N>');
 }
 
 async function main() {
@@ -113,6 +141,16 @@ async function main() {
     if (!report.ok) process.exitCode = 1;
     return;
   }
+  if (args.command === 'grant-strikes') {
+    console.log(JSON.stringify(grantCampaignDependencyStrikes(args.directory, {
+      attemptId: args.attemptId,
+      grantId: args.grantId,
+      level: args.level,
+      nodeIds: args.nodeIds,
+      strikes: args.strikes,
+    }), null, 2));
+    return;
+  }
   if (args.command === 'prepare') {
     const prepared = prepareCampaign(args.path, args.directory);
     console.log(JSON.stringify(campaignStateSummary(prepared.plan, prepared.state), null, 2));
@@ -132,8 +170,11 @@ async function main() {
     process.on('SIGTERM', cancel);
     let state;
     try {
+      const executionMode = args.command === 'trial'
+        || (args.command === 'resume' && plan.state === 'draft')
+        ? 'model-free-trial' : 'frozen';
       state = await executeCampaign(args.path, args.directory, {
-        mode: args.command === 'trial' ? 'model-free-trial' : 'frozen',
+        mode: executionMode,
         signal: cancellation.signal,
       });
     } finally {

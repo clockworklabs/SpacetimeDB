@@ -34,6 +34,12 @@ function validateSourceEvidence(value, at) {
   }
 }
 
+function validateApplicationFailure(value, at) {
+  strictObject(value, at, new Set(['phase', 'reason']));
+  nonEmptyString(value.phase, `${at}.phase`);
+  nonEmptyString(value.reason, `${at}.reason`);
+}
+
 function nonEmptyString(value, at) {
   if (typeof value !== 'string' || value.trim().length === 0) fail(at, 'must be a non-empty string');
   return value;
@@ -510,8 +516,14 @@ function assertState(state) {
       || (attempt.runId !== undefined && (typeof attempt.runId !== 'string' || !attempt.runId))
       || (attempt.outcome === 'inconclusive'
         && (typeof attempt.reason !== 'string' || !attempt.reason
-          || !INCONCLUSIVE_CATEGORIES.has(attempt.category)))) {
+          || !INCONCLUSIVE_CATEGORIES.has(attempt.category)))
+      || (attempt.applicationFailure !== undefined
+        && attempt.outcome !== 'conclusive')) {
       throw new Error(`invalid dependency mode attempt at index ${index}`);
+    }
+    if (attempt.applicationFailure !== undefined) {
+      validateApplicationFailure(attempt.applicationFailure,
+        `attempts[${index}].applicationFailure`);
     }
     if (attempt.evidence !== undefined) validateSourceEvidence(attempt.evidence,
       `attempts[${index}].evidence`);
@@ -549,8 +561,8 @@ function validateConclusiveResult(state, result) {
         throw new Error(`result includes unselected check ${check.id} for ${nodeResult.id}`);
       }
       if (checks.has(check.id)) throw new Error(`result repeats check ${check.id}`);
-      if (!['pass', 'fail'].includes(check.outcome)) {
-        throw new Error(`result check ${check.id} outcome must be pass or fail`);
+      if (!['pass', 'fail', 'not-run'].includes(check.outcome)) {
+        throw new Error(`result check ${check.id} outcome must be pass, fail, or not-run`);
       }
       checks.set(check.id, check.outcome);
     }
@@ -560,6 +572,20 @@ function validateConclusiveResult(state, result) {
   }
   const missingNodes = [...expectedNodes.keys()].filter(nodeId => !actualNodes.has(nodeId));
   if (missingNodes.length) throw new Error(`result is missing nodes: ${missingNodes.join(', ')}`);
+  const currentNodes = new Set(currentPromptNodeIds(state));
+  const hasNotRun = [...actualNodes.values()].some(checks => [...checks.values()].includes('not-run'));
+  if (result.applicationFailure === undefined && hasNotRun) {
+    throw new Error('not-run checks require a typed application failure');
+  }
+  if (result.applicationFailure !== undefined) {
+    validateApplicationFailure(result.applicationFailure, 'result.applicationFailure');
+    for (const [nodeId, checks] of actualNodes) {
+      const expectedOutcome = currentNodes.has(nodeId) ? 'fail' : 'not-run';
+      if ([...checks.values()].some(outcome => outcome !== expectedOutcome)) {
+        throw new Error(`application failure must mark ${nodeId} checks ${expectedOutcome}`);
+      }
+    }
+  }
   return actualNodes;
 }
 
@@ -623,7 +649,7 @@ function applyDependencyResult(inputState, inputResult) {
   const result = structuredClone(inputResult);
   strictObject(result, 'result', new Set([
     'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
-    'sourceSha256', 'selectionSha256', 'evidence',
+    'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure',
   ]));
   nonEmptyString(result.attemptId, 'result.attemptId');
   if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
@@ -654,7 +680,9 @@ function applyDependencyResult(inputState, inputResult) {
     if (!INCONCLUSIVE_CATEGORIES.has(result.category)) {
       throw new Error(`result.category must be one of ${[...INCONCLUSIVE_CATEGORIES].join(', ')}`);
     }
-    if (result.nodes !== undefined) throw new Error('inconclusive results cannot contain node grades');
+    if (result.nodes !== undefined || result.applicationFailure !== undefined) {
+      throw new Error('inconclusive results cannot contain node grades or application failures');
+    }
     state.attempts.push({ attemptId: result.attemptId, level: state.level,
       outcome: result.outcome, category: result.category, reason: result.reason,
       ...(result.runId ? { runId: result.runId } : {}),
@@ -673,11 +701,15 @@ function applyDependencyResult(inputState, inputResult) {
   for (const nodeId of selectedNodeIds) {
     const node = nodesById.get(nodeId);
     const outcomes = actual.get(nodeId);
-    state.nodes[nodeId].checks = Object.fromEntries(node.gradingChecks.map(check =>
-      [check.id, outcomes.get(check.id)]));
+    state.nodes[nodeId].checks = Object.fromEntries(node.gradingChecks.map(check => {
+      const outcome = outcomes.get(check.id);
+      return [check.id, outcome === 'not-run' ? state.nodes[nodeId].checks[check.id] : outcome];
+    }));
   }
   for (const nodeId of selectedNodeIds) {
     const node = nodesById.get(nodeId);
+    const outcomes = actual.get(nodeId);
+    if ([...outcomes.values()].every(outcome => outcome === 'not-run')) continue;
     const checksPass = node.gradingChecks.every(check => state.nodes[nodeId].checks[check.id] === 'pass');
     const dependenciesPass = node.dependencies.every(parentId =>
       state.nodes[parentId].status === 'passed');
@@ -708,7 +740,9 @@ function applyDependencyResult(inputState, inputResult) {
     ...(result.runId ? { runId: result.runId } : {}),
     ...(result.evidence ? { evidence: result.evidence } : {}),
     ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
-    ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
+    ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
+    ...(result.applicationFailure
+      ? { applicationFailure: structuredClone(result.applicationFailure) } : {}) });
 
   let unresolved = nodesAt(state.definition, state.level)
     .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status));

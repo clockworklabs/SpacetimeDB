@@ -56,7 +56,7 @@ const sequentialMode = {
 
 const dependencyMode = {
   id: 'dependency',
-  version: '2.0.0',
+  version: '2.1.0',
   validate(value, { at }) {
     const fields = new Set(['id', 'version', 'strikes']);
     for (const key of Object.keys(value)) {

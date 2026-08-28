@@ -86,7 +86,7 @@ test('the unchanged failure limit is part of the versioned dependency policy ide
     undefined, 2);
   const second = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
     undefined, 3);
-  assert.equal(first.definition.version, '2.0.0');
+  assert.equal(first.definition.version, '2.1.0');
   assert.equal(first.definition.unchangedFailureLimit, 2);
   assert.equal(second.definition.unchangedFailureLimit, 3);
   assert.notEqual(first.identity.sha256, second.identity.sha256);
@@ -183,6 +183,27 @@ test('passed siblings are regraded and return to repair work if they regress', (
   assert.equal(state.nodes.catalog.status, 'passed');
   assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts']);
   assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'catalog']);
+});
+
+test('an application startup failure spends strikes only on current work', () => {
+  const value = fixture();
+  value.strikes.default = 3;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'first-grade', {
+    accounts: 'pass', catalog: 'fail',
+  }));
+  const guardStrikes = state.nodes.accounts.strikes.used;
+  state = progressionEngine.recordResult(state, {
+    ...conclusive(state, 'startup-failure', {
+      accounts: 'not-run', catalog: 'fail',
+    }),
+    applicationFailure: { phase: 'application-start', reason: 'server did not start' },
+  });
+  assert.equal(state.nodes.accounts.status, 'passed');
+  assert.equal(state.nodes.accounts.strikes.used, guardStrikes);
+  assert.equal(state.nodes.catalog.status, 'active');
+  assert.equal(state.nodes.catalog.strikes.used, 2);
+  assert.equal(progressionEngine.nextAction(state).type, 'repair');
 });
 
 test('one failed branch stops while passed branches continue through any number of levels', () => {

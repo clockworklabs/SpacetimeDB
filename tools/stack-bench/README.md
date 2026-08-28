@@ -20,10 +20,17 @@ other open branches continue. Earlier passed features are graded again so that
 regressions remain visible.
 
 Direct runs default to ten repair rounds. Campaign manifests set an explicit
-budget. When a run exhausts its budget, the operator can grant a finite number
-of additional rounds from the saved source checkpoint. The grant creates a
-linked continuation and does not rewrite the original result. Campaign `retry`
-still means a fresh execution.
+budget. After a dependency run stops, the operator can grant additional
+strikes to selected exhausted features. Stack Bench resumes from the saved
+source checkpoint. It keeps the completed execution unchanged and records the
+new work as a linked continuation. Campaign `retry` still means a fresh
+execution.
+
+```text
+node commands/campaign-cli.mjs grant-strikes <campaign-output> \
+  --attempt <attempt-id> --grant-id <unique-id> --level <number> \
+  --feature <feature-id> --strikes <number>
+```
 
 Stack adapters are interchangeable. The model and requested work can remain
 fixed while the stack changes.

@@ -9,6 +9,7 @@ import { hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.mjs';
 import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.mjs';
 import { progressionEngine } from './progression-engine.mjs';
+import { replayDependencyMode } from './dependency-mode.mjs';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.mjs';
 import { resolveProgressionRecipeAction } from './progression-recipe-selection.mjs';
 import { progressionStateExists, readProgressionState, validateProgressionOwner,
@@ -102,6 +103,10 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
   const validatePriorRun = (root, stored) => {
     const artifact = readArtifact(join(root, 'run.json'), { expectedKind: 'benchmark_run' });
     const runOwner = artifact.payload.progressionOwner;
+    const lastEvent = stored.state.events?.at(-1);
+    const runState = lastEvent?.type === 'strikes-granted'
+      ? replayDependencyMode(stored.state.definition, stored.state.events.slice(0, -1))
+      : stored.state;
     if (artifact.attempt.parentId !== owner.attempt.id
       || artifact.identities.engine.sha256 !== currentEngineIdentity().sha256
       || canonicalDefinitionJson(runOwner)
@@ -114,9 +119,9 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
       || artifact.payload.backend !== owner.attempt.stack
       || artifact.payload.model !== owner.attempt.model
       || artifact.payload.condition?.sha256 !== owner.attempt.conditionSha256
-      || artifact.payload.progressionStatus?.phase !== stored.state.phase
-      || artifact.payload.progressionStatus?.level !== stored.state.level
-      || artifact.payload.progressionStatus?.attempts !== stored.state.attempts.length) {
+      || artifact.payload.progressionStatus?.phase !== runState.phase
+      || artifact.payload.progressionStatus?.level !== runState.level
+      || artifact.payload.progressionStatus?.attempts !== runState.attempts.length) {
       throw new Error('prior dependency execution does not match its saved progression state');
     }
     return artifact;

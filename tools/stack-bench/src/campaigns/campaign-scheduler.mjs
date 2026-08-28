@@ -14,6 +14,8 @@ const TERMINAL_OUTCOMES = new Set(['passed', 'app_failure']);
 const INVALID_OUTCOMES = new Set(['provider_failure', 'harness_failure', 'inconclusive',
   'ungraded', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted']);
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
+const FEATURE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+const HASH = /^[a-f0-9]{64}$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = message => { throw new Error(`invalid campaign state: ${message}`); };
 
@@ -77,7 +79,8 @@ export function validateCampaignState(input) {
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
       const executionFields = new Set(['id', 'ordinal', 'status', 'output', 'startedAt',
-        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId', 'runIndex', 'retry']);
+        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId', 'runIndex', 'retry',
+        'continuation']);
       if (!object(execution)) fail(`${executionAt} must be an object`);
       for (const key of Object.keys(execution)) if (!executionFields.has(key)) fail(`${executionAt}.${key} is unknown`);
       string(execution.id, `${executionAt}.id`);
@@ -89,7 +92,8 @@ export function validateCampaignState(input) {
         fail(`${executionAt}.id does not match its attempt and ordinal`);
       }
       if (!EXECUTION_STATUSES.has(execution.status)) fail(`${executionAt}.status is invalid`);
-      if (executionIndex < attempt.executions.length - 1 && execution.status !== 'invalid') {
+      if (executionIndex < attempt.executions.length - 1 && execution.status !== 'invalid'
+        && !(execution.status === 'completed' && execution.continuation !== undefined)) {
         fail(`${executionAt} is historical but not invalid`);
       }
       string(execution.output, `${executionAt}.output`);
@@ -148,11 +152,56 @@ export function validateCampaignState(input) {
           }
         }
       }
+      if (execution.continuation !== undefined) {
+        const continuationAt = `${executionAt}.continuation`;
+        if (attempt.plan.mode?.id !== 'dependency' || execution.status !== 'completed'
+          || !object(execution.continuation)) {
+          fail(`${continuationAt} requires a completed dependency execution`);
+        }
+        const continuationFields = new Set([
+          'grantId', 'level', 'nodeIds', 'strikes', 'snapshotSha256', 'resumeFrom',
+          'scheduledAt',
+        ]);
+        for (const key of Object.keys(execution.continuation)) {
+          if (!continuationFields.has(key)) fail(`${continuationAt}.${key} is unknown`);
+        }
+        string(execution.continuation.grantId, `${continuationAt}.grantId`);
+        if (!SAFE_ID.test(execution.continuation.grantId)) {
+          fail(`${continuationAt}.grantId is not a safe path component`);
+        }
+        if (!Number.isSafeInteger(execution.continuation.level)
+          || execution.continuation.level < 1) fail(`${continuationAt}.level is invalid`);
+        if (!Array.isArray(execution.continuation.nodeIds)
+          || execution.continuation.nodeIds.length === 0
+          || execution.continuation.nodeIds.some((nodeId, nodeIndex) =>
+            typeof nodeId !== 'string' || !FEATURE_ID.test(nodeId)
+            || (nodeIndex > 0
+              && execution.continuation.nodeIds[nodeIndex - 1].localeCompare(nodeId) >= 0))) {
+          fail(`${continuationAt}.nodeIds must be sorted unique feature ids`);
+        }
+        if (!Number.isSafeInteger(execution.continuation.strikes)
+          || execution.continuation.strikes < 1) fail(`${continuationAt}.strikes is invalid`);
+        if (!HASH.test(execution.continuation.snapshotSha256 ?? '')) {
+          fail(`${continuationAt}.snapshotSha256 is invalid`);
+        }
+        const expectedResume = `continuations/${attempt.plan.id}/${execution.continuation.grantId}`;
+        if (execution.continuation.resumeFrom !== expectedResume) {
+          fail(`${continuationAt}.resumeFrom is not the exact grant workspace`);
+        }
+        timestamp(execution.continuation.scheduledAt, `${continuationAt}.scheduledAt`);
+        if (Date.parse(execution.continuation.scheduledAt) < Date.parse(execution.completedAt)) {
+          fail(`${continuationAt}.scheduledAt precedes execution completion`);
+        }
+        if (Date.parse(execution.continuation.scheduledAt) > Date.parse(state.updatedAt)) {
+          fail(`${continuationAt}.scheduledAt is newer than campaign state`);
+        }
+      }
       const eventAt = execution.completedAt ?? execution.startedAt;
       if (Date.parse(eventAt) > Date.parse(state.updatedAt)) fail(`${executionAt} is newer than campaign updatedAt`);
     }
     const latest = attempt.executions.at(-1) ?? null;
-    if (attempt.status === 'pending' && latest !== null && latest.status !== 'invalid') {
+    if (attempt.status === 'pending' && latest !== null && latest.status !== 'invalid'
+      && !(latest.status === 'completed' && latest.continuation !== undefined)) {
       fail(`${at} is pending without an invalid retryable execution`);
     }
     if (attempt.status === 'running' && latest?.status !== 'running') fail(`${at} has no running execution`);
@@ -197,7 +246,8 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
   const attempt = state.attempts.find(candidate => candidate.status === 'pending');
   if (!attempt) return { state, claim: null, capacityFull: false };
   const previous = attempt.executions.at(-1) ?? null;
-  const resumeFrom = previous?.retry?.scheduled === true ? previous.output : null;
+  const resumeFrom = previous?.continuation?.resumeFrom
+    ?? (previous?.retry?.scheduled === true ? previous.output : null);
   const priorOutputs = attempt.executions.map(execution => execution.output);
   const ordinal = attempt.executions.length + 1;
   const id = `${attempt.plan.id}-execution${ordinal}`;
@@ -210,6 +260,28 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
     claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex,
       resumeFrom, priorOutputs },
     capacityFull: false };
+}
+
+export function scheduleDependencyContinuation(input, attemptId, continuation,
+  { now = new Date().toISOString() } = {}) {
+  const state = validateCampaignState(input);
+  string(attemptId, 'attemptId');
+  if (state.status !== 'completed') {
+    throw new Error('dependency continuation requires a completed campaign');
+  }
+  const attempt = state.attempts.find(candidate => candidate.plan.id === attemptId);
+  if (!attempt) throw new Error(`campaign attempt ${attemptId} does not exist`);
+  if (attempt.plan.mode?.id !== 'dependency' || attempt.status !== 'completed') {
+    throw new Error(`campaign attempt ${attemptId} is not a completed dependency attempt`);
+  }
+  const execution = attempt.executions.at(-1);
+  if (execution?.status !== 'completed' || execution.continuation !== undefined) {
+    throw new Error(`campaign attempt ${attemptId} has no unextended completed execution`);
+  }
+  execution.continuation = { ...structuredClone(continuation),
+    nodeIds: [...(continuation?.nodeIds ?? [])].sort(), scheduledAt: now };
+  attempt.status = 'pending';
+  return validateCampaignState(recalculate(state, now));
 }
 
 export function classifyCampaignExecution({ exitCode = null, timedOut = false, run = null } = {}) {

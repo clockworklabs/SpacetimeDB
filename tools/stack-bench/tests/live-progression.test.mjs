@@ -94,7 +94,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       attempt: { id: 'run-1', parentId: owner.attempt.id },
       identities,
       payload: {
-        mode: { id: 'dependency', version: '2.0.0' },
+        mode: { id: 'dependency', version: '2.1.0' },
         backend: owner.attempt.stack,
         model: owner.attempt.model,
         condition: { sha256: owner.attempt.conditionSha256 },
@@ -176,7 +176,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
 
     const attempt = {
       id: owner.attempt.id,
-      mode: { id: 'dependency', version: '2.0.0' },
+      mode: { id: 'dependency', version: '2.1.0' },
       levels: [1],
       featureCatalog: split.featureCatalogIdentity,
       dependencyPolicy: split.dependencyPolicyIdentity,

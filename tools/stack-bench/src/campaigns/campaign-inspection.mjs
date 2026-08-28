@@ -71,7 +71,7 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
         features: strikes?.nodes ?? [],
       },
       work: {
-        current: nodes.filter(node => node.status === 'active'),
+        current: nodes.filter(node => ['active', 'regressed'].includes(node.status)),
         passed: nodes.filter(node => node.status === 'passed'),
         failed: nodes.filter(node => ['exhausted', 'regressed'].includes(node.status)
           || node.checks.failed > 0),

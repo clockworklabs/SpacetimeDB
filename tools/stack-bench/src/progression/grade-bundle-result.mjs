@@ -140,6 +140,13 @@ export function gradeBundleToProgressionResult(input, action,
       ?? bundle.error ?? 'grader evidence was inconclusive');
   }
   if (outcome === 'app_failure') {
+    const promptNodeIds = action.prompt?.nodeIds ?? [];
+    if (!Array.isArray(promptNodeIds) || promptNodeIds.length === 0
+      || promptNodeIds.some(id => typeof id !== 'string' || !selectedNodes.has(id))
+      || new Set(promptNodeIds).size !== promptNodeIds.length) {
+      throw new Error('progression application abort requires exact current prompt nodes');
+    }
+    const currentNodes = new Set(promptNodeIds);
     const attempted = exactKeys(bundle.selection.attemptedChecks,
       'grade bundle attempted checks');
     const reported = exactKeys(bundle.selection.reportedChecks,
@@ -160,10 +167,13 @@ export function gradeBundleToProgressionResult(input, action,
     }
     return { attemptId, runId: run.id, sourceSha256, selectionSha256,
       ...(evidence ? { evidence } : {}),
-      outcome: 'conclusive', nodes: nodeIds.map(nodeId => ({
+      outcome: 'conclusive',
+      applicationFailure: { phase: bundle.outcome.phase, reason: bundle.outcome.reason },
+      nodes: nodeIds.map(nodeId => ({
       id: nodeId,
       checks: expected.filter(check => check.nodeId === nodeId)
-        .map(check => ({ id: check.id, outcome: 'fail' })),
+        .map(check => ({ id: check.id,
+          outcome: currentNodes.has(nodeId) ? 'fail' : 'not-run' })),
     })) };
   }
 

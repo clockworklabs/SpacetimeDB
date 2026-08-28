@@ -7,7 +7,8 @@ import test from 'node:test';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import { claimNextAttempt, classifyCampaignExecution, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, markInterruptedExecution, readCampaignState,
-  validateCampaignState, writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+  scheduleDependencyContinuation, validateCampaignState, writeCampaignState }
+  from '../src/campaigns/campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const plan = () => compileCampaignFile(example);
@@ -28,6 +29,55 @@ test('a contaminated run remains contaminated when its process exits nonzero', (
     contamination: { verdict: 'scores unusable' },
     outcome: { kind: 'ungraded' },
   } }), { status: 'invalid', outcome: 'contaminated', reason: 'scores unusable' });
+});
+
+test('a targeted dependency grant schedules one exact completed attempt for resume', () => {
+  let state = prepared();
+  state.attempts[0].plan.mode = { id: 'dependency', version: '2.1.0' };
+  for (let index = 0; index < state.attempts.length; index += 1) {
+    const minute = String(index * 2 + 1).padStart(2, '0');
+    const completedMinute = String(index * 2 + 2).padStart(2, '0');
+    const claimedAttempt = claimNextAttempt(state, {
+      now: `2026-08-12T00:${minute}:00.000Z`, admissionId: 'admission-1',
+    });
+    state = finishCampaignExecution(claimedAttempt.state, claimedAttempt.claim.executionId,
+      { exitCode: 0, run: { outcome: { kind: 'passed' } } },
+      { now: `2026-08-12T00:${completedMinute}:00.000Z` });
+  }
+  assert.equal(state.status, 'completed');
+  const attempt = state.attempts[0];
+  const priorOutput = attempt.executions[0].output;
+  state = scheduleDependencyContinuation(state, attempt.plan.id, {
+    grantId: 'operator-grant-1', level: 1, nodeIds: ['catalog', 'accounts'],
+    strikes: 2, snapshotSha256: 'a'.repeat(64),
+    resumeFrom: `continuations/${attempt.plan.id}/operator-grant-1`,
+  }, { now: '2026-08-12T00:20:00.000Z' });
+  assert.equal(state.status, 'prepared');
+  assert.deepEqual(state.attempts[0].executions[0].continuation.nodeIds,
+    ['accounts', 'catalog']);
+
+  const resumed = claimNextAttempt(state, {
+    now: '2026-08-12T00:21:00.000Z', admissionId: 'admission-2',
+  });
+  assert.equal(resumed.claim.resumeFrom,
+    `continuations/${attempt.plan.id}/operator-grant-1`);
+  assert.deepEqual(resumed.claim.priorOutputs, [priorOutput]);
+  assert.equal(resumed.state.attempts[0].executions[0].status, 'completed');
+  assert.equal(resumed.state.attempts[0].executions[1].status, 'running');
+  const wrongMode = structuredClone(resumed.state);
+  wrongMode.attempts[0].plan.mode = { id: 'sequential', version: '1.0.0' };
+  assert.throws(() => validateCampaignState(wrongMode),
+    /continuation requires a completed dependency execution/);
+});
+
+test('dependency continuation scheduling rejects non-terminal and duplicate requests', () => {
+  let state = prepared();
+  state.attempts[0].plan.mode = { id: 'dependency', version: '2.1.0' };
+  assert.throws(() => scheduleDependencyContinuation(state, state.attempts[0].plan.id, {
+    grantId: 'grant', level: 1, nodeIds: ['accounts'], strikes: 1,
+    snapshotSha256: 'a'.repeat(64),
+    resumeFrom: `continuations/${state.attempts[0].plan.id}/grant`,
+  }), /completed campaign/);
 });
 
 function parallelPlan(parallelism = 3, repetitions = 1) {

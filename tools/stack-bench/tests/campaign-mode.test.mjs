@@ -15,8 +15,8 @@ test('the campaign mode registry requires an exact supported mode', () => {
     id: 'sequential', version: '1.0.0', extra: true,
   }), /extra is unknown/);
   assert.deepEqual(CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '2.0.0', strikes: { default: 3, levels: {} },
-  }), { id: 'dependency', version: '2.0.0', strikes: { default: 3, levels: {} } });
+    id: 'dependency', version: '2.1.0', strikes: { default: 3, levels: {} },
+  }), { id: 'dependency', version: '2.1.0', strikes: { default: 3, levels: {} } });
 });
 
 test('new modes can be registered without changing campaign validation', () => {

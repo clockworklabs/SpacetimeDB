@@ -103,7 +103,7 @@ function modularDefinition({ requested = [], expected = [], observed = [] } = {}
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '2.0.0',
+  value.mode = { id: 'dependency', version: '2.1.0',
     strikes: { default: 2, levels: {} } };
   delete value.levels;
   delete value.selection.levels[0].features;
@@ -189,7 +189,16 @@ test('campaign graph version must match its recipe calibration', () => {
   const value = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'appliance',
     'campaign.ecommerce-progression-reference.json'), 'utf8'));
   value.featureCatalog = 'ecommerce.questlines@1.1.0';
-  assert.throws(() => compile(value),
+  const calibrationResolver = release => {
+    const calibration = resolvedQualification(release);
+    calibration.qualification.featureCatalog = {
+      id: 'ecommerce.questlines',
+      version: '1.0.0',
+      sha256: 'a'.repeat(64),
+    };
+    return calibration;
+  };
+  assert.throws(() => compile(value, { calibrationResolver }),
     /L1 calibration qualifies ecommerce\.questlines@1\.0\.0, not ecommerce\.questlines@1\.1\.0/);
 });
 
@@ -468,7 +477,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '2.0.0', strikes: { default: 3, levels: {} },
+    id: 'dependency', version: '2.1.0', strikes: { default: 3, levels: {} },
   } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',

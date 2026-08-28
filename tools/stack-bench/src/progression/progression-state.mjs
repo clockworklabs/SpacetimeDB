@@ -278,6 +278,20 @@ function restoreGrantSource(state, owner, grant, checkpoint, workspaceRoot, engi
   }
 }
 
+function grantResumeBinding(state, owner, workspaceRoot) {
+  const sourcePath = ownedPath(workspaceRoot, owner.workspace.appDirectory,
+    'progression application');
+  const source = hashDirectory(sourcePath);
+  return {
+    actionSha256: sha256(canonicalDefinitionJson(progressionEngine.nextAction(state))),
+    source: {
+      directory: owner.workspace.appDirectory,
+      sha256: source.sha256,
+      files: source.files.length,
+    },
+  };
+}
+
 export function grantProgressionState(path, { progression, featureCatalogIdentity,
   dependencyPolicyIdentity, owner, grant,
   checkpoint, expectedSnapshotSha256 } = {}) {
@@ -297,6 +311,7 @@ export function grantProgressionState(path, { progression, featureCatalogIdentit
       current.artifact.identities.engine.sha256);
     return writeProgressionState(path, { progression, featureCatalogIdentity,
       dependencyPolicyIdentity, owner, state,
+      resume: grantResumeBinding(state, owner, dirname(resolve(path))),
       id: current.artifact.id });
   } finally {
     releaseCampaignLock(lock);

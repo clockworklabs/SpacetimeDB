@@ -28,10 +28,20 @@ test('campaign CLI separates read-only, preparation, execution, and status comma
   assert.equal(parseCampaignArgs(argv('inspect', './results')).command, 'inspect');
   assert.equal(parseCampaignArgs(argv('report', './results')).command, 'report');
   assert.equal(parseCampaignArgs(argv('audit', './results')).command, 'audit');
+  assert.deepEqual(parseCampaignArgs(argv('grant-strikes', './results',
+    '--attempt', 'campaign-r1', '--grant-id', 'grant-1', '--level', '3',
+    '--feature', 'orders', '--feature', 'inventory', '--strikes', '2')), {
+    command: 'grant-strikes', directory: resolve('./results'),
+    attemptId: 'campaign-r1', grantId: 'grant-1', level: 3,
+    nodeIds: ['orders', 'inventory'], strikes: 2,
+  });
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json')), /usage/);
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json', '--out', './a', '--out', './b')),
     /usage/);
   assert.throws(() => parseCampaignArgs(argv('status', './results', '--json')), /usage/);
+  assert.throws(() => parseCampaignArgs(argv('grant-strikes', './results',
+    '--attempt', 'campaign-r1', '--level', '3', '--feature', 'orders', '--strikes', '2')),
+  /requires --attempt, --grant-id/);
 });
 
 test('campaign commands print a compact result and retain failed attempt details', () => {
@@ -94,8 +104,8 @@ test('campaign CLI resumes only an existing matching dependency campaign', () =>
   }), /only for dependency/);
   assert.throws(() => validateResumeCampaignState(requested, {
     ...existing, state: { status: 'prepared', attempts: [{ executions: [] }] },
-  }), /interrupted dependency campaign/);
+  }), /scheduled work/);
   assert.throws(() => validateResumeCampaignState(requested, {
     ...existing, state: { ...existing.state, status: 'running' },
-  }), /interrupted dependency campaign/);
+  }), /scheduled work/);
 });
