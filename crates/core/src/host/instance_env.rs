@@ -737,10 +737,9 @@ impl InstanceEnv {
             ));
         }
 
-        // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
         let tx = self
             .relational_db()
-            .begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+            .begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure);
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -1356,6 +1355,7 @@ mod test {
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
+    use spacetimedb_datastore::execution_context::WorkloadType;
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_primitives::{IndexId, TableId};
@@ -1402,6 +1402,19 @@ mod test {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
         Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+    }
+
+    #[test]
+    fn anonymous_procedure_transactions_are_labeled_as_procedure() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, _runtime) = instance_env(db)?;
+
+        env.start_mutable_tx()?;
+        let workload = env.get_tx()?.ctx.workload();
+        assert!(matches!(workload, WorkloadType::Procedure));
+        env.abort_mutable_tx()?;
+
+        Ok(())
     }
 
     #[test]
