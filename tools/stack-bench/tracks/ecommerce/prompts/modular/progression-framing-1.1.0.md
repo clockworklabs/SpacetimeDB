@@ -1,6 +1,4 @@
-## New application
-
-Build the ecommerce application from the product work and testing interface below.
+## Ecommerce application
 
 ## Existing application
 

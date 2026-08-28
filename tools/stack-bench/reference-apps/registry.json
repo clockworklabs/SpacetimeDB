@@ -8,7 +8,7 @@
       "level": 5,
       "actionLevels": [1, 2, 3, 4, 5],
       "status": "active",
-      "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0"],
+      "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0", "ecommerce.progression-l1-l3@1.1.0"],
       "targetPath": "reference-apps/ecommerce/progression/mongodb",
       "origin": {
         "kind": "authored",
@@ -30,7 +30,7 @@
       "level": 5,
       "actionLevels": [1, 2, 3, 4, 5],
       "status": "active",
-      "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0"],
+      "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0", "ecommerce.progression-l1-l3@1.1.0"],
       "targetPath": "reference-apps/ecommerce/progression/postgres",
       "origin": {
         "kind": "authored",
@@ -52,7 +52,7 @@
       "level": 5,
       "actionLevels": [1, 2, 3, 4, 5],
       "status": "active",
-      "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0"],
+      "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0", "ecommerce.progression-l1-l3@1.1.0"],
       "targetPath": "reference-apps/ecommerce/progression/spacetime",
       "origin": {
         "kind": "authored",
