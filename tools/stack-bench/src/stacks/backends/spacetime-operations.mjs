@@ -2,10 +2,12 @@ import { execFileSync } from 'node:child_process';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.mjs';
 import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.mjs';
+import { codingContainerAgentExecOptions } from '../../runtime/coding-container-policy.mjs';
 
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
 const sqlString = value => `'${String(value).replaceAll("'", "''")}'`;
+const agentExec = () => ['exec', ...codingContainerAgentExecOptions()];
 
 export function resetSpacetime({ lease, app, exec = execFileSync }) {
   const layout = resolveSpacetimeModuleLayout(app);
@@ -13,9 +15,9 @@ export function resetSpacetime({ lease, app, exec = execFileSync }) {
   const container = target.buildContainer;
   const containerModule = layout.containerPath;
   try {
-    exec('docker', ['exec', container.name, 'test', '-d', containerModule],
+    exec('docker', [...agentExec(), container.name, 'test', '-d', containerModule],
       { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
-    exec('docker', ['exec', '-w', containerModule, container.name, '/deps/spacetimedb-cli',
+    exec('docker', [...agentExec(), '-w', containerModule, container.name, '/deps/spacetimedb-cli',
       'publish', lease.resources.module, '--module-path', containerModule,
       '-s', target.containerUri, '--delete-data', '-y'],
     { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
@@ -30,7 +32,7 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime, exec =
   if (!spacetime?.buildContainer) {
     throw new Error('SpacetimeDB build container is unavailable for direct SQL');
   }
-  const query = sql => exec('docker', ['exec', spacetime.buildContainer.name,
+  const query = sql => exec('docker', [...agentExec(), spacetime.buildContainer.name,
     '/deps/spacetimedb-cli', 'sql', spacetime.mod, '-s', spacetime.containerUri, sql],
   { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   const idOf = (table, name) => {

@@ -37,7 +37,8 @@ function fixture() {
   for (const path of [
     'commands/run-suite.mjs', 'commands/check-actions.mjs', 'commands/reset-backend.mjs',
     'commands/bench.mjs',
-    'commands/null-control.mjs', 'src/references/reference-live.mjs', 'grader/grade.mjs',
+    'commands/null-control.mjs', 'src/references/reference-live.mjs',
+    'src/references/reference-agent.mjs', 'container/run-build.mjs', 'grader/grade.mjs',
     'grader/mutation-test.mjs', 'linter/lint.mjs', 'package.json', 'package-lock.json',
     'docker-compose.yaml', 'appliance/Controller.Dockerfile', 'appliance/docker-compose.yaml',
     'tracks/ecommerce/walk.mjs',
@@ -169,6 +170,27 @@ test('shared grading changes invalidate every affected scope while mutation-only
     assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, afterGradeReference.sha256);
     assert.notEqual(scoped(root, 'mutation', 'mongodb').sha256, afterGradeMutation.sha256);
     assert.deepEqual(scoped(root, 'null'), afterGradeNull);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference agent and coding-container changes invalidate reference and mutation evidence', () => {
+  const root = fixture();
+  try {
+    const beforeReference = scoped(root, 'reference', 'mongodb');
+    const beforeMutation = scoped(root, 'mutation', 'mongodb');
+    const beforeNull = scoped(root, 'null');
+
+    write(root, 'container/run-build.mjs', 'changed coding container\n');
+    assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, beforeReference.sha256);
+    assert.notEqual(scoped(root, 'mutation', 'mongodb').sha256, beforeMutation.sha256);
+    assert.deepEqual(scoped(root, 'null'), beforeNull);
+
+    const afterBuildReference = scoped(root, 'reference', 'mongodb');
+    const afterBuildMutation = scoped(root, 'mutation', 'mongodb');
+    write(root, 'src/references/reference-agent.mjs', 'changed reference agent\n');
+    assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, afterBuildReference.sha256);
+    assert.notEqual(scoped(root, 'mutation', 'mongodb').sha256, afterBuildMutation.sha256);
+    assert.deepEqual(scoped(root, 'null'), beforeNull);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

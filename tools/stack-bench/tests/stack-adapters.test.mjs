@@ -5,6 +5,7 @@ import test from 'node:test';
 import { createStackAdapterRegistry, executeStackCapability,
   STACK_ADAPTER_SCHEMA_VERSION, STACK_CAPABILITY_SCHEMA_VERSION } from '../src/stacks/stack-adapter-contract.mjs';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { setSpacetimeStock } from '../src/stacks/backends/spacetime-operations.mjs';
 
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
@@ -37,7 +38,8 @@ test('build-container plans expose only artifacts owned by the selected stack', 
   const spacetime = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
     'build-container', 'plan', { repo, appDir });
   assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/spacetimedb-cli'), true);
-  assert.equal(spacetime.mounts.some(mount => mount.target === '/root/.config/spacetime'), true);
+  assert.equal(spacetime.mounts.some(mount =>
+    mount.target === '/home/stackbench/.config/spacetime'), true);
   assert.equal(spacetime.readyFile, '/deps/.ready');
   assert.equal(spacetime.networkNamespace, null);
   const appliance = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
@@ -48,7 +50,7 @@ test('build-container plans expose only artifacts owned by the selected stack', 
   assert.deepEqual(appliance.requiredPaths, []);
   assert.deepEqual(appliance.mounts, [
     { kind: 'bind', source: resolve(appDir, '..', '.spacetime-cli-config'),
-      target: '/root/.config/spacetime', readOnly: false },
+      target: '/home/stackbench/.config/spacetime', readOnly: false },
     { kind: 'volume', source: 'stack-bench-release-deps', target: '/release-deps', readOnly: true },
   ]);
   assert.match(appliance.init, /test -x \/release-deps\/spacetimedb-cli/);
@@ -79,6 +81,27 @@ test('hosted stacks receive the exact leased database through the standard envir
   assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('spacetime'), {
     database: null, networkMode: 'host',
   }), {});
+});
+
+test('SpacetimeDB container operations use the isolated agent identity', () => {
+  const calls = [];
+  const exec = (command, args) => {
+    calls.push([command, args]);
+    const sql = args.at(-1);
+    if (/select id from item/.test(sql)) return '1\n';
+    if (/select id from warehouse/.test(sql)) return '2\n';
+    if (/select quantity/.test(sql)) return '3\n';
+    return '';
+  };
+  setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
+    spacetime: { buildContainer: { name: 'leased-build' }, mod: 'shop',
+      containerUri: 'http://host.docker.internal:3000' }, exec });
+  assert.equal(calls.length, 4);
+  for (const [command, args] of calls) {
+    assert.equal(command, 'docker');
+    assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
+      'HOME=/home/stackbench', '-e', 'USER=stackbench', 'leased-build']);
+  }
 });
 
 test('a new stack registers without changing engine code', () => {

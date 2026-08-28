@@ -129,10 +129,17 @@ test('local and appliance compose files pin the same images but isolate resource
 
 test('coding containers cannot inspect host-network traffic or gain privileges', () => {
   const source = readFileSync(join(ROOT, 'container', 'run-build.mjs'), 'utf8');
+  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.mjs'), 'utf8');
   assert.match(source, /'--cap-drop', 'ALL'/);
+  assert.match(source, /'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'/);
   assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
   assert.match(source, /'--pids-limit', '512'/);
   assert.match(source, /'--read-only'/);
-  assert.match(source, /'--tmpfs', '\/tmp:rw,nosuid,nodev'/);
-  assert.match(source, /'--tmpfs', '\/root:rw,nosuid,nodev'/);
+  assert.match(source, /'--user', `\$\{AGENT_UID\}:\$\{AGENT_GID\}`/);
+  assert.match(source, /'\/tmp': 'rw,nosuid,nodev,mode=1777'/);
+  assert.match(source, /'\/deps': 'rw,nosuid,nodev,mode=0755'/);
+  assert.match(source, /\[CONTROL_DIR\]: 'rw,nosuid,nodev,mode=0700'/);
+  assert.match(policy, /home: '\/home\/stackbench'/);
+  assert.match(source, /does not have the required isolation/);
+  assert.doesNotMatch(source, /'\/root':\s*'rw/);
 });

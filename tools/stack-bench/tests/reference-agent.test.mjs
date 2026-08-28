@@ -130,14 +130,17 @@ test('reference deployment reports both deploy and restoration failures', async 
 });
 
 test('reference clients are explicitly reachable outside their build container', () => {
+  const prefix = 'exec /usr/bin/setpriv --reuid=10001 --regid=10001 --init-groups '
+    + '/usr/local/bin/npm run ';
   assert.equal(referenceDevCommand('reference-server'),
-    'exec npm run dev > /tmp/reference-server.log 2>&1');
+    `${prefix}dev > /run/stack-bench/reference-server.log 2>&1`);
   assert.equal(referenceDevCommand('reference-server', { script: 'start' }),
-    'exec npm run start > /tmp/reference-server.log 2>&1');
+    `${prefix}start > /run/stack-bench/reference-server.log 2>&1`);
   assert.equal(referenceDevCommand('reference-client', { networkVisible: true }),
-    'exec npm run dev -- --host 0.0.0.0 > /tmp/reference-client.log 2>&1');
+    `${prefix}dev -- --host 0.0.0.0 > /run/stack-bench/reference-client.log 2>&1`);
   assert.equal(referenceDevCommand('reference-client', { networkVisible: true, port: 6475 }),
-    'exec npm run dev -- --host 0.0.0.0 --port 6475 --strictPort > /tmp/reference-client.log 2>&1');
+    `${prefix}dev -- --host 0.0.0.0 --port 6475 --strictPort `
+      + '> /run/stack-bench/reference-client.log 2>&1');
   assert.throws(() => referenceDevCommand('reference-client', { port: 0 }),
     /invalid reference port 0/);
   assert.throws(() => referenceDevCommand('../unsafe'), /unsafe reference log name/);

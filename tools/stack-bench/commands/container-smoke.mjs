@@ -17,6 +17,7 @@ import { createBackendLease, readBackendLease, writeBackendLease } from '../src/
 import { fetchStatus } from '../src/runtime/readiness.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
+import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const REPO = resolve(ROOT, '..', '..');
@@ -96,10 +97,11 @@ async function main() {
     }
 
     cpSync(FIXTURE, join(app, 'spacetimedb'), { recursive: true });
-    execFileSync('docker', ['exec', containerName, 'sh', '-lc',
+    const agentExec = ['exec', ...codingContainerAgentExecOptions()];
+    execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       'cd /app/spacetimedb && npm install --no-audit --no-fund'], { stdio: 'pipe' });
 
-    dev = spawn('docker', ['exec', '-i', containerName, 'sh', '-lc',
+    dev = spawn('docker', [...agentExec, '-i', containerName, 'sh', '-c',
       `cd /app/spacetimedb && /deps/spacetimedb-cli dev ${module} `
       + '--no-config --project-path /app/spacetimedb --module-path . '
       + '--server-only --skip-generate '
@@ -135,13 +137,13 @@ async function main() {
     // The grader resets by republishing the same named database from this exact
     // leased container. Prove that `-y` retained a reusable local identity,
     // rather than merely proving that the first anonymous-looking publish ran.
-    execFileSync('docker', ['exec', containerName, 'sh', '-lc',
+    execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       'for process in /proc/[0-9]*; do '
       + 'test "$(cat "$process/comm" 2>/dev/null)" = spacetimedb-cli '
       + '&& kill -TERM "${process##*/}" || true; done'], { stdio: 'pipe' });
     await waitFor(() => dev.exitCode !== null, 15_000, 'spacetime dev to stop before reset publish');
     const targetUri = containerReachableSpacetimeUri(lease, identity.networkMode);
-    execFileSync('docker', ['exec', containerName, 'sh', '-lc',
+    execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       `cd /app/spacetimedb && /deps/spacetimedb-cli publish ${module} `
       + `--no-config --module-path . -s ${targetUri} --delete-data -y`],
     { stdio: 'pipe', timeout: 240_000 });

@@ -20,7 +20,7 @@
 // script ever sees them. agent.mjs spawns it without a shell and is unaffected.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.mjs';
@@ -35,6 +35,8 @@ import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt, startCre
   stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR }
+  from '../src/runtime/coding-container-policy.mjs';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
@@ -54,6 +56,17 @@ catch (error) { console.error(`run-build.mjs: ${error.message}`); process.exit(2
 const prepareOnly = argv.includes('--prepare-only');
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
+const { uid: AGENT_UID, gid: AGENT_GID, home: AGENT_HOME } = CODING_CONTAINER_AGENT;
+const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
+const REQUIRED_CAPABILITIES = Object.freeze([
+  'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID',
+]);
+const REQUIRED_TMPFS = Object.freeze({
+  '/tmp': 'rw,nosuid,nodev,mode=1777',
+  [AGENT_HOME]: `rw,nosuid,nodev,uid=${AGENT_UID},gid=${AGENT_GID},mode=0700`,
+  '/deps': 'rw,nosuid,nodev,mode=0755',
+  [CONTROL_DIR]: 'rw,nosuid,nodev,mode=0700',
+});
 
 const REPO = resolve(join(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), '..', '..', '..'));
 const imageReference = opt('--image', DEFAULT_BUILD_IMAGE);
@@ -126,7 +139,7 @@ if (!prepareOnly) {
 //
 // leak-audit.mjs decides whether a run is contaminated, and cost-ledger.mjs
 // reconstructs the bill; both read the session transcript. Inside the container
-// the CLI files it under /root/.claude/projects/-app (cwd is /app, and the CLI
+// the CLI files it under the isolated user's project directory (cwd is /app, and the CLI
 // names a project folder after its path with separators turned into dashes —
 // checked, not assumed). Mounting the host folder that `leak-audit --app` looks
 // in onto that exact path means the audit keeps working with no argument
@@ -136,9 +149,14 @@ if (!prepareOnly) {
 // every other run's transcripts and the user's own sessions.
 const projects = prepareOnly ? null : join(homedir(), '.claude', 'projects',
   resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
-if (projects) mkdirSync(projects, { recursive: true });
+function ensureAgentWritable(directory) {
+  mkdirSync(directory, { recursive: true });
+  chmodSync(directory, 0o777);
+}
 
-for (const directory of containerPlan.ensureDirectories) mkdirSync(directory, { recursive: true });
+ensureAgentWritable(appDir);
+if (projects) ensureAgentWritable(projects);
+for (const directory of containerPlan.ensureDirectories) ensureAgentWritable(directory);
 
 // The container outlives the coding process because grading and repair reuse
 // the app's dev servers and Linux dependencies. Sessions execute inside one
@@ -173,9 +191,58 @@ function inspectContainer(name) {
   const unsafeCredentialExposure = (inspected.Mounts ?? [])
     .some(mount => sensitiveTargets.has(mount.Destination))
     || (inspected.Config?.Env ?? []).some(value => /^(?:ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=/.test(value));
+  const capabilities = values => values.map(value => value.replace(/^CAP_/, ''));
   return { id: inspected.Id, image: inspected.Image, running: inspected.State?.Running === true,
-    networkMode: inspected.HostConfig?.NetworkMode, unsafeCredentialExposure };
+    networkMode: inspected.HostConfig?.NetworkMode,
+    readonlyRootfs: inspected.HostConfig?.ReadonlyRootfs === true,
+    tmpfs: inspected.HostConfig?.Tmpfs ?? {},
+    capAdd: capabilities(inspected.HostConfig?.CapAdd ?? []),
+    capDrop: capabilities(inspected.HostConfig?.CapDrop ?? []),
+    securityOpt: (inspected.HostConfig?.SecurityOpt ?? [])
+      .map(option => option.replace(/:true$/, '')),
+    pidsLimit: inspected.HostConfig?.PidsLimit ?? null,
+    mounts: (inspected.Mounts ?? []).map(mount => ({
+      type: mount.Type, source: mount.Source, name: mount.Name ?? null,
+      destination: mount.Destination, readOnly: mount.RW !== true,
+    })),
+    unsafeCredentialExposure };
 }
+
+function sameHostPath(left, right) {
+  const normalize = value => resolve(value).replaceAll('\\', '/').toLowerCase();
+  return normalize(left) === normalize(right);
+}
+
+function hasRequiredMounts(container, expectedMounts) {
+  if (container.mounts.length !== expectedMounts.length) return false;
+  return expectedMounts.every(expected => container.mounts.some(actual =>
+    actual.type === expected.kind
+      && actual.destination === expected.target
+      && actual.readOnly === expected.readOnly
+      && (expected.kind === 'volume'
+        ? actual.name === expected.source
+        : sameHostPath(actual.source, expected.source))));
+}
+
+function hasRequiredIsolation(container, expectedMounts) {
+  return container.readonlyRootfs
+    && Object.entries(REQUIRED_TMPFS).every(([path, options]) => container.tmpfs[path] === options)
+    && Object.keys(container.tmpfs).length === Object.keys(REQUIRED_TMPFS).length
+    && REQUIRED_CAPABILITIES.every(capability => container.capAdd.includes(capability))
+    && container.capAdd.length === REQUIRED_CAPABILITIES.length
+    && container.capDrop.includes('ALL')
+    && container.securityOpt.includes('no-new-privileges')
+    && container.pidsLimit === 512
+    && container.image === image
+    && hasRequiredMounts(container, expectedMounts);
+}
+
+const expectedMounts = [
+  { kind: 'bind', source: resolve(appDir), target: '/app', readOnly: false },
+  ...(projects ? [{ kind: 'bind', source: projects,
+    target: `${AGENT_HOME}/.claude/projects/-app`, readOnly: false }] : []),
+  ...containerPlan.mounts,
+];
 
 // Resolve ownership before looking at, reusing, or creating a container. A
 // same-name container is not evidence that this run owns it: adopting one
@@ -226,6 +293,10 @@ if (existing) {
       + 'reconcile the run and start it with the isolated credential broker');
     process.exit(3);
   }
+  if (existing && !hasRequiredIsolation(existing, expectedMounts)) {
+    console.error(`run-build.mjs: leased container ${containerName} does not have the required isolation`);
+    process.exit(3);
+  }
 } else if (priorContainer) {
   console.error(`run-build.mjs: leased container ${priorContainer.name}/${priorContainer.id} is missing`);
   process.exit(3);
@@ -242,13 +313,15 @@ if (!existing) {
     // The agent may write the app, its own home directory, and temporary files.
     // It must not replace system binaries or libraries used by later grading.
     '--read-only',
-    '--tmpfs', '/tmp:rw,nosuid,nodev',
-    '--tmpfs', '/root:rw,nosuid,nodev',
     '-v', `${resolve(appDir)}:/app`,
   ];
+  for (const capability of REQUIRED_CAPABILITIES) create.push('--cap-add', capability);
+  for (const [path, options] of Object.entries(REQUIRED_TMPFS)) {
+    create.push('--tmpfs', `${path}:${options}`);
+  }
   create.push('--network', expectedNetworkMode);
   create.push(...dockerHostGatewayArguments(expectedNetworkMode));
-  if (projects) create.push('-v', `${projects}:/root/.claude/projects/-app`);
+  if (projects) create.push('-v', `${projects}:${AGENT_HOME}/.claude/projects/-app`);
   // The selected adapter owns every stack-specific mount. Giving a treatment
   // another stack's artifacts would violate the "only artifacts under test"
   // boundary.
@@ -274,7 +347,10 @@ if (!existing) {
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
   // build leaves behind are reparented to `sleep`, which never reaps them.
-  create.push('-w', '/app', image, 'sh', '-lc', containerPlan.init);
+  const init = 'chmod -R a+rwX /app 2>/dev/null || true; '
+    + 'export HOME=/tmp npm_config_cache=/tmp/npm-cache; '
+    + containerPlan.init;
+  create.push('-w', '/app', image, 'sh', '-c', init);
 
   const made = spawnSync('docker', create, {
     encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS,
@@ -347,9 +423,10 @@ if (prepareOnly) {
   process.exit(0);
 }
 
-const args = ['exec', '-i', '-w', '/app'];
+const args = ['exec', '-i', '--user', `${AGENT_UID}:${AGENT_GID}`, '-w', '/app'];
 
-args.push('-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
+args.push('-e', `HOME=${AGENT_HOME}`, '-e', 'USER=stackbench',
+  '-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
 const leasedEnvironment = leasedDatabaseEnvironment(adapter, {
   database: leaseContext.lease.resources.database, networkMode: expectedNetworkMode,
 });
@@ -383,7 +460,8 @@ if (opt('--settings')) claudeArgs.push('--settings', opt('--settings'));
 // guarantee that Claude stops inside the long-lived build container.
 const invocationToken = randomBytes(16).toString('hex');
 const processRecord = `/tmp/stack-bench-claude-${invocationToken}.pid`;
-const claudeWrapper = 'record="$1"; shift; start="$(awk \'{print $22}\' /proc/$$/stat)" || exit 1; '
+const claudeWrapper = 'umask 000; record="$1"; shift; '
+  + 'start="$(awk \'{print $22}\' /proc/$$/stat)" || exit 1; '
   + 'printf \'%s %s\\n\' "$$" "$start" > "$record"; exec "$@"';
 
 let credentialBroker = null;
@@ -446,6 +524,9 @@ try {
 } finally {
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
+  spawnSync('docker', ['exec', containerName, 'chmod', '-R', 'a+rwX', '/app'], {
+    stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
   spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
@@ -483,7 +564,7 @@ if ((res.status ?? 1) !== 0) {
   const state = spawnSync('docker', ['inspect', '--format', '{{json .State}}', containerName], {
     encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
-  const memory = spawnSync('docker', ['exec', containerName, 'sh', '-lc',
+  const memory = spawnSync('docker', ['exec', containerName, 'sh', '-c',
     'for f in memory.events memory.current memory.peak memory.max; do '
       + 'p="/sys/fs/cgroup/$f"; if test -r "$p"; then echo "[$f]"; cat "$p"; fi; done'], {
     encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,

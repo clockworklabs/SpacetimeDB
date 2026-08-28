@@ -12,6 +12,8 @@ import { pathToFileURL } from 'node:url';
 import { leaseFromEnv } from '../runtime/backend-lease.mjs';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.mjs';
 import { fetchStatus } from '../runtime/readiness.mjs';
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
+  codingContainerAgentExecOptions } from '../runtime/coding-container-policy.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
@@ -23,6 +25,7 @@ import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snaps
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
+const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
 const COMMAND_TIMEOUT_MS = 15 * 60_000;
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 const phase = message => process.stderr.write(`[reference-agent] ${message}\n`);
@@ -69,7 +72,7 @@ function runSync(label, command, args, options = {}) {
 }
 
 function docker(container, cwd, command, commandArgs = [], env = {}) {
-  const args = ['exec', '-w', cwd];
+  const args = ['exec', ...codingContainerAgentExecOptions(), '-w', cwd];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
   args.push(container, command, ...commandArgs);
   return runSync(`docker exec ${command}`, 'docker', args,
@@ -86,7 +89,9 @@ export function referenceDevCommand(logName,
   const cliArgs = [networkVisible ? '--host 0.0.0.0' : null,
     port === null ? null : `--port ${port} --strictPort`].filter(Boolean);
   const networkArgs = cliArgs.length > 0 ? ` -- ${cliArgs.join(' ')}` : '';
-  return `exec npm run ${script}${networkArgs} > /tmp/${logName}.log 2>&1`;
+  const agent = CODING_CONTAINER_AGENT;
+  return `exec /usr/bin/setpriv --reuid=${agent.uid} --regid=${agent.gid} --init-groups `
+    + `/usr/local/bin/npm run ${script}${networkArgs} > ${CONTROL_DIR}/${logName}.log 2>&1`;
 }
 
 export function prepareReferenceSource(args) {
@@ -144,9 +149,10 @@ export async function deployReferenceAndRestoreSource(deploy, restore) {
 }
 
 function startDetached(container, cwd, logName, env = {}, options = {}) {
-  const args = ['exec', '-d', '-w', cwd];
+  const args = ['exec', '-d', '-w', cwd,
+    '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
-  args.push(container, 'sh', '-lc', referenceDevCommand(logName, options));
+  args.push(container, 'sh', '-c', referenceDevCommand(logName, options));
   runSync('starting detached reference service', 'docker', args, { stdio: 'pipe' });
 }
 
@@ -162,7 +168,11 @@ async function waitFor(url, timeoutMs, description, diagnostics) {
 
 function containerLogs(container, ...names) {
   return names.map(name => {
-    try { return docker(container, '/app', 'sh', ['-lc', `tail -80 /tmp/${name}.log 2>/dev/null || true`]); }
+    try {
+      return runSync('reading reference logs', 'docker', ['exec', container, 'sh', '-c',
+        `tail -80 ${CONTROL_DIR}/${name}.log 2>/dev/null || true`],
+      { encoding: 'utf8', stdio: 'pipe' });
+    }
     catch { return ''; }
   }).join('\n');
 }

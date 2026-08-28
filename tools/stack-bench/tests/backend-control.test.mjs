@@ -41,7 +41,7 @@ test('restart diagnostics are copied only from the exact leased build container'
   const exec = (command, args, options) => {
     calls.push({ argv: [command, ...args], options });
     if (args[0] === 'inspect') return `${lease.resources.buildContainer.id}\n`;
-    return '===== /tmp/restart-mongodb-6673.log =====\nserver failed clearly\n';
+    return '===== /run/stack-bench/restart-mongodb-6673.log =====\nserver failed clearly\n';
   };
   try {
     assert.deepEqual(captureBackendDiagnostics(output, { exec }), { captured: true, path: output });

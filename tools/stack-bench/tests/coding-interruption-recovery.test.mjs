@@ -438,8 +438,26 @@ test('Docker replaces a stopped leased build container and preserves its app mou
     assert.equal(hostConfigResult.status, 0, hostConfigResult.stderr);
     const hostConfig = JSON.parse(hostConfigResult.stdout);
     assert.equal(hostConfig.ReadonlyRootfs, true);
-    assert.equal(hostConfig.Tmpfs['/tmp'], 'rw,nosuid,nodev');
-    assert.equal(hostConfig.Tmpfs['/root'], 'rw,nosuid,nodev');
+    assert.deepEqual([...hostConfig.CapAdd].sort(),
+      ['CAP_DAC_OVERRIDE', 'CAP_FOWNER', 'CAP_KILL', 'CAP_SETGID', 'CAP_SETUID']);
+    assert.equal(hostConfig.CapDrop.map(value => value.replace(/^CAP_/, '')).includes('ALL'), true);
+    assert.equal(hostConfig.SecurityOpt
+      .map(value => value.replace(/:true$/, '')).includes('no-new-privileges'), true);
+    assert.equal(hostConfig.PidsLimit, 512);
+    assert.equal(hostConfig.Tmpfs['/tmp'], 'rw,nosuid,nodev,mode=1777');
+    assert.equal(hostConfig.Tmpfs['/home/stackbench'],
+      'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
+    assert.equal(hostConfig.Tmpfs['/deps'], 'rw,nosuid,nodev,mode=0755');
+    assert.equal(hostConfig.Tmpfs['/run/stack-bench'], 'rw,nosuid,nodev,mode=0700');
+    assert.equal(hostConfig.Tmpfs['/root'], undefined);
+    const agentCaps = docker(['exec', '--user', '10001:10001', firstResult.containerName,
+      'sh', '-c', 'grep "^CapEff:" /proc/self/status']);
+    assert.equal(agentCaps.status, 0, agentCaps.stderr);
+    assert.match(agentCaps.stdout, /CapEff:\s+0+\s*$/);
+    const dropped = docker(['exec', firstResult.containerName, '/usr/bin/setpriv',
+      '--reuid=10001', '--regid=10001', '--init-groups', 'id', '-u']);
+    assert.equal(dropped.status, 0, dropped.stderr);
+    assert.equal(dropped.stdout.trim(), '10001');
     writeFileSync(join(app, 'preserved.txt'), 'preserved\n');
     const stopped = docker(['stop', firstResult.containerName]);
     assert.equal(stopped.status, 0, stopped.stderr);
@@ -452,6 +470,10 @@ test('Docker replaces a stopped leased build container and preserves its app mou
     const mounted = docker(['exec', secondResult.containerName, 'cat', '/app/preserved.txt']);
     assert.equal(mounted.status, 0, mounted.stderr);
     assert.equal(mounted.stdout.trim(), 'preserved');
+    const reused = spawnSync(process.execPath, baseArgs,
+      { encoding: 'utf8', env, timeout: 180_000 });
+    assert.equal(reused.status, 0, reused.stderr);
+    assert.equal(JSON.parse(reused.stdout).identity, secondResult.identity);
   } finally {
     const exact = docker(['inspect', '--format', '{{.Id}}', containerName]);
     if (exact.status === 0 && exact.stdout.trim()) docker(['rm', '-f', exact.stdout.trim()]);

@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import { updateBackendLease } from '../runtime/backend-lease.mjs';
 import { answers as answersSync, killDetachedTree, killTree, pidsOnPort, sleepSync } from '../runtime/platform.mjs';
 import { fetchStatus } from '../runtime/readiness.mjs';
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR }
+  from '../runtime/coding-container-policy.mjs';
 
 const DOCKER_TIMEOUT_MS = 120_000;
+const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
+const { uid: APP_UID, gid: APP_GID } = CODING_CONTAINER_AGENT;
 
 const delay = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) { reject(signal.reason ?? new Error('backend control cancelled')); return; }
@@ -80,8 +84,9 @@ export function hostedStopScript(port) {
 
 export function captureHostedDiagnostics({ lease, output, exec = execFileSync }) {
   const container = inspectBuildContainer(lease, exec);
-  const contents = exec('docker', ['exec', container.name, 'sh', '-lc',
-    'for f in /tmp/reference-server.log /tmp/reference-client.log /tmp/restart-*.log; do '
+  const contents = exec('docker', ['exec', container.name, 'sh', '-c',
+    `for f in ${CONTROL_DIR}/reference-server.log ${CONTROL_DIR}/reference-client.log `
+      + `${CONTROL_DIR}/restart-*.log; do `
       + '[ -f "$f" ] || continue; printf "===== %s =====\\n" "$f"; tail -n 400 "$f"; done'],
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
   if (!contents.trim()) return { captured: false, reason: 'no restart log was present' };
@@ -97,13 +102,13 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
   const container = inspectBuildContainer(lease, exec);
   const url = `http://127.0.0.1:${port}${probe}`;
   if (mode !== 'start') {
-    exec('docker', ['exec', container.name, 'sh', '-lc', hostedStopScript(port)],
+    exec('docker', ['exec', container.name, 'sh', '-c', hostedStopScript(port)],
       { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
     await waitFor(async () => !(await answers(url, { freshConnection: true })),
       30_000, `${backend} API to stop`, signal);
   }
   if (mode === 'stop') return;
-  exec('docker', ['exec', container.name, 'sh', '-lc',
+  exec('docker', ['exec', container.name, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted backend port is still owned by $pids" >&2; exit 4; }'],
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
@@ -124,12 +129,16 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
     }
     return ['-e', `${key}=${value}`];
   });
+  const log = `${CONTROL_DIR}/restart-${backend}-${Number(port)}.log`;
   exec('docker', ['exec', '-d', '-w', serverRelative === '.' ? '/app' : `/app/${serverRelative}`,
-    '-e', `PORT=${Number(port)}`, ...environmentArgs, container.name, 'sh', '-lc',
-    `exec npm run ${script} > /tmp/restart-${backend}-${Number(port)}.log 2>&1`],
+    '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`,
+    '-e', `PORT=${Number(port)}`, ...environmentArgs, container.name, 'sh', '-c',
+    `set -eu; : > ${log}; `
+      + `exec /usr/bin/setpriv --reuid=${APP_UID} --regid=${APP_GID} --init-groups `
+      + `/usr/local/bin/npm run ${script} > ${log} 2>&1`],
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
   await waitFor(() => answers(url), 180_000, `${backend} API to start`, signal);
-  exec('docker', ['exec', container.name, 'sh', '-lc',
+  exec('docker', ['exec', container.name, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + 'set -- $pids; [ "$#" -eq 1 ] || { echo "expected one hosted backend listener, found: $pids" >&2; exit 4; }; '
       + 'pgid=$(ps -o pgid= -p "$1" | tr -d " "); '
