@@ -282,6 +282,47 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   /does not match.*backend/);
 });
 
+test('paid campaign validation requires complete receipt-backed cost evidence', () => {
+  const plan = compileCampaignFile(example);
+  const attempt = plan.attempts.find(item => item.levels.length > 1)
+    ?? { ...plan.attempts[0], levels: [1, 2] };
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+  agent.costLimit = 'native';
+  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const receipt = { complete: true, reconciled: true, error: null, costUsd: 1.25 };
+  const run = {
+    artifactEnvelope: { attempt: { parentId: attempt.id },
+      identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+        experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
+    mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+    pricing: attempt.pricing,
+    guidance: attempt.guidance, condition: attempt.condition,
+    selectionRequest: plan.definition.selection, skills: attempt.skills,
+    runtime: { buildImage: 'test-build-image' },
+    totals: { costUsd: 1.25, costComplete: true },
+    levels: [{ level: 1, selection: plannedSelection(attempt, 1),
+      buildSession: { costUsd: 1.25, costComplete: true,
+        costReceipts: [{ invocation: 1, receipt }] } }],
+    outcome: { kind: 'harness_failure', reason: 'provider-session-error' },
+  };
+
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  assert.throws(() => validateCampaignRun(plan, attempt, {
+    ...run, totals: { ...run.totals, costComplete: false },
+  }, { buildImage: 'test-build-image' }), /totals\.costComplete.*costEvidence/);
+  assert.throws(() => validateCampaignRun(plan, attempt, {
+    ...run, levels: [{ ...run.levels[0], buildSession: {
+      ...run.levels[0].buildSession, costReceipts: [],
+    } }],
+  }, { buildImage: 'test-build-image' }), /costEvidence/);
+  assert.throws(() => validateCampaignRun(plan, attempt, {
+    ...run, levels: [{ ...run.levels[0], buildSession: {
+      ...run.levels[0].buildSession, costReceipts: [{ invocation: 1,
+        receipt: { ...receipt, reconciled: false, error: 'not reconciled' } }],
+    } }],
+  }, { buildImage: 'test-build-image' }), /costEvidence/);
+});
+
 test('dependency validation keeps a conclusive grade when its repair session is interrupted', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-interrupted-'));
   try {

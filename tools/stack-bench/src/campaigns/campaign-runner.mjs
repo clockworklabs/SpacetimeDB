@@ -24,6 +24,7 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { aggregateRunOutcome } from '../evidence/outcomes.mjs';
+import { durableCostLedger } from '../evidence/cost-proof.mjs';
 import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
@@ -453,6 +454,10 @@ export function validateCampaignRun(plan, attempt, run, {
     const missingAllowed = interruptedPrefix && actualLevels.length === 0 && cost == null;
     mismatch(!missingAllowed && (!Number.isFinite(cost)
       || cost > plan.definition.budgets.maxCostUsdPerAttempt), 'totals.costUsd');
+  }
+  if (agent?.costLimit === 'native') {
+    mismatch(run.totals?.costComplete !== true, 'totals.costComplete');
+    mismatch(!durableCostLedger(run).complete, 'costEvidence');
   }
   if (mismatches.length) {
     throw new Error(`run.json does not match its planned campaign attempt: ${mismatches.join(', ')}`);
