@@ -46,11 +46,10 @@ will actually execute and records its immutable content ID.
 ## Coding-agent credentials
 
 The selected agent adapter declares its accepted credential sources. The
-current Claude Code adapter supports three mutually exclusive modes:
+current Claude Code adapter supports two mutually exclusive modes:
 
 - a long-lived subscription token through `CLAUDE_CODE_OAUTH_TOKEN_FILE`;
-- an API key through `ANTHROPIC_API_KEY` or the appliance secret-file mapping;
-- the explicit local recovery mode at `~/.claude/.credentials.json`.
+- an API key through `ANTHROPIC_API_KEY` or the appliance secret-file mapping.
 
 Select one mode. Conflicting sources fail closed. Secret values are not written
 to run artifacts or Docker command arguments. The controller exchanges the
@@ -59,6 +58,9 @@ broker. The coding container receives that token and never receives the
 provider credential or credential file. Production runs still belong on a
 dedicated runner because the controller holds the credential and has
 root-equivalent Docker access.
+
+The adapter does not accept the rotating credential file at
+`~/.claude/.credentials.json`. Use a subscription-token file or an API key.
 
 ## Validate before model spend
 

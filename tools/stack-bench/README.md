@@ -3,27 +3,27 @@
 A machine-verified benchmark for coding agents that build real-time
 applications. Each run uses versioned product work, stack guidance, grading,
 and budget inputs. The harness drives real clients, returns failed checks for
-correction, and records score, cost, tokens, correction rounds, and wall time.
+repair, and records score, cost, tokens, repair rounds, and wall time.
 
-Correction rounds are a declared budget, not a promise that the first retry
-will improve the score. The harness keeps trying through a flat or rejected
-repair until the budget is used, while rolling back changes that lose evidence
-or make the score worse. Results record whether correction was unnecessary,
-succeeded, or exhausted its budget. Successful correction cost and unresolved
-correction spend are reported separately.
+## Progression terms
 
-Direct runs default to ten correction rounds; campaign manifests bind their own
-explicit budget. A multi-level run advances only after the current level passes.
-If L1 still fails after its budget, the run preserves its checkpoint, records L2
-as blocked, and stops for operator review. The operator can then grant a finite
-additional repair budget, correct a benchmark or environment defect, or start a
-fresh run. An unresolved lower level is never silently carried into the next one.
+- A **level** groups features at the same depth in the feature graph.
+- A **repair round** is one coding session after a conclusive failed grade.
+- A **strike** is spent when a conclusive grade fails one feature. One grade can
+  spend a strike on more than one feature. Inconclusive grades and harness
+  failures do not spend strikes.
 
-The accepted source at the end of every level is also preserved and hash-bound
-to the run. After a level conclusively fails and uses its declared correction
-budget, an operator can grant a finite number of additional rounds from that
-exact checkpoint. The new work is stored as a linked continuation; the original
-result is never rewritten. Campaign `retry` still means a fresh execution.
+Sequential mode requires the current level to pass before the next level can
+start. Dependency mode treats each feature as a branch. A feature opens only
+after its parent features pass. An exhausted feature blocks its children, but
+other open branches continue. Earlier passed features are graded again so that
+regressions remain visible.
+
+Direct runs default to ten repair rounds. Campaign manifests set an explicit
+budget. When a run exhausts its budget, the operator can grant a finite number
+of additional rounds from the saved source checkpoint. The grant creates a
+linked continuation and does not rewrite the original result. Campaign `retry`
+still means a fresh execution.
 
 Stack adapters are interchangeable. The model and requested work can remain
 fixed while the stack changes.
@@ -180,6 +180,18 @@ readers accept only schema v2 and reject unknown fields, kinds, versions,
 malformed hashes, and secret-bearing keys. Files outside the current artifact
 schema are not interpreted as benchmark evidence. Operators may retain them
 separately as local archival material.
+
+### Cost evidence
+
+`costUsd` is the normalized benchmark cost. The credential broker records the
+provider usage and applies the pricing rates frozen in the campaign. This value
+controls the benchmark budget. `calculatedCostUsd` is the receipt calculation
+from the same recorded usage and rates. It must match the broker ledger.
+
+`cliCostUsd` preserves the coding CLI's own cost value for comparison. It can
+differ from the normalized benchmark cost and does not control the benchmark
+budget. `costComplete: true` means that every recorded billable session has a
+complete, reconciled receipt. Do not use a cost result when this field is false.
 
 Every check records exactly one typed state: `passed`, `failed`, `inconclusive`,
 or `harness_failure`. One shared status table drives scoring, run outcomes,
