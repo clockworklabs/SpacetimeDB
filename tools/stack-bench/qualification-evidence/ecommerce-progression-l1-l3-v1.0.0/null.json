@@ -1,20 +1,20 @@
 {
   "artifactSchemaVersion": 2,
   "kind": "null_control",
-  "id": "null-control-2026-08-28T06-31-07-830Z",
+  "id": "null-control-2026-08-28T11-47-19-163Z",
   "attempt": {
-    "id": "null-control-2026-08-28T06-31-07-830Z",
+    "id": "null-control-2026-08-28T11-47-19-163Z",
     "parentId": null
   },
   "timestamps": {
-    "startedAt": "2026-08-28T06:31:07.831Z",
-    "completedAt": "2026-08-28T06:59:07.569Z"
+    "startedAt": "2026-08-28T11:47:19.163Z",
+    "completedAt": "2026-08-28T12:15:24.144Z"
   },
   "identities": {
     "engine": {
       "id": "stack-bench",
       "version": null,
-      "sha256": "1283b3b5e730f4efb6b10bb491697bb339ee1ed7b3e62a2670438c11038a65f9",
+      "sha256": "1fb9ad7b8e0a5b115ee4764ba173e35008ca2ae3d598a32af5795f467d961cad",
       "state": null
     },
     "recipe": {
@@ -36,7 +36,7 @@
     "packs": []
   },
   "payload": {
-    "durationMs": 1679738,
+    "durationMs": 1684981,
     "runner": {
       "schemaVersion": 1,
       "mode": "appliance",
@@ -51,7 +51,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "0212d078ddddb00c74434e096c5aac8e97ecf6962ab8538e68879ab4aa55dc20",
+      "executableSha256": "310e6b13b6f5f48cc55337669e87e589e31a5fb6e2eb044c0594f57cb95b53c7",
       "kind": "null",
       "mutationSha256": null,
       "recipe": {
@@ -61,7 +61,7 @@
       },
       "schemaVersion": 1,
       "stack": null,
-      "sha256": "b10fdd804e748ad812b356e28c4e5019c579785a8dfe27cab61ead62fae566b5"
+      "sha256": "2e9f517ba264979b70583abdfe0c222b8a81af9059dec2fc07dbd9fff1f94cd1"
     },
     "tracks": [
       "ecommerce"
