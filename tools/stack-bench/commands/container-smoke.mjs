@@ -99,10 +99,10 @@ async function main() {
     cpSync(FIXTURE, join(app, 'spacetimedb'), { recursive: true });
     const agentExec = ['exec', ...codingContainerAgentExecOptions()];
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
-      'cd /app/spacetimedb && npm install --no-audit --no-fund'], { stdio: 'pipe' });
+      'umask 000; cd /app/spacetimedb && npm install --no-audit --no-fund'], { stdio: 'pipe' });
 
     dev = spawn('docker', [...agentExec, '-i', containerName, 'sh', '-c',
-      `cd /app/spacetimedb && /deps/spacetimedb-cli dev ${module} `
+      `umask 000; cd /app/spacetimedb && /deps/spacetimedb-cli dev ${module} `
       + '--no-config --project-path /app/spacetimedb --module-path . '
       + '--server-only --skip-generate '
       + `-s ${containerReachableSpacetimeUri(lease, identity.networkMode)} -y`],
@@ -144,7 +144,7 @@ async function main() {
     await waitFor(() => dev.exitCode !== null, 15_000, 'spacetime dev to stop before reset publish');
     const targetUri = containerReachableSpacetimeUri(lease, identity.networkMode);
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
-      `cd /app/spacetimedb && /deps/spacetimedb-cli publish ${module} `
+      `umask 000; cd /app/spacetimedb && /deps/spacetimedb-cli publish ${module} `
       + `--no-config --module-path . -s ${targetUri} --delete-data -y`],
     { stdio: 'pipe', timeout: 240_000 });
     const afterReset = execFileSync(CLI, ['sql', module, 'SELECT * FROM smoke_item', '-s', uri],

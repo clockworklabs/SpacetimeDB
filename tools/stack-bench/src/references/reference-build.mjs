@@ -16,7 +16,8 @@ import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
   publicBackendLease, readBackendLease, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../runtime/container-image.mjs';
-import { codingContainerAgentExecOptions } from '../runtime/coding-container-policy.mjs';
+import { codingContainerAgentCommand, codingContainerAgentExecOptions }
+  from '../runtime/coding-container-policy.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
@@ -56,7 +57,7 @@ function run(container, cwd, command, args, commands) {
   const printable = [command, ...args].join(' ');
   try {
     const output = execFileSync('docker', ['exec', ...codingContainerAgentExecOptions(),
-      '-w', cwd, container, command, ...args],
+      '-w', cwd, container, ...codingContainerAgentCommand(command, args)],
       { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 });
     commands.push({ cwd, command: printable, ok: true, durationMs: Date.now() - started,
       outputTail: output.slice(-8_192) });

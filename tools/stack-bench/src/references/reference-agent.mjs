@@ -13,7 +13,8 @@ import { leaseFromEnv } from '../runtime/backend-lease.mjs';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.mjs';
 import { fetchStatus } from '../runtime/readiness.mjs';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
-  codingContainerAgentExecOptions } from '../runtime/coding-container-policy.mjs';
+  codingContainerAgentCommand, codingContainerAgentExecOptions }
+  from '../runtime/coding-container-policy.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
@@ -74,7 +75,7 @@ function runSync(label, command, args, options = {}) {
 function docker(container, cwd, command, commandArgs = [], env = {}) {
   const args = ['exec', ...codingContainerAgentExecOptions(), '-w', cwd];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
-  args.push(container, command, ...commandArgs);
+  args.push(container, ...codingContainerAgentCommand(command, commandArgs));
   return runSync(`docker exec ${command}`, 'docker', args,
     { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 });
 }
@@ -90,7 +91,7 @@ export function referenceDevCommand(logName,
     port === null ? null : `--port ${port} --strictPort`].filter(Boolean);
   const networkArgs = cliArgs.length > 0 ? ` -- ${cliArgs.join(' ')}` : '';
   const agent = CODING_CONTAINER_AGENT;
-  return `exec /usr/bin/setpriv --reuid=${agent.uid} --regid=${agent.gid} --init-groups `
+  return `umask 000; exec /usr/bin/setpriv --reuid=${agent.uid} --regid=${agent.gid} --init-groups `
     + `/usr/local/bin/npm run ${script}${networkArgs} > ${CONTROL_DIR}/${logName}.log 2>&1`;
 }
 

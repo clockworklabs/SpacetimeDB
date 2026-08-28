@@ -12,3 +12,7 @@ export function codingContainerAgentExecOptions() {
   return ['--user', `${agent.uid}:${agent.gid}`, '-e', `HOME=${agent.home}`,
     '-e', `USER=${agent.name}`];
 }
+
+export function codingContainerAgentCommand(command, args = []) {
+  return ['sh', '-c', 'umask 000; exec "$@"', 'stack-bench-agent', command, ...args];
+}

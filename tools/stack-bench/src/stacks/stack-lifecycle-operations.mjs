@@ -133,7 +133,7 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
   exec('docker', ['exec', '-d', '-w', serverRelative === '.' ? '/app' : `/app/${serverRelative}`,
     '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`,
     '-e', `PORT=${Number(port)}`, ...environmentArgs, container.name, 'sh', '-c',
-    `set -eu; : > ${log}; `
+    `set -eu; umask 000; : > ${log}; `
       + `exec /usr/bin/setpriv --reuid=${APP_UID} --regid=${APP_GID} --init-groups `
       + `/usr/local/bin/npm run ${script} > ${log} 2>&1`],
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });

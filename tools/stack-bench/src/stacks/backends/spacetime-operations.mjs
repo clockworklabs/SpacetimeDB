@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.mjs';
 import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.mjs';
-import { codingContainerAgentExecOptions } from '../../runtime/coding-container-policy.mjs';
+import { codingContainerAgentCommand, codingContainerAgentExecOptions }
+  from '../../runtime/coding-container-policy.mjs';
 
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
@@ -15,11 +16,13 @@ export function resetSpacetime({ lease, app, exec = execFileSync }) {
   const container = target.buildContainer;
   const containerModule = layout.containerPath;
   try {
-    exec('docker', [...agentExec(), container.name, 'test', '-d', containerModule],
+    exec('docker', [...agentExec(), container.name,
+      ...codingContainerAgentCommand('test', ['-d', containerModule])],
       { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
-    exec('docker', [...agentExec(), '-w', containerModule, container.name, '/deps/spacetimedb-cli',
-      'publish', lease.resources.module, '--module-path', containerModule,
-      '-s', target.containerUri, '--delete-data', '-y'],
+    exec('docker', [...agentExec(), '-w', containerModule, container.name,
+      ...codingContainerAgentCommand('/deps/spacetimedb-cli',
+        ['publish', lease.resources.module, '--module-path', containerModule,
+          '-s', target.containerUri, '--delete-data', '-y'])],
     { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   } catch (error) {
     const detail = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim() || error.message;
@@ -33,7 +36,8 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime, exec =
     throw new Error('SpacetimeDB build container is unavailable for direct SQL');
   }
   const query = sql => exec('docker', [...agentExec(), spacetime.buildContainer.name,
-    '/deps/spacetimedb-cli', 'sql', spacetime.mod, '-s', spacetime.containerUri, sql],
+    ...codingContainerAgentCommand('/deps/spacetimedb-cli',
+      ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],
   { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   const idOf = (table, name) => {
     const output = query(`select id from ${table} where name = ${sqlString(name)}`);
