@@ -456,7 +456,7 @@ function restoreSource(from, appDir) {
 // Check contamination after every coding session. File-tool permissions do not
 // govern shell reads, so the transcript audit remains a separate hard gate.
 function auditContamination(appDir) {
-  const args = [join(ROOT, 'commands', 'leak-audit.mjs'), '--app', appDir, '--json'];
+  const args = [join(ROOT, 'dist', 'commands', 'leak-audit.js'), '--app', appDir, '--json'];
   let firstFailure = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {

@@ -50,7 +50,7 @@ export const DENY = [
 // Bash is not, and in --print mode an unapproved command is simply refused: a
 // build that cannot run `npm install` or `spacetime publish` does not build.
 // So Bash is allowed wholesale. That is the same hole named above — `cat` still
-// reaches a denied path — and it is why leak-audit.mjs, not this file, decides
+// reaches a denied path, which is why the contamination audit decides
 // whether a run counts.
 export const ALLOW = ['Bash'];
 

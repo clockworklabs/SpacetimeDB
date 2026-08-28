@@ -143,7 +143,7 @@ if (!prepareOnly) {
 
 // The audit trail has to survive `--rm`.
 //
-// leak-audit.mjs decides whether a run is contaminated, and cost-ledger.mjs
+// The contamination audit decides whether a run is contaminated, and cost-ledger.mjs
 // reconstructs the bill; both read the session transcript. Inside the container
 // the CLI files it under the isolated user's project directory (cwd is /app, and the CLI
 // names a project folder after its path with separators turned into dashes —

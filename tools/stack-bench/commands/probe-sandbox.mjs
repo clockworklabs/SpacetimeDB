@@ -10,7 +10,7 @@
 // than no probe: it reports assurance it no longer has.
 //
 // SCOPE: `Read(...)` rules govern the FILE TOOLS ONLY — a denied path is still
-// reachable with `cat`, verified, and that is why leak-audit.mjs (detection)
+// reachable with `cat`, verified, and that is why the contamination audit
 // remains the control rather than this (prevention). The probe measures what
 // the sandbox claims to do, not the whole exposure.
 //
@@ -167,4 +167,4 @@ if (untried) {
   process.exit(2);
 }
 console.log('PASS: every probed path was refused to the file tools.');
-console.log('Bash remains ungoverned by design — leak-audit.mjs is the control.');
+console.log('Bash remains ungoverned by design; the contamination audit is the control.');

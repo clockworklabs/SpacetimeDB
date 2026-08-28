@@ -5,21 +5,24 @@
 // session's recorded cwd. Reconstructing paths from transcript folder names is
 // ambiguous and is never used as authority.
 //
-// Usage: node commands/leak-audit.mjs [--dir <transcript-root>] [--json]
+// Usage: node dist/commands/leak-audit.js [--dir <transcript-root>] [--json]
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
-const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
-const asJson = process.argv.includes('--json');
+const arg = (name: string, fallback: string | null = null): string | null => {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? fallback : process.argv[index + 1] ?? fallback;
+};
 // --dir is the ONLY root when given. Scanning every project on the machine
 // buries the runs under review in unrelated work.
 //
 // --app takes the application directory instead and finds the transcripts the
 // CLI filed for it: they live under ~/.claude/projects in a folder whose name
 // is the app's path with every separator and colon turned into a dash.
-function transcriptsFor(appDir) {
+function transcriptsFor(appDir: string): string[] {
   const base = join(homedir(), '.claude', 'projects');
   if (!existsSync(base)) return [];
   const want = resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase();
@@ -28,15 +31,8 @@ function transcriptsFor(appDir) {
     .map(d => join(base, d));
 }
 
-const ROOTS = arg('--app') ? transcriptsFor(arg('--app'))
-  : arg('--dir') ? [resolve(arg('--dir'))]
-  : [join(homedir(), '.claude', 'projects')];
-
-const norm = s => String(s ?? '').replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
-
-// When the caller names the app directory, that IS the boundary — no guessing
-// from whatever directory the session happened to be standing in.
-const APP_BOUNDARY = arg('--app') ? norm(resolve(arg('--app'))) : null;
+const norm = (value: unknown): string => String(value ?? '')
+  .replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
 
 // Files a build legitimately needs: its own app, plus node_modules noise.
 // ...plus the CLI's own scratch for THIS session (background task output lives
@@ -47,7 +43,7 @@ const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]
 // Commands that pull file contents into context.
 const READER = /(?:^|[;&|]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|]+)/g;
 
-const CLASSES = [
+const CLASSES: Array<readonly [RegExp, string]> = [
   [/\.claude[/\\]projects.*memory|[/\\]memory[/\\].*\.md$/, 'BENCHMARK NOTES'],
   [/scenarios[/\\].*\.json|grade\.mjs|mutation|check-scenarios/, 'GRADER / TEST SPECS'],
   [/contracts[/\\].*\.json|appendix-\d+\.md|walk\.mjs|lint\.mjs/, 'CONTRACT / LINTER'],
@@ -55,7 +51,8 @@ const CLASSES = [
   [/[/\\]skills[/\\]/, 'skill docs (intended)'],
   [/backends[/\\].*\.md|CLAUDE\.md|README/, 'setup docs (intended)'],
 ];
-const classify = p => (CLASSES.find(([re]) => re.test(p)) ?? [null, 'other'])[1];
+const classify = (path: string): string => CLASSES.find(([pattern]) => pattern.test(path))?.[1]
+  ?? 'other';
 
 // The boundary is the APP directory, not wherever the session happened to be
 // standing. Taking the most common cwd looked reasonable and was wrong: a
@@ -66,20 +63,23 @@ const classify = p => (CLASSES.find(([re]) => re.test(p)) ?? [null, 'other'])[1]
 // When --app names the directory, that is the answer. Otherwise take the
 // SHALLOWEST cwd seen, which is the closest thing to the app root the transcript
 // knows about — never the most frequent.
-function sessionCwd(lines) {
-  const seen = new Set();
+function sessionCwd(lines: string[]): string | null {
+  const seen = new Set<string>();
   for (const l of lines) {
     const m = l.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
-    if (m) seen.add(norm(m[1].replace(/\\\\/g, '/')));
+    if (m?.[1]) seen.add(norm(m[1].replace(/\\\\/g, '/')));
   }
   if (!seen.size) return null;
-  return [...seen].sort((a, b) => a.split('/').length - b.split('/').length || a.length - b.length)[0];
+  return [...seen].sort((a, b) => a.split('/').length - b.split('/').length || a.length - b.length)[0]
+    ?? null;
 }
 
-function pathsFromBash(cmd) {
-  const out = [];
-  for (const m of String(cmd).matchAll(READER)) {
-    for (const tokRaw of m[1].split(/\s+/)) {
+export function pathsFromBash(command: unknown): string[] {
+  const out: string[] = [];
+  for (const match of String(command).matchAll(READER)) {
+    const argumentsText = match[1];
+    if (!argumentsText) continue;
+    for (const tokRaw of argumentsText.split(/\s+/)) {
       const t = tokRaw.replace(/^["']|["']$/g, '');
       if (!t || t.startsWith('-')) continue;
       if (/[*?]/.test(t) || /\//.test(t) || /\\/.test(t) || /\.\w+$/.test(t)) out.push(t);
@@ -96,7 +96,41 @@ function pathsFromBash(cmd) {
 //
 // Bash is not governed by the Read rules, so its reads resolve as successful
 // unless the command itself failed; that asymmetry is the point of auditing it.
-function auditTranscript(file, boundary) {
+interface AuditHit {
+  path: string;
+  via: string;
+  kind: string;
+  unresolved?: boolean;
+}
+
+interface PendingRead {
+  paths: string[];
+  via: string;
+}
+
+interface TranscriptAudit {
+  file: string;
+  cwd: string | null;
+  fileTool: number;
+  bashReads: number;
+  hits: AuditHit[];
+  refused: AuditHit[];
+}
+
+interface AuditResult extends TranscriptAudit {
+  root: string;
+}
+
+interface TranscriptContent {
+  type?: string;
+  name?: string;
+  id?: string;
+  tool_use_id?: string;
+  is_error?: boolean;
+  input?: { file_path?: string; path?: string; pattern?: string; command?: string };
+}
+
+export function auditTranscript(file: string, boundary: string | null): TranscriptAudit {
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
   // --app names a HOST directory, but a containerised build worked at /app and
   // its transcript records container paths. Held against the host boundary,
@@ -111,18 +145,22 @@ function auditTranscript(file, boundary) {
   // harness directory as the boundary and reported that run clean.
   const own = sessionCwd(lines);
   const cwd = own === '/app' ? own : (boundary ?? own);
-  const hits = [], refused = [];
-  const pending = new Map();
+  const hits: AuditHit[] = [];
+  const refused: AuditHit[] = [];
+  const pending = new Map<string, PendingRead>();
   let fileTool = 0, bashReads = 0;
 
   for (const line of lines) {
-    let e; try { e = JSON.parse(line); } catch { continue; }
-    const c = e.message?.content;
+    let event: { message?: { content?: TranscriptContent[] } };
+    try { event = JSON.parse(line) as typeof event; } catch { continue; }
+    const c = event.message?.content;
     if (!Array.isArray(c)) continue;
     for (const p of c) {
-      if (p.type === 'tool_result' && pending.has(p.tool_use_id)) {
-        const { paths, via } = pending.get(p.tool_use_id);
-        pending.delete(p.tool_use_id);
+      if (p.type === 'tool_result' && p.tool_use_id && pending.has(p.tool_use_id)) {
+        const completed = pending.get(p.tool_use_id ?? '');
+        if (!completed) continue;
+        const { paths, via } = completed;
+        pending.delete(p.tool_use_id ?? '');
         const blocked = p.is_error === true;
         for (const n of paths) (blocked ? refused : hits).push({ path: n, via, kind: classify(n) });
         continue;
@@ -154,7 +192,7 @@ function auditTranscript(file, boundary) {
         if (cwd && n.startsWith(cwd)) continue;
         paths.push(n);
       }
-      if (paths.length) pending.set(p.id, { paths, via: p.name });
+      if (paths.length && p.id && p.name) pending.set(p.id, { paths, via: p.name });
     }
   }
   // A call whose result never arrived (session cut short) is unresolved, and
@@ -165,12 +203,22 @@ function auditTranscript(file, boundary) {
   return { file, cwd, fileTool, bashReads, hits, refused };
 }
 
-const results = [];
-for (const root of ROOTS) {
+function main(): void {
+  const requestedApp = arg('--app');
+  const requestedDirectory = arg('--dir');
+  const roots = requestedApp ? transcriptsFor(requestedApp)
+    : requestedDirectory ? [resolve(requestedDirectory)]
+    : [join(homedir(), '.claude', 'projects')];
+  // When the caller names the app directory, that is the boundary. Do not
+  // infer it from a transcript folder name.
+  const appBoundary = requestedApp ? norm(resolve(requestedApp)) : null;
+  const results: AuditResult[] = [];
+for (const root of roots) {
   if (!existsSync(root)) continue;
   const stack = [root];
   while (stack.length) {
     const d = stack.pop();
+    if (!d) continue;
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       if (e.isDirectory()) { if (!/node_modules/.test(p)) stack.push(p); continue; }
@@ -182,14 +230,18 @@ for (const root of ROOTS) {
       // calls, and none of them were ever checked.
       if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
       if (statSync(p).size < 2000) continue;
-      results.push({ ...auditTranscript(p, APP_BOUNDARY), root });
+      results.push({ ...auditTranscript(p, appBoundary), root });
     }
   }
 }
 
-if (asJson) { console.log(JSON.stringify(results, null, 2)); process.exit(0); }
+if (process.argv.includes('--json')) {
+  console.log(JSON.stringify(results, null, 2));
+  return;
+}
 
-const label = f => f.replace(/\\/g, '/').split('/').slice(-3).join('/').slice(0, 62);
+const label = (file: string): string => file.replace(/\\/g, '/')
+  .split('/').slice(-3).join('/').slice(0, 62);
 console.log('\nBuilds that read outside their own directory');
 console.log('(counts BOTH file tools and Bash cat/grep/find; boundary = the session\'s own cwd)\n');
 
@@ -206,13 +258,17 @@ for (const r of results.sort((a, b) => b.hits.length - a.hits.length)) {
     }
     continue;
   }
-  const byKind = {};
+  const byKind: Record<string, string[]> = {};
   for (const h of r.hits) (byKind[h.kind] ??= []).push(h.path);
   console.log(`  ${label(r.file)}`);
   console.log(`      cwd: ...${r.cwd.slice(-52)}   (${r.fileTool} file-tool, ${r.bashReads} bash reads)`);
   for (const [k, v] of Object.entries(byKind).sort((a, b) => b[1].length - a[1].length)) {
-    console.log(`      ${String(v.length).padStart(3)}x ${k.padEnd(22)} ${[...new Set(v)][0].split('/').slice(-2).join('/')}`);
+    const example = [...new Set(v)][0] ?? '';
+    console.log(`      ${String(v.length).padStart(3)}x ${k.padEnd(22)} ${example.split('/').slice(-2).join('/')}`);
   }
 }
 console.log(`\n  ${clean} transcript(s) read nothing outside their directory.`);
 console.log(`  ${results.length} transcript(s) examined.\n`);
+}
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main();
