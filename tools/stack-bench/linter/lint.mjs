@@ -47,14 +47,16 @@ function parseArgs(argv) {
 
 export function selectHooks(hooks, selectedIds = []) {
   if (!selectedIds.length) return hooks;
-  const byId = new Map(hooks.map(hook => [hook.id, hook]));
-  return [...new Set(selectedIds)].sort().map(id => byId.get(id) ?? {
+  const remaining = new Set(selectedIds);
+  const selected = hooks.filter(hook => remaining.delete(hook.id));
+  const unknown = [...remaining].sort().map(id => ({
     id,
     element: `the selected application control ${id}`,
     stage: 'scenario',
     check: 'visible',
     note: 'checked by the selected feature suite',
-  });
+  }));
+  return [...selected, ...unknown];
 }
 
 function loadHooks(level, track, selectedIds = []) {

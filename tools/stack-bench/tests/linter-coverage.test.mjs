@@ -19,6 +19,20 @@ test('a selected lint surface excludes unrelated hooks and keeps unknown hooks f
   assert.equal(selected[1].stage, 'scenario');
 });
 
+test('selected hooks keep contract order when one control reveals another', () => {
+  const selected = selectHooks([
+    { id: 'signin-toggle', stage: 'landing', check: 'visible' },
+    { id: 'signin-username', stage: 'landing', check: 'attached', revealedBy: 'signin-toggle' },
+    { id: 'signin-password', stage: 'landing', check: 'attached', revealedBy: 'signin-toggle' },
+  ], ['signin-password', 'signin-toggle', 'signin-username']);
+
+  assert.deepEqual(selected.map(hook => hook.id), [
+    'signin-toggle',
+    'signin-username',
+    'signin-password',
+  ]);
+});
+
 test('contract lint fails closed when a golden path forgets a lintable stage', () => {
   const hooks = [
     { id: 'seen', stage: 'landing' },
