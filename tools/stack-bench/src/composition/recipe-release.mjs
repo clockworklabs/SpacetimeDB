@@ -628,8 +628,8 @@ function exactRecipeRequest(requested) {
     ...(requested.contentSha256 !== undefined ? { contentSha256: requested.contentSha256 } : {}) };
 }
 
-// Normal runs resolve the promoted L<n> alias. Qualification may name one
-// catalogued candidate exactly, so it can be tested before that alias moves.
+// Normal runs resolve the public promoted L<n> alias. An exact request may use
+// a non-default release from the separate catalog before or after promotion.
 // Both choices return the same binding and use the same runner path.
 export function resolveRecipeRelease(track, level, requested = null) {
   const catalogPath = join(track.dir, 'composition', 'promotions.json');
@@ -651,7 +651,7 @@ export function resolveRecipeRelease(track, level, requested = null) {
     const candidateCatalog = compilePromotionFile(candidateCatalogPath, { trackRoot: track.dir });
     choices = candidateCatalog.entries.filter(entry => entry.alias === alias
       && entry.recipe.id === exact.id && entry.recipe.version === exact.version
-      && entry.status === 'candidate');
+      && entry.status !== 'retired');
     if (choices.length) {
       catalog = candidateCatalog;
       selectedCatalogPath = candidateCatalogPath;

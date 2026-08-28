@@ -257,6 +257,35 @@ test('cumulative continuity does not trust mutable scenario level labels', () =>
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
+test('an exact promoted release stays separate from public level defaults', () => {
+  const box = copyTrack();
+  try {
+    const recipePath = join(box.root, 'composition', 'recipes', 'progression-l1-l3-1.0.0.json');
+    const recipe = JSON.parse(readFileSync(recipePath, 'utf8'));
+    for (const pack of recipe.packs) {
+      editJson(join(box.root, 'composition', 'recipes', pack.path),
+        value => { value.state = 'qualified'; });
+    }
+    editJson(recipePath, value => { value.state = 'qualified'; });
+    editJson(join(box.root, 'composition', 'candidates.json'), value => {
+      for (const entry of value.entries.filter(entry =>
+        entry.recipe.id === 'ecommerce.progression-l1-l3')) entry.status = 'promoted';
+    });
+    const track = loadTrack('ecommerce');
+    const copiedTrack = { ...track, dir: box.root,
+      suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
+
+    assert.equal(resolveRecipeRelease(copiedTrack, 1).release.id, 'ecommerce.l1-modular');
+    assert.equal(resolveRecipeRelease(copiedTrack, 2).release.id, 'ecommerce.l2-standard');
+    for (const level of [1, 2, 3]) {
+      const exact = resolveRecipeRelease(copiedTrack, level,
+        'ecommerce.progression-l1-l3@1.0.0');
+      assert.equal(exact.status, 'promoted');
+      assert.equal(exact.catalog.id, 'ecommerce.recipe-candidates');
+    }
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
 test('the first cumulative level bootstraps only from the exact promoted lower level', () => {
   const box = copyTrack();
   try {
