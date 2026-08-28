@@ -5,7 +5,7 @@ import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { runProgressionMode } from '../src/progression/progression-runner.mjs';
 
 const definition = () => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: 'progression-mode',
   id: 'runner-fixture',
   version: '1.0.0',
@@ -66,7 +66,7 @@ test('the runner pauses an inconclusive attempt without publishing a zero score'
   assert.equal(result.outcome.kind, 'provider_failure');
   assert.equal(result.score.averagePercentage, null);
   assert.equal(result.score.questlines[0].percentage, null);
-  assert.equal(result.state.strikes['1'].used, 0);
+  assert.equal(result.state.nodes.account.strikes.used, 0);
 });
 
 test('the runner rejects incomplete grading results instead of advancing', async () => {

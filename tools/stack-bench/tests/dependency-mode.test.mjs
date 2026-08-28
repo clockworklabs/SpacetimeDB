@@ -20,7 +20,7 @@ const node = (id, dependencies, questline, points = [1]) => ({
 });
 
 const fixture = () => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: 'progression-mode',
   id: 'storefront-paths',
   version: '1.0.0',
@@ -70,7 +70,7 @@ test('a valid graph compiles in deterministic level and id order', () => {
   assert.deepEqual(compiled.questlines.find(item => item.id === 'identity').nodes,
     ['accounts', 'ownership', 'recovery']);
   assert.deepEqual(compiled.strikes, { levels: { 1: 2, 2: 1, 3: 2 } });
-  assert.equal(compiled.unchangedFailureLimit, 2);
+  assert.equal(compiled.unchangedFailureLimit, 3);
 });
 
 test('the unchanged failure limit is part of the versioned dependency policy identity', () => {
@@ -86,7 +86,7 @@ test('the unchanged failure limit is part of the versioned dependency policy ide
     undefined, 2);
   const second = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
     undefined, 3);
-  assert.equal(first.definition.version, '1.1.0');
+  assert.equal(first.definition.version, '2.0.0');
   assert.equal(first.definition.unchangedFailureLimit, 2);
   assert.equal(second.definition.unchangedFailureLimit, 3);
   assert.notEqual(first.identity.sha256, second.identity.sha256);
@@ -259,6 +259,8 @@ test('no passed node at a level stops progression', () => {
 
 test('inconclusive attempts do not consume strikes or change selections', () => {
   const state = progressionEngine.initialize(fixture());
+  const beforeStrikes = Object.fromEntries(Object.entries(state.nodes)
+    .map(([nodeId, node]) => [nodeId, node.strikes]));
   const beforeScore = progressionEngine.score(state);
   assert.equal(beforeScore.averagePercentage, null);
   assert(beforeScore.questlines.every(questline => questline.percentage === null));
@@ -266,7 +268,8 @@ test('inconclusive attempts do not consume strikes or change selections', () => 
     attemptId: 'provider-503', outcome: 'inconclusive', category: 'provider_failure',
     reason: 'provider failure',
   });
-  assert.deepEqual(next.strikes, state.strikes);
+  assert.deepEqual(Object.fromEntries(Object.entries(next.nodes)
+    .map(([nodeId, node]) => [nodeId, node.strikes])), beforeStrikes);
   assert.deepEqual(progressionEngine.promptSelection(next), progressionEngine.promptSelection(state));
   assert.equal(next.attempts.at(-1).outcome, 'inconclusive');
   const score = progressionEngine.score(next);
@@ -281,18 +284,22 @@ test('a terminal failed run can receive an auditable continuation grant', () => 
   value.strikes.default = 1;
   let state = progressionEngine.initialize(value);
   assert.throws(() => progressionEngine.grantStrikes(state,
-    { grantId: 'too-early', level: 1, strikes: 1 }), /only after progression terminates/);
+    { grantId: 'too-early', level: 1, nodeIds: ['accounts'], strikes: 1 }),
+  /only after progression terminates/);
   state = progressionEngine.recordResult(state, conclusive(state, 'failed-l1', {
     accounts: 'fail', catalog: 'fail',
   }));
   assert.deepEqual(state.terminalOutcome, {
     kind: 'failed', reason: 'no-unlocked-nodes', level: 1, blockedLevel: 2,
   });
-  state = progressionEngine.grantStrikes(state, { grantId: 'grant-1', level: 1, strikes: 2 });
+  state = progressionEngine.grantStrikes(state, {
+    grantId: 'grant-1', level: 1, nodeIds: ['accounts', 'catalog'], strikes: 2,
+  });
   assert.equal(state.phase, 'active');
-  assert.deepEqual(state.strikes['1'], {
+  assert.deepEqual(state.nodes.accounts.strikes, {
     initialBudget: 1, granted: 2, budget: 3, used: 1,
   });
+  assert.deepEqual(state.nodes.catalog.strikes, state.nodes.accounts.strikes);
   assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts', 'catalog']);
   assert.deepEqual(state.events.map(event => event.type), ['attempt-recorded', 'strikes-granted']);
   state = progressionEngine.recordResult(state, conclusive(state, 'continued-l1', {
@@ -317,18 +324,20 @@ test('a continuation grant can reopen an exhausted branch after another branch c
   }));
   assert.deepEqual(state.terminalOutcome, { kind: 'partial', reason: 'graph-complete', level: 3 });
 
-  state = progressionEngine.grantStrikes(state, { grantId: 'catalog-grant', level: 1, strikes: 1 });
+  state = progressionEngine.grantStrikes(state, {
+    grantId: 'catalog-grant', level: 1, nodeIds: ['catalog'], strikes: 1,
+  });
   assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['catalog']);
   assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'catalog']);
   state = progressionEngine.recordResult(state, conclusive(state, 'continued-catalog', {
     accounts: 'pass', catalog: 'pass',
   }));
   assert.equal(state.level, 2);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership', 'search']);
+  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['search']);
   assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds,
     ['accounts', 'catalog', 'ownership', 'search']);
-  assert.equal(state.nodes.ownership.checks['check.ownership.1'], null);
-  assert.equal(state.nodes.recovery.checks['check.recovery.1'], null);
+  assert.equal(state.nodes.ownership.checks['check.ownership.1'], 'pass');
+  assert.equal(state.nodes.recovery.checks['check.recovery.1'], 'pass');
 });
 
 test('an earlier grant does not reopen a later exhausted level or retain its evidence', () => {
@@ -346,21 +355,29 @@ test('an earlier grant does not reopen a later exhausted level or retain its evi
   assert.equal(state.nodes.ownership.exhaustedAtLevel, 2);
 
   state = progressionEngine.grantStrikes(state, {
-    grantId: 'l1-only', level: 1, strikes: 1,
+    grantId: 'l1-only', level: 1, nodeIds: ['catalog'], strikes: 1,
   });
   assert.equal(state.nodes.ownership.status, 'exhausted');
   assert.equal(state.nodes.ownership.exhaustedAtLevel, 2);
-  assert.equal(state.nodes.ownership.checks['check.ownership.1'], null);
+  assert.equal(state.nodes.ownership.checks['check.ownership.1'], 'fail');
   state = progressionEngine.recordResult(state, conclusive(state, 'repair-l1', {
     accounts: 'pass', catalog: 'pass',
   }));
+  assert.equal(state.level, 2);
+  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['search']);
+  state = progressionEngine.recordResult(state, conclusive(state, 'finish-search', {
+    accounts: 'pass', catalog: 'pass', search: 'pass',
+  }));
+  state = progressionEngine.recordResult(state, conclusive(state, 'finish-recommendations', {
+    accounts: 'pass', catalog: 'pass', search: 'pass', recommendations: 'pass',
+  }));
   assert.equal(state.phase, 'terminal');
-  assert.equal(state.terminalOutcome.blockedLevel, 2);
   assert.throws(() => progressionEngine.grantStrikes(state,
-    { grantId: 'wrong-level', level: 1, strikes: 1 }), /no exhausted repair target/);
+    { grantId: 'wrong-level', level: 1, nodeIds: ['catalog'], strikes: 1 }),
+  /not an exhausted target/);
   state = progressionEngine.grantStrikes(state,
-    { grantId: 'l2-needed', level: 2, strikes: 1 });
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership', 'search']);
+    { grantId: 'l2-needed', level: 2, nodeIds: ['ownership'], strikes: 1 });
+  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership']);
 });
 
 test('state resumes by replay and rejects contradictory snapshots or event sequences', () => {
@@ -379,7 +396,7 @@ test('state resumes by replay and rejects contradictory snapshots or event seque
 
 test('a child with multiple parents opens only when every parent passes', () => {
   const value = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     kind: 'progression-mode',
     id: 'multi-parent',
     version: '1.0.0',
@@ -461,7 +478,7 @@ test('passed nodes outside the active branch are regression guards', () => {
     ['catalog', 'search']);
 });
 
-test('a continuation grant reopens a regressed ancestor and its affected child', () => {
+test('a continuation grant repairs an exhausted ancestor without charging its child', () => {
   const value = fixture();
   value.strikes.levels[2] = 1;
   let state = progressionEngine.initialize(value);
@@ -469,6 +486,12 @@ test('a continuation grant reopens a regressed ancestor and its affected child',
     accounts: 'pass', catalog: 'pass',
   }));
   state = progressionEngine.recordResult(state, conclusive(state, 'l2-regression', {
+    accounts: 'fail', catalog: 'pass', ownership: 'pass', search: 'pass',
+  }));
+  assert.equal(state.level, 2);
+  assert.equal(state.nodes.accounts.strikes.used, 1);
+  assert.equal(state.nodes.accounts.strikes.budget, 2);
+  state = progressionEngine.recordResult(state, conclusive(state, 'l2-regression-repair', {
     accounts: 'fail', catalog: 'pass', ownership: 'pass', search: 'pass',
   }));
   assert.equal(state.level, 3);
@@ -479,11 +502,15 @@ test('a continuation grant reopens a regressed ancestor and its affected child',
   assert.equal(state.phase, 'terminal');
   assert.equal(state.nodes.accounts.status, 'exhausted');
   assert.equal(state.nodes.accounts.exhaustedAtLevel, 2);
-  assert.equal(state.nodes.ownership.status, 'exhausted');
+  assert.equal(state.nodes.ownership.status, 'blocked');
+  assert.equal(state.nodes.ownership.strikes.used, 0);
   assert.equal(state.nodes.search.status, 'passed');
+  assert.throws(() => progressionEngine.grantStrikes(state, {
+    grantId: 'child-only', level: 2, nodeIds: ['ownership'], strikes: 1,
+  }), /not an exhausted target/);
 
   state = progressionEngine.grantStrikes(state, {
-    grantId: 'repair-regression', level: 2, strikes: 1,
+    grantId: 'repair-regression', level: 2, nodeIds: ['accounts'], strikes: 1,
   });
   assert.deepEqual(progressionEngine.promptSelection(state).nodeIds,
     ['accounts', 'ownership']);
@@ -492,7 +519,7 @@ test('a continuation grant reopens a regressed ancestor and its affected child',
   }));
   assert.equal(state.level, 3);
   assert.equal(state.nodes.recovery.status, 'active');
-  assert.equal(state.nodes.recommendations.status, 'active');
+  assert.equal(state.nodes.recommendations.status, 'passed');
 });
 
 test('questline percentages use partial check points and the overall score weights groups equally', () => {

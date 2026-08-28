@@ -14,7 +14,7 @@ import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 import { emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
 
 const progression = () => compileProgressionInput({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: 'progression-mode',
   id: 'persisted-runner',
   version: '1.0.0',
@@ -30,7 +30,7 @@ const progression = () => compileProgressionInput({
 const stateIdentities = Object.freeze({
   featureCatalogIdentity: { id: 'persisted-runner', version: '1.0.0',
     sha256: 'c'.repeat(64), state: 'draft' },
-  dependencyPolicyIdentity: { id: 'dependency-gated', version: '1.0.0',
+  dependencyPolicyIdentity: { id: 'dependency-gated', version: '2.0.0',
     sha256: 'd'.repeat(64) },
 });
 const owner = () => ({ schemaVersion: 1,
@@ -133,7 +133,8 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
       owner: scope,
       expectedSnapshotSha256: terminal.snapshotSha256,
       checkpoint: { artifact: '../outside.json' },
-      grant: { grantId: 'wrong-source', level: 1, strikes: 2 } }), /escapes the progression workspace/);
+      grant: { grantId: 'wrong-source', level: 1, nodeIds: ['account'], strikes: 2 } }),
+    /escapes the progression workspace/);
     assert.equal(readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope }).snapshotSha256,
       terminal.snapshotSha256);
@@ -143,7 +144,8 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
         owner: scope,
         expectedSnapshotSha256: terminal.snapshotSha256,
         checkpoint: { artifact: 'checkpoint-link.json' },
-        grant: { grantId: 'linked-source', level: 1, strikes: 2 } }), /symbolic link/);
+        grant: { grantId: 'linked-source', level: 1, nodeIds: ['account'], strikes: 2 } }),
+      /symbolic link/);
     } catch (error) {
       if (!['EPERM', 'EACCES'].includes(error.code)) throw error;
       t.diagnostic('symbolic-link assertion skipped because this host cannot create a file link');
@@ -152,9 +154,9 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
       owner: scope,
       expectedSnapshotSha256: terminal.snapshotSha256,
       checkpoint: { artifact: join('result', checkpoint.artifact) },
-      grant: { grantId: 'grant-1', level: 1, strikes: 2 } });
+      grant: { grantId: 'grant-1', level: 1, nodeIds: ['account'], strikes: 2 } });
     assert.equal(granted.state.phase, 'active');
-    assert.equal(granted.state.strikes['1'].granted, 2);
+    assert.equal(granted.state.nodes.account.strikes.granted, 2);
     assert.deepEqual(granted.state.events.map(event => event.type),
       ['attempt-recorded', 'strikes-granted']);
     assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const version = 1;\n');
@@ -162,7 +164,8 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
       owner: scope,
       expectedSnapshotSha256: terminal.snapshotSha256,
       checkpoint: { artifact: join('result', checkpoint.artifact) },
-      grant: { grantId: 'grant-2', level: 1, strikes: 1 } }), /state changed/);
+      grant: { grantId: 'grant-2', level: 1, nodeIds: ['account'], strikes: 1 } }),
+    /state changed/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

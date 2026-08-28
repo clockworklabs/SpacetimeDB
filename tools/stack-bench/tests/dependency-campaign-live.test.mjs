@@ -127,7 +127,9 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     ]);
     assert.equal(progression.payload.snapshot.phase, 'terminal');
     assert.equal(progression.payload.snapshot.attempts.length, 3);
-    assert.equal(progression.payload.snapshot.strikes['1'].used, 3);
+    assert.equal(progression.payload.snapshot.nodes.accounts.strikes.used, 3);
+    assert.equal(progression.payload.snapshot.nodes.accounts.exhaustionReason,
+      'strikes-exhausted');
     const runtimeDefinition = dependencyRuntimeDefinition(
       plan.featureCatalog, plan.dependencyPolicy);
     const replayed = replayDependencyMode(runtimeDefinition,

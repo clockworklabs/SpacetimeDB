@@ -925,7 +925,8 @@ function dependencyWork(attempt) {
     <div class="dependency-summary">
       <p><span class="tag">Current level</span><strong>L${escapeHtml(progress.level)}</strong></p>
       <p><span class="tag">Attempts</span><strong>${escapeHtml(progress.attempts.level)} at this level</strong></p>
-      <p><span class="tag">Strikes</span><strong>${escapeHtml(progress.attempts.used)} of ${escapeHtml(progress.attempts.budget)}</strong></p>
+      <p><span class="tag">Features in repair</span><strong>${escapeHtml(progress.attempts.features.length)}</strong></p>
+      <p><span class="tag">Attempts left</span><strong>${escapeHtml(progress.attempts.maxRemaining)} max</strong></p>
       <p><span class="tag">Score</span><strong>${score == null ? 'In progress' : `${Math.round(score)}%`}</strong></p>
       <p><span class="tag">Evidence</span><strong>${plural(progress.evidence.length, 'graded attempt')}</strong></p>
     </div>

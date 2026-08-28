@@ -103,7 +103,7 @@ function modularDefinition({ requested = [], expected = [], observed = [] } = {}
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '1.0.0',
+  value.mode = { id: 'dependency', version: '2.0.0',
     strikes: { default: 2, levels: {} } };
   delete value.levels;
   delete value.selection.levels[0].features;
@@ -468,7 +468,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '1.0.0', strikes: { default: 3, levels: {} },
+    id: 'dependency', version: '2.0.0', strikes: { default: 3, levels: {} },
   } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',

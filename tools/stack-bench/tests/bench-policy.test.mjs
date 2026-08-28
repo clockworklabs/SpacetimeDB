@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
-  levelGradeIsUsable, parseArgs,
+  dependencyRepairBudget, dependencyStrikeRecords, levelGradeIsUsable, parseArgs,
   pristineMutationBaselinePath, repairHistoryEntry, repairProgressState }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
@@ -23,6 +23,38 @@ test('progression level usability follows its stricter evidence result', () => {
   assert.equal(levelGradeIsUsable({ kind: 'provider_failure' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'inconclusive' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'conclusive' }), true);
+});
+
+test('dependency repair accounting uses each feature budget', () => {
+  const action = { strikes: { scope: 'feature', maxRemaining: 3 } };
+  assert.equal(dependencyRepairBudget(action, 0), 2);
+  assert.equal(dependencyRepairBudget(action, 1), 3);
+  assert.throws(() => dependencyRepairBudget({ strikes: { scope: 'level', maxRemaining: 3 } }, 0),
+    /feature-strike action/);
+
+  const state = {
+    definition: { nodes: [
+      { id: 'accounts', level: 1 },
+      { id: 'catalog', level: 1 },
+      { id: 'recovery', level: 2 },
+    ] },
+    nodes: {
+      accounts: { strikes: { initialBudget: 3, granted: 0, budget: 3, used: 1 },
+        exhaustedAtLevel: null, exhaustionReason: null },
+      catalog: { strikes: { initialBudget: 3, granted: 2, budget: 5, used: 5 },
+        exhaustedAtLevel: 1, exhaustionReason: 'strikes-exhausted' },
+      recovery: { strikes: { initialBudget: 2, granted: 0, budget: 2, used: 1 },
+        exhaustedAtLevel: null, exhaustionReason: null },
+    },
+  };
+  assert.deepEqual(dependencyStrikeRecords(state, 1, ['recovery']), [
+    { nodeId: 'accounts', initialBudget: 3, granted: 0, budget: 3, used: 1,
+      remaining: 2, exhaustionReason: null },
+    { nodeId: 'catalog', initialBudget: 3, granted: 2, budget: 5, used: 5,
+      remaining: 0, exhaustionReason: 'strikes-exhausted' },
+    { nodeId: 'recovery', initialBudget: 2, granted: 0, budget: 2, used: 1,
+      remaining: 1, exhaustionReason: null },
+  ]);
 });
 
 test('resumed dependency costs separate prior, current, and cumulative execution usage', () => {

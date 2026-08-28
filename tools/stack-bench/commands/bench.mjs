@@ -354,6 +354,35 @@ export function levelGradeIsUsable(bundleOutcome, progressionAttempt = null) {
   return !['provider_failure', 'ungraded', 'harness_failure'].includes(bundleOutcome.kind);
 }
 
+export function dependencyRepairBudget(action, conclusiveAttempts) {
+  if (!action || action.strikes?.scope !== 'feature'
+    || !Number.isSafeInteger(action.strikes.maxRemaining)
+    || action.strikes.maxRemaining < 0
+    || !Number.isSafeInteger(conclusiveAttempts) || conclusiveAttempts < 0) {
+    throw new Error('dependency repair budget requires one valid feature-strike action');
+  }
+  return Math.max(0, conclusiveAttempts + action.strikes.maxRemaining - 1);
+}
+
+export function dependencyStrikeRecords(state, level, includedNodeIds = []) {
+  const included = new Set(includedNodeIds);
+  return state.definition.nodes
+    .filter(node => node.level === level
+      || state.nodes[node.id].exhaustedAtLevel === level
+      || included.has(node.id))
+    .map(node => {
+      const nodeState = state.nodes[node.id];
+      return { nodeId: node.id,
+        initialBudget: nodeState.strikes.initialBudget,
+        granted: nodeState.strikes.granted,
+        budget: nodeState.strikes.budget,
+        used: nodeState.strikes.used,
+        remaining: nodeState.strikes.budget - nodeState.strikes.used,
+        exhaustionReason: nodeState.exhaustionReason };
+    })
+    .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+}
+
 function snapshotSource(appDir, to) {
   snapshotAppSource(appDir, to);
 }
@@ -1112,7 +1141,8 @@ async function main() {
       agentAdapter: agentAdapterIdentity(agentAdapter),
       stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
-    mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential', version: '1.0.0' },
+    mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential',
+      version: args.progression ? '2.0.0' : '1.0.0' },
     track: args.track, backend: args.backend, model: args.model,
     pricing: args.pricing,
     guidance: args.guidance, condition: args.condition ?? null,
@@ -1273,11 +1303,27 @@ async function main() {
 
     let progressionSelection = bindProgressionAction(level);
     if (progressionSelection?.action.type === 'terminal') break;
+    const conclusiveProgressionAttempts = () => progressionExecution
+      ? progressionExecution.state.attempts.filter(attempt =>
+        attempt.level === level && attempt.outcome === 'conclusive').length
+      : 0;
+    const repairBudgetFor = selected => selected
+      ? dependencyRepairBudget(selected.action, conclusiveProgressionAttempts())
+      : args.fixRounds;
+    const levelStrikeNodeIds = new Set(progressionSelection?.action.strikes.nodes
+      .map(node => node.nodeId) ?? []);
+    let progressionRepairBudgetRounds = repairBudgetFor(progressionSelection);
+    const trackProgressionBudget = selected => {
+      if (!selected) return;
+      selected.action.strikes.nodes.forEach(node => levelStrikeNodeIds.add(node.nodeId));
+      progressionRepairBudgetRounds = Math.max(
+        progressionRepairBudgetRounds, repairBudgetFor(selected));
+    };
     const resumedRepair = progressionStart?.resumed === true
       && progressionStart.action.type === 'repair'
       && progressionStart.action.level === level;
     const priorRepairRounds = resumedRepair
-      ? Math.max(0, progressionStart.action.strikes.used - 1) : 0;
+      ? Math.max(0, conclusiveProgressionAttempts() - 1) : 0;
     if (resumedRepair) {
       sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
         '--history-json', '[]', '--archive', join(appDir, 'stack-bench', 'records',
@@ -1504,7 +1550,7 @@ async function main() {
           : resumedRepair ? (initialBundleOutcome.kind === 'passed' ? 'corrected' : 'incomplete')
           : initialBundleOutcome.kind === 'passed' ? 'not-needed' : 'incomplete',
         budgetRounds: progressionSelection
-          ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
+          ? progressionRepairBudgetRounds : args.fixRounds,
         roundsUsed: priorRepairRounds + (resumedRepair ? 1 : 0),
         ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
         stopReason: !initialGradeUsable ? 'initial-grading-failed'
@@ -1523,7 +1569,7 @@ async function main() {
           status: failure ? 'ungraded'
             : classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
           budgetRounds: progressionSelection
-            ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
+            ? progressionRepairBudgetRounds : args.fixRounds,
           roundsUsed: priorRepairRounds + fixRounds,
           ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
           stopReason: null,
@@ -1568,9 +1614,12 @@ async function main() {
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       snapshotSource(appDir, snapshot);
       fixRounds += 1;
-      if (args.progression) progressionSelection = bindProgressionAction(level);
+      if (args.progression) {
+        progressionSelection = bindProgressionAction(level);
+        trackProgressionBudget(progressionSelection);
+      }
       const displayedRepairBudget = args.progression
-        ? Math.max(0, progressionSelection.action.strikes.budget - 1)
+        ? progressionRepairBudgetRounds
         : args.fixRounds;
       console.log(`--- fix round ${fixRounds}/${displayedRepairBudget} ---`);
       const fix = await runAgentForLevel('fix', level);
@@ -1694,11 +1743,15 @@ async function main() {
     // remains available for diagnosis, but the level is not a usable grade.
     const graded = levelGradeIsUsable(finalBundleOutcome,
       args.progression ? progressionAttempt : null);
-    const progressionStrikes = progressionExecution?.state.strikes?.[String(level)] ?? null;
-    const repairBudgetRounds = progressionStrikes
-      ? Math.max(0, progressionStrikes.budget - 1) : args.fixRounds;
-    const repairBudgetExhausted = progressionStrikes
-      ? progressionStrikes.used >= progressionStrikes.budget
+    const nodeStrikes = progressionExecution
+      ? dependencyStrikeRecords(progressionExecution.state, level, levelStrikeNodeIds)
+      : null;
+    const repairBudgetRounds = progressionExecution
+      ? Math.max(priorRepairRounds + fixRounds, progressionRepairBudgetRounds)
+      : args.fixRounds;
+    const repairBudgetExhausted = progressionExecution
+      ? finalBundleOutcome.kind === 'app_failure'
+        && !(progressionNext?.type === 'repair' && progressionNext.level === level)
       : fixRounds >= args.fixRounds;
     const repairStatus = !graded ? 'ungraded'
       : finalBundleOutcome.kind === 'passed' ? (fixRounds > 0 ? 'corrected' : 'not-needed')
@@ -1714,9 +1767,9 @@ async function main() {
       roundsUsed: priorRepairRounds + fixRounds,
       ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
-      ...(progressionStrikes ? {
-        strikeBudget: progressionStrikes.budget,
-        strikesUsed: progressionStrikes.used,
+      ...(nodeStrikes ? {
+        strikeScope: 'feature',
+        nodeStrikes,
       } : {}),
     };
     if (continuing) {

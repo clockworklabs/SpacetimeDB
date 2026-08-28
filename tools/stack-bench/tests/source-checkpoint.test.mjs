@@ -76,6 +76,20 @@ test('source checkpoint artifacts reject paths and repair accounting that cannot
         stopReason: 'budget-exhausted' },
       outcome: { kind: 'app_failure' },
     }), /roundsUsed exceeds its budget/);
+    assert.throws(() => preserveLevelCheckpoint({
+      appDir: app,
+      outputDir: join(root, 'feature-strikes'),
+      runId: 'run-parent',
+      track: 'ecommerce',
+      backend: 'postgres',
+      level: 1,
+      repair: { status: 'budget-exhausted', budgetRounds: 2, roundsUsed: 2,
+        stopReason: 'budget-exhausted', strikeScope: 'feature', nodeStrikes: [
+          { nodeId: 'accounts', initialBudget: 3, granted: 0, budget: 3, used: 2, remaining: 2,
+            exhaustionReason: null },
+        ] },
+      outcome: { kind: 'app_failure' },
+    }), /nodeStrikes\[0\] is invalid/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

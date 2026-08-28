@@ -10,7 +10,7 @@ import { resolveProgressionRecipeAction,
   validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.mjs';
 
 const definition = () => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: 'progression-mode',
   id: 'ecommerce-dependency',
   version: '1.0.0',

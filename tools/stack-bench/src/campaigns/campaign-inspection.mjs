@@ -48,8 +48,10 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
         // The questline and the dependency ids let a view draw the graph the
         // engine walks, instead of re-deriving structure from prose.
         questline: definition.questline,
-        dependencies: definition.dependencies.map(dependency => dependency.id),
+        dependencies: [...definition.dependencies],
         status: node.status,
+        strikes: { ...node.strikes, remaining: node.strikes.budget - node.strikes.used },
+        exhaustionReason: node.exhaustionReason,
         checks: {
           passed: checks.filter(value => value === 'pass').length,
           failed: checks.filter(value => value === 'fail').length,
@@ -57,16 +59,16 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
         },
       };
     });
-    const strike = state.strikes[String(state.level)] ?? null;
+    const action = progressionEngine.nextAction(state);
+    const strikes = action.type === 'terminal' ? null : action.strikes;
     return {
       phase: state.phase,
       level: state.level,
       attempts: {
         total: state.attempts.length,
         level: state.attempts.filter(item => item.level === state.level).length,
-        used: strike?.used ?? 0,
-        budget: strike?.budget ?? 0,
-        remaining: strike ? strike.budget - strike.used : 0,
+        maxRemaining: strikes?.maxRemaining ?? 0,
+        features: strikes?.nodes ?? [],
       },
       work: {
         current: nodes.filter(node => node.status === 'active'),

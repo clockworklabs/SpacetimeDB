@@ -71,6 +71,9 @@ export function inspectRepairParent(parentDirectory, levelNumber) {
   const parent = { ...parentArtifact.payload, id: parentArtifact.id, kind: parentArtifact.kind,
     artifactEnvelope: { attempt: parentArtifact.attempt, timestamps: parentArtifact.timestamps,
       identities: parentArtifact.identities } };
+  if (parent.mode?.id === 'dependency' || parent.progressionStatus !== undefined) {
+    throw new Error('generic repair grants do not support dependency campaigns');
+  }
   const level = parent.levels?.find(item => item.level === levelNumber);
   requireCompletedFailure(level, parent);
 

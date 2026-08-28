@@ -223,7 +223,7 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   assert.throws(() => validateCampaignRun(plan, attempt,
-    { ...run, mode: { id: 'dependency', version: '1.0.0' } },
+    { ...run, mode: { id: 'dependency', version: '2.0.0' } },
     { buildImage: 'test-build-image' }), /does not match.*mode/);
   assert.throws(() => validateCampaignRun(plan, attempt, { ...run,
     artifactEnvelope: { ...run.artifactEnvelope, identities: {

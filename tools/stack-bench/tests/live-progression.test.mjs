@@ -18,7 +18,7 @@ import { createLiveProgressionExecution }
 import { validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 
 const definition = () => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: 'progression-mode',
   id: 'live-fixture',
   version: '1.0.0',
@@ -94,7 +94,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       attempt: { id: 'run-1', parentId: owner.attempt.id },
       identities,
       payload: {
-        mode: { id: 'dependency', version: '1.0.0' },
+        mode: { id: 'dependency', version: '2.0.0' },
         backend: owner.attempt.stack,
         model: owner.attempt.model,
         condition: { sha256: owner.attempt.conditionSha256 },
@@ -153,7 +153,10 @@ test('live progression binds, records, checkpoints, and persists one exact actio
 
     const next = execution.record({ selected, bundle: grade, level: 1,
       repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
-        stopReason: 'not-needed', strikeBudget: 2, strikesUsed: 0 } });
+        stopReason: 'not-needed', strikeScope: 'feature', nodeStrikes: [
+          { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
+            remaining: 2, exhaustionReason: null },
+        ] } });
     assert.equal(next.type, 'terminal');
     assert.equal(execution.state.nodes.accounts.status, 'passed');
     assert.equal(states.at(-1).score.averagePercentage, 100);
@@ -173,7 +176,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
 
     const attempt = {
       id: owner.attempt.id,
-      mode: { id: 'dependency', version: '1.0.0' },
+      mode: { id: 'dependency', version: '2.0.0' },
       levels: [1],
       featureCatalog: split.featureCatalogIdentity,
       dependencyPolicy: split.dependencyPolicyIdentity,
@@ -270,7 +273,7 @@ test('live progression records provider interruptions without consuming a strike
     assert.equal(execution.state.attempts.length, 1);
     assert.equal(execution.state.attempts[0].outcome, 'inconclusive');
     assert.equal(execution.state.attempts[0].category, 'provider_failure');
-    assert.equal(execution.state.strikes['1'].used, 0);
+    assert.equal(execution.state.nodes.accounts.strikes.used, 0);
     assert.equal(existsSync(join(outputDir, 'progression', 'attempt-001')), false);
     assert.equal(existsSync(join(outputDir, 'progression-state.json')), true);
   } finally {
@@ -362,7 +365,12 @@ test('an interrupted execution restores the saved source and resumes the next gr
     });
     assert.equal(first.record({ selected, bundle: grade, level: 1,
       repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
-        stopReason: 'not-needed', strikeBudget: 2, strikesUsed: 0 } }).level, 2);
+        stopReason: 'not-needed', strikeScope: 'feature', nodeStrikes: [
+          { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
+            remaining: 2, exhaustionReason: null },
+          { nodeId: 'catalog', initialBudget: 2, granted: 0, budget: 2, used: 0,
+            remaining: 2, exhaustionReason: null },
+        ] } }).level, 2);
     writeArtifact(join(firstOutput, 'run.json'), {
       ...runArtifact,
       payload: { ...runArtifact.payload, progressionStatus: first.status() },
@@ -459,7 +467,10 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
     });
     assert.equal(first.record({ selected, bundle: grade, level: 1,
       repair: { status: 'incomplete', budgetRounds: 1, roundsUsed: 0,
-        stopReason: null, strikeBudget: 2, strikesUsed: 1 } }).type, 'repair');
+        stopReason: null, strikeScope: 'feature', nodeStrikes: [
+          { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 1,
+            remaining: 1, exhaustionReason: null },
+        ] } }).type, 'repair');
     writeArtifact(join(firstOutput, 'run.json'), { ...runArtifact,
       payload: { ...runArtifact.payload, progressionStatus: first.status(),
         totals: { costUsd: 1.25, costComplete: true }, levels: [] } });

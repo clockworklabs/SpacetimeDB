@@ -133,7 +133,9 @@ test('dashboard reports dependency work from the validated persisted state', t =
   assert.equal(summary.attempts[0].dependency.level, 1);
   assert(summary.attempts[0].dependency.work.current.some(node => node.id === 'accounts'));
   assert.deepEqual(summary.attempts[0].dependency.attempts,
-    { total: 0, level: 0, used: 0, budget: 3, remaining: 3 });
+    { total: 0, level: 0, maxRemaining: 3, features: [
+      { nodeId: 'accounts', initialBudget: 3, granted: 0, budget: 3, used: 0, remaining: 3 },
+    ] });
   assert(summary.package.executions[0].artifacts
     .some(item => item.path.endsWith('/progression-state.json')));
 });

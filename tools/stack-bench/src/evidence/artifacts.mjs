@@ -605,7 +605,7 @@ function validatePayload(kind, payload) {
     objectWhenPresent('repair');
     if (!isObject(payload.repair)) fail('source_checkpoint payload.repair is required');
     const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stallLimitRounds',
-      'stopReason', 'strikeBudget', 'strikesUsed']);
+      'stopReason', 'strikeScope', 'nodeStrikes']);
     for (const key of Object.keys(payload.repair)) {
       if (!repairFields.has(key)) fail(`source_checkpoint payload.repair.${key} is unknown`);
     }
@@ -624,11 +624,34 @@ function validatePayload(kind, payload) {
     if (payload.repair.roundsUsed > payload.repair.budgetRounds) {
       fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');
     }
-    if (payload.repair.strikeBudget !== undefined || payload.repair.strikesUsed !== undefined) {
-      if (!Number.isSafeInteger(payload.repair.strikeBudget) || payload.repair.strikeBudget < 1
-        || !Number.isSafeInteger(payload.repair.strikesUsed) || payload.repair.strikesUsed < 0
-        || payload.repair.strikesUsed > payload.repair.strikeBudget) {
-        fail('source_checkpoint payload.repair strike use is invalid');
+    if (payload.repair.strikeScope !== undefined || payload.repair.nodeStrikes !== undefined) {
+      if (payload.repair.strikeScope !== 'feature' || !Array.isArray(payload.repair.nodeStrikes)) {
+        fail('source_checkpoint payload.repair feature strikes are invalid');
+      }
+      const ids = new Set();
+      let prior = null;
+      for (const [index, counter] of payload.repair.nodeStrikes.entries()) {
+        if (!isObject(counter)) fail(`source_checkpoint payload.repair.nodeStrikes[${index}] is invalid`);
+        const fields = new Set(['nodeId', 'initialBudget', 'granted', 'budget', 'used',
+          'remaining', 'exhaustionReason']);
+        for (const key of Object.keys(counter)) {
+          if (!fields.has(key)) fail(`source_checkpoint payload.repair.nodeStrikes[${index}].${key} is unknown`);
+        }
+        if (typeof counter.nodeId !== 'string' || !counter.nodeId || ids.has(counter.nodeId)
+          || (prior !== null && prior.localeCompare(counter.nodeId) >= 0)
+          || !Number.isSafeInteger(counter.initialBudget) || counter.initialBudget < 1
+          || !Number.isSafeInteger(counter.granted) || counter.granted < 0
+          || !Number.isSafeInteger(counter.budget) || counter.budget < 1
+          || counter.budget !== counter.initialBudget + counter.granted
+          || !Number.isSafeInteger(counter.used) || counter.used < 0
+          || counter.used > counter.budget
+          || counter.remaining !== counter.budget - counter.used
+          || (counter.exhaustionReason !== null
+            && !['strikes-exhausted', 'repeated-findings'].includes(counter.exhaustionReason))) {
+          fail(`source_checkpoint payload.repair.nodeStrikes[${index}] is invalid`);
+        }
+        ids.add(counter.nodeId);
+        prior = counter.nodeId;
       }
     }
     if (payload.repair.stopReason !== null && typeof payload.repair.stopReason !== 'string') {

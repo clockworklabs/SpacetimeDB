@@ -40,6 +40,7 @@ function parentFixture(root, overrides = {}) {
     identities,
     track: 'loop', backend: 'stub', model: 'deterministic', guidance: 'prescribed',
     condition: null, selectionRequest: { packs: [], checks: [] }, skills: [],
+    ...(overrides.mode ? { mode: overrides.mode } : {}),
     runtime: { buildImage: 'test-build-image', url: 'http://localhost:1234' },
     backendLease: { runIndex: 0 },
     levels: [level, downstream], contaminated: false,
@@ -102,6 +103,15 @@ test('repair grants reject incomplete evidence, remaining budget, and changed so
     rmSync(remainingRoot, { recursive: true, force: true });
     rmSync(changedRoot, { recursive: true, force: true });
   }
+});
+
+test('generic repair grants reject dependency campaigns', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-dependency-'));
+  try {
+    parentFixture(root, { mode: { id: 'dependency', version: '2.0.0' } });
+    assert.throws(() => createRepairGrant(root, { level: 1, rounds: 2 }),
+      /do not support dependency campaigns/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('repair grant rounds are finite and explicitly bounded', () => {
