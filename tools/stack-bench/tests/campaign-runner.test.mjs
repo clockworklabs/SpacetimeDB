@@ -332,6 +332,58 @@ test('dependency validation keeps a conclusive grade when its repair session is 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('dependency validation accepts only an explicit pre-grade failure placeholder', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-pre-grade-failure-'));
+  try {
+    const plan = compileCampaignFile(dependencyModelFree);
+    const attempt = plan.attempts[0];
+    const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+    const stack = plan.stacks.find(item => item.id === attempt.stack);
+    const owner = { schemaVersion: 1,
+      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+      attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
+        agentAdapter: attempt.agentAdapter, model: attempt.model,
+        conditionSha256: attempt.condition.sha256 },
+      workspace: { appDirectory: 'source' } };
+    const progression = compileProgressionInput(dependencyRuntimeDefinition(
+      plan.featureCatalog, plan.dependencyPolicy));
+    const state = progressionEngine.initialize(progression.definition);
+    writeProgressionState(join(root, 'progression-state.json'), {
+      progression, featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state,
+    });
+    const run = {
+      artifactEnvelope: { attempt: { parentId: attempt.id },
+        identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+          experiment: experimentIdentity(plan), agentAdapter: agent.identity,
+          stackAdapter: stack }) },
+      mode: attempt.mode, track: plan.definition.track, backend: attempt.stack,
+      model: attempt.model, pricing: attempt.pricing, guidance: attempt.guidance,
+      condition: attempt.condition, selectionRequest: plan.definition.selection,
+      featureCatalog: attempt.featureCatalog, dependencyPolicy: attempt.dependencyPolicy,
+      progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
+      progressionStatus: liveProgressionStatus(state), skills: attempt.skills,
+      runtime: { buildImage: 'test-build-image' },
+      validation: { ladder: { policy: 'dependency-gated', requestedLevels: attempt.levels,
+        completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } },
+      levels: [{ level: state.level, score: null, max: null,
+        error: 'coding-session-failed',
+        outcome: { kind: 'harness_failure', phase: 'coding-session',
+          reason: 'coding-session-failed' } }],
+      outcome: { kind: 'harness_failure', phase: 'coding-session',
+        reason: 'coding-session-failed' },
+    };
+    assert.equal(validateCampaignRun(plan, attempt, run, {
+      buildImage: 'test-build-image', resultDir: root,
+    }), run);
+    const withoutError = { ...run, levels: [{ ...run.levels[0] }] };
+    delete withoutError.levels[0].error;
+    assert.throws(() => validateCampaignRun(plan, attempt, withoutError, {
+      buildImage: 'test-build-image', resultDir: root,
+    }), /levels\.L1\.progressionAttempt/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('campaign validation accepts an explicit repeated-findings pause but rejects an unexplained stop', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts[0];

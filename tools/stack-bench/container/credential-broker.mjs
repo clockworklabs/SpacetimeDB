@@ -37,6 +37,27 @@ function priceNormalizedUsage(usage, rates) {
   }, rates);
 }
 
+function rawUsage(usage) {
+  return {
+    input_tokens: usage.input,
+    output_tokens: usage.output,
+    cache_read_input_tokens: usage.cacheRead,
+    cache_creation_input_tokens: usage.cacheWrite5m + usage.cacheWrite1h,
+    cache_creation: {
+      ephemeral_5m_input_tokens: usage.cacheWrite5m,
+      ephemeral_1h_input_tokens: usage.cacheWrite1h,
+    },
+  };
+}
+
+function brokerCoversCliUsage(broker, cli) {
+  return broker.input >= cli.input
+    && broker.output >= cli.output
+    && broker.cacheRead >= cli.cacheRead
+    && broker.cacheWrite5m + broker.cacheWrite1h
+      >= cli.cacheWrite5m + cli.cacheWrite1h;
+}
+
 function fail(message) {
   throw new Error(`credential broker: ${message}`);
 }
@@ -158,11 +179,12 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     cliUsage = normalizeClaudeUsage(cliResult?.usage);
   } catch (error) { if (!issue) issue = error.message; }
   if (verifiedLedger) usage = structuredClone(verifiedLedger.usage);
-  if (!issue && cliUsage && (cliUsage.input !== usage.input
-    || cliUsage.output !== usage.output || cliUsage.cacheRead !== usage.cacheRead
-    || cliUsage.cacheWrite5m + cliUsage.cacheWrite1h
-      !== usage.cacheWrite5m + usage.cacheWrite1h)) {
-    issue = 'credential broker usage does not match CLI usage totals';
+  // The CLI summary can omit provider calls used for internal session work.
+  // The broker sees every billed provider response, so it is the cost source
+  // of truth. The CLI summary remains a useful lower-bound check: if it reports
+  // usage that the broker did not record, the receipt is incomplete.
+  if (!issue && cliUsage && !brokerCoversCliUsage(usage, cliUsage)) {
+    issue = 'credential broker usage is lower than CLI usage totals';
   }
   try {
     if (verifiedRates && usage) calculatedCostUsd = priceNormalizedUsage(usage, verifiedRates);
@@ -195,6 +217,7 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   const result = cliResult && typeof cliResult === 'object' && !Array.isArray(cliResult)
     ? structuredClone(cliResult) : { type: 'result', is_error: true, result: '' };
   result.total_cost_usd = receipt.costUsd;
+  if (usage) result.usage = rawUsage(usage);
   result.stack_bench_cost_receipt = receipt;
   if (issue) {
     result.is_error = true;

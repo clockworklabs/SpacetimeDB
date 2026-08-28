@@ -403,18 +403,29 @@ export function validateCampaignRun(plan, attempt, run, {
           dependencyPolicyIdentity: plan.dependencyPolicy.identity,
           owner,
         });
+        const storedStatus = liveProgressionStatus(stored.state);
         mismatch(canonicalDefinitionJson(run.progressionStatus)
-          !== canonicalDefinitionJson(liveProgressionStatus(stored.state)), 'progressionStatus');
+          !== canonicalDefinitionJson(storedStatus), 'progressionStatus');
         mismatch(canonicalDefinitionJson(ladder?.requestedLevels)
           !== canonicalDefinitionJson(expectedLevels), 'validation.ladder.requestedLevels');
         const conclusiveLevels = [...new Set(stored.state.attempts
           .filter(item => item.outcome === 'conclusive').map(item => item.level))];
         mismatch(canonicalDefinitionJson(ladder?.completedLevels)
           !== canonicalDefinitionJson(conclusiveLevels), 'validation.ladder.completedLevels');
+        let hasPreGradeFailure = false;
         for (const level of run.levels ?? []) {
           const last = [...stored.state.attempts].reverse()
             .find(item => item.level === level.level);
-          mismatch(!last, `levels.L${level.level}.progressionAttempt`);
+          const preGradeFailure = !last
+            && run.outcome?.kind === 'harness_failure'
+            && level === run.levels.at(-1)
+            && level.level === storedStatus.level
+            && typeof level.error === 'string' && level.error.length > 0
+            && level.score === null && level.max === null
+            && level.outcome?.kind === 'harness_failure';
+          hasPreGradeFailure ||= preGradeFailure;
+          mismatch(!last && !preGradeFailure, `levels.L${level.level}.progressionAttempt`);
+          if (!last) continue;
           mismatch(last?.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
             `levels.L${level.level}.selection.sha256`);
           const validScore = Number.isSafeInteger(level.score) && Number.isSafeInteger(level.max)
@@ -431,7 +442,7 @@ export function validateCampaignRun(plan, attempt, run, {
           const expectedOutcome = expectedDependencyRunOutcomeKind(
             run.levels, stored.state.terminalOutcome);
           mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
-        } else if (!interruptedPrefix) {
+        } else if (!interruptedPrefix && !hasPreGradeFailure) {
           mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
             'progressionState.phase');
         }
