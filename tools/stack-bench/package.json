@@ -24,7 +24,7 @@
     "check:mutations": "node dist/commands/check-mutations.js",
     "check:definition-goldens": "node commands/definition-goldens.mjs",
     "check:composition": "node commands/check-composition.mjs",
-    "check:prompts": "node commands/prompt-snapshot.mjs",
+    "check:prompts": "node --test tests/dependency-neutral-prompt.test.mjs",
     "check:calibration": "node commands/check-calibration.mjs",
     "check:references": "node src/references/reference-fixtures.mjs",
     "pregraph": "npm run build",

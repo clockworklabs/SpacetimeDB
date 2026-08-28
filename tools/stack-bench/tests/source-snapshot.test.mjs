@@ -83,6 +83,28 @@ test('source seeding copies arbitrary layouts without dependencies or harness ev
   assert.equal(existsSync(join(target, '.prompt-build-l1.md')), false);
 });
 
+test('source snapshots exclude package and browser tool caches', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-caches-'));
+  const app = join(root, 'app');
+  const snapshot = join(root, 'snapshot');
+  try {
+    put(join(app, 'src', 'app.ts'), 'export const app = true;\n');
+    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.pw-browsers', '.pwcache']) {
+      put(join(app, directory, 'tool-artifact'), 'not application source\n');
+    }
+    const before = hashAppSource(app);
+    snapshotAppSource(app, snapshot);
+    assert.equal(readFileSync(join(snapshot, 'src', 'app.ts'), 'utf8'),
+      'export const app = true;\n');
+    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.pw-browsers', '.pwcache']) {
+      assert.equal(existsSync(join(snapshot, directory)), false);
+    }
+    assert.equal(hashAppSource(snapshot).sha256, before.sha256);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('source identity matches preserved bytes and ignores dependencies and harness evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-identity-'));
   const app = join(root, 'app');

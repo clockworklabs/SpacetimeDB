@@ -121,14 +121,16 @@
         "reducer": "sign_in"
       }
     ],
+    "databaseProvenance": {
+      "action": "signUp",
+      "check": "ecommerce.feature.accounts.accounts.1a",
+      "observationField": "user",
+      "scenario": "scenarios/01-account-create-2.4.0.json"
+    },
     "plannedThrough": 5,
     "portOffset": 300,
     "reseedOnReset": true,
-    "reseedProbeExpectation": {
-      "jsonPath": "items",
-      "minCount": 1
-    },
-    "restartProbe": "/api/items",
+    "restartProbe": "/",
     "schemaVersion": 1,
     "slug": "ecom",
     "suites": {

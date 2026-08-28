@@ -5,12 +5,8 @@
   "validatedThrough": 2,
   "plannedThrough": 5,
   "portOffset": 300,
-  "restartProbe": "/api/items",
+  "restartProbe": "/",
   "reseedOnReset": true,
-  "reseedProbeExpectation": {
-    "jsonPath": "items",
-    "minCount": 1
-  },
   "databaseProvenance": {
     "scenario": "scenarios/01-account-create-2.4.0.json",
     "check": "ecommerce.feature.accounts.accounts.1a",

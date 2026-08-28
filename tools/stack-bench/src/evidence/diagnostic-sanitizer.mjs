@@ -8,6 +8,15 @@ const BEARER_CREDENTIAL = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-
 const NAMED_CREDENTIAL = /["']?(?:anthropic_api_key|claude_code_oauth_token|api[_-]?key|access[_-]?token|auth[_-]?token|oauth[_-]?token|password|secret)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
 const PREFIXED_CREDENTIAL = /\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/g;
 
+function publicControlName(value) {
+  const raw = String(value ?? '');
+  const match = raw.match(/\[(?:data-testid|data-test|data-cy)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\]\s]+))\]/i)
+    ?? raw.match(/(?:getByTestId|locator)\(\s*["']([^"']+)["']/i);
+  const name = match?.[1] ?? match?.[2] ?? match?.[3];
+  if (!name || !/^[a-z0-9][a-z0-9_.:-]{0,79}$/i.test(name)) return null;
+  return name.replace(/[-_.:]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
 export function redactCredentials(value) {
   return String(value ?? '')
     .replace(BEARER_CREDENTIAL, '[redacted credential]')
@@ -44,6 +53,7 @@ function clean(value, limit, { callLog = true } = {}) {
     .replace(/\b(?:within|after|timeout(?: of)?)\s+\d+(?:\.\d+)?\s*(?:ms|milliseconds?|s|seconds?)\b/gi,
       'in time')
     .replace(/\b\d+(?:\.\d+)?\s*(?:ms|milliseconds?|s|seconds?)\b/gi, '')
+    .replace(/\bin time exceeded\b/gi, 'did not respond in time')
     .replace(/\s+/g, ' ')
     .trim();
   if (reasons) result = `${result}${result ? ' ' : ''}(${reasons})`;
@@ -92,6 +102,8 @@ export function humaniseDiagnostic(detail = '') {
   }
 
   if (/Timeout/i.test(raw)) {
+    const control = publicControlName(raw);
+    if (control) return `the ${control} did not become usable`;
     const why = sanitiseDiagnostic(raw).replace(/^timeout\b[:\s-]*/i, '').trim();
     return why ? `the app did not respond in time: ${why}` : 'the app did not respond in time';
   }

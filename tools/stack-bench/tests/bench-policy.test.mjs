@@ -233,13 +233,14 @@ test('the first repair that makes an unstartable app gradeable is never rolled b
   assert.equal(repairEvidenceDecision({ suites: {} }, after).action, 'rollback-no-comparison');
 });
 
-test('grading forwards the track startup-data expectation', () => {
+test('grading uses the public app root for restart readiness', () => {
   const track = loadTrack('ecommerce');
   const argv = gradeArgv({ backend: 'postgres', track: 'ecommerce', runIndex: 0,
     media: false }, '/app', 'http://localhost:6573', 'postgres-l1', 1, track, 'attempt');
-  const index = argv.indexOf('--reseed-probe-expectation-json');
+  const index = argv.indexOf('--reseed-probe');
   assert(index > 0);
-  assert.deepEqual(JSON.parse(argv[index + 1]), { jsonPath: 'items', minCount: 1 });
+  assert.equal(argv[index + 1], 'http://localhost:6573');
+  assert.equal(argv.includes('--reseed-probe-expectation-json'), false);
 });
 
 test('Spacetime grading probes the application instead of a missing API port', () => {

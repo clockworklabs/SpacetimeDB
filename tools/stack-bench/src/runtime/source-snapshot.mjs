@@ -6,7 +6,12 @@ import { hashDirectory } from '../evidence/provenance.mjs';
 // Runtime state, dependencies, evidence, and harness-owned control files are
 // deliberately not part of the model-authored source snapshot.
 const PRESERVED_DIRS = new Set(['node_modules', '.git', 'stack-bench']);
-const TRANSIENT_DIRS = new Set(['dist', '.vite', 'coverage']);
+const TRANSIENT_DIRS = new Set([
+  'dist', '.vite', 'coverage',
+  // Package and browser tooling can create large trees with dangling links.
+  // They are runtime caches, not model-authored application source.
+  '.apt', '.cache', '.debroot', '.libs', '.pw-browsers', '.pwcache',
+]);
 const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
 const ROOT_HARNESS_FILES = new Set([
   '.sandbox-settings.json', '.stack-bench-backend',

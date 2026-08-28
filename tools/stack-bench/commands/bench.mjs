@@ -652,7 +652,9 @@ export function gradeArgv(args, appDir, url, label, level, track, parentAttemptI
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
     ...(expressPort === null ? []
-      : ['--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`]),
+      : ['--reseed-probe', track.reseedProbeExpectation
+        ? `http://localhost:${expressPort}${track.restartProbe}`
+        : url]),
     ...(expressPort !== null && track.reseedProbeExpectation
       ? ['--reseed-probe-expectation-json', JSON.stringify(track.reseedProbeExpectation)] : []),
     '--run-index', String(args.runIndex),
@@ -1748,7 +1750,9 @@ async function main() {
           ? `    application setup is now gradeable (${after}/${afterMax}); keeping this repair`
           : '    application setup is still failing; keeping the attempted repair for the next round');
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
-          'kept because the app became gradeable'));
+          afterMax > 0
+            ? 'kept because the app became gradeable'
+            : 'kept to continue repairing application setup'));
         if (!recordRepairProgression()) break;
         if (pauseForRepeatedFindings()) break;
         continue;

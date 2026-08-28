@@ -43,4 +43,7 @@ test('humanisation keeps useful behaviour while hiding the implementation', () =
     'the server accepted a request that claimed to be from a different user');
   assert.equal(humaniseDiagnostic('setup failed: waiting for [data-testid="current-user"]'),
     'signing in never completed, so nothing behind it could be reached');
+  assert.equal(humaniseDiagnostic(`locator.click: Timeout 5000ms exceeded.\n`
+    + `waiting for locator('[data-testid="profile-link"],#profile-link')`),
+  'the profile link did not become usable');
 });

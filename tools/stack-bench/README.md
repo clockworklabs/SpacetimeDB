@@ -106,12 +106,10 @@ npm run test:null
 npm run test:container
 ```
 
-`check:prompts` is model-free and Docker-free. It renders the actual L1/L2
-build, upgrade, and fix prompts for every packaged stack under prescribed and
-neutral guidance, then compares their exact bytes with the reviewed appliance
-snapshot. If an intentional prompt change occurs, inspect the rendered prompts
-with `commands/agent.mjs --print-prompt` before refreshing the snapshot with
-`node commands/prompt-snapshot.mjs --write`.
+`check:prompts` is model-free and Docker-free. It renders the actual L1-L3
+dependency-mode requests for every packaged stack. It verifies their exact
+bytes, confirms that the product request is the same across stacks, and rejects
+language that tells the agent about grading or testing.
 
 `preflight` says whether the exact requested run can start and gives a concrete
 fix for each failure. It checks Docker/Compose, resource floors, image and
