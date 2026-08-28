@@ -75,6 +75,10 @@ import { PRICING_UNIT, validatePricingAuthority }
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
+export function addCostUsd(...values) {
+  return Number(values.reduce((sum, value) => sum + (value ?? 0), 0).toFixed(6));
+}
+
 export function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
     fixRounds: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
@@ -401,7 +405,7 @@ let emergencyTeardown = null;
 
 function runAgent(args, adapter, mode, level, appDir) {
   const remainingBudget = args.maxBudgetUsd == null ? null
-    : Number((args.maxBudgetUsd - (args.spentBudgetUsd ?? 0)).toFixed(6));
+    : addCostUsd(args.maxBudgetUsd, -(args.spentBudgetUsd ?? 0));
   if (remainingBudget !== null && remainingBudget <= 0) {
     throw new Error(`attempt cost cap of $${args.maxBudgetUsd} was exhausted before ${mode} L${level}`);
   }
@@ -438,7 +442,7 @@ function runAgent(args, adapter, mode, level, appDir) {
         }
         try {
           const result = validateAgentResult(JSON.parse(stdout.trim().split('\n').pop()), request);
-          args.spentBudgetUsd = Number(((args.spentBudgetUsd ?? 0) + result.costUsd).toFixed(6));
+          args.spentBudgetUsd = addCostUsd(args.spentBudgetUsd, result.costUsd);
           resolveRun(result);
         }
         catch (parseError) {
@@ -478,13 +482,13 @@ export function runSessionRecord(session, round = null) {
 export function finalizeRunTotals(run, started, { now = Date.now(), costComplete = true } = {}) {
   const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
   const currentLevels = run.levels.filter(level => !inherited.has(level.level));
-  const currentExecutionCostUsd = Number(currentLevels.reduce((n, level) => n
+  const currentExecutionCostUsd = addCostUsd(currentLevels.reduce((n, level) => n
     + (level.buildCostUsd ?? level.resumeCostUsd ?? 0)
-    + (level.fixCostUsd ?? 0), 0).toFixed(6));
+    + (level.fixCostUsd ?? 0), 0));
   const priorExecutionCostUsd = run.progressionResume?.priorTotals?.costUsd ?? null;
   const cumulativeCostUsd = run.progressionResume
     ? (typeof priorExecutionCostUsd === 'number'
-      ? Number((priorExecutionCostUsd + currentExecutionCostUsd).toFixed(6)) : null)
+      ? addCostUsd(priorExecutionCostUsd, currentExecutionCostUsd) : null)
     : currentExecutionCostUsd;
   run.totals = {
     score: run.levels.reduce((n, level) => n + (level.score ?? 0), 0),
@@ -1665,7 +1669,7 @@ async function main() {
         : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
-      fixCostUsd: Number(fixCost.toFixed(6)),
+      fixCostUsd: addCostUsd(fixCost),
       fixSessions,
       repairHistory,
       sessionTotals,
@@ -1780,8 +1784,8 @@ async function main() {
       appFailures: [], inconclusive: [], harnessFailures: [] }
     : aggregateRunOutcome(run.levels);
   if (args.repairGrant) {
-    run.continuation.cumulativeCostAfterUsd = Number((run.continuation.cumulativeCostBeforeUsd
-      + run.totals.costUsd).toFixed(4));
+    run.continuation.cumulativeCostAfterUsd = addCostUsd(
+      run.continuation.cumulativeCostBeforeUsd, run.totals.costUsd);
     run.continuation.cumulativeDurationAfterSec = run.continuation.cumulativeDurationBeforeSec
       + run.totals.durationSec;
   }

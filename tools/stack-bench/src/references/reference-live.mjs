@@ -35,6 +35,8 @@ import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.mjs';
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
+import { progressionLevels, selectFeatureCatalogLevels }
+  from '../progression/progression-definition.mjs';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.mjs';
 import { mutationTargetKeys } from '../evidence/mutation-analysis.mjs';
@@ -481,7 +483,9 @@ export function referenceQualificationContext(fixture, recipe = null,
   const declaredCatalog = calibration.qualification.featureCatalog;
   const catalogRef = featureCatalog ?? (declaredCatalog
     ? `${declaredCatalog.id}@${declaredCatalog.version}` : null);
-  const catalog = catalogRef ? resolveFeatureCatalog(catalogRef, track) : null;
+  const fullCatalog = catalogRef ? resolveFeatureCatalog(catalogRef, track) : null;
+  const catalog = fullCatalog ? selectFeatureCatalogLevels(fullCatalog,
+    progressionLevels(fullCatalog).filter(candidate => candidate <= level)) : null;
   if (declaredCatalog && catalog.identity.sha256 !== declaredCatalog.sha256) {
     throw new Error(`${calibration.id} feature catalog identity does not match`);
   }

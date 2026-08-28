@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { finalizeRunTotals } from '../commands/bench.mjs';
+import { addCostUsd, finalizeRunTotals } from '../commands/bench.mjs';
 import { checkDatabaseProvenance } from '../commands/run-suite.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS, CODING_SESSION_TIMEOUT_MS }
   from '../src/agents/coding-session-timeouts.mjs';
@@ -56,4 +56,5 @@ test('session and run totals keep receipt precision', () => {
   const run = { levels: [{ level: 1, buildCostUsd: 0.123456, fixCostUsd: 0.234567 },
     { level: 2, buildCostUsd: 0.345678, fixCostUsd: 0 }] };
   assert.equal(finalizeRunTotals(run, 0, { now: 1 }).costUsd, 0.703701);
+  assert.equal(addCostUsd(0.123456, 0.234567, 0.345678), 0.703701);
 });

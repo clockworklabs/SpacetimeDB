@@ -397,6 +397,18 @@ test('progression reference qualification follows the catalog check selection', 
     [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
 });
 
+test('L1-L3 qualification compares the scoped graph identity', () => {
+  const context = referenceQualificationContext({
+    backend: 'mongodb', track: 'ecommerce', level: 5, id: 'ecommerce-progression-mongodb',
+    imported: { sourceSha256: 'af82e6c4c5118d554abef79240535b6191a0a3677db0957024455cd5a224c9dd' },
+  }, 'ecommerce.progression-l1-l3@1.0.0', {
+    level: 3, featureCatalog: 'ecommerce.questlines@1.1.0',
+  });
+  assert.equal(context.featureCatalog.version, '1.1.0');
+  assert.equal(context.selectedCheckKeys.length, 112);
+  assert.equal(context.level, 3);
+});
+
 test('reference qualification keeps underlying runs beside the requested artifact', () => {
   const root = join(tmpdir(), 'stack-bench-reference-output-test');
   const paths = referenceQualificationPaths({ out: join(root, 'postgres-reference.json') }, 'ignored-id');
