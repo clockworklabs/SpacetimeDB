@@ -18,6 +18,7 @@ const ONE_REQUEST_USAGE = { input_tokens: 100, output_tokens: 100,
 const DETAILED_USAGE = { input_tokens: 100, output_tokens: 100,
   cache_read_input_tokens: 50, cache_creation_input_tokens: 30,
   cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 10 } };
+const ZERO_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 };
 
 const listen = server => new Promise((resolve, reject) => {
   server.once('error', reject);
@@ -211,6 +212,8 @@ test('credential broker atomically records all direct requests without credentia
       assert.equal(ledger.billableRequests, 2);
       assert.equal(ledger.completedBillableRequests, 2);
       assert.equal(ledger.spentUsd, 0.0036);
+      assert.deepEqual(ledger.usage,
+        { input: 200, output: 200, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 });
       const text = readFileSync(ledgerPath, 'utf8');
       assert.doesNotMatch(text, new RegExp(sessionToken));
       assert.doesNotMatch(text, new RegExp(credential));
@@ -219,20 +222,78 @@ test('credential broker atomically records all direct requests without credentia
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('broker receipt is authoritative and direct request spend causes fail-closed mismatch', () => {
-  const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+test('streamed provider usage produces a reconciled campaign-priced receipt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-cache-ledger-test-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const stream = [
+    'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":50,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":10}}}}',
+    'data: {"type":"message_delta","usage":{"output_tokens":100}}',
+    '',
+  ].join('\n');
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+      const response = await send(brokerPort, {
+        headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' },
+        body: '{"model":"test-model","max_tokens":1000}',
+      });
+      assert.equal(response.status, 200);
+      const ledger = readCredentialBrokerLedger(ledgerPath,
+        { model: 'test-model', maxBudgetUsd: 1 });
+      assert.deepEqual(ledger.usage,
+        { input: 100, output: 100, cacheRead: 50, cacheWrite5m: 20, cacheWrite1h: 10 });
+      assert.equal(ledger.spentUsd, 0.00195);
+      const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+        cliResult: { type: 'result', is_error: false, total_cost_usd: 0.002925,
+          usage: { input_tokens: 100, output_tokens: 100, cache_read_input_tokens: 50,
+            cache_creation_input_tokens: 30 } },
+        model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+      assert.equal(reconciled.ok, true);
+      assert.equal(reconciled.receipt.costUsd, 0.00195);
+      assert.equal(reconciled.receipt.calculatedCostUsd, 0.00195);
+      assert.equal(reconciled.receipt.cliCostUsd, 0.002925);
+    }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES,
+      upstreamHeaders: { 'content-type': 'text/event-stream' }, upstreamBody: stream });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('campaign pricing is authoritative when CLI pricing differs', () => {
+  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
-    spentUsd: 0.0036, reservedUsd: 0, complete: true,
+    spentUsd: 0.0036, reservedUsd: 0,
+    usage: { input: 200, output: 200, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+    complete: true,
     updatedAt: new Date().toISOString() };
   const reconciled = reconcileCredentialBrokerReceipt({ ledger,
-    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018,
-      usage: ONE_REQUEST_USAGE },
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0054,
+      usage: { ...ONE_REQUEST_USAGE, input_tokens: 200, output_tokens: 200 } },
     model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
-  assert.equal(reconciled.ok, false);
-  assert.equal(reconciled.result.is_error, true);
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.result.is_error, false);
   assert.equal(reconciled.result.total_cost_usd, 0.0036);
   assert.equal(reconciled.receipt.source, 'credential-broker');
-  assert.match(reconciled.receipt.error, /does not match CLI receipt/);
+  assert.equal(reconciled.receipt.cliCostUsd, 0.0054);
+  assert.equal(reconciled.receipt.error, null);
+});
+
+test('broker retains cache write classes that the CLI summary combines', () => {
+  const ledger = { schemaVersion: 2, model: 'claude-sonnet-5', maxBudgetUsd: 50,
+    acceptedRequests: 66, billableRequests: 66, completedBillableRequests: 66,
+    spentUsd: 1.686071, reservedUsd: 0,
+    usage: { input: 124, output: 48559, cacheRead: 5100226,
+      cacheWrite5m: 66627, cacheWrite1h: 3405 },
+    complete: true, updatedAt: new Date().toISOString() };
+  const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 2.529107,
+      usage: { input_tokens: 124, output_tokens: 48559,
+        cache_read_input_tokens: 5100226, cache_creation_input_tokens: 70032 } },
+    model: 'claude-sonnet-5', maxBudgetUsd: 50,
+    pricingRates: { input: 2, output: 10, cacheWrite5m: 2.5,
+      cacheWrite1h: 4, cacheRead: 0.2 } });
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.receipt.costUsd, 1.686071);
+  assert.equal(reconciled.receipt.calculatedCostUsd, 1.686071);
+  assert.equal(reconciled.receipt.cliCostUsd, 2.529107);
+  assert.equal(reconciled.receipt.usage.cacheWrite1h, 3405);
 });
 
 test('missing or incomplete broker ledgers fail closed with a conservative receipt', () => {
@@ -244,9 +305,9 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
   assert.equal(missing.result.stack_bench_cost_receipt.complete, false);
 
   const incomplete = reconcileCredentialBrokerReceipt({ ledger: {
-    schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+    schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
-    spentUsd: 0.1, reservedUsd: 0.4, complete: false,
+    spentUsd: 0.1, reservedUsd: 0.4, usage: ZERO_USAGE, complete: false,
     updatedAt: new Date().toISOString(),
   }, cliResult: { type: 'result', is_error: false, total_cost_usd: 0.1 },
   model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
@@ -256,9 +317,11 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
 });
 
 test('matching broker and CLI receipts preserve a successful result', () => {
-  const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
-    spentUsd: 0.00195, reservedUsd: 0, complete: true,
+    spentUsd: 0.00195, reservedUsd: 0,
+    usage: { input: 100, output: 100, cacheRead: 50, cacheWrite5m: 20, cacheWrite1h: 10 },
+    complete: true,
     updatedAt: new Date().toISOString() };
   const reconciled = reconcileCredentialBrokerReceipt({ ledger,
     cliResult: { type: 'result', is_error: false, total_cost_usd: 0.00195,
@@ -275,14 +338,30 @@ test('matching broker and CLI receipts preserve a successful result', () => {
   assert.equal(reconciled.receipt.calculatedCostUsd, 0.00195);
 });
 
-test('receipt reconciliation rejects usage that cannot reproduce broker spend', () => {
-  const ledger = { schemaVersion: 1, model: 'test-model', maxBudgetUsd: 1,
+test('receipt reconciliation rejects CLI usage that differs from broker usage', () => {
+  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
-    spentUsd: 0.0018, reservedUsd: 0, complete: true,
+    spentUsd: 0.0018, reservedUsd: 0,
+    usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+    complete: true,
     updatedAt: new Date().toISOString() };
   const reconciled = reconcileCredentialBrokerReceipt({ ledger,
     cliResult: { type: 'result', is_error: false, total_cost_usd: 0.0018,
       usage: { ...ONE_REQUEST_USAGE, output_tokens: 0 } },
+  model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+  assert.equal(reconciled.ok, false);
+  assert.match(reconciled.receipt.error, /usage does not match CLI usage/);
+});
+
+test('receipt reconciliation rejects spend that cannot be reproduced from broker usage', () => {
+  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    spentUsd: 0.002, reservedUsd: 0,
+    usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+    complete: true, updatedAt: new Date().toISOString() };
+  const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+    cliResult: { type: 'result', is_error: false, total_cost_usd: 0.002,
+      usage: ONE_REQUEST_USAGE },
     model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
   assert.equal(reconciled.ok, false);
   assert.match(reconciled.receipt.error, /usage-priced spend/);

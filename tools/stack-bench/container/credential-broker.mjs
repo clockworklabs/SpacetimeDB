@@ -12,7 +12,8 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
-import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
+import { normalizeClaudeUsage, priceClaudeUsage, priceNormalizedClaudeUsage }
+  from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
   from '../src/evidence/pricing-authority.mjs';
 
@@ -21,8 +22,9 @@ const MAX_REQUESTS = 512;
 const MAX_OUTPUT_TOKENS = 128_000;
 const ALLOWED_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
 const PRICE_FIELDS = PRICING_RATE_FIELDS;
-const LEDGER_SCHEMA_VERSION = 1;
+const LEDGER_SCHEMA_VERSION = 2;
 const COST_TOLERANCE_USD = 0.0001;
+const USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'];
 
 function fail(message) {
   throw new Error(`credential broker: ${message}`);
@@ -69,7 +71,7 @@ function validateLedger(value, { model = null, maxBudgetUsd = undefined } = {}) 
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('spend ledger is invalid');
   const fields = new Set(['schemaVersion', 'model', 'maxBudgetUsd', 'acceptedRequests',
     'billableRequests', 'completedBillableRequests', 'spentUsd', 'reservedUsd',
-    'complete', 'updatedAt']);
+    'usage', 'complete', 'updatedAt']);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`spend ledger.${key} is unknown`);
   if (value.schemaVersion !== LEDGER_SCHEMA_VERSION) fail('spend ledger schema is invalid');
   if (typeof value.model !== 'string' || !value.model) fail('spend ledger model is invalid');
@@ -91,6 +93,15 @@ function validateLedger(value, { model = null, maxBudgetUsd = undefined } = {}) 
   }
   for (const field of ['spentUsd', 'reservedUsd']) {
     if (!Number.isFinite(value[field]) || value[field] < 0) fail(`spend ledger.${field} is invalid`);
+  }
+  if (!value.usage || typeof value.usage !== 'object' || Array.isArray(value.usage)
+    || Object.keys(value.usage).some(field => !USAGE_FIELDS.includes(field))) {
+    fail('spend ledger.usage is invalid');
+  }
+  for (const field of USAGE_FIELDS) {
+    if (!Number.isSafeInteger(value.usage[field]) || value.usage[field] < 0) {
+      fail(`spend ledger.usage.${field} is invalid`);
+    }
   }
   const complete = value.reservedUsd === 0
     && value.completedBillableRequests === value.billableRequests;
@@ -122,6 +133,7 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   let verifiedLedger = null;
   let verifiedRates = null;
   let usage = null;
+  let cliUsage = null;
   let calculatedCostUsd = null;
   let issue = null;
   try { verifiedLedger = validateLedger(ledger, { model, maxBudgetUsd }); }
@@ -132,8 +144,17 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   try { verifiedRates = validatePricingRates(pricingRates); }
   catch (error) { if (!issue) issue = error.message; }
   try {
-    usage = normalizeClaudeUsage(cliResult?.usage);
-    if (verifiedRates) calculatedCostUsd = priceClaudeUsage(cliResult.usage, verifiedRates);
+    cliUsage = normalizeClaudeUsage(cliResult?.usage);
+  } catch (error) { if (!issue) issue = error.message; }
+  if (verifiedLedger) usage = structuredClone(verifiedLedger.usage);
+  if (!issue && cliUsage && (cliUsage.input !== usage.input
+    || cliUsage.output !== usage.output || cliUsage.cacheRead !== usage.cacheRead
+    || cliUsage.cacheWrite5m + cliUsage.cacheWrite1h
+      !== usage.cacheWrite5m + usage.cacheWrite1h)) {
+    issue = 'credential broker usage does not match CLI usage totals';
+  }
+  try {
+    if (verifiedRates && usage) calculatedCostUsd = priceNormalizedClaudeUsage(usage, verifiedRates);
   } catch (error) { if (!issue) issue = error.message; }
   const brokerCost = verifiedLedger
     ? Math.min(maxBudgetUsd, verifiedLedger.spentUsd + verifiedLedger.reservedUsd)
@@ -141,9 +162,6 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   const cliCost = Number(cliResult?.total_cost_usd);
   if (!issue && (!Number.isFinite(cliCost) || cliCost < 0)) {
     issue = 'coding session did not return a usable cost receipt';
-  }
-  if (!issue && Math.abs(cliCost - brokerCost) > toleranceUsd) {
-    issue = `credential broker spend $${brokerCost.toFixed(6)} does not match CLI receipt $${cliCost.toFixed(6)}`;
   }
   if (!issue && Math.abs(calculatedCostUsd - brokerCost) > toleranceUsd) {
     issue = `usage-priced spend $${calculatedCostUsd.toFixed(6)} does not match credential broker spend $${brokerCost.toFixed(6)}`;
@@ -301,6 +319,7 @@ export function createCredentialBroker(configInput, {
   let completedBillableRequests = 0;
   let spentUsd = 0;
   let reservedUsd = 0;
+  const usageTotals = Object.fromEntries(USAGE_FIELDS.map(field => [field, 0]));
   const recordLedger = () => writeLedger(config.ledgerPath, {
     schemaVersion: LEDGER_SCHEMA_VERSION,
     model: config.model,
@@ -310,6 +329,7 @@ export function createCredentialBroker(configInput, {
     completedBillableRequests,
     spentUsd: Number(spentUsd.toFixed(6)),
     reservedUsd: Number(reservedUsd.toFixed(6)),
+    usage: usageTotals,
     complete: reservedUsd === 0 && completedBillableRequests === billableRequests,
     updatedAt: new Date().toISOString(),
   });
@@ -398,7 +418,13 @@ export function createCredentialBroker(configInput, {
               : null;
             if (!usage) spentUsd += costCeiling;
             else {
-              try { spentUsd += priceClaudeUsage(usage, config.pricingRates); }
+              try {
+                const normalized = normalizeClaudeUsage(usage);
+                spentUsd += priceNormalizedClaudeUsage(normalized, config.pricingRates);
+                for (const field of USAGE_FIELDS) {
+                  usageTotals[field] += normalized[field];
+                }
+              }
               catch { spentUsd += costCeiling; }
             }
           }
