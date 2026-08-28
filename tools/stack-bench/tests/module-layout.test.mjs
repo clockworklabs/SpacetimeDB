@@ -141,5 +141,6 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(source, /\[CONTROL_DIR\]: 'rw,nosuid,nodev,mode=0700'/);
   assert.match(policy, /home: '\/home\/stackbench'/);
   assert.match(source, /does not have the required isolation/);
+  assert.match(source, /'--bare'/);
   assert.doesNotMatch(source, /'\/root':\s*'rw/);
 });

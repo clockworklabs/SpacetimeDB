@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { agentRecipeRequest, agentScenarioPaths } from '../commands/agent.mjs';
+import { agentVisibleContractText, contractControlIds }
+  from '../src/composition/agent-visible-contract.mjs';
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
   createRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
@@ -15,6 +17,26 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 const ROOT = join(import.meta.dirname, '..');
 const AGENT = join(ROOT, 'commands', 'agent.mjs');
 const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1);
+
+test('selected hook linting uses only public test ids from the composed contract', () => {
+  assert.deepEqual(contractControlIds([
+    'Use `staff-link` and `staff-signin-submit`.',
+    'The password is `stackbench-staff-2026`.',
+    'The attribute is `data-action-input`.',
+  ].join('\n')), ['staff-link', 'staff-signin-submit']);
+});
+
+test('agent-visible contracts do not disclose grading or test execution', () => {
+  const visible = agentVisibleContractText([
+    '## What the harness needs',
+    '# Account testing interface',
+    'The runner locates controls. The test fixture provides accounts.',
+    '| Test ID | Element |',
+  ].join('\n'));
+  assert.doesNotMatch(visible, /harness|runner|testing interface|test fixture|test id|hooks/i);
+  assert.match(visible, /Run configuration/);
+  assert.match(visible, /Application interface/i);
+});
 
 function printPrompt(app, request, extraArgs = []) {
   return execFileSync(process.execPath, [AGENT, '--mode', 'build', '--backend', 'postgres',
@@ -43,6 +65,9 @@ test('pack selection changes the real model prompt and exact task identity', () 
     assert.match(prompt, /## Accounts/);
     assert.doesNotMatch(prompt, /## Reviews/);
     assert.doesNotMatch(prompt, /## Cart/);
+    assert.doesNotMatch(prompt,
+      /harness|runner|testing hooks|automated verification|test interface contract|\bhooks\b/i);
+    assert.doesNotMatch(prompt, /check-app|contract check|automated verification|data-testid/i);
     assert.deepEqual(selected.selection.promptPacks, ['ecommerce.feature.accounts']);
 
     const tampered = structuredClone(visible);

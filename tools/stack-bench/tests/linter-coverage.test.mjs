@@ -1,7 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { completeAbortedHooks, completeUnvisitedHooks } from '../linter/lint.mjs';
+import { completeAbortedHooks, completeUnvisitedHooks, selectHooks } from '../linter/lint.mjs';
+import { stableElementSelector } from '../src/actions/element-selector.mjs';
+
+test('stable element selectors support ordinary ids and existing test ids', () => {
+  assert.equal(stableElementSelector('account-name'),
+    '[data-testid="account-name"],#account-name');
+  assert.throws(() => stableElementSelector('account name'), /invalid stable element id/);
+});
+
+test('a selected lint surface excludes unrelated hooks and keeps unknown hooks for scenario grading', () => {
+  const selected = selectHooks([
+    { id: 'accounts', stage: 'landing', check: 'visible' },
+    { id: 'cart', stage: 'cart', check: 'visible' },
+  ], ['support-link', 'accounts']);
+  assert.deepEqual(selected.map(hook => hook.id), ['accounts', 'support-link']);
+  assert.equal(selected[1].stage, 'scenario');
+});
 
 test('contract lint fails closed when a golden path forgets a lintable stage', () => {
   const hooks = [

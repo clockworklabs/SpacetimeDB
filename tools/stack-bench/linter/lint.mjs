@@ -14,12 +14,13 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { stableElementSelector } from '../src/actions/element-selector.mjs';
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK_TIMEOUT = 5000;
 
 function parseArgs(argv) {
-  const args = { level: 1, json: false, headed: false, track: DEFAULT_TRACK };
+  const args = { level: 1, json: false, headed: false, track: DEFAULT_TRACK, hooks: [] };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--url': args.url = argv[++i]; break;
@@ -29,6 +30,7 @@ function parseArgs(argv) {
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
       case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
+      case '--hook': args.hooks.push(argv[++i]); break;
       case '--headed': args.headed = true; break;
       default:
         console.error(`Unknown argument: ${argv[i]}`);
@@ -42,7 +44,19 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadHooks(level, track) {
+export function selectHooks(hooks, selectedIds = []) {
+  if (!selectedIds.length) return hooks;
+  const byId = new Map(hooks.map(hook => [hook.id, hook]));
+  return [...new Set(selectedIds)].sort().map(id => byId.get(id) ?? {
+    id,
+    element: `the selected application control ${id}`,
+    stage: 'scenario',
+    check: 'visible',
+    note: 'checked by the selected feature suite',
+  });
+}
+
+function loadHooks(level, track, selectedIds = []) {
   const CONTRACTS_DIR = track.contracts;
   const files = readdirSync(CONTRACTS_DIR).filter(f => /^\d+-[a-z-]+\.json$/.test(f)).sort();
   const hooks = [];
@@ -54,10 +68,10 @@ function loadHooks(level, track) {
     console.error(`No contracts found for level ${level} in ${CONTRACTS_DIR}`);
     process.exit(2);
   }
-  return hooks;
+  return selectHooks(hooks, selectedIds);
 }
 
-const tid = id => `[data-testid="${id}"]`;
+const tid = stableElementSelector;
 const uniq = Date.now().toString(36).slice(-5);
 
 async function checkHook(page, hook, results) {
@@ -115,7 +129,7 @@ export function completeAbortedHooks(hooks, results, error) {
 async function run() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
-  const hooks = loadHooks(args.level, track);
+  const hooks = loadHooks(args.level, track, args.hooks);
   const byStage = stage => hooks.filter(h => h.stage === stage);
   const results = [];
   const blocked = stage => {
@@ -148,6 +162,7 @@ async function run() {
     label: args.label ?? null,
     url: args.url,
     level: args.level,
+    selectedHooks: args.hooks.length ? [...new Set(args.hooks)].sort() : null,
     pass: failures.length === 0,
     counts: {
       lintable: results.filter(r => r.status !== 'SCENARIO').length,
@@ -175,8 +190,8 @@ async function run() {
       console.log(`${r.status.padEnd(9)} ${r.id}${r.detail ? ` — ${r.detail}` : ''}`);
     }
     console.log(failures.length === 0
-      ? `\nCONTRACT LINT PASS (${results.filter(r => r.status === 'PASS').length} hooks)`
-      : `\nCONTRACT LINT FAIL (${failures.length} hook(s) missing or blocked)`);
+      ? `\nAPPLICATION CONTRACT PASS (${results.filter(r => r.status === 'PASS').length} controls)`
+      : `\nAPPLICATION CONTRACT FAIL (${failures.length} control(s) missing or blocked)`);
   }
   process.exit(failures.length === 0 ? 0 : 1);
 }

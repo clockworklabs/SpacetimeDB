@@ -457,6 +457,12 @@ if (process.env.MAX_THINKING_TOKENS) {
 
 const claudeArgs = [
   '--print', '--output-format', 'json',
+  // A benchmark session must not inherit Claude Code's project memory,
+  // CLAUDE.md files, plugins, or background integrations. The generated app
+  // and the explicit request are the complete input. Transcripts are still
+  // persisted, so cost reconciliation and the post-session leak audit remain
+  // available.
+  '--bare',
   '--permission-mode', 'acceptEdits',
   '--effort', effort,
   '--model', model,

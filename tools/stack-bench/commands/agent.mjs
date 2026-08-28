@@ -12,9 +12,8 @@
 //
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
-import { execFileSync, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, realpathSync,
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync,
          openSync, readSync, closeSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, basename, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
@@ -22,8 +21,8 @@ import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
 import { writeSandbox } from '../src/runtime/sandbox.mjs';
-import { killTree } from '../src/runtime/platform.mjs';
 import { leaseFromEnv } from '../src/runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../src/runtime/container-image.mjs';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.mjs';
@@ -77,7 +76,7 @@ const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 // Set once in main(), because the addresses a build is TOLD to use depend on
 // where the build runs.
 //
-// Host services — the databases, the SpacetimeDB host, the lint server — stay on
+// Host services — the databases and the SpacetimeDB host — stay on
 // the machine, and `localhost` inside a container is the container. Those
 // addresses are rewritten to Docker's host alias. Dev-server ports are NOT
 // rewritten: those servers start inside the container and are published back
@@ -366,34 +365,6 @@ function backendDoc(args, p, track) {
 // Which documents are inlined is the variable under test in the cost work, so
 // it is a flag rather than an edit: both arms of a comparison then come from
 // one binary, and run.json records which arm produced each number.
-// The coding container must not receive a filesystem path into the harness.
-// Lint requests therefore use a short-lived loopback service with a per-session
-// token. It runs in a separate process because the parent waits on synchronous
-// child processes while the coding session is active.
-function startLintServer(cmd, appDir) {
-  const portFile = join(appDir, '.lint-port');
-  const token = randomBytes(32).toString('hex');
-  rmSync(portFile, { force: true });
-  const argv = [join(ROOT, 'commands', 'lint-server.mjs'), '--port-file', portFile,
-    '--cmd', cmd, '--token', token];
-  const child = spawn(process.execPath,
-    argv,
-    { detached: true, stdio: 'ignore' });
-  child.unref();
-
-  // The port file appears only once the socket is accepting, so waiting for it
-  // is waiting for readiness — not a guess at how long a spawn takes.
-  for (let i = 0; i < 100; i++) {
-    if (existsSync(portFile)) {
-      const port = readFileSync(portFile, 'utf8').trim();
-      if (port) return { port, pid: child.pid, token };
-    }
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
-  }
-  killTree(child.pid);
-  throw new Error('the lint server did not come up; a build without its hook check is not worth running');
-}
-
 // Whether a containerised run can actually work, checked before anything is
 // spent rather than discovered an hour in as a build error the model gets
 // blamed for. Returns a reason instead of throwing, because the default and the
@@ -502,24 +473,9 @@ function resolveIsolation(args) {
   return decided;
 }
 
-function writeLintShim(appDir, port, token) {
-  const sh = join(appDir, 'check-hooks.sh');
-  writeFileSync(sh, lintShimScript(HOST_ADDR, port, token));
-  return './check-hooks.sh';
-}
-
-export function lintShimScript(host, port, token) {
-  return '#!/usr/bin/env bash\n'
-    + '# Verifies the required data-testid hooks resolve in the running app.\n'
-    + `curl -sS --fail-with-body -H 'X-Stack-Bench-Lint-Token: ${token}' `
-    + `http://${host}:${port}/lint\n`;
-}
-
-export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
-  const lint = args.mode === 'resume' ? null : args.printPrompt ? './check-hooks.sh'
-    : writeLintShim(args.app, lintEndpoint.port, lintEndpoint.token);
+export function buildPrompt(args, p, track, materials = {}) {
   const common = [
-    'The app lives in /app — work there.',
+    'Build the app in /app.',
     // Container runs only, and identical for every backend so no stack gets
     // more guidance than another.
     //
@@ -530,12 +486,12 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
     // every containerised run would build a working app the grader cannot
     // reach, and fail for a reason that has nothing to do with the database.
     '',
-      'Dev servers must listen on 0.0.0.0, not localhost, or nothing outside '
-      + 'can reach them. For Vite set `server.host: true` in vite.config.ts.',
+      'The client must listen on 0.0.0.0, not localhost, so it is reachable '
+      + 'outside its process.',
     '',
-    '## Backend access and API material',
+    '## Stack',
     '',
-    backendDoc(args, p, track),
+    agentVisibleContractText(backendDoc(args, p, track)),
   ];
   const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
   if (skills) common.push('', '## Selected API reference', '', skills);
@@ -547,8 +503,7 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
       'This is a saved application from an earlier completed run. Install its',
       'dependencies and start its existing database module, server, and web client',
       'as needed. Do not implement features or fix application behavior. Do not',
-      'change source files; the controller will verify that the saved source remains',
-      'byte-for-byte identical before grading it.',
+      'change source files. The saved source must remain byte-for-byte identical.',
       '',
       'Output RESUME_COMPLETE when the existing app is running.',
       '',
@@ -558,7 +513,7 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
 
   if (args.mode === 'fix') {
     return [
-      'Fix the bugs reported by automated verification.',
+      'Fix the reported application bugs.',
       '',
       'Read BUG_REPORT.md in the app directory. Each entry says what was expected',
       'and what actually happened. Fix the app so the behaviour matches, redeploy,',
@@ -566,7 +521,6 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
       '',
       'Change only what is needed. Do not alter behaviour that is already correct.',
       '',
-      `When the fixes are deployed, verify the testing hooks still resolve:\n\n    ${lint}\n`,
       'Output FIX_COMPLETE when done.',
       '',
       ...common,
@@ -585,20 +539,16 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
   return [
     ...verb,
     '',
-    `When it is deployed, verify the testing hooks resolve:\n\n    ${lint}\n`,
-    'Fix any failures and re-run until it prints CONTRACT LINT PASS.',
-    `Output ${args.mode === 'upgrade' ? 'UPGRADE_COMPLETE' : 'DEPLOY_COMPLETE'} when the`,
-    'dev server is confirmed running and the lint passes.',
+    `After the client is running, reply with ${args.mode === 'upgrade'
+      ? 'UPGRADE_COMPLETE' : 'DEPLOY_COMPLETE'}.`,
     '',
     ...common,
     '',
-    '## Requested application',
+    agentVisibleContractText(materials.requirementText ?? levelPrompt(track, args.level)),
     '',
-    materials.requirementText ?? levelPrompt(track, args.level),
+    '## Application interface',
     '',
-    '## Test interface contract',
-    '',
-    materials.contractText ?? appendix(track, args.level),
+    agentVisibleContractText(materials.contractText ?? appendix(track, args.level)),
   ].join('\n');
 }
 
@@ -648,7 +598,7 @@ async function main() {
   // diff of this against a saved copy — captured with the same isolation flags,
   // since host and container prompts differ by design.
   if (args.printPrompt) {
-    process.stdout.write(buildPrompt(args, p, track, undefined, { skillsText, requirementText, contractText }));
+    process.stdout.write(buildPrompt(args, p, track, { skillsText, requirementText, contractText }));
     return;
   }
   if (args.mode === 'build') {
@@ -671,19 +621,7 @@ async function main() {
   mkdirSync(args.app, { recursive: true });
   writeFileSync(join(args.app, '.stack-bench-backend'), args.backend);
 
-  // The linter runs here, in the harness, and answers over loopback. The build
-  // is given a port instead of a path, so there is nothing in its directory to
-  // read the harness location out of.
-  const lintCmd = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
-    + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
-  const lintServer = startLintServer(lintCmd, args.app);
-  // A detached child outlives a parent that throws, so every exit path stops it.
-  const stopLint = () => killTree(lintServer.pid);
-  process.on('exit', stopLint);
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopLint(); process.exit(130); });
-
-  const prompt = buildPrompt(args, p, track, lintServer,
-    { skillsText, requirementText, contractText });
+  const prompt = buildPrompt(args, p, track, { skillsText, requirementText, contractText });
   const bugReportPath = join(args.app, 'BUG_REPORT.md');
   const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
     ? readFileSync(bugReportPath, 'utf8') : null;
@@ -777,11 +715,6 @@ async function main() {
       throttle: { waits: 0, waitedMs: 0, maxWaitMs: throttleMaxWaitMinutes * 60_000,
         jitterMs: throttleJitterMs } };
   }
-
-  // The session is over, so the lint endpoint has no reason to stay open — and
-  // an open listener would keep this process alive after it has printed its
-  // result.
-  killTree(lintServer.pid);
 
   const { raw, spawnError, sessionResults, interruptions, result, throttle } = coding;
   const noOutput = !result.session_id && !raw.trim();

@@ -9,8 +9,8 @@ const PRESERVED_DIRS = new Set(['node_modules', '.git', 'stack-bench']);
 const TRANSIENT_DIRS = new Set(['dist', '.vite', 'coverage']);
 const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
 const ROOT_HARNESS_FILES = new Set([
-  '.lint-port', '.sandbox-settings.json', '.stack-bench-backend',
-  'BUG_REPORT.md', 'bug-report-quality.json', 'check-hooks.sh',
+  '.sandbox-settings.json', '.stack-bench-backend',
+  'BUG_REPORT.md', 'bug-report-quality.json',
 ]);
 const RUNTIME_LOG_FILES = new Set(['client.log', 'server.log', 'vite.log']);
 

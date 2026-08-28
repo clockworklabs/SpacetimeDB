@@ -10,8 +10,9 @@ import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../src/evi
 import { acquireCampaignLock, releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
 import { createRepairGrant, inspectRepairParent } from '../src/runtime/repair-grant.mjs';
 import { rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
+import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
-const ROOT = import.meta.dirname;
+const ROOT = STACK_BENCH_ROOT;
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
 
 export function parseRepairArgs(argv) {

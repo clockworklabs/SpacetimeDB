@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ensureDatabase, hostServiceAddress, lintShimScript } from '../commands/agent.mjs';
+import { ensureDatabase, hostServiceAddress } from '../commands/agent.mjs';
 import { codingSessionFailure } from '../src/agents/coding-session-recovery.mjs';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -111,12 +111,9 @@ test('exit 137 is reported as a kill without guessing that it was OOM', () => {
   assert.match(detail, /oom_kill 0/);
 });
 
-test('appliance lint endpoint is reachable only through its authenticated shim', () => {
+test('appliance uses the configured host-service address', () => {
   assert.equal(hostServiceAddress({ STACK_BENCH_APPLIANCE: '1' }), '127.0.0.1');
   assert.equal(hostServiceAddress({}), 'host.docker.internal');
   assert.equal(hostServiceAddress({ STACK_BENCH_APPLIANCE: '1',
     STACK_BENCH_HOST_ALIAS: 'explicit-host' }), 'explicit-host');
-  const script = lintShimScript('127.0.0.1', 43210, 'a'.repeat(64));
-  assert.match(script, /X-Stack-Bench-Lint-Token: a{64}/);
-  assert.match(script, /http:\/\/127\.0\.0\.1:43210\/lint/);
 });

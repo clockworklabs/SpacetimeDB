@@ -36,6 +36,7 @@ import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { stableElementSelector } from '../src/actions/element-selector.mjs';
 import {
   BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,
@@ -136,7 +137,7 @@ function parseArgs(argv) {
   return args;
 }
 
-const tid = id => `[data-testid="${id}"]`;
+const tid = stableElementSelector;
 const uniq = () => Math.random().toString(36).slice(2, 7);
 
 // ─── Actor: an isolated browser context with its own identity ────────────────

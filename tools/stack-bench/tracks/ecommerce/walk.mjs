@@ -34,13 +34,15 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   };
 
   await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  const hasStage = (...stages) => stages.some(stage => byStage(stage).length > 0);
 
   // Stage: landing — the storefront and its prices are public, so everything
   // here must resolve before anyone signs in.
   let ok = true;
   for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
 
-  if (ok) {
+  if (ok && hasStage('storefront', 'item', 'item-after-review', 'cart',
+    'after-checkout', 'admin', 'operations', 'fulfilment')) {
     // Alphanumeric on purpose. This was `lint-${uniq}`; the spec never states
     // which characters a username must accept, so an app validating them as
     // letters, digits and underscore rejected every account the linter made,
@@ -51,21 +53,21 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   }
 
   // Stage: storefront — signing up turns the buying controls on.
-  if (ok) {
+  if (ok && byStage('storefront').length) {
     for (const h of byStage('storefront')) ok = (await checkHook(page, h, results)) && ok;
   } else blocked('storefront');
 
   // Reviews are gated on having bought the item, so the walk earns the right
   // before it exercises the form — otherwise a spec-compliant refusal would
   // read as a missing hook.
-  if (ok) {
+  if (ok && byStage('item-after-review').length) {
     await click(page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first()
       .locator(tid('buy-now')).first(), `buy ${REVIEW_ITEM}`);
     await page.waitForTimeout(1200);
   }
 
   // Stage: search-results — search for an item the storefront is not showing.
-  if (ok) {
+  if (ok && byStage('search-results').length) {
     const search = page.locator(tid('search-input')).first();
     await search.fill(SEARCH_ONLY);
     await search.press('Enter').catch(() => {});
@@ -88,7 +90,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   } else blocked('search-results');
 
   // Stage: item — open one item's detail view from its card.
-  if (ok) {
+  if (ok && byStage('item').length) {
     const card = page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first();
     try {
       await card.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
@@ -101,7 +103,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
 
   // Stage: item-after-review — the review must arrive without a reload.
   const probe = `lint review ${uniq}`;
-  if (ok) {
+  if (ok && byStage('item-after-review').length) {
     const rating = page.locator(tid('review-rating')).first();
     // A rating control can be a select, a number input or a row of buttons.
     await rating.selectOption('5')
@@ -121,7 +123,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   } else blocked('item-after-review');
 
   // Stage: cart — add a known item, then open the cart.
-  if (ok) {
+  if (ok && byStage('cart').length) {
     // Search reaches the product regardless of ranking or page size.
     const search = page.locator(tid('search-input')).first();
     await search.fill(CART_ITEM);
@@ -137,7 +139,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   } else blocked('cart');
 
   // Stage: after-checkout — the order must show the item that was bought.
-  if (ok) {
+  if (ok && byStage('after-checkout').length) {
     await click(page.locator(tid('checkout-submit')).first(), 'submit checkout');
     await page.waitForTimeout(1500);
     const orders = page.locator(tid('orders-toggle')).first();
@@ -158,7 +160,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
 
   // Stage: admin — a separate account with its own area. Signing out and back
   // in as the seeded admin is the only way to reach it.
-  if (ok) {
+  if (ok && hasStage('admin', 'operations', 'fulfilment')) {
     await click(page.locator(tid('signout')).first(), 'sign out');
     await page.waitForTimeout(1000);
     const toggle = page.locator(tid('signin-toggle')).first();
@@ -190,7 +192,11 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
         blocked('fulfilment');
       }
     }
-  } else blocked('admin');
+  } else {
+    blocked('admin');
+    blocked('operations');
+    blocked('fulfilment');
+  }
 
   for (const h of byStage('scenario')) {
     results.push({ id: h.id, status: 'SCENARIO', detail: h.note });

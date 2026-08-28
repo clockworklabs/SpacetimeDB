@@ -84,17 +84,17 @@ for (const file of readdirSync(resultsDir).filter(name => /^grading-.*\.json$/.t
   }
 }
 
-// Contract failures are separate because the test id is itself the public
+// Contract failures are separate because the element id is itself the public
 // requirement here. Behavioural failures above must never expose one.
 const lintPath = join(resultsDir, 'contract-lint.json');
 if (existsSync(lintPath)) {
   const lint = readArtifactPayload(lintPath, { expectedKind: 'contract_lint' });
   for (const result of (lint.results ?? []).filter(item => item.status === 'FAIL')) {
     bugs.push({
-      area: 'Testing hooks',
-      expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use data-testid="${result.id}"`,
+      area: 'Application controls',
+      expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use id="${result.id}"`,
       observed: sanitiseDiagnostic(result.detail
-        ?? `no visible element with data-testid="${result.id}" was found after a clean reset`, 500),
+        ?? `no visible element with id="${result.id}" was found after a clean reset`, 500),
       contract: true, vague: false,
     });
   }
@@ -108,7 +108,7 @@ if (existsSync(bundlePath)) {
       'database-provenance': `The app must use the ${bundle.backend} database and connection supplied for this run.`,
       'application-layout': 'The app must use a project layout that can be built, started, and reset repeatedly.',
       'application-restart': 'The app must provide a repeatable command that starts its server after a clean database reset.',
-    }[bundle.outcome.phase] ?? 'The app must start successfully in the supplied benchmark environment.';
+    }[bundle.outcome.phase] ?? 'The app must start successfully in the supplied environment.';
     bugs.unshift({
       area: 'Application setup',
       expected,
@@ -130,8 +130,8 @@ const contractFailures = repairBugs.filter(bug => bug.contract);
 const lines = [
   '# Bug Report',
   '',
-  'Stack Bench found these problems after a clean database reset and a fresh',
-  'application restart. Fix the app so the behaviour matches, then redeploy.',
+  'The application has these problems after a clean database reset and a fresh',
+  'restart. Fix the behaviour, then redeploy.',
   'Do not change behaviour that is already correct. A check against warm local',
   'state does not replace the clean verification result below.',
   '',
@@ -170,8 +170,8 @@ if (behavioural.length) {
 }
 
 if (contractFailures.length) {
-  lines.push('## Testing interface', '');
-  lines.push('Stack Bench could not find these required elements in the clean test state:', '');
+  lines.push('## Application controls', '');
+  lines.push('These required elements were not available in the clean application state:', '');
   contractFailures.forEach(bug => {
     lines.push(`- **Expected:** ${bug.expected}`);
     lines.push(`  **Actual:** ${bug.observed}`);

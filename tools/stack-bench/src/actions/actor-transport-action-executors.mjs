@@ -317,7 +317,8 @@ async function scheduleMessage({ input, capabilities }) {
   const when = actor.loc('schedule-time');
   await when.waitFor({ state: 'visible', timeout: browser.defaultWithin });
   const dedicated = actor.page.locator(
-    '[data-testid="schedule-message-input"], [data-testid="schedule-text"]').first();
+    '[data-testid="schedule-message-input"], #schedule-message-input, '
+      + '[data-testid="schedule-text"], #schedule-text').first();
   if (await dedicated.count()) await dedicated.fill(input.text);
   const type = (await when.getAttribute('type')) ?? 'text';
   const at = new Date(Date.now() + input.secondsAhead * 1000);

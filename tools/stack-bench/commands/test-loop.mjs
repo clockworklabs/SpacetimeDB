@@ -130,13 +130,13 @@ const reportPath = join(APP, 'BUG_REPORT.md');
 const reportExists = existsSync(reportPath);
 check('the bug report was written', reportExists);
 // Behavioural findings must never reveal how they were detected, or a fix can
-// target the check instead of the app. Missing-hook findings are exempt: there
-// the test id is the requirement.
+// target the check instead of the app. Missing-control findings are exempt:
+// there the element id is the requirement.
 const report = reportExists ? readFileSync(reportPath, 'utf8') : '';
-const behaviourSection = report.split('## Missing testing hooks')[0];
+const behaviourSection = report.split('## Application controls')[0];
 check('behavioural findings do not leak selectors or timings',
   !/data-testid|locator|within \d+ms/.test(behaviourSection));
-check('missing hooks are reported separately', /## Missing testing hooks/.test(report));
+check('missing controls are reported separately', /## Application controls/.test(report));
 check('build and fix costs are both recorded',
   level?.buildCostUsd > 0 && level?.fixCostUsd > 0,
   `build=${level?.buildCostUsd} fix=${level?.fixCostUsd}`);
@@ -162,7 +162,8 @@ check('run totals aggregate every model session',
   JSON.stringify(run.totals));
 check('wall time recorded', run.totals?.durationSec >= 0);
 check('the fix improved the contract lint',
-  /CONTRACT LINT FAIL[\s\S]*CONTRACT LINT PASS/.test(out) || level?.contractPass === true,
+  /APPLICATION CONTRACT FAIL[\s\S]*APPLICATION CONTRACT PASS/.test(out)
+    || level?.contractPass === true,
   'expected the broken fixture to fail the lint and the fixed one to pass');
 
 console.log('\nLoop test — zero fix rounds allowed');

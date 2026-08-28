@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
-  dependencyRepairBudget, dependencyStrikeRecords, levelGradeIsUsable, parseArgs,
+  clearPrivateGradingEvidence, dependencyRepairBudget, dependencyStrikeRecords,
+  levelGradeIsUsable, parseArgs,
   pristineMutationBaselinePath, repairHistoryEntry, repairProgressState }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
@@ -86,6 +87,22 @@ test('audit failures retain the exit code and stderr needed for diagnosis', () =
   error.stderr = 'permission denied\nsecond line';
   assert.equal(auditFailureSummary(error),
     'Command failed: leak audit (exit 7; stderr: permission denied)');
+});
+
+test('repair preparation removes raw grading evidence but keeps the app and bug report', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-isolation-'));
+  try {
+    mkdirSync(join(root, 'stack-bench'), { recursive: true });
+    writeFileSync(join(root, 'stack-bench', 'bundle.json'), '{"private":true}\n');
+    writeFileSync(join(root, 'BUG_REPORT.md'), '# Behaviour only\n');
+    writeFileSync(join(root, 'app.js'), 'export {};\n');
+    clearPrivateGradingEvidence(root);
+    assert.equal(existsSync(join(root, 'stack-bench')), false);
+    assert.equal(existsSync(join(root, 'BUG_REPORT.md')), true);
+    assert.equal(existsSync(join(root, 'app.js')), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('dependency campaign progression rejects an incomplete or unbound plan reference', () => {

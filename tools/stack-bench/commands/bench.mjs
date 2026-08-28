@@ -23,7 +23,7 @@ import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
-  moduleName, dbName, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
+  moduleName, dbName, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
 import { formatRepairProgress } from '../src/evidence/scoring.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
@@ -77,6 +77,15 @@ const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 export function addCostUsd(...values) {
   return Number(values.reduce((sum, value) => sum + (value ?? 0), 0).toFixed(6));
+}
+
+// Grading writes private evidence into the mounted app directory because the
+// grader and app share one runtime. A repair session may receive only the
+// behavioural BUG_REPORT.md produced from that evidence. Remove the raw
+// bundle, scenario names, screenshots, and grader output before the coding
+// model starts.
+export function clearPrivateGradingEvidence(appDir) {
+  rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
 }
 
 export function parseArgs(argv) {
@@ -1326,8 +1335,9 @@ async function main() {
       ? Math.max(0, conclusiveProgressionAttempts() - 1) : 0;
     if (resumedRepair) {
       sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
-        '--history-json', '[]', '--archive', join(appDir, 'stack-bench', 'records',
+        '--history-json', '[]', '--archive', join(args.out, 'repair-reports',
           `bug-report-l${level}-resume.md`)], { stdio: 'pipe' });
+      clearPrivateGradingEvidence(appDir);
     }
 
     const firstMode = resumedRepair ? 'fix'
@@ -1585,7 +1595,7 @@ async function main() {
       try {
         sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
           '--history-json', JSON.stringify(repairHistory),
-          '--archive', join(appDir, 'stack-bench', 'records',
+          '--archive', join(args.out, 'repair-reports',
             `bug-report-l${level}-round${fixRounds + 1}.md`)], { stdio: 'pipe' });
       } catch (err) {
         if (err.status === 3) wroteReport = false;      // nothing failed
@@ -1613,6 +1623,7 @@ async function main() {
       // building. It only has to survive this process.
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       snapshotSource(appDir, snapshot);
+      clearPrivateGradingEvidence(appDir);
       fixRounds += 1;
       if (args.progression) {
         progressionSelection = bindProgressionAction(level);

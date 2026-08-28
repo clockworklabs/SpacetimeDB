@@ -23,6 +23,7 @@ import { controlBackend } from '../src/runtime/backend-control.mjs';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { contractControlIds } from '../src/composition/agent-visible-contract.mjs';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.mjs';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.mjs';
@@ -486,14 +487,16 @@ function resetDatabase(args) {
   return { ok: true, detail: null, outcome: null };
 }
 
-function lint(args) {
+function lint(args, selectedTask = null) {
   process.stdout.write('  contract lint ... ');
   const out = join(args.out, 'contract-lint.json');
   rmSync(out, { force: true });
   try {
+    const controls = selectedTask ? contractControlIds(selectedTask.task.contractText) : [];
     run('node', [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
       '--track', args.track, '--label', args.label, '--out', out,
-      '--parent-attempt-id', args.bundleArtifactId]);
+      '--parent-attempt-id', args.bundleArtifactId,
+      ...controls.flatMap(id => ['--hook', id])]);
   } catch { /* non-zero exit means hooks failed; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = readArtifactPayload(out, { expectedKind: 'contract_lint' });
@@ -915,7 +918,7 @@ async function main() {
       console.log('\nABORTED: application data came from outside the benchmark database.');
       process.exit(1);
     }
-    bundle.suites.lint = lint(args);
+    bundle.suites.lint = lint(args, selectedTask);
     bundle.actions = checkActions(args);
   }
 
