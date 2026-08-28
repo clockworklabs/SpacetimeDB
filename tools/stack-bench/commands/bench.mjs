@@ -367,18 +367,43 @@ function restoreSource(from, appDir) {
 // Check contamination after every coding session. File-tool permissions do not
 // govern shell reads, so the transcript audit remains a separate hard gate.
 function auditContamination(appDir) {
-  try {
-    const audit = sh('node', [join(ROOT, 'commands', 'leak-audit.mjs'), '--app', appDir, '--json'], { stdio: 'pipe' });
-    const escapes = JSON.parse(audit).flatMap(r => r.hits ?? []);
-    const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS/.test(h.kind));
-    if (!serious.length) return null;
-    return { evidence: [...new Set(serious.map(h => `${h.kind}: ${h.path.split('/').slice(-2).join('/')}`))].slice(0, 8),
-      verdict: 'SCORES NOT USABLE — the build read the harness that grades it.' };
-  } catch (e) {
-    // An audit that could not run is not a pass.
-    return { evidence: [`audit did not run: ${String(e.message).split(/\r?\n/)[0]}`],
-      verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
+  const args = [join(ROOT, 'commands', 'leak-audit.mjs'), '--app', appDir, '--json'];
+  let firstFailure = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const audit = sh('node', args, { stdio: 'pipe' });
+      const escapes = JSON.parse(audit).flatMap(r => r.hits ?? []);
+      const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS/.test(h.kind));
+      if (firstFailure) {
+        console.error(`  warning: contamination audit passed on retry after: ${auditFailureSummary(firstFailure)}`);
+      }
+      if (!serious.length) return null;
+      return { kind: 'contaminated',
+        evidence: [...new Set(serious.map(h => `${h.kind}: ${h.path.split('/').slice(-2).join('/')}`))].slice(0, 8),
+        verdict: 'SCORES NOT USABLE — the build read the harness that grades it.' };
+    } catch (error) {
+      firstFailure ??= error;
+      if (attempt === 2) {
+        // An audit that could not run is not a pass. Keep the process details so
+        // the failure can be repaired without another paid reproduction.
+        return { kind: 'harness_failure',
+          evidence: [`audit did not run after retry: ${auditFailureSummary(error)}`],
+          verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
+      }
+    }
   }
+  return null;
+}
+
+export function auditFailureSummary(error) {
+  const message = String(error?.message ?? error).split(/\r?\n/)[0];
+  const stderr = String(error?.stderr ?? '').trim().split(/\r?\n/)[0];
+  const details = [
+    Number.isInteger(error?.status) ? `exit ${error.status}` : null,
+    error?.signal ? `signal ${error.signal}` : null,
+    stderr ? `stderr: ${stderr}` : null,
+  ].filter(Boolean);
+  return details.length ? `${message} (${details.join('; ')})` : message;
 }
 
 function containerIdentity(name) {
@@ -1199,15 +1224,41 @@ async function main() {
     }
   };
 
-  // Stop at the session that becomes contaminated. Exit 4 so campaign tooling
-  // records an unusable run rather than a valid zero.
-  const abortContaminated = (whichSession, contamination) => {
-    run.contaminated = true;
-    run.contamination = { ...contamination, detectedAt: whichSession };
-    console.log(`\n  !! CONTAMINATED at ${whichSession} — this session read the harness that grades it:`);
-    for (const e of contamination.evidence) console.log(`     ${e}`);
-    console.log('     Scores from this run must not be quoted. Stopping now rather than');
-    console.log('     paying to grade a level that cannot be used.');
+  // Stop before grading if a coding session read protected material or if the
+  // audit itself failed. Keep the paid session and exact cost in run.json even
+  // though no score may be used.
+  const abortUnusableSession = (whichSession, audit, levelRecord, selected) => {
+    const reason = audit.evidence.join('; ');
+    const outcome = { kind: audit.kind === 'harness_failure' ? 'harness_failure' : 'ungraded',
+      phase: 'contamination-audit', reason,
+      appFailures: [], inconclusive: [],
+      harnessFailures: audit.kind === 'harness_failure' ? [reason] : [] };
+    run.contaminated = audit.kind === 'contaminated';
+    run.contamination = { evidence: audit.evidence, verdict: audit.verdict,
+      detectedAt: whichSession };
+    run.levels.push({ ...levelRecord, error: reason, outcome });
+    if (progressionExecution) {
+      recordProgressionGrade({ selected, bundle: null, level: levelRecord.level,
+        failure: outcome,
+        repair: { status: 'ungraded', budgetRounds: 0, roundsUsed: 0,
+          stopReason: audit.kind === 'harness_failure' ? 'audit-failure' : 'contaminated' } });
+      run.progressionStatus = progressionExecution.status();
+    }
+    run.validation.ladder.stoppedAfterLevel = run.levels.at(-2)?.level ?? null;
+    run.validation.ladder.blockedLevels = args.levelList
+      .filter(candidate => candidate >= levelRecord.level);
+    finalizeRunTotals(run, started, { costComplete: runCostComplete });
+    run.outcome = outcome;
+    run.completedAt = new Date().toISOString();
+    if (run.contaminated) {
+      console.log(`\n  !! CONTAMINATED at ${whichSession}:`);
+      for (const evidence of audit.evidence) console.log(`     ${evidence}`);
+      console.log('     Scores from this run must not be quoted.');
+    } else {
+      console.log(`\n  !! HARNESS FAILURE at ${whichSession}:`);
+      for (const evidence of audit.evidence) console.log(`     ${evidence}`);
+      console.log('     The audit did not establish a usable result.');
+    }
     try { writeRunJson(join(args.out, 'run.json'), run); } catch { /* best effort */ }
     try { sh('node', [join(ROOT, 'commands', 'archive-transcripts.mjs'), '--app', appDir, '--label', artifactLabel], { stdio: 'pipe' }); } catch { /* best effort */ }
     teardown();
@@ -1238,7 +1289,21 @@ async function main() {
     const build = await runAgentForLevel(
       resumedRepair || level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
     const buildLeak = auditContamination(appDir);
-    if (buildLeak) abortContaminated(`level ${level} ${firstMode}`, buildLeak);
+    if (buildLeak) {
+      const buildSession = runSessionRecord(build,
+        resumedRepair ? priorRepairRounds + 1 : null);
+      const sessionTotals = summarizeSessions([buildSession]);
+      abortUnusableSession(`level ${level} ${firstMode}`, buildLeak, {
+        level, graded: false, score: null, max: null, selection: null,
+        ...(resumedRepair
+          ? { fixCostUsd: build.costUsd, fixSessions: [buildSession], fixRounds: 1,
+            priorRepairRounds, cumulativeFixRounds: priorRepairRounds + 1 }
+          : continuing
+          ? { resumeCostUsd: build.costUsd, resumeSession: buildSession }
+          : { buildCostUsd: build.costUsd, buildSession }),
+        sessionTotals, costUsd: build.costUsd, durationMs: Date.now() - t0,
+      }, progressionSelection);
+    }
     // Carry the agent's own record of the setup up to the run. Comparing two
     // scores is only meaningful if the reasoning budget, permission mode and
     // CLI version behind them were the same, and that is not knowable after the
@@ -1527,7 +1592,29 @@ async function main() {
       // that read the scenario file is not going to be redeemed by another
       // round, and grading it only produces a number nobody may quote.
       const fixLeak = auditContamination(appDir);
-      if (fixLeak) abortContaminated(`fix round ${fixRounds}`, fixLeak);
+      if (fixLeak) {
+        const buildSession = runSessionRecord(build);
+        const sessions = resumedRepair ? fixSessions : [buildSession, ...fixSessions];
+        const sessionTotals = summarizeSessions(sessions);
+        abortUnusableSession(`fix round ${fixRounds}`, fixLeak, {
+          level, graded: false, score: null, max: null,
+          selection: bundle?.selection ?? null,
+          ...(resumedRepair
+            ? { resumedRepair: firstBuild }
+            : continuing
+            ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
+            : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
+          fixCostUsd: addCostUsd(fixCost), fixSessions, fixRounds,
+          ...(resumedRepair ? { priorRepairRounds,
+            cumulativeFixRounds: priorRepairRounds + fixRounds } : {}),
+          repair: { status: 'ungraded', budgetRounds: displayedRepairBudget,
+            roundsUsed: priorRepairRounds + fixRounds,
+            stopReason: fixLeak.kind === 'harness_failure' ? 'audit-failure' : 'contaminated' },
+          sessionTotals,
+          costUsd: resumedRepair ? addCostUsd(fixCost) : addCostUsd(build.costUsd, fixCost),
+          durationMs: Date.now() - t0,
+        }, progressionSelection);
+      }
       bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level, track, runId);
 
       const after = bundle?.totals?.score ?? 0;
@@ -1759,26 +1846,26 @@ async function main() {
   }
 
   // Record a final transcript audit in addition to the per-session hard gates.
-  try {
-    const audit = sh('node', [join(ROOT, 'commands', 'leak-audit.mjs'), '--app', appDir, '--json'], { stdio: 'pipe' });
-    const escapes = JSON.parse(audit).flatMap(r => r.hits ?? []);
-    const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS/.test(h.kind));
-    run.contaminated = serious.length > 0;
-    run.contamination = serious.length
-      ? { evidence: [...new Set(serious.map(h => `${h.kind}: ${h.path.split('/').slice(-2).join('/')}`))].slice(0, 8),
-          verdict: 'SCORES NOT USABLE — the build read the harness that grades it.' }
-      : { evidence: 'no reads of the grader, contracts, prompts or notes', verdict: 'scores usable' };
-    if (run.contaminated) {
-      console.log(`\n  !! CONTAMINATED: this build read the harness that grades it —`);
-      for (const e of run.contamination.evidence) console.log(`     ${e}`);
-      console.log('     Scores from this run must not be quoted.');
-    }
-  } catch (e) {
-    // An audit that cannot run is not a pass.
+  // The same retry and diagnostic path is used at both gates.
+  let finalAuditFailure = null;
+  const finalAudit = auditContamination(appDir);
+  if (!finalAudit) {
+    run.contaminated = false;
+    run.contamination = { evidence: 'no reads of the grader, contracts, prompts or notes',
+      verdict: 'scores usable' };
+  } else if (finalAudit.kind === 'contaminated') {
     run.contaminated = true;
-    run.contamination = { evidence: `audit did not run: ${String(e.message).split('\n')[0]}`,
-      verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
-    console.log('\n  !! AUDIT DID NOT RUN — scores from this run must not be quoted.');
+    run.contamination = { evidence: finalAudit.evidence, verdict: finalAudit.verdict };
+    console.log('\n  !! CONTAMINATED: this build read the harness that grades it:');
+    for (const evidence of finalAudit.evidence) console.log(`     ${evidence}`);
+    console.log('     Scores from this run must not be quoted.');
+  } else {
+    run.contaminated = false;
+    run.contamination = { evidence: finalAudit.evidence, verdict: finalAudit.verdict };
+    const reason = finalAudit.evidence.join('; ');
+    finalAuditFailure = { kind: 'harness_failure', phase: 'contamination-audit', reason,
+      appFailures: [], inconclusive: [], harnessFailures: [reason] };
+    console.log('\n  !! AUDIT DID NOT COMPLETE. Scores from this run must not be quoted.');
   }
 
   // Keep the transcript evidence outside the provider CLI's prunable store.
@@ -1788,10 +1875,10 @@ async function main() {
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
   finalizeRunTotals(run, started, { costComplete: runCostComplete });
-  run.outcome = args.referenceMutationOnly && run.mutationControl?.ok
+  run.outcome = finalAuditFailure ?? (args.referenceMutationOnly && run.mutationControl?.ok
     ? { kind: 'passed', phase: 'mutation-control', reason: null,
       appFailures: [], inconclusive: [], harnessFailures: [] }
-    : aggregateRunOutcome(run.levels);
+    : aggregateRunOutcome(run.levels));
   if (args.repairGrant) {
     run.continuation.cumulativeCostAfterUsd = addCostUsd(
       run.continuation.cumulativeCostBeforeUsd, run.totals.costUsd);

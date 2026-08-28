@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { finalizeRunTotals, formatLevelSummary, gradeArgv, levelGradeIsUsable, parseArgs,
+import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
+  levelGradeIsUsable, parseArgs,
   pristineMutationBaselinePath, repairHistoryEntry, repairProgressState }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
@@ -45,6 +46,14 @@ test('ungraded level summaries contain useful failure values', () => {
     error: 'coding-session-failed', buildCostUsd: 1.25, durationMs: 4_400 }),
   'L1: NOT GRADED | 0 repairs | $1.25 total ($0.00 repairs) | '
     + 'stopped: coding session failed | 4s');
+});
+
+test('audit failures retain the exit code and stderr needed for diagnosis', () => {
+  const error = new Error('Command failed: leak audit');
+  error.status = 7;
+  error.stderr = 'permission denied\nsecond line';
+  assert.equal(auditFailureSummary(error),
+    'Command failed: leak audit (exit 7; stderr: permission denied)');
 });
 
 test('dependency campaign progression rejects an incomplete or unbound plan reference', () => {

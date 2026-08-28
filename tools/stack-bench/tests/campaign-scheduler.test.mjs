@@ -22,6 +22,14 @@ test('provider failures remain distinct from harness failures in campaign state'
     reason: 'attempt process exited 1: provider-connection-error' });
 });
 
+test('a contaminated run remains contaminated when its process exits nonzero', () => {
+  assert.deepEqual(classifyCampaignExecution({ exitCode: 4, run: {
+    contaminated: true,
+    contamination: { verdict: 'scores unusable' },
+    outcome: { kind: 'ungraded' },
+  } }), { status: 'invalid', outcome: 'contaminated', reason: 'scores unusable' });
+});
+
 function parallelPlan(parallelism = 3, repetitions = 1) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-plan-'));
   const path = join(root, 'campaign.json');

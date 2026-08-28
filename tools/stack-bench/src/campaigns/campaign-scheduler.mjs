@@ -225,11 +225,11 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
       reason: `attempt process exited ${exitCode ?? 'without a code'}: `
         + `${run.outcome.reason ?? `${outcome.replace('_', ' ')} occurred`}` };
   }
+  if (run?.contaminated === true) return { status: 'invalid', outcome: 'contaminated',
+    reason: run.contamination?.verdict ?? 'run was contaminated' };
   if (exitCode !== 0) return { status: 'invalid', outcome: 'harness_failure',
     reason: `attempt process exited ${exitCode ?? 'without a code'}` };
   if (!run) return { status: 'invalid', outcome: 'missing_artifact', reason: 'run.json was not produced' };
-  if (run.contaminated === true) return { status: 'invalid', outcome: 'contaminated',
-    reason: run.contamination?.verdict ?? 'run was contaminated' };
   const outcome = run.outcome?.kind ?? 'ungraded';
   if (TERMINAL_OUTCOMES.has(outcome)) return { status: 'completed', outcome, reason: null };
   if (INVALID_OUTCOMES.has(outcome)) return { status: 'invalid', outcome,
