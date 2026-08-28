@@ -214,48 +214,48 @@
         "stack": "mongodb",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/mongodb-reference.json",
-        "sha256": "126e9f476afe2d9451af6c4037936b3c5bd9f9a19cc092611682462919882baa"
+        "sha256": "79d51d492bc3368667eda2352746124c606b34313e8c560f28c20f82b9e7168b"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/mongodb-mutation.json",
-        "sha256": "b92ef8f7404967d56a02903a38cfcf8b074c872c0ff0f749b8efb7d4d7fd8367"
+        "sha256": "8493ffa900fe32f50bc48b8ad01e7382f911d9ccf3ce99c0af7fb475a58e3c5c"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/postgres-reference.json",
-        "sha256": "89a65baca623022f2ff12c6fcaf060c4d3a44dbf4ef2ceed3556c48beef4c178"
+        "sha256": "3cff7a4b1dbcd14f00a668152bb57144bf4c3e8f11928d8bae9a6d45f1bbaccf"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/postgres-mutation.json",
-        "sha256": "0caf74dbcc1d3a86dd6727dccf626686c41adbcfd3ecd15faef6288aa0258c88"
+        "sha256": "79e680d12636e6b9f97a248da255c9f0be49cb78cdaeb9053dc50fc79e15b46a"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/spacetime-reference.json",
-        "sha256": "60d322c835f1e15251b0bc122240e26f84364aab8111a1334c417fe668c3d302"
+        "sha256": "500da820328c110c9757ed0287a4b06efe3113f4959c9800ea8af3bb13ce1a65"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/spacetime-mutation.json",
-        "sha256": "71653e0feac58b5a48087fb088db54c96097dd2867111c7605cef9ca25fb13b0"
+        "sha256": "fc48c36fb2eeb6252fe7e68de5ec741952cfd21229dd14c87140a0aba009d40f"
       },
       {
         "kind": "null",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/null.json",
-        "sha256": "e6092f3008d63a64097a13cea23cda3bf1b6fac637bf4325445c863262da7985"
+        "sha256": "84f63ea5e696b9bed6a4ff666bae20b54df7a56d078bbf3082c818a1956d3d9b"
       }
     ]
   },

@@ -1,34 +1,34 @@
 {
   "artifactSchemaVersion": 2,
   "kind": "null_control",
-  "id": "null-control-2026-08-28T03-01-08-326Z",
+  "id": "null-control-2026-08-28T06-31-07-830Z",
   "attempt": {
-    "id": "null-control-2026-08-28T03-01-08-326Z",
+    "id": "null-control-2026-08-28T06-31-07-830Z",
     "parentId": null
   },
   "timestamps": {
-    "startedAt": "2026-08-28T03:01:08.326Z",
-    "completedAt": "2026-08-28T03:29:04.271Z"
+    "startedAt": "2026-08-28T06:31:07.831Z",
+    "completedAt": "2026-08-28T06:59:07.569Z"
   },
   "identities": {
     "engine": {
       "id": "stack-bench",
       "version": null,
-      "sha256": "4b2f785e7b174823bbbb44042e8700071067d6bc79db249264334e250efde147",
+      "sha256": "1283b3b5e730f4efb6b10bb491697bb339ee1ed7b3e62a2670438c11038a65f9",
       "state": null
     },
     "recipe": {
       "id": "ecommerce.progression-l1-l3",
       "version": "1.0.0",
       "sha256": "5f0041c2d21925ec88e2f786294ba9e5b9e5e71a8b95ee36ba6dd36d06a88a2d",
-      "state": "draft"
+      "state": "qualified"
     },
     "fixture": null,
     "calibration": {
       "id": "ecommerce.progression-l1-l3-calibration",
       "version": "1.0.0",
       "sha256": "856468b7bfbcefbbe435ea0f303ea3f0a8ded50da73dccb50741c186d4746d5a",
-      "state": "draft"
+      "state": "qualified"
     },
     "experiment": null,
     "agentAdapter": null,
@@ -36,7 +36,7 @@
     "packs": []
   },
   "payload": {
-    "durationMs": 1675946,
+    "durationMs": 1679738,
     "runner": {
       "schemaVersion": 1,
       "mode": "appliance",
@@ -51,7 +51,7 @@
     },
     "qualificationScope": {
       "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-      "executableSha256": "c539eeee5c277aafc6f25e3c9b8744188059390a49f6185fe894063ed08d630d",
+      "executableSha256": "0212d078ddddb00c74434e096c5aac8e97ecf6962ab8538e68879ab4aa55dc20",
       "kind": "null",
       "mutationSha256": null,
       "recipe": {
@@ -61,7 +61,7 @@
       },
       "schemaVersion": 1,
       "stack": null,
-      "sha256": "4e17035a06e9c139eea6dbf1822a622234912e8cb03a32d4d82719de1d193cdb"
+      "sha256": "b10fdd804e748ad812b356e28c4e5019c579785a8dfe27cab61ead62fae566b5"
     },
     "tracks": [
       "ecommerce"
