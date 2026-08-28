@@ -4,10 +4,11 @@ import { parsePreflightArgs, printPreflightReport, runPreflight,
   writePreflightReport } from '../src/runtime/preflight.mjs';
 
 let request;
-try { request = parsePreflightArgs(process.argv); }
-catch (error) {
-  console.error(`preflight: ${error.message}`);
-  console.error('Usage: node commands/preflight.mjs --backend spacetime[,postgres,mongodb] [--track ecommerce] [--levels 1-2] [--smoke]');
+try {
+  request = parsePreflightArgs(process.argv);
+} catch (error) {
+  console.error(`preflight: ${error instanceof Error ? error.message : String(error)}`);
+  console.error('Usage: stack-bench preflight --backend spacetime[,postgres,mongodb] [--track ecommerce] [--levels 1-2] [--smoke]');
   process.exit(2);
 }
 

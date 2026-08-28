@@ -20,6 +20,7 @@ test('controller forwards repeated stop signals until its child exits', () => {
 test('controller exposes a small explicit operator command surface', () => {
   assert.equal(resolveControllerCommand([]), null);
   assert.equal(resolveControllerCommand(['--help']), null);
+  assert.match(resolveControllerCommand(['preflight']).args[0], /preflight\.js$/);
   const run = resolveControllerCommand(['run', '--backend', 'postgres', '--levels', '1-2']);
   assert.equal(run.executable, process.execPath);
   assert.match(run.args[0], /[\\/]dist[\\/]commands[\\/]/);
