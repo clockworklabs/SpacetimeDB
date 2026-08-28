@@ -332,7 +332,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('dependency validation accepts only an explicit pre-grade failure placeholder', () => {
+test('dependency validation requires a matching pre-grade failure attempt', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-pre-grade-failure-'));
   try {
     const plan = compileCampaignFile(dependencyModelFree);
@@ -347,7 +347,11 @@ test('dependency validation accepts only an explicit pre-grade failure placehold
       workspace: { appDirectory: 'source' } };
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
       plan.featureCatalog, plan.dependencyPolicy));
-    const state = progressionEngine.initialize(progression.definition);
+    const emptyState = progressionEngine.initialize(progression.definition);
+    const state = progressionEngine.recordResult(emptyState, {
+      attemptId: 'pre-grade-harness-failure', outcome: 'inconclusive',
+      category: 'harness_failure', reason: 'coding-session-failed',
+    });
     writeProgressionState(join(root, 'progression-state.json'), {
       progression, featureCatalogIdentity: plan.featureCatalog.identity,
       dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state,
@@ -366,7 +370,7 @@ test('dependency validation accepts only an explicit pre-grade failure placehold
       runtime: { buildImage: 'test-build-image' },
       validation: { ladder: { policy: 'dependency-gated', requestedLevels: attempt.levels,
         completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } },
-      levels: [{ level: state.level, score: null, max: null,
+      levels: [{ level: state.level, graded: false, score: null, max: null,
         error: 'coding-session-failed',
         outcome: { kind: 'harness_failure', phase: 'coding-session',
           reason: 'coding-session-failed' } }],
@@ -376,11 +380,33 @@ test('dependency validation accepts only an explicit pre-grade failure placehold
     assert.equal(validateCampaignRun(plan, attempt, run, {
       buildImage: 'test-build-image', resultDir: root,
     }), run);
-    const withoutError = { ...run, levels: [{ ...run.levels[0] }] };
-    delete withoutError.levels[0].error;
-    assert.throws(() => validateCampaignRun(plan, attempt, withoutError, {
+    writeProgressionState(join(root, 'progression-state.json'), {
+      progression, featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state: emptyState,
+    });
+    const withoutAttempt = { ...run, progressionStatus: liveProgressionStatus(emptyState) };
+    assert.throws(() => validateCampaignRun(plan, attempt, withoutAttempt, {
       buildImage: 'test-build-image', resultDir: root,
     }), /levels\.L1\.progressionAttempt/);
+
+    const gradingState = progressionEngine.recordResult(emptyState, {
+      attemptId: 'inconclusive-grading', outcome: 'inconclusive',
+      category: 'inconclusive_evidence', reason: 'one selected check could not be measured',
+    });
+    writeProgressionState(join(root, 'progression-state.json'), {
+      progression, featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state: gradingState,
+    });
+    const gradingRun = structuredClone(run);
+    gradingRun.progressionStatus = liveProgressionStatus(gradingState);
+    gradingRun.levels[0] = { level: gradingState.level, graded: false,
+      score: null, max: null, outcome: { kind: 'inconclusive', phase: 'grading',
+        reason: 'bundle contains inconclusive evidence' } };
+    gradingRun.outcome = { kind: 'inconclusive', phase: 'grading',
+      reason: 'bundle contains inconclusive evidence' };
+    assert.equal(validateCampaignRun(plan, attempt, gradingRun, {
+      buildImage: 'test-build-image', resultDir: root,
+    }), gradingRun);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -669,6 +695,12 @@ test('only explicit transient provider failures receive campaign retry authority
     phase: 'coding-session', reason: 'coding-session-failed', provider: { providerStatus: 503 } },
     totals: { costUsd: 1.25, costComplete: true } },
   { ...clean, requireCostReceipt: true }).budgetKnown, true);
+  assert.deepEqual(campaignRetryAuthority({ outcome: { kind: 'provider_failure',
+    phase: 'coding-session', reason: 'provider-connection-error',
+    provider: { providerStatus: null } } }, clean), {
+    transient: true, recoveryClean: true, budgetKnown: true,
+    cause: 'provider-connection-error',
+  });
   for (const outcome of [
     { kind: 'harness_failure', phase: 'coding-session', reason: 'coding-process-killed',
       provider: { providerStatus: null } },

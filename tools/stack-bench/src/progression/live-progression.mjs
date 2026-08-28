@@ -226,13 +226,13 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
     }
     return selected;
   };
-  const record = ({ selected, bundle, level, repair }) => {
+  const record = ({ selected, bundle, level, repair, failure = null }) => {
     if (!selected || selected.action.type === 'terminal') return null;
     const sequence = state.attempts.length + 1;
     const evidenceDirectory = join(outputDir, 'progression',
       `attempt-${String(sequence).padStart(3, '0')}`);
     const gradingDirectory = join(appDir, 'stack-bench');
-    if (existsSync(gradingDirectory)) {
+    if (!failure && existsSync(gradingDirectory)) {
       cpSync(gradingDirectory, evidenceDirectory, {
         recursive: true,
         filter: source => !/[\\/]media([\\/]|$)/.test(source),
@@ -240,7 +240,16 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
     }
 
     let result;
-    if (!bundle?.selection || !existsSync(join(evidenceDirectory, 'bundle.json'))) {
+    if (failure) {
+      const category = ['provider_failure', 'harness_failure', 'interrupted', 'inconclusive_evidence']
+        .includes(failure.kind) ? failure.kind : 'harness_failure';
+      result = {
+        attemptId: `${runId}-progression-${sequence}`,
+        outcome: 'inconclusive',
+        category,
+        reason: failure.reason ?? `${category.replaceAll('_', ' ')} during coding`,
+      };
+    } else if (!bundle?.selection || !existsSync(join(evidenceDirectory, 'bundle.json'))) {
       result = {
         attemptId: `${runId}-progression-${sequence}`,
         outcome: 'inconclusive',

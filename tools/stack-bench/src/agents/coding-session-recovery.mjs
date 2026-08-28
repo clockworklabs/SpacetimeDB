@@ -18,6 +18,24 @@ const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
 export const DEFAULT_THROTTLE_MAX_WAIT_MS = 300 * 60_000;
 const BROKER_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
 
+export function providerSessionFailure(result) {
+  const status = result?.api_error_status ?? null;
+  if (result?.terminal_reason === 'api_error' && THROTTLE_STATUSES.has(status)) {
+    return { code: 'provider-throttle', status };
+  }
+  if (result?.terminal_reason === 'api_error' && TRANSIENT_API_STATUSES.has(status)) {
+    return { code: 'provider-api-error', status };
+  }
+  const detail = typeof result?.result === 'string' ? result.result : '';
+  if (/API Error:.*(?:Unable to connect to API|ConnectionRefused)/i.test(detail)) {
+    return { code: 'provider-connection-error', status };
+  }
+  if (result?.terminal_reason === 'api_error') {
+    return { code: 'provider-session-error', status };
+  }
+  return null;
+}
+
 // Synchronous by design: the surrounding loop drives execFileSync invocations,
 // and each chunk is at most 15 minutes so a pending SIGTERM is honoured at the
 // next chunk boundary rather than never.
@@ -83,6 +101,13 @@ export function codingSessionInterruption(error, result) {
     return { kind: 'provider-api-error', resumeSession: result.session_id,
       recoverStoppedContainer: false, terminalReason: 'api_error',
       providerStatus: result.api_error_status ?? null };
+  }
+  const providerFailure = providerSessionFailure(result);
+  if (providerFailure?.code === 'provider-connection-error'
+    && typeof result.session_id === 'string' && result.session_id) {
+    return { kind: 'provider-connection-error', resumeSession: result.session_id,
+      recoverStoppedContainer: false, terminalReason: result.terminal_reason ?? null,
+      providerStatus: providerFailure.status };
   }
   if (error?.code === 'ETIMEDOUT') {
     return { kind: 'coding-session-timeout', resumeSession: null,

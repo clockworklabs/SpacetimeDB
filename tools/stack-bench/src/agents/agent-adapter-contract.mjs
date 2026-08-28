@@ -238,7 +238,9 @@ export function validateAgentResult(value, request) {
 export function agentSessionFailure(result) {
   if (result.ok === true && result.sessionId) return null;
   const failureCode = result.providerMetadata?.failureCode;
-  return { kind: 'harness_failure', phase: 'coding-session',
+  const kind = typeof failureCode === 'string' && failureCode.startsWith('provider-')
+    ? 'provider_failure' : 'harness_failure';
+  return { kind, phase: 'coding-session',
     reason: typeof failureCode === 'string' && failureCode ? failureCode
       : result.sessionId ? 'coding session reported failure' : 'coding session did not run',
     provider: result.providerMetadata?.failure ?? null,

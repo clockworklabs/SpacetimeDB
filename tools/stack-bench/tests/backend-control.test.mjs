@@ -61,15 +61,21 @@ test('restart diagnostics are copied only from the exact leased build container'
   }
 });
 
-test('hosted backend stop targets the listener process group, not only its child PID', () => {
+test('hosted backend stop targets safe process groups and exact group-1 listeners', () => {
   const command = hostedStopScript(6301);
   assert.ok(command.match(/lsof -ti tcp:6301 -sTCP:LISTEN/g).length >= 3,
     'listener ownership must be reacquired before TERM, before KILL, and during final verification');
   assert.match(command, /ps -o pgid=/);
   assert.match(command, /\/bin\/kill -TERM -- "-\$pgid"/);
+  assert.match(command, /\/bin\/kill -TERM "\$pid"/);
   assert.match(command, /\/bin\/kill -KILL -- "-\$pgid"/);
+  assert.match(command, /\/bin\/kill -KILL "\$pid"/);
   assert.match(command, /quiet.*-ge 10/);
   assert.match(command, /hosted backend port 6301 still has a listener/);
-  assert.match(command, /\|1\).*exit 4/);
+  assert.match(command, /self_pgid=/);
+  assert.match(command, /init_pgid=/);
+  assert.match(command, /"\$pgid" = 1/);
+  assert.match(command, /direct="\$direct \$pid"/);
+  assert.match(command, /unsafe listener pid/);
   assert.throws(() => hostedStopScript('6301; rm -rf /'), /invalid hosted backend port/);
 });

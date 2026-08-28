@@ -351,7 +351,7 @@ export function repairHistoryEntry(round, before, after, result) {
 
 export function levelGradeIsUsable(bundleOutcome, progressionAttempt = null) {
   if (progressionAttempt) return progressionAttempt.outcome === 'conclusive';
-  return !['ungraded', 'harness_failure'].includes(bundleOutcome.kind);
+  return !['provider_failure', 'ungraded', 'harness_failure'].includes(bundleOutcome.kind);
 }
 
 function snapshotSource(appDir, to) {
@@ -1258,7 +1258,14 @@ async function main() {
     if (buildFailure) {
       console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, 'run.json')}`);
       const failedSession = runSessionRecord(build);
-      run.levels.push({ level, score: null, max: null, error: buildFailure.reason,
+      if (progressionExecution) {
+        recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
+          failure: buildFailure,
+          repair: { status: 'ungraded', budgetRounds: 0, roundsUsed: 0,
+            stopReason: 'agent-session-failure' } });
+      }
+      run.levels.push({ level, graded: false, score: null, max: null,
+        selection: null, error: buildFailure.reason,
         outcome: buildFailure,
         ...(continuing
           ? { resumeSession: failedSession, resumeCostUsd: build.costUsd }
@@ -1441,13 +1448,15 @@ async function main() {
     });
     const progressionMayRepair = () => !args.progression
       || (progressionNext?.type === 'repair' && progressionNext.level === level);
-    const recordRepairProgression = () => {
+    const recordRepairProgression = ({ failure = null } = {}) => {
       progressionNext = recordProgressionGrade({
         selected: progressionSelection,
-        bundle,
+        bundle: failure ? null : bundle,
         level,
+        failure,
         repair: {
-          status: classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
+          status: failure ? 'ungraded'
+            : classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
           budgetRounds: progressionSelection
             ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
           roundsUsed: priorRepairRounds + fixRounds,
@@ -1510,7 +1519,7 @@ async function main() {
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'agent session failed'));
         repairStopReason = 'agent-session-failure';
-        recordRepairProgression();
+        recordRepairProgression({ failure: fixFailure });
         break;
       }
 
@@ -1697,8 +1706,8 @@ async function main() {
       outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
-    if (!args.progression
-      || progressionExecution.state.attempts.at(-1)?.outcome === 'conclusive') {
+    if (!args.progression || progressionExecution.state.attempts
+      .some(attempt => attempt.level === level && attempt.outcome === 'conclusive')) {
       run.validation.ladder.completedLevels.push(level);
     }
     writeRunJson(join(args.out, 'run.json'), run);
@@ -1819,7 +1828,7 @@ async function main() {
     // Keep the model-free friction report above automatic; make this analysis
     // explicit and never run it for an incomplete attempt.
     if (args.behavioralReview
-      && !['harness_failure', 'ungraded'].includes(run.outcome?.kind)) {
+      && !['provider_failure', 'harness_failure', 'ungraded'].includes(run.outcome?.kind)) {
       try {
         sh('node', [join(ROOT, 'commands', 'stdb-review.mjs'), '--label', artifactLabel,
           '--source', join(args.out, 'source'),

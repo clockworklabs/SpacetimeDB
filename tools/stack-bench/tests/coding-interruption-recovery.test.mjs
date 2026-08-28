@@ -32,6 +32,32 @@ test('provider mid-response errors resume the exact paid session', () => {
     api_error_status: 401, session_id: sessionId }), null);
 });
 
+test('provider connection failures resume the exact paid session', () => {
+  const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7a';
+  const result = { type: 'result', is_error: true, terminal_reason: 'cost_receipt_error',
+    session_id: sessionId,
+    result: 'API Error: Unable to connect to API (ConnectionRefused)',
+    total_cost_usd: 1.25, num_turns: 2, usage: {},
+    stack_bench_cost_receipt: brokerReceipt(1.25) };
+  assert.deepEqual(codingSessionInterruption(null, result), {
+    kind: 'provider-connection-error', resumeSession: sessionId,
+    recoverStoppedContainer: false, terminalReason: 'cost_receipt_error', providerStatus: null,
+  });
+  const calls = [];
+  const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 1,
+    maxBudgetUsd: 10,
+    invoke(request) {
+      calls.push(request);
+      return JSON.stringify(calls.length === 1 ? result : {
+        is_error: false, session_id: sessionId, total_cost_usd: 0.5,
+        num_turns: 1, usage: {}, stack_bench_cost_receipt: brokerReceipt(0.5, 8.75),
+      });
+    } });
+  assert.equal(coding.spawnError, null);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].resumeSession, sessionId);
+});
+
 test('a provider throttle is classified as waitable, with or without a session', () => {
   const throttled = parseCodingSessionResult(JSON.stringify({ type: 'result', is_error: true,
     terminal_reason: 'api_error', api_error_status: 429, session_id: 'paid-session' }));

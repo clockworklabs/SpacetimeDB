@@ -53,9 +53,11 @@ export function suitesForRecipe(track, binding) {
 }
 
 export function childFailureDetail(failure = null, stdout = '', limit = 600) {
-  const lines = [failure?.stderr, stdout, failure?.message]
+  const processOutput = [failure?.stderr, stdout]
     .filter(value => value !== undefined && value !== null && String(value).trim())
-    .join('\n').trim().split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    .join('\n').trim();
+  const diagnostic = processOutput || String(failure?.message ?? '').trim();
+  const lines = diagnostic.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   if (!lines.length) return '';
   const noise = line => line.startsWith('at ') || /^Node\.js v/.test(line)
     || /^node:internal\//.test(line) || /^\^+$/.test(line) || /^[\[\]{},]+$/.test(line);

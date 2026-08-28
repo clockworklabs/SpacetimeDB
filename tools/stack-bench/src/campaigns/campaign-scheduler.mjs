@@ -11,8 +11,8 @@ const ATTEMPT_STATUSES = new Set(['pending', 'running', 'completed', 'invalid'])
 const EXECUTION_STATUSES = new Set(['running', 'completed', 'invalid']);
 const CAMPAIGN_STATUSES = new Set(['prepared', 'running', 'completed', 'attention-required']);
 const TERMINAL_OUTCOMES = new Set(['passed', 'app_failure']);
-const INVALID_OUTCOMES = new Set(['harness_failure', 'inconclusive', 'ungraded', 'contaminated',
-  'timed_out', 'missing_artifact', 'scheduler_interrupted']);
+const INVALID_OUTCOMES = new Set(['provider_failure', 'harness_failure', 'inconclusive',
+  'ungraded', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted']);
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = message => { throw new Error(`invalid campaign state: ${message}`); };
@@ -218,9 +218,12 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
     return { status: 'invalid', outcome: 'scheduler_interrupted',
       reason: run.outcome?.reason ?? 'scheduler was interrupted' };
   }
-  if (exitCode !== 0 && run?.outcome?.kind === 'harness_failure') {
-    return { status: 'invalid', outcome: 'harness_failure',
-      reason: `attempt process exited ${exitCode ?? 'without a code'}: ${run.outcome.reason ?? 'harness failed'}` };
+  if (exitCode !== 0
+    && ['provider_failure', 'harness_failure'].includes(run?.outcome?.kind)) {
+    const outcome = run.outcome.kind;
+    return { status: 'invalid', outcome,
+      reason: `attempt process exited ${exitCode ?? 'without a code'}: `
+        + `${run.outcome.reason ?? `${outcome.replace('_', ' ')} occurred`}` };
   }
   if (exitCode !== 0) return { status: 'invalid', outcome: 'harness_failure',
     reason: `attempt process exited ${exitCode ?? 'without a code'}` };

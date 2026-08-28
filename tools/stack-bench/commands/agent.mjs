@@ -32,7 +32,7 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
-import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS,
+import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
   runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.mjs';
@@ -786,6 +786,7 @@ async function main() {
   const { raw, spawnError, sessionResults, interruptions, result, throttle } = coding;
   const noOutput = !result.session_id && !raw.trim();
   const failed = Boolean(spawnError || noOutput);
+  const providerFailure = providerSessionFailure(result);
   const usage = result.usage ?? {};
   const input = usage.input_tokens ?? 0;
   const output = usage.output_tokens ?? 0;
@@ -877,7 +878,8 @@ async function main() {
     ok: !failed && result.is_error === false,
     providerMetadata: { failureCode: failed
       ? String(spawnError ?? '').startsWith('provider stayed throttled')
-        ? 'provider-throttle-exhausted' : noOutput ? 'coding-session-no-output' : 'coding-session-failed'
+        ? 'provider-throttle-exhausted'
+        : providerFailure?.code ?? (noOutput ? 'coding-session-no-output' : 'coding-session-failed')
       : result.is_error === true ? 'provider-session-error' : null,
       failure: failed ? {
         providerStatus: result.api_error_status ?? null,

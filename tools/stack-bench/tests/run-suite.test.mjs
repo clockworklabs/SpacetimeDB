@@ -87,6 +87,15 @@ test('grader child diagnostics skip Node rejection boilerplate', () => {
     /^browserContext\.close: Target page, context or browser has been closed/);
 });
 
+test('child diagnostics prefer process stderr over generated command text', () => {
+  const detail = childFailureDetail({
+    stderr: 'hosted backend port 6301 still has a listener',
+    message: 'Command failed: docker exec generated-app sh -lc <large command>',
+  });
+  assert.equal(detail, 'hosted backend port 6301 still has a listener');
+  assert.doesNotMatch(detail, /docker exec/);
+});
+
 test('grader subprocess output is retained with credentials redacted', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grader-child-'));
   try {

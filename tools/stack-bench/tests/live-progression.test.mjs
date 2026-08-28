@@ -229,6 +229,55 @@ test('live progression binds, records, checkpoints, and persists one exact actio
   }
 });
 
+test('live progression records provider interruptions without consuming a strike', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-live-provider-failure-'));
+  try {
+    const appDir = join(root, 'app');
+    const outputDir = join(root, 'result');
+    mkdirSync(appDir, { recursive: true });
+    mkdirSync(outputDir, { recursive: true });
+    const progression = compileProgressionInput(definition());
+    const split = splitIdentities(progression);
+    const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+      'ecommerce.l1-modular@2.5.0');
+    const owner = { schemaVersion: 1,
+      campaign: { id: 'campaign', version: '1.0.0', sha256: 'a'.repeat(64) },
+      attempt: { id: 'campaign-r1', track: 'ecommerce', stack: 'postgres',
+        agentAdapter: 'claude-code', model: 'test-model', conditionSha256: 'b'.repeat(64) },
+      workspace: { appDirectory: 'source' } };
+    const identities = emptyArtifactIdentities({
+      agentAdapter: { id: owner.attempt.agentAdapter },
+      stackAdapter: { id: owner.attempt.stack },
+    });
+    const runArtifact = createArtifact({ kind: 'benchmark_run', id: 'run-1',
+      attempt: { id: 'run-1', parentId: owner.attempt.id }, identities,
+      payload: { backend: owner.attempt.stack, model: owner.attempt.model,
+        condition: { sha256: owner.attempt.conditionSha256 },
+        featureCatalog: split.featureCatalogIdentity,
+        dependencyPolicy: split.dependencyPolicyIdentity,
+        progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt } } });
+    const execution = createLiveProgressionExecution({ progression, ...split, owner,
+      statePath: join(outputDir, 'progression-state.json'), runId: 'run-1',
+      outputDir, appDir, track: owner.attempt.track, backend: owner.attempt.stack,
+      identities, recipeBindings: new Map([[1, binding]]),
+      getRunArtifact: () => runArtifact });
+    execution.initialize();
+    const selected = execution.bind(1);
+    execution.record({ selected, bundle: null, level: 1,
+      failure: { kind: 'provider_failure', reason: 'provider-connection-error' },
+      repair: { status: 'ungraded', budgetRounds: 1, roundsUsed: 0,
+        stopReason: 'agent-session-failure' } });
+    assert.equal(execution.state.attempts.length, 1);
+    assert.equal(execution.state.attempts[0].outcome, 'inconclusive');
+    assert.equal(execution.state.attempts[0].category, 'provider_failure');
+    assert.equal(execution.state.strikes['1'].used, 0);
+    assert.equal(existsSync(join(outputDir, 'progression', 'attempt-001')), false);
+    assert.equal(existsSync(join(outputDir, 'progression-state.json')), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an interrupted execution restores the saved source and resumes the next graph action', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-live-resume-'));
   try {

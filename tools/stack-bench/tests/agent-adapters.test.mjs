@@ -130,15 +130,17 @@ test('completion validation rejects wrong identity and malformed usage', () => {
     { ...request, adapterCostLimit: 'unsupported' }).costComplete, false);
 });
 
-test('an unsuccessful provider session is a harness failure even when it has an id', () => {
+test('provider failures stay separate from harness failures', () => {
   assert.equal(agentSessionFailure({ ok: true, sessionId: 'session-1' }), null);
   assert.deepEqual(agentSessionFailure({ ok: false, sessionId: 'session-2',
     providerMetadata: { failureCode: 'provider-session-error' } }), {
-    kind: 'harness_failure', phase: 'coding-session', reason: 'provider-session-error',
+    kind: 'provider_failure', phase: 'coding-session', reason: 'provider-session-error',
     provider: null,
     appFailures: [], inconclusive: [], harnessFailures: [],
   });
   assert.equal(agentSessionFailure({ ok: true, sessionId: null }).reason, 'coding session did not run');
+  assert.equal(agentSessionFailure({ ok: false, sessionId: null,
+    providerMetadata: { failureCode: 'coding-session-no-output' } }).kind, 'harness_failure');
 });
 
 test('malformed and duplicate agent adapters fail at registry construction', () => {

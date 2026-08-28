@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
-import { killTree } from '../src/runtime/platform.mjs';
+import { killTree, sleepSync } from '../src/runtime/platform.mjs';
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
   from '../src/evidence/pricing-authority.mjs';
@@ -21,8 +21,10 @@ const MAX_REQUESTS = 512;
 const MAX_OUTPUT_TOKENS = 128_000;
 const ALLOWED_PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
 const PRICE_FIELDS = PRICING_RATE_FIELDS;
-const LEDGER_SCHEMA_VERSION = 2;
+const LEDGER_SCHEMA_VERSION = 3;
 const COST_TOLERANCE_USD = 0.0001;
+const BROKER_DRAIN_TIMEOUT_MS = 30_000;
+const BROKER_DRAIN_POLL_MS = 100;
 const USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'];
 
 function priceNormalizedUsage(usage, rates) {
@@ -102,7 +104,8 @@ function validateConfig(value) {
 function validateLedger(value, { model = null, maxBudgetUsd = undefined } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('spend ledger is invalid');
   const fields = new Set(['schemaVersion', 'model', 'maxBudgetUsd', 'acceptedRequests',
-    'billableRequests', 'completedBillableRequests', 'spentUsd', 'reservedUsd',
+    'billableRequests', 'completedBillableRequests', 'estimatedBillableRequests',
+    'spentUsd', 'reservedUsd',
     'usage', 'complete', 'updatedAt']);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`spend ledger.${key} is unknown`);
   if (value.schemaVersion !== LEDGER_SCHEMA_VERSION) fail('spend ledger schema is invalid');
@@ -115,13 +118,17 @@ function validateLedger(value, { model = null, maxBudgetUsd = undefined } = {}) 
   if (maxBudgetUsd !== undefined && value.maxBudgetUsd !== maxBudgetUsd) {
     fail('spend ledger budget does not match');
   }
-  for (const field of ['acceptedRequests', 'billableRequests', 'completedBillableRequests']) {
+  for (const field of ['acceptedRequests', 'billableRequests', 'completedBillableRequests',
+    'estimatedBillableRequests']) {
     if (!Number.isSafeInteger(value[field]) || value[field] < 0) {
       fail(`spend ledger.${field} is invalid`);
     }
   }
   if (value.completedBillableRequests > value.billableRequests) {
     fail('spend ledger completed request count is invalid');
+  }
+  if (value.estimatedBillableRequests > value.completedBillableRequests) {
+    fail('spend ledger estimated request count is invalid');
   }
   for (const field of ['spentUsd', 'reservedUsd']) {
     if (!Number.isFinite(value[field]) || value[field] < 0) fail(`spend ledger.${field} is invalid`);
@@ -172,6 +179,9 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   catch (error) { issue = error.message; }
   if (!issue && verifiedLedger.complete !== true) {
     issue = 'credential broker spend ledger is incomplete';
+  }
+  if (!issue && verifiedLedger.estimatedBillableRequests !== 0) {
+    issue = 'credential broker contains billable requests without exact provider usage';
   }
   try { verifiedRates = validatePricingRates(pricingRates); }
   catch (error) { if (!issue) issue = error.message; }
@@ -314,14 +324,26 @@ function responseUsage(body, contentEncoding = null) {
   let text;
   try { text = decodedResponseBody(body, contentEncoding).toString('utf8'); }
   catch { return null; }
-  try { add(JSON.parse(text)); }
-  catch {
+  try {
+    add(JSON.parse(text));
+  } catch {
+    let sawError = false;
+    let sawFinalUsage = false;
+    let sawMessageStop = false;
     for (const line of text.split(/\r?\n/)) {
       if (!line.startsWith('data:')) continue;
       const data = line.slice(5).trim();
       if (!data || data === '[DONE]') continue;
-      try { add(JSON.parse(data)); } catch { /* Ignore non-JSON event data. */ }
+      try {
+        const event = JSON.parse(data);
+        if (event?.type === 'error') sawError = true;
+        if (event?.type === 'message_delta' && event.usage
+          && typeof event.usage === 'object') sawFinalUsage = true;
+        if (event?.type === 'message_stop') sawMessageStop = true;
+        add(event);
+      } catch { /* Ignore non-JSON event data. */ }
     }
+    if (sawError || !sawFinalUsage || !sawMessageStop) return null;
   }
   if (values.length === 0) return null;
   const number = field => Math.max(0, ...values.map(value => Number(value[field]) || 0));
@@ -351,6 +373,7 @@ export function createCredentialBroker(configInput, {
   let acceptedRequests = 0;
   let billableRequests = 0;
   let completedBillableRequests = 0;
+  let estimatedBillableRequests = 0;
   let spentUsd = 0;
   let reservedUsd = 0;
   const usageTotals = Object.fromEntries(USAGE_FIELDS.map(field => [field, 0]));
@@ -361,6 +384,7 @@ export function createCredentialBroker(configInput, {
     acceptedRequests,
     billableRequests,
     completedBillableRequests,
+    estimatedBillableRequests,
     spentUsd: Number(spentUsd.toFixed(6)),
     reservedUsd: Number(reservedUsd.toFixed(6)),
     usage: usageTotals,
@@ -420,6 +444,21 @@ export function createCredentialBroker(configInput, {
       if (billable) billableRequests += 1;
       reservedUsd += costCeiling;
       recordLedger();
+      let billableSettled = !billable;
+      const settleBillable = ({ usage = null, estimated = false } = {}) => {
+        if (billableSettled) return;
+        billableSettled = true;
+        reservedUsd -= costCeiling;
+        completedBillableRequests += 1;
+        if (estimated) {
+          estimatedBillableRequests += 1;
+          spentUsd += costCeiling;
+        } else if (usage) {
+          spentUsd += priceNormalizedUsage(usage, config.pricingRates);
+          for (const field of USAGE_FIELDS) usageTotals[field] += usage[field];
+        }
+        recordLedger();
+      };
       const headers = upstreamHeaders(request, config);
       for (const name of ['connection', 'keep-alive', 'proxy-connection', 'te', 'trailer',
         'transfer-encoding', 'upgrade']) delete headers[name];
@@ -443,35 +482,27 @@ export function createCredentialBroker(configInput, {
         upstreamResponse.on('end', () => {
           response.end();
           if (!billable) return;
-          reservedUsd -= costCeiling;
-          completedBillableRequests += 1;
           if ((upstreamResponse.statusCode ?? 502) >= 200
             && (upstreamResponse.statusCode ?? 502) < 300) {
             const usage = responseBytes <= maxRequestBytes
               ? responseUsage(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding'])
               : null;
-            if (!usage) spentUsd += costCeiling;
-            else {
-              try {
-                const normalized = normalizeClaudeUsage(usage);
-                spentUsd += priceNormalizedUsage(normalized, config.pricingRates);
-                for (const field of USAGE_FIELDS) {
-                  usageTotals[field] += normalized[field];
-                }
-              }
-              catch { spentUsd += costCeiling; }
-            }
+            if (!usage) settleBillable({ estimated: true });
+            else try { settleBillable({ usage: normalizeClaudeUsage(usage) }); }
+            catch { settleBillable({ estimated: true }); }
+          } else {
+            settleBillable();
           }
-          recordLedger();
         });
+        const settleAbortedResponse = () => {
+          settleBillable({ estimated: true });
+          if (!response.writableEnded) response.destroy();
+        };
+        upstreamResponse.once('aborted', settleAbortedResponse);
+        upstreamResponse.once('error', settleAbortedResponse);
       });
       upstreamRequest.on('error', () => {
-        if (billable) {
-          reservedUsd -= costCeiling;
-          spentUsd += costCeiling;
-          completedBillableRequests += 1;
-          recordLedger();
-        }
+        settleBillable({ estimated: true });
         if (!response.headersSent) response.writeHead(502, { 'content-type': 'text/plain' });
         response.end('upstream request failed');
       });
@@ -479,7 +510,7 @@ export function createCredentialBroker(configInput, {
     });
   });
   return { server, stats: () => ({ acceptedRequests,
-    billableRequests, completedBillableRequests,
+    billableRequests, completedBillableRequests, estimatedBillableRequests,
     spentUsd: Number(spentUsd.toFixed(6)), reservedUsd: Number(reservedUsd.toFixed(6)) }) };
 }
 
@@ -535,13 +566,32 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
   }
 }
 
-export function stopCredentialBroker(broker) {
+export function stopCredentialBroker(broker, {
+  drainTimeoutMs = BROKER_DRAIN_TIMEOUT_MS,
+  pollMs = BROKER_DRAIN_POLL_MS,
+  readLedger = readCredentialBrokerLedger,
+  terminate = killTree,
+  sleep = sleepSync,
+  now = Date.now,
+} = {}) {
   if (!broker) return null;
-  killTree(broker.child.pid);
   let ledger = null;
   try {
-    ledger = readCredentialBrokerLedger(broker.ledgerPath,
-      { model: broker.model, maxBudgetUsd: broker.maxBudgetUsd });
+    const expected = { model: broker.model, maxBudgetUsd: broker.maxBudgetUsd };
+    const deadline = now() + drainTimeoutMs;
+    // A provider connection can close just before the upstream response ends.
+    // Keep the broker alive long enough to settle that request and write its
+    // exact usage. Killing it immediately leaves a reservation in the ledger,
+    // which turns a recoverable provider interruption into an unknown cost.
+    do {
+      try { ledger = readLedger(broker.ledgerPath, expected); }
+      catch { ledger = null; }
+      if (ledger?.complete === true || now() >= deadline) break;
+      sleep(pollMs);
+    } while (true);
+    terminate(broker.child.pid);
+    try { ledger = readLedger(broker.ledgerPath, expected); }
+    catch { /* Keep the last valid ledger. */ }
   } catch { /* The caller treats a missing or invalid ledger as a full-cap receipt. */ }
   finally { rmSync(broker.root, { recursive: true, force: true }); }
   return ledger;

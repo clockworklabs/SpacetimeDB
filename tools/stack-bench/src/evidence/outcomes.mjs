@@ -78,7 +78,7 @@ export function classifyBundle(bundle) {
       appFailures: bundle.outcome?.appFailures ?? [], inconclusive: [],
       harnessFailures: cleanupFailures };
   }
-  if (bundle.outcome?.kind === 'harness_failure') {
+  if (['provider_failure', 'harness_failure'].includes(bundle.outcome?.kind)) {
     return { ...bundle.outcome, appFailures: [], inconclusive: [], harnessFailures: [] };
   }
   if (bundle.outcome?.kind === 'app_failure') {
@@ -121,10 +121,14 @@ export function classifyBundle(bundle) {
 }
 
 export function aggregateRunOutcome(levels) {
-  const priority = ['harness_failure', 'ungraded', 'app_failure', 'inconclusive', 'passed'];
+  const priority = ['harness_failure', 'provider_failure', 'ungraded', 'app_failure',
+    'inconclusive', 'passed'];
   const kinds = levels.map(level => level.outcome?.kind ?? 'ungraded');
+  const kind = priority.find(candidate => kinds.includes(candidate)) ?? 'ungraded';
+  const selected = levels.find(level => (level.outcome?.kind ?? 'ungraded') === kind)?.outcome ?? {};
   return {
-    kind: priority.find(kind => kinds.includes(kind)) ?? 'ungraded',
+    ...selected,
+    kind,
     levels: Object.fromEntries(levels.map(level => [String(level.level), level.outcome ?? {
       kind: 'ungraded', reason: 'level has no structured outcome',
     }])),
@@ -132,14 +136,15 @@ export function aggregateRunOutcome(levels) {
 }
 
 export function runExitCode(outcome) {
-  return ['harness_failure', 'ungraded', 'incomplete'].includes(outcome?.kind) ? 1 : 0;
+  return ['provider_failure', 'harness_failure', 'ungraded', 'incomplete']
+    .includes(outcome?.kind) ? 1 : 0;
 }
 
 // A ladder level builds on the source produced by the previous level. If that
 // level was not graded, proceeding would spend another model session on an
 // artifact whose baseline is unknown and produce a run that cannot be compared.
 export function ladderMayContinue(outcome) {
-  return !['harness_failure', 'ungraded'].includes(outcome?.kind);
+  return !['provider_failure', 'harness_failure', 'ungraded'].includes(outcome?.kind);
 }
 
 // Building and repairing a level can continue while its failures are ordinary

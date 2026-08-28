@@ -480,6 +480,10 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   assert.throws(() => validateCampaignDefinition(definition({ attemptPolicy: {
     retries: 1, retryOn: [], excludeFromAnalysis: [],
   } })), /retryOn/);
+  const providerRetry = validateCampaignDefinition(definition({ attemptPolicy: {
+    retries: 1, retryOn: ['provider_failure'], excludeFromAnalysis: ['provider_failure'],
+  } }));
+  assert.deepEqual(providerRetry.attemptPolicy.retryOn, ['provider_failure']);
   assert.throws(() => compile(definition({ selection: { packs: [], checks: ['missing.check'] } })),
     /recipe has no check/);
   assert.throws(() => compile(definition({ conditions: [{

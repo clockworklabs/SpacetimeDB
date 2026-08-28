@@ -149,7 +149,8 @@ test('credential broker enforces model, output token, and session cost limits', 
       body: '{"model":"test-model","max_tokens":1000}' })).status, 402);
     assert.equal(seen.length, 0);
     assert.deepEqual(stats(), { acceptedRequests: 3, billableRequests: 0,
-      completedBillableRequests: 0, spentUsd: 0, reservedUsd: 0 });
+      completedBillableRequests: 0, estimatedBillableRequests: 0,
+      spentUsd: 0, reservedUsd: 0 });
   }, { maxBudgetUsd: 0.01, pricingRates: rates });
 });
 
@@ -167,7 +168,8 @@ test('credential broker charges reported usage and reserves enough for the next 
     assert.equal((await send(brokerPort, request)).status, 402);
     assert.equal(seen.length, 3);
     assert.deepEqual(stats(), { acceptedRequests: 4, billableRequests: 3,
-      completedBillableRequests: 3, spentUsd: 0.0054, reservedUsd: 0 });
+      completedBillableRequests: 3, estimatedBillableRequests: 0,
+      spentUsd: 0.0054, reservedUsd: 0 });
   }, { maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
 });
 
@@ -176,6 +178,7 @@ test('credential broker prices repeated compressed streams instead of exhausting
   const stream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}',
     'data: {"type":"message_delta","usage":{"output_tokens":100}}',
+    'data: {"type":"message_stop"}',
     '',
   ].join('\n');
   await withBroker('api-key', async ({ brokerPort, sessionToken, seen, stats }) => {
@@ -187,7 +190,8 @@ test('credential broker prices repeated compressed streams instead of exhausting
     }
     assert.equal(seen[0].headers['accept-encoding'], undefined);
     assert.deepEqual(stats(), { acceptedRequests: 60, billableRequests: 60,
-      completedBillableRequests: 60, spentUsd: 0.108, reservedUsd: 0 });
+      completedBillableRequests: 60, estimatedBillableRequests: 0,
+      spentUsd: 0.108, reservedUsd: 0 });
   }, { maxBudgetUsd: 100, maxOutputTokens: 128_000, pricingRates: rates,
     upstreamHeaders: { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' },
     upstreamBody: gzipSync(stream) });
@@ -211,6 +215,7 @@ test('credential broker atomically records all direct requests without credentia
       assert.equal(ledger.complete, true);
       assert.equal(ledger.billableRequests, 2);
       assert.equal(ledger.completedBillableRequests, 2);
+      assert.equal(ledger.estimatedBillableRequests, 0);
       assert.equal(ledger.spentUsd, 0.0036);
       assert.deepEqual(ledger.usage,
         { input: 200, output: 200, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 });
@@ -222,12 +227,67 @@ test('credential broker atomically records all direct requests without credentia
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('credential broker rejects a settled request without exact provider usage', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-estimated-ledger-test-'));
+  const ledgerPath = join(root, 'ledger.json');
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+      const response = await send(brokerPort, {
+        headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' },
+        body: '{"model":"test-model","max_tokens":1000}',
+      });
+      assert.equal(response.status, 200);
+      const ledger = readCredentialBrokerLedger(ledgerPath,
+        { model: 'test-model', maxBudgetUsd: 1 });
+      assert.equal(ledger.complete, true);
+      assert.equal(ledger.estimatedBillableRequests, 1);
+      const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+        cliResult: { type: 'result', is_error: false, total_cost_usd: 0, usage: ZERO_USAGE },
+        model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+      assert.equal(reconciled.ok, false);
+      assert.equal(reconciled.receipt.reconciled, false);
+      assert.match(reconciled.receipt.error, /without exact provider usage/);
+    }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES,
+      upstreamBody: '{"ok":true}' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('credential broker rejects a cleanly ended provider error stream', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-error-stream-test-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const stream = [
+    'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}',
+    'event: error',
+    'data: {"type":"error","error":{"type":"api_error","message":"connection lost"}}',
+    '',
+  ].join('\n');
+  try {
+    await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+      assert.equal((await send(brokerPort, {
+        headers: { authorization: `Bearer ${sessionToken}`, 'content-type': 'application/json' },
+        body: '{"model":"test-model","max_tokens":1000}',
+      })).status, 200);
+      const ledger = readCredentialBrokerLedger(ledgerPath,
+        { model: 'test-model', maxBudgetUsd: 1 });
+      assert.equal(ledger.complete, true);
+      assert.equal(ledger.estimatedBillableRequests, 1);
+      const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+        cliResult: { type: 'result', is_error: true, total_cost_usd: 0, usage: ZERO_USAGE },
+        model: 'test-model', maxBudgetUsd: 1, pricingRates: PRICING_RATES });
+      assert.equal(reconciled.ok, false);
+      assert.match(reconciled.receipt.error, /without exact provider usage/);
+    }, { ledgerPath, maxBudgetUsd: 1, pricingRates: PRICING_RATES,
+      upstreamHeaders: { 'content-type': 'text/event-stream' }, upstreamBody: stream });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('streamed provider usage produces a reconciled campaign-priced receipt', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-cache-ledger-test-'));
   const ledgerPath = join(root, 'ledger.json');
   const stream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":50,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":10}}}}',
     'data: {"type":"message_delta","usage":{"output_tokens":100}}',
+    'data: {"type":"message_stop"}',
     '',
   ].join('\n');
   try {
@@ -257,8 +317,9 @@ test('streamed provider usage produces a reconciled campaign-priced receipt', as
 });
 
 test('campaign pricing is authoritative when CLI pricing differs', () => {
-  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
+    estimatedBillableRequests: 0,
     spentUsd: 0.0036, reservedUsd: 0,
     usage: { input: 200, output: 200, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true,
@@ -276,8 +337,9 @@ test('campaign pricing is authoritative when CLI pricing differs', () => {
 });
 
 test('broker retains cache write classes that the CLI summary combines', () => {
-  const ledger = { schemaVersion: 2, model: 'claude-sonnet-5', maxBudgetUsd: 50,
+  const ledger = { schemaVersion: 3, model: 'claude-sonnet-5', maxBudgetUsd: 50,
     acceptedRequests: 66, billableRequests: 66, completedBillableRequests: 66,
+    estimatedBillableRequests: 0,
     spentUsd: 1.686071, reservedUsd: 0,
     usage: { input: 124, output: 48559, cacheRead: 5100226,
       cacheWrite5m: 66627, cacheWrite1h: 3405 },
@@ -305,8 +367,9 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
   assert.equal(missing.result.stack_bench_cost_receipt.complete, false);
 
   const incomplete = reconcileCredentialBrokerReceipt({ ledger: {
-    schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+    schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
+    estimatedBillableRequests: 0,
     spentUsd: 0.1, reservedUsd: 0.4, usage: ZERO_USAGE, complete: false,
     updatedAt: new Date().toISOString(),
   }, cliResult: { type: 'result', is_error: false, total_cost_usd: 0.1 },
@@ -317,8 +380,9 @@ test('missing or incomplete broker ledgers fail closed with a conservative recei
 });
 
 test('matching broker and CLI receipts preserve a successful result', () => {
-  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    estimatedBillableRequests: 0,
     spentUsd: 0.00195, reservedUsd: 0,
     usage: { input: 100, output: 100, cacheRead: 50, cacheWrite5m: 20, cacheWrite1h: 10 },
     complete: true,
@@ -339,8 +403,9 @@ test('matching broker and CLI receipts preserve a successful result', () => {
 });
 
 test('receipt reconciliation accepts provider usage that includes CLI-omitted calls', () => {
-  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 2, billableRequests: 2, completedBillableRequests: 2,
+    estimatedBillableRequests: 0,
     spentUsd: 0.00201, reservedUsd: 0,
     usage: { input: 120, output: 110, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true,
@@ -359,8 +424,9 @@ test('receipt reconciliation accepts provider usage that includes CLI-omitted ca
 });
 
 test('receipt reconciliation rejects provider usage below the CLI lower bound', () => {
-  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    estimatedBillableRequests: 0,
     spentUsd: 0.0018, reservedUsd: 0,
     usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true, updatedAt: new Date().toISOString() };
@@ -373,8 +439,9 @@ test('receipt reconciliation rejects provider usage below the CLI lower bound', 
 });
 
 test('real paid-session usage reconciles to broker totals', () => {
-  const ledger = { schemaVersion: 2, model: 'claude-sonnet-5', maxBudgetUsd: 50,
+  const ledger = { schemaVersion: 3, model: 'claude-sonnet-5', maxBudgetUsd: 50,
     acceptedRequests: 97, billableRequests: 97, completedBillableRequests: 97,
+    estimatedBillableRequests: 0,
     spentUsd: 2.665346, reservedUsd: 0,
     usage: { input: 2647, output: 77041, cacheRead: 8026721,
       cacheWrite5m: 113719, cacheWrite1h: 0 },
@@ -393,8 +460,9 @@ test('real paid-session usage reconciles to broker totals', () => {
 });
 
 test('receipt reconciliation rejects spend that cannot be reproduced from broker usage', () => {
-  const ledger = { schemaVersion: 2, model: 'test-model', maxBudgetUsd: 1,
+  const ledger = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 1,
+    estimatedBillableRequests: 0,
     spentUsd: 0.002, reservedUsd: 0,
     usage: { input: 100, output: 100, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
     complete: true, updatedAt: new Date().toISOString() };
@@ -426,4 +494,33 @@ test('credential broker lifecycle creates only an attempt-scoped session credent
   assert.equal(existsSync(broker.root), false);
   assert.equal(ledger.complete, true);
   assert.equal(ledger.spentUsd, 0);
+});
+
+test('credential broker shutdown waits for an in-flight request to settle', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-drain-'));
+  const incomplete = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
+    acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
+    estimatedBillableRequests: 0,
+    spentUsd: 0, reservedUsd: 0.4, usage: ZERO_USAGE, complete: false,
+    updatedAt: new Date().toISOString() };
+  const complete = { ...incomplete, completedBillableRequests: 1,
+    spentUsd: 0.0018, reservedUsd: 0, complete: true };
+  let reads = 0;
+  let slept = 0;
+  let terminated = null;
+  let clock = 0;
+  const ledger = stopCredentialBroker({ root, ledgerPath: join(root, 'ledger.json'),
+    model: 'test-model', maxBudgetUsd: 1, child: { pid: 42 } }, {
+    drainTimeoutMs: 1_000,
+    pollMs: 100,
+    readLedger: () => ++reads < 3 ? incomplete : complete,
+    terminate: pid => { terminated = pid; },
+    sleep: ms => { slept += ms; clock += ms; },
+    now: () => clock,
+  });
+  assert.equal(ledger.complete, true);
+  assert.equal(reads, 4, 'the final read must happen after termination');
+  assert.equal(slept, 200);
+  assert.equal(terminated, 42);
+  assert.equal(existsSync(root), false);
 });

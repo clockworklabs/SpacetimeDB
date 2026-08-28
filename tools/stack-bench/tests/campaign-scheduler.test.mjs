@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
-import { claimNextAttempt, createCampaignState, finishCampaignExecution,
+import { claimNextAttempt, classifyCampaignExecution, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, markInterruptedExecution, readCampaignState,
   validateCampaignState, writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
@@ -14,6 +14,13 @@ const plan = () => compileCampaignFile(example);
 const prepared = () => createCampaignState(plan(), { now: '2026-08-12T00:00:00.000Z' });
 const claimed = () => claimNextAttempt(prepared(), { now: '2026-08-12T00:01:00.000Z',
   admissionId: 'admission-1' });
+
+test('provider failures remain distinct from harness failures in campaign state', () => {
+  assert.deepEqual(classifyCampaignExecution({ exitCode: 1, run: { outcome: {
+    kind: 'provider_failure', reason: 'provider-connection-error',
+  } } }), { status: 'invalid', outcome: 'provider_failure',
+    reason: 'attempt process exited 1: provider-connection-error' });
+});
 
 function parallelPlan(parallelism = 3, repetitions = 1) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-plan-'));

@@ -20,8 +20,23 @@ test('missing output and explicit harness failure are not app failures', () => {
     'harness_failure');
 });
 
+test('provider failures preserve their cause and stop the run', () => {
+  const provider = { kind: 'provider_failure', phase: 'coding-session',
+    reason: 'provider-connection-error', provider: { providerStatus: null } };
+  assert.deepEqual(classifyBundle({ outcome: provider }), {
+    ...provider, appFailures: [], inconclusive: [], harnessFailures: [],
+  });
+  const outcome = aggregateRunOutcome([{ level: 1, outcome: provider }]);
+  assert.equal(outcome.kind, 'provider_failure');
+  assert.equal(outcome.reason, 'provider-connection-error');
+  assert.deepEqual(outcome.provider, { providerStatus: null });
+  assert.equal(runExitCode(outcome), 1);
+  assert.equal(ladderMayContinue(outcome), false);
+});
+
 test('ungraded and harness-failed runs return a failing process status', () => {
   assert.equal(runExitCode({ kind: 'harness_failure' }), 1);
+  assert.equal(runExitCode({ kind: 'provider_failure' }), 1);
   assert.equal(runExitCode({ kind: 'ungraded' }), 1);
   assert.equal(runExitCode({ kind: 'app_failure' }), 0);
   assert.equal(runExitCode({ kind: 'passed' }), 0);
@@ -33,6 +48,7 @@ test('a ladder stops after an ungraded or harness-failed level', () => {
   assert.equal(ladderMayContinue({ kind: 'inconclusive' }), true);
   assert.equal(ladderMayContinue({ kind: 'passed' }), true);
   assert.equal(ladderMayContinue({ kind: 'harness_failure' }), false);
+  assert.equal(ladderMayContinue({ kind: 'provider_failure' }), false);
   assert.equal(ladderMayContinue({ kind: 'ungraded' }), false);
 });
 

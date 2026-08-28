@@ -160,7 +160,7 @@ export function validateCampaignRun(plan, attempt, run, {
     && run.levels.at(-1)?.repair?.status === 'budget-exhausted';
   const interruptedPrefix = actualLevels.length < expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
-    && ['harness_failure', 'ungraded'].includes(run.outcome?.kind);
+    && ['provider_failure', 'harness_failure', 'ungraded'].includes(run.outcome?.kind);
   const dependencyPrefix = dependencyMode && actualLevels.length > 0
     && actualLevels.length <= expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
@@ -174,7 +174,7 @@ export function validateCampaignRun(plan, attempt, run, {
   mismatch(run.backend !== attempt.stack, 'backend');
   mismatch(run.model !== attempt.model, 'model');
   mismatch(canonicalDefinitionJson(run.pricing ?? null)
-    !== canonicalDefinitionJson(attempt.pricing), 'pricing');
+    !== canonicalDefinitionJson(attempt.pricing ?? null), 'pricing');
   mismatch(run.guidance !== attempt.guidance, 'guidance');
   mismatch(!condition || canonicalDefinitionJson(run.condition)
     !== canonicalDefinitionJson(attempt.condition), 'condition');
@@ -412,19 +412,10 @@ export function validateCampaignRun(plan, attempt, run, {
           .filter(item => item.outcome === 'conclusive').map(item => item.level))];
         mismatch(canonicalDefinitionJson(ladder?.completedLevels)
           !== canonicalDefinitionJson(conclusiveLevels), 'validation.ladder.completedLevels');
-        let hasPreGradeFailure = false;
         for (const level of run.levels ?? []) {
           const last = [...stored.state.attempts].reverse()
             .find(item => item.level === level.level);
-          const preGradeFailure = !last
-            && run.outcome?.kind === 'harness_failure'
-            && level === run.levels.at(-1)
-            && level.level === storedStatus.level
-            && typeof level.error === 'string' && level.error.length > 0
-            && level.score === null && level.max === null
-            && level.outcome?.kind === 'harness_failure';
-          hasPreGradeFailure ||= preGradeFailure;
-          mismatch(!last && !preGradeFailure, `levels.L${level.level}.progressionAttempt`);
+          mismatch(!last, `levels.L${level.level}.progressionAttempt`);
           if (!last) continue;
           mismatch(last?.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
             `levels.L${level.level}.selection.sha256`);
@@ -434,6 +425,12 @@ export function validateCampaignRun(plan, attempt, run, {
             `levels.L${level.level}.score`);
           mismatch(last?.outcome === 'inconclusive' && level.graded !== false,
             `levels.L${level.level}.graded`);
+          const codingInterruption = last?.outcome === 'inconclusive'
+            && level.outcome?.phase === 'coding-session';
+          mismatch(codingInterruption && last.category !== level.outcome?.kind,
+            `levels.L${level.level}.progressionAttempt.category`);
+          mismatch(codingInterruption && last.reason !== level.outcome?.reason,
+            `levels.L${level.level}.progressionAttempt.reason`);
         }
         if (stored.state.phase === 'terminal') {
           // The graph records feature progress. The run outcome also includes
@@ -442,7 +439,7 @@ export function validateCampaignRun(plan, attempt, run, {
           const expectedOutcome = expectedDependencyRunOutcomeKind(
             run.levels, stored.state.terminalOutcome);
           mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
-        } else if (!interruptedPrefix && !hasPreGradeFailure) {
+        } else if (!interruptedPrefix) {
           mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
             'progressionState.phase');
         }
@@ -468,17 +465,26 @@ const TRANSIENT_PROVIDER_STATUSES = new Set([500, 502, 503, 504, 529]);
 export function campaignRetryAuthority(run, { recoveryClean = false, requireCostReceipt = false } = {}) {
   const outcome = run?.outcome;
   const providerStatus = outcome?.provider?.providerStatus;
-  const transient = outcome?.kind === 'harness_failure'
+  const legacyTransient = outcome?.kind === 'harness_failure'
     && outcome.phase === 'coding-session'
     && outcome.reason !== 'provider-throttle-exhausted'
     && TRANSIENT_PROVIDER_STATUSES.has(providerStatus);
+  const providerTransient = outcome?.kind === 'provider_failure'
+    && outcome.phase === 'coding-session'
+    && outcome.reason !== 'provider-throttle-exhausted'
+    && (TRANSIENT_PROVIDER_STATUSES.has(providerStatus)
+      || ['provider-api-error', 'provider-connection-error'].includes(outcome.reason));
+  const transient = legacyTransient || providerTransient;
   const budgetKnown = !requireCostReceipt || (run?.totals?.costComplete === true
     && Number.isFinite(run?.totals?.costUsd) && run.totals.costUsd >= 0);
   return {
     transient,
     recoveryClean: recoveryClean === true,
     budgetKnown,
-    cause: transient ? `provider-http-${providerStatus}` : null,
+    cause: transient
+      ? providerStatus === null || providerStatus === undefined
+        ? outcome.reason : `provider-http-${providerStatus}`
+      : null,
   };
 }
 

@@ -54,15 +54,24 @@ export function hostedStopScript(port) {
     throw new Error(`invalid hosted backend port ${port}`);
   }
   const listeners = `lsof -ti tcp:${numericPort} -sTCP:LISTEN`;
-  const collectGroups = `groups=""; for pid in $(${listeners}); do `
+  const protectedGroups = 'self_pgid=$(ps -o pgid= -p $$ | tr -d " "); '
+    + 'init_child=$(ps -o pid= --ppid 1 | awk "NR==1 {print \\$1}"); '
+    + 'init_pgid=""; [ -z "$init_child" ] || init_pgid=$(ps -o pgid= -p "$init_child" | tr -d " ")';
+  const collectTargets = `groups=""; direct=""; for pid in $(${listeners}); do `
+    + 'case "$pid" in ""|*[!0-9]*|1) echo "unsafe listener pid $pid" >&2; exit 4;; esac; '
     + 'pgid=$(ps -o pgid= -p "$pid" | tr -d " "); '
-    + 'case "$pgid" in ""|*[!0-9]*|1) echo "unsafe process group for listener $pid" >&2; exit 4;; esac; '
-    + 'case " $groups " in *" $pgid "*) ;; *) groups="$groups $pgid";; esac; done';
-  return `quiet=0; attempt=0; while [ "$attempt" -lt 100 ]; do ${collectGroups}; `
-    + 'if [ -z "$groups" ]; then quiet=$((quiet + 1)); [ "$quiet" -ge 10 ] && exit 0; '
-    + 'else quiet=0; for pgid in $groups; do /bin/kill -TERM -- "-$pgid" 2>/dev/null || true; done; fi; '
+    + 'case "$pgid" in "") continue;; '
+    + '*[!0-9]*|0) echo "unsafe process group for listener $pid" >&2; exit 4;; '
+    + '*) if [ "$pgid" = 1 ] || [ "$pgid" = "$self_pgid" ] || [ "$pgid" = "$init_pgid" ]; '
+    + 'then direct="$direct $pid"; '
+    + 'else case " $groups " in *" $pgid "*) ;; *) groups="$groups $pgid";; esac; fi;; esac; done';
+  const signalTargets = signal => `for pgid in $groups; do /bin/kill -${signal} -- "-$pgid" 2>/dev/null || true; done; `
+    + `for pid in $direct; do /bin/kill -${signal} "$pid" 2>/dev/null || true; done`;
+  return `${protectedGroups}; quiet=0; attempt=0; while [ "$attempt" -lt 100 ]; do ${collectTargets}; `
+    + 'if [ -z "$groups$direct" ]; then quiet=$((quiet + 1)); [ "$quiet" -ge 10 ] && exit 0; '
+    + `else quiet=0; ${signalTargets('TERM')}; fi; `
     + 'attempt=$((attempt + 1)); sleep 0.1; done; '
-    + `${collectGroups}; for pgid in $groups; do /bin/kill -KILL -- "-$pgid" 2>/dev/null || true; done; `
+    + `${collectTargets}; ${signalTargets('KILL')}; `
     + `quiet=0; attempt=0; while [ "$attempt" -lt 50 ]; do if [ -z "$(${listeners})" ]; `
     + 'then quiet=$((quiet + 1)); [ "$quiet" -ge 10 ] && exit 0; else quiet=0; fi; '
     + 'attempt=$((attempt + 1)); sleep 0.1; done; '
