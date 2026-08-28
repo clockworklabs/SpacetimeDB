@@ -149,3 +149,11 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(source, /'--bare'/);
   assert.doesNotMatch(source, /'\/root':\s*'rw/);
 });
+
+test('coding session transcripts are handed back read-only to the controller', () => {
+  const source = readFileSync(join(ROOT, 'container', 'run-build.mjs'), 'utf8');
+  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.mjs'), 'utf8');
+  assert.match(source, /codingContainerTranscriptHandoffCommand\(\)/);
+  assert.match(policy, /\['chmod', '-R', 'a\+rX', `\$\{CODING_CONTAINER_AGENT\.home\}\/\.claude\/projects\/-app`\]/);
+  assert.doesNotMatch(policy, /codingContainerTranscriptHandoffCommand[\s\S]*?a\+rwX/);
+});

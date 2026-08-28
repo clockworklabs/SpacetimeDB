@@ -27,3 +27,11 @@ export function codingContainerAgentExecOptions() {
 export function codingContainerAgentCommand(command, args = []) {
   return ['sh', '-c', 'umask 000; exec "$@"', 'application-command', command, ...args];
 }
+
+// Claude creates transcript files with mode 0600. They are bind-mounted from
+// the controller so the audit and cost ledger can inspect them after the coding
+// session. Give the controller read access before the session container is
+// released. Do not make transcripts writable by other users.
+export function codingContainerTranscriptHandoffCommand() {
+  return ['chmod', '-R', 'a+rX', `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`];
+}

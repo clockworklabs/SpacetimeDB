@@ -251,6 +251,28 @@ test('credential broker charges reported usage and reserves enough for the next 
   }, { maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
 });
 
+test('credential broker clears different concurrent reservations before the next request', async () => {
+  const rates = { input: 2, output: 10, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2 };
+  const upstreamBody = JSON.stringify({ usage: ONE_REQUEST_USAGE });
+  const bodyWithBytes = bytes => {
+    const prefix = '{"model":"test-model","max_tokens":65536,"padding":"';
+    const suffix = '"}';
+    return `${prefix}${'x'.repeat(bytes - prefix.length - suffix.length)}${suffix}`;
+  };
+  await withBroker('api-key', async ({ brokerPort, sessionToken, stats }) => {
+    const headers = { authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json' };
+    const first = send(brokerPort, { headers, body: bodyWithBytes(4_049) });
+    const second = send(brokerPort, { headers, body: bodyWithBytes(6_840) });
+    assert.deepEqual((await Promise.all([first, second])).map(result => result.status), [200, 200]);
+    assert.equal(stats().reservedUsd, 0);
+    assert.equal((await send(brokerPort, { headers, body: bodyWithBytes(4_049) })).status, 200);
+    assert.deepEqual(stats(), { acceptedRequests: 3, billableRequests: 3,
+      completedBillableRequests: 3, estimatedBillableRequests: 0,
+      spentUsd: 0.0036, reservedUsd: 0 });
+  }, { maxBudgetUsd: 100, maxOutputTokens: 65_536, pricingRates: rates, upstreamBody });
+});
+
 test('credential broker prices repeated compressed streams instead of exhausting the request cap', async () => {
   const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
   const stream = [
