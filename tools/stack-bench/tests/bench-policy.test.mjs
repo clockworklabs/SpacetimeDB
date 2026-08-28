@@ -6,12 +6,56 @@ import test from 'node:test';
 
 import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
   clearPrivateGradingEvidence, dependencyRepairBudget, dependencyStrikeRecords,
-  levelGradeIsUsable, parseArgs,
-  pristineMutationBaselinePath, repairHistoryEntry, repairProgressState }
+  levelGradeIsUsable, parseArgs, preserveFinalPackageEvidence,
+  pristineMutationBaselinePath, repairHistoryEntry, repairProgressState,
+  sourceBoundFirstBuildOutcome }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+
+test('final package preservation verifies both source and grading before success', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-final-package-'));
+  try {
+    const app = join(root, 'app');
+    const output = join(root, 'output');
+    mkdirSync(join(app, 'stack-bench'), { recursive: true });
+    mkdirSync(output, { recursive: true });
+    writeFileSync(join(app, 'index.js'), 'export const ready = true;\n');
+    const source = hashAppSource(app);
+    writeArtifact(join(app, 'stack-bench', 'bundle.json'), {
+      kind: 'grade_bundle', id: 'final-grade', payload: {
+        observation: 'scored', source: { sha256: source.sha256 },
+        suites: {}, totals: { score: 1, max: 1 },
+        selection: { sha256: 'a'.repeat(64) },
+      },
+    });
+
+    const evidence = preserveFinalPackageEvidence({ appDir: app, outputDir: output });
+    assert.equal(evidence.source.sha256, source.sha256);
+    assert.equal(existsSync(join(output, 'grading', 'bundle.json')), true);
+
+    rmSync(join(app, 'stack-bench', 'bundle.json'));
+    assert.throws(() => preserveFinalPackageEvidence({ appDir: app, outputDir: output }),
+      /mandatory result package evidence.*final grader produced no bundle/);
+    assert.equal(existsSync(join(output, 'source', 'index.js')), true,
+      'source evidence remains available when grading preservation fails');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a missing first-build source is a harness failure', () => {
+  const passed = { outcome: { kind: 'passed' }, totals: { score: 1, max: 1 }, suites: {} };
+  assert.equal(sourceBoundFirstBuildOutcome(passed, { sha256: 'a'.repeat(64) }).kind, 'passed');
+  assert.deepEqual(sourceBoundFirstBuildOutcome(passed, null), {
+    kind: 'harness_failure',
+    phase: 'first-build-source',
+    reason: 'the first-build source could not be preserved and verified',
+    appFailures: [],
+    inconclusive: [],
+    harnessFailures: ['the first-build source could not be preserved and verified'],
+  });
+});
 
 test('direct runs default to ten repair rounds while an explicit budget still wins', () => {
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);

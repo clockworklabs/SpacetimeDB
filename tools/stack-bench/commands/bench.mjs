@@ -393,6 +393,60 @@ function snapshotSource(appDir, to) {
   snapshotAppSource(appDir, to);
 }
 
+export function preserveFinalPackageEvidence({ appDir, outputDir }) {
+  const failures = [];
+  let source = null;
+  let grading = null;
+
+  try {
+    const live = hashAppSource(appDir);
+    const destination = join(outputDir, 'source');
+    snapshotSource(appDir, destination);
+    const saved = hashDirectory(destination);
+    if (saved.sha256 !== live.sha256 || saved.files.length !== live.files.length) {
+      throw new Error('preserved final source differs from the live application source');
+    }
+    source = { directory: 'source', sha256: saved.sha256, files: saved.files.length };
+  } catch (error) {
+    failures.push(`source: ${String(error.message).split(/\r?\n/)[0]}`);
+  }
+
+  try {
+    const from = join(appDir, 'stack-bench');
+    const destination = join(outputDir, 'grading');
+    if (!existsSync(join(from, 'bundle.json'))) {
+      throw new Error('final grader produced no bundle.json');
+    }
+    rmSync(destination, { recursive: true, force: true });
+    cpSync(from, destination, {
+      recursive: true,
+      filter: path => !/[\\/]media([\\/]|$)/.test(path),
+    });
+    const bundle = readArtifactPayload(join(destination, 'bundle.json'), {
+      expectedKind: 'grade_bundle',
+    });
+    if (!source || bundle.source?.sha256 !== source.sha256) {
+      throw new Error('final grading bundle does not match the preserved application source');
+    }
+    grading = { directory: 'grading', artifact: 'grading/bundle.json',
+      sourceSha256: bundle.source.sha256 };
+  } catch (error) {
+    failures.push(`grading: ${String(error.message).split(/\r?\n/)[0]}`);
+  }
+
+  if (failures.length) {
+    throw new Error(`could not preserve mandatory result package evidence: ${failures.join('; ')}`);
+  }
+  return { source, grading };
+}
+
+export function sourceBoundFirstBuildOutcome(bundle, source) {
+  if (source) return classifyBundle(bundle);
+  const reason = 'the first-build source could not be preserved and verified';
+  return { kind: 'harness_failure', phase: 'first-build-source', reason,
+    appFailures: [], inconclusive: [], harnessFailures: [reason] };
+}
+
 // Restore in place: generated layouts are not prescribed, active watchers keep
 // their directory handles, and dependency folders survive at any depth.
 function restoreSource(from, appDir) {
@@ -1444,7 +1498,7 @@ async function main() {
       max: bundle?.totals?.max ?? null,
       regression: bundle?.totals?.regression ?? null,
       contractPass: bundle?.totals?.contractPass ?? null,
-      outcome: classifyBundle(bundle),
+      outcome: sourceBoundFirstBuildOutcome(bundle, firstBuildSource),
       source: firstBuildSource,
       missed: Object.values(bundle?.suites ?? {}).flatMap(s =>
         (s?.features ?? []).flatMap(f =>
@@ -1939,18 +1993,10 @@ async function main() {
       { stdio: 'pipe' });
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
-  finalizeRunTotals(run, started, { costComplete: runCostComplete });
   run.outcome = finalAuditFailure ?? (args.referenceMutationOnly && run.mutationControl?.ok
     ? { kind: 'passed', phase: 'mutation-control', reason: null,
       appFailures: [], inconclusive: [], harnessFailures: [] }
     : aggregateRunOutcome(run.levels));
-  if (args.repairGrant) {
-    run.continuation.cumulativeCostAfterUsd = addCostUsd(
-      run.continuation.cumulativeCostBeforeUsd, run.totals.costUsd);
-    run.continuation.cumulativeDurationAfterSec = run.continuation.cumulativeDurationBeforeSec
-      + run.totals.durationSec;
-  }
-  run.completedAt = new Date().toISOString();
   if (args.mutations && !run.mutationControl?.ok && !run.mutationControl?.skipped) {
     run.outcome = { kind: run.mutationControl?.outcome?.kind === 'incomplete'
       ? 'incomplete' : 'harness_failure', phase: 'mutation-control',
@@ -1959,6 +2005,28 @@ async function main() {
         ?? 'one or more declared mutations were not cleanly caught',
       appFailures: [], inconclusive: [] };
   }
+
+  if (run.levels.some(level => level.graded === true)) {
+    try {
+      preserveFinalPackageEvidence({ appDir, outputDir: args.out });
+      console.log(`  source kept at ${join(args.out, 'source')}`);
+      console.log(`  grading detail kept at ${join(args.out, 'grading')}`);
+    } catch (error) {
+      const reason = String(error.message).split(/\r?\n/)[0];
+      run.outcome = { kind: 'harness_failure', phase: 'evidence-preservation', reason,
+        appFailures: [], inconclusive: [], harnessFailures: [reason] };
+      console.log(`  !! ${reason}`);
+    }
+  }
+
+  finalizeRunTotals(run, started, { costComplete: runCostComplete });
+  if (args.repairGrant) {
+    run.continuation.cumulativeCostAfterUsd = addCostUsd(
+      run.continuation.cumulativeCostBeforeUsd, run.totals.costUsd);
+    run.continuation.cumulativeDurationAfterSec = run.continuation.cumulativeDurationBeforeSec
+      + run.totals.durationSec;
+  }
+  run.completedAt = new Date().toISOString();
   writeRunJson(join(args.out, 'run.json'), run);
 
   // Produce a model-free friction report from the transcript when available.
@@ -1999,29 +2067,6 @@ async function main() {
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);
   console.log(`  ${join(args.out, 'run.json')}`);
-
-  // Preserve the scored source before removing the work directory.
-  try {
-    snapshotSource(appDir, join(args.out, 'source'));
-    console.log(`  source kept at ${join(args.out, 'source')}`);
-  } catch (e) {
-    console.log(`  !! could not keep the source: ${String(e.message).split('\n')[0]}`);
-  }
-
-  // Preserve grading bundles and per-suite details. Media is omitted here
-  // because traces and video are large and reproducible.
-  try {
-    const from = join(appDir, 'stack-bench');
-    if (existsSync(from)) {
-      cpSync(from, join(args.out, 'grading'), {
-        recursive: true,
-        filter: src => !/[\\/]media([\\/]|$)/.test(src),
-      });
-      console.log(`  grading detail kept at ${join(args.out, 'grading')}`);
-    }
-  } catch (e) {
-    console.log(`  !! could not keep the grading detail: ${String(e.message).split('\n')[0]}`);
-  }
 
   teardown();
 

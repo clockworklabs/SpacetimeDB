@@ -12,7 +12,7 @@ import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
 import { rescueSupervisedLease, runBounded } from '../references/reference-live.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { runPreflight } from '../runtime/preflight.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
 import { validateReleaseManifest } from '../releases/release-manifest.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { readProgressionState } from '../progression/progression-state.mjs';
@@ -168,6 +168,40 @@ export function validateCampaignRun(plan, attempt, run, {
     && run.validation?.ladder?.policy === 'dependency-gated';
   const mismatches = [];
   const mismatch = (condition, field) => { if (condition) mismatches.push(field); };
+  const finalGradedLevel = (run.levels ?? []).filter(level => Number.isSafeInteger(level.score)
+    && Number.isSafeInteger(level.max) && level.max > 0).at(-1) ?? null;
+  if (resultDir !== null && finalGradedLevel
+    && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
+    if (typeof resultDir !== 'string' || !resultDir) {
+      mismatch(true, 'packageEvidence');
+    } else {
+      let source = null;
+      let grading = null;
+      try {
+        const sourcePath = join(resolve(resultDir), 'source');
+        if (!existsSync(sourcePath)) throw new Error('missing source');
+        source = hashDirectory(sourcePath);
+      } catch {
+        mismatch(true, 'packageEvidence.source');
+      }
+      try {
+        const bundlePath = join(resolve(resultDir), 'grading', 'bundle.json');
+        if (!existsSync(bundlePath)) throw new Error('missing grading bundle');
+        grading = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' });
+      } catch {
+        mismatch(true, 'packageEvidence.grading');
+      }
+      if (source && grading) {
+        mismatch(grading.source?.sha256 !== source.sha256,
+          'packageEvidence.grading.sourceSha256');
+        mismatch(grading.selection?.sha256 !== finalGradedLevel.selection?.sha256,
+          'packageEvidence.grading.selectionSha256');
+        mismatch(grading.totals?.score !== finalGradedLevel.score
+          || grading.totals?.max !== finalGradedLevel.max,
+        'packageEvidence.grading.score');
+      }
+    }
+  }
   mismatch(run.artifactEnvelope?.attempt?.parentId !== attempt.id, 'attempt.parentId');
   mismatch(canonicalDefinitionJson(run.mode ?? null)
     !== canonicalDefinitionJson(attempt.mode), 'mode');

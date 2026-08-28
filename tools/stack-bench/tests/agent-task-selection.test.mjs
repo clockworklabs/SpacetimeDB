@@ -36,6 +36,8 @@ test('agent-visible contracts do not disclose grading or test execution', () => 
   assert.doesNotMatch(visible, /harness|runner|testing interface|test fixture|test id|hooks/i);
   assert.match(visible, /Run configuration/);
   assert.match(visible, /Application interface/i);
+  assert.equal(agentVisibleContractText('Keep the contest action. Expose the test action.'),
+    'Keep the contest action. Expose the application action.');
 });
 
 function printPrompt(app, request, extraArgs = []) {

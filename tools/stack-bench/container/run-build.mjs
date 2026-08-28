@@ -35,6 +35,8 @@ import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-aut
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt, startCredentialBroker,
   stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
+import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
+  removeFailedBuildContainer } from './reconcile-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentEnvironment }
@@ -315,9 +317,12 @@ if (existing) {
 // Create it if this is the first round of the run; reuse it for every round
 // after, so a fix round finds the app, its node_modules and its servers exactly
 // where the build round left them.
+let containerInspection = existing;
 if (!existing) {
+  const creationToken = randomBytes(16).toString('hex');
   const create = [
     'run', '-d', '--init', '--name', containerName,
+    '--label', `${BUILD_CONTAINER_CREATION_LABEL}=${creationToken}`,
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
     '--pids-limit', String(BUILD_CONTAINER_RESOURCE_LIMITS.pids),
     '--cpus', String(BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount),
@@ -371,11 +376,35 @@ if (!existing) {
   if (made.status !== 0) {
     console.error(`run-build.mjs: could not start ${containerName}`);
     console.error(made.stderr || made.stdout || made.error?.message || '');
+    try {
+      removeFailedBuildContainer({ containerName, creationToken,
+        createdId: containerIdFromDockerOutput(made.stdout), dockerEnv,
+        timeoutMs: DOCKER_TIMEOUT_MS });
+    } catch (cleanupError) {
+      console.error(`run-build.mjs: ${cleanupError.message}`);
+      process.exit(3);
+    }
+    process.exit(2);
+  }
+
+  const createdId = containerIdFromDockerOutput(made.stdout);
+  try { containerInspection = inspectContainer(containerName); }
+  catch (error) {
+    console.error(`run-build.mjs: cannot inspect ${containerName}: ${error.message}`);
+  }
+  if (!containerInspection) {
+    try {
+      removeFailedBuildContainer({ containerName, creationToken, createdId, dockerEnv,
+        timeoutMs: DOCKER_TIMEOUT_MS });
+    } catch (cleanupError) {
+      console.error(`run-build.mjs: ${cleanupError.message}`);
+      process.exit(3);
+    }
+    console.error(`run-build.mjs: cannot inspect ${containerName}`);
     process.exit(2);
   }
 }
 
-const containerInspection = inspectContainer(containerName);
 if (!containerInspection) {
   console.error(`run-build.mjs: cannot inspect ${containerName}`);
   process.exit(2);

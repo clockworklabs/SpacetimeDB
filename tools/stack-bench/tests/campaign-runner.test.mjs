@@ -11,7 +11,7 @@ import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   expectedDependencyRunOutcomeKind, processFailureDetail, remainingAttemptCostBudget,
   validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { hashDirectory, sha256 } from '../src/evidence/provenance.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
@@ -32,6 +32,20 @@ const plannedSelection = (attempt, level) => structuredClone(
   attempt.condition.requested.levels.find(item => item.level === level).selection);
 const experimentIdentity = plan => ({ id: plan.id, version: plan.version,
   sha256: plan.contentSha256, state: plan.state });
+
+function writeFakePackageEvidence(output, level) {
+  const source = join(output, 'source');
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, 'app.js'), 'export const ready = true;\n');
+  const sourceHash = hashDirectory(source).sha256;
+  writeArtifact(join(output, 'grading', 'bundle.json'), {
+    kind: 'grade_bundle', id: `fake-grade-${level.level}`, payload: {
+      observation: 'scored', source: { sha256: sourceHash }, suites: {},
+      totals: { score: level.score, max: level.max },
+      selection: { sha256: level.selection.sha256 },
+    },
+  });
+}
 
 test('campaign failures prefer the last explicit error over stack and exit noise', () => {
   const stderrTail = [
@@ -513,11 +527,18 @@ test('campaign validation requires complete first-build and final measurement co
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 58, max: 58, fixRounds: 0,
+  levels: [{ level: 1, graded: true, selection: plannedSelection(attempt, 1),
+    score: 58, max: 58, fixRounds: 0,
     firstBuild: { score: 58, max: 58, outcome },
     repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
     outcome }], outcome: { kind: 'passed' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  const missingPackage = mkdtempSync(join(tmpdir(), 'stack-bench-missing-package-'));
+  try {
+    assert.throws(() => validateCampaignRun(plan, attempt, run, {
+      buildImage: 'test-build-image', resultDir: missingPackage,
+    }), /packageEvidence\.source.*packageEvidence\.grading/);
+  } finally { rmSync(missingPackage, { recursive: true, force: true }); }
 
   const missingFirstBuildPoint = structuredClone(run);
   missingFirstBuildPoint.levels[0].firstBuild.score = 57;
@@ -799,6 +820,16 @@ test('model-free campaign execution checkpoints an authorized retry and every co
               instructions: ['No recovery action is required.'] } });
           return { code: 3, timedOut: false };
         }
+        const levels = attempt.levels.map(level => {
+          const selection = plannedSelection(attempt, level);
+          const max = selection.scoredPoints;
+          const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
+          return { level, graded: true, selection, score: max, max, fixRounds: 0,
+            firstBuild: { score: max, max, outcome },
+            repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+            outcome };
+        });
+        writeFakePackageEvidence(output, levels.at(-1));
         writeRunJson(join(output, 'run.json'), { id: `fake-${calls.length}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
           identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
@@ -809,16 +840,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
           guidance: attempt.guidance, condition: attempt.condition,
           selectionRequest: planned.definition.selection,
           skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
-          totals: { costUsd: 0 },
-          levels: attempt.levels.map(level => {
-            const selection = plannedSelection(attempt, level);
-            const max = selection.scoredPoints;
-            const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-            return { level, selection, score: max, max, fixRounds: 0,
-              firstBuild: { score: max, max, outcome },
-            repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
-              outcome };
-          }),
+          totals: { costUsd: 0 }, levels,
           outcome: { kind: 'passed' } });
         return { code: 0, timedOut: false };
       } });
@@ -892,6 +914,16 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
         const stack = planned.stacks.find(item => item.id === attempt.stack);
         const completedAt = new Date().toISOString();
         const { writeRunJson } = await import('../src/evidence/artifacts.mjs');
+        const levels = attempt.levels.map(level => {
+          const selection = plannedSelection(attempt, level);
+          const max = selection.scoredPoints;
+          const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
+          return { level, graded: true, selection, score: max, max, fixRounds: 0,
+            firstBuild: { score: max, max, outcome },
+            repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+            outcome };
+        });
+        writeFakePackageEvidence(output, levels.at(-1));
         writeRunJson(join(output, 'run.json'), { id: `parallel-${runIndex}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
           identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
@@ -902,15 +934,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
           guidance: attempt.guidance, condition: attempt.condition,
           selectionRequest: planned.definition.selection, skills: attempt.skills,
           runtime: { buildImage: options.env.STACK_BENCH_IMAGE }, totals: { costUsd: 0 },
-          levels: attempt.levels.map(level => {
-            const selection = plannedSelection(attempt, level);
-            const max = selection.scoredPoints;
-            const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-            return { level, selection, score: max, max, fixRounds: 0,
-              firstBuild: { score: max, max, outcome },
-              repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
-              outcome };
-          }), outcome: { kind: 'passed' } });
+          levels, outcome: { kind: 'passed' } });
         active -= 1;
         return { code: 0, timedOut: false };
       } });
