@@ -12,6 +12,14 @@ RUN corepack enable \
     && test -f crates/bindings-typescript/dist/server/index.d.ts \
     && test -f crates/bindings-typescript/dist/server/index.mjs
 
+FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac AS stack-bench-build
+
+WORKDIR /opt/stack-bench
+COPY tools/stack-bench/package.json tools/stack-bench/package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY tools/stack-bench/ ./
+RUN npm run build
+
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac
 
 ENV NODE_ENV=production \
@@ -47,6 +55,7 @@ ENV STACK_BENCH_SOURCE_REVISION=$SOURCE_REVISION \
     STACK_BENCH_BINARY_SOURCE_SHA256=$BINARY_SOURCE_SHA256
 
 COPY tools/stack-bench/ ./
+COPY --from=stack-bench-build /opt/stack-bench/dist/ ./dist/
 COPY skills/ /skills/
 COPY crates/bindings-typescript/ /opt/stack-bench-embedded-deps/bindings-typescript/
 COPY --from=sdk-build /workspace/crates/bindings-typescript/dist/ /opt/stack-bench-embedded-deps/bindings-typescript/dist/
