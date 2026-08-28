@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { calibrationQualificationIdentity, calibrationQualificationRelease,
+import { calibrationQualificationIdentity, calibrationQualificationRelease, canReuseQualificationScope,
   compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, hasExactSelectedPackRuntime, resolveCalibrationForRelease,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
@@ -366,4 +366,60 @@ test('equivalence decisions require two distinct executions and hash-bound evide
       evidence: [{ path: 'missing-evidence.json', sha256: '3'.repeat(64) }],
     }];
   }), /does not exist/);
+});
+
+test('qualification reuse accepts only the declared source and unchanged grading inputs', () => {
+  const sourceRecipe = { id: 'recipe', version: '1.0.0',
+    contentSha256: '1'.repeat(64), executionSha256: '2'.repeat(64) };
+  const sourceCalibration = { id: 'calibration', version: '1.0.0', sha256: '3'.repeat(64) };
+  const calibration = { qualificationReuse: { sourceRecipe, sourceCalibration,
+    rationale: 'Selector compatibility only',
+    evidence: [{ path: 'proof.json', sha256: '6'.repeat(64) }], scopes: [{
+    kind: 'mutation', stack: 'mongodb', fromExecutableSha256: '4'.repeat(64),
+    toExecutableSha256: '5'.repeat(64),
+  }] } };
+  const artifact = { identities: {
+    recipe: { id: sourceRecipe.id, version: sourceRecipe.version,
+      sha256: sourceRecipe.contentSha256 },
+    calibration: { ...sourceCalibration },
+  } };
+  const actual = { executableSha256: '4'.repeat(64),
+    recipe: { id: sourceRecipe.id, version: sourceRecipe.version,
+      contentSha256: sourceRecipe.contentSha256 },
+    checksSha256: '7'.repeat(64), stack: { id: 'mongodb', version: '1.0.0',
+      reference: { id: 'fixture', sourceSha256: '8'.repeat(64) } },
+    mutationSha256: '9'.repeat(64) };
+  const expected = structuredClone(actual);
+  expected.executableSha256 = '5'.repeat(64);
+  expected.recipe = { id: 'recipe', version: '1.1.0', contentSha256: 'a'.repeat(64) };
+  const input = { actual, expected, artifact, calibration,
+    entry: { kind: 'mutation', stack: 'mongodb' } };
+  assert.equal(canReuseQualificationScope(input), true);
+  for (const change of [
+    value => { value.actual.checksSha256 = 'b'.repeat(64); },
+    value => { value.actual.mutationSha256 = 'b'.repeat(64); },
+    value => { value.actual.stack.reference.sourceSha256 = 'b'.repeat(64); },
+    value => { value.expected.executableSha256 = 'b'.repeat(64); },
+    value => { value.artifact.identities.calibration.sha256 = 'b'.repeat(64); },
+  ]) {
+    const changed = structuredClone(input);
+    change(changed);
+    assert.equal(canReuseQualificationScope(changed), false);
+  }
+});
+
+test('qualification reuse definitions are exact and hash-bound', () => {
+  const definition = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
+  definition.qualificationReuse = {
+    sourceRecipe: { id: definition.recipe.id, version: '1.0.0',
+      contentSha256: '1'.repeat(64), executionSha256: definition.recipe.executionSha256 },
+    sourceCalibration: { id: definition.id, version: '1.0.0', sha256: '2'.repeat(64) },
+    rationale: 'No scoring change',
+    evidence: [{ path: 'proof.json', sha256: '5'.repeat(64) }],
+    scopes: [{ kind: 'null', fromExecutableSha256: '3'.repeat(64),
+      toExecutableSha256: '4'.repeat(64) }],
+  };
+  assert.doesNotThrow(() => compileCalibrationDefinition(definition));
+  definition.qualificationReuse.scopes[0].stack = 'mongodb';
+  assert.throws(() => compileCalibrationDefinition(definition), /not allowed for null reuse/);
 });

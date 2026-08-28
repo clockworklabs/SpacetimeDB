@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "kind": "qualification-scope-reuse",
+  "sourceRecipe": {
+    "id": "ecommerce.progression-l1-l3",
+    "version": "1.0.0",
+    "contentSha256": "5f0041c2d21925ec88e2f786294ba9e5b9e5e71a8b95ee36ba6dd36d06a88a2d",
+    "executionSha256": "d728eff6c9e10769352ff510eaa722caeba05b377d65db36c066ea29a234c67f"
+  },
+  "targetRecipe": {
+    "id": "ecommerce.progression-l1-l3",
+    "version": "1.1.0",
+    "contentSha256": "12e4682c59226804fa92495d786670add33a9041f7b291a37dc80493bf4e1e1b",
+    "executionSha256": "d728eff6c9e10769352ff510eaa722caeba05b377d65db36c066ea29a234c67f"
+  },
+  "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
+  "reason": "Prompt execution and qualification inputs are unchanged. Later executable changes harden agent isolation, source evidence, cost proof, repair continuation, and stable selectors. Targeted tests cover those paths. The prior mutation corpus is unchanged.",
+  "verification": [
+    {
+      "command": "node --test --test-name-pattern=qualification reuse tools/stack-bench/tests/calibration-compiler.test.mjs",
+      "result": "2 passed"
+    },
+    {
+      "command": "node --test tools/stack-bench/tests/agent-task-selection.test.mjs tools/stack-bench/tests/bench-policy.test.mjs tools/stack-bench/tests/linter-coverage.test.mjs tools/stack-bench/tests/qualification-scope.test.mjs tools/stack-bench/tests/selected-grade.test.mjs tools/stack-bench/tests/source-checkpoint.test.mjs tools/stack-bench/tests/repair-grant.test.mjs tools/stack-bench/tests/campaign-progression-grant.test.mjs",
+      "result": "54 passed"
+    }
+  ],
+  "scopes": [
+    {
+      "kind": "reference",
+      "stack": "mongodb",
+      "fromExecutableSha256": "98c450c7fbb109a3f1c0ef6ff28f68504ada8a4bc1aa663c6ca1d1fc67aadddd",
+      "toExecutableSha256": "604db0752669089df3aa703d6977c68a569549cabebd172c6395300d05cac5f2"
+    },
+    {
+      "kind": "mutation",
+      "stack": "mongodb",
+      "fromExecutableSha256": "bcd2b116b0d7602f79efd503076964eeee68b69733b9e97882fa0cb5fbfe8edb",
+      "toExecutableSha256": "7292025736eab1f9fc230ce27f9f290469f6d9f303c460e01635b2b610dfd516"
+    },
+    {
+      "kind": "reference",
+      "stack": "postgres",
+      "fromExecutableSha256": "0669dc8a90aaca4d41146c6aaf767b193b8e347ac487a47f4357653f461b5c69",
+      "toExecutableSha256": "f2adfd8aade6c6d8c985d45cb83485f741b25d29af4e6f5814ce85083e31fa1c"
+    },
+    {
+      "kind": "mutation",
+      "stack": "postgres",
+      "fromExecutableSha256": "aabc9df6193a8aa48534afaab9356cf1d01473973ce1de2456dc4e5c42af0b58",
+      "toExecutableSha256": "b1abd660c455fbbf6d5342582d9e03be1d0a3e16f5ffb717ac9decf9222601a4"
+    },
+    {
+      "kind": "reference",
+      "stack": "spacetime",
+      "fromExecutableSha256": "9d4033ad1a4a6b5992c4e5f9a0014c58a3d5793f5a36f65470c29c2a85bb0a41",
+      "toExecutableSha256": "b1da59b046e3762e96f4cc766d8248a38f2b28964b02cf84c2237cd9bd44d3e4"
+    },
+    {
+      "kind": "mutation",
+      "stack": "spacetime",
+      "fromExecutableSha256": "72868eeb2c8b3aa07e233b7403788dd6b1797a5854779c66cabc2e2d7cf389a6",
+      "toExecutableSha256": "2ca9b37e7ff43a18f767c140d036fc80df523cd7c33321a164b9100594c83318"
+    },
+    {
+      "kind": "null",
+      "fromExecutableSha256": "a6a1f2a23c385275242edc1ecda29662301a67582449b1d7c2fa5e0e83ab2393",
+      "toExecutableSha256": "fbddb19798f3a80e7a3fc56c24f2c4bf2a82170204e70d27c89dd8fc37412aea"
+    }
+  ]
+}

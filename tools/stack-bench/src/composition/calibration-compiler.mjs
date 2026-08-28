@@ -87,7 +87,7 @@ function contained(root, from, path, at) {
 const ROOT_FIELDS = new Set([
   'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'track', 'recipe',
   'fixture', 'references', 'mutations', 'nullControl', 'controls', 'qualification',
-  'equivalenceDecisions', 'promotion',
+  'equivalenceDecisions', 'qualificationReuse', 'promotion',
 ]);
 const RECIPE_FIELDS = new Set([
   'path', 'id', 'version', 'meaningSha256', 'executionSha256', 'contentSha256',
@@ -110,6 +110,16 @@ const EVIDENCE_FIELDS = new Set(['kind', 'stack', 'repetition', 'path', 'sha256'
 const EQUIVALENCE_EVIDENCE_FIELDS = new Set(['path', 'sha256']);
 const EQUIVALENCE_FIELDS = new Set([
   'fromExecutionSha256', 'toExecutionSha256', 'rationale', 'evidence',
+]);
+const QUALIFICATION_REUSE_FIELDS = new Set([
+  'sourceRecipe', 'sourceCalibration', 'rationale', 'evidence', 'scopes',
+]);
+const QUALIFICATION_REUSE_RECIPE_FIELDS = new Set([
+  'id', 'version', 'contentSha256', 'executionSha256',
+]);
+const QUALIFICATION_REUSE_CALIBRATION_FIELDS = new Set(['id', 'version', 'sha256']);
+const QUALIFICATION_REUSE_SCOPE_FIELDS = new Set([
+  'kind', 'stack', 'fromExecutableSha256', 'toExecutableSha256',
 ]);
 const PROMOTION_FIELDS = new Set(['catalogPath', 'catalogSha256', 'alias', 'status']);
 
@@ -285,6 +295,50 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
     });
   });
 
+  if (value.qualificationReuse !== undefined) {
+    const reuse = value.qualificationReuse;
+    const at = `${source}.qualificationReuse`;
+    strictObject(reuse, at, QUALIFICATION_REUSE_FIELDS);
+    strictObject(reuse.sourceRecipe, `${at}.sourceRecipe`, QUALIFICATION_REUSE_RECIPE_FIELDS);
+    exactId(reuse.sourceRecipe.id, `${at}.sourceRecipe.id`);
+    exactVersion(reuse.sourceRecipe.version, `${at}.sourceRecipe.version`);
+    exactHash(reuse.sourceRecipe.contentSha256, `${at}.sourceRecipe.contentSha256`);
+    exactHash(reuse.sourceRecipe.executionSha256, `${at}.sourceRecipe.executionSha256`);
+    strictObject(reuse.sourceCalibration, `${at}.sourceCalibration`,
+      QUALIFICATION_REUSE_CALIBRATION_FIELDS);
+    exactId(reuse.sourceCalibration.id, `${at}.sourceCalibration.id`);
+    exactVersion(reuse.sourceCalibration.version, `${at}.sourceCalibration.version`);
+    exactHash(reuse.sourceCalibration.sha256, `${at}.sourceCalibration.sha256`);
+    string(reuse.rationale, `${at}.rationale`);
+    array(reuse.evidence, `${at}.evidence`, { nonEmpty: true });
+    reuse.evidence.forEach((entry, index) => {
+      const evidenceAt = `${at}.evidence[${index}]`;
+      strictObject(entry, evidenceAt, EQUIVALENCE_EVIDENCE_FIELDS);
+      string(entry.path, `${evidenceAt}.path`);
+      exactHash(entry.sha256, `${evidenceAt}.sha256`);
+    });
+    array(reuse.scopes, `${at}.scopes`, { nonEmpty: true });
+    const scopeKeys = new Set();
+    reuse.scopes.forEach((scope, index) => {
+      const scopeAt = `${at}.scopes[${index}]`;
+      strictObject(scope, scopeAt, QUALIFICATION_REUSE_SCOPE_FIELDS);
+      if (!['reference', 'mutation', 'null'].includes(scope.kind)) {
+        fail(`${scopeAt}.kind`, 'must be reference, mutation, or null');
+      }
+      if (scope.kind === 'null') {
+        if (scope.stack !== undefined) fail(`${scopeAt}.stack`, 'is not allowed for null reuse');
+      } else string(scope.stack, `${scopeAt}.stack`);
+      exactHash(scope.fromExecutableSha256, `${scopeAt}.fromExecutableSha256`);
+      exactHash(scope.toExecutableSha256, `${scopeAt}.toExecutableSha256`);
+      if (scope.fromExecutableSha256 === scope.toExecutableSha256) {
+        fail(scopeAt, 'must compare different executable hashes');
+      }
+      const key = `${scope.kind}:${scope.stack ?? ''}`;
+      if (scopeKeys.has(key)) fail(scopeAt, `duplicates ${key}`);
+      scopeKeys.add(key);
+    });
+  }
+
   strictObject(value.promotion, `${source}.promotion`, PROMOTION_FIELDS);
   string(value.promotion.catalogPath, `${source}.promotion.catalogPath`);
   exactHash(value.promotion.catalogSha256, `${source}.promotion.catalogSha256`);
@@ -323,6 +377,45 @@ function exactEvidenceIdentity(actual, expected, at) {
     || actual.sha256 !== expected.sha256) {
     evidenceFailure(at, `has wrong ${at.split('.').at(-1)} identity`);
   }
+}
+
+function evidenceIdentityMatches(actual, expected) {
+  return actual?.id === expected?.id && actual?.version === expected?.version
+    && actual?.sha256 === expected?.sha256;
+}
+
+function qualificationEvidenceOrigin(artifact, calibration, qualificationIdentity, release, at) {
+  const currentRecipe = { id: release.id, version: release.version, sha256: release.contentSha256 };
+  const current = evidenceIdentityMatches(artifact.identities?.recipe, currentRecipe)
+    && evidenceIdentityMatches(artifact.identities?.calibration, qualificationIdentity);
+  if (current) return 'current';
+  const reuse = calibration.qualificationReuse;
+  const sourceRecipe = reuse && { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
+    sha256: reuse.sourceRecipe.contentSha256 };
+  if (reuse && evidenceIdentityMatches(artifact.identities?.recipe, sourceRecipe)
+    && evidenceIdentityMatches(artifact.identities?.calibration, reuse.sourceCalibration)) {
+    return 'reused';
+  }
+  evidenceFailure(at, 'has mismatched recipe or calibration identities');
+}
+
+export function canReuseQualificationScope({ actual, expected, artifact, calibration, entry }) {
+  const reuse = calibration?.qualificationReuse;
+  const decision = reuse?.scopes.find(scope => scope.kind === entry.kind
+    && (scope.stack ?? null) === (entry.stack ?? null));
+  if (!decision) return false;
+  const sourceScopeRecipe = { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
+    contentSha256: reuse.sourceRecipe.contentSha256 };
+  const sourceArtifactRecipe = { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
+    sha256: reuse.sourceRecipe.contentSha256 };
+  return actual.executableSha256 === decision.fromExecutableSha256
+    && expected.executableSha256 === decision.toExecutableSha256
+    && evidenceIdentityMatches(artifact.identities?.recipe, sourceArtifactRecipe)
+    && evidenceIdentityMatches(artifact.identities?.calibration, reuse.sourceCalibration)
+    && canonicalDefinitionJson(actual.recipe) === canonicalDefinitionJson(sourceScopeRecipe)
+    && actual.checksSha256 === expected.checksSha256
+    && canonicalDefinitionJson(actual.stack) === canonicalDefinitionJson(expected.stack)
+    && actual.mutationSha256 === expected.mutationSha256;
 }
 
 export function currentLevelPoints(release, execution) {
@@ -364,10 +457,7 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     enforceQualificationScope = true }) {
   const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
   if (!artifact || typeof artifact !== 'object') evidenceFailure(at, 'is not an artifact');
-  exactEvidenceIdentity(artifact.identities?.recipe,
-    { id: release.id, version: release.version, sha256: release.contentSha256 }, `${at}.recipe`);
-  exactEvidenceIdentity(artifact.identities?.calibration, qualificationIdentity,
-    `${at}.calibration`);
+  qualificationEvidenceOrigin(artifact, calibration, qualificationIdentity, release, at);
   if (!artifact.identities?.engine?.sha256) evidenceFailure(at, 'has no engine content identity');
   if (calibration.qualification.runner !== undefined) {
     for (const [field, expected] of Object.entries(calibration.qualification.runner)) {
@@ -500,6 +590,7 @@ function validateCurrentQualificationScope(artifact, entry,
     stackBenchRoot,
   });
   if (actual.sha256 !== expected.sha256) {
+    if (canReuseQualificationScope({ actual, expected, artifact, calibration, entry })) return;
     const changed = ['executableSha256', 'checksSha256', 'mutationSha256']
       .filter(field => actual[field] !== expected[field]);
     if (canonicalDefinitionJson(actual.recipe) !== canonicalDefinitionJson(expected.recipe)) {
@@ -596,6 +687,7 @@ export function calibrationQualificationIdentity(calibration) {
       })).sort((a, b) => a.id.localeCompare(b.id)),
     },
     equivalenceDecisions: calibration.equivalenceDecisions,
+    ...(calibration.qualificationReuse ? { qualificationReuse: calibration.qualificationReuse } : {}),
   });
   return { id: calibration.id, version: calibration.version,
     sha256: sha256(canonicalDefinitionJson(document)) };
@@ -760,14 +852,22 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
   });
   if (zeroPoint.size) fail(`${source}.controls`, `missing zero-point checks: ${[...zeroPoint].sort().join(', ')}`);
 
-  const qualificationIdentity = calibrationQualificationIdentity({
-    ...calibration,
-    references: { ...calibration.references, entries: references },
-    mutations,
-  });
+  let qualificationReuse = calibration.qualificationReuse;
+  if (qualificationReuse) {
+    if (qualificationReuse.sourceRecipe.executionSha256 !== calibration.recipe.executionSha256) {
+      fail(`${source}.qualificationReuse.sourceRecipe.executionSha256`,
+        'must match the current recipe execution identity');
+    }
+    qualificationReuse = { ...qualificationReuse,
+      evidence: verifyEvidence(qualificationReuse.evidence, benchRoot,
+        `${source}.qualificationReuse.evidence`) };
+  }
+  const calibrated = { ...calibration, qualificationReuse,
+    references: { ...calibration.references, entries: references }, mutations };
+  const qualificationIdentity = calibrationQualificationIdentity(calibrated);
   const verifiedEvidence = verifyQualificationEvidence(calibration.qualification.evidence, benchRoot,
     `${source}.qualification.evidence`, {
-      calibration: { ...calibration, references: { ...calibration.references, entries: references }, mutations },
+      calibration: calibrated,
       qualificationIdentity,
       release: qualificationRelease,
       references,
@@ -863,6 +963,9 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     equivalenceDecisions: equivalenceDecisions.sort((a, b) =>
       `${a.fromExecutionSha256}:${a.toExecutionSha256}`
         .localeCompare(`${b.fromExecutionSha256}:${b.toExecutionSha256}`)),
+    ...(qualificationReuse ? { qualificationReuse: { ...qualificationReuse,
+      scopes: [...qualificationReuse.scopes].sort((a, b) => `${a.kind}:${a.stack ?? ''}`
+        .localeCompare(`${b.kind}:${b.stack ?? ''}`)) } } : {}),
     promotion: { ...calibration.promotion, catalogPath: catalogRef.relative },
   });
   const qualificationSha256 = calibrationQualificationIdentity(plan).sha256;
