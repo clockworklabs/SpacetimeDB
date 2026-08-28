@@ -32,6 +32,8 @@ const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
 const USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'];
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const roundUsd = value => Number(value.toFixed(6));
+const reserveUsd = value => Math.ceil(value * 1e6) / 1e6;
 
 function priceNormalizedUsage(usage, rates) {
   return priceClaudeUsage({
@@ -464,26 +466,26 @@ export function createCredentialBroker(configInput, {
       }
       const billable = path === '/v1/messages' && config.maxBudgetUsd != null;
       const costCeiling = billable
-        ? requestCostCeiling(received, payload.max_tokens, config.pricingRates) : 0;
+        ? reserveUsd(requestCostCeiling(received, payload.max_tokens, config.pricingRates)) : 0;
       if (billable && spentUsd + reservedUsd + costCeiling > config.maxBudgetUsd) {
         writeHead(402, { 'content-type': 'text/plain' });
         endResponse('session cost limit reached');
         return;
       }
       if (billable) billableRequests += 1;
-      reservedUsd += costCeiling;
+      reservedUsd = roundUsd(reservedUsd + costCeiling);
       recordLedger();
       let billableSettled = !billable;
       const settleBillable = ({ usage = null, estimated = false } = {}) => {
         if (billableSettled) return;
         billableSettled = true;
-        reservedUsd -= costCeiling;
+        reservedUsd = roundUsd(reservedUsd - costCeiling);
         completedBillableRequests += 1;
         if (estimated) {
           estimatedBillableRequests += 1;
-          spentUsd += costCeiling;
+          spentUsd = roundUsd(spentUsd + costCeiling);
         } else if (usage) {
-          spentUsd += priceNormalizedUsage(usage, config.pricingRates);
+          spentUsd = roundUsd(spentUsd + priceNormalizedUsage(usage, config.pricingRates));
           for (const field of USAGE_FIELDS) usageTotals[field] += usage[field];
         }
         recordLedger();

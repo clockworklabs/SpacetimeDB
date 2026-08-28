@@ -39,7 +39,7 @@ import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
   removeFailedBuildContainer } from './reconcile-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
-  codingContainerAgentEnvironment }
+  codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommand }
   from '../src/runtime/coding-container-policy.mjs';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
@@ -588,6 +588,9 @@ try {
 } finally {
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
+  spawnSync('docker', ['exec', containerName, ...codingContainerTranscriptHandoffCommand()], {
+    stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
   spawnSync('docker', ['exec', containerName, 'chmod', '-R', 'a+rwX', '/app'], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
