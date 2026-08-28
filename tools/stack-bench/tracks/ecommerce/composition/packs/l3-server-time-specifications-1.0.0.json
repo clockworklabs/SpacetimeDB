@@ -4,7 +4,7 @@
   "id": "ecommerce.l3.server-time-specifications",
   "stableId": "ecommerce.l3.server-time",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "Server-controlled time",
   "description": "Deferred work does not require a browser and does not run early.",

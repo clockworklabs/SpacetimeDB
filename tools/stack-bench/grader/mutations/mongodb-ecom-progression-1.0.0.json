@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "status": "candidate",
+  "status": "active",
   "fixtureSha256": "af82e6c4c5118d554abef79240535b6191a0a3677db0957024455cd5a224c9dd",
   "backend": "mongodb",
   "track": "ecommerce",

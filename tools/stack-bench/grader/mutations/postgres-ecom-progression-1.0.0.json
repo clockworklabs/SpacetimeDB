@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "status": "candidate",
+  "status": "active",
   "fixtureSha256": "ff4c349b1594dbf15e871c104d28688e10232281d8afcba742fb1e03bdb593ed",
   "backend": "postgres",
   "track": "ecommerce",

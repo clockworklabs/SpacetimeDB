@@ -4,7 +4,7 @@
   "id": "ecommerce.l2.stock-transfers-features",
   "stableId": "ecommerce.inventory-operations",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "feature",
   "title": "Stock transfers",
   "description": "Move stock between warehouses without changing the total.",

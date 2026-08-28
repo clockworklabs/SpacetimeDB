@@ -4,7 +4,7 @@
   "id": "ecommerce.progression.l1-l3-deferred-integrity-specifications",
   "stableId": "ecommerce.l3.deferred-integrity",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "L1-L3 deferred-work integrity",
   "description": "Deferred restocks apply once and reservations preserve stock.",

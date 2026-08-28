@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-roles", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-roles", "version": "1.0.0", "state": "qualified", "moduleType": "feature",
   "title": "Staff roles", "description": "Role assignment and staff permission boundaries.",
   "requiresPacks": ["ecommerce.progression.staff-access@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },

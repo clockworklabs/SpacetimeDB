@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.progression.managed-support",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "feature",
   "title": "Managed support cases",
   "description": "Shared support cases with live updates and account privacy.",

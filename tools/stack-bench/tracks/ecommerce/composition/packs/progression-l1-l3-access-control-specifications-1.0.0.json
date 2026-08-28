@@ -4,7 +4,7 @@
   "id": "ecommerce.progression.l1-l3-access-control-specifications",
   "stableId": "ecommerce.spec.access-control",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "L1-L3 access control",
   "moduleType": "specification",
   "description": "Server authorization protects purchases, reviews, and carts.",

@@ -4,7 +4,7 @@
   "id": "ecommerce.progression.l1-l3-live-state-specifications",
   "stableId": "ecommerce.spec.live-state",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "L1-L3 live state",
   "moduleType": "specification",
   "description": "Open clients receive product, cart, and review changes.",

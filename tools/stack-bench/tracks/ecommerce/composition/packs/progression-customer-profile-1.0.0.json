@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.customer-profile", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.customer-profile", "version": "1.0.0", "state": "qualified", "moduleType": "feature",
   "title": "Customer profile", "description": "Private customer details and shipping address.",
   "requiresPacks": ["ecommerce.feature.accounts@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },

@@ -4,7 +4,7 @@
   "id": "ecommerce.progression.fulfilment-queue",
   "stableId": "ecommerce.operations-access",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "feature",
   "title": "Fulfilment queue",
   "description": "Staff and administrator fulfilment workflows.",

@@ -4,7 +4,7 @@
   "id": "ecommerce.l3.deferred-access-specifications",
   "stableId": "ecommerce.l3.deferred-access",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "Scheduled-work access",
   "description": "Customers cannot schedule or cancel restocks.",

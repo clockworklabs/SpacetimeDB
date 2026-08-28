@@ -3,7 +3,7 @@
   "kind": "benchmark-recipe",
   "id": "ecommerce.progression-l1-l3",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce progression L1-L3",
   "track": "ecommerce",
   "fixture": {

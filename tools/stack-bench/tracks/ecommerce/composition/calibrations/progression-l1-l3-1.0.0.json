@@ -3,7 +3,7 @@
   "kind": "calibration-manifest",
   "id": "ecommerce.progression-l1-l3-calibration",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce progression L1-L3 calibration",
   "track": "ecommerce",
   "recipe": {
@@ -43,19 +43,19 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecom-progression-1.0.0.json",
-      "sha256": "c87a112143f7d2107bcda4fdd3fa79c0a57595f076b1125011538a8d49c6c0c8",
+      "sha256": "f085b5a8031e60f7d518441975062bbfbb9ebde6fe3d160e099662830b69cab5",
       "referenceId": "ecommerce-progression-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecom-progression-1.0.0.json",
-      "sha256": "dea5a98ac4e71d96d782d8ec1cd352579238a10042cc2e2c40f3b0dcc414086e",
+      "sha256": "63872e8cf2f5d3d6c25fa6a00ae92051350eec383ea9c71db8d1dde608a5fcf4",
       "referenceId": "ecommerce-progression-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecom-progression-1.0.0.json",
-      "sha256": "d56296c48d6289ddd43bd9a15c011f74595065f201af6327df649336aa1ea809",
+      "sha256": "f76b81ef63b8aa0e36705a853def763f975c0950d685069282acb7005e7c18ec",
       "referenceId": "ecommerce-progression-spacetime"
     }
   ],
@@ -197,24 +197,73 @@
     "stacks": [
       {
         "id": "mongodb",
-        "status": "candidate"
+        "status": "qualified"
       },
       {
         "id": "postgres",
-        "status": "candidate"
+        "status": "qualified"
       },
       {
         "id": "spacetime",
-        "status": "candidate"
+        "status": "qualified"
       }
     ],
-    "evidence": []
+    "evidence": [
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/mongodb-reference.json",
+        "sha256": "126e9f476afe2d9451af6c4037936b3c5bd9f9a19cc092611682462919882baa"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/mongodb-mutation.json",
+        "sha256": "b92ef8f7404967d56a02903a38cfcf8b074c872c0ff0f749b8efb7d4d7fd8367"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/postgres-reference.json",
+        "sha256": "89a65baca623022f2ff12c6fcaf060c4d3a44dbf4ef2ceed3556c48beef4c178"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/postgres-mutation.json",
+        "sha256": "0caf74dbcc1d3a86dd6727dccf626686c41adbcfd3ecd15faef6288aa0258c88"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/spacetime-reference.json",
+        "sha256": "60d322c835f1e15251b0bc122240e26f84364aab8111a1334c417fe668c3d302"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/spacetime-mutation.json",
+        "sha256": "71653e0feac58b5a48087fb088db54c96097dd2867111c7605cef9ca25fb13b0"
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/null.json",
+        "sha256": "e6092f3008d63a64097a13cea23cda3bf1b6fac637bf4325445c863262da7985"
+      }
+    ]
   },
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/candidates.json",
-    "catalogSha256": "7d2c235e067d1afba46a9d0f27b9962b4490c150802cc765abe8c7e3dc8a98d4",
+    "catalogSha256": "a5cf56e1667672ab7b6a39a194f6bd3c7b250d73f2d6385648ff2b175274c86b",
     "alias": "L3",
-    "status": "candidate"
+    "status": "promoted"
   }
 }

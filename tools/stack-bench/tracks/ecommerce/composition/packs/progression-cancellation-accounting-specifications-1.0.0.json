@@ -4,7 +4,7 @@
   "id": "ecommerce.progression.cancellation-accounting-specifications",
   "stableId": "ecommerce.returns-pricing",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "Cancellation accounting",
   "description": "Cancellation removes the exact cancelled amount from revenue.",

@@ -56,7 +56,7 @@ test('the cumulative L1-L3 release contains only its catalog checks', () => {
   ]) assert.equal(packIds.has(id), false, id);
 });
 
-test('one draft calibration binds the exact cumulative L1-L3 release', () => {
+test('the qualified calibration binds the exact cumulative L1-L3 release', () => {
   const release = buildRecipeRelease(RECIPE, { trackRoot: TRACK });
   const calibration = compileCalibrationFile(CALIBRATION, {
     trackRoot: TRACK,
@@ -65,16 +65,16 @@ test('one draft calibration binds the exact cumulative L1-L3 release', () => {
   });
 
   assert.equal(calibration.id, 'ecommerce.progression-l1-l3-calibration');
-  assert.equal(calibration.state, 'draft');
+  assert.equal(calibration.state, 'qualified');
   assert.equal(calibration.recipe.contentSha256, release.contentSha256);
   assert.equal(calibration.qualification.checks.length, 112);
   assert.equal(calibration.qualification.featureCatalog.sha256,
     '6ee12eae91afcdb8a83293dd4218fcbaac24982b6b22648a4859881a0c9f9aee');
-  assert.equal(calibration.qualification.evidence.length, 0);
+  assert.equal(calibration.qualification.evidence.length, 7);
   assert.deepEqual(calibration.qualification.stacks.map(stack => stack.status),
-    ['candidate', 'candidate', 'candidate']);
+    ['qualified', 'qualified', 'qualified']);
   assert.equal(calibration.promotion.alias, 'L3');
-  assert.equal(calibration.promotion.status, 'candidate');
+  assert.equal(calibration.promotion.status, 'promoted');
 });
 
 test('L1-L3 share the scoped release while L4-L5 keep the full draft release', () => {

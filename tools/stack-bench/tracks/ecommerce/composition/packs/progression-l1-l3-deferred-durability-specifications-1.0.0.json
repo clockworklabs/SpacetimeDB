@@ -4,7 +4,7 @@
   "id": "ecommerce.progression.l1-l3-deferred-durability-specifications",
   "stableId": "ecommerce.l3.deferred-durability",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "L1-L3 deferred-work durability",
   "description": "Pending reservations and restocks survive a backend restart.",

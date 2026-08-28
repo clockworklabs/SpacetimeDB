@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.progression.faceted-search",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "feature",
   "title": "Faceted search",
   "description": "Combined catalogue filters with stable pagination.",

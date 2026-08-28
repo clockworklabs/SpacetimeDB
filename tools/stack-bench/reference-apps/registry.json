@@ -7,7 +7,7 @@
       "track": "ecommerce",
       "level": 5,
       "actionLevels": [1, 2, 3, 4, 5],
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0"],
       "targetPath": "reference-apps/ecommerce/progression/mongodb",
       "origin": {
@@ -21,7 +21,7 @@
       "mutationManifests": [
         "grader/mutations/mongodb-ecom-progression-1.0.0.json"
       ],
-      "qualification": "Candidate pending model-free Docker qualification."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/."
     },
     {
       "id": "ecommerce-progression-postgres",
@@ -29,7 +29,7 @@
       "track": "ecommerce",
       "level": 5,
       "actionLevels": [1, 2, 3, 4, 5],
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0"],
       "targetPath": "reference-apps/ecommerce/progression/postgres",
       "origin": {
@@ -43,7 +43,7 @@
       "mutationManifests": [
         "grader/mutations/postgres-ecom-progression-1.0.0.json"
       ],
-      "qualification": "Candidate pending model-free Docker qualification."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/."
     },
     {
       "id": "ecommerce-progression-spacetime",
@@ -51,7 +51,7 @@
       "track": "ecommerce",
       "level": 5,
       "actionLevels": [1, 2, 3, 4, 5],
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.progression-catalog@1.0.0", "ecommerce.progression-l1-l3@1.0.0"],
       "targetPath": "reference-apps/ecommerce/progression/spacetime",
       "origin": {
@@ -65,7 +65,7 @@
       "mutationManifests": [
         "grader/mutations/spacetime-ecom-progression-1.0.0.json"
       ],
-      "qualification": "Candidate pending model-free Docker qualification."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/."
     },
     {
       "id": "ecommerce-l1-mongodb",
