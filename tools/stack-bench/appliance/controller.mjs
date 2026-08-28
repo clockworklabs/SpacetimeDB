@@ -1,26 +1,28 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+
+const RUNTIME_ROOT = join(STACK_BENCH_ROOT, 'dist');
 
 const COMMANDS = Object.freeze({
-  'init-deps': [join(ROOT, 'appliance', 'dependency-volume.mjs'), 'init'],
-  'verify-deps': [join(ROOT, 'appliance', 'dependency-volume.mjs'), 'verify'],
-  'preflight': [join(ROOT, 'commands', 'preflight.mjs')],
-  'qualify-reference': [join(ROOT, 'src', 'references', 'reference-live.mjs')],
-  'qualify-null': [join(ROOT, 'commands', 'null-control.mjs')],
-  'qualification': [join(ROOT, 'commands', 'qualification-cli.mjs')],
-  'pack-budget': [join(ROOT, 'src', 'composition', 'pack-budget.mjs')],
-  'campaign': [join(ROOT, 'commands', 'campaign-cli.mjs')],
-  'dashboard': [join(ROOT, 'dashboard', 'dashboard-server.mjs')],
-  'repair': [join(ROOT, 'commands', 'repair-cli.mjs')],
-  'run': [join(ROOT, 'commands', 'bench.mjs')],
-  'verify-release': [join(ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],
-  'recover': [join(ROOT, 'commands', 'recovery.mjs'), 'recover'],
-  'recover-lease': [join(ROOT, 'commands', 'recovery.mjs'), 'recover-lease'],
+  'init-deps': [join(RUNTIME_ROOT, 'appliance', 'dependency-volume.mjs'), 'init'],
+  'verify-deps': [join(RUNTIME_ROOT, 'appliance', 'dependency-volume.mjs'), 'verify'],
+  'preflight': [join(RUNTIME_ROOT, 'commands', 'preflight.mjs')],
+  'qualify-reference': [join(RUNTIME_ROOT, 'src', 'references', 'reference-live.mjs')],
+  'qualify-null': [join(RUNTIME_ROOT, 'commands', 'null-control.mjs')],
+  'qualification': [join(RUNTIME_ROOT, 'commands', 'qualification-cli.mjs')],
+  'pack-budget': [join(RUNTIME_ROOT, 'src', 'composition', 'pack-budget.mjs')],
+  'campaign': [join(RUNTIME_ROOT, 'commands', 'campaign-cli.mjs')],
+  'dashboard': [join(RUNTIME_ROOT, 'dashboard', 'dashboard-server.mjs')],
+  'repair': [join(RUNTIME_ROOT, 'commands', 'repair-cli.mjs')],
+  'run': [join(RUNTIME_ROOT, 'commands', 'bench.mjs')],
+  'verify-release': [join(RUNTIME_ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],
+  'recover': [join(RUNTIME_ROOT, 'commands', 'recovery.mjs'), 'recover'],
+  'recover-lease': [join(RUNTIME_ROOT, 'commands', 'recovery.mjs'), 'recover-lease'],
 });
 
 const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'dashboard', 'run']);
