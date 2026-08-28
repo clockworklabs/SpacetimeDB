@@ -911,17 +911,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ci-coordinate-internal-tests"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.50",
- "duct",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ci-docs-build"
 version = "0.1.0"
 dependencies = [
@@ -1041,6 +1030,17 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "duct",
+]
+
+[[package]]
+name = "ci-workflow-coordinator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
