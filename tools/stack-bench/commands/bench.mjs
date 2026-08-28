@@ -1354,7 +1354,7 @@ async function main() {
       console.log('     The audit did not establish a usable result.');
     }
     try { writeRunJson(join(args.out, 'run.json'), run); } catch { /* best effort */ }
-    try { sh('node', [join(ROOT, 'commands', 'archive-transcripts.mjs'), '--app', appDir, '--label', artifactLabel], { stdio: 'pipe' }); } catch { /* best effort */ }
+    try { sh('node', [join(ROOT, 'dist', 'commands', 'archive-transcripts.js'), '--app', appDir, '--label', artifactLabel], { stdio: 'pipe' }); } catch { /* best effort */ }
     teardown();
     process.exit(4);
   };
@@ -1989,7 +1989,7 @@ async function main() {
 
   // Keep the transcript evidence outside the provider CLI's prunable store.
   try {
-    sh('node', [join(ROOT, 'commands', 'archive-transcripts.mjs'), '--app', appDir, '--label', artifactLabel],
+    sh('node', [join(ROOT, 'dist', 'commands', 'archive-transcripts.js'), '--app', appDir, '--label', artifactLabel],
       { stdio: 'pipe' });
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
