@@ -57,6 +57,7 @@ test('controller exposes a small explicit operator command surface', () => {
   assert.match(command(['qualify-null']).args[0] ?? '', /null-control\.mjs$/);
   assert.match(command(['qualification']).args[0] ?? '', /qualification-cli\.mjs$/);
   assert.match(command(['pack-budget']).args[0] ?? '', /pack-budget\.mjs$/);
+  assert.match(command(['repair']).args[0] ?? '', /repair-cli\.js$/);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
 });
 

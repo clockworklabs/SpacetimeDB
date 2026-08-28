@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseRepairArgs } from '../commands/repair-cli.mjs';
+import { parseRepairArgs } from '../commands/repair-cli.js';
 
 test('repair CLI separates inspection from one explicitly bounded grant', () => {
-  const status = parseRepairArgs(['node', 'repair-cli.mjs', 'status', './run', '--level', '2']);
+  const status = parseRepairArgs(['node', 'repair-cli.js', 'status', './run', '--level', '2']);
   assert.equal(status.command, 'status');
   assert.equal(status.level, 2);
 
-  const grant = parseRepairArgs(['node', 'repair-cli.mjs', 'grant', './run',
+  const grant = parseRepairArgs(['node', 'repair-cli.js', 'grant', './run',
     '--level', '2', '--rounds', '4', '--max-budget-usd', '25', '--timeout-minutes', '90']);
   assert.equal(grant.command, 'grant');
   assert.equal(grant.level, 2);
@@ -27,6 +27,6 @@ test('repair CLI rejects unbounded, duplicate, and ambiguous requests', () => {
     ['status', './run'],
   ];
   for (const args of invalid) {
-    assert.throws(() => parseRepairArgs(['node', 'repair-cli.mjs', ...args]));
+    assert.throws(() => parseRepairArgs(['node', 'repair-cli.js', ...args]));
   }
 });

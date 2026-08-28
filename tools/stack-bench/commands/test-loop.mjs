@@ -200,7 +200,7 @@ check('the deferred parent exhausted its original two-round budget',
   JSON.stringify(deferred.levels?.[0]?.repair));
 let continuationOutput = '';
 try {
-  continuationOutput = execFileSync('node', [join(ROOT, 'commands', 'repair-cli.mjs'), 'grant', WORK,
+  continuationOutput = execFileSync('node', [join(ROOT, 'dist', 'commands', 'repair-cli.js'), 'grant', WORK,
     '--level', '1', '--rounds', '2', '--timeout-minutes', '10'], {
     encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: BENCH_TIMEOUT_MS,
   });
