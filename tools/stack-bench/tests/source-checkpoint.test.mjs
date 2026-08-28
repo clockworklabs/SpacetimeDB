@@ -54,7 +54,7 @@ test('source checkpoint artifacts reject paths and repair accounting that cannot
       kind: 'source_checkpoint',
       id: 'wrong-path',
       payload: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         track: 'ecommerce',
         backend: 'postgres',
         level: 1,

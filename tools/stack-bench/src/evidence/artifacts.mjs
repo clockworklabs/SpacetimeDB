@@ -578,7 +578,7 @@ function validatePayload(kind, payload) {
   if (kind === 'recovery') { objectWhenPresent('cleanup'); objectWhenPresent('resources');
     arrayWhenPresent('instructions'); }
   if (kind === 'source_checkpoint') {
-    if (payload.schemaVersion !== 1) fail('source_checkpoint payload.schemaVersion must be 1');
+    if (payload.schemaVersion !== 2) fail('source_checkpoint payload.schemaVersion must be 2');
     for (const field of ['track', 'backend']) {
       if (typeof payload[field] !== 'string' || !payload[field]) {
         fail(`source_checkpoint payload.${field} must be a non-empty string`);
