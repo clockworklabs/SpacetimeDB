@@ -8,6 +8,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
@@ -163,6 +164,11 @@ function clientAuthorized(request, sessionToken) {
 function upstreamHeaders(request, config) {
   const headers = { ...request.headers };
   delete headers.host;
+  // Usage accounting reads a copy of the provider response. Ask for an
+  // identity response so the accounting path and the client see the same
+  // bytes. The decoder below still handles an encoded response if an upstream
+  // proxy adds one.
+  delete headers['accept-encoding'];
   delete headers.authorization;
   delete headers['proxy-authorization'];
   delete headers['x-api-key'];
@@ -211,14 +217,31 @@ function requestCostCeiling(bodyBytes, maxTokens, rates) {
   return bodyBytes * inputRate / 1e6 + maxTokens * rates.output / 1e6;
 }
 
-function responseUsage(body) {
+function decodedResponseBody(body, contentEncoding) {
+  const encodings = String(contentEncoding ?? '')
+    .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+  let decoded = body;
+  for (const encoding of encodings.reverse()) {
+    if (encoding === 'identity') continue;
+    const options = { maxOutputLength: MAX_REQUEST_BYTES };
+    if (encoding === 'gzip' || encoding === 'x-gzip') decoded = gunzipSync(decoded, options);
+    else if (encoding === 'deflate') decoded = inflateSync(decoded, options);
+    else if (encoding === 'br') decoded = brotliDecompressSync(decoded, options);
+    else throw new Error(`unsupported response encoding ${encoding}`);
+  }
+  return decoded;
+}
+
+function responseUsage(body, contentEncoding = null) {
   const values = [];
   const add = value => {
     if (!value || typeof value !== 'object') return;
     if (value.usage && typeof value.usage === 'object') values.push(value.usage);
     if (value.message?.usage && typeof value.message.usage === 'object') values.push(value.message.usage);
   };
-  const text = body.toString('utf8');
+  let text;
+  try { text = decodedResponseBody(body, contentEncoding).toString('utf8'); }
+  catch { return null; }
   try { add(JSON.parse(text)); }
   catch {
     for (const line of text.split(/\r?\n/)) {
@@ -351,7 +374,8 @@ export function createCredentialBroker(configInput, {
           if ((upstreamResponse.statusCode ?? 502) >= 200
             && (upstreamResponse.statusCode ?? 502) < 300) {
             const usage = responseBytes <= maxRequestBytes
-              ? responseUsage(Buffer.concat(responseChunks)) : null;
+              ? responseUsage(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding'])
+              : null;
             if (!usage) spentUsd += costCeiling;
             else {
               try { spentUsd += priceClaudeUsage(usage, config.pricingRates); }

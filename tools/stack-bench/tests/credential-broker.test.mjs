@@ -4,6 +4,7 @@ import { request as httpRequest, createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { gzipSync } from 'node:zlib';
 
 import { createCredentialBroker, readCredentialBrokerLedger,
   reconcileCredentialBrokerReceipt, startCredentialBroker,
@@ -32,7 +33,7 @@ function send(port, { method = 'POST', path = '/v1/messages', headers = {}, body
 }
 
 async function withBroker(mode, body, config = {}) {
-  const { upstreamBody = '{"ok":true}', ...brokerConfig } = config;
+  const { upstreamBody = '{"ok":true}', upstreamHeaders = {}, ...brokerConfig } = config;
   const seen = [];
   const upstreamServer = createServer((request, response) => {
     const chunks = [];
@@ -40,7 +41,7 @@ async function withBroker(mode, body, config = {}) {
     request.on('end', () => {
       seen.push({ method: request.method, url: request.url, headers: request.headers,
         body: Buffer.concat(chunks).toString('utf8') });
-      response.writeHead(200, { 'content-type': 'application/json' });
+      response.writeHead(200, { 'content-type': 'application/json', ...upstreamHeaders });
       response.end(upstreamBody);
     });
   });
@@ -158,6 +159,28 @@ test('credential broker charges reported usage and reserves enough for the next 
     assert.deepEqual(stats(), { acceptedRequests: 4, billableRequests: 3,
       completedBillableRequests: 3, spentUsd: 0.0054, reservedUsd: 0 });
   }, { maxBudgetUsd: 0.02, pricingRates: rates, upstreamBody });
+});
+
+test('credential broker prices repeated compressed streams instead of exhausting the request cap', async () => {
+  const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
+  const stream = [
+    'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}',
+    'data: {"type":"message_delta","usage":{"output_tokens":100}}',
+    '',
+  ].join('\n');
+  await withBroker('api-key', async ({ brokerPort, sessionToken, seen, stats }) => {
+    const request = { headers: { authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json', 'accept-encoding': 'gzip' },
+    body: '{"model":"test-model","max_tokens":128000}' };
+    for (let turn = 0; turn < 60; turn += 1) {
+      assert.equal((await send(brokerPort, request)).status, 200);
+    }
+    assert.equal(seen[0].headers['accept-encoding'], undefined);
+    assert.deepEqual(stats(), { acceptedRequests: 60, billableRequests: 60,
+      completedBillableRequests: 60, spentUsd: 0.108, reservedUsd: 0 });
+  }, { maxBudgetUsd: 100, maxOutputTokens: 128_000, pricingRates: rates,
+    upstreamHeaders: { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' },
+    upstreamBody: gzipSync(stream) });
 });
 
 test('credential broker atomically records all direct requests without credentials', async () => {
