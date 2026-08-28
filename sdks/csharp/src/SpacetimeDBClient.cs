@@ -408,7 +408,7 @@ namespace SpacetimeDB
             {
                 try
                 {
-                    using var stream = new MemoryStream(bytes.ToArray());
+                    using var stream = new ListStream(bytes);
                     using var reader = new BinaryReader(stream);
                     return new SpacetimeDB.BSATN.String().Read(reader);
                 }
