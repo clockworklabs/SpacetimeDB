@@ -1,4 +1,5 @@
 media/
+dist/
 local-notes/
 *.local.md
 .loop-test/
