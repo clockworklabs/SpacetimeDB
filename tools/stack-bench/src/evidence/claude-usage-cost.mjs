@@ -36,16 +36,8 @@ export function normalizeClaudeUsage(usage) {
 }
 
 export function priceClaudeUsage(usage, rates = CLAUDE_SONNET_RATES) {
-  return priceNormalizedClaudeUsage(normalizeClaudeUsage(usage), rates);
-}
-
-export function priceNormalizedClaudeUsage(values, rates = CLAUDE_SONNET_RATES) {
   rates = validatePricingRates(rates, { at: 'Claude pricing rates' });
-  for (const field of ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h']) {
-    if (!Number.isFinite(values?.[field]) || values[field] < 0) {
-      throw new Error(`normalized Claude usage ${field} is incomplete`);
-    }
-  }
+  const values = normalizeClaudeUsage(usage);
   return values.input * rates.input / 1e6
     + values.output * rates.output / 1e6
     + values.cacheRead * rates.cacheRead / 1e6

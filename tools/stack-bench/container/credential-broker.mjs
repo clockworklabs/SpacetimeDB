@@ -12,8 +12,7 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
-import { normalizeClaudeUsage, priceClaudeUsage, priceNormalizedClaudeUsage }
-  from '../src/evidence/claude-usage-cost.mjs';
+import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
   from '../src/evidence/pricing-authority.mjs';
 
@@ -25,6 +24,18 @@ const PRICE_FIELDS = PRICING_RATE_FIELDS;
 const LEDGER_SCHEMA_VERSION = 2;
 const COST_TOLERANCE_USD = 0.0001;
 const USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'];
+
+function priceNormalizedUsage(usage, rates) {
+  return priceClaudeUsage({
+    input_tokens: usage.input,
+    output_tokens: usage.output,
+    cache_read_input_tokens: usage.cacheRead,
+    cache_creation: {
+      ephemeral_5m_input_tokens: usage.cacheWrite5m,
+      ephemeral_1h_input_tokens: usage.cacheWrite1h,
+    },
+  }, rates);
+}
 
 function fail(message) {
   throw new Error(`credential broker: ${message}`);
@@ -154,7 +165,7 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     issue = 'credential broker usage does not match CLI usage totals';
   }
   try {
-    if (verifiedRates && usage) calculatedCostUsd = priceNormalizedClaudeUsage(usage, verifiedRates);
+    if (verifiedRates && usage) calculatedCostUsd = priceNormalizedUsage(usage, verifiedRates);
   } catch (error) { if (!issue) issue = error.message; }
   const brokerCost = verifiedLedger
     ? Math.min(maxBudgetUsd, verifiedLedger.spentUsd + verifiedLedger.reservedUsd)
@@ -420,7 +431,7 @@ export function createCredentialBroker(configInput, {
             else {
               try {
                 const normalized = normalizeClaudeUsage(usage);
-                spentUsd += priceNormalizedClaudeUsage(normalized, config.pricingRates);
+                spentUsd += priceNormalizedUsage(normalized, config.pricingRates);
                 for (const field of USAGE_FIELDS) {
                   usageTotals[field] += normalized[field];
                 }
