@@ -64,6 +64,7 @@ const REQUIRED_CAPABILITIES = Object.freeze([
 const REQUIRED_TMPFS = Object.freeze({
   '/tmp': 'rw,nosuid,nodev,mode=1777',
   [AGENT_HOME]: `rw,nosuid,nodev,uid=${AGENT_UID},gid=${AGENT_GID},mode=0700`,
+  [`${AGENT_HOME}/.claude`]: `rw,nosuid,nodev,uid=${AGENT_UID},gid=${AGENT_GID},mode=0700`,
   '/deps': 'rw,nosuid,nodev,mode=0755',
   [CONTROL_DIR]: 'rw,nosuid,nodev,mode=0700',
 });
@@ -414,6 +415,20 @@ if (containerPlan.readyFile) {
     console.error(logs.stderr || logs.stdout || '');
     process.exit(2);
   }
+}
+
+// A nested transcript mount makes Docker create its parent directories as
+// root. Confirm that Claude can create its private session state before a
+// provider request can spend money.
+const homeProbe = spawnSync('docker', [
+  'exec', '--user', `${AGENT_UID}:${AGENT_GID}`, '-e', `HOME=${AGENT_HOME}`,
+  containerName, 'sh', '-c',
+  'umask 077; mkdir -p "$HOME/.claude/session-env" && test -w "$HOME/.claude/session-env"',
+], { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS });
+if (homeProbe.status !== 0) {
+  console.error(`run-build.mjs: agent home is not writable in ${containerName}`);
+  console.error(homeProbe.stderr || homeProbe.stdout || homeProbe.error?.message || '');
+  process.exit(2);
 }
 
 if (prepareOnly) {

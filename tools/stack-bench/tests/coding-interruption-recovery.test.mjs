@@ -447,6 +447,8 @@ test('Docker replaces a stopped leased build container and preserves its app mou
     assert.equal(hostConfig.Tmpfs['/tmp'], 'rw,nosuid,nodev,mode=1777');
     assert.equal(hostConfig.Tmpfs['/home/stackbench'],
       'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
+    assert.equal(hostConfig.Tmpfs['/home/stackbench/.claude'],
+      'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
     assert.equal(hostConfig.Tmpfs['/deps'], 'rw,nosuid,nodev,mode=0755');
     assert.equal(hostConfig.Tmpfs['/run/stack-bench'], 'rw,nosuid,nodev,mode=0700');
     assert.equal(hostConfig.Tmpfs['/root'], undefined);
@@ -454,6 +456,9 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       'sh', '-c', 'grep "^CapEff:" /proc/self/status']);
     assert.equal(agentCaps.status, 0, agentCaps.stderr);
     assert.match(agentCaps.stdout, /CapEff:\s+0+\s*$/);
+    const sessionState = docker(['exec', '--user', '10001:10001', firstResult.containerName,
+      'sh', '-c', 'test -w /home/stackbench/.claude/session-env']);
+    assert.equal(sessionState.status, 0, sessionState.stderr);
     const dropped = docker(['exec', firstResult.containerName, '/usr/bin/setpriv',
       '--reuid=10001', '--regid=10001', '--init-groups', 'id', '-u']);
     assert.equal(dropped.status, 0, dropped.stderr);
