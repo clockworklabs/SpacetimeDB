@@ -17,7 +17,7 @@
     "prerecover": "npm run build",
     "recover": "node dist/commands/recovery.js recover",
     "release:bundle": "node src/releases/release-bundle.mjs",
-    "release:source": "node src/releases/release-source.mjs --json",
+    "release:source": "npm run build --silent && node dist/src/releases/release-source.js --json",
     "verify:release": "node src/releases/release-manifest.mjs verify",
     "check:scenarios": "node commands/check-scenarios.mjs --track chat && node commands/check-scenarios.mjs --track ecommerce --recipe l1-modular-2.5.0.json && node commands/check-scenarios.mjs --track ecommerce --recipe l2-standard-1.6.0.json && node commands/check-scenarios.mjs --track ecommerce --recipe l3-standard-1.0.0.json && node commands/check-scenarios.mjs --track ecommerce --recipe progression-catalog-1.0.0.json",
     "precheck:mutations": "npm run build",

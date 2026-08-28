@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { releaseSourceIdentity, releaseSourceRoot } from '../src/releases/release-source.mjs';
+import { REPOSITORY_ROOT, STACK_BENCH_ROOT } from '../src/package-root.js';
+import { releaseSourceIdentity, releaseSourceRoot } from '../src/releases/release-source.js';
+import type { GitRunner } from '../src/releases/release-source.js';
 
 test('the release-source CLI anchors itself to the repository instead of the caller cwd', () => {
-  assert.equal(releaseSourceRoot(), realpathSync(join(import.meta.dirname, '..', '..', '..')));
+  assert.equal(releaseSourceRoot(), realpathSync(REPOSITORY_ROOT));
 });
 
-function repository() {
+function repository(): { root: string; files: string[] } {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));
   const files = ['licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
     'crates/bindings-typescript/package.json', 'skills/typescript-server/SKILL.md',
@@ -26,11 +29,34 @@ function repository() {
   return { root, files };
 }
 
-function git(files, { changed = '' } = {}) {
-  return (_root, args) => {
+function canonicalBytes(root: string, path: string): Buffer {
+  return Buffer.from(readFileSync(join(root, ...path.split('/')), 'utf8').replaceAll('\r\n', '\n'));
+}
+
+function blobId(bytes: Buffer): string {
+  return createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+}
+
+function git(files: string[], { changed = '' }: { changed?: string } = {}): GitRunner {
+  return (root, args, options = {}) => {
     if (args[0] === 'rev-parse') return `${'a'.repeat(40)}\n`;
     if (args[0] === 'status') return changed;
-    if (args[0] === 'ls-files') return `${files.join('\n')}\n`;
+    if (args[0] === 'ls-files') return files.map(path => {
+      const bytes = canonicalBytes(root, path);
+      return `100644 ${blobId(bytes)} 0\t${path}\0`;
+    }).join('');
+    if (args[0] === 'cat-file') {
+      const byId = new Map(files.map(path => {
+        const bytes = canonicalBytes(root, path);
+        return [blobId(bytes), bytes] as const;
+      }));
+      const objects = String(options.input ?? '').trim().split('\n').filter(Boolean).map(id => {
+        const bytes = byId.get(id);
+        if (!bytes) throw new Error(`unknown fake git object ${id}`);
+        return Buffer.concat([Buffer.from(`${id} blob ${bytes.length}\n`), bytes, Buffer.from('\n')]);
+      });
+      return Buffer.concat(objects);
+    }
     throw new Error(`unexpected git call ${args.join(' ')}`);
   };
 }
@@ -67,8 +93,8 @@ test('release source identity refuses a changed or untracked release input', () 
 });
 
 test('controller build context includes every repository root copied by its Dockerfile', () => {
-  const dockerfile = readFileSync(join(import.meta.dirname, '..', 'appliance', 'Controller.Dockerfile'), 'utf8');
-  const ignore = readFileSync(join(import.meta.dirname, '..', 'appliance',
+  const dockerfile = readFileSync(join(STACK_BENCH_ROOT, 'appliance', 'Controller.Dockerfile'), 'utf8');
+  const ignore = readFileSync(join(STACK_BENCH_ROOT, 'appliance',
     'Controller.Dockerfile.dockerignore'), 'utf8');
   const roots = [...dockerfile.matchAll(/^COPY (?!-)\s*([^/\s]+)(?:\/|\s)/gm)].map(match => match[1]);
   for (const root of new Set(roots)) {
@@ -78,7 +104,7 @@ test('controller build context includes every repository root copied by its Dock
 });
 
 test('controller build context excludes ignored local Stack Bench state', () => {
-  const ignore = readFileSync(join(import.meta.dirname, '..', 'appliance',
+  const ignore = readFileSync(join(STACK_BENCH_ROOT, 'appliance',
     'Controller.Dockerfile.dockerignore'), 'utf8');
   const rules = new Set(ignore.split(/\r?\n/));
   const localPaths = [

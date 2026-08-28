@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { assertBinarySourceUnchanged, createBinaryProvenance, RUST_BUILDER_IMAGE,
-  verifyBinaryProvenance } from '../container/binary-provenance.mjs';
-import { binarySourceIdentity } from '../src/releases/release-source.mjs';
+  verifyBinaryProvenance } from '../container/binary-provenance.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { binarySourceIdentity, SOURCE_IDENTITY_SCHEME }
+  from '../src/releases/release-source.js';
 
-const SOURCE = { revision: 'a'.repeat(40), sha256: 'b'.repeat(64), files: 12 };
+const SOURCE = { identityScheme: SOURCE_IDENTITY_SCHEME,
+  revision: 'a'.repeat(40), sha256: 'b'.repeat(64), files: 12 } as const;
 
-function fixture() {
+function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-binaries-'));
   const bin = join(root, 'container', 'bin');
   mkdirSync(bin, { recursive: true });
@@ -19,7 +23,7 @@ function fixture() {
   return root;
 }
 
-function record(root) {
+function record(root: string) {
   const manifest = createBinaryProvenance(root, SOURCE);
   writeFileSync(join(root, 'container', 'spacetimedb-binaries.json'),
     `${JSON.stringify(manifest, null, 2)}\n`);
@@ -61,27 +65,37 @@ test('binary provenance rejects stale source and an unbuilt clean checkout', () 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('binary source identity is content-bound and can require clean inputs', () => {
+test('binary source identity uses canonical Git content across checkout line endings', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-binary-source-'));
-  const names = ['Cargo.toml', 'crates/cli/src/main.rs'];
-  for (const name of names) {
-    const path = join(root, ...name.split('/'));
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${name}\n`);
-  }
-  const runGit = (_root, args) => {
-    if (args[0] === 'rev-parse') return `${SOURCE.revision}\n`;
-    if (args[0] === 'status') return '';
-    if (args[0] === 'ls-files') return `${names.join('\n')}\n`;
-    throw new Error(`unexpected git call ${args.join(' ')}`);
-  };
+  const cargo = join(root, 'Cargo.toml');
+  const main = join(root, 'crates', 'cli', 'src', 'main.rs');
+  mkdirSync(dirname(main), { recursive: true });
+  writeFileSync(join(root, '.gitattributes'), '* text=auto\n');
+  writeFileSync(cargo, '[workspace]\n');
+  writeFileSync(main, 'fn main() {}\n');
+  const git = (args: string[]): string => execFileSync('git', ['-C', root, ...args], {
+    encoding: 'utf8', windowsHide: true,
+  });
   try {
-    const before = binarySourceIdentity(root, { runGit, requireClean: true });
-    writeFileSync(join(root, 'crates', 'cli', 'src', 'main.rs'), 'changed\n');
-    assert.notEqual(binarySourceIdentity(root, { runGit }).sha256, before.sha256);
-    assert.throws(() => binarySourceIdentity(root, { requireClean: true,
-      runGit: (_root, args) => args[0] === 'status' ? ' M crates/cli/src/main.rs\n'
-        : runGit(_root, args) }), /binary source paths are not clean/);
+    git(['init', '--quiet']);
+    git(['config', 'user.email', 'stack-bench@example.invalid']);
+    git(['config', 'user.name', 'Stack Bench']);
+    git(['config', 'core.autocrlf', 'false']);
+    git(['add', '.gitattributes', 'Cargo.toml', 'crates/cli/src/main.rs']);
+    git(['commit', '--quiet', '-m', 'fixture']);
+    const before = binarySourceIdentity(root);
+
+    git(['config', 'core.autocrlf', 'true']);
+    rmSync(cargo);
+    rmSync(main);
+    git(['checkout', '--', 'Cargo.toml', 'crates/cli/src/main.rs']);
+    assert.match(readFileSync(main, 'utf8'), /\r\n/);
+    assert.equal(git(['status', '--porcelain=v1', '--', 'Cargo.toml', 'crates']).trim(), '');
+    assert.equal(binarySourceIdentity(root).sha256, before.sha256);
+
+    writeFileSync(main, 'fn main() { println!("changed"); }\n');
+    assert.throws(() => binarySourceIdentity(root),
+      /binary source paths are not clean/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -94,20 +108,21 @@ test('binary provenance refuses a source change during the build', () => {
 });
 
 test('controller verifies recorded binaries before it installs them', () => {
-  const dockerfile = readFileSync(join(import.meta.dirname, '..', 'appliance',
+  const dockerfile = readFileSync(join(STACK_BENCH_ROOT, 'appliance',
     'Controller.Dockerfile'), 'utf8');
   assert.match(dockerfile, /ARG BINARY_SOURCE_SHA256/);
-  const verify = dockerfile.indexOf('binary-provenance.mjs verify');
+  const verify = dockerfile.indexOf('binary-provenance.js verify');
   const install = dockerfile.indexOf('install -m 0555 container\/bin\/spacetimedb-cli');
   assert.equal(verify >= 0 && install > verify, true);
   assert.doesNotMatch(dockerfile, /^COPY .*container\/bin\/spacetimedb-/m);
 });
 
 test('the Linux binary build uses the recorded builder digest', () => {
-  const script = readFileSync(join(import.meta.dirname, '..', 'container',
+  const script = readFileSync(join(STACK_BENCH_ROOT, 'container',
     'build-linux-cli.sh'), 'utf8');
   assert.match(script, new RegExp(RUST_BUILDER_IMAGE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(script, /STACK_BENCH_RUST_IMAGE/);
-  assert.match(script, /binary-provenance\.mjs" source/);
-  assert.match(script, /binary-provenance\.mjs" record/);
+  assert.match(script, /PROVENANCE=.*binary-provenance\.js/);
+  assert.match(script, /node "\$PROVENANCE" source/);
+  assert.match(script, /node "\$PROVENANCE" record/);
 });

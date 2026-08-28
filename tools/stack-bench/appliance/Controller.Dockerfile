@@ -61,7 +61,7 @@ COPY crates/bindings-typescript/ /opt/stack-bench-embedded-deps/bindings-typescr
 COPY --from=sdk-build /workspace/crates/bindings-typescript/dist/ /opt/stack-bench-embedded-deps/bindings-typescript/dist/
 COPY licenses/BSL.txt /opt/stack-bench-embedded-deps/BSL.txt
 
-RUN node container/binary-provenance.mjs verify \
+RUN node dist/container/binary-provenance.js verify \
       --root /opt/stack-bench --source-sha256 "$BINARY_SOURCE_SHA256" \
     && install -m 0555 container/bin/spacetimedb-cli \
       /opt/stack-bench-embedded-deps/spacetimedb-cli \
