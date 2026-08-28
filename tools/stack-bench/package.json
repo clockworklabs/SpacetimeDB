@@ -8,7 +8,6 @@
   "scripts": {
     "bootstrap:browsers": "playwright install chromium",
     "bench": "node commands/bench.mjs",
-    "compare": "node commands/compare-runs.mjs",
     "preflight": "node commands/preflight.mjs",
     "recover": "node commands/recovery.mjs recover",
     "release:bundle": "node src/releases/release-bundle.mjs",
