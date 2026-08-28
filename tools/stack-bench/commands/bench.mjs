@@ -480,6 +480,23 @@ export function finalizeRunTotals(run, started, { now = Date.now(), costComplete
   return run.totals;
 }
 
+export function formatLevelSummary(level) {
+  const starting = level.firstBuild?.score != null
+    ? `${level.firstBuild.score}/${level.firstBuild.max} unaided -> `
+    : level.baseline?.score != null ? `${level.baseline.score}/${level.baseline.max} resumed -> ` : '';
+  const score = level.graded ? `${starting}${level.score}/${level.max}` : 'NOT GRADED';
+  const repairs = Number.isInteger(level.fixRounds) ? level.fixRounds : 0;
+  const repairLabel = `${repairs} ${repairs === 1 ? 'repair' : 'repairs'}`;
+  const totalCost = (level.buildCostUsd ?? level.resumeCostUsd ?? 0) + (level.fixCostUsd ?? 0);
+  const durationSec = Number.isFinite(level.durationSec)
+    ? level.durationSec : Math.round((level.durationMs ?? 0) / 1000);
+  const status = level.error
+    ? `stopped: ${level.error.replaceAll('-', ' ')}`
+    : level.repair?.status?.replaceAll('-', ' ') ?? 'complete';
+  return `L${level.level}: ${score} | ${repairLabel} | $${totalCost.toFixed(2)} total`
+    + ` ($${(level.fixCostUsd ?? 0).toFixed(2)} repairs) | ${status} | ${durationSec}s`;
+}
+
 export function gradeArgv(args, appDir, url, label, level, track, parentAttemptId,
   { observation = 'scored', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
@@ -1192,7 +1209,7 @@ async function main() {
     // that is a harness failure, not a result for this backend.
     const buildFailure = agentSessionFailure(build);
     if (buildFailure) {
-      console.log(`  ABORTED: ${buildFailure.reason} — see ${join(appDir, `.session-*-l${level}.json`)}`);
+      console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, 'run.json')}`);
       const failedSession = { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
         durationMs: build.durationMs, usage: build.usage ?? null,
         providerThrottle: build.setup?.providerThrottle ?? null,
@@ -1793,14 +1810,7 @@ async function main() {
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {
-    const starting = l.firstBuild?.score != null
-      ? `${l.firstBuild.score}/${l.firstBuild.max} unaided → `
-      : l.baseline?.score != null ? `${l.baseline.score}/${l.baseline.max} resumed → ` : '';
-    const score = l.graded ? `${starting}${l.score}/${l.max}` : 'NOT GRADED';
-    const correction = l.repair?.status?.replaceAll('-', ' ') ?? 'unknown';
-    console.log(`  L${l.level}: ${score}  ${l.fixRounds} fix round(s)  ` +
-      `$${((l.buildCostUsd ?? l.resumeCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)} total` +
-      ` ($${(l.fixCostUsd ?? 0).toFixed(2)} correction)  ${correction}  ${l.durationSec}s`);
+    console.log(`  ${formatLevelSummary(l)}`);
   }
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);

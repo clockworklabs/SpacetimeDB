@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { finalizeRunTotals, gradeArgv, levelGradeIsUsable, parseArgs, pristineMutationBaselinePath,
-  repairHistoryEntry, repairProgressState }
+import { finalizeRunTotals, formatLevelSummary, gradeArgv, levelGradeIsUsable, parseArgs,
+  pristineMutationBaselinePath, repairHistoryEntry, repairProgressState }
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -37,6 +37,13 @@ test('resumed dependency costs separate prior, current, and cumulative execution
   assert.equal(run.totals.cumulativeCostUsd, 6);
   assert.equal(run.totals.costUsd, 6);
   assert.equal(run.totals.costComplete, true);
+});
+
+test('ungraded level summaries contain useful failure values', () => {
+  assert.equal(formatLevelSummary({ level: 1, graded: false,
+    error: 'coding-session-failed', buildCostUsd: 1.25, durationMs: 4_400 }),
+  'L1: NOT GRADED | 0 repairs | $1.25 total ($0.00 repairs) | '
+    + 'stopped: coding session failed | 4s');
 });
 
 test('dependency campaign progression rejects an incomplete or unbound plan reference', () => {
