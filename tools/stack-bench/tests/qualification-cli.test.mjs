@@ -31,7 +31,7 @@ test('mutation workers split defects even when they use one scenario', () => {
   assert.equal(mutationWorkerCount(calibration, 'postgres', () => manifest), 4);
 });
 
-test('qualification status lists exact evidence and launch readiness without writing', () => {
+test('pending L1 qualification lists the required evidence without writing', () => {
   const status = qualificationReadiness('ecommerce', 1);
   assert.match(status.scope.calibration.sha256, /^[a-f0-9]{64}$/);
   assert.equal(status.requiredEvidence.length, 7);
@@ -40,7 +40,8 @@ test('qualification status lists exact evidence and launch readiness without wri
   assert.deepEqual(status.budgetPreparation.commands, []);
   assert.equal(status.launch.ok, true);
   assert.deepEqual(status.launch.blockers, []);
-  assertQualificationIsCurrent(status);
+  assert.equal(status.promotion.ready, false);
+  assert.equal(status.promotion.blockers.filter(item => item.code === 'evidence_missing').length, 7);
   assert(status.promotion.governance.some(item => item.path === 'recipe.state'
     && item.state === 'qualified' && item.target === 'qualified'));
   assert.equal(status.promotion.blockers.some(item => item.code === 'source_not_promoted'), false);
@@ -55,15 +56,9 @@ test('qualification status rejects ambiguous or undeclared scope', () => {
     '--track', 'ecommerce']), /usage/);
 });
 
-test('qualification status reports complete L2 defect coverage', () => {
-  const status = qualificationReadiness('ecommerce', 2);
-  assert.deepEqual(status.scope.runner, {
-    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
-  });
-  assert(status.promotion.governance.some(item => item.path === 'promotion.status'
-    && item.state === 'promoted' && item.target === 'promoted'));
-  assertQualificationIsCurrent(status);
-  assert.equal(status.launch.ok, true);
+test('sequential L2 qualification waits for a promoted L1 baseline', () => {
+  assert.throws(() => qualificationReadiness('ecommerce', 2),
+    /requires exactly one promoted L1 base/);
 });
 
 test('qualification status uses the exact progression check subset', () => {
@@ -83,22 +78,23 @@ test('qualification status uses the exact progression check subset', () => {
     blocker.code === 'defect_check_coverage_incomplete'), false);
 });
 
-test('the promoted L1 release discloses complete defect coverage and exact evidence', () => {
-  const status = qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.5.0');
-  assert.equal(status.defectChecks.totalChecks, 46);
-  assert.equal(status.defectChecks.totalPoints, 58);
-  assert.deepEqual(status.defectChecks.stacks.map(item => [item.stack, item.coveredChecks]), [
-    ['mongodb', 46], ['postgres', 46], ['spacetime', 46],
-  ]);
-  assert(status.defectChecks.stacks.every(item => item.coveredPoints === 58
+test('the cumulative release discloses complete defect coverage at every promoted level', () => {
+  for (const level of [1, 2, 3]) {
+    const status = qualificationReadiness('ecommerce', level,
+      'ecommerce.progression-l1-l3@1.1.0');
+    assert.equal(status.scope.recipe.id, 'ecommerce.progression-l1-l3');
+    assert.equal(status.defectChecks.totalChecks, 112);
+    assert.equal(status.defectChecks.totalPoints, 199);
+    assert(status.defectChecks.stacks.every(item => item.coveredChecks === 112
+      && item.coveredPoints === 199
     && item.missingChecks.length === 0));
-  assertQualificationIsCurrent(status);
-  assert.equal(status.promotion.blockers
-    .filter(item => item.code === 'defect_check_coverage_incomplete').length, 0);
-  assert.equal(status.requiredEvidence.length, 7);
+    assertQualificationIsCurrent(status);
+    assert.equal(status.commands.every(command => command.includes('--level 3')), true);
+    assert.equal(status.requiredEvidence.length, 7);
+  }
 });
 
-test('qualification resolves the promoted modular L1 release exactly and by default', () => {
+test('qualification resolves the pending modular L1 release exactly and by default', () => {
   const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-modular@2.5.0']);
   assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.5.0');
@@ -107,9 +103,9 @@ test('qualification resolves the promoted modular L1 release exactly and by defa
   assert.equal(status.scope.calibration.version, '2.5.0');
   assert.equal(status.launch.ok, true);
   assert.equal(status.requiredEvidence.length, 7);
-  assertQualificationIsCurrent(status);
+  assert.equal(status.promotion.ready, false);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
-    && item.state === 'promoted' && item.target === 'promoted'));
+    && item.state === 'candidate' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.5.0')));
   assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.5.0');
   assert.throws(() => qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.3.0'),
@@ -118,17 +114,11 @@ test('qualification resolves the promoted modular L1 release exactly and by defa
     /no recipe release|retired|requires exactly one catalogued/);
 });
 
-test('qualification resolves the promoted modular L2 release exactly and by default', () => {
-  const status = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.6.0');
-  assert.equal(status.scope.recipe.version, '1.6.0');
-  assert.equal(status.scope.calibration.version, '1.6.0');
-  assert.equal(status.launch.ok, true);
-  assert.equal(status.requiredEvidence.length, 7);
-  assertQualificationIsCurrent(status);
-  assert(status.promotion.governance.some(item => item.path === 'promotion.status'
-    && item.state === 'promoted' && item.target === 'promoted'));
-  assert(status.commands.every(command => command.includes('--recipe ecommerce.l2-standard@1.6.0')));
-  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.version, '1.6.0');
+test('pending modular L2 cannot bypass its L1 qualification dependency', () => {
+  assert.throws(() => qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.6.0'),
+    /requires exactly one promoted L1 base/);
+  assert.throws(() => qualificationReadiness('ecommerce', 2),
+    /requires exactly one promoted L1 base/);
   assert.throws(() => qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.2.0'),
     /no recipe release|retired|requires exactly one catalogued/);
 });

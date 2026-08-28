@@ -16,16 +16,15 @@ const calibration = compileCalibrationFile('composition/calibrations/l1-modular-
   release,
 });
 
-test('the L1 modular calibration is qualified by the complete live evidence set', () => {
+test('the L1 modular release remains available while current qualification is pending', () => {
   assert.equal(release.state, 'qualified');
-  assert.equal(calibration.state, 'qualified');
-  assert.equal(calibration.promotion.status, 'promoted');
-  assert.equal(calibration.qualification.evidence.length, 7);
-  assert.equal(new Set(calibration.qualification.evidence.map(entry => entry.path)).size, 7);
+  assert.equal(calibration.state, 'draft');
+  assert.equal(calibration.promotion.status, 'candidate');
+  assert.deepEqual(calibration.qualification.evidence, []);
   assert.deepEqual(calibration.qualification.stacks, [
-    { id: 'mongodb', status: 'qualified' },
-    { id: 'postgres', status: 'qualified' },
-    { id: 'spacetime', status: 'qualified' },
+    { id: 'mongodb', status: 'candidate' },
+    { id: 'postgres', status: 'candidate' },
+    { id: 'spacetime', status: 'candidate' },
   ]);
   assert.equal(calibration.references.entries.every(reference =>
     reference.status === 'active' && reference.targetPath === undefined), true);

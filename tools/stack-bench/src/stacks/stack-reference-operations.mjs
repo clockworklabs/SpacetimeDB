@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { dockerHostServiceAddress } from '../runtime/docker-network.mjs';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.mjs';
 import { referenceInstallSteps } from '../references/reference-install.mjs';
+import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.mjs';
 
 function validateHostedDatabase({ args, lease, track, helpers }) {
   const expected = helpers.dbName(track, args.runIndex);
@@ -49,18 +50,19 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
 }
 
 export function deployPostgresReference(input) {
+  const { user, password } = POSTGRES_APPLICATION_IDENTITY;
   return deployHostedReference(input, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) =>
-      `postgresql://stackbench:stackbench@${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
+      `postgresql://${user}:${password}@${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
     prepare: ({ expected, service }, helpers) => {
       try {
         helpers.runSync('creating PostgreSQL reference database', 'docker',
-          ['exec', service.name, 'psql', '-U', 'stackbench', '-d', 'postgres',
-            '-c', `CREATE DATABASE ${expected} OWNER stackbench;`], { stdio: 'pipe' });
+          ['exec', service.name, 'psql', '-U', user, '-d', 'postgres',
+            '-c', `CREATE DATABASE ${expected} OWNER ${user};`], { stdio: 'pipe' });
       } catch { /* an existing run-index database is expected */ }
       helpers.runSync('resetting PostgreSQL reference schema', 'docker',
-        ['exec', service.name, 'psql', '-U', 'stackbench', '-d', expected,
-          '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO stackbench;'],
+        ['exec', service.name, 'psql', '-U', user, '-d', expected,
+          '-c', `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${user};`],
         { stdio: 'pipe' });
     },
     pushSchema: ({ container, metadata, serverEnv, helpers }) => {

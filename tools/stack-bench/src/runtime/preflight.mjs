@@ -11,7 +11,7 @@ import { isExactImageReference, parseImageId } from './container-image.mjs';
 import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.mjs';
 import { dockerMountArguments } from './container-mount.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
-  PREFLIGHT_RESOURCE_FLOORS } from '../composition/product-config.mjs';
+  preflightResourceFloors } from '../composition/product-config.mjs';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.mjs';
 import { validateFeatureCatalogInput } from '../progression/progression-definition.mjs';
@@ -19,6 +19,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.mjs';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.mjs';
 import { pidsOnPort } from './platform.mjs';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.mjs';
@@ -34,8 +35,19 @@ function splitList(value) {
   return String(value).split(',').map(item => item.trim()).filter(Boolean);
 }
 
+export function verifyPostgresServiceIdentity(containerName, { execute = execFileSync } = {}) {
+  const { user, password, defaultDatabase: database } = POSTGRES_APPLICATION_IDENTITY;
+  const output = execute('docker', ['exec', '-e', `PGPASSWORD=${password}`, containerName,
+    'psql', '-h', '127.0.0.1', '-U', user, '-d', database,
+    '-v', 'ON_ERROR_STOP=1', '-Atc', "SELECT current_user || '|' || current_database();"],
+  { encoding: 'utf8', stdio: 'pipe' }).trim();
+  const expected = `${user}|${database}`;
+  if (output !== expected) throw new Error(`expected ${expected}, received ${output || 'no output'}`);
+  return expected;
+}
+
 export function parsePreflightArgs(argv, { env = process.env } = {}) {
-  const request = { backends: [], track: 'ecommerce', levels: '1', runIndex: 0,
+  const request = { backends: [], track: 'ecommerce', levels: '1', runIndex: 0, parallelism: 1,
     agentAdapter: 'claude-code', packIds: [], checkKeys: [], smoke: false,
     image: env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
     resultsDir: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')) };
@@ -46,6 +58,7 @@ export function parsePreflightArgs(argv, { env = process.env } = {}) {
       case '--levels': request.levels = argv[++i]; break;
       case '--recipe': request.recipe = argv[++i]; break;
       case '--run-index': request.runIndex = Number(argv[++i]); break;
+      case '--parallelism': request.parallelism = Number(argv[++i]); break;
       case '--agent-adapter': request.agentAdapter = argv[++i]; break;
       case '--pack': request.packIds.push(...splitList(argv[++i])); break;
       case '--check': request.checkKeys.push(...splitList(argv[++i])); break;
@@ -60,6 +73,9 @@ export function parsePreflightArgs(argv, { env = process.env } = {}) {
   if (!request.backends.length) throw new Error('--backend is required (comma-separated values are accepted)');
   request.backends = [...new Set(request.backends)].sort();
   if (!Number.isInteger(request.runIndex) || request.runIndex < 0) throw new Error('--run-index must be a non-negative integer');
+  if (!Number.isInteger(request.parallelism) || request.parallelism < 1) {
+    throw new Error('--parallelism must be a positive integer');
+  }
   const match = String(request.levels).match(/^(\d+)(?:-(\d+))?$/);
   if (!match || Number(match[2] ?? match[1]) < Number(match[1])) throw new Error('--levels must be N or N-M');
   request.levelList = Array.from({ length: Number(match[2] ?? match[1]) - Number(match[1]) + 1 },
@@ -211,6 +227,7 @@ export function runPreflight(request, dependencies = {}) {
   const inspectPorts = dependencies.pidsOnPort ?? pidsOnPort;
   const probePort = dependencies.probePort ?? probeLoopbackPort;
   const checks = [];
+  const resourceFloors = preflightResourceFloors(request.parallelism ?? 1);
   const add = (...args) => checks.push(checkResult(...args));
   let track;
   let agent;
@@ -332,10 +349,10 @@ export function runPreflight(request, dependencies = {}) {
     rmSync(join(request.resultsDir, hostMarker));
     const stats = statfs(request.resultsDir, { bigint: true });
     const free = stats.bavail * stats.bsize;
-    add('storage.results', free >= BigInt(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes) ? 'pass' : 'fail',
+    add('storage.results', free >= BigInt(resourceFloors.resultDiskBytes) ? 'pass' : 'fail',
       `${bytes(free)} free at ${request.resultsDir}`,
-      free >= BigInt(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes) ? null
-        : `Provide at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes)} free for persistent results.`);
+      free >= BigInt(resourceFloors.resultDiskBytes) ? null
+        : `Provide at least ${bytes(resourceFloors.resultDiskBytes)} free for persistent results.`);
   } catch (error) {
     add('storage.results', 'fail', `Result directory is not safely writable: ${error.message}`,
       'Choose a persistent writable result directory with --results-dir.');
@@ -359,18 +376,18 @@ export function runPreflight(request, dependencies = {}) {
       add('docker.compose', 'fail', 'Docker Compose plugin is unavailable',
         'Install the Docker Compose v2 plugin.');
     }
-    const enoughCpu = dockerInfo.NCPU >= PREFLIGHT_RESOURCE_FLOORS.cpuCount;
+    const enoughCpu = dockerInfo.NCPU >= resourceFloors.cpuCount;
     add('docker.cpu', enoughCpu ? 'pass' : 'fail', `${dockerInfo.NCPU} CPUs available`,
-      enoughCpu ? null : `Allocate at least ${PREFLIGHT_RESOURCE_FLOORS.cpuCount} CPUs to Docker.`);
-    const enoughMemory = dockerInfo.MemTotal >= PREFLIGHT_RESOURCE_FLOORS.memoryBytes;
+      enoughCpu ? null : `Allocate at least ${resourceFloors.cpuCount} CPUs to Docker.`);
+    const enoughMemory = dockerInfo.MemTotal >= resourceFloors.memoryBytes;
     add('docker.memory', enoughMemory ? 'pass' : 'fail',
       `${bytes(dockerInfo.MemTotal)} available`,
-      enoughMemory ? null : `Allocate at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.memoryBytes)} to Docker.`);
+      enoughMemory ? null : `Allocate at least ${bytes(resourceFloors.memoryBytes)} to Docker.`);
     const engineTime = Date.parse(dockerInfo.SystemTime);
     const skew = !Number.isFinite(engineTime) ? Number.NaN
       : engineTime < dockerInfoStartedAt ? dockerInfoStartedAt - engineTime
         : engineTime > dockerInfoFinishedAt ? engineTime - dockerInfoFinishedAt : 0;
-    const clockReady = Number.isFinite(skew) && skew <= PREFLIGHT_RESOURCE_FLOORS.clockSkewMs;
+    const clockReady = Number.isFinite(skew) && skew <= resourceFloors.clockSkewMs;
     add('docker.clock', clockReady ? 'pass' : 'fail',
       `host/engine skew ${Number.isFinite(skew) ? skew : 'unknown'} ms`,
       clockReady ? null : 'Synchronize the host and Docker clocks.');
@@ -424,6 +441,16 @@ export function runPreflight(request, dependencies = {}) {
         ? `${containerName} is running exact image ${expectedId}`
         : `${containerName} is absent, stopped/unhealthy, on the wrong image, or mapped to the wrong port`,
       ready ? null : `Run docker compose -f ${COMPOSE} up -d ${service}.`);
+      if (backend === 'postgres' && ready) {
+        try {
+          const identity = verifyPostgresServiceIdentity(containerName, { execute: run });
+          add('service.postgres.identity', 'pass', `Authenticated as ${identity}`);
+        } catch (error) {
+          add('service.postgres.identity', 'fail',
+            `PostgreSQL application identity is unavailable: ${error.message}`,
+            `Recreate or migrate the Stack Bench PostgreSQL volume, then restart ${containerName}.`);
+        }
+      }
     } catch (error) {
       add(`service.${backend}`, 'fail', `${containerName} is not ready`,
         `Run docker compose -f ${COMPOSE} up -d ${service}.`);
@@ -519,10 +546,10 @@ export function runPreflight(request, dependencies = {}) {
           + `${Object.keys(smoke.executables ?? {}).length} agent executable(s); `
           + `result mount ${persisted ? 'persistent' : 'failed'}`,
       smokeReady ? null : 'Fix the agent executable, container Node/runtime, networking, or persistent results mount.', smoke);
-      add('storage.container', smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? 'pass' : 'fail',
+      add('storage.container', smoke.diskFreeBytes >= resourceFloors.resultDiskBytes ? 'pass' : 'fail',
         `${bytes(smoke.diskFreeBytes)} free in Docker storage`,
-        smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? null
-          : `Provide at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes)} free in Docker storage.`);
+        smoke.diskFreeBytes >= resourceFloors.resultDiskBytes ? null
+          : `Provide at least ${bytes(resourceFloors.resultDiskBytes)} free in Docker storage.`);
       if (credentialStatusCommand) add('agent.authentication',
         smoke.credentialStatus === 'ready' ? 'pass' : 'fail',
         smoke.credentialStatus === 'ready' ? 'Local agent credential status is ready in the build image'
@@ -543,7 +570,8 @@ export function runPreflight(request, dependencies = {}) {
     schemaVersion: 1,
     generatedAt: new Date(startedAt).toISOString(),
     request: { backends: request.backends, track: request.track, levels: request.levelList,
-      runIndex: request.runIndex, agentAdapter: request.agentAdapter, packs: request.packIds,
+      runIndex: request.runIndex, parallelism: request.parallelism ?? 1,
+      agentAdapter: request.agentAdapter, packs: request.packIds,
       checks: request.checkKeys, recipe: request.recipe ?? null,
       requestedScopeCount: request.requestedScopes?.length ?? 0,
       image: request.image, resultsDir: request.resultsDir,

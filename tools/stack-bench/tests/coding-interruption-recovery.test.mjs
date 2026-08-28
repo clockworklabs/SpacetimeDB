@@ -365,7 +365,7 @@ test('stopped-container recovery removes only the exact authenticated lease targ
   try {
     const path = join(root, 'lease.json');
     const lease = createBackendLease({ runId: 'recover-build-test', backend: 'mongodb',
-      track: 'ecommerce', runIndex: 0, database: 'stackbench_ecom_run0',
+      track: 'ecommerce', runIndex: 0, database: 'app_ecom_run0',
       container: { name: 'stack-bench-mongodb', id: 'database-id' } });
     lease.state = 'active';
     lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
@@ -388,7 +388,7 @@ test('stopped-container recovery fails closed on a lease mismatch', () => {
   try {
     const path = join(root, 'lease.json');
     const lease = createBackendLease({ runId: 'recover-build-test', backend: 'mongodb',
-      track: 'ecommerce', runIndex: 0, database: 'stackbench_ecom_run0',
+      track: 'ecommerce', runIndex: 0, database: 'app_ecom_run0',
       container: { name: 'stack-bench-mongodb', id: 'database-id' } });
     lease.state = 'active';
     lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
@@ -419,7 +419,7 @@ test('Docker replaces a stopped leased build container and preserves its app mou
     const databaseContainer = docker(['inspect', '--format', '{{.Id}}', 'stack-bench-mongodb']);
     assert.equal(databaseContainer.status, 0, databaseContainer.stderr);
     const lease = createBackendLease({ runId: 'recover-build-docker-smoke', backend: 'mongodb',
-      track: 'ecommerce', runIndex: 91, database: 'stackbench_ecom_run91',
+      track: 'ecommerce', runIndex: 91, database: 'app_ecom_run91',
       container: { name: 'stack-bench-mongodb', id: databaseContainer.stdout.trim() } });
     lease.state = 'active';
     writeBackendLease(leasePath, lease);
@@ -445,19 +445,19 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       .map(value => value.replace(/:true$/, '')).includes('no-new-privileges'), true);
     assert.equal(hostConfig.PidsLimit, 512);
     assert.equal(hostConfig.Tmpfs['/tmp'], 'rw,nosuid,nodev,mode=1777');
-    assert.equal(hostConfig.Tmpfs['/home/stackbench'],
+    assert.equal(hostConfig.Tmpfs['/home/developer'],
       'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
-    assert.equal(hostConfig.Tmpfs['/home/stackbench/.claude'],
+    assert.equal(hostConfig.Tmpfs['/home/developer/.claude'],
       'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
     assert.equal(hostConfig.Tmpfs['/deps'], 'rw,nosuid,nodev,mode=0755');
-    assert.equal(hostConfig.Tmpfs['/run/stack-bench'], 'rw,nosuid,nodev,mode=0700');
+    assert.equal(hostConfig.Tmpfs['/run/application'], 'rw,nosuid,nodev,mode=0700');
     assert.equal(hostConfig.Tmpfs['/root'], undefined);
     const agentCaps = docker(['exec', '--user', '10001:10001', firstResult.containerName,
       'sh', '-c', 'grep "^CapEff:" /proc/self/status']);
     assert.equal(agentCaps.status, 0, agentCaps.stderr);
     assert.match(agentCaps.stdout, /CapEff:\s+0+\s*$/);
     const sessionState = docker(['exec', '--user', '10001:10001', firstResult.containerName,
-      'sh', '-c', 'test -w /home/stackbench/.claude/session-env']);
+      'sh', '-c', 'test -w /home/developer/.claude/session-env']);
     assert.equal(sessionState.status, 0, sessionState.stderr);
     const dropped = docker(['exec', firstResult.containerName, '/usr/bin/setpriv',
       '--reuid=10001', '--regid=10001', '--init-groups', 'id', '-u']);

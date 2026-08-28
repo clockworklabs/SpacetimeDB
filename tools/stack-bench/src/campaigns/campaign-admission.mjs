@@ -72,6 +72,7 @@ export function validateCampaignAdmission(input, plan, directory) {
         || request.track !== plan.definition.track
         || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
         || request.runIndex !== runIndex
+        || request.parallelism !== plan.summary.parallelism
         || canonicalDefinitionJson(request.packs)
           !== canonicalDefinitionJson(plan.definition.selection.packs ?? [])
         || canonicalDefinitionJson(request.checks)

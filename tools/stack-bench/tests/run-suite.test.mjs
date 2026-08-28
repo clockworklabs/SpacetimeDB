@@ -9,13 +9,36 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   applicationDatabaseMarker, checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
-  databaseContainerForGrading, runGraderChild, verifyReseedProbe, waitForReseedProbe }
+  contractLintArgv, databaseContainerForGrading, runGraderChild, verifyReseedProbe, waitForReseedProbe }
   from '../commands/run-suite.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
+
+function sequentialL2Track() {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-l2-'));
+  const root = join(temp, 'ecommerce');
+  cpSync(ECOMMERCE, root, { recursive: true });
+  const promotionsPath = join(root, 'composition', 'promotions.json');
+  const promotions = JSON.parse(readFileSync(promotionsPath, 'utf8'));
+  const l1 = promotions.entries.find(entry => entry.alias === 'L1'
+    && entry.recipe.id === 'ecommerce.l1-modular' && entry.recipe.version === '2.5.0');
+  l1.status = 'promoted';
+  writeFileSync(promotionsPath, `${JSON.stringify(promotions, null, 2)}\n`);
+  const manifest = JSON.parse(readFileSync(join(root, 'track.json'), 'utf8'));
+  return { temp, track: { ...loadTrack('ecommerce'), dir: root, suites: manifest.suites } };
+}
+
+test('contract lint receives the selected credential aliases', () => {
+  const aliases = { 'stackbench-admin-2026': 'store-admin-2026' };
+  const argv = contractLintArgv({
+    url: 'http://app', level: 1, track: 'ecommerce', label: 'attempt',
+    out: '/results', bundleArtifactId: 'attempt', credentialAliases: aliases,
+  });
+  assert.equal(argv[argv.indexOf('--credential-aliases-json') + 1], JSON.stringify(aliases));
+});
 
 test('code metrics count each package manifest once when server code is at the app root', () => {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-code-metrics-'));
@@ -137,10 +160,10 @@ test('database provenance parses the port instead of accepting a matching substr
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-database-provenance-'));
   try {
     writeFileSync(join(temp, 'server.js'),
-      "const url = 'mongodb://localhost:6537/stackbench_ecom_run0';\n");
+      "const url = 'mongodb://localhost:6537/app_ecom_run0';\n");
     assert.equal(checkDatabaseProvenance({ app: temp, backend: 'mongodb' }).ok, true);
     writeFileSync(join(temp, 'server.js'),
-      "const url = 'mongodb://localhost:16537/stackbench_ecom_run0';\n");
+      "const url = 'mongodb://localhost:16537/app_ecom_run0';\n");
     assert.equal(checkDatabaseProvenance({ app: temp, backend: 'mongodb' }).ok, false);
   } finally {
     rmSync(temp, { recursive: true, force: true });
@@ -361,45 +384,48 @@ test('hardened modular grading isolates the four direct server checks', () => {
 });
 
 test('recipe execution keeps inherited suites out of the current-level score', () => {
-  const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
-  const suites = suitesForRecipe(track, binding);
-
-  const inherited = suites.filter(suite => suite.inherited);
-  assert.equal(inherited.length, 31);
-  assert(inherited.every(suite => suite.fromLevel === 1));
-  assert.equal(suites.filter(suite => !suite.inherited).length, 10);
+  const { temp, track } = sequentialL2Track();
+  try {
+    const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
+    const suites = suitesForRecipe(track, binding);
+    const inherited = suites.filter(suite => suite.inherited);
+    assert.equal(inherited.length, 31);
+    assert(inherited.every(suite => suite.fromLevel === 1));
+    assert.equal(suites.filter(suite => !suite.inherited).length, 10);
+  } finally { rmSync(temp, { recursive: true, force: true }); }
 });
 
 test('L2 grading rechecks the exact selected L1 score without adding it to L2 points', () => {
-  const track = loadTrack('ecommerce');
-  const l1 = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.5.0');
-  const l2 = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
-  const prior = createBoundRecipeTaskRequest(l1, {
-    featureIds: ['ecommerce.feature.accounts', 'ecommerce.feature.cart-checkout',
-      'ecommerce.feature.catalog', 'ecommerce.feature.purchasing',
-      'ecommerce.feature.reviews', 'ecommerce.feature.warehouse-admin'],
-    expectedSpecifications: ['ecommerce.spec.access-control@1.2.0',
-      'ecommerce.spec.concurrency-safety@1.3.0',
-      'ecommerce.spec.external-data-sync@1.1.0', 'ecommerce.spec.live-state@1.2.0',
-      'ecommerce.spec.state-durability@1.1.0',
-      'ecommerce.spec.transactional-integrity@1.3.0'],
-  });
-  const current = createBoundRecipeTaskRequest(l2, {
-    featureIds: ['ecommerce.inventory-operations-features',
-      'ecommerce.operations-access-features', 'ecommerce.returns-pricing-features'],
-    expectedSpecifications: ['ecommerce.inventory-operations-specifications@1.0.0',
-      'ecommerce.operations-access-specifications@1.0.0',
-      'ecommerce.returns-pricing-specifications@1.0.0'],
-  });
-  const scope = attachRegressionScope(current.selection, l2, suitesForRecipe(track, l2),
-    prior.selection.scoredChecks.map(check => check.stableKey));
-  assert.equal(scope.scoredPoints, 59);
-  assert.equal(scope.regressionPoints, 58);
-  assert.equal(scope.regressionChecks.length, prior.selection.scoredChecks.length);
-  assert.equal(scope.checks.length,
-    current.selection.scoredChecks.length + prior.selection.scoredChecks.length);
-  assert.match(scope.evaluationSha256, /^[a-f0-9]{64}$/);
+  const { temp, track } = sequentialL2Track();
+  try {
+    const l1 = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.5.0');
+    const l2 = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
+    const prior = createBoundRecipeTaskRequest(l1, {
+      featureIds: ['ecommerce.feature.accounts', 'ecommerce.feature.cart-checkout',
+        'ecommerce.feature.catalog', 'ecommerce.feature.purchasing',
+        'ecommerce.feature.reviews', 'ecommerce.feature.warehouse-admin'],
+      expectedSpecifications: ['ecommerce.spec.access-control@1.2.0',
+        'ecommerce.spec.concurrency-safety@1.3.0',
+        'ecommerce.spec.external-data-sync@1.1.0', 'ecommerce.spec.live-state@1.2.0',
+        'ecommerce.spec.state-durability@1.1.0',
+        'ecommerce.spec.transactional-integrity@1.3.0'],
+    });
+    const current = createBoundRecipeTaskRequest(l2, {
+      featureIds: ['ecommerce.inventory-operations-features',
+        'ecommerce.operations-access-features', 'ecommerce.returns-pricing-features'],
+      expectedSpecifications: ['ecommerce.inventory-operations-specifications@1.0.0',
+        'ecommerce.operations-access-specifications@1.0.0',
+        'ecommerce.returns-pricing-specifications@1.0.0'],
+    });
+    const scope = attachRegressionScope(current.selection, l2, suitesForRecipe(track, l2),
+      prior.selection.scoredChecks.map(check => check.stableKey));
+    assert.equal(scope.scoredPoints, 59);
+    assert.equal(scope.regressionPoints, 58);
+    assert.equal(scope.regressionChecks.length, prior.selection.scoredChecks.length);
+    assert.equal(scope.checks.length,
+      current.selection.scoredChecks.length + prior.selection.scoredChecks.length);
+    assert.match(scope.evaluationSha256, /^[a-f0-9]{64}$/);
+  } finally { rmSync(temp, { recursive: true, force: true }); }
 });
 
 test('cumulative ownership survives inherited execution id renames', () => {
@@ -415,6 +441,12 @@ test('cumulative ownership survives inherited execution id renames', () => {
     writeFileSync(recipe, `${JSON.stringify(value, null, 2)}\n`);
     const track = { ...loadTrack('ecommerce'), dir: root,
       suites: JSON.parse(readFileSync(join(root, 'track.json'), 'utf8')).suites };
+    const promotionsPath = join(root, 'composition', 'promotions.json');
+    const promotions = JSON.parse(readFileSync(promotionsPath, 'utf8'));
+    promotions.entries.find(entry => entry.alias === 'L1'
+      && entry.recipe.id === 'ecommerce.l1-modular'
+      && entry.recipe.version === '2.5.0').status = 'promoted';
+    writeFileSync(promotionsPath, `${JSON.stringify(promotions, null, 2)}\n`);
     const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
     const suites = suitesForRecipe(track, binding);
     const inherited = suites.filter(suite => suite.inherited);

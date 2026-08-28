@@ -11,8 +11,10 @@ import { proveMongoDbUse, provePostgresUse,
   resetPostgres } from '../src/stacks/stack-backend-operations.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../src/runtime/spacetime-layout.mjs';
+import { POSTGRES_APPLICATION_IDENTITY } from '../src/stacks/hosted-database-identity.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;
 
 function writeModule(directory) {
   mkdirSync(join(directory, 'src'), { recursive: true });
@@ -47,7 +49,7 @@ test('the reset entrypoint reports a generated layout separately from a harness 
   const leasePath = join(root, 'lease.json');
   mkdirSync(app);
   const lease = createBackendLease({ runId: 'layout-exit', backend: 'spacetime', track: 'ecommerce',
-    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'stackbench-ecom-run0',
+    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
     dataDir: join(root, 'data') });
   lease.state = 'active';
   writeBackendLease(leasePath, lease);
@@ -69,7 +71,7 @@ test('the reset entrypoint reports a generated layout separately from a harness 
 test('PostgreSQL per-check reset clears rows without removing the app schema', () => {
   const lease = {
     resources: {
-      database: 'stackbench_ecom_run0',
+      database: 'app_ecom_run0',
       container: { name: 'postgres-service', id: 'a'.repeat(64) },
     },
   };
@@ -92,7 +94,7 @@ test('PostgreSQL per-check reset clears rows without removing the app schema', (
 });
 
 test('PostgreSQL runtime provenance finds an application marker in the exact leased database', () => {
-  const lease = { resources: { database: 'stackbench_ecom_run0',
+  const lease = { resources: { database: 'app_ecom_run0',
     container: { name: 'postgres-service', id: 'a'.repeat(64) } } };
   const calls = [];
   const exec = (command, args, options) => {
@@ -122,7 +124,7 @@ test('PostgreSQL runtime provenance finds an application marker in the exact lea
 });
 
 test('MongoDB runtime provenance finds an application marker in the exact leased database', () => {
-  const lease = { resources: { database: 'stackbench_ecom_run0',
+  const lease = { resources: { database: 'app_ecom_run0',
     container: { name: 'mongodb-service', id: 'b'.repeat(64) } } };
   const calls = [];
   const execWith = output => (command, args) => {
@@ -150,17 +152,17 @@ test('runtime database provenance works against the Docker services', {
   skip: process.env.STACK_BENCH_DATABASE_PROVENANCE_SMOKE !== '1',
 }, () => {
   const suffix = `${process.pid}_${Date.now()}`;
-  const marker = `stackbench-proof-${suffix}`;
-  const postgresDatabase = `stackbench_proof_${suffix}`;
-  const mongoDatabase = `stackbench_proof_${suffix}`;
+  const marker = `application-proof-${suffix}`;
+  const postgresDatabase = `application_proof_${suffix}`;
+  const mongoDatabase = `application_proof_${suffix}`;
   const docker = (args, options = {}) => execFileSync('docker', args,
     { encoding: 'utf8', stdio: 'pipe', timeout: 120_000, ...options });
   const container = name => ({ name,
     id: docker(['inspect', '--format', '{{.Id}}', name]).trim() });
   try {
-    docker(['exec', 'stack-bench-postgres', 'psql', '-U', 'stackbench', '-d', 'postgres',
-      '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${postgresDatabase} OWNER stackbench;`]);
-    docker(['exec', 'stack-bench-postgres', 'psql', '-U', 'stackbench', '-d', postgresDatabase,
+    docker(['exec', 'stack-bench-postgres', 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
+      '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${postgresDatabase} OWNER ${POSTGRES_USER};`]);
+    docker(['exec', 'stack-bench-postgres', 'psql', '-U', POSTGRES_USER, '-d', postgresDatabase,
       '-v', 'ON_ERROR_STOP=1', '-c',
       `CREATE TABLE account (username text NOT NULL); INSERT INTO account VALUES ('${marker}');`]);
     docker(['exec', 'stack-bench-mongodb', 'mongosh', mongoDatabase, '--quiet', '--eval',
@@ -172,7 +174,7 @@ test('runtime database provenance works against the Docker services', {
       container: container('stack-bench-mongodb') } }, marker }).ok, true);
   } finally {
     try {
-      docker(['exec', 'stack-bench-postgres', 'psql', '-U', 'stackbench', '-d', 'postgres',
+      docker(['exec', 'stack-bench-postgres', 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
         '-v', 'ON_ERROR_STOP=1', '-c', `DROP DATABASE IF EXISTS ${postgresDatabase} WITH (FORCE);`]);
     } catch { /* keep the original test failure */ }
     try {
@@ -186,18 +188,18 @@ test('PostgreSQL reset preserves schema and does not touch another lease databas
   skip: process.env.STACK_BENCH_POSTGRES_RESET_SMOKE !== '1',
 }, () => {
   const suffix = `${process.pid}_${Date.now()}`;
-  const target = `stackbench_reset_${suffix}`;
-  const neighbor = `stackbench_neighbor_${suffix}`;
+  const target = `application_reset_${suffix}`;
+  const neighbor = `application_neighbor_${suffix}`;
   const container = 'stack-bench-postgres';
   const docker = (args, options = {}) => execFileSync('docker', args,
     { encoding: 'utf8', stdio: 'pipe', timeout: 120_000, ...options });
-  const database = (name, sql) => docker(['exec', container, 'psql', '-U', 'stackbench',
+  const database = (name, sql) => docker(['exec', container, 'psql', '-U', POSTGRES_USER,
     '-d', name, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
   try {
     const id = docker(['inspect', '--format', '{{.Id}}', container]).trim();
     for (const name of [target, neighbor]) {
-      docker(['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
-        '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${name} OWNER stackbench;`]);
+      docker(['exec', container, 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
+        '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${name} OWNER ${POSTGRES_USER};`]);
       database(name, 'CREATE TABLE item (id bigserial PRIMARY KEY, name text NOT NULL); '
         + "INSERT INTO item(name) VALUES ('kept schema');");
     }
@@ -211,7 +213,7 @@ test('PostgreSQL reset preserves schema and does not touch another lease databas
   } finally {
     for (const name of [target, neighbor]) {
       try {
-        docker(['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
+        docker(['exec', container, 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
           '-v', 'ON_ERROR_STOP=1', '-c', `DROP DATABASE IF EXISTS ${name} WITH (FORCE);`]);
       } catch { /* keep the original test failure */ }
     }
@@ -224,7 +226,7 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
   const leasePath = join(root, 'lease.json');
   writeModule(join(app, 'backend', 'spacetimedb'));
   const lease = createBackendLease({ runId: 'reset-test', backend: 'spacetime', track: 'ecommerce',
-    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'stackbench-ecom-run0',
+    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
     dataDir: join(root, 'data') });
   lease.state = 'active';
   lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64), running: true,
@@ -245,7 +247,7 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
     const publish = calls.find(call => call.argv.includes('publish'));
     assert.deepEqual(publish.argv.slice(0, 6),
       ['docker', 'exec', '-w', '/app/backend/spacetimedb', 'leased-build', '/deps/spacetimedb-cli']);
-    assert.ok(publish.argv.includes('stackbench-ecom-run0'));
+    assert.ok(publish.argv.includes('app-ecom-run0'));
     assert.ok(publish.argv.includes('http://host.docker.internal:3310'));
     assert.equal(publish.argv.includes(join(app, 'backend', 'spacetimedb')), false);
     assert.equal(calls.every(call => call.options.timeout === 120_000), true);
@@ -267,7 +269,7 @@ test('Spacetime reset honors the module path declared by a generated project', (
     server: 'bench', 'module-path': './spacetimedb',
   }));
   const lease = createBackendLease({ runId: 'reset-declared', backend: 'spacetime', track: 'ecommerce',
-    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'stackbench-ecom-run0',
+    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
     dataDir: join(root, 'data') });
   lease.state = 'active';
   lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64), running: true,

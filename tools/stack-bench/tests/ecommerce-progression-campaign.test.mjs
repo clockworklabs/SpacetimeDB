@@ -180,6 +180,7 @@ test('campaign admission sends the exact catalog, mode, and default build image 
         return { schemaVersion: 1, generatedAt: '2026-08-25T00:00:00.000Z',
           request: { backends: request.backends, track: request.track,
             levels: request.levelList, runIndex: request.runIndex,
+            parallelism: request.parallelism,
             agentAdapter: request.agentAdapter, packs: request.packIds,
             checks: request.checkKeys, image: request.image,
             resultsDir: request.resultsDir, smoke: request.smoke },

@@ -78,6 +78,23 @@ test('neutral guidance 1.1 adds only the SpacetimeDB packaging contract', () => 
   assert.notDeepEqual(nextProfile.documents.spacetime, oldProfile.documents.spacetime);
 });
 
+test('neutral guidance 1.2 replaces branded documents for every stack', () => {
+  const oldProfile = resolveGuidanceProfile('neutral@1.1.0', ['mongodb', 'postgres', 'spacetime']);
+  const nextProfile = resolveGuidanceProfile('neutral@1.2.0', ['mongodb', 'postgres', 'spacetime']);
+  assert.equal(nextProfile.state, 'qualified');
+  assert.equal(nextProfile.material.designAdvice, false);
+  assert.deepEqual(Object.keys(nextProfile.documents), ['mongodb', 'postgres', 'spacetime']);
+  assert.deepEqual(nextProfile.credentialAliases, {
+    'stackbench-admin-2026': 'store-admin-2026',
+    'stackbench-customer-2026': 'store-customer-2026',
+    'stackbench-staff-2026': 'store-staff-2026',
+  });
+  assert.equal(oldProfile.credentialAliases, undefined);
+  for (const stack of ['mongodb', 'postgres', 'spacetime']) {
+    assert.notDeepEqual(nextProfile.documents[stack], oldProfile.documents[stack]);
+  }
+});
+
 test('expected modular specifications are scored under the ordinary repair policy', () => {
   const selected = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.0.0',
     repairPolicy: 'scored-only@1.0.0' };

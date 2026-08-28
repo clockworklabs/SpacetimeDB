@@ -30,6 +30,7 @@ function parseArgs(argv) {
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
       case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
+      case '--credential-aliases-json': args.credentialAliases = JSON.parse(argv[++i]); break;
       case '--hook': args.hooks.push(argv[++i]); break;
       case '--headed': args.headed = true; break;
       default:

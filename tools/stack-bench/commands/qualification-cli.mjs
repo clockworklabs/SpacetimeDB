@@ -169,7 +169,9 @@ export function qualificationReadiness(trackName, level, recipe = null) {
   const output = '/var/lib/stack-bench/results/qualification';
   const stacks = calibration.qualification.stacks
     .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
-  const budgetEvidence = stacks.map(stack => `${output}/budget-input/${trackName}-l${level}-${stack}.json`);
+  const qualificationLevel = Number(calibration.promotion.alias.slice(1));
+  const budgetEvidence = stacks.map(stack =>
+    `${output}/budget-input/${trackName}-l${qualificationLevel}-${stack}.json`);
   const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
   const recipeOption = recipe
     ? ` --recipe ${binding.release.id}@${binding.release.version}` : '';
@@ -190,9 +192,9 @@ export function qualificationReadiness(trackName, level, recipe = null) {
       policy: PACK_BUDGET_POLICY,
       commands: budgetPreparationRequired ? [
         ...stacks.map((stack, index) =>
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
-        `pack-budget recommend --track ${trackName} --level ${level}${recipeOption} ${budgetEvidence
-          .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${level}-pack-budgets.json`,
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
+        `pack-budget recommend --track ${trackName} --level ${qualificationLevel}${recipeOption} ${budgetEvidence
+          .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${qualificationLevel}-pack-budgets.json`,
       ] : [],
     },
     requiredEvidence,
@@ -200,11 +202,11 @@ export function qualificationReadiness(trackName, level, recipe = null) {
     commands: [
       ...stacks.flatMap(stack => [
         ...(!combinedReferenceEvidence ? [
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${qualificationLevel}-${stack}-reference.json`,
         ] : []),
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --release-candidate${mutationWorkerOption(calibration, stack)} --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --release-candidate${mutationWorkerOption(calibration, stack)} --out ${output}/${trackName}-l${qualificationLevel}-${stack}-mutation.json`,
       ]),
-      `qualify-null --track ${trackName} --level ${level}${recipeOption} --out ${output}/${trackName}-l${level}-null.json`,
+      `qualify-null --track ${trackName} --level ${qualificationLevel}${recipeOption} --out ${output}/${trackName}-l${qualificationLevel}-null.json`,
     ],
     promotion: { ready: promotionBlockers.length === 0, blockers: promotionBlockers,
       governance },

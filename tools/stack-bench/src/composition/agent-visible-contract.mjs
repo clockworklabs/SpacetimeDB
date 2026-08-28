@@ -1,7 +1,9 @@
+import { applyCredentialAliases } from './credential-aliases.mjs';
+
 // Contract sources keep internal grading terms. Coding agents receive only the
 // public application requirements and stable interface names.
-export function agentVisibleContractText(value) {
-  return String(value ?? '')
+export function agentVisibleContractText(value, credentialAliases = {}) {
+  return applyCredentialAliases(value, credentialAliases)
     .replace(/The app is graded by an automated harness that locates elements \*\*only\*\* via\s+/gi,
       'Expose ')
     .replace(/What the harness needs/gi, 'Run configuration')
@@ -24,6 +26,11 @@ export function agentVisibleContractText(value) {
     .replace(/the runner/gi, 'the external client')
     .replace(/test fixture/gi, 'run configuration')
     .replace(/test handle/gi, 'interface value')
+    .replace(/direct authorization tests/gi, 'direct authorization actions')
+    .replace(/testing call/gi, 'application action')
+    .replace(/\btest action\b/gi, 'application action')
+    .replace(/Do not add another transport\s+only for Stack Bench\./gi,
+      'Use the same transport as the visible application.')
     .replace(/Test ID/gi, 'Element ID')
     .replace(/Test id/gi, 'Element ID')
     .replace(/\bhooks\b/gi, 'controls')

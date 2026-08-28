@@ -73,7 +73,8 @@ test('campaign admission receives only the feature catalog levels in the compile
         return {
           schemaVersion: 1,
           request: { backends: request.backends, track: request.track, levels: request.levelList,
-            runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+            runIndex: request.runIndex, parallelism: request.parallelism,
+            agentAdapter: request.agentAdapter,
             packs: request.packIds, checks: request.checkKeys, image: request.image,
             resultsDir: request.resultsDir, smoke: request.smoke },
           ok: true,

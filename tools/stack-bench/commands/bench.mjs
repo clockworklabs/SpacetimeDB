@@ -478,6 +478,7 @@ function runAgent(args, adapter, mode, level, appDir) {
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
     recipe: agentRecipeIdentity(args.recipe, recipeTask),
     guidanceDocument: args.guidanceDocument,
+    credentialAliases: args.condition?.guidance?.credentialAliases ?? {},
     recipeTask,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   request.pricing = args.pricing;
@@ -608,6 +609,9 @@ export function gradeArgv(args, appDir, url, label, level, track, parentAttemptI
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(args.recipeTasks?.get(level)
       ? ['--recipe-task-json', JSON.stringify(args.recipeTasks.get(level).request)] : []),
+    ...(args.condition?.guidance?.credentialAliases
+      ? ['--credential-aliases-json', JSON.stringify(
+          args.condition.guidance.credentialAliases)] : []),
     ...(observation === 'scored' && args.recipeTasks && !args.progression
       ? ['--regression-checks-json', JSON.stringify([...args.recipeTasks.entries()]
         .filter(([priorLevel]) => priorLevel < level)

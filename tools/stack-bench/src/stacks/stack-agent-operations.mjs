@@ -1,8 +1,11 @@
 import { join, resolve } from 'node:path';
+import { CODING_CONTAINER_AGENT } from '../runtime/coding-container-policy.mjs';
 import { databaseContainerName } from './database-containers.mjs';
+import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.mjs';
 
 export function postgresConnectionUrl({ dbPort, database, hostUrl }) {
-  return hostUrl(`postgresql://stackbench:stackbench@localhost:${dbPort}/${database}`);
+  const { user, password } = POSTGRES_APPLICATION_IDENTITY;
+  return hostUrl(`postgresql://${user}:${password}@localhost:${dbPort}/${database}`);
 }
 
 export function mongoDbConnectionUrl({ dbPort, database, hostUrl }) {
@@ -53,7 +56,8 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
       requiredPaths: [],
       ensureDirectories: [config],
       mounts: [
-        { kind: 'bind', source: config, target: '/home/stackbench/.config/spacetime', readOnly: false },
+        { kind: 'bind', source: config,
+          target: `${CODING_CONTAINER_AGENT.home}/.config/spacetime`, readOnly: false },
         { kind: 'volume', source: releaseVolume, target: '/release-deps', readOnly: true },
       ],
       init: 'set -eu; '
@@ -75,7 +79,8 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
     requiredPaths: [bindings, cli, standalone],
     ensureDirectories: [config],
     mounts: [
-      { kind: 'bind', source: config, target: '/home/stackbench/.config/spacetime', readOnly: false },
+      { kind: 'bind', source: config,
+        target: `${CODING_CONTAINER_AGENT.home}/.config/spacetime`, readOnly: false },
       { kind: 'bind', source: bindings, target: '/deps-src/bindings-typescript', readOnly: true },
       { kind: 'bind', source: cli, target: '/deps/spacetimedb-cli', readOnly: true },
       { kind: 'bind', source: standalone, target: '/deps/spacetimedb-standalone', readOnly: true },

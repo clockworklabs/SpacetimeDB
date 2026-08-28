@@ -133,13 +133,18 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(source, /'--cap-drop', 'ALL'/);
   assert.match(source, /'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'/);
   assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
-  assert.match(source, /'--pids-limit', '512'/);
+  assert.match(source, /'--pids-limit', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.pids\)/);
+  assert.match(source, /'--cpus', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.cpuCount\)/);
+  assert.match(source, /'--memory', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.memoryBytes\)/);
+  assert.match(source,
+    /'--memory-swap', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.memorySwapBytes\)/);
+  assert.match(source, /resourceLimits: structuredClone\(BUILD_CONTAINER_RESOURCE_LIMITS\)/);
   assert.match(source, /'--read-only'/);
   assert.match(source, /'--user', `\$\{AGENT_UID\}:\$\{AGENT_GID\}`/);
   assert.match(source, /'\/tmp': 'rw,nosuid,nodev,mode=1777'/);
   assert.match(source, /'\/deps': 'rw,nosuid,nodev,mode=0755'/);
   assert.match(source, /\[CONTROL_DIR\]: 'rw,nosuid,nodev,mode=0700'/);
-  assert.match(policy, /home: '\/home\/stackbench'/);
+  assert.match(policy, /home: '\/home\/developer'/);
   assert.match(source, /does not have the required isolation/);
   assert.match(source, /'--bare'/);
   assert.doesNotMatch(source, /'\/root':\s*'rw/);

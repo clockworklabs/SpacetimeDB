@@ -153,6 +153,7 @@ function parseArgs(argv) {
       case '--level': a.level = argv[++i]; break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
+      case '--credential-aliases-json': a.credentialAliases = JSON.parse(argv[++i]); break;
       case '--regression-checks-json': a.regressionChecks = JSON.parse(argv[++i]); break;
       case '--observation': a.observation = argv[++i]; break;
       case '--source-sha256': a.sourceSha256 = argv[++i]; break;
@@ -487,16 +488,23 @@ function resetDatabase(args) {
   return { ok: true, detail: null, outcome: null };
 }
 
+export function contractLintArgv(args, selectedTask = null) {
+  const controls = selectedTask ? contractControlIds(selectedTask.task.contractText) : [];
+  const out = join(args.out, 'contract-lint.json');
+  return [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
+      '--track', args.track, '--label', args.label, '--out', out,
+      '--parent-attempt-id', args.bundleArtifactId,
+      ...(args.credentialAliases
+        ? ['--credential-aliases-json', JSON.stringify(args.credentialAliases)] : []),
+      ...controls.flatMap(id => ['--hook', id])];
+}
+
 function lint(args, selectedTask = null) {
   process.stdout.write('  contract lint ... ');
   const out = join(args.out, 'contract-lint.json');
   rmSync(out, { force: true });
   try {
-    const controls = selectedTask ? contractControlIds(selectedTask.task.contractText) : [];
-    run('node', [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
-      '--track', args.track, '--label', args.label, '--out', out,
-      '--parent-attempt-id', args.bundleArtifactId,
-      ...controls.flatMap(id => ['--hook', id])]);
+    run('node', contractLintArgv(args, selectedTask));
   } catch { /* non-zero exit means hooks failed; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = readArtifactPayload(out, { expectedKind: 'contract_lint' });
@@ -541,6 +549,9 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
     ? `${args.recipeTask.recipe.id}@${args.recipeTask.recipe.version}` : null);
   if (requestedRecipe) argv.push('--recipe', requestedRecipe);
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
+  if (args.credentialAliases) {
+    argv.push('--credential-aliases-json', JSON.stringify(args.credentialAliases));
+  }
   if (recordSelection && args.selection?.sha256) {
     argv.push('--selection-sha256', args.selection.evaluationSha256 ?? args.selection.sha256);
   }

@@ -44,7 +44,7 @@ function workspace() {
   const leasePath = join(root, 'lease.json');
   const lease = createBackendLease({
     runId: 'ecommerce-spacetime-run7-test', backend: 'spacetime', track: 'ecommerce', runIndex: 7,
-    serverUri: 'http://127.0.0.1:43210', module: 'stackbench-ecom-run7',
+    serverUri: 'http://127.0.0.1:43210', module: 'app-ecom-run7',
     dataDir: join(root, 'data'),
   });
   lease.state = 'active';
@@ -84,7 +84,7 @@ test('reset uses the harness module and URI instead of generated config', () => 
       stdio: 'pipe',
     });
     const args = readFileSync(ws.capture, 'utf8');
-    assert.match(args, /^publish\nstackbench-ecom-run7\n/m);
+    assert.match(args, /^publish\napp-ecom-run7\n/m);
     assert.match(args, /http:\/\/127\.0\.0\.1:43210/);
     assert.doesNotMatch(args, /victim-module|production\.example/);
   } finally {

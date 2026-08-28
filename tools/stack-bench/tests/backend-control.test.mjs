@@ -28,7 +28,7 @@ test('restart diagnostics are copied only from the exact leased build container'
   const leasePath = join(root, 'lease.json');
   const output = join(root, 'restart.log');
   const lease = createBackendLease({ runId: 'diagnostics-test', backend: 'mongodb',
-    track: 'ecommerce', runIndex: 0, database: 'stackbench_ecom_run0',
+    track: 'ecommerce', runIndex: 0, database: 'app_ecom_run0',
     container: { name: 'database', id: 'd'.repeat(64) } });
   lease.state = 'active';
   lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
@@ -42,7 +42,7 @@ test('restart diagnostics are copied only from the exact leased build container'
   const exec = (command, args, options) => {
     calls.push({ argv: [command, ...args], options });
     if (args[0] === 'inspect') return `${lease.resources.buildContainer.id}\n`;
-    return '===== /run/stack-bench/restart-mongodb-6673.log =====\nserver failed clearly\n';
+    return '===== /run/application/restart-mongodb-6673.log =====\nserver failed clearly\n';
   };
   try {
     assert.deepEqual(captureBackendDiagnostics(output, { exec }), { captured: true, path: output });
@@ -101,7 +101,7 @@ test('hosted backend control inspects and stops listeners as the application use
   });
 
   assert.deepEqual(calls[1].args.slice(0, 7), [
-    'exec', '--user', '10001:10001', '-e', 'HOME=/home/stackbench', '-e', 'USER=stackbench',
+    'exec', '--user', '10001:10001', '-e', 'HOME=/home/developer', '-e', 'USER=developer',
   ]);
   assert.equal(calls[1].args[7], 'leased-build');
   assert.match(calls[1].args.at(-1), /lsof -ti tcp:65534 -sTCP:LISTEN/);

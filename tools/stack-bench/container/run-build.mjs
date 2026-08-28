@@ -27,7 +27,8 @@ import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.m
 import { resolveContainerImage } from '../src/runtime/container-image.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
-import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
+  from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.mjs';
 import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.mjs';
@@ -35,7 +36,8 @@ import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt, startCre
   stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
-import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR }
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
+  codingContainerAgentEnvironment }
   from '../src/runtime/coding-container-policy.mjs';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
@@ -57,6 +59,7 @@ const prepareOnly = argv.includes('--prepare-only');
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
 const { uid: AGENT_UID, gid: AGENT_GID, home: AGENT_HOME } = CODING_CONTAINER_AGENT;
+const AGENT_ENVIRONMENT = codingContainerAgentEnvironment();
 const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
 const REQUIRED_CAPABILITIES = Object.freeze([
   'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID',
@@ -202,6 +205,9 @@ function inspectContainer(name) {
     securityOpt: (inspected.HostConfig?.SecurityOpt ?? [])
       .map(option => option.replace(/:true$/, '')),
     pidsLimit: inspected.HostConfig?.PidsLimit ?? null,
+    nanoCpus: inspected.HostConfig?.NanoCpus ?? null,
+    memoryBytes: inspected.HostConfig?.Memory ?? null,
+    memorySwapBytes: inspected.HostConfig?.MemorySwap ?? null,
     mounts: (inspected.Mounts ?? []).map(mount => ({
       type: mount.Type, source: mount.Source, name: mount.Name ?? null,
       destination: mount.Destination, readOnly: mount.RW !== true,
@@ -233,7 +239,10 @@ function hasRequiredIsolation(container, expectedMounts) {
     && container.capAdd.length === REQUIRED_CAPABILITIES.length
     && container.capDrop.includes('ALL')
     && container.securityOpt.includes('no-new-privileges')
-    && container.pidsLimit === 512
+    && container.pidsLimit === BUILD_CONTAINER_RESOURCE_LIMITS.pids
+    && container.nanoCpus === BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount * 1_000_000_000
+    && container.memoryBytes === BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes
+    && container.memorySwapBytes === BUILD_CONTAINER_RESOURCE_LIMITS.memorySwapBytes
     && container.image === image
     && hasRequiredMounts(container, expectedMounts);
 }
@@ -310,7 +319,10 @@ if (!existing) {
   const create = [
     'run', '-d', '--init', '--name', containerName,
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
-    '--pids-limit', '512',
+    '--pids-limit', String(BUILD_CONTAINER_RESOURCE_LIMITS.pids),
+    '--cpus', String(BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount),
+    '--memory', String(BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes),
+    '--memory-swap', String(BUILD_CONTAINER_RESOURCE_LIMITS.memorySwapBytes),
     // The agent may write the app, its own home directory, and temporary files.
     // It must not replace system binaries or libraries used by later grading.
     '--read-only',
@@ -380,6 +392,7 @@ try {
     next.resources.buildContainer = {
       name: containerName, id: containerId, image: containerImage, owned: true, running: true,
       networkMode: expectedNetworkMode,
+      resourceLimits: structuredClone(BUILD_CONTAINER_RESOURCE_LIMITS),
     };
     return next;
   });
@@ -440,7 +453,7 @@ if (prepareOnly) {
 
 const args = ['exec', '-i', '--user', `${AGENT_UID}:${AGENT_GID}`, '-w', '/app'];
 
-args.push('-e', `HOME=${AGENT_HOME}`, '-e', 'USER=stackbench',
+args.push('-e', `HOME=${AGENT_ENVIRONMENT.HOME}`, '-e', `USER=${AGENT_ENVIRONMENT.USER}`,
   '-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
 const leasedEnvironment = leasedDatabaseEnvironment(adapter, {
   database: leaseContext.lease.resources.database, networkMode: expectedNetworkMode,
@@ -480,7 +493,7 @@ if (opt('--settings')) claudeArgs.push('--settings', opt('--settings'));
 // Record the exact remote PID. Killing the local `docker exec` client does not
 // guarantee that Claude stops inside the long-lived build container.
 const invocationToken = randomBytes(16).toString('hex');
-const processRecord = `/tmp/stack-bench-claude-${invocationToken}.pid`;
+const processRecord = `${CODING_CONTAINER_PROCESS_IDENTITY.recordPrefix}${invocationToken}.pid`;
 const claudeWrapper = 'umask 000; record="$1"; shift; '
   + 'start="$(awk \'{print $22}\' /proc/$$/stat)" || exit 1; '
   + 'printf \'%s %s\\n\' "$$" "$start" > "$record"; exec "$@"';
@@ -497,7 +510,8 @@ try {
 }
 dockerExecEnv.ANTHROPIC_AUTH_TOKEN = credentialBroker.sessionToken;
 args.push('-e', 'ANTHROPIC_AUTH_TOKEN', '-e', `ANTHROPIC_BASE_URL=${credentialBroker.baseUrl}`,
-  containerName, 'sh', '-c', claudeWrapper, 'stack-bench-claude', processRecord,
+  containerName, 'sh', '-c', claudeWrapper, CODING_CONTAINER_PROCESS_IDENTITY.sessionLabel,
+  processRecord,
   'claude', ...claudeArgs);
 
 // MSYS_NO_PATHCONV: Git Bash rewrites container-side paths like /app into
@@ -511,7 +525,7 @@ function signalClaude(signal) {
     + 'current="$(awk \'{print $22}\' "/proc/$pid/stat" 2>/dev/null)" || exit 5; '
     + 'test "$current" = "$expected" || exit 3; kill "-$signal" "$pid"';
   return spawnSync('docker', ['exec', containerName, 'sh', '-c', script,
-    'stack-bench-stop', processRecord, signal], {
+    CODING_CONTAINER_PROCESS_IDENTITY.stopLabel, processRecord, signal], {
     encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
 }

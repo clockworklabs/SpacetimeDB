@@ -1,18 +1,29 @@
 export const CODING_CONTAINER_AGENT = Object.freeze({
-  name: 'stackbench',
+  name: 'developer',
   uid: 10001,
   gid: 10001,
-  home: '/home/stackbench',
+  home: '/home/developer',
 });
 
-export const CODING_CONTAINER_CONTROL_DIR = '/run/stack-bench';
+export const CODING_CONTAINER_CONTROL_DIR = '/run/application';
+
+export const CODING_CONTAINER_PROCESS_IDENTITY = Object.freeze({
+  recordPrefix: '/tmp/developer-session-',
+  sessionLabel: 'developer-session',
+  stopLabel: 'developer-stop',
+});
+
+export function codingContainerAgentEnvironment() {
+  return { HOME: CODING_CONTAINER_AGENT.home, USER: CODING_CONTAINER_AGENT.name };
+}
 
 export function codingContainerAgentExecOptions() {
   const agent = CODING_CONTAINER_AGENT;
-  return ['--user', `${agent.uid}:${agent.gid}`, '-e', `HOME=${agent.home}`,
-    '-e', `USER=${agent.name}`];
+  const environment = codingContainerAgentEnvironment();
+  return ['--user', `${agent.uid}:${agent.gid}`, '-e', `HOME=${environment.HOME}`,
+    '-e', `USER=${environment.USER}`];
 }
 
 export function codingContainerAgentCommand(command, args = []) {
-  return ['sh', '-c', 'umask 000; exec "$@"', 'stack-bench-agent', command, ...args];
+  return ['sh', '-c', 'umask 000; exec "$@"', 'application-command', command, ...args];
 }

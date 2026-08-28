@@ -16,8 +16,8 @@ function withLease(backend, run) {
   const common = { runId: `agent-${backend}-run0-test`, backend, track: track.name, runIndex: 0 };
   const lease = backend === 'spacetime'
     ? createBackendLease({ ...common, serverUri: 'http://127.0.0.1:3210',
-      module: 'stackbench-ecom-run0', dataDir: join(root, 'data') })
-    : createBackendLease({ ...common, database: 'stackbench_ecom_run0',
+      module: 'app-ecom-run0', dataDir: join(root, 'data') })
+    : createBackendLease({ ...common, database: 'app_ecom_run0',
       container: { name: `stack-bench-${backend}`, id: backend.repeat(8) } });
   lease.state = 'active';
   writeBackendLease(path, lease);
@@ -60,7 +60,7 @@ test('a PostgreSQL wipe failure aborts a supposedly clean build', () => {
       return '';
     };
     assert.throws(() => ensureDatabase('postgres', 0, null, track, true, { exec }),
-      /could not wipe stackbench_ecom_run0/);
+      /could not wipe app_ecom_run0/);
   });
 });
 
@@ -71,7 +71,7 @@ test('a MongoDB wipe failure aborts a supposedly clean build', () => {
       throw new Error('wipe failed');
     };
     assert.throws(() => ensureDatabase('mongodb', 0, null, track, true, { exec }),
-      /could not wipe stackbench_ecom_run0/);
+      /could not wipe app_ecom_run0/);
   });
 });
 
@@ -81,7 +81,7 @@ test('Spacetime cleanup ignores absence but rejects authorization and transport 
     assert.doesNotThrow(() => ensureDatabase('spacetime', 0, null, track, true,
       { exec: () => { throw absent; }, stdbBin: 'spacetime-test' }));
     const currentCliAbsent = Object.assign(new Error('command failed'),
-      { stderr: Buffer.from('Error: failed to find database `stackbench-ecom-run0`.\n') });
+      { stderr: Buffer.from('Error: failed to find database `app-ecom-run0`.\n') });
     assert.doesNotThrow(() => ensureDatabase('spacetime', 0, null, track, true,
       { exec: () => { throw currentCliAbsent; }, stdbBin: 'spacetime-test' }));
     const unauthorized = Object.assign(new Error('401 Unauthorized'), { stderr: '401 Unauthorized' });

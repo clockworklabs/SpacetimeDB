@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { harnessBrowserFailure, harnessProcessFailure,
   runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { materializeScenarioCredentials } from '../src/composition/credential-aliases.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
@@ -114,6 +115,7 @@ function parseArgs(argv) {
       case '--recipe': args.recipe = argv[++i]; break;
       case '--expected-recipe-sha256': args.expectedRecipeSha256 = argv[++i]; break;
       case '--selected-check': args.selectedCheckKeys.push(argv[++i]); break;
+      case '--credential-aliases-json': args.credentialAliases = JSON.parse(argv[++i]); break;
       case '--selection-sha256': args.selectionSha256 = argv[++i]; break;
       case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
       // Which database to write to directly for out-of-band writes.
@@ -793,7 +795,9 @@ async function main() {
   const specPath = args.spec ? args.spec : join(ROOT, 'scenarios', `level-${String(args.level).padStart(2, '0')}.json`);
   let spec;
   try {
-    spec = compileScenarioDefinition(JSON.parse(readFileSync(specPath, 'utf8')), { source: specPath });
+    const compiled = compileScenarioDefinition(JSON.parse(readFileSync(specPath, 'utf8')),
+      { source: specPath });
+    spec = materializeScenarioCredentials(compiled, args.credentialAliases);
   } catch (error) {
     throw new Error(`cannot compile scenario ${specPath}: ${error.message}`, { cause: error });
   }

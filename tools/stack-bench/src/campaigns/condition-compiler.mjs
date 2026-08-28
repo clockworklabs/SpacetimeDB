@@ -5,6 +5,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
+import { validateCredentialAliases } from '../composition/credential-aliases.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
@@ -15,10 +16,12 @@ const REF = /^([a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at, message) => { throw new Error(`invalid study condition at ${at}: ${message}`); };
 
-function strict(value, at, fields) {
+function strict(value, at, fields, optional = new Set()) {
   if (!object(value)) fail(at, 'must be an object');
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
-  for (const key of fields) if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
+  for (const key of fields) {
+    if (!optional.has(key) && !Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
+  }
 }
 
 function contained(root, path, at) {
@@ -77,9 +80,9 @@ function readProfile(catalog, section, reference) {
   return { match, path, profile };
 }
 
-function loadProfile(catalog, section, reference, kind, fields) {
+function loadProfile(catalog, section, reference, kind, fields, optional = new Set()) {
   const { match, path, profile } = readProfile(catalog, section, reference);
-  strict(profile, reference, fields);
+  strict(profile, reference, fields, optional);
   validateIdentityFields(profile, reference, kind);
   if (profile.id !== match[1] || profile.version !== match[2]) fail(reference, 'does not match the loaded profile identity');
   return { profile, path };
@@ -87,9 +90,9 @@ function loadProfile(catalog, section, reference, kind, fields) {
 
 function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
   const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'mode', 'material',
-    'documents', 'skills']);
+    'documents', 'skills', 'credentialAliases']);
   const { profile } = loadProfile(catalog, 'guidanceProfiles', reference,
-    'backend-guidance-profile', fields);
+    'backend-guidance-profile', fields, new Set(['credentialAliases']));
   if (!['prescribed', 'neutral'].includes(profile.mode)) fail(`${reference}.mode`, 'must be prescribed or neutral');
   strict(profile.material, `${reference}.material`, new Set(['accessFacts', 'apiReference', 'designAdvice']));
   for (const field of ['accessFacts', 'apiReference', 'designAdvice']) {
@@ -119,8 +122,14 @@ function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
     catch (error) { fail(`${reference}.skills.${stack}`, `cannot be read: ${error.message}`); }
     skills[stack] = { ids: [...ids], sha256: sha256(text), bytes: Buffer.byteLength(text) };
   }
-  return { ...identity(profile, { documents, skills }), mode: profile.mode,
-    material: profile.material, documents, skills };
+  const hasCredentialAliases = Object.hasOwn(profile, 'credentialAliases');
+  const credentialAliases = hasCredentialAliases
+    ? validateCredentialAliases(profile.credentialAliases, `${reference}.credentialAliases`)
+    : null;
+  const resolved = hasCredentialAliases ? { documents, skills, credentialAliases } : { documents, skills };
+  return { ...identity(profile, resolved), mode: profile.mode,
+    material: profile.material, documents, skills,
+    ...(hasCredentialAliases ? { credentialAliases } : {}) };
 }
 
 // Public review surface for tooling that must inspect the exact guidance

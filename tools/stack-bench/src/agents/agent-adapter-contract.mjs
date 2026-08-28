@@ -275,6 +275,8 @@ export function agentRequestArgv(adapter, request) {
     ...(request.recipe ? ['--recipe', request.recipe] : []),
     ...(request.guidanceDocument
       ? ['--guidance-document-json', JSON.stringify(request.guidanceDocument)] : []),
+    ...(request.credentialAliases && Object.keys(request.credentialAliases).length
+      ? ['--credential-aliases-json', JSON.stringify(request.credentialAliases)] : []),
     ...(Array.isArray(request.skills)
       ? ['--skills-json', JSON.stringify(request.skills)] : []),
     ...(request.recipeTask

@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../src/runtime/preflight.mjs';
+import { parsePreflightArgs, probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
+  from '../src/runtime/preflight.mjs';
 import { isExactImageReference } from '../src/runtime/container-image.mjs';
 import { createArtifact, validateArtifact } from '../src/evidence/artifacts.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
@@ -24,6 +25,24 @@ function request(root, extra = []) {
   return parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub', '--track', 'loop',
     '--levels', '1', '--agent-adapter', 'deterministic', '--results-dir', root, ...extra]);
 }
+
+test('PostgreSQL preflight proves the configured role, password, and database', () => {
+  let command;
+  const identity = verifyPostgresServiceIdentity('stack-bench-postgres', {
+    execute: (file, args) => {
+      command = [file, ...args];
+      return 'appuser|app\n';
+    },
+  });
+  assert.equal(identity, 'appuser|app');
+  assert.deepEqual(command.slice(0, 4),
+    ['docker', 'exec', '-e', 'PGPASSWORD=local-app-password']);
+  assert(command.includes('stack-bench-postgres'));
+  assert(command.includes('127.0.0.1'));
+  assert.throws(() => verifyPostgresServiceIdentity('stack-bench-postgres', {
+    execute: () => 'stackbench|stackbench\n',
+  }), /expected appuser\|app/);
+});
 
 test('preflight validates exact scope and a model-free container/result-volume smoke', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-'));
@@ -115,6 +134,31 @@ test('preflight does not count Docker info latency as clock skew', () => {
     const clock = report.checks.find(check => check.id === 'docker.clock');
     assert.equal(clock.status, 'pass', clock.summary);
     assert.equal(clock.summary, 'host/engine skew 0 ms');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('preflight reserves capacity for all concurrent build containers', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-parallel-capacity-'));
+  try {
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo({ NCPU: 7, MemTotal: 15 * 1024 ** 3 });
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const report = runPreflight(request(root, ['--parallelism', '3']), {
+      run, now: Date.parse('2026-08-12T12:00:00.100Z'), env: {}, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
+    });
+    assert.equal(report.request.parallelism, 3);
+    assert.equal(report.checks.find(check => check.id === 'docker.cpu').status, 'fail');
+    assert.match(report.checks.find(check => check.id === 'docker.cpu').remediation,
+      /at least 10 CPUs/);
+    assert.equal(report.checks.find(check => check.id === 'docker.memory').status, 'fail');
+    assert.match(report.checks.find(check => check.id === 'docker.memory').remediation,
+      /at least 20\.0 GiB/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

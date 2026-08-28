@@ -4,19 +4,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { calibrationQualificationIdentity, calibrationQualificationRelease, canReuseQualificationScope,
+import { calibrationCoversAlias, calibrationQualificationIdentity,
+  calibrationQualificationRelease, canReuseQualificationScope,
   compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, hasExactSelectedPackRuntime, resolveCalibrationForRelease,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { checkCalibrations } from '../commands/check-calibration.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');
 const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-modular-2.5.0.json');
+const PROGRESSION_CALIBRATION = join(TRACK.dir, 'composition', 'calibrations',
+  'progression-l1-l3-1.1.0.json');
 
 test('qualification runtime must cover the exact selected pack set', () => {
   const release = { checkCatalog: [{ packId: 'accounts' }, { packId: 'accounts' },
@@ -42,6 +45,12 @@ function current() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
+function qualifiedProgression() {
+  const binding = resolveRecipeRelease(TRACK, 3, 'ecommerce.progression-l1-l3@1.1.0');
+  return { binding, plan: compileCalibrationFile(PROGRESSION_CALIBRATION,
+    { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
+}
+
 function withCurrentScope(artifact, entry, context) {
   const scoped = structuredClone(artifact);
   const reference = entry.kind === 'null' ? null
@@ -55,23 +64,21 @@ function withCurrentScope(artifact, entry, context) {
   return scoped;
 }
 
-test('runtime calibration resolution binds the qualified L1 and L2 releases', () => {
+test('runtime calibration resolution exposes the pending L1 candidate', () => {
   const l1 = resolveRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1,
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, alias: 'L1' });
   assert.equal(resolved.id, 'ecommerce.l1-modular-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
-  const l2 = resolveRecipeRelease(TRACK, 2).release;
-  const qualified = resolveCalibrationForRelease(l2,
-    { trackRoot: TRACK.dir, stackBenchRoot: ROOT, alias: 'L2' });
-  assert.equal(qualified.id, 'ecommerce.l2-standard-calibration');
-  assert.equal(qualified.state, 'qualified');
-  assert.deepEqual(qualified.qualification.stacks.map(stack => stack.status),
-    ['qualified', 'qualified', 'qualified']);
-  assert.equal(qualified.qualification.evidence.length, 7);
-  assert.deepEqual(qualified.qualification.runner, {
+  assert.equal(resolved.state, 'draft');
+  assert.deepEqual(resolved.qualification.stacks.map(stack => stack.status),
+    ['candidate', 'candidate', 'candidate']);
+  assert.deepEqual(resolved.qualification.evidence, []);
+  assert.deepEqual(resolved.qualification.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
+  assert.throws(() => resolveRecipeRelease(TRACK, 2, 'ecommerce.l2-standard@1.6.0'),
+    /requires exactly one promoted L1 base; found 0/);
 });
 
 test('runtime calibration resolution uses the requested level alias', () => {
@@ -81,6 +88,38 @@ test('runtime calibration resolution uses the requested level alias', () => {
   assert.equal(resolveCalibrationForRelease(release, { ...options, alias: 'L3' })?.id,
     'ecommerce.progression-calibration');
   assert.equal(resolveCalibrationForRelease(release, { ...options, alias: 'L2' }), null);
+});
+
+test('one cumulative calibration covers each promoted lower alias of the same recipe', () => {
+  const options = { trackRoot: TRACK.dir, stackBenchRoot: ROOT };
+  for (const level of [1, 2, 3]) {
+    const release = resolveRecipeRelease(TRACK, level,
+      'ecommerce.progression-l1-l3@1.1.0').release;
+    assert.equal(release.id, 'ecommerce.progression-l1-l3');
+    const calibration = resolveCalibrationForRelease(release,
+      { ...options, alias: `L${level}` });
+    assert.equal(calibration.id, 'ecommerce.progression-l1-l3-calibration');
+    assert.equal(calibration.promotion.alias, 'L3');
+  }
+});
+
+test('cumulative aliases must name the exact calibrated recipe source', () => {
+  const release = resolveRecipeRelease(TRACK, 3,
+    'ecommerce.progression-l1-l3@1.1.0').release;
+  const calibration = resolveCalibrationForRelease(release,
+    { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  const catalogPath = join(TRACK.dir, 'composition', 'candidates.json');
+  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
+  catalog.entries.find(entry => entry.alias === 'L1'
+    && entry.recipe.id === release.id && entry.recipe.version === release.version).recipe.path =
+    'recipes/progression-l1-l3-1.0.0.json';
+  assert.equal(calibrationCoversAlias(calibration, release, 'L1',
+    { catalog, catalogPath, trackRoot: TRACK.dir }), false);
+  catalog.entries.find(entry => entry.alias === 'L3'
+    && entry.recipe.id === release.id && entry.recipe.version === release.version).recipe.path =
+    'recipes/progression-l1-l3-1.0.0.json';
+  assert.equal(calibrationCoversAlias(calibration, release, 'L3',
+    { catalog, catalogPath, trackRoot: TRACK.dir }), false);
 });
 
 function temporaryCalibration(change) {
@@ -139,7 +178,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   const first = current().plan;
   const second = current().plan;
   assert.deepEqual(first, second);
-  assert.equal(first.state, 'qualified');
+  assert.equal(first.state, 'draft');
   assert.equal(first.recipe.contentSha256, current().binding.release.contentSha256);
   assert.equal(first.fixture.sourceSha256, current().binding.release.components.fixture.sha256);
   assert.equal(first.references.entries.length, 3);
@@ -158,28 +197,23 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.match(first.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
+    .filter(result => result.id === 'ecommerce.l1-modular-calibration'
+      || result.id === 'ecommerce.l2-standard-calibration')
     .map(result => `${result.id}@${result.version}:${result.state}`), [
-    'ecommerce.l1-modular-calibration@2.3.0:qualified',
-    'ecommerce.l1-modular-calibration@2.4.0:qualified',
-    'ecommerce.l1-modular-calibration@2.5.0:qualified',
-    'ecommerce.l1-standard-calibration@1.0.0:qualified',
-    'ecommerce.l1-standard-calibration@1.1.0:qualified',
-    'ecommerce.l2-standard-calibration@1.1.0:qualified',
-    'ecommerce.l2-standard-calibration@1.2.0:qualified',
-    'ecommerce.l2-standard-calibration@1.4.0:qualified',
-    'ecommerce.l2-standard-calibration@1.5.0:qualified',
-    'ecommerce.l2-standard-calibration@1.6.0:qualified',
+    'ecommerce.l1-modular-calibration@2.5.0:draft',
+    'ecommerce.l2-standard-calibration@1.6.0:draft',
   ]);
 });
 
 test('qualification evidence is semantically bound and tampering fails closed', () => {
-  const { binding, plan } = current();
+  const { binding, plan } = qualifiedProgression();
+  const qualified = calibrationQualificationRelease(plan, binding.release, binding.execution);
   const context = {
     calibration: plan,
     qualificationIdentity: calibrationQualificationIdentity(plan),
-    release: binding.release,
+    release: qualified.release,
     references: plan.references.entries,
-    execution: binding.execution,
+    execution: qualified.execution,
     stackBenchRoot: ROOT,
   };
   const referenceEntry = plan.qualification.evidence.find(entry =>
@@ -208,7 +242,6 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   };
   const runnerIdentity = calibrationQualificationIdentity(runnerBound);
   const runnerReference = structuredClone(scopedReference);
-  runnerReference.identities.calibration = { ...runnerIdentity, state: runnerBound.state };
   runnerReference.payload.runner = { ...runnerBound.qualification.runner,
     dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
     kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 };
@@ -232,54 +265,30 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     /complete null policy/);
 });
 
-test('the qualified L2 release keeps its score contract and binds fresh qualification evidence', () => {
-  const binding = resolveRecipeRelease(TRACK, 2);
+test('the L2 candidate keeps its score contract while qualification is pending', () => {
+  const release = buildRecipeRelease(
+    join(TRACK.dir, 'composition', 'recipes', 'l2-standard-1.6.0.json'),
+    { trackRoot: TRACK.dir });
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
     'l2-standard-1.6.0.json'), {
-    trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
+    trackRoot: TRACK.dir, stackBenchRoot: ROOT, release,
   });
-  assert.equal(binding.release.scoring.points, 117);
-  assert.equal(binding.alias, 'L2');
-  assert.equal(binding.status, 'promoted');
-  assert.equal(plan.state, 'qualified');
-  assert.equal(plan.qualification.evidence.length, 7);
-  assert.equal(new Set(plan.qualification.evidence.map(entry => entry.path)).size, 7);
-  const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'
-    && evidence.stack === 'mongodb' && evidence.repetition === 1);
-  const artifact = readArtifact(join(ROOT, entry.path));
-  const context = { calibration: plan, qualificationIdentity: calibrationQualificationIdentity(plan),
-    release: binding.release, references: plan.references.entries, execution: binding.execution,
-    stackBenchRoot: ROOT };
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(
-    withCurrentScope(artifact, entry, context), entry, context));
+  assert.equal(release.scoring.points, 117);
+  assert.equal(plan.state, 'draft');
+  assert.equal(plan.promotion.status, 'candidate');
+  assert.deepEqual(plan.qualification.evidence, []);
 });
 
 test('qualification uses typed ownership when inherited execution ids are renamed', () => {
-  const binding = resolveRecipeRelease(TRACK, 2);
-  const release = structuredClone(binding.release);
-  const execution = structuredClone(binding.execution);
-  const rename = id => id.replace(/@L1$/, '-base');
-  for (const entry of execution) entry.id = rename(entry.id);
-  for (const check of release.checkCatalog) check.executionId = rename(check.executionId);
-
-  assert.equal(currentLevelPoints(release, execution), 59);
-  const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.6.0.json'), {
-    trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
-  });
-  const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'
-    && evidence.stack === 'mongodb' && evidence.repetition === 1);
-  const artifact = readArtifact(join(ROOT, entry.path));
-  const context = {
-    calibration: plan,
-    qualificationIdentity: calibrationQualificationIdentity(plan),
-    release,
-    references: plan.references.entries,
-    execution,
-    stackBenchRoot: ROOT,
-  };
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(
-    withCurrentScope(artifact, entry, context), entry, context));
+  const release = { checkCatalog: [
+    { stableKey: 'base', executionId: 'renamed-base', points: 5 },
+    { stableKey: 'current', executionId: 'current', points: 3 },
+  ] };
+  const execution = [
+    { id: 'renamed-base', ownership: { kind: 'inherited' } },
+    { id: 'current', ownership: { kind: 'current' } },
+  ];
+  assert.equal(currentLevelPoints(release, execution), 3);
 });
 
 test('qualification identity excludes governance transitions but binds executable controls', () => {
@@ -340,12 +349,11 @@ test('every zero-point check requires one typed policy with valid mutation targe
   }), /duplicates|not an unassigned/);
 });
 
-test('qualified calibration cannot downgrade a supported stack or its promoted state', () => {
-  assert.throws(() => compileChanged(value => {
-    value.qualification.stacks[0].status = 'candidate';
-  }), /every supported stack must be qualified/);
-  assert.throws(() => compileChanged(value => { value.state = 'draft'; }),
-    /promoted alias requires a qualified calibration/);
+test('pending calibration cannot claim qualification or promotion', () => {
+  assert.throws(() => compileChanged(value => { value.state = 'qualified'; }),
+    /every supported stack must be qualified/);
+  assert.throws(() => compileChanged(value => { value.promotion.status = 'promoted'; }),
+    /does not resolve to this recipe at the declared status/);
 });
 
 test('equivalence decisions require two distinct executions and hash-bound evidence', () => {

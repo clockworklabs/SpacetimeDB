@@ -14,7 +14,7 @@
     "executionSha256": "d728eff6c9e10769352ff510eaa722caeba05b377d65db36c066ea29a234c67f"
   },
   "checksSha256": "3dfe9733a580ca89c0176993e2588e9c800bbd6c3c4c9030117e376ed71c780f",
-  "reason": "Prompt execution and qualification inputs are unchanged. Later executable changes harden agent isolation, source evidence, cost proof, repair continuation, and stable selectors. Targeted tests cover those paths. The prior mutation corpus is unchanged.",
+  "reason": "The selected checks, points, reference sources, mutation definitions, and model-free grading inputs are unchanged. The executable changes affect runtime isolation, evidence validation, cost validation, repair control, prompt sanitization, and credential aliases. Focused tests cover those changes.",
   "verification": [
     {
       "command": "node --test --test-name-pattern=qualification reuse tools/stack-bench/tests/calibration-compiler.test.mjs",
@@ -30,42 +30,42 @@
       "kind": "reference",
       "stack": "mongodb",
       "fromExecutableSha256": "98c450c7fbb109a3f1c0ef6ff28f68504ada8a4bc1aa663c6ca1d1fc67aadddd",
-      "toExecutableSha256": "604db0752669089df3aa703d6977c68a569549cabebd172c6395300d05cac5f2"
+      "toExecutableSha256": "baf1857d97234cf56fe0ccf4e23f1276eb880c45896628bc1bf228c4099d2803"
     },
     {
       "kind": "mutation",
       "stack": "mongodb",
       "fromExecutableSha256": "bcd2b116b0d7602f79efd503076964eeee68b69733b9e97882fa0cb5fbfe8edb",
-      "toExecutableSha256": "7292025736eab1f9fc230ce27f9f290469f6d9f303c460e01635b2b610dfd516"
+      "toExecutableSha256": "6b6f75699df8d56ebcae5b975e5607857d44d05def46d6fa15e4b01b3633bbb5"
     },
     {
       "kind": "reference",
       "stack": "postgres",
       "fromExecutableSha256": "0669dc8a90aaca4d41146c6aaf767b193b8e347ac487a47f4357653f461b5c69",
-      "toExecutableSha256": "f2adfd8aade6c6d8c985d45cb83485f741b25d29af4e6f5814ce85083e31fa1c"
+      "toExecutableSha256": "4d14e6ed4fbae5e3a318186b87ad747f97455b7485646bc13e43a865f4b9f6a7"
     },
     {
       "kind": "mutation",
       "stack": "postgres",
       "fromExecutableSha256": "aabc9df6193a8aa48534afaab9356cf1d01473973ce1de2456dc4e5c42af0b58",
-      "toExecutableSha256": "b1abd660c455fbbf6d5342582d9e03be1d0a3e16f5ffb717ac9decf9222601a4"
+      "toExecutableSha256": "ba714f0a7f1014262250b99bcd6628bbaaf50e6e1ba476efae432c8eaa3d8c2a"
     },
     {
       "kind": "reference",
       "stack": "spacetime",
       "fromExecutableSha256": "9d4033ad1a4a6b5992c4e5f9a0014c58a3d5793f5a36f65470c29c2a85bb0a41",
-      "toExecutableSha256": "b1da59b046e3762e96f4cc766d8248a38f2b28964b02cf84c2237cd9bd44d3e4"
+      "toExecutableSha256": "9c5eb1f8376f060cdcaf4c1515d800b1958a57b7c6fa495556b0cd9bc0e13c2e"
     },
     {
       "kind": "mutation",
       "stack": "spacetime",
       "fromExecutableSha256": "72868eeb2c8b3aa07e233b7403788dd6b1797a5854779c66cabc2e2d7cf389a6",
-      "toExecutableSha256": "2ca9b37e7ff43a18f767c140d036fc80df523cd7c33321a164b9100594c83318"
+      "toExecutableSha256": "08d752745f5ffc1c1da88174bff1ede0e63321d44d92cf1a582d901544cb6de4"
     },
     {
       "kind": "null",
       "fromExecutableSha256": "a6a1f2a23c385275242edc1ecda29662301a67582449b1d7c2fa5e0e83ab2393",
-      "toExecutableSha256": "fbddb19798f3a80e7a3fc56c24f2c4bf2a82170204e70d27c89dd8fc37412aea"
+      "toExecutableSha256": "6e3413d009b1c6ed4d33f5c1f31964a8d6d97ac803dde05910f2f14da4503d1e"
     }
   ]
 }

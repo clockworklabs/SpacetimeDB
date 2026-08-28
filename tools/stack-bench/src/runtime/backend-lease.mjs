@@ -101,6 +101,14 @@ export function validateBackendLease(lease, { token, backend, runId, active = fa
       && !['bridge', 'host'].includes(lease.resources.buildContainer.networkMode)) {
       fail('buildContainer.networkMode is invalid');
     }
+    const limits = lease.resources.buildContainer.resourceLimits;
+    const fields = ['cpuCount', 'memoryBytes', 'memorySwapBytes', 'pids'];
+    if (!limits || typeof limits !== 'object' || Array.isArray(limits)
+      || Object.keys(limits).some(key => !fields.includes(key))
+      || fields.some(field => !Number.isSafeInteger(limits[field]) || limits[field] < 1)
+      || limits.memorySwapBytes < limits.memoryBytes) {
+      fail('buildContainer.resourceLimits is invalid');
+    }
   }
   if (!Array.isArray(lease.resources?.locks)) fail('locks must be an array');
   if (lease.resources.launchedPid !== null

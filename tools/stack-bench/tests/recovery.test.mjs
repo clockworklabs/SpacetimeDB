@@ -19,7 +19,7 @@ function fixture({ state = 'active' } = {}) {
   const locks = join(root, 'locks');
   mkdirSync(output, { recursive: true });
   const lease = createBackendLease({ runId: 'recovery-postgres-run0', backend: 'postgres',
-    track: 'ecommerce', runIndex: 0, database: 'stackbench_recovery',
+    track: 'ecommerce', runIndex: 0, database: 'app_recovery',
     container: { name: 'stack-bench-postgres', id: 'postgres-id' } });
   lease.state = state;
   lease.resources.locks.push(acquireResourceLock({ root: locks,

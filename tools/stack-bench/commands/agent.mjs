@@ -235,6 +235,7 @@ function parseArgs(argv) {
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
+      case '--credential-aliases-json': a.credentialAliases = JSON.parse(argv[++i]); break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
       case '--thinking': a.thinking = argv[++i]; break;
@@ -482,7 +483,7 @@ export function buildPrompt(args, p, track, materials = {}) {
     '',
     '## Stack',
     '',
-    agentVisibleContractText(backendDoc(args, p, track)),
+    agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases),
   ];
   const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
   if (skills) common.push('', '## Selected API reference', '', skills);
@@ -535,11 +536,13 @@ export function buildPrompt(args, p, track, materials = {}) {
     '',
     ...common,
     '',
-    agentVisibleContractText(materials.requirementText ?? levelPrompt(track, args.level)),
+    agentVisibleContractText(materials.requirementText ?? levelPrompt(track, args.level),
+      args.credentialAliases),
     '',
     '## Application interface',
     '',
-    agentVisibleContractText(materials.contractText ?? appendix(track, args.level)),
+    agentVisibleContractText(materials.contractText ?? appendix(track, args.level),
+      args.credentialAliases),
   ].join('\n');
 }
 

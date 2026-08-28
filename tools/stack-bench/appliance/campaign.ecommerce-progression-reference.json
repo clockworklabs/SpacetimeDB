@@ -35,7 +35,7 @@
     {
       "id": "reference-pilot",
       "version": "1.0.0",
-      "guidanceProfile": "neutral@1.1.0",
+      "guidanceProfile": "neutral@1.2.0",
       "repairPolicy": "scored-only@1.0.0"
     }
   ],

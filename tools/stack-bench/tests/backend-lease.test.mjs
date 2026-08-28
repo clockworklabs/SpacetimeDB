@@ -28,7 +28,7 @@ function fixture() {
   const path = join(root, 'lease.json');
   const lease = createBackendLease({
     runId: 'chat-spacetime-run0-test', backend: 'spacetime', track: 'chat', runIndex: 0,
-    serverUri: 'http://127.0.0.1:3210', module: 'stackbench-run0', dataDir: join(root, 'data'),
+    serverUri: 'http://127.0.0.1:3210', module: 'app-run0', dataDir: join(root, 'data'),
   });
   return { root, path, lease };
 }
@@ -91,20 +91,34 @@ test('leases reject unknown lifecycle states and malformed process identities', 
   f.lease.resources.buildContainer = { name: 'build', id: 'container-id', image: 'image-id',
     owned: true, networkMode: 'ambient' };
   assert.throws(() => writeBackendLease(f.path, f.lease), /buildContainer.networkMode is invalid/);
+  f.lease.resources.buildContainer.networkMode = 'bridge';
+  assert.throws(() => writeBackendLease(f.path, f.lease),
+    /buildContainer.resourceLimits is invalid/);
+  f.lease.resources.buildContainer.resourceLimits = {
+    cpuCount: 2, memoryBytes: 4096, memorySwapBytes: 2048, pids: 512,
+  };
+  assert.throws(() => writeBackendLease(f.path, f.lease),
+    /buildContainer.resourceLimits is invalid/);
 });
 
 test('public lease evidence hashes rather than exposes the ownership token', () => {
   const f = fixture();
   try {
+    f.lease.resources.buildContainer = { name: 'build', id: 'container-id', image: 'image-id',
+      owned: true, networkMode: 'bridge', resourceLimits: {
+        cpuCount: 2, memoryBytes: 4096, memorySwapBytes: 4096, pids: 512,
+      } };
     const publicLease = publicBackendLease(f.lease);
     assert.equal(publicLease.ownershipToken, undefined);
     assert.match(publicLease.ownership.markerSha256, /^[0-9a-f]{64}$/);
+    assert.deepEqual(publicLease.resources.buildContainer.resourceLimits,
+      { cpuCount: 2, memoryBytes: 4096, memorySwapBytes: 4096, pids: 512 });
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
 test('Spacetime leases reject non-loopback and portless targets', () => {
   const base = { runId: 'unsafe', backend: 'spacetime', track: 'chat', runIndex: 0,
-    module: 'stackbench-run0', dataDir: tmpdir() };
+    module: 'app-run0', dataDir: tmpdir() };
   assert.throws(() => createBackendLease({ ...base, serverUri: 'https://production.example:443' }),
     /must use http/);
   assert.throws(() => createBackendLease({ ...base, serverUri: 'http://localhost' }),
@@ -117,7 +131,7 @@ test('supervisor teardown releases an owned lease without runtime processes', ()
   try {
     const lease = createBackendLease({
       runId: 'chat-postgres-run0-supervisor', backend: 'postgres', track: 'chat', runIndex: 0,
-      database: 'stackbench_supervisor', container: { name: 'unused-postgres', id: 'unused-id' },
+      database: 'app_supervisor', container: { name: 'unused-postgres', id: 'unused-id' },
     });
     lease.state = 'active';
     writeBackendLease(path, lease);
@@ -207,7 +221,7 @@ test('listener operations refuse a process not captured by the lease', async () 
     const port = server.address().port;
     const lease = createBackendLease({
       runId: 'listener-refusal', backend: 'spacetime', track: 'chat', runIndex: 0,
-      serverUri: `http://127.0.0.1:${port}`, module: 'stackbench-run0', dataDir: join(root, 'data'),
+      serverUri: `http://127.0.0.1:${port}`, module: 'app-run0', dataDir: join(root, 'data'),
     });
     lease.state = 'active';
     lease.resources.listenerPids = [process.pid + 1000];
@@ -240,7 +254,7 @@ test('resource locks exclude a concurrent run and release only for their owner',
 
 test('bench and reference leases use the same canonical slot and backend keys', () => {
   const input = { backend: 'spacetime', track: 'ecommerce', runIndex: 0,
-    serverUri: 'http://127.0.0.1:3310', module: 'stackbench-ecom-run0',
+    serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
     dataDir: tmpdir() };
   const bench = createBackendLease({ ...input, runId: 'bench' });
   const reference = createBackendLease({ ...input, runId: 'reference' });

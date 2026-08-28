@@ -14,7 +14,7 @@ test('PostgreSQL reference deployment uses its locked schema tool', async () => 
   writeFileSync(join(app, 'server', 'package.json'), JSON.stringify({ scripts: { start: 'node server.js' } }));
   const dockerCalls = [];
   const helpers = {
-    dbName() { return 'stackbench_ecom_run0'; },
+    dbName() { return 'app_ecom_run0'; },
     runSync(label) {
       return label === 'inspecting leased database container' ? 'container-id\n' : '';
     },
@@ -29,7 +29,7 @@ test('PostgreSQL reference deployment uses its locked schema tool', async () => 
       args: { app, backend: 'postgres', runIndex: 0 },
       metadata: { installDirectories: [], server: { directory: 'server' },
         client: { directory: 'client' } },
-      lease: { resources: { database: 'stackbench_ecom_run0',
+      lease: { resources: { database: 'app_ecom_run0',
         container: { name: 'postgres', id: 'container-id' } } },
       track: { restartProbe: '/api/items' }, container: 'build-0',
       ports: { dbPort: 6532, express: 6301, vite: 6573 }, buildNetworkMode: 'host', helpers,
@@ -39,7 +39,7 @@ test('PostgreSQL reference deployment uses its locked schema tool', async () => 
     assert.deepEqual(dockerCalls[0].slice(0, 4), [
       'build-0', '/app/server', './node_modules/.bin/drizzle-kit', ['push', '--force'],
     ]);
-    assert.match(dockerCalls[0][4].DATABASE_URL, /stackbench_ecom_run0/);
+    assert.match(dockerCalls[0][4].DATABASE_URL, /app_ecom_run0/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -53,7 +53,7 @@ test('hosted reference credentials stay in process environment', async () => {
     writeFileSync(join(app, 'server', 'package.json'), JSON.stringify({ scripts: { start: 'node server.js' } }));
     const starts = [];
     const helpers = {
-      dbName() { return 'stackbench_ecom_run0'; },
+      dbName() { return 'app_ecom_run0'; },
       runSync(label) {
         return label === 'inspecting leased database container' ? 'container-id\n' : '';
       },
@@ -67,13 +67,13 @@ test('hosted reference credentials stay in process environment', async () => {
       args: { app, backend: 'mongodb', runIndex: 0 },
       metadata: { installDirectories: [], server: { directory: 'server' },
         client: { directory: 'client' } },
-      lease: { resources: { database: 'stackbench_ecom_run0',
+      lease: { resources: { database: 'app_ecom_run0',
         container: { name: 'mongodb', id: 'container-id' } } },
       track: {}, container: 'build-0', ports: { dbPort: 6537, express: 6401, vite: 6673 },
       buildNetworkMode: 'host', helpers,
     });
     assert.equal(existsSync(join(app, 'server', '.env')), false);
-    assert.match(starts[0][3].DATABASE_URL, /stackbench_ecom_run0/);
+    assert.match(starts[0][3].DATABASE_URL, /app_ecom_run0/);
     assert.equal(starts[0][3].PORT, '6401');
     assert.equal(starts[0][3].JWT_SECRET, 'stack-bench-reference-only-secret-2026');
   } finally {

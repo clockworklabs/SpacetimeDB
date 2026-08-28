@@ -39,7 +39,7 @@ test('build-container plans expose only artifacts owned by the selected stack', 
     'build-container', 'plan', { repo, appDir });
   assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/spacetimedb-cli'), true);
   assert.equal(spacetime.mounts.some(mount =>
-    mount.target === '/home/stackbench/.config/spacetime'), true);
+    mount.target === '/home/developer/.config/spacetime'), true);
   assert.equal(spacetime.readyFile, '/deps/.ready');
   assert.equal(spacetime.networkNamespace, null);
   const appliance = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
@@ -50,7 +50,7 @@ test('build-container plans expose only artifacts owned by the selected stack', 
   assert.deepEqual(appliance.requiredPaths, []);
   assert.deepEqual(appliance.mounts, [
     { kind: 'bind', source: resolve(appDir, '..', '.spacetime-cli-config'),
-      target: '/home/stackbench/.config/spacetime', readOnly: false },
+      target: '/home/developer/.config/spacetime', readOnly: false },
     { kind: 'volume', source: 'stack-bench-release-deps', target: '/release-deps', readOnly: true },
   ]);
   assert.match(appliance.init, /test -x \/release-deps\/spacetimedb-cli/);
@@ -73,11 +73,11 @@ test('build-container plans expose only artifacts owned by the selected stack', 
 
 test('hosted stacks receive the exact leased database through the standard environment', () => {
   assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('postgres'), {
-    database: 'stackbench_ecom_run6', networkMode: 'host',
-  }), { DATABASE_URL: 'postgresql://stackbench:stackbench@127.0.0.1:6532/stackbench_ecom_run6' });
+    database: 'app_ecom_run6', networkMode: 'host',
+  }), { DATABASE_URL: 'postgresql://appuser:local-app-password@127.0.0.1:6532/app_ecom_run6' });
   assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('mongodb'), {
-    database: 'stackbench_ecom_run7', networkMode: 'bridge',
-  }), { DATABASE_URL: 'mongodb://host.docker.internal:6537/stackbench_ecom_run7' });
+    database: 'app_ecom_run7', networkMode: 'bridge',
+  }), { DATABASE_URL: 'mongodb://host.docker.internal:6537/app_ecom_run7' });
   assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('spacetime'), {
     database: null, networkMode: 'host',
   }), {});
@@ -100,7 +100,7 @@ test('SpacetimeDB container operations use the isolated agent identity', () => {
   for (const [command, args] of calls) {
     assert.equal(command, 'docker');
     assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
-      'HOME=/home/stackbench', '-e', 'USER=stackbench', 'leased-build']);
+      'HOME=/home/developer', '-e', 'USER=developer', 'leased-build']);
   }
 });
 

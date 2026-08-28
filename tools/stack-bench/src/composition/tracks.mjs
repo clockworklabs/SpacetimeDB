@@ -177,13 +177,13 @@ export function sweepWorkRoot(maxAgeHours = 12) {
   return stuck;
 }
 
-// Suffixed names: chat keeps the unsuffixed originals, so its databases,
-// modules and result directories are exactly what they have always been.
+// Each run gets a separate application database and module. Result names remain
+// operator-facing and include the selected stack.
 export const dbName = (track, runIndex) =>
-  `stackbench${track.slug ? `_${track.slug}` : ''}_run${runIndex}`;
+  `app${track.slug ? `_${track.slug}` : ''}_run${runIndex}`;
 
 export const moduleName = (track, runIndex) =>
-  `stackbench${track.slug ? `-${track.slug}` : ''}-run${runIndex}`;
+  `app${track.slug ? `-${track.slug}` : ''}-run${runIndex}`;
 
 export const resultsName = (track, backend, runIndex) =>
   `${backend}${track.slug ? `-${track.slug}` : ''}-run${runIndex}`;

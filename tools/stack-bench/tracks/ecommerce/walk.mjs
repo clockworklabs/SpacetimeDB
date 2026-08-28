@@ -4,8 +4,13 @@
 // One pass, one browser, one customer. Anything needing a second customer, a
 // concurrent action or a refusal belongs to the scenario suites, not here.
 
+import { applyCredentialAliases } from '../../src/composition/credential-aliases.mjs';
+
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'stackbench-admin-2026';
+
+export const seededAdminPassword = credentialAliases =>
+  applyCredentialAliases(ADMIN_PASS, credentialAliases);
 
 // Seeded items the walk relies on. `SEARCH_ONLY` is outside the opening top ten
 // (the catalogue starts with no purchases, so the storefront is alphabetical),
@@ -166,7 +171,8 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     const toggle = page.locator(tid('signin-toggle')).first();
     if (await toggle.count()) await toggle.click().catch(() => {});
     await page.locator(tid('signin-username')).first().fill(ADMIN_USER);
-    await page.locator(tid('signin-password')).first().fill(ADMIN_PASS);
+    await page.locator(tid('signin-password')).first().fill(
+      seededAdminPassword(args.credentialAliases));
     await click(page.locator(tid('signin-submit')).first(), 'submit sign-in');
     await page.waitForTimeout(1500);
     const link = page.locator(tid('admin-link')).first();

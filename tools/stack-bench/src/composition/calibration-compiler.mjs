@@ -121,7 +121,9 @@ const QUALIFICATION_REUSE_CALIBRATION_FIELDS = new Set(['id', 'version', 'sha256
 const QUALIFICATION_REUSE_SCOPE_FIELDS = new Set([
   'kind', 'stack', 'fromExecutableSha256', 'toExecutableSha256',
 ]);
-const PROMOTION_FIELDS = new Set(['catalogPath', 'catalogSha256', 'alias', 'status']);
+const PROMOTION_FIELDS = new Set([
+  'catalogPath', 'catalogSha256', 'alias', 'coveredAliases', 'status',
+]);
 
 export function compileCalibrationDefinition(input, { source = '<calibration>' } = {}) {
   const value = structuredClone(input);
@@ -343,6 +345,20 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
   string(value.promotion.catalogPath, `${source}.promotion.catalogPath`);
   exactHash(value.promotion.catalogSha256, `${source}.promotion.catalogSha256`);
   if (!/^L[1-9]\d*$/.test(value.promotion.alias)) fail(`${source}.promotion.alias`, 'must be an L1-style alias');
+  if (value.promotion.coveredAliases !== undefined) {
+    array(value.promotion.coveredAliases, `${source}.promotion.coveredAliases`, { nonEmpty: true });
+    const covered = new Set();
+    for (const [index, alias] of value.promotion.coveredAliases.entries()) {
+      if (!/^L[1-9]\d*$/.test(alias)) {
+        fail(`${source}.promotion.coveredAliases[${index}]`, 'must be an L1-style alias');
+      }
+      if (covered.has(alias)) fail(`${source}.promotion.coveredAliases`, `duplicates ${alias}`);
+      covered.add(alias);
+    }
+    if (!covered.has(value.promotion.alias)) {
+      fail(`${source}.promotion.coveredAliases`, `must include ${value.promotion.alias}`);
+    }
+  }
   if (!['candidate', 'promoted', 'retired'].includes(value.promotion.status)) {
     fail(`${source}.promotion.status`, 'must be candidate, promoted, or retired');
   }
@@ -976,6 +992,25 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     qualificationStaleness: verifiedEvidence.staleness };
 }
 
+export function calibrationCoversAlias(calibration, release, alias,
+  { catalog, catalogPath, trackRoot }) {
+  const exactAlias = calibration.promotion.alias === alias;
+  const coveredAliases = calibration.promotion.coveredAliases ?? [calibration.promotion.alias];
+  if (!coveredAliases.includes(alias)) return false;
+  if (!exactAlias && !calibration.qualification.featureCatalog) return false;
+  const requestedLevel = Number(alias.slice(1));
+  const qualifiedLevel = Number(calibration.promotion.alias.slice(1));
+  if (!Number.isInteger(requestedLevel) || requestedLevel < 1 || requestedLevel > qualifiedLevel) {
+    return false;
+  }
+  return catalog.entries.some(entry => entry.alias === alias
+    && entry.status === calibration.promotion.status
+    && entry.recipe.id === release.id && entry.recipe.version === release.version
+    && calibration.recipe.contentSha256 === release.contentSha256
+    && contained(trackRoot, dirname(catalogPath), entry.recipe.path,
+      `calibration alias ${alias}`).relative === calibration.recipe.path);
+}
+
 export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoot, alias = null } = {}) {
   if (!release) return null;
   const root = realpathSync(resolve(trackRoot));
@@ -987,12 +1022,17 @@ export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoo
     const raw = readJson(path, 'calibration');
     if (raw.recipe?.id !== release.id || raw.recipe?.version !== release.version
       || raw.recipe?.contentSha256 !== release.contentSha256) continue;
-    if (alias !== null && raw.promotion?.alias !== alias) continue;
     matches.push(compileCalibrationFile(path, { trackRoot: root, stackBenchRoot, release }));
   }
-  if (matches.length > 1) {
+  const selected = alias === null ? matches : matches.filter(calibration => {
+    const catalogPath = resolve(root, calibration.promotion.catalogPath);
+    const catalog = compilePromotionFile(catalogPath, { trackRoot: root });
+    return calibrationCoversAlias(calibration, release, alias,
+      { catalog, catalogPath, trackRoot: root });
+  });
+  if (selected.length > 1) {
     const scope = alias === null ? '' : ` for ${alias}`;
     throw new Error(`multiple calibrations match ${release.id}@${release.version}${scope} (${release.contentSha256})`);
   }
-  return matches[0] ?? null;
+  return selected[0] ?? null;
 }

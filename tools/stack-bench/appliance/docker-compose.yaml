@@ -81,13 +81,13 @@ services:
     container_name: stack-bench-postgres
     ports: ["127.0.0.1:6532:5432"]
     environment:
-      POSTGRES_USER: stackbench
-      POSTGRES_PASSWORD: stackbench
-      POSTGRES_DB: stackbench
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: local-app-password
+      POSTGRES_DB: app
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stackbench"]
+      test: ["CMD-SHELL", "pg_isready -U appuser -d app"]
       interval: 5s
       timeout: 5s
       retries: 12

@@ -5,8 +5,7 @@ import test from 'node:test';
 import { qualificationReadiness } from '../commands/qualification-cli.mjs';
 import { compileCalibrationFile } from '../src/composition/calibration-compiler.mjs';
 import { compilePromotionFile } from '../src/composition/composition-compiler.mjs';
-import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
 
 const BENCH = join(import.meta.dirname, '..');
@@ -38,55 +37,43 @@ test('L2 1.6 calibration binds every scored check to an exact defect per backend
   ]);
 });
 
-test('L2 1.6 is qualified and promoted by its exact evidence set', () => {
+test('L2 1.6 remains available while current qualification is pending', () => {
   assert.equal(release.state, 'qualified');
-  assert.equal(calibration.state, 'qualified');
-  assert.equal(calibration.promotion.status, 'promoted');
-  assert.equal(calibration.qualification.evidence.length, 7);
-  assert.equal(new Set(calibration.qualification.evidence.map(entry => entry.path)).size, 7);
+  assert.equal(calibration.state, 'draft');
+  assert.equal(calibration.promotion.status, 'candidate');
+  assert.deepEqual(calibration.qualification.evidence, []);
   assert.deepEqual(calibration.qualification.stacks, [
-    { id: 'mongodb', status: 'qualified' },
-    { id: 'postgres', status: 'qualified' },
-    { id: 'spacetime', status: 'qualified' },
+    { id: 'mongodb', status: 'candidate' },
+    { id: 'postgres', status: 'candidate' },
+    { id: 'spacetime', status: 'candidate' },
   ]);
   assert(calibration.references.entries.every(reference => reference.status === 'active'));
   assert(calibration.mutations.every(mutation => mutation.status === 'active'));
 
-  const track = loadTrack('ecommerce');
-  const promoted = resolveRecipeRelease(track, 2);
-  const exact = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
-  assert.deepEqual([promoted.release.version, promoted.status], ['1.6.0', 'promoted']);
-  assert.deepEqual([exact.release.version, exact.status], ['1.6.0', 'promoted']);
+  assert.equal(release.version, '1.6.0');
+  assert.equal(release.task.mode, 'upgrade');
+  assert.deepEqual([release.task.baseRecipe.id, release.task.baseRecipe.version],
+    ['ecommerce.l1-modular', '2.5.0']);
 });
 
-test('L2 1.6 has complete defect coverage and current scoped evidence', () => {
-  const readiness = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.6.0');
-  assert.equal(readiness.launch.ok, true);
-  assert.deepEqual(readiness.defectChecks.stacks.map(stack => ({
-    stack: stack.stack,
-    coveredChecks: stack.coveredChecks,
-    missingChecks: stack.missingChecks,
-  })), [
-    { stack: 'mongodb', coveredChecks: 74, missingChecks: [] },
-    { stack: 'postgres', coveredChecks: 74, missingChecks: [] },
-    { stack: 'spacetime', coveredChecks: 74, missingChecks: [] },
-  ]);
-  assert.equal(readiness.promotion.ready, true);
-  assert.deepEqual(readiness.promotion.blockers, []);
+test('L2 qualification waits for a promoted L1 baseline', () => {
+  assert.throws(() => qualificationReadiness('ecommerce', 2,
+    'ecommerce.l2-standard@1.6.0'), /requires exactly one promoted L1 base; found 0/);
 });
 
-test('the catalogs and registry promote L2 1.6 and retain its exact reference inputs', () => {
+test('the catalogs and registry retain L2 1.6 as an exact candidate', () => {
   const catalog = compilePromotionFile(join(TRACK_ROOT, 'composition', 'candidates.json'), {
     trackRoot: TRACK_ROOT,
   });
-  assert.deepEqual(catalog.entries.filter(entry => entry.alias === 'L2'), []);
+  assert.deepEqual(catalog.entries.filter(entry => entry.alias === 'L2'
+    && entry.recipe.id === 'ecommerce.l2-standard'), []);
   const promotions = compilePromotionFile(join(TRACK_ROOT, 'composition', 'promotions.json'), {
     trackRoot: TRACK_ROOT,
   });
   assert.deepEqual(promotions.entries.filter(entry => entry.alias === 'L2'
-    && entry.status === 'promoted'), [{
+    && entry.status === 'candidate'), [{
     alias: 'L2',
-    status: 'promoted',
+    status: 'candidate',
     recipe: {
       path: 'recipes/l2-standard-1.6.0.json',
       id: 'ecommerce.l2-standard',
