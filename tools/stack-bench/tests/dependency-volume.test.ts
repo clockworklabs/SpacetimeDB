@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import { createDependencyManifest, initializeDependencyVolume, manifestSha256,
-  verifyDependencyTree } from '../appliance/dependency-volume.mjs';
+  verifyDependencyTree } from '../appliance/dependency-volume.js';
 
-function fixture(t) {
+function fixture(t: TestContext): { source: string; target: string } {
   const root = join(tmpdir(), `stack-bench-deps-${process.pid}-${Math.random().toString(16).slice(2)}`);
   const source = join(root, 'source');
   const target = join(root, 'target');

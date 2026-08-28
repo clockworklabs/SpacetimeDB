@@ -9,8 +9,8 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 const RUNTIME_ROOT = join(STACK_BENCH_ROOT, 'dist');
 
 const COMMANDS = Object.freeze({
-  'init-deps': [join(RUNTIME_ROOT, 'appliance', 'dependency-volume.mjs'), 'init'],
-  'verify-deps': [join(RUNTIME_ROOT, 'appliance', 'dependency-volume.mjs'), 'verify'],
+  'init-deps': [join(RUNTIME_ROOT, 'appliance', 'dependency-volume.js'), 'init'],
+  'verify-deps': [join(RUNTIME_ROOT, 'appliance', 'dependency-volume.js'), 'verify'],
   'preflight': [join(RUNTIME_ROOT, 'commands', 'preflight.js')],
   'qualify-reference': [join(RUNTIME_ROOT, 'src', 'references', 'reference-live.mjs')],
   'qualify-null': [join(RUNTIME_ROOT, 'commands', 'null-control.mjs')],

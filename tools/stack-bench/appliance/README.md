@@ -14,7 +14,7 @@ destroy it after copying verified results elsewhere.
 - `Controller.Dockerfile` builds the grader/controller with Playwright, a
   digest-pinned Docker CLI, and checksum-pinned Cosign 3.1.3 for qualified
   release verification.
-- `dependency-volume.mjs` copies the release's exact SDK, CLI, and standalone
+- The dependency-volume command copies the release's exact SDK, CLI, and standalone
   runtime into one checksummed named volume. It refuses unmarked, changed, or
   wrong-release content.
 - `docker-compose.yaml` starts the controller, one-shot dependency initializer,

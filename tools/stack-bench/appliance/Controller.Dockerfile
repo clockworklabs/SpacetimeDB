@@ -79,10 +79,10 @@ RUN node container/binary-provenance.mjs verify \
     && tar -tzf /opt/stack-bench-embedded-deps/spacetimedb.tgz | grep -Fxq package/dist/server/index.d.ts \
     && tar -tzf /opt/stack-bench-embedded-deps/spacetimedb.tgz | grep -Fxq package/dist/server/index.mjs \
     && cd /opt/stack-bench \
-    && node appliance/dependency-volume.mjs manifest \
+    && node dist/appliance/dependency-volume.js manifest \
       --source /opt/stack-bench-embedded-deps \
       --out /opt/stack-bench/dependency-manifest.json \
-    && node appliance/dependency-volume.mjs verify \
+    && node dist/appliance/dependency-volume.js verify \
       --target /opt/stack-bench-embedded-deps \
       --manifest /opt/stack-bench/dependency-manifest.json \
     && rm -rf results .spacetime-data .loop-test archive/pre-v1/results

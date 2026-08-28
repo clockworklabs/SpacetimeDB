@@ -10,18 +10,39 @@ import { pathToFileURL } from 'node:url';
 
 const MARKER = '.stack-bench-release-deps.json';
 
-function sha256Bytes(bytes) {
+export interface DependencyManifestFile {
+  path: string;
+  size: number;
+  mode: number;
+  sha256: string;
+}
+
+export interface DependencyManifest {
+  schemaVersion: 1;
+  files: DependencyManifestFile[];
+}
+
+interface DependencyVerification {
+  manifestSha256: string;
+  files: number;
+}
+
+interface DependencyInitialization extends DependencyVerification {
+  initialized: boolean;
+}
+
+function sha256Bytes(bytes: string | NodeJS.ArrayBufferView): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function normalizedRelative(root, path) {
+function normalizedRelative(root: string, path: string): string {
   const value = relative(root, path).split(sep).join('/');
   if (!value || value.startsWith('../') || value === '..') throw new Error(`path escapes dependency root: ${path}`);
   return value;
 }
 
-function walk(root, current = root) {
-  const files = [];
+function walk(root: string, current = root): string[] {
+  const files: string[] = [];
   for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const path = join(current, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`dependency tree cannot contain symlinks: ${normalizedRelative(root, path)}`);
@@ -32,7 +53,7 @@ function walk(root, current = root) {
   return files;
 }
 
-export function createDependencyManifest(root) {
+export function createDependencyManifest(root: string): DependencyManifest {
   const absolute = resolve(root);
   if (!existsSync(absolute) || !lstatSync(absolute).isDirectory()) {
     throw new Error(`dependency source is not a directory: ${absolute}`);
@@ -46,11 +67,12 @@ export function createDependencyManifest(root) {
   return { schemaVersion: 1, files };
 }
 
-export function manifestSha256(manifest) {
+export function manifestSha256(manifest: DependencyManifest): string {
   return sha256Bytes(`${JSON.stringify(manifest)}\n`);
 }
 
-export function verifyDependencyTree(root, manifest, { allowMarker = false } = {}) {
+export function verifyDependencyTree(root: string, manifest: DependencyManifest,
+  { allowMarker = false }: { allowMarker?: boolean } = {}): DependencyVerification {
   if (!manifest || manifest.schemaVersion !== 1 || !Array.isArray(manifest.files) || !manifest.files.length) {
     throw new Error('dependency manifest is invalid');
   }
@@ -63,7 +85,8 @@ export function verifyDependencyTree(root, manifest, { allowMarker = false } = {
   return { manifestSha256: manifestSha256(manifest), files: manifest.files.length };
 }
 
-export function initializeDependencyVolume({ source, target, manifest }) {
+export function initializeDependencyVolume({ source, target, manifest }:
+  { source: string; target: string; manifest: DependencyManifest }): DependencyInitialization {
   const sourceRoot = resolve(source);
   const targetRoot = resolve(target);
   const verified = verifyDependencyTree(sourceRoot, manifest);
@@ -102,23 +125,26 @@ export function initializeDependencyVolume({ source, target, manifest }) {
   }
 }
 
-function option(argv, name, fallback = null) {
+function option(argv: string[], name: string): string | undefined {
   const index = argv.indexOf(name);
-  return index === -1 ? fallback : argv[index + 1];
+  if (index === -1) return undefined;
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
+  return value;
 }
 
-function main(argv) {
+function main(argv: string[]): void {
   const command = argv[2];
-  const source = option(argv, '--source', '/opt/stack-bench-embedded-deps');
-  const target = option(argv, '--target', '/opt/stack-bench-release-deps');
-  const manifestPath = option(argv, '--manifest', '/opt/stack-bench/dependency-manifest.json');
+  const source = option(argv, '--source') ?? '/opt/stack-bench-embedded-deps';
+  const target = option(argv, '--target') ?? '/opt/stack-bench-release-deps';
+  const manifestPath = option(argv, '--manifest') ?? '/opt/stack-bench/dependency-manifest.json';
   if (command === 'manifest') {
     const output = option(argv, '--out');
     if (!output) throw new Error('manifest requires --out');
     writeFileSync(resolve(output), `${JSON.stringify(createDependencyManifest(source), null, 2)}\n`, { flag: 'wx' });
     return;
   }
-  const manifest = JSON.parse(readFileSync(resolve(manifestPath), 'utf8'));
+  const manifest: DependencyManifest = JSON.parse(readFileSync(resolve(manifestPath), 'utf8'));
   if (command === 'init') {
     process.stdout.write(`${JSON.stringify(initializeDependencyVolume({ source, target, manifest }))}\n`);
     return;
@@ -127,10 +153,13 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify(verifyDependencyTree(target, manifest, { allowMarker: true }))}\n`);
     return;
   }
-  throw new Error('usage: dependency-volume.mjs manifest|init|verify [options]');
+  throw new Error('usage: dependency-volume manifest|init|verify [options]');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try { main(process.argv); }
-  catch (error) { console.error(`dependency-volume: ${error.message}`); process.exit(2); }
+  catch (error) {
+    console.error(`dependency-volume: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(2);
+  }
 }
