@@ -44,7 +44,7 @@ pub async fn add_energy<S: ControlStateDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     // Nb.: Negative amount withdraws
     let amount = amount.map(|s| s.parse::<u128>()).transpose().map_err(|e| {
-        log::error!("Failed to parse amount: {e:?}");
+        log::debug!("Failed to parse amount: {e:?}");
         StatusCode::BAD_REQUEST
     })?;
 
@@ -102,7 +102,7 @@ pub async fn set_energy_balance<S: ControlStateDelegate>(
         .map(|balance| balance.parse::<i128>())
         .transpose()
         .map_err(|err| {
-            log::error!("Failed to parse balance: {err:?}");
+            log::debug!("Failed to parse balance: {err:?}");
             StatusCode::BAD_REQUEST
         })?
         .unwrap_or(0);
