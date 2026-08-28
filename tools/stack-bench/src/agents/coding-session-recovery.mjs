@@ -27,6 +27,10 @@ export function providerSessionFailure(result) {
     return { code: 'provider-api-error', status };
   }
   const detail = typeof result?.result === 'string' ? result.result : '';
+  if (result?.stack_bench_credential_broker?.endpointKind === 'local-credential-broker'
+    && /API Error:.*(?:Unable to connect to API|ConnectionRefused)/i.test(detail)) {
+    return { code: 'credential-broker-unavailable', status };
+  }
   if (/API Error:.*(?:Unable to connect to API|ConnectionRefused)/i.test(detail)) {
     return { code: 'provider-connection-error', status };
   }
@@ -103,6 +107,12 @@ export function codingSessionInterruption(error, result) {
       providerStatus: result.api_error_status ?? null };
   }
   const providerFailure = providerSessionFailure(result);
+  if (providerFailure?.code === 'credential-broker-unavailable'
+    && typeof result.session_id === 'string' && result.session_id) {
+    return { kind: 'credential-broker-unavailable', resumeSession: result.session_id,
+      recoverStoppedContainer: false, terminalReason: result.terminal_reason ?? null,
+      providerStatus: null };
+  }
   if (providerFailure?.code === 'provider-connection-error'
     && typeof result.session_id === 'string' && result.session_id) {
     return { kind: 'provider-connection-error', resumeSession: result.session_id,
@@ -221,6 +231,14 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
     const receiptCostUsd = completeBrokerReceiptCost(result);
+    if (interruption?.kind === 'credential-broker-unavailable') {
+      interruptions.push({ ...interruption, invocation: invocation + 1,
+        sessionId: result?.session_id ?? null, costUsd: receiptCostUsd });
+      spawnError = receiptCostUsd === null
+        ? 'local credential broker failed without a complete reconciled cost receipt; automatic recovery is disabled'
+        : 'local credential broker failed; automatic recovery is disabled';
+      break;
+    }
     if (maxBudgetUsd !== null && interruption && receiptCostUsd === null) {
       interruptions.push({ ...interruption, invocation: invocation + 1,
         sessionId: result?.session_id ?? null, costUsd: null });

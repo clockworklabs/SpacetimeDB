@@ -888,6 +888,7 @@ async function main() {
       } : null,
       interruptions, invocations: sessionResults.length,
       terminalRecovery: result.terminal_recovery ?? null,
+      credentialBroker: result.stack_bench_credential_broker ?? null,
       sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))] },
   };
   writeFileSync(join(args.app, `.session-${args.mode}-l${args.level}.json`), JSON.stringify({ ...out, text: result.result }, null, 2));

@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
-import { killTree, sleepSync } from '../src/runtime/platform.mjs';
+import { killTree } from '../src/runtime/platform.mjs';
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
   from '../src/evidence/pricing-authority.mjs';
@@ -25,7 +25,13 @@ const LEDGER_SCHEMA_VERSION = 3;
 const COST_TOLERANCE_USD = 0.0001;
 const BROKER_DRAIN_TIMEOUT_MS = 30_000;
 const BROKER_DRAIN_POLL_MS = 100;
+const BROKER_STDERR_LIMIT_BYTES = 16 * 1024;
+const BROKER_STOP_GRACE_MS = 2_000;
+const BROKER_STOP_FORCE_MS = 2_000;
+const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
 const USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'];
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function priceNormalizedUsage(usage, rates) {
   return priceClaudeUsage({
@@ -165,7 +171,7 @@ export function readCredentialBrokerLedger(path, expected = {}) {
 }
 
 export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, maxBudgetUsd,
-  pricingRates, toleranceUsd = COST_TOLERANCE_USD } = {}) {
+  pricingRates, brokerDiagnostics = null, toleranceUsd = COST_TOLERANCE_USD } = {}) {
   if (typeof model !== 'string' || !model) fail('receipt model is invalid');
   if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) fail('receipt budget is invalid');
   if (!Number.isFinite(toleranceUsd) || toleranceUsd < 0) fail('receipt tolerance is invalid');
@@ -229,6 +235,9 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
   result.total_cost_usd = receipt.costUsd;
   if (usage) result.usage = rawUsage(usage);
   result.stack_bench_cost_receipt = receipt;
+  if (brokerDiagnostics) {
+    result.stack_bench_credential_broker = structuredClone(brokerDiagnostics);
+  }
   if (issue) {
     result.is_error = true;
     result.terminal_reason = 'cost_receipt_error';
@@ -266,11 +275,14 @@ function requestPath(value) {
 
 function rejectRequest(request, response, status, message) {
   const send = () => {
-    if (response.writableEnded) return;
-    response.writeHead(status, { 'content-type': 'text/plain' });
-    response.end(message);
+    if (response.destroyed || response.writableEnded) return;
+    try {
+      if (!response.headersSent) response.writeHead(status, { 'content-type': 'text/plain' });
+      response.end(message);
+    } catch { response.destroy(); }
   };
   request.on('error', () => {});
+  response.on('error', () => {});
   if (request.complete) send();
   else {
     request.once('end', send);
@@ -393,6 +405,23 @@ export function createCredentialBroker(configInput, {
   });
   recordLedger();
   const server = createServer((request, response) => {
+    // A client can disappear while the broker is still draining an upstream
+    // response. Socket errors must not terminate the broker and strand a paid
+    // request reservation in the ledger.
+    request.on('error', () => {});
+    request.on('aborted', () => {});
+    response.on('error', () => {});
+    const responseOpen = () => !response.destroyed && !response.writableEnded;
+    const writeHead = (status, headers) => {
+      if (!responseOpen() || response.headersSent) return;
+      try { response.writeHead(status, headers); }
+      catch { response.destroy(); }
+    };
+    const endResponse = body => {
+      if (!responseOpen()) return;
+      try { response.end(body); }
+      catch { response.destroy(); }
+    };
     if (!clientAuthorized(request, config.sessionToken)) {
       rejectRequest(request, response, 401, 'unauthorized');
       return;
@@ -417,8 +446,8 @@ export function createCredentialBroker(configInput, {
       received += chunk.length;
       if (received > maxRequestBytes) {
         tooLarge = true;
-        if (!response.headersSent) response.writeHead(413, { 'content-type': 'text/plain' });
-        response.end('request is too large');
+        writeHead(413, { 'content-type': 'text/plain' });
+        endResponse('request is too large');
         return;
       }
       chunks.push(chunk);
@@ -429,16 +458,16 @@ export function createCredentialBroker(configInput, {
       let payload;
       try { payload = parseProviderRequest(body, path, config); }
       catch (error) {
-        response.writeHead(400, { 'content-type': 'text/plain' });
-        response.end(error.message);
+        writeHead(400, { 'content-type': 'text/plain' });
+        endResponse(error.message);
         return;
       }
       const billable = path === '/v1/messages' && config.maxBudgetUsd != null;
       const costCeiling = billable
         ? requestCostCeiling(received, payload.max_tokens, config.pricingRates) : 0;
       if (billable && spentUsd + reservedUsd + costCeiling > config.maxBudgetUsd) {
-        response.writeHead(402, { 'content-type': 'text/plain' });
-        response.end('session cost limit reached');
+        writeHead(402, { 'content-type': 'text/plain' });
+        endResponse('session cost limit reached');
         return;
       }
       if (billable) billableRequests += 1;
@@ -471,16 +500,19 @@ export function createCredentialBroker(configInput, {
         path: request.url,
         headers,
       }, upstreamResponse => {
-        response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+        writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         const responseChunks = [];
         let responseBytes = 0;
         upstreamResponse.on('data', chunk => {
           responseBytes += chunk.length;
           if (responseBytes <= maxRequestBytes) responseChunks.push(chunk);
-          response.write(chunk);
+          if (responseOpen()) {
+            try { response.write(chunk); }
+            catch { response.destroy(); }
+          }
         });
         upstreamResponse.on('end', () => {
-          response.end();
+          endResponse();
           if (!billable) return;
           if ((upstreamResponse.statusCode ?? 502) >= 200
             && (upstreamResponse.statusCode ?? 502) < 300) {
@@ -496,18 +528,23 @@ export function createCredentialBroker(configInput, {
         });
         const settleAbortedResponse = () => {
           settleBillable({ estimated: true });
-          if (!response.writableEnded) response.destroy();
+          if (responseOpen()) response.destroy();
         };
         upstreamResponse.once('aborted', settleAbortedResponse);
         upstreamResponse.once('error', settleAbortedResponse);
       });
       upstreamRequest.on('error', () => {
         settleBillable({ estimated: true });
-        if (!response.headersSent) response.writeHead(502, { 'content-type': 'text/plain' });
-        response.end('upstream request failed');
+        writeHead(502, { 'content-type': 'text/plain' });
+        endResponse('upstream request failed');
       });
       upstreamRequest.end(body);
     });
+  });
+  server.on('clientError', (_error, socket) => {
+    socket.on('error', () => {});
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+    else socket.destroy();
   });
   return { server, stats: () => ({ acceptedRequests,
     billableRequests, completedBillableRequests, estimatedBillableRequests,
@@ -522,6 +559,8 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
   const credential = containerAuthSecret(selectedAuth);
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-credential-broker-'));
   let child = null;
+  const processState = { exitCode: null, signal: null, exitedAt: null,
+    stderrTail: '', stderrPending: '', stderrTruncated: false };
   try {
     chmodSync(root, 0o700);
     const configPath = join(root, 'config.json');
@@ -536,11 +575,20 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
     writeFileSync(configPath, `${JSON.stringify(config)}\n`, { flag: 'wx', mode: 0o600 });
     child = spawn(process.execPath, [resolve(import.meta.dirname, 'credential-broker.mjs'),
       '--config', configPath], {
-      stdio: ['ignore', 'ignore', 'inherit'],
+      stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,
       env: Object.fromEntries(['PATH', 'Path', 'SystemRoot', 'WINDIR', 'SSL_CERT_FILE',
         'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY']
         .filter(name => env[name] !== undefined).map(name => [name, env[name]])),
+    });
+    const diagnosticSecrets = [credential, sessionToken];
+    child.stderr.on('data', chunk => appendDiagnosticStderr(
+      processState, chunk.toString('utf8'), diagnosticSecrets));
+    child.once('exit', (code, signal) => {
+      appendDiagnosticStderr(processState, '', diagnosticSecrets, true);
+      processState.exitCode = code;
+      processState.signal = signal;
+      processState.exitedAt = new Date().toISOString();
     });
     let spawnError = null;
     child.once('error', error => { spawnError = error; });
@@ -558,7 +606,9 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
     if (ready.host !== listenHost) throw new Error('credential broker returned an invalid host');
     const host = networkMode === 'host' ? '127.0.0.1' : 'host.docker.internal';
     return { child, root, ledgerPath, model, maxBudgetUsd: maxBudgetUsd ?? null,
-      sessionToken, baseUrl: `http://${host}:${ready.port}`, listenHost: ready.host };
+      sessionToken, baseUrl: `http://${host}:${ready.port}`, listenHost: ready.host,
+      endpointKind: 'local-credential-broker', processState,
+      diagnosticSecrets, finalDiagnostics: null, finalLedger: null };
   } catch (error) {
     if (child?.pid) killTree(child.pid);
     rmSync(root, { recursive: true, force: true });
@@ -566,34 +616,188 @@ export function startCredentialBroker(selectedAuth, { networkMode, deadlineMs,
   }
 }
 
-export function stopCredentialBroker(broker, {
+function ledgerDiagnostics(ledger) {
+  if (!ledger) return null;
+  return Object.fromEntries(['schemaVersion', 'model', 'maxBudgetUsd', 'acceptedRequests',
+    'billableRequests', 'completedBillableRequests', 'estimatedBillableRequests',
+    'spentUsd', 'reservedUsd', 'usage', 'complete', 'updatedAt']
+    .map(field => [field, structuredClone(ledger[field])]));
+}
+
+function redactDiagnosticText(value, broker) {
+  let result = String(value ?? '');
+  const secrets = Array.isArray(broker) ? broker : broker?.diagnosticSecrets ?? [];
+  for (const secret of secrets) {
+    if (typeof secret === 'string' && secret) result = result.replaceAll(secret, '[REDACTED]');
+  }
+  return result;
+}
+
+function appendDiagnosticStderr(state, chunk, secrets, flush = false) {
+  const raw = state.stderrPending + chunk;
+  let redacted = redactDiagnosticText(raw, secrets);
+  let pendingLength = 0;
+  if (!flush) {
+    for (const secret of secrets) {
+      for (let length = Math.min(secret.length - 1, redacted.length);
+        length > pendingLength; length -= 1) {
+        if (redacted.endsWith(secret.slice(0, length))) {
+          pendingLength = length;
+          break;
+        }
+      }
+    }
+  } else if (raw && secrets.some(secret => secret.startsWith(raw))) {
+    redacted = '[REDACTED]';
+  }
+  state.stderrPending = pendingLength ? redacted.slice(-pendingLength) : '';
+  const safe = pendingLength ? redacted.slice(0, -pendingLength) : redacted;
+  const next = state.stderrTail + safe;
+  if (Buffer.byteLength(next) > BROKER_STDERR_LIMIT_BYTES) {
+    state.stderrTruncated = true;
+    state.stderrTail = Buffer.from(next).subarray(-BROKER_STDERR_LIMIT_BYTES).toString('utf8');
+  } else state.stderrTail = next;
+}
+
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error?.code !== 'ESRCH'; }
+}
+
+function brokerExited(broker, alive) {
+  const state = broker?.processState ?? {};
+  if (state.exitedAt || state.exitCode !== null && state.exitCode !== undefined
+    || state.signal !== null && state.signal !== undefined
+    || broker?.child?.exitCode !== null && broker?.child?.exitCode !== undefined
+    || broker?.child?.signalCode !== null && broker?.child?.signalCode !== undefined) return true;
+  return !alive(broker?.child?.pid);
+}
+
+async function waitForBrokerExit(broker, timeoutMs, { sleep, now, alive }) {
+  const deadline = now() + timeoutMs;
+  while (!brokerExited(broker, alive) && now() < deadline) await sleep(BROKER_DRAIN_POLL_MS);
+  return brokerExited(broker, alive);
+}
+
+export function credentialBrokerDiagnostics(broker) {
+  if (!broker) return null;
+  if (broker.finalDiagnostics) return structuredClone(broker.finalDiagnostics);
+  const state = broker.processState ?? {};
+  return {
+    schemaVersion: 1,
+    endpointKind: broker.endpointKind ?? 'local-credential-broker',
+    child: {
+      pid: broker.child?.pid ?? null,
+      exitCode: state.exitCode ?? broker.child?.exitCode ?? null,
+      signal: state.signal ?? broker.child?.signalCode ?? null,
+      exitedAt: state.exitedAt ?? null,
+      stderrTail: state.stderrTail ? redactDiagnosticText(state.stderrTail, broker) : null,
+      stderrTruncated: state.stderrTruncated === true,
+    },
+    drain: null,
+    termination: null,
+    ledger: null,
+    errors: [],
+  };
+}
+
+export async function stopCredentialBroker(broker, {
   drainTimeoutMs = BROKER_DRAIN_TIMEOUT_MS,
   pollMs = BROKER_DRAIN_POLL_MS,
+  gracefulTimeoutMs = BROKER_STOP_GRACE_MS,
+  forceTimeoutMs = BROKER_STOP_FORCE_MS,
   readLedger = readCredentialBrokerLedger,
   terminate = killTree,
-  sleep = sleepSync,
+  requestStop = child => child.kill('SIGTERM'),
+  alive = processAlive,
+  sleep = wait,
   now = Date.now,
 } = {}) {
   if (!broker) return null;
+  if (broker.finalDiagnostics) return structuredClone(broker.finalLedger);
   let ledger = null;
+  const startedAt = now();
+  let drainTimedOut = false;
+  let drainReason = null;
+  const errors = [];
+  const errorKeys = new Set();
+  const recordError = (type, phase, error) => {
+    const message = redactDiagnosticText(error?.message ?? error, broker) || 'unknown error';
+    const key = `${type}:${phase}:${message}`;
+    if (errorKeys.has(key)) return;
+    errorKeys.add(key);
+    errors.push({ type, phase, message });
+  };
+  const read = (phase, expected) => {
+    try { return readLedger(broker.ledgerPath, expected); }
+    catch (error) { recordError('ledger-read-error', phase, error); return null; }
+  };
+  let gracefulRequested = false;
+  let forceRequested = false;
+  let exited = brokerExited(broker, alive);
+  const expected = { model: broker.model, maxBudgetUsd: broker.maxBudgetUsd };
   try {
-    const expected = { model: broker.model, maxBudgetUsd: broker.maxBudgetUsd };
     const deadline = now() + drainTimeoutMs;
     // A provider connection can close just before the upstream response ends.
     // Keep the broker alive long enough to settle that request and write its
     // exact usage. Killing it immediately leaves a reservation in the ledger,
     // which turns a recoverable provider interruption into an unknown cost.
     do {
-      try { ledger = readLedger(broker.ledgerPath, expected); }
-      catch { ledger = null; }
-      if (ledger?.complete === true || now() >= deadline) break;
-      sleep(pollMs);
+      ledger = read('drain', expected) ?? ledger;
+      if (ledger?.complete === true) { drainReason = 'ledger-complete'; break; }
+      exited = brokerExited(broker, alive);
+      if (exited) { drainReason = 'child-exited'; break; }
+      if (now() >= deadline) { drainTimedOut = true; drainReason = 'timeout'; break; }
+      await sleep(pollMs);
     } while (true);
-    terminate(broker.child.pid);
-    try { ledger = readLedger(broker.ledgerPath, expected); }
-    catch { /* Keep the last valid ledger. */ }
-  } catch { /* The caller treats a missing or invalid ledger as a full-cap receipt. */ }
-  finally { rmSync(broker.root, { recursive: true, force: true }); }
+    exited = brokerExited(broker, alive);
+    if (!exited) {
+      gracefulRequested = true;
+      try { requestStop(broker.child); }
+      catch (error) { recordError('termination-error', 'graceful-request', error); }
+      exited = await waitForBrokerExit(broker, gracefulTimeoutMs, { sleep, now, alive });
+    }
+    if (!exited) {
+      forceRequested = true;
+      try { terminate(broker.child.pid); }
+      catch (error) { recordError('termination-error', 'force-request', error); }
+      exited = await waitForBrokerExit(broker, forceTimeoutMs, { sleep, now, alive });
+    }
+    if (!exited) recordError('termination-error', 'exit-verification',
+      new Error('credential broker remained alive after forced termination'));
+    ledger = read('final', expected) ?? ledger;
+  } catch (error) { recordError('broker-stop-error', 'shutdown', error); }
+  finally {
+    const state = broker.processState ?? {};
+    if (exited) {
+      try { rmSync(broker.root, { recursive: true, force: true }); }
+      catch (error) { recordError('cleanup-error', 'private-root', error); }
+    }
+    broker.finalLedger = ledger;
+    broker.finalDiagnostics = {
+      ...credentialBrokerDiagnostics(broker),
+      child: {
+        pid: broker.child?.pid ?? null,
+        exitCode: state.exitCode ?? broker.child?.exitCode ?? null,
+        signal: state.signal ?? broker.child?.signalCode ?? null,
+        exitedAt: state.exitedAt ?? null,
+        stderrTail: state.stderrTail ? redactDiagnosticText(state.stderrTail, broker) : null,
+        stderrTruncated: state.stderrTruncated === true,
+      },
+      drain: {
+        timeoutMs: drainTimeoutMs,
+        elapsedMs: Math.max(0, now() - startedAt),
+        timedOut: drainTimedOut,
+        reason: drainReason,
+        terminationRequested: gracefulRequested,
+      },
+      termination: { gracefulRequested, forceRequested, exited,
+        gracefulTimeoutMs, forceTimeoutMs },
+      ledger: ledgerDiagnostics(ledger),
+      errors,
+    };
+  }
   return ledger;
 }
 
@@ -609,6 +813,11 @@ async function main() {
   try { config = validateConfig(JSON.parse(readFileSync(configPath, 'utf8'))); }
   finally { rmSync(configPath, { force: true }); }
   const { server } = createCredentialBroker(config);
+  const sockets = new Set();
+  server.on('connection', socket => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
   server.on('error', error => {
     process.stderr.write(`credential broker: ${error.message}\n`);
     process.exitCode = 1;
@@ -623,7 +832,17 @@ async function main() {
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    server.close(() => process.exit(0));
+    const force = setTimeout(() => {
+      for (const socket of sockets) socket.destroy();
+      server.closeAllConnections?.();
+      process.exit(0);
+    }, BROKER_SERVER_CLOSE_GRACE_MS);
+    force.unref();
+    server.close(() => {
+      clearTimeout(force);
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
   };
   if (config.parentPid) {
     setInterval(() => {

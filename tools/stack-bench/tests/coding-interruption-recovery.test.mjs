@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { aggregateCodingSessionResults, codingSessionInterruption,
-  parseCodingSessionResult, runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
+  parseCodingSessionResult, providerSessionFailure,
+  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
+import { agentSessionFailure } from '../src/agents/agent-adapter-contract.mjs';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
+  startCredentialBroker, stopCredentialBroker } from '../container/credential-broker.mjs';
 import { recoverStoppedBuildContainer } from '../container/recover-build-container.mjs';
 
 function brokerReceipt(costUsd, maxBudgetUsd = 10) {
@@ -56,6 +61,73 @@ test('provider connection failures resume the exact paid session', () => {
   assert.equal(coding.spawnError, null);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].resumeSession, sessionId);
+});
+
+test('a refused local credential broker is a harness failure and cannot auto-retry unknown cost', () => {
+  const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7a';
+  const result = { type: 'result', is_error: true, terminal_reason: 'cost_receipt_error',
+    session_id: sessionId,
+    result: 'API Error: Unable to connect to API (ConnectionRefused)',
+    total_cost_usd: 1.25, num_turns: 2, usage: {},
+    stack_bench_credential_broker: { endpointKind: 'local-credential-broker',
+      child: { exitCode: 1, signal: null, stderrTail: 'broker failed' },
+      ledger: { complete: false, reservedUsd: 1.2 } },
+    stack_bench_cost_receipt: { ...brokerReceipt(1.25), complete: false,
+      reconciled: false, error: 'broker ledger is incomplete' } };
+  assert.deepEqual(providerSessionFailure(result), {
+    code: 'credential-broker-unavailable', status: null,
+  });
+  assert.deepEqual(codingSessionInterruption(null, result), {
+    kind: 'credential-broker-unavailable', resumeSession: sessionId,
+    recoverStoppedContainer: false, terminalReason: 'cost_receipt_error', providerStatus: null,
+  });
+  let calls = 0;
+  const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 3,
+    maxBudgetUsd: 10, invoke() { calls += 1; return JSON.stringify(result); } });
+  assert.equal(calls, 1);
+  assert.match(coding.spawnError, /broker failed without a complete reconciled cost receipt/);
+  assert.equal(coding.interruptions[0].kind, 'credential-broker-unavailable');
+  assert.equal(agentSessionFailure({ ok: false,
+    providerMetadata: { failureCode: 'credential-broker-unavailable' } }).kind,
+  'harness_failure');
+});
+
+test('a real broker child exit reaches the run result and stops recovery as a harness failure', async () => {
+  const model = 'test-model';
+  const maxBudgetUsd = 10;
+  const pricingRates = { input: 3, output: 15, cacheWrite5m: 3.75,
+    cacheWrite1h: 6, cacheRead: 0.3 };
+  const broker = startCredentialBroker({ mode: 'api-key',
+    environment: { name: 'ANTHROPIC_API_KEY', value: 'provider-secret-value-1234567890' },
+    mount: null }, { networkMode: 'host', deadlineMs: 10_000, model,
+    maxBudgetUsd, pricingRates });
+  broker.child.kill('SIGTERM');
+  await once(broker.child, 'exit');
+  const ledger = await stopCredentialBroker(broker);
+  const diagnostics = credentialBrokerDiagnostics(broker);
+  const reconciled = reconcileCredentialBrokerReceipt({ ledger,
+    cliResult: { type: 'result', is_error: true, terminal_reason: 'api_error',
+      session_id: '950df556-38bb-429c-aee9-1af4a00a6c7a', total_cost_usd: 0,
+      usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0 },
+      result: 'API Error: Unable to connect to API (ConnectionRefused)' },
+    model, maxBudgetUsd, pricingRates, brokerDiagnostics: diagnostics });
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.result.stack_bench_cost_receipt.reconciled, true);
+  assert.ok(reconciled.result.stack_bench_credential_broker.child.exitCode !== null
+    || reconciled.result.stack_bench_credential_broker.child.signal !== null);
+  let calls = 0;
+  const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 3,
+    maxBudgetUsd, invoke() { calls += 1; return JSON.stringify(reconciled.result); } });
+  assert.equal(calls, 1);
+  assert.match(coding.spawnError, /local credential broker failed/);
+  assert.equal(coding.interruptions[0].kind, 'credential-broker-unavailable');
+  assert.equal(coding.interruptions[0].costUsd, 0);
+  const failureCode = providerSessionFailure(coding.result).code;
+  const agentResult = { ok: false, providerMetadata: { failureCode,
+    credentialBroker: coding.result.stack_bench_credential_broker } };
+  assert.equal(agentSessionFailure(agentResult).kind, 'harness_failure');
+  assert.equal(agentResult.providerMetadata.credentialBroker.termination.exited, true);
 });
 
 test('a provider throttle is classified as waitable, with or without a session', () => {

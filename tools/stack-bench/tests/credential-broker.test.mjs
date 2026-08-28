@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { request as httpRequest, createServer } from 'node:http';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
-import { createCredentialBroker, readCredentialBrokerLedger,
+import { createCredentialBroker, credentialBrokerDiagnostics, readCredentialBrokerLedger,
   reconcileCredentialBrokerReceipt, startCredentialBroker,
   stopCredentialBroker } from '../container/credential-broker.mjs';
 
@@ -28,6 +31,14 @@ const listen = server => new Promise((resolve, reject) => {
 const close = server => new Promise((resolve, reject) => {
   server.close(error => error ? reject(error) : resolve());
 });
+
+async function waitFor(predicate, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for broker state');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
 
 function send(port, { method = 'POST', path = '/v1/messages', headers = {}, body = '{}' } = {}) {
   return new Promise((resolve, reject) => {
@@ -77,6 +88,73 @@ test('credential broker rejects unauthorized and unsupported requests before ups
       headers: { authorization: `Bearer ${sessionToken}` } })).status, 404);
     assert.equal(seen.length, 0);
     assert.equal(stats().acceptedRequests, 0);
+  });
+});
+
+test('credential broker survives a downstream disconnect and settles exact upstream usage', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-disconnect-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const upstreamServer = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"usage":');
+      setTimeout(() => response.end(`${JSON.stringify(ONE_REQUEST_USAGE)}}`), 25);
+    });
+  });
+  const upstreamPort = await listen(upstreamServer);
+  const sessionToken = 'session-token-value-1234567890';
+  const { server, stats } = createCredentialBroker({ mode: 'api-key',
+    credential: 'provider-secret-value-1234567890', sessionToken,
+    ledgerPath, model: 'test-model', maxOutputTokens: 4096,
+    maxBudgetUsd: 1, pricingRates: PRICING_RATES }, {
+    requestUpstream: httpRequest,
+    upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort },
+  });
+  const brokerPort = await listen(server);
+  const requestOptions = { hostname: '127.0.0.1', port: brokerPort, method: 'POST',
+    path: '/v1/messages', headers: { authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json' } };
+  try {
+    await new Promise((resolve, reject) => {
+      const request = httpRequest(requestOptions, response => {
+        response.once('data', () => { response.destroy(); resolve(); });
+      });
+      request.once('error', reject);
+      request.end('{"model":"test-model","max_tokens":1000}');
+    });
+    await waitFor(() => stats().completedBillableRequests === 1);
+    const second = await send(brokerPort, {
+      headers: requestOptions.headers,
+      body: '{"model":"test-model","max_tokens":1000}',
+    });
+    assert.equal(second.status, 200);
+    assert.deepEqual(stats(), { acceptedRequests: 2, billableRequests: 2,
+      completedBillableRequests: 2, estimatedBillableRequests: 0,
+      spentUsd: 0.0036, reservedUsd: 0 });
+    assert.equal(readCredentialBrokerLedger(ledgerPath,
+      { model: 'test-model', maxBudgetUsd: 1 }).complete, true);
+  } finally {
+    await close(server);
+    await close(upstreamServer);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('credential broker survives malformed client socket input', async () => {
+  await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
+    await new Promise((resolve, reject) => {
+      const socket = connect({ host: '127.0.0.1', port: brokerPort });
+      socket.once('connect', () => socket.write('not-http\r\n\r\n'));
+      socket.once('data', () => socket.destroy());
+      socket.once('close', resolve);
+      socket.once('error', reject);
+    });
+    const result = await send(brokerPort, {
+      headers: { authorization: `Bearer ${sessionToken}` },
+      body: '{"model":"test-model","max_tokens":1}',
+    });
+    assert.equal(result.status, 200);
   });
 });
 
@@ -489,14 +567,128 @@ test('credential broker lifecycle creates only an attempt-scoped session credent
     assert.match(broker.sessionToken, /^[a-f0-9]{64}$/);
     assert.equal((await send(new URL(broker.baseUrl).port)).status, 401);
   } finally {
-    ledger = stopCredentialBroker(broker);
+    ledger = await stopCredentialBroker(broker);
   }
   assert.equal(existsSync(broker.root), false);
   assert.equal(ledger.complete, true);
   assert.equal(ledger.spentUsd, 0);
+  const diagnostics = credentialBrokerDiagnostics(broker);
+  assert.equal(diagnostics.endpointKind, 'local-credential-broker');
+  assert.equal(diagnostics.drain.timedOut, false);
+  assert.equal(diagnostics.ledger.complete, true);
+  assert.equal(diagnostics.ledger.spentUsd, 0);
 });
 
-test('credential broker shutdown waits for an in-flight request to settle', () => {
+test('credential broker diagnostics retain child exit, stderr, and the final ledger', async () => {
+  const providerCredential = 'provider-secret-value-1234567890';
+  const broker = startCredentialBroker({ mode: 'api-key',
+    environment: { name: 'ANTHROPIC_API_KEY', value: providerCredential },
+    mount: null }, { networkMode: 'host', deadlineMs: 10_000, model: 'test-model' });
+  const providerCut = 11;
+  const sessionCut = 19;
+  broker.child.stderr.emit('data', Buffer.from(
+    `${'x'.repeat(20_000)} broker failure ${providerCredential.slice(0, providerCut)}`));
+  broker.child.stderr.emit('data', Buffer.from(
+    `${providerCredential.slice(providerCut)} ${broker.sessionToken.slice(0, sessionCut)}`));
+  broker.child.stderr.emit('data', Buffer.from(
+    `${broker.sessionToken.slice(sessionCut)}\n`));
+  broker.child.kill();
+  await once(broker.child, 'exit');
+  const ledger = await stopCredentialBroker(broker, { drainTimeoutMs: 0 });
+  const diagnostics = credentialBrokerDiagnostics(broker);
+  assert.equal(ledger.complete, true);
+  assert.ok(diagnostics.child.exitCode !== null || diagnostics.child.signal !== null);
+  assert.match(diagnostics.child.stderrTail, /broker failure \[REDACTED\] \[REDACTED\]/);
+  assert.equal(diagnostics.child.stderrTruncated, true);
+  assert.doesNotMatch(JSON.stringify(diagnostics), new RegExp(providerCredential));
+  assert.doesNotMatch(JSON.stringify(diagnostics), new RegExp(broker.sessionToken));
+  assert.doesNotMatch(diagnostics.child.stderrTail,
+    new RegExp(providerCredential.slice(0, providerCut)));
+  assert.doesNotMatch(diagnostics.child.stderrTail,
+    new RegExp(broker.sessionToken.slice(0, sessionCut)));
+  assert.equal(diagnostics.drain.terminationRequested, false);
+  assert.equal(diagnostics.termination.exited, true);
+  assert.equal(diagnostics.ledger.complete, true);
+});
+
+test('credential broker closes an active request after its parent exits',
+  { timeout: 10_000 }, async () => {
+    const moduleUrl = new URL('../container/credential-broker.mjs', import.meta.url).href;
+    const script = `
+      import { startCredentialBroker } from ${JSON.stringify(moduleUrl)};
+      const broker = startCredentialBroker({ mode: 'api-key',
+        environment: { name: 'ANTHROPIC_API_KEY', value: 'provider-secret-value-1234567890' },
+        mount: null }, { networkMode: 'host', deadlineMs: 10000, model: 'test-model' });
+      process.stdout.write(JSON.stringify({ pid: broker.child.pid, baseUrl: broker.baseUrl,
+        sessionToken: broker.sessionToken, root: broker.root, ledgerPath: broker.ledgerPath }) + '\\n');
+      process.stdin.once('data', () => process.exit(0));
+      process.stdin.resume();
+    `;
+    const parent = spawn(process.execPath, ['--input-type=module', '--eval', script], {
+      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    });
+    let active = null;
+    let ready = null;
+    const alive = pid => {
+      try { process.kill(pid, 0); return true; }
+      catch (error) { return error?.code !== 'ESRCH'; }
+    };
+    try {
+      ready = await new Promise((resolve, reject) => {
+        let output = '';
+        parent.stdout.on('data', chunk => {
+          output += chunk.toString('utf8');
+          const newline = output.indexOf('\n');
+          if (newline === -1) return;
+          try { resolve(JSON.parse(output.slice(0, newline))); }
+          catch (error) { reject(error); }
+        });
+        parent.once('error', reject);
+        parent.once('exit', code => reject(new Error(`broker parent exited before ready (${code})`)));
+      });
+      const port = Number(new URL(ready.baseUrl).port);
+      active = connect({ host: '127.0.0.1', port });
+      active.on('error', () => {});
+      await once(active, 'connect');
+      const activeClosed = new Promise(resolve => active.once('close', resolve));
+      active.write('POST /v1/messages HTTP/1.1\r\n'
+        + `Host: 127.0.0.1:${port}\r\n`
+        + `Authorization: Bearer ${ready.sessionToken}\r\n`
+        + 'Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n'
+        + '{"model":"test-model"');
+      await waitFor(() => readCredentialBrokerLedger(ready.ledgerPath,
+        { model: 'test-model', maxBudgetUsd: null }).acceptedRequests === 1);
+      parent.stdin.end('exit');
+      await once(parent, 'exit');
+      const started = Date.now();
+      await waitFor(() => !alive(ready.pid), 4_000);
+      assert.ok(Date.now() - started < 4_000);
+      await Promise.race([activeClosed, new Promise((_, reject) => setTimeout(
+        () => reject(new Error('active broker socket stayed open')), 1_000))]);
+      await new Promise((resolve, reject) => {
+        const probe = connect({ host: '127.0.0.1', port });
+        const timeout = setTimeout(() => {
+          probe.destroy();
+          reject(new Error('broker port did not close'));
+        }, 1_000);
+        probe.once('error', () => { clearTimeout(timeout); resolve(); });
+        probe.once('connect', () => {
+          clearTimeout(timeout);
+          probe.destroy();
+          reject(new Error('broker remained reachable after parent exit'));
+        });
+      });
+    } finally {
+      active?.destroy();
+      if (parent.exitCode === null) parent.kill();
+      if (ready && alive(ready.pid)) {
+        try { process.kill(ready.pid, 'SIGKILL'); } catch { /* already stopped */ }
+      }
+      if (ready?.root) rmSync(ready.root, { recursive: true, force: true });
+    }
+  });
+
+test('credential broker shutdown waits for an in-flight request to settle', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-drain-'));
   const incomplete = { schemaVersion: 3, model: 'test-model', maxBudgetUsd: 1,
     acceptedRequests: 1, billableRequests: 1, completedBillableRequests: 0,
@@ -507,20 +699,53 @@ test('credential broker shutdown waits for an in-flight request to settle', () =
     spentUsd: 0.0018, reservedUsd: 0, complete: true };
   let reads = 0;
   let slept = 0;
-  let terminated = null;
+  let graceful = null;
+  let alive = true;
   let clock = 0;
-  const ledger = stopCredentialBroker({ root, ledgerPath: join(root, 'ledger.json'),
-    model: 'test-model', maxBudgetUsd: 1, child: { pid: 42 } }, {
+  const broker = { root, ledgerPath: join(root, 'ledger.json'),
+    model: 'test-model', maxBudgetUsd: 1, child: { pid: 42 } };
+  const ledger = await stopCredentialBroker(broker, {
     drainTimeoutMs: 1_000,
     pollMs: 100,
     readLedger: () => ++reads < 3 ? incomplete : complete,
-    terminate: pid => { terminated = pid; },
-    sleep: ms => { slept += ms; clock += ms; },
+    requestStop: child => { graceful = child.pid; alive = false; },
+    alive: () => alive,
+    sleep: async ms => { slept += ms; clock += ms; },
     now: () => clock,
   });
   assert.equal(ledger.complete, true);
   assert.equal(reads, 4, 'the final read must happen after termination');
   assert.equal(slept, 200);
-  assert.equal(terminated, 42);
+  assert.equal(graceful, 42);
+  assert.equal(broker.finalDiagnostics.termination.forceRequested, false);
+  assert.equal(existsSync(root), false);
+});
+
+test('credential broker forces termination and records typed shutdown errors', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-force-'));
+  let alive = true;
+  let forced = null;
+  let clock = 0;
+  const broker = { root, ledgerPath: join(root, 'missing-ledger.json'),
+    model: 'test-model', maxBudgetUsd: 1, child: { pid: 43 }, processState: {} };
+  const ledger = await stopCredentialBroker(broker, {
+    drainTimeoutMs: 0, gracefulTimeoutMs: 100, forceTimeoutMs: 100, pollMs: 25,
+    readLedger: () => { throw new Error('ledger unavailable'); },
+    requestStop: () => {},
+    terminate: pid => { forced = pid; alive = false; },
+    alive: () => alive,
+    sleep: async ms => { clock += ms; },
+    now: () => clock,
+  });
+  assert.equal(ledger, null);
+  assert.equal(forced, 43);
+  assert.deepEqual(broker.finalDiagnostics.termination, {
+    gracefulRequested: true, forceRequested: true, exited: true,
+    gracefulTimeoutMs: 100, forceTimeoutMs: 100,
+  });
+  assert.deepEqual(broker.finalDiagnostics.errors, [
+    { type: 'ledger-read-error', phase: 'drain', message: 'ledger unavailable' },
+    { type: 'ledger-read-error', phase: 'final', message: 'ledger unavailable' },
+  ]);
   assert.equal(existsSync(root), false);
 });
