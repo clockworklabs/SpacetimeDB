@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { updateBackendLease } from '../runtime/backend-lease.mjs';
 import { answers as answersSync, killDetachedTree, killTree, pidsOnPort, sleepSync } from '../runtime/platform.mjs';
 import { fetchStatus } from '../runtime/readiness.mjs';
-import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR }
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.mjs';
 
 const DOCKER_TIMEOUT_MS = 120_000;
@@ -102,13 +102,16 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
   const container = inspectBuildContainer(lease, exec);
   const url = `http://127.0.0.1:${port}${probe}`;
   if (mode !== 'start') {
-    exec('docker', ['exec', container.name, 'sh', '-c', hostedStopScript(port)],
+    // The reduced root capability set cannot inspect the agent user's sockets.
+    // Stop the service as its owner so listener discovery and signals are reliable.
+    exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name,
+      'sh', '-c', hostedStopScript(port)],
       { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
     await waitFor(async () => !(await answers(url, { freshConnection: true })),
       30_000, `${backend} API to stop`, signal);
   }
   if (mode === 'stop') return;
-  exec('docker', ['exec', container.name, 'sh', '-c',
+  exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted backend port is still owned by $pids" >&2; exit 4; }'],
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
@@ -138,7 +141,7 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
       + `/usr/local/bin/npm run ${script} > ${log} 2>&1`],
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
   await waitFor(() => answers(url), 180_000, `${backend} API to start`, signal);
-  exec('docker', ['exec', container.name, 'sh', '-c',
+  exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + 'set -- $pids; [ "$#" -eq 1 ] || { echo "expected one hosted backend listener, found: $pids" >&2; exit 4; }; '
       + 'pgid=$(ps -o pgid= -p "$1" | tr -d " "); '

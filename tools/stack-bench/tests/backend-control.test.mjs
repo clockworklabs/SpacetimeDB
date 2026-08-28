@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../src/runtime/backend-control.mjs';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { controlHosted } from '../src/stacks/stack-lifecycle-operations.mjs';
 
 test('backend control refuses without an authenticated lease', async () => {
   const priorPath = process.env.STACK_BENCH_LEASE;
@@ -78,4 +79,30 @@ test('hosted backend stop targets safe process groups and exact group-1 listener
   assert.match(command, /direct="\$direct \$pid"/);
   assert.match(command, /unsafe listener pid/);
   assert.throws(() => hostedStopScript('6301; rm -rf /'), /invalid hosted backend port/);
+});
+
+test('hosted backend control inspects and stops listeners as the application user', async () => {
+  const id = 'a'.repeat(64);
+  const calls = [];
+  const exec = (command, args, options) => {
+    calls.push({ command, args, options });
+    if (args[0] === 'inspect') return `${id}\n`;
+    return '';
+  };
+
+  await controlHosted({
+    adapterId: 'mongodb',
+    lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
+    app: '.',
+    port: 65534,
+    probe: '/',
+    mode: 'stop',
+    exec,
+  });
+
+  assert.deepEqual(calls[1].args.slice(0, 7), [
+    'exec', '--user', '10001:10001', '-e', 'HOME=/home/stackbench', '-e', 'USER=stackbench',
+  ]);
+  assert.equal(calls[1].args[7], 'leased-build');
+  assert.match(calls[1].args.at(-1), /lsof -ti tcp:65534 -sTCP:LISTEN/);
 });
