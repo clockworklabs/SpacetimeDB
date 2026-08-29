@@ -20,6 +20,12 @@ export interface CompiledTaskFragment
 
 export interface CompiledOwnedTaskFragment extends CompiledTaskFragment {
   owners: string[];
+  ownerConditions?: Array<{
+    owner: string;
+    modes: string[];
+    requiresFeatures: string[];
+  }>;
+  requiresFeatures?: string[];
 }
 
 export interface PackCheck {
@@ -115,7 +121,7 @@ export interface CompiledRecipePlan {
     state: string;
     title: string;
     track: string;
-    compatibility: unknown;
+    compatibility: { legacyLevel?: number; mode?: string } | null;
     task: {
       mode: string;
       baseRecipe: { id: string; version: string; path: string } | null;

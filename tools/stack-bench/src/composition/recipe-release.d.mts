@@ -5,26 +5,70 @@ export interface RecipeCheck {
   executionId: string;
   points: number;
   packId?: string;
+  stablePackId?: string;
+  packVersion?: string;
+  checkGroupId?: string;
+  role?: string;
+  observations?: string[];
+  requiresFeatures?: string[];
   source?: string;
-  featureId?: string | null;
+  featureId?: number;
   criterionId?: string;
+  description?: string;
+}
+
+export interface RecipeTaskFragment {
+  id: string;
+  path: string;
+  order: number;
+  owners: string[];
+  ownerConditions?: Array<{
+    owner: string;
+    modes: string[];
+    requiresFeatures: string[];
+  }>;
+  modes: string[];
+  requiresFeatures?: string[];
+}
+
+export interface RecipePackComponent {
+  id: string;
+  version: string;
+  state: string;
+  path: string;
+  sha256: string;
+  includeRoles: string[];
+  stableId?: string;
+  moduleType?: string;
+  requiresPacks: string[];
 }
 
 export interface RecipeRelease {
   id: string;
   version: string;
   state: string;
+  title: string;
   track: string;
+  compatibility: { legacyLevel?: number; mode?: string } | null;
   meaningSha256: string;
   executionSha256: string;
   contentSha256: string;
   sourceManifestSha256: string;
   scoring: { mode: string; checks: number; points: number };
   checkCatalog: RecipeCheck[];
-  components: { fixture: { sha256: string } };
+  components: {
+    fixture: { id: string; version: string; state: string; path: string; sha256: string };
+    packs: RecipePackComponent[];
+  };
   task: {
     mode: string;
-    baseRecipe?: RecipeRelease;
+    baseRecipe: Pick<RecipeRelease, 'id' | 'version' | 'state' | 'track' | 'meaningSha256'
+      | 'executionSha256' | 'contentSha256' | 'sourceManifestSha256'> | null;
+    requirements: RecipeTaskFragment[];
+    contracts: RecipeTaskFragment[];
+    requirementSha256: string;
+    contractSha256: string;
+    composedSha256: string;
   };
 }
 

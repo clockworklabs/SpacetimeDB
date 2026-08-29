@@ -6,12 +6,19 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { diffRecipeFiles, selectRecipeRelease, validatePackFile,
-  validateRecipeFile, showRecipeFile } from '../commands/composition-cli.mjs';
+  validateRecipeFile, showRecipeFile } from '../commands/composition-cli.js';
 import { hashDirectory } from '../src/evidence/provenance.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const SOURCE = loadTrack('ecommerce').dir;
-const CLI = join(import.meta.dirname, '..', 'commands', 'composition-cli.mjs');
+const CLI = join(import.meta.dirname, '..', 'commands', 'composition-cli.js');
+
+interface MutableRecipeFile {
+  state: string;
+  fixture: { path: string; id: string; version: string };
+  packs: Array<{ id: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
 
 test('pack and recipe validation resolve their full source context without writing', () => {
   const before = hashDirectory(SOURCE);
@@ -50,10 +57,13 @@ test('recipe show gives pack/check selections their own stable scope identity', 
   assert(selected.checkCatalog.every(check => check.packId === 'ecommerce.identity-access'));
   assert.equal(selectRecipeRelease(release, { packIds: ['ecommerce.identity-access'] })
     .selection.sha256, selected.selection.sha256);
-  const key = selected.checkCatalog[0].stableKey;
+  const firstCheck = selected.checkCatalog[0];
+  assert.ok(firstCheck);
+  const key = firstCheck.stableKey;
   const one = selectRecipeRelease(release, { checkKeys: [key] });
   assert.deepEqual(one.checkCatalog.map(check => check.stableKey), [key]);
   const outside = release.checkCatalog.find(check => check.packId !== 'ecommerce.identity-access');
+  assert.ok(outside);
   assert.throws(() => selectRecipeRelease(release, {
     packIds: ['ecommerce.identity-access'], checkKeys: [outside.stableKey],
   }), /unrequested pack/);
@@ -75,9 +85,9 @@ test('recipe diff separates categories and names exact calibration work invalida
   const root = join(temporary, 'ecommerce');
   try {
     cpSync(SOURCE, root, { recursive: true });
-    const original = join(root, 'composition', 'recipes', 'l1-standard-1.0.0.json');
+    const original = join(root, 'composition', 'recipes', 'l1-modular-2.5.0.json');
     const changed = join(root, 'composition', 'recipes', 'l1-fixture-variant.json');
-    const value = JSON.parse(readFileSync(original, 'utf8'));
+    const value = JSON.parse(readFileSync(original, 'utf8')) as MutableRecipeFile;
     value.state = 'draft';
     value.fixture = { path: '../fixtures/operations-1.0.0.json',
       id: 'ecommerce.operations', version: '1.0.0' };
@@ -92,8 +102,10 @@ test('recipe diff separates categories and names exact calibration work invalida
       metadata: true,
     });
     assert.equal(diff.calibrations.length, 1);
-    assert.equal(diff.calibrations[0].id, 'ecommerce.l1-standard-calibration');
-    assert.deepEqual(diff.calibrations[0].invalidated, [
+    const calibration = diff.calibrations[0];
+    assert.ok(calibration);
+    assert.equal(calibration.id, 'ecommerce.l1-modular-calibration');
+    assert.deepEqual(calibration.invalidated, [
       'recipe binding', 'recipe qualification state', 'fixture binding',
       'reference repetitions', 'mutation repetitions', 'null repetitions', 'promotion decision',
     ]);
@@ -107,7 +119,7 @@ test('recipe diff names requirement and contract fragments changed by pack compo
     cpSync(SOURCE, root, { recursive: true });
     const original = join(root, 'composition', 'recipes', 'l1-standard-1.0.0.json');
     const changed = join(root, 'composition', 'recipes', 'l1-without-session.json');
-    const value = JSON.parse(readFileSync(original, 'utf8'));
+    const value = JSON.parse(readFileSync(original, 'utf8')) as MutableRecipeFile;
     value.packs = value.packs.filter(pack => pack.id !== 'ecommerce.session-durability');
     writeFileSync(changed, `${JSON.stringify(value, null, 2)}\n`);
     const diff = diffRecipeFiles(original, changed, { trackRoot: root });

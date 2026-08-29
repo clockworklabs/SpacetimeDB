@@ -10,15 +10,39 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs'
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';
+import type { CompiledPackDefinition, CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
+import type { RecipeCheck, RecipeRelease } from '../src/composition/recipe-release.mjs';
+import type { RecipeSelectionOptions, SelectedRecipeRelease } from '../src/composition/recipe-selection.mjs';
 
 export { selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
 
-function json(path, label) {
-  try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) { throw new Error(`cannot read ${label} ${path}: ${error.message}`, { cause: error }); }
+interface TrackRootOptions {
+  trackRoot: string;
 }
 
-function contained(root, path, label) {
+interface PackIndexEntry {
+  pack: CompiledPackDefinition;
+  path: string;
+}
+
+interface CalibrationValue {
+  id: string;
+  version: string;
+  recipe?: { id?: string; version?: string; contentSha256?: string };
+}
+
+type RecipeOptions = TrackRootOptions & RecipeSelectionOptions;
+type RecipeTaskKind = 'requirements' | 'contracts';
+
+function json<T = unknown>(path: string, label: string): T {
+  try { return JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
+  }
+}
+
+function contained(root: string, path: string, label: string): string {
   const absoluteRoot = realpathSync(resolve(root));
   const candidate = resolve(path);
   const lexical = relative(absoluteRoot, candidate);
@@ -30,9 +54,9 @@ function contained(root, path, label) {
   return absolute;
 }
 
-function packIndex(trackRoot) {
+function packIndex(trackRoot: string): Map<string, PackIndexEntry> {
   const directory = join(trackRoot, 'composition', 'packs');
-  const byRef = new Map();
+  const byRef = new Map<string, PackIndexEntry>();
   for (const name of readdirSync(directory).filter(file => file.endsWith('.json')).sort()) {
     const path = join(directory, name);
     const pack = compilePackDefinition(json(path, 'pack'), {
@@ -50,8 +74,9 @@ function packIndex(trackRoot) {
   return byRef;
 }
 
-export function validatePackFile(path, { trackRoot } = {}) {
-  if (!trackRoot) throw new Error('pack validation requires trackRoot');
+export function validatePackFile(path: string, options: Partial<TrackRootOptions> = {}) {
+  const { trackRoot } = options;
+  if (trackRoot === undefined) throw new Error('pack validation requires trackRoot');
   const root = realpathSync(resolve(trackRoot));
   const absolute = contained(join(root, 'composition'), path, 'pack path');
   const pack = compilePackDefinition(json(absolute, 'pack'), {
@@ -65,19 +90,21 @@ export function validatePackFile(path, { trackRoot } = {}) {
     if (!packs.has(ref)) throw new Error(`${ownRef} references missing pack ${ref}`);
   }
   const sourceCache = new Map();
-  for (const kind of ['requirements', 'contracts']) {
+  for (const kind of ['requirements', 'contracts'] satisfies RecipeTaskKind[]) {
     for (const fragment of pack.task[kind]) {
       resolveTaskFragment(fragment, { trackRoot: root,
         source: `${relative(root, absolute).replaceAll('\\', '/')}.task.${kind}.${fragment.id}`,
         sourceCache });
     }
   }
-  const state = new Map();
-  const visit = (ref, chain = []) => {
+  const state = new Map<string, 'visiting' | 'done'>();
+  const visit = (ref: string, chain: string[] = []): void => {
     if (state.get(ref) === 'done') return;
     if (state.get(ref) === 'visiting') throw new Error(`pack dependency cycle: ${[...chain, ref].join(' -> ')}`);
     state.set(ref, 'visiting');
-    for (const dependency of packs.get(ref).pack.requiresPacks) {
+    const entry = packs.get(ref);
+    if (!entry) throw new Error(`missing pack release ${ref}`);
+    for (const dependency of entry.pack.requiresPacks) {
       if (!packs.has(dependency)) throw new Error(`${ref} references missing pack ${dependency}`);
       visit(dependency, [...chain, ref]);
     }
@@ -98,15 +125,21 @@ export function validatePackFile(path, { trackRoot } = {}) {
     checkGroups: pack.checks.length, criteria, requiresPacks: pack.requiresPacks };
 }
 
-export function validateRecipeFile(path, { trackRoot } = {}) {
-  if (!trackRoot) throw new Error('recipe validation requires trackRoot');
+export function validateRecipeFile(path: string, options: Partial<TrackRootOptions> = {}): {
+  plan: CompiledRecipePlan;
+  release: RecipeRelease;
+} {
+  const { trackRoot } = options;
+  if (trackRoot === undefined) throw new Error('recipe validation requires trackRoot');
   const absolute = contained(join(trackRoot, 'composition'), path, 'recipe path');
   const plan = compileRecipeFile(absolute, { trackRoot });
   const release = buildRecipeRelease(absolute, { trackRoot });
   return { plan, release };
 }
 
-export function showRecipeFile(path, options = {}) {
+export function showRecipeFile(path: string, options: RecipeOptions): SelectedRecipeRelease & {
+  builderTask: ReturnType<typeof composeSelectedRecipeTask> & { note: string };
+} {
   const compiled = validateRecipeFile(path, options);
   const selected = selectRecipeRelease(compiled.release, options);
   const builderTask = composeSelectedRecipeTask(compiled.plan, selected.selection);
@@ -119,9 +152,10 @@ export function showRecipeFile(path, options = {}) {
   };
 }
 
-const same = (left, right) => canonicalDefinitionJson(left) === canonicalDefinitionJson(right);
+const same = (left: unknown, right: unknown): boolean =>
+  canonicalDefinitionJson(left) === canonicalDefinitionJson(right);
 
-function meaningView(release) {
+function meaningView(release: RecipeRelease) {
   return {
     track: release.track,
     task: release.task,
@@ -131,27 +165,33 @@ function meaningView(release) {
   };
 }
 
-function scoringView(release) {
+function scoringView(release: RecipeRelease) {
   return { scoring: release.scoring,
     checks: release.checkCatalog.map(({ stableKey, points }) => ({ stableKey, points })) };
 }
 
-function metadataView(release) {
+function metadataView(release: RecipeRelease) {
   return { id: release.id, version: release.version, state: release.state, title: release.title,
     compatibility: release.compatibility, sourceManifestSha256: release.sourceManifestSha256 };
 }
 
-function matchingCalibrations(trackRoot, release) {
+function matchingCalibrations(trackRoot: string, release: RecipeRelease): Array<{
+  path: string;
+  value: CalibrationValue;
+}> {
   const directory = join(trackRoot, 'composition', 'calibrations');
   if (!existsSync(directory)) return [];
   return readdirSync(directory).filter(name => name.endsWith('.json')).sort()
-    .map(name => ({ path: join(directory, name), value: json(join(directory, name), 'calibration') }))
+    .map(name => ({ path: join(directory, name),
+      value: json<CalibrationValue>(join(directory, name), 'calibration') }))
     .filter(({ value }) => value.recipe?.id === release.id
       && value.recipe?.version === release.version
       && value.recipe?.contentSha256 === release.contentSha256);
 }
 
-export function diffRecipeFiles(fromPath, toPath, { trackRoot } = {}) {
+export function diffRecipeFiles(fromPath: string, toPath: string, options: Partial<TrackRootOptions> = {}) {
+  const { trackRoot } = options;
+  if (trackRoot === undefined) throw new Error('recipe diff requires trackRoot');
   const from = validateRecipeFile(fromPath, { trackRoot }).release;
   const to = validateRecipeFile(toPath, { trackRoot }).release;
   const categories = {
@@ -179,7 +219,7 @@ export function diffRecipeFiles(fromPath, toPath, { trackRoot } = {}) {
     return { id: value.id, version: value.version,
       path: relative(trackRoot, path).replaceAll('\\', '/'), invalidated: [...new Set(invalidated)] };
   });
-  const fragmentDiff = kind => {
+  const fragmentDiff = (kind: RecipeTaskKind) => {
     const before = new Map(from.task[kind].map(fragment => [fragment.id, fragment]));
     const after = new Map(to.task[kind].map(fragment => [fragment.id, fragment]));
     return {
@@ -204,19 +244,49 @@ export function diffRecipeFiles(fromPath, toPath, { trackRoot } = {}) {
   };
 }
 
-function parse(argv) {
-  const args = { json: false, positional: [], packIds: [], checkKeys: [] };
+type CliSubject = 'pack' | 'recipe';
+type CliCommand = 'validate' | 'show' | 'diff';
+
+interface ParsedArgs extends RecipeSelectionOptions {
+  json: boolean;
+  positional: string[];
+  packIds: string[];
+  checkKeys: string[];
+  track?: string;
+  trackRoot?: string;
+}
+
+interface CliArgs extends ParsedArgs {
+  subject: CliSubject;
+  command: CliCommand;
+  paths: string[];
+  trackRoot: string;
+}
+
+function nextArgument(argv: string[], index: number, option: string): string {
+  const value = argv[index + 1];
+  if (value === undefined) throw new Error(`${option} requires a value`);
+  return value;
+}
+
+function parse(argv: string[]): CliArgs {
+  const args: ParsedArgs = { json: false, positional: [], packIds: [], checkKeys: [] };
   for (let index = 2; index < argv.length; index += 1) {
-    if (argv[index] === '--track') args.track = argv[++index];
-    else if (argv[index] === '--track-root') args.trackRoot = resolve(argv[++index]);
-    else if (argv[index] === '--pack') args.packIds.push(...argv[++index].split(',').filter(Boolean));
-    else if (argv[index] === '--check') args.checkKeys.push(...argv[++index].split(',').filter(Boolean));
-    else if (argv[index] === '--json') args.json = true;
-    else args.positional.push(argv[index]);
+    const argument = argv[index];
+    if (argument === undefined) continue;
+    if (argument === '--track') args.track = nextArgument(argv, index++, argument);
+    else if (argument === '--track-root') args.trackRoot = resolve(nextArgument(argv, index++, argument));
+    else if (argument === '--pack') args.packIds.push(...nextArgument(argv, index++, argument).split(',').filter(Boolean));
+    else if (argument === '--check') args.checkKeys.push(...nextArgument(argv, index++, argument).split(',').filter(Boolean));
+    else if (argument === '--json') args.json = true;
+    else args.positional.push(argument);
   }
   const [subject, command, ...paths] = args.positional;
-  if (!['pack', 'recipe'].includes(subject) || !['validate', 'show', 'diff'].includes(command)) {
-    throw new Error('usage: composition-cli.mjs pack validate <file> --track <name> | recipe validate|show <file> --track <name> | recipe diff <from> <to> --track <name>');
+  if (subject !== 'pack' && subject !== 'recipe') {
+    throw new Error('usage: composition-cli.js pack validate <file> --track <name> | recipe validate|show <file> --track <name> | recipe diff <from> <to> --track <name>');
+  }
+  if (command !== 'validate' && command !== 'show' && command !== 'diff') {
+    throw new Error('usage: composition-cli.js pack validate <file> --track <name> | recipe validate|show <file> --track <name> | recipe diff <from> <to> --track <name>');
   }
   if (subject === 'pack' && command !== 'validate') throw new Error(`pack ${command} is not supported`);
   if ((command === 'diff' ? paths.length !== 2 : paths.length !== 1)) throw new Error(`${subject} ${command} received the wrong number of paths`);
@@ -224,18 +294,23 @@ function parse(argv) {
   if ((args.packIds.length || args.checkKeys.length) && !(subject === 'recipe' && command === 'show')) {
     throw new Error('--pack and --check are allowed only with recipe show');
   }
-  args.trackRoot ??= join(TRACKS_DIR, args.track);
-  return { ...args, subject, command, paths };
+  const trackRoot = args.trackRoot ?? join(TRACKS_DIR, args.track ?? '');
+  return { ...args, subject, command, paths, trackRoot };
 }
 
 function main() {
   const args = parse(process.argv);
-  let result;
-  if (args.subject === 'pack') result = validatePackFile(args.paths[0], args);
-  else if (args.command === 'diff') result = diffRecipeFiles(args.paths[0], args.paths[1], args);
-  else if (args.command === 'show') result = showRecipeFile(args.paths[0], args);
+  const firstPath = args.paths[0];
+  if (firstPath === undefined) throw new Error('command requires a source path');
+  let result: object;
+  if (args.subject === 'pack') result = validatePackFile(firstPath, args);
+  else if (args.command === 'diff') {
+    const secondPath = args.paths[1];
+    if (secondPath === undefined) throw new Error('recipe diff requires two source paths');
+    result = diffRecipeFiles(firstPath, secondPath, args);
+  } else if (args.command === 'show') result = showRecipeFile(firstPath, args);
   else {
-    const compiled = validateRecipeFile(args.paths[0], args);
+    const compiled = validateRecipeFile(firstPath, args);
     result = {
       id: compiled.release.id, version: compiled.release.version, state: compiled.release.state,
       packs: compiled.release.components.packs.length, checks: compiled.release.checkCatalog.length,
@@ -246,10 +321,15 @@ function main() {
     };
   }
   if (args.json || args.command === 'show' || args.command === 'diff') console.log(JSON.stringify(result, null, 2));
-  else console.log(`${result.id}@${result.version} ${result.state}: valid`);
+  else if ('id' in result && 'version' in result && 'state' in result) {
+    console.log(`${String(result.id)}@${String(result.version)} ${String(result.state)}: valid`);
+  } else throw new Error('validation result has no release identity');
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   try { main(); }
-  catch (error) { console.error(error.message); process.exitCode = 2; }
+  catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 2;
+  }
 }
