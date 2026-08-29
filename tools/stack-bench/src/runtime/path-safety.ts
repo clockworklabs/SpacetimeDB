@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export function assertNewOrEmptyDirectory(path, label) {
+export function assertNewOrEmptyDirectory(path: string, label: string): string {
   const target = resolve(path);
   if (!existsSync(target)) return target;
 

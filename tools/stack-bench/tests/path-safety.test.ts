@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.mjs';
+import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
 
 test('new and empty output directories are accepted', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-path-'));
