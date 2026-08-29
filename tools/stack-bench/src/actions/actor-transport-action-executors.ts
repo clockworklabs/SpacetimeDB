@@ -1106,12 +1106,12 @@ export function createNamedActionsCapability({
   readonly fetchImpl?: NamedFetch;
   readonly now?: () => number;
 }): NamedActionsCapability {
-  const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-  if (!adapter) throw new Error(`unknown stack adapter "${backend}"`);
   return Object.freeze({
     resolve: (id: string) => (actions ?? []).find(action => action.id === id) ?? null,
+    // The adapter is resolved per request: a scenario that names no action
+    // grades without a backend at all.
     request(action: NamedAction, input: unknown) {
-      return executeStackCapability(adapter, 'named-action', 'request',
+      return executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'named-action', 'request',
         { action, input, spacetime, url }) as NamedActionRequest | null;
     },
     fetch: fetchImpl,
