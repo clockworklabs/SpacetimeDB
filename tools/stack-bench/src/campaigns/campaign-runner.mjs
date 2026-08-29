@@ -25,7 +25,7 @@ import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { aggregateRunOutcome } from '../evidence/outcomes.mjs';
 import { durableCostLedger } from '../evidence/cost-proof.mjs';
-import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.mjs';
+import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');

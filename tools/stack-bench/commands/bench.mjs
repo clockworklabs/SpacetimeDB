@@ -65,7 +65,7 @@ import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
 import { campaignAdmissionSmokeReuse, readCampaignAdmission }
-  from '../src/campaigns/campaign-admission.mjs';
+  from '../src/campaigns/campaign-admission.js';
 import { gradingRunTimeoutMs, selectedGradingSourceCount }
   from '../src/runtime/grading-timeout.mjs';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';

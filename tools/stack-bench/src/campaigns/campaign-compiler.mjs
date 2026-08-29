@@ -20,7 +20,7 @@ import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
-import { validateCampaignMode } from './campaign-mode.mjs';
+import { validateCampaignMode } from './campaign-mode.js';
 
 export const CAMPAIGN_SCHEMA_VERSION = 5;
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';

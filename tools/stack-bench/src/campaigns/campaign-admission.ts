@@ -4,8 +4,106 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { readArtifact } from '../evidence/artifacts.mjs';
 
 const SMOKE_REUSE_MS = 15 * 60_000;
+type UnknownRecord = Record<string, unknown>;
+type AdmissionStatus = 'pass' | 'warn' | 'fail';
 
-function contained(root, path, label) {
+interface CampaignAdmissionCheck {
+  id: string;
+  status: AdmissionStatus;
+  summary: string;
+}
+
+interface CampaignAdmissionReportRequest extends UnknownRecord {
+  agentAdapter: string;
+  runIndex: number;
+  backends: unknown;
+  image: unknown;
+}
+
+interface CampaignAdmissionReport extends UnknownRecord {
+  schemaVersion: number;
+  ok: boolean;
+  request: CampaignAdmissionReportRequest;
+  checks: CampaignAdmissionCheck[];
+  summary: { passed: number; failed: number; warnings: number };
+}
+
+export interface CampaignAdmission extends UnknownRecord {
+  schemaVersion: number;
+  campaignId: string;
+  campaignSha256: string;
+  createdAt: string;
+  ok: boolean;
+  runtime: unknown;
+  agents: unknown;
+  conditions: unknown;
+  reports: CampaignAdmissionReport[];
+}
+
+interface CampaignAdmissionPlan {
+  id: string;
+  contentSha256: string;
+  definition: {
+    runtime: { buildImage: string | null };
+    track: string;
+    levels: unknown;
+    selection: { packs?: unknown; checks?: unknown };
+  };
+  agents: Array<{ adapter: string; model: string; identity: unknown }>;
+  conditions: unknown;
+  stacks: Array<{ id: string }>;
+  summary: { parallelism: number };
+}
+
+export interface CampaignAdmissionSmokeInput {
+  ok: boolean;
+  createdAt: string;
+  reports: Array<{
+    ok: boolean;
+    request: {
+      agentAdapter: string;
+      runIndex: number;
+      backends: string[];
+      image: unknown;
+    };
+    checks: Array<{ id: string; status: string; summary?: string }>;
+  }>;
+}
+
+export interface CampaignAdmissionSmokeRequest {
+  agentAdapter: string;
+  runIndex: number;
+  backend: string;
+  image: unknown;
+}
+
+export type CampaignAdmissionSmokeReuse =
+  | { reusable: false; reason: string }
+  | { reusable: true; reason: null; createdAt: string };
+
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function validCheck(value: unknown): value is CampaignAdmissionCheck {
+  return object(value)
+    && typeof value.id === 'string'
+    && (value.status === 'pass' || value.status === 'warn' || value.status === 'fail')
+    && typeof value.summary === 'string';
+}
+
+function validReport(value: unknown): value is CampaignAdmissionReport {
+  if (!object(value) || value.schemaVersion !== 1 || typeof value.ok !== 'boolean'
+    || !object(value.request) || typeof value.request.agentAdapter !== 'string'
+    || typeof value.request.runIndex !== 'number' || !Array.isArray(value.checks)
+    || !value.checks.every(validCheck) || !object(value.summary)) return false;
+  const checks = value.checks;
+  return value.summary.passed === checks.filter(check => check.status === 'pass').length
+    && value.summary.failed === checks.filter(check => check.status === 'fail').length
+    && value.summary.warnings === checks.filter(check => check.status === 'warn').length
+    && value.ok === !checks.some(check => check.status === 'fail');
+}
+
+function contained(root: string, path: string, label: string): string {
   const absoluteRoot = resolve(root);
   const absolute = resolve(absoluteRoot, path);
   const rel = relative(absoluteRoot, absolute);
@@ -15,8 +113,12 @@ function contained(root, path, label) {
   return absolute;
 }
 
-export function validateCampaignAdmission(input, plan, directory) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+export function validateCampaignAdmission(
+  input: unknown,
+  plan: CampaignAdmissionPlan,
+  directory: string,
+): CampaignAdmission {
+  if (!object(input)) {
     throw new Error('campaign admission payload must be an object');
   }
   const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
@@ -50,23 +152,15 @@ export function validateCampaignAdmission(input, plan, directory) {
   const expectedResultsDir = resolve(directory);
   for (const adapter of adapters) {
     for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
-      const matches = input.reports.filter(report => report?.request?.agentAdapter === adapter
-        && report?.request?.runIndex === runIndex);
+      const matches = input.reports.filter((report): report is UnknownRecord & {
+        request: UnknownRecord & { agentAdapter: string; runIndex: number };
+      } => object(report) && object(report.request)
+        && report.request.agentAdapter === adapter && report.request.runIndex === runIndex);
       if (matches.length !== 1) {
         throw new Error(`campaign admission must contain one ${adapter} report for run slot ${runIndex}`);
       }
-      const report = matches[0];
-      if (report.schemaVersion !== 1 || typeof report.ok !== 'boolean' || !Array.isArray(report.checks)
-        || !report.summary || typeof report.summary !== 'object'
-        || !report.checks.every(check => check && typeof check === 'object'
-          && typeof check.id === 'string' && ['pass', 'warn', 'fail'].includes(check.status)
-          && typeof check.summary === 'string')
-        || report.summary.passed !== report.checks.filter(check => check.status === 'pass').length
-        || report.summary.failed !== report.checks.filter(check => check.status === 'fail').length
-        || report.summary.warnings !== report.checks.filter(check => check.status === 'warn').length
-        || report.ok !== !report.checks.some(check => check.status === 'fail')) {
-        throw new Error(`campaign admission report for ${adapter} is malformed`);
-      }
+      const report = matches[0]!;
+      if (!validReport(report)) throw new Error(`campaign admission report for ${adapter} is malformed`);
       const request = report.request;
       if (canonicalDefinitionJson(request.backends) !== canonicalDefinitionJson(expectedBackends)
         || request.track !== plan.definition.track
@@ -80,6 +174,7 @@ export function validateCampaignAdmission(input, plan, directory) {
         || request.smoke !== true
         || (plan.definition.runtime.buildImage !== null
           && request.image !== plan.definition.runtime.buildImage)
+        || typeof request.resultsDir !== 'string'
         || resolve(request.resultsDir) !== expectedResultsDir) {
         throw new Error(`campaign admission report for ${adapter} does not match the compiled scope`);
       }
@@ -88,26 +183,34 @@ export function validateCampaignAdmission(input, plan, directory) {
   if (input.ok !== input.reports.every(report => report.ok)) {
     throw new Error('campaign admission verdict does not match its reports');
   }
-  return structuredClone(input);
+  return structuredClone(input) as CampaignAdmission;
 }
 
-export function readCampaignAdmission(directory, id, plan) {
+export function readCampaignAdmission(
+  directory: string,
+  id: string,
+  plan: CampaignAdmissionPlan,
+): CampaignAdmission {
   const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');
   const artifact = readArtifact(path, { expectedKind: 'campaign_admission', expectedId: id });
-  if (artifact.identities.experiment?.sha256 !== plan.contentSha256) {
+  const experiment = artifact.identities.experiment;
+  if (!object(experiment) || experiment.sha256 !== plan.contentSha256) {
     throw new Error(`campaign admission ${id} has the wrong experiment identity`);
   }
   return validateCampaignAdmission(artifact.payload, plan, directory);
 }
 
-export function campaignAdmissionSmokeReuse(admission, request,
-  { now = Date.now(), maxAgeMs = SMOKE_REUSE_MS } = {}) {
+export function campaignAdmissionSmokeReuse(
+  admission: CampaignAdmissionSmokeInput,
+  request: CampaignAdmissionSmokeRequest,
+  { now = Date.now(), maxAgeMs = SMOKE_REUSE_MS }: { now?: number; maxAgeMs?: number } = {},
+): CampaignAdmissionSmokeReuse {
   if (admission.ok !== true) throw new Error('campaign admission did not pass');
   const reports = admission.reports.filter(report =>
     report.request.agentAdapter === request.agentAdapter
     && report.request.runIndex === request.runIndex);
   if (reports.length !== 1) throw new Error('campaign admission has no exact attempt report');
-  const report = reports[0];
+  const report = reports[0]!;
   if (report.ok !== true) throw new Error('campaign admission attempt report did not pass');
   if (!report.request.backends.includes(request.backend)) {
     throw new Error(`campaign admission does not cover stack ${request.backend}`);

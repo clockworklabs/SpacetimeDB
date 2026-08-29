@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { CAMPAIGN_MODE_REGISTRY, createCampaignModeRegistry }
-  from '../src/campaigns/campaign-mode.mjs';
+  from '../src/campaigns/campaign-mode.js';
 
 test('the campaign mode registry requires an exact supported mode', () => {
   assert.deepEqual(CAMPAIGN_MODE_REGISTRY.validate({

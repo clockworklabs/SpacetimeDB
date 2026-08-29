@@ -2,17 +2,36 @@ export const CAMPAIGN_MODE_SCHEMA_VERSION = 1;
 
 const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const positiveInteger = (value, at) => {
-  if (!Number.isSafeInteger(value) || value < 1) fail(`${at} must be a positive integer`);
+type UnknownRecord = Record<string, unknown>;
+
+export interface CampaignModeInput extends UnknownRecord {
+  id: string;
+  version: string;
+}
+
+export interface CampaignModeDefinition extends CampaignModeInput {
+  validate(value: CampaignModeInput, options: { at: string }): CampaignModeInput;
+}
+
+export interface CampaignModeRegistry {
+  ids: readonly string[];
+  validate(input: unknown, options?: { at?: string }): CampaignModeInput;
+}
+
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const positiveInteger = (value: unknown, at: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    fail(`${at} must be a positive integer`);
+  }
   return value;
 };
 
-function fail(message) {
+function fail(message: string): never {
   throw new Error(`invalid campaign mode: ${message}`);
 }
 
-function validateIdentity(value, at) {
+function validateIdentity(value: unknown, at: string): asserts value is CampaignModeInput {
   if (!object(value)) fail(`${at} must be an object`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id is invalid`);
   if (typeof value.version !== 'string' || !VERSION.test(value.version)) {
@@ -20,9 +39,9 @@ function validateIdentity(value, at) {
   }
 }
 
-export function createCampaignModeRegistry(modes) {
+export function createCampaignModeRegistry(modes: CampaignModeDefinition[]): CampaignModeRegistry {
   if (!Array.isArray(modes) || modes.length === 0) fail('registry requires at least one mode');
-  const entries = new Map();
+  const entries = new Map<string, CampaignModeDefinition>();
   for (const mode of modes) {
     validateIdentity(mode, 'registry entry');
     if (typeof mode.validate !== 'function') fail(`${mode.id}@${mode.version} requires validate()`);
@@ -32,7 +51,7 @@ export function createCampaignModeRegistry(modes) {
   }
   return Object.freeze({
     ids: Object.freeze([...entries.keys()].sort()),
-    validate(input, { at = 'mode' } = {}) {
+    validate(input: unknown, { at = 'mode' }: { at?: string } = {}) {
       validateIdentity(input, at);
       const key = `${input.id}@${input.version}`;
       const mode = entries.get(key);
@@ -45,7 +64,7 @@ export function createCampaignModeRegistry(modes) {
 const sequentialMode = {
   id: 'sequential',
   version: '1.0.0',
-  validate(value, { at }) {
+  validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
     const fields = new Set(['id', 'version']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for sequential mode`);
@@ -57,7 +76,7 @@ const sequentialMode = {
 const dependencyMode = {
   id: 'dependency',
   version: '2.1.0',
-  validate(value, { at }) {
+  validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
     const fields = new Set(['id', 'version', 'strikes']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
@@ -69,7 +88,7 @@ const dependencyMode = {
     }
     const levels = value.strikes.levels ?? {};
     if (!object(levels)) fail(`${at}.strikes.levels must be an object`);
-    const normalizedLevels = {};
+    const normalizedLevels: Record<string, number> = {};
     for (const [level, budget] of Object.entries(levels)) {
       if (!/^[1-9]\d*$/.test(level)) fail(`${at}.strikes.levels.${level} has an invalid level`);
       normalizedLevels[level] = positiveInteger(budget, `${at}.strikes.levels.${level}`);
@@ -87,6 +106,6 @@ export const CAMPAIGN_MODE_REGISTRY = createCampaignModeRegistry([
   sequentialMode,
 ]);
 
-export function validateCampaignMode(value, options) {
+export function validateCampaignMode(value: unknown, options?: { at?: string }): CampaignModeInput {
   return CAMPAIGN_MODE_REGISTRY.validate(value, options);
 }
