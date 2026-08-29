@@ -6,12 +6,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
-import { resetBackend } from '../src/stacks/backend-reset.mjs';
+import { resetBackend } from '../dist/src/stacks/backend-reset.mjs';
 import { proveMongoDbUse, provePostgresUse,
-  resetPostgres } from '../src/stacks/stack-backend-operations.mjs';
+  resetPostgres } from '../dist/src/stacks/stack-backend-operations.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../src/runtime/spacetime-layout.mjs';
-import { POSTGRES_APPLICATION_IDENTITY } from '../src/stacks/hosted-database-identity.mjs';
+import { POSTGRES_APPLICATION_IDENTITY } from '../dist/src/stacks/hosted-database-identity.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;

@@ -19,7 +19,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
-import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.mjs';
+import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.mjs';
 import { pidsOnPort } from './platform.mjs';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.mjs';

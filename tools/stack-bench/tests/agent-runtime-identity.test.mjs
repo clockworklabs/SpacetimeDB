@@ -3,16 +3,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { dbName, moduleName } from '../src/composition/tracks.mjs';
+import { dbName, moduleName } from '../dist/src/composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,
   codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.mjs';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
-  from '../src/stacks/stack-adapters.mjs';
+  from '../dist/src/stacks/stack-adapters.mjs';
 import { POSTGRES_APPLICATION_IDENTITY }
-  from '../src/stacks/hosted-database-identity.mjs';
-import { spacetimeBuildContainerPlan } from '../src/stacks/stack-agent-operations.mjs';
+  from '../dist/src/stacks/hosted-database-identity.js';
+import { spacetimeBuildContainerPlan } from '../dist/src/stacks/stack-agent-operations.mjs';
 
 const FORBIDDEN_IDENTITY = /stackbench|stack[-_ ]bench|benchmark|harness|test|grader/i;
 
