@@ -32,7 +32,7 @@ import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
-import { evidenceNowMs } from '../src/evidence/evidence-timing.mjs';
+import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';

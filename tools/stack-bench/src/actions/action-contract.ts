@@ -1,4 +1,4 @@
-import { evidenceNowMs } from '../evidence/evidence-timing.mjs';
+import { evidenceNowMs } from '../evidence/evidence-timing.js';
 
 type UnknownRecord = Record<string, unknown>;
 type ActionStatus = 'passed' | 'failed' | 'inconclusive' | 'harness_failure';
