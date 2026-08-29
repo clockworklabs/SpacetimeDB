@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.mjs';
 import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.mjs';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
-  from '../../runtime/coding-container-policy.mjs';
+  from '../../runtime/coding-container-policy.js';
 
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;

@@ -14,7 +14,7 @@ import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.m
 import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
-  from '../runtime/coding-container-policy.mjs';
+  from '../runtime/coding-container-policy.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';

@@ -40,7 +40,7 @@ import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommand }
-  from '../src/runtime/coding-container-policy.mjs';
+  from '../src/runtime/coding-container-policy.js';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';

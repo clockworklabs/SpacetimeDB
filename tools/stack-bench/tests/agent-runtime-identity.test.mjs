@@ -7,7 +7,7 @@ import { dbName, moduleName } from '../dist/src/composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../dist/src/package-root.js';
 import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,
-  codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.mjs';
+  codingContainerAgentExecOptions } from '../dist/src/runtime/coding-container-policy.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
   from '../dist/src/stacks/stack-adapters.mjs';
 import { POSTGRES_APPLICATION_IDENTITY }

@@ -14,7 +14,7 @@ import { writeArtifact } from '../dist/src/evidence/artifacts.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { parseReferenceAgentArgs } from '../src/references/reference-agent.mjs';
+import { parseReferenceAgentArgs } from '../dist/src/references/reference-agent.mjs';
 import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistry }
   from '../src/references/reference-fixtures.mjs';
 

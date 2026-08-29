@@ -17,7 +17,7 @@ import { createBackendLease, readBackendLease, writeBackendLease } from '../src/
 import { fetchStatus } from '../src/runtime/readiness.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
-import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.mjs';
+import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');

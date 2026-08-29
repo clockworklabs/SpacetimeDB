@@ -1,5 +1,5 @@
 import { join, resolve } from 'node:path';
-import { CODING_CONTAINER_AGENT } from '../runtime/coding-container-policy.mjs';
+import { CODING_CONTAINER_AGENT } from '../runtime/coding-container-policy.js';
 import { databaseContainerName } from './database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
 

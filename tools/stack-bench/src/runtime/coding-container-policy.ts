@@ -13,18 +13,18 @@ export const CODING_CONTAINER_PROCESS_IDENTITY = Object.freeze({
   stopLabel: 'developer-stop',
 });
 
-export function codingContainerAgentEnvironment() {
+export function codingContainerAgentEnvironment(): { HOME: string; USER: string } {
   return { HOME: CODING_CONTAINER_AGENT.home, USER: CODING_CONTAINER_AGENT.name };
 }
 
-export function codingContainerAgentExecOptions() {
+export function codingContainerAgentExecOptions(): string[] {
   const agent = CODING_CONTAINER_AGENT;
   const environment = codingContainerAgentEnvironment();
   return ['--user', `${agent.uid}:${agent.gid}`, '-e', `HOME=${environment.HOME}`,
     '-e', `USER=${environment.USER}`];
 }
 
-export function codingContainerAgentCommand(command, args = []) {
+export function codingContainerAgentCommand(command: string, args: readonly string[] = []): string[] {
   return ['sh', '-c', 'umask 000; exec "$@"', 'application-command', command, ...args];
 }
 
@@ -32,6 +32,6 @@ export function codingContainerAgentCommand(command, args = []) {
 // the controller so the audit and cost ledger can inspect them after the coding
 // session. Give the controller read access before the session container is
 // released. Do not make transcripts writable by other users.
-export function codingContainerTranscriptHandoffCommand() {
+export function codingContainerTranscriptHandoffCommand(): string[] {
   return ['chmod', '-R', 'a+rX', `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`];
 }

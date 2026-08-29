@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { deployReferenceAndRestoreSource, parseReferenceAgentArgs, prepareReferenceSource, referenceDevCommand,
-  restoreReferenceSourceIdentity } from '../src/references/reference-agent.mjs';
+  restoreReferenceSourceIdentity } from '../dist/src/references/reference-agent.mjs';
 
 function argv({ mode = 'build', level = '2', runIndex = '0', recipe } = {}) {
   return ['node', 'reference-agent.mjs', '--mode', mode, '--backend', 'mongodb',

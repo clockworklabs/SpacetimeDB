@@ -129,7 +129,7 @@ test('local and appliance compose files pin the same images but isolate resource
 
 test('coding containers cannot inspect host-network traffic or gain privileges', () => {
   const source = readFileSync(join(ROOT, 'container', 'run-build.mjs'), 'utf8');
-  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.mjs'), 'utf8');
+  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.ts'), 'utf8');
   assert.match(source, /'--cap-drop', 'ALL'/);
   assert.match(source, /'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'/);
   assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
@@ -152,7 +152,7 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
 
 test('coding session transcripts are handed back read-only to the controller', () => {
   const source = readFileSync(join(ROOT, 'container', 'run-build.mjs'), 'utf8');
-  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.mjs'), 'utf8');
+  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.ts'), 'utf8');
   assert.match(source, /codingContainerTranscriptHandoffCommand\(\)/);
   assert.match(policy, /\['chmod', '-R', 'a\+rX', `\$\{CODING_CONTAINER_AGENT\.home\}\/\.claude\/projects\/-app`\]/);
   assert.doesNotMatch(policy, /codingContainerTranscriptHandoffCommand[\s\S]*?a\+rwX/);
