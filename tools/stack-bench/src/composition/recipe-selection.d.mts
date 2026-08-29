@@ -1,4 +1,4 @@
-import type { CompiledRecipePlan } from './composition-compiler.mjs';
+import type { CompiledRecipePlan } from './composition-compiler.js';
 import type { RecipeCheck, RecipeRelease } from './recipe-release.js';
 
 export interface RecipeSelection {

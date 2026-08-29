@@ -3,6 +3,193 @@ import { dirname, relative, resolve, sep } from 'node:path';
 
 import { compileScenarioDefinition } from './definition-compiler.js';
 
+type UnknownRecord = Record<string, unknown>;
+
+// Each compiler validates a cloned record field by field and returns that same
+// record. The intersection is what lets the proven record be read back as the
+// shape it was proven to be.
+type Validated<T> = T & UnknownRecord;
+
+import type { CompiledFeature, CompiledScenarioDefinition, CompiledStep } from './definition-compiler.js';
+
+export interface TaskFragmentDefinition {
+  id: string;
+  path: string;
+  order: number;
+  from?: string;
+  until?: string;
+  modes?: string[];
+  requiresFeatures?: string[];
+}
+
+export interface CompiledTaskFragment
+  extends Omit<TaskFragmentDefinition, 'from' | 'until' | 'modes'> {
+  from: string | null;
+  until: string | null;
+  modes: string[];
+  text: string;
+}
+
+export interface CompiledOwnedTaskFragment extends CompiledTaskFragment {
+  owners: string[];
+  ownerConditions?: Array<{
+    owner: string;
+    modes: string[];
+    requiresFeatures: string[];
+  }>;
+  requiresFeatures?: string[];
+}
+
+export interface PackCheck {
+  id: string;
+  stableId?: string;
+  source: string;
+  feature: number;
+  criteria?: string[];
+  role: string;
+  observations?: string[];
+  requiresFeatures?: string[];
+}
+
+export interface CompiledPackDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  stableId?: string;
+  version: string;
+  state: string;
+  title: string;
+  moduleType?: string;
+  requiresPacks: string[];
+  conflictsWith: string[];
+  capabilities: string[];
+  evidence: string[];
+  budget: { status: string; maxRuntimeMs?: number };
+  task: ValidatedTaskFragmentSet;
+  checks: PackCheck[];
+}
+
+export interface FixtureItem {
+  name: string;
+  price: string;
+  category: string;
+  stock: Record<string, number>;
+}
+
+export interface FixtureAccount {
+  username: string;
+  password: string;
+  roles: string[];
+}
+
+export interface CompiledFixtureDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  warehouses: string[];
+  items: FixtureItem[];
+  accounts: FixtureAccount[];
+  empty: string[];
+}
+
+export interface SelectedCheckGroup {
+  packId: string;
+  packVersion: string;
+  stablePackId?: string;
+  moduleType?: string;
+  checkGroupId: string;
+  role: string;
+  observations?: string[];
+  requiresFeatures?: string[];
+  source: string;
+  feature: CompiledFeature;
+  actions: string[];
+}
+
+export interface SelectedCheck {
+  stableKey: string;
+  packId: string;
+  stablePackId?: string;
+  checkGroupId: string;
+  criterionId: string;
+  role: string;
+  observations?: string[];
+  requiresFeatures?: string[];
+  source: string;
+  featureId: number;
+  description: string;
+  sourcePoints: number;
+  points: number;
+}
+
+export interface CompiledRecipePlan {
+  compositionSchemaVersion: number;
+  recipe: {
+    id: string;
+    version: string;
+    state: string;
+    title: string;
+    track: string;
+    compatibility: { legacyLevel?: number; mode?: string } | null;
+    task: {
+      mode: string;
+      baseRecipe: { id: string; version: string; path: string } | null;
+      requirements: CompiledOwnedTaskFragment[];
+      contracts: CompiledOwnedTaskFragment[];
+      requirementText: string;
+      contractText: string;
+    };
+  };
+  fixture: CompiledFixtureDefinition;
+  packs: Array<{
+    id: string;
+    stableId?: string;
+    version: string;
+    state: string;
+    title: string;
+    moduleType?: string;
+    path: string;
+    includeRoles: string[];
+    requiresPacks: string[];
+    capabilities: string[];
+    evidence: string[];
+    budget: { status: string; maxRuntimeMs?: number };
+    task: { requirementIds: string[]; contractIds: string[] };
+    actions: string[];
+  }>;
+  capabilities: string[];
+  execution: Array<{ id: string; source: string; checkGroups: SelectedCheckGroup[] }>;
+  checks: SelectedCheck[];
+  scoring: { mode: string; checks: number; points: number };
+}
+
+export interface PromotionEntry {
+  alias: string;
+  status: string;
+  recipe: { id: string; version: string; path: string };
+}
+
+export interface CompiledPromotionDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  entries: PromotionEntry[];
+}
+
+export interface CompiledPromotionCatalog {
+  compositionSchemaVersion: number;
+  catalog: { id: string; version: string; state: string; title: string };
+  entries: PromotionEntry[];
+}
+
+export type CompiledRecipeRelease = CompiledRecipePlan;
+
 export const COMPOSITION_SCHEMA_VERSION = 1;
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
@@ -10,85 +197,99 @@ const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/
 const STATES = new Set(['draft', 'qualified', 'retired']);
 const ROLES = new Set(['feature', 'guarantee', 'control']);
 const MODULE_TYPES = new Set(['feature', 'specification']);
+const BUDGET_STATUSES = new Set(['unmeasured', 'bounded']);
 const OBSERVATIONS = new Set(['requested', 'unmentioned']);
 
-const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = (at, message) => { throw new Error(`invalid benchmark composition at ${at}: ${message}`); };
+const isMember = (allowed: Set<string>, value: unknown): boolean =>
+  typeof value === 'string' && allowed.has(value);
 
-function strictObject(value, at, allowed) {
+const isOneOf = (value: unknown, allowed: readonly string[]): boolean =>
+  typeof value === 'string' && allowed.includes(value);
+
+const isObject = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+function fail(at: string, message: string): never {
+  throw new Error(`invalid benchmark composition at ${at}: ${message}`);
+}
+
+function strictObject(value: unknown, at: string,
+  allowed: Set<string>): asserts value is UnknownRecord {
   if (!isObject(value)) fail(at, 'must be an object');
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) fail(`${at}.${key}`, 'unknown field');
   }
 }
 
-function string(value, at, { nonEmpty = true } = {}) {
+function string(value: unknown, at: string,
+  { nonEmpty = true }: { nonEmpty?: boolean } = {}): string {
   if (typeof value !== 'string' || (nonEmpty && value.trim().length === 0)) {
     fail(at, `must be a${nonEmpty ? ' non-empty' : ''} string`);
   }
   return value;
 }
 
-function id(value, at) {
-  string(value, at);
-  if (!ID.test(value)) fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
-  return value;
+function id(value: unknown, at: string): string {
+  const text = string(value, at);
+  if (!ID.test(text)) fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
+  return text;
 }
 
-function version(value, at) {
-  string(value, at);
-  if (!VERSION.test(value)) fail(at, 'must be an exact semantic version');
-  return value;
+function version(value: unknown, at: string): string {
+  const text = string(value, at);
+  if (!VERSION.test(text)) fail(at, 'must be an exact semantic version');
+  return text;
 }
 
-function exactRef(value, at) {
-  string(value, at);
-  const split = value.lastIndexOf('@');
+function exactRef(value: unknown, at: string): string {
+  const text = string(value, at);
+  const split = text.lastIndexOf('@');
   if (split < 1) fail(at, 'must be an exact id@version reference');
-  id(value.slice(0, split), `${at} id`);
-  version(value.slice(split + 1), `${at} version`);
-  return value;
+  id(text.slice(0, split), `${at} id`);
+  version(text.slice(split + 1), `${at} version`);
+  return text;
 }
 
-function uniqueStrings(value, at) {
+function uniqueStrings(value: unknown, at: string): string[] {
   if (!Array.isArray(value)) fail(at, 'must be an array');
-  const seen = new Set();
+  const seen = new Set<string>();
   return value.map((item, index) => {
-    string(item, `${at}[${index}]`);
-    if (seen.has(item)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(item)}`);
-    seen.add(item);
-    return item;
+    const text = string(item, `${at}[${index}]`);
+    if (seen.has(text)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(text)}`);
+    seen.add(text);
+    return text;
   });
 }
 
-function identityFields(value, at, kind) {
+function identityFields(value: UnknownRecord, at: string, kind: string): void {
   if (value.schemaVersion !== COMPOSITION_SCHEMA_VERSION) {
     fail(`${at}.schemaVersion`, `must be ${COMPOSITION_SCHEMA_VERSION}`);
   }
   if (value.kind !== kind) fail(`${at}.kind`, `must be ${JSON.stringify(kind)}`);
   id(value.id, `${at}.id`);
   version(value.version, `${at}.version`);
-  if (!STATES.has(value.state)) fail(`${at}.state`, 'must be draft, qualified, or retired');
+  if (!isMember(STATES, value.state)) fail(`${at}.state`, 'must be draft, qualified, or retired');
   string(value.title, `${at}.title`);
 }
 
-function readJson(path, label) {
+function readJson(path: string, label: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
   } catch (error) {
-    throw new Error(`cannot read ${label} ${path}: ${error.message}`, { cause: error });
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
   }
 }
 
-function contained(root, from, path, at) {
-  string(path, at);
+function contained(root: string, from: string, path: unknown,
+  at: string): { absolute: string; relative: string } {
+  const text = string(path, at);
   const lexicalRoot = resolve(root);
-  const candidate = resolve(from, path);
+  const candidate = resolve(from, text);
   const lexicalRelative = relative(lexicalRoot, candidate);
   if (lexicalRelative === '..' || lexicalRelative.startsWith(`..${sep}`)) {
     fail(at, `escapes ${lexicalRoot}`);
   }
-  if (!existsSync(candidate)) fail(at, `does not exist: ${path}`);
+  if (!existsSync(candidate)) fail(at, `does not exist: ${text}`);
   const rootPath = realpathSync(lexicalRoot);
   const target = realpathSync(candidate);
   const rel = relative(rootPath, target);
@@ -112,32 +313,49 @@ const TASK_FRAGMENT_FIELDS = new Set([
 const TASK_MODES = new Set(['fresh', 'upgrade']);
 const RECIPE_TASK_MODES = new Set([...TASK_MODES, 'action']);
 
-function taskFragmentDefinition(fragment, at) {
+type ValidatedTaskFragment = {
+  id: string;
+  path: string;
+  order: number;
+  from?: string;
+  until?: string;
+  modes: string[];
+  requiresFeatures?: string[];
+};
+
+type ValidatedTaskFragmentSet = {
+  requirements: ValidatedTaskFragment[];
+  contracts: ValidatedTaskFragment[];
+};
+
+function taskFragmentDefinition(fragment: unknown, at: string): ValidatedTaskFragment {
   strictObject(fragment, at, TASK_FRAGMENT_FIELDS);
   id(fragment.id, `${at}.id`);
   string(fragment.path, `${at}.path`);
-  if (!Number.isInteger(fragment.order) || fragment.order < 0) {
+  if (!Number.isInteger(fragment.order) || Number(fragment.order) < 0) {
     fail(`${at}.order`, 'must be a non-negative integer');
   }
   if (fragment.from !== undefined) string(fragment.from, `${at}.from`);
   if (fragment.until !== undefined) string(fragment.until, `${at}.until`);
-  fragment.modes = uniqueStrings(fragment.modes ?? ['fresh', 'upgrade'], `${at}.modes`);
-  if (fragment.modes.length === 0) fail(`${at}.modes`, 'must not be empty');
-  for (const mode of fragment.modes) {
-    if (!TASK_MODES.has(mode)) fail(`${at}.modes`, `unknown task mode ${mode}`);
+  const modes = uniqueStrings(fragment.modes ?? ['fresh', 'upgrade'], `${at}.modes`);
+  fragment.modes = modes;
+  if (modes.length === 0) fail(`${at}.modes`, 'must not be empty');
+  for (const mode of modes) {
+    if (!isMember(TASK_MODES, mode)) fail(`${at}.modes`, `unknown task mode ${mode}`);
   }
   if (fragment.requiresFeatures !== undefined) {
-    fragment.requiresFeatures = uniqueStrings(fragment.requiresFeatures, `${at}.requiresFeatures`).sort();
-    if (fragment.requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
-    for (const featureId of fragment.requiresFeatures) id(featureId, `${at}.requiresFeatures`);
+    const requiresFeatures = uniqueStrings(fragment.requiresFeatures, `${at}.requiresFeatures`).sort();
+    fragment.requiresFeatures = requiresFeatures;
+    if (requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
+    for (const featureId of requiresFeatures) id(featureId, `${at}.requiresFeatures`);
   }
-  return fragment;
+  return fragment as ValidatedTaskFragment;
 }
 
-function taskFragmentSet(value, at) {
+function taskFragmentSet(value: unknown, at: string): ValidatedTaskFragmentSet {
   strictObject(value, at, PACK_TASK_FIELDS);
-  const seen = new Set();
-  const compile = (fragments, kind) => {
+  const seen = new Set<string>();
+  const compile = (fragments: unknown, kind: string): ValidatedTaskFragment[] => {
     if (!Array.isArray(fragments)) fail(`${at}.${kind}`, 'must be an array');
     return fragments.map((fragment, index) => {
       const compiled = taskFragmentDefinition(fragment, `${at}.${kind}[${index}]`);
@@ -153,8 +371,10 @@ function taskFragmentSet(value, at) {
   };
 }
 
-export function resolveTaskFragment(fragmentInput, { trackRoot, source = '<task-fragment>',
-  sourceCache = new Map() } = {}) {
+export function resolveTaskFragment(fragmentInput: unknown,
+  { trackRoot, source = '<task-fragment>', sourceCache = new Map<string, string>() }:
+    { trackRoot: string; source?: string; sourceCache?: Map<string, string> }):
+  CompiledTaskFragment {
   if (!trackRoot) throw new Error('task fragment resolution requires trackRoot');
   const fragment = taskFragmentDefinition(structuredClone(fragmentInput), source);
   const root = resolve(trackRoot);
@@ -193,110 +413,123 @@ export function resolveTaskFragment(fragmentInput, { trackRoot, source = '<task-
   };
 }
 
-export function compilePackDefinition(input, { source = '<pack>' } = {}) {
+export function compilePackDefinition(input: unknown,
+  { source = '<pack>' }: { source?: string } = {}): CompiledPackDefinition {
   const pack = structuredClone(input);
   strictObject(pack, source, PACK_FIELDS);
   identityFields(pack, source, 'test-pack');
   if (pack.stableId !== undefined) id(pack.stableId, `${source}.stableId`);
-  if (pack.moduleType !== undefined && !MODULE_TYPES.has(pack.moduleType)) {
+  if (pack.moduleType !== undefined && !isMember(MODULE_TYPES, pack.moduleType)) {
     fail(`${source}.moduleType`, 'must be feature or specification');
   }
   if (pack.description !== undefined) string(pack.description, `${source}.description`);
-  pack.requiresPacks = uniqueStrings(pack.requiresPacks ?? [], `${source}.requiresPacks`);
-  pack.conflictsWith = uniqueStrings(pack.conflictsWith ?? [], `${source}.conflictsWith`);
-  pack.requiresPacks.forEach((ref, index) => exactRef(ref, `${source}.requiresPacks[${index}]`));
-  pack.conflictsWith.forEach((ref, index) => exactRef(ref, `${source}.conflictsWith[${index}]`));
-  pack.capabilities = uniqueStrings(pack.capabilities ?? [], `${source}.capabilities`);
-  if (pack.capabilities.length === 0) fail(`${source}.capabilities`, 'must not be empty');
-  pack.evidence = uniqueStrings(pack.evidence ?? [], `${source}.evidence`);
-  if (pack.evidence.length === 0) fail(`${source}.evidence`, 'must not be empty');
-  strictObject(pack.budget, `${source}.budget`, BUDGET_FIELDS);
-  if (!['unmeasured', 'bounded'].includes(pack.budget.status)) {
+  const requiresPacks = uniqueStrings(pack.requiresPacks ?? [], `${source}.requiresPacks`);
+  const conflictsWith = uniqueStrings(pack.conflictsWith ?? [], `${source}.conflictsWith`);
+  pack.requiresPacks = requiresPacks;
+  pack.conflictsWith = conflictsWith;
+  requiresPacks.forEach((ref, index) => exactRef(ref, `${source}.requiresPacks[${index}]`));
+  conflictsWith.forEach((ref, index) => exactRef(ref, `${source}.conflictsWith[${index}]`));
+  const capabilities = uniqueStrings(pack.capabilities ?? [], `${source}.capabilities`);
+  pack.capabilities = capabilities;
+  if (capabilities.length === 0) fail(`${source}.capabilities`, 'must not be empty');
+  const evidence = uniqueStrings(pack.evidence ?? [], `${source}.evidence`);
+  pack.evidence = evidence;
+  if (evidence.length === 0) fail(`${source}.evidence`, 'must not be empty');
+  const budget = pack.budget;
+  strictObject(budget, `${source}.budget`, BUDGET_FIELDS);
+  if (!isMember(BUDGET_STATUSES, budget.status)) {
     fail(`${source}.budget.status`, 'must be unmeasured or bounded');
   }
-  if (pack.budget.status === 'bounded') {
-    if (!Number.isInteger(pack.budget.maxRuntimeMs) || pack.budget.maxRuntimeMs < 1) {
+  if (budget.status === 'bounded') {
+    if (!Number.isInteger(budget.maxRuntimeMs) || Number(budget.maxRuntimeMs) < 1) {
       fail(`${source}.budget.maxRuntimeMs`, 'must be a positive integer for a bounded budget');
     }
-  } else if (pack.budget.maxRuntimeMs !== undefined) {
+  } else if (budget.maxRuntimeMs !== undefined) {
     fail(`${source}.budget.maxRuntimeMs`, 'is allowed only for a bounded budget');
   }
-  if (pack.state === 'qualified' && pack.budget.status !== 'bounded') {
+  if (pack.state === 'qualified' && budget.status !== 'bounded') {
     fail(`${source}.budget`, 'qualified packs require a bounded runtime budget');
   }
-  pack.task = taskFragmentSet(pack.task, `${source}.task`);
-  if (pack.task.requirements.length === 0) {
+  const task = taskFragmentSet(pack.task, `${source}.task`);
+  pack.task = task;
+  if (task.requirements.length === 0) {
     fail(`${source}.task.requirements`, 'must not be empty');
   }
-  if (!Array.isArray(pack.checks) || pack.checks.length === 0) {
+  const checks = pack.checks;
+  if (!Array.isArray(checks) || checks.length === 0) {
     fail(`${source}.checks`, 'must be a non-empty array');
   }
-  const taskFragments = [...pack.task.requirements, ...pack.task.contracts];
+  const taskFragments = [...task.requirements, ...task.contracts];
   if (pack.moduleType === 'feature'
     && taskFragments.some(fragment => fragment.requiresFeatures !== undefined)) {
     fail(`${source}.task`, 'feature module fragments cannot declare specification applicability');
   }
   if (pack.moduleType === 'specification'
-    && pack.task.requirements.some(fragment => fragment.requiresFeatures === undefined)) {
+    && task.requirements.some(fragment => fragment.requiresFeatures === undefined)) {
     fail(`${source}.task.requirements`,
       'specification requirement fragments must declare applicable feature modules');
   }
-  const checkIds = new Set();
-  pack.checks.forEach((check, index) => {
+  const checkIds = new Set<string>();
+  const validatedChecks = checks.map((check: unknown, index: number) => {
     const at = `${source}.checks[${index}]`;
     strictObject(check, at, CHECK_REF_FIELDS);
-    id(check.id, `${at}.id`);
-    if (checkIds.has(check.id)) fail(`${at}.id`, `duplicate check group ${check.id}`);
-    checkIds.add(check.id);
+    const checkId = id(check.id, `${at}.id`);
+    if (checkIds.has(checkId)) fail(`${at}.id`, `duplicate check group ${checkId}`);
+    checkIds.add(checkId);
     if (check.stableId !== undefined) id(check.stableId, `${at}.stableId`);
     string(check.source, `${at}.source`);
-    if (!Number.isInteger(check.feature) || check.feature < 1) {
+    if (!Number.isInteger(check.feature) || Number(check.feature) < 1) {
       fail(`${at}.feature`, 'must be a positive integer');
     }
     if (check.criteria !== undefined) {
-      check.criteria = uniqueStrings(check.criteria, `${at}.criteria`);
-      if (check.criteria.length === 0) fail(`${at}.criteria`, 'must not be empty');
-      for (const criterion of check.criteria) id(criterion, `${at}.criteria`);
+      const criteria = uniqueStrings(check.criteria, `${at}.criteria`);
+      check.criteria = criteria;
+      if (criteria.length === 0) fail(`${at}.criteria`, 'must not be empty');
+      for (const criterion of criteria) id(criterion, `${at}.criteria`);
     }
-    if (!ROLES.has(check.role)) fail(`${at}.role`, 'must be feature, guarantee, or control');
+    if (!isMember(ROLES, check.role)) fail(`${at}.role`, 'must be feature, guarantee, or control');
     if (check.observations !== undefined) {
-      check.observations = uniqueStrings(check.observations, `${at}.observations`).sort();
-      if (check.observations.length === 0) fail(`${at}.observations`, 'must not be empty');
-      for (const observation of check.observations) {
-        if (!OBSERVATIONS.has(observation)) {
+      const observations = uniqueStrings(check.observations, `${at}.observations`).sort();
+      check.observations = observations;
+      if (observations.length === 0) fail(`${at}.observations`, 'must not be empty');
+      for (const observation of observations) {
+        if (!isMember(OBSERVATIONS, observation)) {
           fail(`${at}.observations`, `unknown observation class ${observation}`);
         }
       }
     }
     if (check.requiresFeatures !== undefined) {
-      check.requiresFeatures = uniqueStrings(check.requiresFeatures, `${at}.requiresFeatures`).sort();
-      if (check.requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
-      for (const featureId of check.requiresFeatures) id(featureId, `${at}.requiresFeatures`);
+      const requiresFeatures = uniqueStrings(check.requiresFeatures, `${at}.requiresFeatures`).sort();
+      check.requiresFeatures = requiresFeatures;
+      if (requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
+      for (const featureId of requiresFeatures) id(featureId, `${at}.requiresFeatures`);
     }
+    return check;
   });
   if (pack.moduleType === 'feature') {
-    if (pack.checks.some(check => check.role === 'guarantee')) {
+    if (validatedChecks.some(check => check.role === 'guarantee')) {
       fail(`${source}.checks`, 'feature modules cannot own guarantee checks');
     }
-    if (pack.checks.some(check => check.observations?.includes('unmentioned'))) {
+    if (validatedChecks.some(check => Array.isArray(check.observations)
+      && check.observations.includes('unmentioned'))) {
       fail(`${source}.checks`, 'feature modules cannot own evaluations without prompting');
     }
-    if (pack.checks.some(check => check.requiresFeatures !== undefined)) {
+    if (validatedChecks.some(check => check.requiresFeatures !== undefined)) {
       fail(`${source}.checks`, 'feature modules cannot declare specification applicability');
     }
   }
   if (pack.moduleType === 'specification') {
-    if (pack.checks.some(check => check.role === 'feature')) {
+    if (validatedChecks.some(check => check.role === 'feature')) {
       fail(`${source}.checks`, 'specification modules cannot own feature checks');
     }
-    if (pack.checks.some(check => check.observations === undefined)) {
+    if (validatedChecks.some(check => check.observations === undefined)) {
       fail(`${source}.checks`, 'specification modules must declare prompted and/or unprompted evaluation');
     }
-    if (pack.checks.some(check => check.requiresFeatures === undefined)) {
+    if (validatedChecks.some(check => check.requiresFeatures === undefined)) {
       fail(`${source}.checks`, 'specification checks must declare applicable feature modules');
     }
   }
-  return pack;
+  return pack as Validated<CompiledPackDefinition>;
 }
 
 const FIXTURE_FIELDS = new Set([
@@ -306,49 +539,55 @@ const FIXTURE_FIELDS = new Set([
 const ITEM_FIELDS = new Set(['name', 'price', 'category', 'stock']);
 const ACCOUNT_FIELDS = new Set(['username', 'password', 'roles']);
 
-export function compileFixtureDefinition(input, { source = '<fixture>' } = {}) {
+export function compileFixtureDefinition(input: unknown,
+  { source = '<fixture>' }: { source?: string } = {}): CompiledFixtureDefinition {
   const fixture = structuredClone(input);
   strictObject(fixture, source, FIXTURE_FIELDS);
   identityFields(fixture, source, 'fixture-set');
-  fixture.warehouses = uniqueStrings(fixture.warehouses, `${source}.warehouses`);
-  if (fixture.warehouses.length === 0) fail(`${source}.warehouses`, 'must not be empty');
-  if (!Array.isArray(fixture.items) || fixture.items.length === 0) {
+  const warehouses = uniqueStrings(fixture.warehouses, `${source}.warehouses`);
+  fixture.warehouses = warehouses;
+  if (warehouses.length === 0) fail(`${source}.warehouses`, 'must not be empty');
+  const items = fixture.items;
+  if (!Array.isArray(items) || items.length === 0) {
     fail(`${source}.items`, 'must be a non-empty array');
   }
-  const itemNames = new Set();
-  fixture.items.forEach((item, index) => {
+  const itemNames = new Set<unknown>();
+  items.forEach((item: unknown, index: number) => {
     const at = `${source}.items[${index}]`;
     strictObject(item, at, ITEM_FIELDS);
-    string(item.name, `${at}.name`);
-    if (itemNames.has(item.name)) fail(`${at}.name`, `duplicate item ${item.name}`);
-    itemNames.add(item.name);
-    string(item.price, `${at}.price`);
-    if (!/^\d+\.\d{2}$/.test(item.price)) fail(`${at}.price`, 'must be a decimal string with two places');
+    const name = string(item.name, `${at}.name`);
+    if (itemNames.has(name)) fail(`${at}.name`, `duplicate item ${name}`);
+    itemNames.add(name);
+    const price = string(item.price, `${at}.price`);
+    if (!/^\d+\.\d{2}$/.test(price)) fail(`${at}.price`, 'must be a decimal string with two places');
     string(item.category, `${at}.category`);
-    strictObject(item.stock, `${at}.stock`, new Set(fixture.warehouses));
-    for (const warehouse of fixture.warehouses) {
-      if (!Number.isInteger(item.stock[warehouse]) || item.stock[warehouse] < 0) {
+    const stock = item.stock;
+    strictObject(stock, `${at}.stock`, new Set(warehouses));
+    for (const warehouse of warehouses) {
+      if (!Number.isInteger(stock[warehouse]) || Number(stock[warehouse]) < 0) {
         fail(`${at}.stock.${warehouse}`, 'must be a non-negative integer');
       }
     }
-    for (const warehouse of fixture.warehouses) {
-      if (!(warehouse in item.stock)) fail(`${at}.stock.${warehouse}`, 'is required');
+    for (const warehouse of warehouses) {
+      if (!(warehouse in stock)) fail(`${at}.stock.${warehouse}`, 'is required');
     }
   });
-  if (!Array.isArray(fixture.accounts)) fail(`${source}.accounts`, 'must be an array');
-  const usernames = new Set();
-  fixture.accounts.forEach((account, index) => {
+  const accounts = fixture.accounts;
+  if (!Array.isArray(accounts)) fail(`${source}.accounts`, 'must be an array');
+  const usernames = new Set<unknown>();
+  accounts.forEach((account: unknown, index: number) => {
     const at = `${source}.accounts[${index}]`;
     strictObject(account, at, ACCOUNT_FIELDS);
-    string(account.username, `${at}.username`);
-    if (usernames.has(account.username)) fail(`${at}.username`, `duplicate account ${account.username}`);
-    usernames.add(account.username);
+    const username = string(account.username, `${at}.username`);
+    if (usernames.has(username)) fail(`${at}.username`, `duplicate account ${username}`);
+    usernames.add(username);
     string(account.password, `${at}.password`);
-    account.roles = uniqueStrings(account.roles, `${at}.roles`);
-    if (account.roles.length === 0) fail(`${at}.roles`, 'must not be empty');
+    const roles = uniqueStrings(account.roles, `${at}.roles`);
+    account.roles = roles;
+    if (roles.length === 0) fail(`${at}.roles`, 'must not be empty');
   });
   fixture.empty = uniqueStrings(fixture.empty ?? [], `${source}.empty`);
-  return fixture;
+  return fixture as Validated<CompiledFixtureDefinition>;
 }
 
 const RECIPE_FIELDS = new Set([
@@ -362,56 +601,95 @@ const EXECUTION_FIELDS = new Set(['id', 'source']);
 const SCORING_FIELDS = new Set(['mode', 'weights']);
 const COMPATIBILITY_FIELDS = new Set(['legacyLevel', 'mode']);
 
-function validateFileRef(ref, at) {
+type FileRef = { path: string; id: string; version: string };
+
+type ValidatedRecipe = {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  track: string;
+  fixture: FileRef;
+  task: ({ mode: 'upgrade'; baseRecipe: FileRef }
+    | { mode: 'fresh' | 'action'; baseRecipe?: undefined })
+    & { framing: ValidatedTaskFragmentSet };
+  packs: Array<FileRef & { includeRoles: string[] }>;
+  execution: 'all-selected-sources' | Array<{ id: string; source: string }>;
+  scoring: { mode: 'explicit'; weights: Record<string, number> }
+    | { mode: 'legacy-source-points' | 'source-points'; weights?: undefined };
+  compatibility?: { legacyLevel: number; mode?: string };
+} & UnknownRecord;
+
+type FragmentKind = 'requirements' | 'contracts';
+
+type ComposedFragment = CompiledOwnedTaskFragment;
+
+type SelectedPack = {
+  selection: ValidatedRecipe['packs'][number];
+  pack: CompiledPackDefinition;
+  path: string;
+};
+
+function validateFileRef(ref: unknown, at: string): asserts ref is FileRef {
   strictObject(ref, at, FILE_REF_FIELDS);
   string(ref.path, `${at}.path`);
   id(ref.id, `${at}.id`);
   version(ref.version, `${at}.version`);
 }
 
-export function compileRecipeDefinition(input, { source = '<recipe>' } = {}) {
+export function compileRecipeDefinition(input: unknown,
+  { source = '<recipe>' }: { source?: string } = {}): ValidatedRecipe {
   const recipe = structuredClone(input);
   strictObject(recipe, source, RECIPE_FIELDS);
   identityFields(recipe, source, 'benchmark-recipe');
   id(recipe.track, `${source}.track`);
   validateFileRef(recipe.fixture, `${source}.fixture`);
-  strictObject(recipe.task, `${source}.task`, TASK_FIELDS);
-  if (!RECIPE_TASK_MODES.has(recipe.task.mode)) {
+  const task = recipe.task;
+  strictObject(task, `${source}.task`, TASK_FIELDS);
+  if (!isMember(RECIPE_TASK_MODES, task.mode)) {
     fail(`${source}.task.mode`, 'must be fresh, upgrade, or action');
   }
-  if (recipe.task.mode === 'upgrade') {
-    validateFileRef(recipe.task.baseRecipe, `${source}.task.baseRecipe`);
-  } else if (recipe.task.baseRecipe !== undefined) {
+  if (task.mode === 'upgrade') {
+    validateFileRef(task.baseRecipe, `${source}.task.baseRecipe`);
+  } else if (task.baseRecipe !== undefined) {
     fail(`${source}.task.baseRecipe`, 'is allowed only for upgrade recipes');
   }
-  if (recipe.task.mode !== 'action'
-    && (recipe.execution === 'all-selected-sources' || recipe.scoring?.mode === 'source-points')) {
+  const scoring = recipe.scoring;
+  if (task.mode !== 'action'
+    && (recipe.execution === 'all-selected-sources'
+      || (isObject(scoring) && scoring.mode === 'source-points'))) {
     fail(source, 'automatic execution and source scoring require an action recipe');
   }
-  recipe.task.framing = taskFragmentSet(recipe.task.framing, `${source}.task.framing`);
-  if (recipe.task.framing.requirements.length === 0) {
+  const framing = taskFragmentSet(task.framing, `${source}.task.framing`);
+  task.framing = framing;
+  if (framing.requirements.length === 0) {
     fail(`${source}.task.framing.requirements`, 'must not be empty');
   }
-  if (!Array.isArray(recipe.packs) || recipe.packs.length === 0) fail(`${source}.packs`, 'must not be empty');
-  const packIds = new Set();
-  recipe.packs.forEach((selection, index) => {
+  const packs = recipe.packs;
+  if (!Array.isArray(packs) || packs.length === 0) fail(`${source}.packs`, 'must not be empty');
+  const packIds = new Set<unknown>();
+  packs.forEach((selection: unknown, index: number) => {
     const at = `${source}.packs[${index}]`;
     strictObject(selection, at, PACK_SELECTION_FIELDS);
     validateFileRef({ path: selection.path, id: selection.id, version: selection.version }, at);
     if (packIds.has(selection.id)) fail(`${at}.id`, `duplicate selected pack ${selection.id}`);
     packIds.add(selection.id);
-    selection.includeRoles = uniqueStrings(selection.includeRoles, `${at}.includeRoles`);
-    for (const role of selection.includeRoles) {
-      if (!ROLES.has(role)) fail(`${at}.includeRoles`, `unknown role ${role}`);
+    const includeRoles = uniqueStrings(selection.includeRoles, `${at}.includeRoles`);
+    selection.includeRoles = includeRoles;
+    for (const role of includeRoles) {
+      if (!isMember(ROLES, role)) fail(`${at}.includeRoles`, `unknown role ${role}`);
     }
   });
-  if (recipe.execution !== 'all-selected-sources') {
-    if (!Array.isArray(recipe.execution) || recipe.execution.length === 0) {
+  const execution = recipe.execution;
+  if (execution !== 'all-selected-sources') {
+    if (!Array.isArray(execution) || execution.length === 0) {
       fail(`${source}.execution`, 'must be a non-empty array or "all-selected-sources"');
     }
-    const executionIds = new Set();
-    const executionSources = new Set();
-    recipe.execution.forEach((entry, index) => {
+    const executionIds = new Set<unknown>();
+    const executionSources = new Set<unknown>();
+    execution.forEach((entry: unknown, index: number) => {
       const at = `${source}.execution[${index}]`;
       strictObject(entry, at, EXECUTION_FIELDS);
       string(entry.id, `${at}.id`);
@@ -422,42 +700,46 @@ export function compileRecipeDefinition(input, { source = '<recipe>' } = {}) {
       executionSources.add(entry.source);
     });
   }
-  strictObject(recipe.scoring, `${source}.scoring`, SCORING_FIELDS);
-  if (!['legacy-source-points', 'source-points', 'explicit'].includes(recipe.scoring.mode)) {
+  strictObject(scoring, `${source}.scoring`, SCORING_FIELDS);
+  if (!isOneOf(scoring.mode, ['legacy-source-points', 'source-points', 'explicit'])) {
     fail(`${source}.scoring.mode`, 'must be legacy-source-points, source-points, or explicit');
   }
-  if (recipe.scoring.mode === 'explicit') {
-    if (!isObject(recipe.scoring.weights)) fail(`${source}.scoring.weights`, 'must be an object');
-    for (const [key, points] of Object.entries(recipe.scoring.weights)) {
+  const weights = scoring.weights;
+  if (scoring.mode === 'explicit') {
+    if (!isObject(weights)) fail(`${source}.scoring.weights`, 'must be an object');
+    for (const [key, points] of Object.entries(weights)) {
       string(key, `${source}.scoring.weights key`);
-      if (!Number.isInteger(points) || points < 0) {
+      if (!Number.isInteger(points) || Number(points) < 0) {
         fail(`${source}.scoring.weights.${key}`, 'must be a non-negative integer');
       }
     }
-  } else if (recipe.scoring.weights !== undefined) {
+  } else if (weights !== undefined) {
     fail(`${source}.scoring.weights`, 'is allowed only with explicit scoring');
   }
-  if (recipe.compatibility !== undefined) {
-    strictObject(recipe.compatibility, `${source}.compatibility`, COMPATIBILITY_FIELDS);
-    if (!Number.isInteger(recipe.compatibility.legacyLevel) || recipe.compatibility.legacyLevel < 1) {
+  const compatibility = recipe.compatibility;
+  if (compatibility !== undefined) {
+    strictObject(compatibility, `${source}.compatibility`, COMPATIBILITY_FIELDS);
+    if (!Number.isInteger(compatibility.legacyLevel) || Number(compatibility.legacyLevel) < 1) {
       fail(`${source}.compatibility.legacyLevel`, 'must be a positive integer');
     }
-    if (recipe.compatibility.mode !== undefined
-        && !['legacy-parity', 'cumulative'].includes(recipe.compatibility.mode)) {
+    if (compatibility.mode !== undefined
+        && !isOneOf(compatibility.mode, ['legacy-parity', 'cumulative'])) {
       fail(`${source}.compatibility.mode`, 'must be legacy-parity or cumulative');
     }
-    if (recipe.compatibility.mode === 'cumulative' && recipe.task.mode !== 'upgrade') {
+    if (compatibility.mode === 'cumulative' && task.mode !== 'upgrade') {
       fail(`${source}.compatibility.mode`, 'cumulative compatibility requires an upgrade recipe');
     }
   }
-  if (recipe.scoring.mode === 'legacy-source-points' && recipe.compatibility === undefined) {
+  if (scoring.mode === 'legacy-source-points' && compatibility === undefined) {
     fail(`${source}.scoring.mode`, 'legacy-source-points is allowed only for a declared compatibility recipe');
   }
-  return recipe;
+  return recipe as ValidatedRecipe;
 }
 
-export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities = null,
-  recipeStack = [] } = {}) {
+export function compileRecipeFile(recipePath: string,
+  { trackRoot, availableCapabilities = null, recipeStack = [] }:
+    { trackRoot?: string; availableCapabilities?: string[] | null; recipeStack?: string[] } = {}):
+  CompiledRecipePlan {
   const absoluteRecipe = realpathSync(resolve(recipePath));
   const root = resolve(trackRoot ?? dirname(dirname(dirname(absoluteRecipe))));
   const compositionRoot = resolve(root, 'composition');
@@ -479,14 +761,15 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
   if (fixture.id !== recipe.fixture.id || fixture.version !== recipe.fixture.version) {
     fail(`${recipeSource}.fixture`, `expected ${recipe.fixture.id}@${recipe.fixture.version}, found ${fixture.id}@${fixture.version}`);
   }
-  let baseRecipe = null;
+  let baseRecipe: { id: string; version: string; path: string } | null = null;
   if (recipe.task.mode === 'upgrade') {
     const at = `${recipeSource}.task.baseRecipe`;
-    const ref = contained(compositionRoot, dirname(absoluteRecipe), recipe.task.baseRecipe.path, `${at}.path`);
+    const base = recipe.task.baseRecipe;
+    const ref = contained(compositionRoot, dirname(absoluteRecipe), base.path, `${at}.path`);
     const plan = compileRecipeFile(ref.absolute, { trackRoot: root, availableCapabilities,
       recipeStack: [...recipeStack, absoluteRecipe] });
-    if (plan.recipe.id !== recipe.task.baseRecipe.id || plan.recipe.version !== recipe.task.baseRecipe.version) {
-      fail(at, `expected ${recipe.task.baseRecipe.id}@${recipe.task.baseRecipe.version}, found ${plan.recipe.id}@${plan.recipe.version}`);
+    if (plan.recipe.id !== base.id || plan.recipe.version !== base.version) {
+      fail(at, `expected ${base.id}@${base.version}, found ${plan.recipe.id}@${plan.recipe.version}`);
     }
     if (recipe.state === 'qualified' && plan.recipe.state !== 'qualified') {
       fail(at, `qualified upgrade recipe selects ${plan.recipe.state} base ${plan.recipe.id}@${plan.recipe.version}`);
@@ -494,10 +777,9 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     baseRecipe = { id: plan.recipe.id, version: plan.recipe.version, path: ref.relative };
   }
 
-  const selectedPacks = [];
-  const selectedByRef = new Map();
-  for (let index = 0; index < recipe.packs.length; index += 1) {
-    const selection = recipe.packs[index];
+  const selectedPacks: SelectedPack[] = [];
+  const selectedByRef = new Map<string, CompiledPackDefinition>();
+  for (const [index, selection] of recipe.packs.entries()) {
     const at = `${recipeSource}.packs[${index}]`;
     const packRef = contained(compositionRoot, dirname(absoluteRecipe), selection.path, `${at}.path`);
     const pack = compilePackDefinition(readJson(packRef.absolute, 'pack'), {
@@ -516,8 +798,8 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
   }
   for (const { pack } of selectedPacks) {
     for (const required of pack.requiresPacks) {
-      if (!selectedByRef.has(required)) fail(`${pack.id}.requiresPacks`, `missing ${required}`);
       const dependency = selectedByRef.get(required);
+      if (!dependency) fail(`${pack.id}.requiresPacks`, `missing ${required}`);
       if (pack.moduleType === 'feature' && dependency.moduleType !== 'feature') {
         fail(`${pack.id}.requiresPacks`, `feature modules cannot depend on ${required}`);
       }
@@ -542,7 +824,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       }
     }
     for (const check of pack.checks) {
-      for (const featureId of check.requiresFeatures) {
+      for (const featureId of check.requiresFeatures ?? []) {
         if (!featureModuleIds.has(featureId)) {
           fail(`${pack.id}.${check.id}.requiresFeatures`,
             `references missing feature module ${featureId}`);
@@ -560,36 +842,41 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       }
     }
   }
-  const visitState = new Map();
-  const visit = (ref, chain = []) => {
+  const visitState = new Map<string, 'visiting' | 'done'>();
+  const visit = (ref: string, chain: readonly string[] = []): void => {
     if (visitState.get(ref) === 'done') return;
     if (visitState.get(ref) === 'visiting') {
       fail(`${recipeSource}.packs`, `dependency cycle: ${[...chain, ref].join(' -> ')}`);
     }
     visitState.set(ref, 'visiting');
     const pack = selectedByRef.get(ref);
+    if (!pack) fail(`${recipeSource}.packs`, `missing ${ref}`);
     for (const required of pack.requiresPacks) visit(required, [...chain, ref]);
     visitState.set(ref, 'done');
   };
   for (const ref of selectedByRef.keys()) visit(ref);
 
-  const fragmentSources = new Map();
-  const composedFragments = { requirements: new Map(), contracts: new Map() };
-  const moduleTypeById = new Map(selectedPacks.map(({ pack }) => [pack.id, pack.moduleType]));
-  const addFragment = (kind, fragment, owner) => {
+  const fragmentSources = new Map<string, string>();
+  const composedFragments: Record<FragmentKind, Map<string, ComposedFragment>> = {
+    requirements: new Map(), contracts: new Map(),
+  };
+  const moduleTypeById = new Map<string, string | undefined>(
+    selectedPacks.map(({ pack }) => [pack.id, pack.moduleType]));
+  const addFragment = (kind: FragmentKind, fragment: ValidatedTaskFragment, owner: string): void => {
     if (recipe.task.mode !== 'action' && !fragment.modes.includes(recipe.task.mode)) return;
     const at = `${owner}.task.${kind}.${fragment.id}`;
     const definition = resolveTaskFragment(fragment, { trackRoot: root, source: at,
       sourceCache: fragmentSources });
     const current = composedFragments[kind].get(fragment.id);
     if (current) {
-      const comparable = value => JSON.stringify({ ...value, owners: undefined,
+      const comparable = (value: object): string => JSON.stringify({ ...value, owners: undefined,
         order: undefined, modes: undefined, requiresFeatures: undefined,
         ownerConditions: undefined });
       if (comparable(current) !== comparable(definition)) {
         fail(at, `shared fragment ${fragment.id} does not match its other owner`);
       }
-      const condition = value => ({
+      const condition = (value: { modes: string[]; requiresFeatures?: string[] }):
+        { modes: string[]; requiresFeatures: string[] } => ({
         modes: value.modes,
         requiresFeatures: value.requiresFeatures ?? [],
       });
@@ -622,22 +909,26 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     for (const fragment of pack.task.requirements) addFragment('requirements', fragment, pack.id);
     for (const fragment of pack.task.contracts) addFragment('contracts', fragment, pack.id);
   }
-  const orderedFragments = kind => [...composedFragments[kind].values()]
-    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
-    .map(fragment => ({ ...fragment, owners: [...fragment.owners].sort() }));
+  const orderedFragments = (kind: FragmentKind): ComposedFragment[] =>
+    [...composedFragments[kind].values()]
+      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+      .map(fragment => ({ ...fragment, owners: [...fragment.owners].sort() }));
   const taskRequirements = orderedFragments('requirements');
   const taskContracts = orderedFragments('contracts');
   if (taskRequirements.length === 0) fail(`${recipeSource}.task`, 'composes no requirements');
 
-  const scenarioCache = new Map();
-  const selectedFeatures = [];
-  const claimedCriteria = new Set();
-  const actionsForSteps = steps => {
-    const actions = [];
+  const scenarioCache = new Map<string, CompiledScenarioDefinition>();
+  const selectedFeatures: SelectedCheckGroup[] = [];
+  const claimedCriteria = new Set<string>();
+  const actionsForSteps = (steps: readonly CompiledStep[]): string[] => {
+    const actions: string[] = [];
     for (const step of steps) {
       actions.push(step.do);
       if (step.do === 'race') {
-        for (const branch of step.branches) actions.push(...actionsForSteps(branch));
+        const branches = step.branches;
+        if (Array.isArray(branches)) {
+          for (const branch of branches) actions.push(...actionsForSteps(branch));
+        }
       }
     }
     return actions;
@@ -699,10 +990,11 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     }
   }
 
-  const bySource = new Map();
+  const bySource = new Map<string, SelectedCheckGroup[]>();
   for (const selected of selectedFeatures) {
-    if (!bySource.has(selected.source)) bySource.set(selected.source, []);
-    bySource.get(selected.source).push(selected);
+    const group = bySource.get(selected.source);
+    if (group) group.push(selected);
+    else bySource.set(selected.source, [selected]);
   }
   const executionEntries = recipe.execution === 'all-selected-sources'
     ? [...bySource.keys()].sort().map((source, index) => ({
@@ -716,20 +1008,24 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     if (!selected) fail(`${recipeSource}.execution.${entry.id}`, `source has no selected check groups: ${normalized}`);
     bySource.delete(normalized);
     const scenario = scenarioCache.get(normalized);
+    if (!scenario) fail(`${recipeSource}.execution.${entry.id}`, `source was not compiled: ${normalized}`);
     const scenarioOrder = scenario.features.map(feature => feature.id);
-    const criterionOrder = featureId => scenario.features.find(feature => feature.id === featureId)
-      .criteria.map(criterion => criterion.id);
+    const criterionOrder = (featureId: number): string[] =>
+      scenario.features.find(feature => feature.id === featureId)
+        ?.criteria.map(criterion => criterion.id) ?? [];
+    const firstCriterion = (group: SelectedCheckGroup): string =>
+      group.feature.criteria[0]?.id ?? '';
     return { id: entry.id, source: normalized, checkGroups: selected.slice()
       .sort((a, b) => scenarioOrder.indexOf(a.feature.id) - scenarioOrder.indexOf(b.feature.id)
-        || criterionOrder(a.feature.id).indexOf(a.feature.criteria[0].id)
-          - criterionOrder(b.feature.id).indexOf(b.feature.criteria[0].id)) };
+        || criterionOrder(a.feature.id).indexOf(firstCriterion(a))
+          - criterionOrder(b.feature.id).indexOf(firstCriterion(b))) };
   });
   if (bySource.size) {
     fail(`${recipeSource}.execution`, `missing selected sources: ${[...bySource.keys()].sort().join(', ')}`);
   }
 
-  const checks = [];
-  const stableKeys = new Set();
+  const checks: Array<Omit<SelectedCheck, 'points'> & { points?: number }> = [];
+  const stableKeys = new Set<string>();
   for (const suite of execution) {
     for (const group of suite.checkGroups) {
       for (const criterion of group.feature.criteria) {
@@ -758,10 +1054,12 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     for (const key of stableKeys) if (!weightKeys.delete(key)) fail(`${recipeSource}.scoring.weights`, `missing ${key}`);
     if (weightKeys.size) fail(`${recipeSource}.scoring.weights`, `unknown checks: ${[...weightKeys].sort().join(', ')}`);
   }
+  const scoring = recipe.scoring;
   for (const check of checks) {
-    check.points = recipe.scoring.mode === 'explicit'
-      ? recipe.scoring.weights[check.stableKey] : check.sourcePoints;
+    check.points = scoring.mode === 'explicit'
+      ? scoring.weights[check.stableKey] : check.sourcePoints;
   }
+  const scoredChecks = checks as SelectedCheck[];
 
   const capabilities = [...new Set(selectedPacks.flatMap(({ pack }) => pack.capabilities))].sort();
   if (availableCapabilities !== null) {
@@ -814,11 +1112,11 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     })),
     capabilities,
     execution,
-    checks,
+    checks: scoredChecks,
     scoring: {
-      mode: recipe.scoring.mode,
-      checks: checks.length,
-      points: checks.reduce((total, check) => total + check.points, 0),
+      mode: scoring.mode,
+      checks: scoredChecks.length,
+      points: scoredChecks.reduce((total, check) => total + check.points, 0),
     },
   };
 }
@@ -828,7 +1126,8 @@ const PROMOTION_FIELDS = new Set([
 ]);
 const PROMOTION_ENTRY_FIELDS = new Set(['alias', 'status', 'recipe']);
 
-export function compilePromotionDefinition(input, { source = '<promotion-catalog>' } = {}) {
+export function compilePromotionDefinition(input: unknown,
+  { source = '<promotion-catalog>' }: { source?: string } = {}): CompiledPromotionDefinition {
   const catalog = structuredClone(input);
   strictObject(catalog, source, PROMOTION_FIELDS);
   identityFields(catalog, source, 'promotion-catalog');
@@ -836,14 +1135,14 @@ export function compilePromotionDefinition(input, { source = '<promotion-catalog
   if (catalog.entries.length === 0 && catalog.state !== 'draft') {
     fail(`${source}.entries`, 'must be non-empty once the catalog is qualified');
   }
-  const activeAliases = new Set();
-  const candidates = new Set();
+  const activeAliases = new Set<unknown>();
+  const candidates = new Set<string>();
   catalog.entries.forEach((entry, index) => {
     const at = `${source}.entries[${index}]`;
     strictObject(entry, at, PROMOTION_ENTRY_FIELDS);
-    string(entry.alias, `${at}.alias`);
-    if (!/^L[1-9]\d*$/.test(entry.alias)) fail(`${at}.alias`, 'must look like L1, L2, and so on');
-    if (!['candidate', 'promoted', 'retired'].includes(entry.status)) {
+    const alias = string(entry.alias, `${at}.alias`);
+    if (!/^L[1-9]\d*$/.test(alias)) fail(`${at}.alias`, 'must look like L1, L2, and so on');
+    if (!isOneOf(entry.status, ['candidate', 'promoted', 'retired'])) {
       fail(`${at}.status`, 'must be candidate, promoted, or retired');
     }
     validateFileRef(entry.recipe, `${at}.recipe`);
@@ -855,10 +1154,11 @@ export function compilePromotionDefinition(input, { source = '<promotion-catalog
     if (candidates.has(candidate)) fail(at, `duplicate alias target ${candidate}`);
     candidates.add(candidate);
   });
-  return catalog;
+  return catalog as Validated<CompiledPromotionDefinition>;
 }
 
-export function compilePromotionFile(catalogPath, { trackRoot } = {}) {
+export function compilePromotionFile(catalogPath: string,
+  { trackRoot }: { trackRoot?: string } = {}): CompiledPromotionCatalog {
   const absoluteCatalog = resolve(catalogPath);
   const root = resolve(trackRoot ?? dirname(dirname(absoluteCatalog)));
   const compositionRoot = resolve(root, 'composition');

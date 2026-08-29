@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
-import { compilePromotionFile, compileRecipeFile } from './composition-compiler.mjs';
+import { compilePromotionFile, compileRecipeFile } from './composition-compiler.js';
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -10,7 +10,7 @@ import type {
   CompiledOwnedTaskFragment,
   CompiledPromotionCatalog,
   CompiledRecipePlan,
-} from './composition-compiler.mjs';
+} from './composition-compiler.js';
 import type { CompiledStep } from './definition-compiler.js';
 import type { Track, TrackSuiteSource } from './tracks.js';
 

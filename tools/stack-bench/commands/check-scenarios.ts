@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { compileRecipeFile, type CompiledOwnedTaskFragment, type CompiledRecipeRelease }
-  from '../src/composition/composition-compiler.mjs';
+  from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledStep }
   from '../src/composition/definition-compiler.js';
 import { DEFAULT_TRACK, listTracks, loadTrack, type Track }

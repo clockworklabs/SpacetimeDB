@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
-import { compilePromotionFile } from './composition-compiler.mjs';
+import { compilePromotionFile } from './composition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
 import { sha256 } from '../evidence/provenance.js';

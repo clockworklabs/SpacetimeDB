@@ -7,7 +7,7 @@ import {
   compilePackDefinition,
   compilePromotionFile,
   compileRecipeFile,
-} from '../src/composition/composition-compiler.mjs';
+} from '../src/composition/composition-compiler.js';
 import { TRACKS_DIR, listTracks } from '../src/composition/tracks.js';
 
 function json(path: string): unknown {

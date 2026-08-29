@@ -13,8 +13,8 @@ import {
   compileRecipeDefinition,
   compileRecipeFile,
   resolveTaskFragment,
-} from '../src/composition/composition-compiler.mjs';
-import type { CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
+} from '../src/composition/composition-compiler.js';
+import type { CompiledRecipePlan } from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { loadTrack, suitesFor } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';

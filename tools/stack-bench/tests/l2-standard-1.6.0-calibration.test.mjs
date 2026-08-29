@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { qualificationReadiness } from '../commands/qualification-cli.mjs';
 import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.mjs';
-import { compilePromotionFile } from '../src/composition/composition-compiler.mjs';
+import { compilePromotionFile } from '../src/composition/composition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
 

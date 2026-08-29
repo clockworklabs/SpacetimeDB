@@ -4,13 +4,13 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.mjs';
+import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
 import { TRACKS_DIR } from '../src/composition/tracks.js';
-import type { CompiledPackDefinition, CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
+import type { CompiledPackDefinition, CompiledRecipePlan } from '../src/composition/composition-compiler.js';
 import type { RecipeCheck, RecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeSelectionOptions, SelectedRecipeRelease } from '../src/composition/recipe-selection.mjs';
 

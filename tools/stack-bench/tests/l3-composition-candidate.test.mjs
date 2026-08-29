@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compilePackDefinition } from '../src/composition/composition-compiler.mjs';
+import { compilePackDefinition } from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadTrack } from '../src/composition/tracks.js';

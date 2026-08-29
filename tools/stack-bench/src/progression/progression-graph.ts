@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import {
   compilePackDefinition,
   type CompiledPackDefinition,
-} from '../composition/composition-compiler.mjs';
+} from '../composition/composition-compiler.js';
 import {
   compileProgressionDefinitionFile,
   type CompiledProgressionDefinition,

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
+import { compileRecipeFile } from '../src/composition/composition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
   resolveBoundRecipeTaskRequest, resolveModularRecipeSelection, selectScenarioChecks }

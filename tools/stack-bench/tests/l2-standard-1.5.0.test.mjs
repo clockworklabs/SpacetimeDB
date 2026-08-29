@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
+import { compileRecipeFile } from '../src/composition/composition-compiler.js';
 import { buildRecipeRelease, executionPlanForRelease } from '../dist/src/composition/recipe-release.js';
 import { resolveModularRecipeSelection } from '../src/composition/recipe-selection.mjs';
 
