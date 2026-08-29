@@ -80,6 +80,13 @@ export interface ProgressionEvent extends Record<string, unknown> {
   grant?: Record<string, unknown>;
 }
 
+export interface ProgressionGrant extends Record<string, unknown> {
+  grantId: string;
+  level: number;
+  nodeIds: string[];
+  strikes: number;
+}
+
 export interface ProgressionState extends Record<string, unknown> {
   schemaVersion: number;
   policy: string;
@@ -89,7 +96,7 @@ export interface ProgressionState extends Record<string, unknown> {
   level: number;
   nodes: Record<string, ProgressionNodeState>;
   attempts: ProgressionAttempt[];
-  grants: Array<Record<string, unknown>>;
+  grants: ProgressionGrant[];
   events: ProgressionEvent[];
 }
 
@@ -151,11 +158,6 @@ interface ReadProgressionStateOptions {
   dependencyPolicyIdentity: unknown;
   owner: unknown;
   requireCurrentEngine?: boolean;
-}
-
-interface ProgressionGrant {
-  level: number;
-  [key: string]: unknown;
 }
 
 interface GrantProgressionStateOptions {

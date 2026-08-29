@@ -53,8 +53,8 @@ interface GrantCampaignSnapshot {
     version: string;
     contentSha256: string;
     definition: { mode?: { id?: string }; track: string };
-    featureCatalog?: { identity: unknown; [key: string]: unknown };
-    dependencyPolicy?: { identity: unknown; [key: string]: unknown };
+    featureCatalog?: { identity: unknown };
+    dependencyPolicy?: { identity: unknown };
   };
   state: {
     status: string;
@@ -210,8 +210,8 @@ function sameGrant(left: unknown, right: unknown): boolean {
 
 export function grantCampaignDependencyStrikes(directory: string, input: unknown, {
   inspect = inspectCampaign,
-  readState = readProgressionState as (path: string,
-    options: ProgressionContextOptions) => StoredProgressionState,
+  readState = (path: string, options: ProgressionContextOptions): StoredProgressionState =>
+    readProgressionState(path, options),
   grantState = grantProgressionState,
   schedule = scheduleDependencyContinuation,
   writeState = writeCampaignState,

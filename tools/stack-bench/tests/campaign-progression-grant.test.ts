@@ -7,7 +7,7 @@ import test from 'node:test';
 import { grantCampaignDependencyStrikes, prepareGrantWorkspace }
   from '../src/campaigns/campaign-progression-grant.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
-  from '../dist/src/progression/progression-definition.js';
+  from '../src/progression/progression-definition.js';
 
 interface TestContinuation {
   grantId: string;
