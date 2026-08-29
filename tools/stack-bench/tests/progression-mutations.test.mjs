@@ -4,15 +4,15 @@ import { extname, join } from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
 import { mutationFileEdits } from '../dist/src/evidence/mutation-analysis.js';
-import { rebaseMutationManifest } from '../src/evidence/mutation-rebase.mjs';
+import { rebaseMutationManifest } from '../dist/src/evidence/mutation-rebase.js';
 import { compileFeatureCatalogInput,
   compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../dist/src/progression/progression-recipe-selection.js';
-import { loadReferenceRegistry } from '../src/references/reference-fixtures.mjs';
+import { loadReferenceRegistry } from '../dist/src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

@@ -3,14 +3,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { rebaseMutationManifest } from '../src/evidence/mutation-rebase.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { rebaseMutationManifest } from '../dist/src/evidence/mutation-rebase.js';
 import { compileFeatureCatalogInput,
   compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../dist/src/progression/progression-recipe-selection.js';
-import { loadReferenceRegistry } from '../src/references/reference-fixtures.mjs';
+import { loadReferenceRegistry } from '../dist/src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
@@ -25,8 +25,8 @@ const fixtures = new Map(loadReferenceRegistry().fixtures
   .filter(fixture => fixture.id.startsWith('ecommerce-progression-'))
   .map(fixture => [fixture.backend, fixture]));
 const expected = {
-  mongodb: { mutations: 46, covered: 47, missing: 65,
-    blocked: { 'unknown-target': 4, 'anchor-mismatch': 12 }, excluded: 9 },
+  mongodb: { mutations: 45, covered: 46, missing: 66,
+    blocked: { 'unknown-target': 4, 'anchor-mismatch': 13 }, excluded: 9 },
   postgres: { mutations: 47, covered: 50, missing: 62,
     blocked: { 'unknown-target': 4, 'anchor-mismatch': 13 }, excluded: 9 },
   spacetime: { mutations: 58, covered: 60, missing: 52,

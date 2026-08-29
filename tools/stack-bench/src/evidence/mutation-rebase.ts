@@ -1,26 +1,97 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
-import { mutationFileEdits, mutationTargetKeys, resolveMutationFile,
-  validateMutationDefinitions } from './mutation-analysis.js';
+import {
+  mutationFileEdits,
+  mutationTargetKeys,
+  resolveMutationFile,
+  validateMutationDefinitions,
+} from './mutation-analysis.js';
+import type { MutationDefinition } from './mutation-analysis.js';
+import type { RecipeCheck, RecipeRelease } from '../composition/recipe-release.mjs';
 
-function scenarioPath(track, source) {
+type BlockReason = 'unsafe-file' | 'missing-file' | 'anchor-mismatch';
+
+interface MutationManifest {
+  schemaVersion?: unknown;
+  level?: unknown;
+  mutations?: MutationDefinition[];
+  track?: unknown;
+  backend?: unknown;
+  scenario?: string | null;
+}
+
+interface RebaseOptions {
+  release?: RecipeRelease;
+  selectedCheckKeys?: string[];
+  app?: string;
+  fixtureSha256?: string;
+  note?: string;
+}
+
+interface AnchorIssue {
+  reason: BlockReason;
+  detail: string;
+}
+
+interface BlockedMutation {
+  id: unknown;
+  reason: BlockReason | 'unknown-target';
+  detail?: string;
+  targets?: string[];
+}
+
+interface ExcludedMutation {
+  id: unknown;
+  targets: string[];
+}
+
+interface RebasedMutation extends MutationDefinition {
+  id: string;
+  scenario: string;
+  targets: string[];
+}
+
+export interface MutationRebaseResult {
+  manifest: {
+    schemaVersion: 2;
+    status: 'candidate';
+    fixtureSha256: string;
+    backend: unknown;
+    track: string;
+    note?: string;
+    mutations: RebasedMutation[];
+  };
+  blocked: BlockedMutation[];
+  excluded: ExcludedMutation[];
+  coverage: {
+    selected: string[];
+    covered: string[];
+    missing: string[];
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function scenarioPath(track: string, source: string): string {
   return `tracks/${track}/${source}`;
 }
 
-function scenarioSuffix(source) {
+function scenarioSuffix(source: string): string {
   return basename(source, '.json')
     .replace(/^progression-/, '')
     .replace(/-\d+\.\d+\.\d+$/, '');
 }
 
-function anchorIssue(app, mutation) {
+function anchorIssue(app: string, mutation: MutationDefinition): AnchorIssue | null {
   for (const edit of mutationFileEdits(mutation)) {
-    let file;
+    let file: string;
     try {
       file = resolveMutationFile(app, edit.file);
     } catch (error) {
-      return { reason: 'unsafe-file', detail: error.message };
+      return { reason: 'unsafe-file', detail: errorMessage(error) };
     }
     if (!existsSync(file)) {
       return { reason: 'missing-file', detail: edit.file };
@@ -33,7 +104,10 @@ function anchorIssue(app, mutation) {
   return null;
 }
 
-function selectedKeys(release, keys) {
+function selectedKeys(
+  release: RecipeRelease | undefined,
+  keys: string[] | undefined,
+): { catalog: Map<string, RecipeCheck>; selected: Set<string>; release: RecipeRelease } {
   if (!release?.track || !Array.isArray(release.checkCatalog)) {
     throw new Error('mutation rebase requires a compiled recipe release');
   }
@@ -45,18 +119,25 @@ function selectedKeys(release, keys) {
   if (unknown.length) {
     throw new Error(`mutation rebase selected unknown checks: ${unknown.sort().join(', ')}`);
   }
-  return { catalog, selected: new Set(keys) };
+  return { catalog, selected: new Set(keys), release };
 }
 
-export function rebaseMutationManifest(manifest,
-  { release, selectedCheckKeys, app, fixtureSha256, note } = {}) {
+export function rebaseMutationManifest(
+  manifest: MutationManifest | null | undefined,
+  { release, selectedCheckKeys, app, fixtureSha256, note }: RebaseOptions = {},
+): MutationRebaseResult {
   if (manifest?.schemaVersion !== 2 || manifest.level !== undefined) {
     throw new Error('mutation rebase accepts only level-independent schema 2 manifests');
   }
   if (!Array.isArray(manifest.mutations) || manifest.mutations.length === 0) {
     throw new Error('mutation rebase requires a non-empty mutation manifest');
   }
-  if (typeof app !== 'string' || !app || !/^[a-f0-9]{64}$/.test(fixtureSha256 ?? '')) {
+  if (
+    typeof app !== 'string'
+    || !app
+    || typeof fixtureSha256 !== 'string'
+    || !/^[a-f0-9]{64}$/.test(fixtureSha256)
+  ) {
     throw new Error('mutation rebase requires an app directory and fixture SHA-256');
   }
   if (note !== undefined && (typeof note !== 'string' || !note.trim())) {
@@ -74,40 +155,42 @@ export function rebaseMutationManifest(manifest,
       .map(issue => `${issue.mutation ?? '<unnamed>'}:${issue.kind}`).join(', ')}`);
   }
 
-  const { catalog, selected } = selectedKeys(release, selectedCheckKeys);
-  const blocked = [];
-  const excluded = [];
-  const mutations = [];
+  const { catalog, selected, release: compiledRelease } = selectedKeys(release, selectedCheckKeys);
+  const blocked: BlockedMutation[] = [];
+  const excluded: ExcludedMutation[] = [];
+  const mutations: RebasedMutation[] = [];
   for (const mutation of manifest.mutations) {
+    const mutationId = mutation.id as string;
     const targets = mutationTargetKeys(mutation);
     const unknown = targets.filter(key => !catalog.has(key));
     if (unknown.length) {
-      blocked.push({ id: mutation.id, reason: 'unknown-target', targets: unknown.sort() });
+      blocked.push({ id: mutationId, reason: 'unknown-target', targets: unknown.sort() });
       continue;
     }
     const outside = targets.filter(key => !selected.has(key));
     if (outside.length) {
-      excluded.push({ id: mutation.id, targets: outside.sort() });
+      excluded.push({ id: mutationId, targets: outside.sort() });
       continue;
     }
     const issue = anchorIssue(app, mutation);
     if (issue) {
-      blocked.push({ id: mutation.id, ...issue });
+      blocked.push({ id: mutationId, ...issue });
       continue;
     }
 
-    const targetsBySource = new Map();
+    const targetsBySource = new Map<string, string[]>();
     for (const target of targets) {
-      const source = catalog.get(target).source;
-      if (!targetsBySource.has(source)) targetsBySource.set(source, []);
-      targetsBySource.get(source).push(target);
+      const source = catalog.get(target)?.source as string;
+      const sourceTargets = targetsBySource.get(source) ?? [];
+      sourceTargets.push(target);
+      targetsBySource.set(source, sourceTargets);
     }
     const groups = [...targetsBySource].sort(([left], [right]) => left.localeCompare(right));
     for (const [source, sourceTargets] of groups) {
       mutations.push({
         ...mutation,
-        id: groups.length === 1 ? mutation.id : `${mutation.id}--${scenarioSuffix(source)}`,
-        scenario: scenarioPath(release.track, source),
+        id: groups.length === 1 ? mutationId : `${mutationId}--${scenarioSuffix(source)}`,
+        scenario: scenarioPath(compiledRelease.track, source),
         targets: sourceTargets.sort(),
       });
     }
@@ -126,7 +209,7 @@ export function rebaseMutationManifest(manifest,
       status: 'candidate',
       fixtureSha256,
       backend: manifest.backend,
-      track: manifest.track,
+      track: manifest.track as string,
       ...(note ? { note } : {}),
       mutations,
     },
