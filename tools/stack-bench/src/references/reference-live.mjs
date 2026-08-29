@@ -19,7 +19,7 @@ import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJso
 import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';
-import { resolveReferenceSelection } from './reference-selection.mjs';
+import { resolveReferenceSelection } from './reference-selection.js';
 import { killTree } from '../runtime/platform.mjs';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';

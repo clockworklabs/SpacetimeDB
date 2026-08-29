@@ -6,8 +6,8 @@ import test from 'node:test';
 import { hashDirectory } from '../dist/src/evidence/provenance.js';
 import { inspectReferenceCandidate, loadReferenceRegistry,
   inspectImportedReference, selectReferenceFixture,
-  validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
-import { resolveReferenceSelection } from '../src/references/reference-selection.mjs';
+  validateReferenceRegistry } from '../dist/src/references/reference-fixtures.mjs';
+import { resolveReferenceSelection } from '../dist/src/references/reference-selection.js';
 
 test('the reference registry binds active, candidate, blocked, and provenance lifecycles', () => {
   const registry = loadReferenceRegistry();
