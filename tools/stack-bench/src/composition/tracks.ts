@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { compileTrackManifest } from './definition-compiler.js';
-import type { StackPortAllocation } from '../stacks/stack-adapter-contract.js';
+import type { StackRunPorts } from '../stacks/stack-adapter-contract.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.js';
 
@@ -143,7 +143,7 @@ export const PORT_BASES = Object.freeze(stackPortAllocations());
 // beyond anything this benchmark does.
 export const RUN_INDEX_CAP = 20;
 
-export function portsFor(track: TrackDefinition, backend: string, runIndex: number): StackPortAllocation {
+export function portsFor(track: TrackDefinition, backend: string, runIndex: number): StackRunPorts {
   if (runIndex > RUN_INDEX_CAP) {
     throw new Error(`--run-index ${runIndex} exceeds ${RUN_INDEX_CAP}; the port grid is only proven collision-free below that`);
   }

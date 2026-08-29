@@ -31,8 +31,20 @@ export class StackCapabilityUnsupportedError extends Error {
 }
 
 export type StackCapabilityExecutor = (operation: string, input: unknown) => unknown;
-export interface StackPortAllocation {
-  readonly [port: string]: number | undefined;
+// The base ports a backend claims, before any per-run offset. A backend that
+// serves its own API or runs a database container declares those too.
+export interface StackPortBases {
+  readonly vite: number;
+  readonly express?: number;
+  readonly db?: number;
+}
+
+// The ports one run owns. express and dbPort are null for a backend that has
+// no such port, so a caller must reject null rather than test for undefined.
+export interface StackRunPorts {
+  readonly vite: number;
+  readonly express: number | null;
+  readonly dbPort: number | null;
 }
 
 export type StackOperation = (input: unknown) => unknown;
@@ -145,9 +157,15 @@ export function executeStackCapability(
 export function executeStackCapability(
   adapter: StackAdapter,
   capabilityName: 'ports',
-  operation: 'for-run' | 'allocations',
+  operation: 'allocations',
   input?: unknown,
-): StackPortAllocation;
+): StackPortBases;
+export function executeStackCapability(
+  adapter: StackAdapter,
+  capabilityName: 'ports',
+  operation: 'for-run',
+  input: unknown,
+): StackRunPorts;
 export function executeStackCapability(
   adapter: StackAdapter,
   capabilityName: string,

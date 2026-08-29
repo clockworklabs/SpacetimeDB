@@ -607,7 +607,7 @@ export function runPreflight(
       const inspected = inspections[0];
       if (!inspected) throw new Error(`${containerName} inspection returned no container`);
       const allocated = portsFor(track, backend, request.runIndex);
-      const hostPort = String(allocated.dbPort ?? allocated.db);
+      const hostPort = String(allocated.dbPort);
       const mapping = inspected.NetworkSettings?.Ports?.[`${backend === 'postgres' ? 5432 : 27017}/tcp`] ?? [];
       const healthy = !inspected.State?.Health || inspected.State.Health.Status === 'healthy';
       const ready = inspected.State?.Running === true && healthy && inspected.Image === expectedId
@@ -695,7 +695,7 @@ export function runPreflight(
       ...(agent?.outboundDestinations ?? [])])].sort();
     const tcpPorts = track ? request.backends.filter(backend => ['postgres', 'mongodb'].includes(backend))
       .map(backend => portsFor(track, backend, request.runIndex).dbPort)
-      .filter((port): port is number => port !== undefined).sort((a, b) => a - b) : [];
+      .filter((port): port is number => typeof port === 'number').sort((a, b) => a - b) : [];
     const credentialStatusCommand = auth.kind !== undefined && ['credential-file',
       'credential-environment', 'credential-secret-file'].includes(auth.kind)
       ? agent?.credentialStatusCommand ?? null : null;

@@ -243,7 +243,8 @@ function validateActionInput(value: unknown, at: string): void {
   if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
 }
 
-function validateNamedActionParams(value: unknown, at: string): void {
+function validateNamedActionParams(value: unknown,
+  at: string): asserts value is UnknownRecord[] {
   if (!array(value)) fail(at, 'must be an array');
   const names = new Set<string>();
   value.forEach((param, index) => {
@@ -265,24 +266,23 @@ function validateNamedActionParams(value: unknown, at: string): void {
   });
 }
 
-function validateInlineNamedAction(value: unknown, at: string): void {
+function validateInlineNamedAction(value: unknown,
+  at: string): asserts value is UnknownRecord & { params?: UnknownRecord[] } {
   strictObject(value, at, new Set(['id', 'path', 'method', 'reducer', 'args', 'params']));
   const path = value.path;
-  for (const [key, field] of [['id', value.id], ['path', path], ['reducer', value.reducer]] as const) {
-    if (!nonEmptyString(field)) fail(`${at}.${key}`, 'must be a non-empty string');
-  }
-  if (!nonEmptyString(path) || !path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
+  if (!nonEmptyString(value.id)) fail(`${at}.id`, 'must be a non-empty string');
+  if (!nonEmptyString(path)) fail(`${at}.path`, 'must be a non-empty string');
+  if (!nonEmptyString(value.reducer)) fail(`${at}.reducer`, 'must be a non-empty string');
+  if (!path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
   if (value.method !== undefined
       && !oneOf(value.method, ['DELETE', 'PATCH', 'POST', 'PUT'])) {
     fail(`${at}.method`, 'must be "DELETE", "PATCH", "POST", or "PUT"');
   }
   if (!anyArray(value.args)) fail(`${at}.args`, 'must be an array');
-  if (value.params !== undefined) {
-    validateNamedActionParams(value.params, `${at}.params`);
-    const params = value.params;
-    if (!array(params)) fail(`${at}.params`, 'must be an array');
-    params.filter((param): param is UnknownRecord => object(param) && param.in === 'path')
-      .forEach((param, index) => {
+  const params = value.params;
+  if (params !== undefined) {
+    validateNamedActionParams(params, `${at}.params`);
+    params.filter(param => param.in === 'path').forEach((param, index) => {
       if (!path.includes(String(param.placeholder))) {
         fail(`${at}.params[${index}].placeholder`, `does not appear in path ${JSON.stringify(path)}`);
       }
@@ -339,10 +339,8 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     const namedAction = step.namedAction;
     if (namedAction) {
       validateInlineNamedAction(namedAction, `${at}.namedAction`);
-      if (!object(namedAction) || namedAction.id !== step.action) {
-        fail(`${at}.namedAction.id`, 'must match action');
-      }
-      if (!array(namedAction.params) || namedAction.params.length === 0) {
+      if (namedAction.id !== step.action) fail(`${at}.namedAction.id`, 'must match action');
+      if (!namedAction.params?.length) {
         fail(`${at}.namedAction.params`, 'must be a non-empty array');
       }
     }
@@ -360,7 +358,8 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (step.do === 'sendConcurrently') validateSenders(step.senders, `${at}.senders`);
   if (step.do === 'clickConcurrently' && step.targets) {
     const population = step.actors;
-    validateTargets(step.targets, stringArray(population) ? population : [], `${at}.targets`);
+    if (!stringArray(population)) fail(`${at}.actors`, 'must be an array of strings');
+    validateTargets(step.targets, population, `${at}.targets`);
   }
   if (step.do === 'race') {
     const branches = step.branches;
@@ -575,8 +574,7 @@ export function compileTrackManifest(input: unknown,
       const actionParams = action.params;
       if (actionParams !== undefined) {
         validateNamedActionParams(actionParams, `${at}.params`);
-        if (!array(actionParams)) fail(`${at}.params`, 'must be an array');
-        actionParams.filter((param): param is UnknownRecord => object(param) && param.in === 'path')
+        actionParams.filter(param => param.in === 'path')
           .forEach((param, paramIndex) => {
           if (!actionPath.includes(String(param.placeholder))) {
             fail(`${at}.params[${paramIndex}].placeholder`,

@@ -27,7 +27,7 @@ the missing server proof.
 
 Scenario files contain features with isolated `actors`, unscored `setup` steps,
 and explicitly normalized criterion points. The full 51-action language is
-defined in `definition-compiler.mjs` and registered in `action-catalog.mjs`;
+defined in `definition-compiler.ts` and registered in `action-catalog.mjs`;
 scenario prose is not the runtime contract.
 
 Executors are split by responsibility: ordinary browser actions, actor and

@@ -352,7 +352,7 @@ live-update assertion and retry it, so "real-time" means real-time.
 | `docker-compose.yaml` | the Postgres and MongoDB services |
 | `appliance/` | dedicated Linux runner controller image, Compose bundle, and operator guide |
 | `reset-db.sh`, `restart-backend.sh` | environment control used by the suites |
-| `src/composition/tracks.mjs` | resolves a track: its paths, suites, ports and names |
+| `src/composition/tracks.ts` | resolves a track: its paths, suites, ports and names |
 | `tracks/<name>/` | one application: prompts, contracts, scenarios, lint walk |
 | `backends/` | per-backend setup and deploy instructions given to the agent |
 ## Validation safeguards
