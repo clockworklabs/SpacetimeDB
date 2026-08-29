@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { harnessBrowserFailure, harnessProcessFailure,
   runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
-import { materializeScenarioCredentials } from '../src/composition/credential-aliases.mjs';
+import { materializeScenarioCredentials } from '../src/composition/credential-aliases.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';

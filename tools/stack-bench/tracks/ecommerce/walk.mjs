@@ -4,7 +4,7 @@
 // One pass, one browser, one customer. Anything needing a second customer, a
 // concurrent action or a refusal belongs to the scenario suites, not here.
 
-import { applyCredentialAliases } from '../../src/composition/credential-aliases.mjs';
+import { applyCredentialAliases } from '../../src/composition/credential-aliases.js';
 
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'stackbench-admin-2026';

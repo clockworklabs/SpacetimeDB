@@ -5,7 +5,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.mjs';
 import { sha256 } from '../evidence/provenance.js';
-import { validateCredentialAliases } from '../composition/credential-aliases.mjs';
+import { validateCredentialAliases } from '../composition/credential-aliases.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');

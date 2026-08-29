@@ -73,7 +73,7 @@ export function loadTrack(name = DEFAULT_TRACK) {
     prompts: join(dir, 'prompts'),
     contracts: join(dir, 'contracts'),
     scenarios: join(dir, 'scenarios'),
-    walk: join(dir, 'walk.mjs'),
+    walk: join(ROOT, 'dist', 'tracks', name, 'walk.mjs'),
   };
 }
 

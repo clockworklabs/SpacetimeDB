@@ -1,10 +1,17 @@
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+type MutableRecord = Record<string, unknown>;
 
-export function validateCredentialAliases(input, at = 'credentialAliases') {
+const isRecord = (value: unknown): value is MutableRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+export function validateCredentialAliases(
+  input: unknown,
+  at = 'credentialAliases',
+): Readonly<Record<string, string>> {
   if (input === undefined || input === null) return Object.freeze({});
-  if (!object(input)) throw new Error(`${at} must be an object`);
+  if (!isRecord(input)) throw new Error(`${at} must be an object`);
+
   const entries = Object.entries(input);
-  const targets = new Set();
+  const targets = new Set<string>();
   for (const [source, target] of entries) {
     if (!source || typeof target !== 'string' || !target) {
       throw new Error(`${at} must map non-empty strings to non-empty strings`);
@@ -13,11 +20,15 @@ export function validateCredentialAliases(input, at = 'credentialAliases') {
     if (targets.has(target)) throw new Error(`${at} target ${target} is duplicated`);
     targets.add(target);
   }
-  return Object.freeze(Object.fromEntries(entries.sort(([left], [right]) =>
-    left.localeCompare(right))));
+
+  return Object.freeze(Object.fromEntries(
+    entries
+      .map(([source, target]) => [source, target as string] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  ));
 }
 
-export function applyCredentialAliases(value, aliases) {
+export function applyCredentialAliases(value: unknown, aliases: unknown): string {
   let result = String(value ?? '');
   const entries = Object.entries(validateCredentialAliases(aliases))
     .sort(([left], [right]) => right.length - left.length || left.localeCompare(right));
@@ -25,20 +36,23 @@ export function applyCredentialAliases(value, aliases) {
   return result;
 }
 
-export function materializeScenarioCredentials(input, aliases) {
+export function materializeScenarioCredentials<T>(input: T, aliases?: unknown): T {
   const resolved = validateCredentialAliases(aliases);
   if (Object.keys(resolved).length === 0) return input;
+
   const scenario = structuredClone(input);
-  const visit = value => {
+  const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
       value.forEach(visit);
       return;
     }
-    if (!object(value)) return;
+    if (!isRecord(value)) return;
     for (const [field, child] of Object.entries(value)) {
       if ((field === 'password' || field === 'text') && typeof child === 'string') {
         value[field] = applyCredentialAliases(child, resolved);
-      } else visit(child);
+      } else {
+        visit(child);
+      }
     }
   };
   visit(scenario);

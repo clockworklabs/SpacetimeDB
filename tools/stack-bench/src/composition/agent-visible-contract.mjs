@@ -1,4 +1,4 @@
-import { applyCredentialAliases } from './credential-aliases.mjs';
+import { applyCredentialAliases } from './credential-aliases.js';
 
 // Contract sources keep internal grading terms. Coding agents receive only the
 // public application requirements and stable interface names.

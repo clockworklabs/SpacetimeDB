@@ -6,7 +6,16 @@ import { dirname, join, relative, resolve } from 'node:path';
 // This command runs from dist/scripts after TypeScript compilation.
 const root = resolve(import.meta.dirname, '..', '..');
 const output = join(root, 'dist');
-const sourceDirectories = ['appliance', 'commands', 'container', 'dashboard', 'grader', 'linter', 'src'];
+const sourceDirectories = [
+  'appliance',
+  'commands',
+  'container',
+  'dashboard',
+  'grader',
+  'linter',
+  'src',
+  'tracks',
+];
 
 function copyModules(directory: string): void {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {

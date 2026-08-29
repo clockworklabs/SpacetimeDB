@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { gradeArgv } from '../dist/commands/bench.mjs';
-import { agentRequestArgv } from '../src/agents/agent-adapter-contract.mjs';
+import { agentRequestArgv } from '../dist/src/agents/agent-adapter-contract.mjs';
 import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
-import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
+import { agentVisibleContractText } from '../dist/src/composition/agent-visible-contract.mjs';
 import { materializeScenarioCredentials, validateCredentialAliases }
-  from '../src/composition/credential-aliases.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
-import { seededAdminPassword } from '../tracks/ecommerce/walk.mjs';
+  from '../dist/src/composition/credential-aliases.js';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { seededAdminPassword } from '../dist/tracks/ecommerce/walk.mjs';
 
 const aliases = {
   'stackbench-admin-2026': 'store-admin-2026',
