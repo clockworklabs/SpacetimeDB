@@ -1,7 +1,7 @@
 import {
   validatePricingRates,
   type PricingRates,
-} from './pricing-authority.mjs';
+} from './pricing-authority.js';
 
 export const CLAUDE_SONNET_RATES: Readonly<PricingRates> = Object.freeze({
   input: 2.00,
