@@ -369,7 +369,9 @@ test('stopped-container recovery removes only the exact authenticated lease targ
       container: { name: 'stack-bench-mongodb', id: 'database-id' } });
     lease.state = 'active';
     lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
-      image: 'image-id', owned: true, running: false, networkMode: 'bridge' };
+      image: 'image-id', owned: true, running: false, networkMode: 'bridge',
+      resourceLimits: { cpuCount: 2, memoryBytes: 2147483648,
+        memorySwapBytes: 2147483648, pids: 512 } };
     writeBackendLease(path, lease);
     const calls = [];
     const recovered = recoverStoppedBuildContainer({
@@ -392,7 +394,9 @@ test('stopped-container recovery fails closed on a lease mismatch', () => {
       container: { name: 'stack-bench-mongodb', id: 'database-id' } });
     lease.state = 'active';
     lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
-      image: 'image-id', owned: true, running: false, networkMode: 'bridge' };
+      image: 'image-id', owned: true, running: false, networkMode: 'bridge',
+      resourceLimits: { cpuCount: 2, memoryBytes: 2147483648,
+        memorySwapBytes: 2147483648, pids: 512 } };
     writeBackendLease(path, lease);
     let executed = false;
     assert.throws(() => recoverStoppedBuildContainer({
