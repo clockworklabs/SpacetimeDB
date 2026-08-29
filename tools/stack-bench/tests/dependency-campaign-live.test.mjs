@@ -14,7 +14,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { readCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { validateProgressionCampaignLevelScope } from '../commands/bench.mjs';
-import { replayDependencyMode } from '../src/progression/dependency-mode.mjs';
+import { replayDependencyMode } from '../dist/src/progression/dependency-mode.js';
 import { dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');

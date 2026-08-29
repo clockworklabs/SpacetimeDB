@@ -1,6 +1,22 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
+import type {
+  CompiledProgressionDefinition,
+  CompiledProgressionNode,
+  CompiledProgressionQuestline,
+} from './progression-definition.js';
+import type {
+  ProgressionAction,
+  ProgressionPolicy,
+} from './progression-engine.js';
+import type {
+  ProgressionEvent,
+  ProgressionNodeState,
+  ProgressionState,
+  ProgressionTerminalOutcome,
+} from './progression-state.js';
+
 export const DEPENDENCY_MODE_SCHEMA_VERSION = 3;
 export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
 export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
@@ -9,86 +25,242 @@ export const DEFAULT_UNCHANGED_FAILURE_LIMIT = 3;
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const HASH = /^[a-f0-9]{64}$/;
-const NODE_STATUSES = new Set(['locked', 'active', 'passed', 'exhausted', 'regressed', 'blocked']);
-const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed']);
+const NODE_STATUSES = new Set(['locked', 'active', 'passed', 'exhausted', 'regressed', 'blocked'] as const);
+const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed'] as const);
 const INCONCLUSIVE_CATEGORIES = new Set([
   'provider_failure', 'harness_failure', 'interrupted', 'inconclusive_evidence',
-]);
-const RELEASE_STATES = new Set(['draft', 'qualified']);
+] as const);
 
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = (at, message) => { throw new Error(`invalid dependency mode at ${at}: ${message}`); };
+type InconclusiveCategory = 'provider_failure' | 'harness_failure' | 'interrupted'
+  | 'inconclusive_evidence';
+type CheckOutcome = 'pass' | 'fail' | 'not-run';
+type StoredCheckOutcome = Exclude<CheckOutcome, 'not-run'> | null;
 
-function strictObject(value, at, fields) {
-  if (!object(value)) fail(at, 'must be an object');
+interface SourceEvidence extends Record<string, unknown> {
+  kind: 'grade_bundle';
+  id: string;
+  sha256: string;
+}
+
+interface ApplicationFailure extends Record<string, unknown> {
+  phase: string;
+  reason: string;
+}
+
+interface AuthoredDependency extends Record<string, unknown> {
+  id: string;
+  reason: string;
+}
+
+interface AuthoredNode extends Omit<CompiledProgressionNode, 'level' | 'dependencies' | 'dependencyReasons'> {
+  level?: number;
+  dependencies: Array<AuthoredDependency | string>;
+  dependencyReasons?: Record<string, string>;
+}
+
+interface MutableDefinition extends Record<string, unknown> {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  policy?: string;
+  strikes?: { default?: number; levels?: Record<string, number> };
+  unchangedFailureLimit?: number;
+  nodes: AuthoredNode[];
+  questlines: Array<Omit<CompiledProgressionQuestline, 'nodes'> & { nodes?: string[] }>;
+}
+
+export interface CompiledDependencyDefinition extends CompiledProgressionDefinition {
+  policy: typeof DEPENDENCY_MODE_POLICY;
+  strikes: { levels: Record<string, number> };
+  unchangedFailureLimit: number;
+}
+
+export interface DependencyPromptSelection {
+  nodeIds: string[];
+  featureRefs: string[];
+  promptModules: string[];
+}
+
+export interface DependencyGradingSelection {
+  nodeIds: string[];
+  checks: Array<{ id: string; points: number; nodeId: string }>;
+}
+
+interface ResultCheck extends Record<string, unknown> {
+  id: string;
+  outcome: CheckOutcome;
+}
+
+interface ResultNode extends Record<string, unknown> {
+  id: string;
+  checks: ResultCheck[];
+}
+
+interface ResultBase extends Record<string, unknown> {
+  attemptId: string;
+  runId?: string;
+  sourceSha256?: string;
+  selectionSha256?: string;
+  evidence?: SourceEvidence;
+}
+
+export interface ConclusiveResult extends ResultBase {
+  outcome: 'conclusive';
+  nodes: ResultNode[];
+  applicationFailure?: ApplicationFailure;
+  category?: never;
+  reason?: never;
+}
+
+interface InconclusiveResult extends ResultBase {
+  outcome: 'inconclusive';
+  category: InconclusiveCategory;
+  reason: string;
+  nodes?: never;
+  applicationFailure?: never;
+}
+
+export type DependencyResult = ConclusiveResult | InconclusiveResult;
+
+export interface DependencyStrikeGrant extends Record<string, unknown> {
+  grantId: string;
+  level: number;
+  nodeIds: string[];
+  strikes: number;
+}
+
+interface AttemptRecordedEvent extends ProgressionEvent {
+  sequence: number;
+  type: 'attempt-recorded';
+  result: DependencyResult;
+  grant?: never;
+}
+
+interface StrikesGrantedEvent extends ProgressionEvent {
+  sequence: number;
+  type: 'strikes-granted';
+  result?: never;
+  grant: DependencyStrikeGrant;
+}
+
+export type DependencyEvent = AttemptRecordedEvent | StrikesGrantedEvent;
+
+export interface DependencyState extends ProgressionState {
+  definition: CompiledDependencyDefinition;
+  events: DependencyEvent[];
+  grants: DependencyStrikeGrant[];
+}
+
+interface PointTotals {
+  passedPoints: number;
+  failedPoints: number;
+  gradedPoints: number;
+  ungradedPoints: number;
+  availablePoints: number;
+}
+
+export interface DependencyScore {
+  status: 'final' | 'provisional';
+  terminalOutcome: ProgressionTerminalOutcome | null;
+  attempts: {
+    total: number;
+    inconclusive: number;
+    inconclusiveByCategory: Record<InconclusiveCategory, number>;
+    conclusive: number;
+  };
+  questlines: Array<PointTotals & {
+    id: string;
+    title: string;
+    percentage: number | null;
+    provisionalPercentage: null;
+  }>;
+  averagePercentage: number | null;
+  uniqueChecks: PointTotals & { percentage: number | null; provisionalPercentage: null };
+}
+
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const fail = (at: string, message: string): never => {
+  throw new Error(`invalid dependency mode at ${at}: ${message}`);
+};
+
+function strictObject(value: unknown, at: string, fields: ReadonlySet<string>): asserts value is Record<string, unknown> {
+  if (!object(value)) return fail(at, 'must be an object');
   for (const key of Object.keys(value)) {
     if (!fields.has(key)) fail(`${at}.${key}`, 'unknown field');
   }
 }
 
-function validateSourceEvidence(value, at) {
+function validateSourceEvidence(value: unknown, at: string): asserts value is SourceEvidence {
   strictObject(value, at, new Set(['kind', 'id', 'sha256']));
   if (value.kind !== 'grade_bundle' || typeof value.id !== 'string' || !value.id
-    || !HASH.test(value.sha256 ?? '')) {
+    || typeof value.sha256 !== 'string' || !HASH.test(value.sha256)) {
     throw new Error(`${at} must identify one grade bundle artifact`);
   }
 }
 
-function validateApplicationFailure(value, at) {
+function validateApplicationFailure(value: unknown, at: string): asserts value is ApplicationFailure {
   strictObject(value, at, new Set(['phase', 'reason']));
   nonEmptyString(value.phase, `${at}.phase`);
   nonEmptyString(value.reason, `${at}.reason`);
 }
 
-function nonEmptyString(value, at) {
-  if (typeof value !== 'string' || value.trim().length === 0) fail(at, 'must be a non-empty string');
+function nonEmptyString(value: unknown, at: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) return fail(at, 'must be a non-empty string');
   return value;
 }
 
-function identifier(value, at) {
-  nonEmptyString(value, at);
-  if (!ID.test(value)) fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
-  return value;
+function identifier(value: unknown, at: string): string {
+  const result = nonEmptyString(value, at);
+  if (!ID.test(result)) return fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
+  return result;
 }
 
-function semanticVersion(value, at) {
-  nonEmptyString(value, at);
-  if (!VERSION.test(value)) fail(at, 'must be an exact semantic version');
-  return value;
+function semanticVersion(value: unknown, at: string): string {
+  const result = nonEmptyString(value, at);
+  if (!VERSION.test(result)) return fail(at, 'must be an exact semantic version');
+  return result;
 }
 
-function positiveInteger(value, at) {
-  if (!Number.isSafeInteger(value) || value < 1) fail(at, 'must be a positive integer within the safe range');
-  return value;
+function positiveInteger(value: unknown, at: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    return fail(at, 'must be a positive integer within the safe range');
+  }
+  return value as number;
 }
 
-function uniqueStrings(value, at, { exactRefs = false, nonEmpty = true } = {}) {
+function uniqueStrings(value: unknown, at: string,
+  { exactRefs = false, nonEmpty = true }: { exactRefs?: boolean; nonEmpty?: boolean } = {}): string[] {
   if (!Array.isArray(value) || (nonEmpty && value.length === 0)) {
     fail(at, `must be ${nonEmpty ? 'a non-empty' : 'an'} array`);
   }
-  const seen = new Set();
-  return value.map((item, index) => {
-    nonEmptyString(item, `${at}[${index}]`);
-    if (seen.has(item)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(item)}`);
-    seen.add(item);
+  const seen = new Set<string>();
+  return (value as unknown[]).map((item, index) => {
+    const result = nonEmptyString(item, `${at}[${index}]`);
+    if (seen.has(result)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(result)}`);
+    seen.add(result);
     if (exactRefs) {
-      const split = item.lastIndexOf('@');
+      const split = result.lastIndexOf('@');
       if (split < 1) fail(`${at}[${index}]`, 'must be an exact id@version reference');
-      identifier(item.slice(0, split), `${at}[${index}] id`);
-      semanticVersion(item.slice(split + 1), `${at}[${index}] version`);
+      identifier(result.slice(0, split), `${at}[${index}] id`);
+      semanticVersion(result.slice(split + 1), `${at}[${index}] version`);
     } else {
-      identifier(item, `${at}[${index}]`);
+      identifier(result, `${at}[${index}]`);
     }
-    return item;
+    return result;
   });
 }
 
-function compileStrikeBudgets(value, levels) {
+function compileStrikeBudgets(value: unknown, levels: number[]): Record<string, number> {
   strictObject(value, 'strikes', new Set(['default', 'levels']));
   if (value.default !== undefined) positiveInteger(value.default, 'strikes.default');
-  strictObject(value.levels ?? {}, 'strikes.levels', new Set(levels.map(String)));
-  const overrides = new Map();
-  for (const [level, budget] of Object.entries(value.levels ?? {})) {
+  const rawLevels = value.levels ?? {};
+  strictObject(rawLevels, 'strikes.levels', new Set(levels.map(String)));
+  const overrides = new Map<number, number>();
+  for (const [level, budget] of Object.entries(rawLevels)) {
     if (!/^[1-9]\d*$/.test(level)) fail(`strikes.levels.${level}`, 'level key must be a positive integer');
     overrides.set(Number(level), positiveInteger(budget, `strikes.levels.${level}`));
   }
@@ -96,25 +268,29 @@ function compileStrikeBudgets(value, levels) {
     const budget = overrides.get(level) ?? value.default;
     if (budget === undefined) fail(`strikes.levels.${level}`, 'is required when no default is set');
     return [String(level), budget];
-  }));
+  })) as Record<string, number>;
 }
 
-function assertAcyclic(nodesById) {
-  const visiting = new Set();
-  const visited = new Set();
-  const visit = (node, chain) => {
+function assertAcyclic(nodesById: Map<string, CompiledProgressionNode>): void {
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (node: CompiledProgressionNode, chain: string[]): void => {
     if (visited.has(node.id)) return;
     if (visiting.has(node.id)) fail('nodes', `dependency cycle: ${[...chain, node.id].join(' -> ')}`);
     visiting.add(node.id);
-    for (const dependency of node.dependencies) visit(nodesById.get(dependency), [...chain, node.id]);
+    for (const dependency of node.dependencies) {
+      const parent = nodesById.get(dependency);
+      if (parent) visit(parent, [...chain, node.id]);
+    }
     visiting.delete(node.id);
     visited.add(node.id);
   };
   for (const node of nodesById.values()) visit(node, []);
 }
 
-function compileGraphDefinition(input, { source, catalogOnly }) {
-  const definition = structuredClone(input);
+function compileGraphDefinition(input: unknown,
+  { source, catalogOnly }: { source: string; catalogOnly: boolean }): CompiledProgressionDefinition {
+  const definition = structuredClone(input) as MutableDefinition;
   const fields = ['schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes',
     'questlines'];
   if (!catalogOnly) fields.push('policy', 'strikes', 'unchangedFailureLimit');
@@ -127,7 +303,7 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
   if (definition.kind !== expectedKind) fail(`${source}.kind`, `must be ${JSON.stringify(expectedKind)}`);
   identifier(definition.id, `${source}.id`);
   semanticVersion(definition.version, `${source}.version`);
-  if (!RELEASE_STATES.has(definition.state)) {
+  if (definition.state !== 'draft' && definition.state !== 'qualified') {
     fail(`${source}.state`, 'must be "draft" or "qualified"');
   }
   nonEmptyString(definition.title, `${source}.title`);
@@ -144,8 +320,9 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
     fail(`${source}.nodes`, 'must be a non-empty array');
   }
 
-  const nodeIds = new Set();
-  const checkIds = new Set();
+  const authoredNodes = structuredClone(definition.nodes);
+  const nodeIds = new Set<string>();
+  const checkIds = new Set<string>();
   definition.nodes.forEach((node, index) => {
     const at = `${source}.nodes[${index}]`;
     strictObject(node, at, new Set([
@@ -163,7 +340,7 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
     if (!Array.isArray(node.gradingChecks) || node.gradingChecks.length === 0) {
       fail(`${at}.gradingChecks`, 'must be a non-empty array');
     }
-    const localChecks = new Set();
+    const localChecks = new Set<string>();
     node.gradingChecks.forEach((check, checkIndex) => {
       const checkAt = `${at}.gradingChecks[${checkIndex}]`;
       strictObject(check, checkAt, new Set(['id', 'points']));
@@ -181,14 +358,16 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
       fail(at, 'compiled level and dependency reasons must appear together');
     }
     if (compiledNode) positiveInteger(node.level, `${at}.level`);
-    const dependencies = new Set();
+    const dependencies = new Set<string>();
     node.dependencies.forEach((dependency, dependencyIndex) => {
       const dependencyAt = `${at}.dependencies[${dependencyIndex}]`;
-      const dependencyId = compiledNode ? dependency : dependency?.id;
-      if (compiledNode) identifier(dependencyId, dependencyAt);
+      let dependencyId: string;
+      if (compiledNode) {
+        dependencyId = identifier(dependency, dependencyAt);
+      }
       else {
         strictObject(dependency, dependencyAt, new Set(['id', 'reason']));
-        identifier(dependencyId, `${dependencyAt}.id`);
+        dependencyId = identifier(dependency.id, `${dependencyAt}.id`);
         nonEmptyString(dependency.reason, `${dependencyAt}.reason`);
       }
       if (dependencies.has(dependencyId)) {
@@ -197,19 +376,25 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
       }
       dependencies.add(dependencyId);
     });
-    node.dependencies = [...dependencies].sort();
+    const compiledDependencies = [...dependencies].sort();
+    node.dependencies = compiledDependencies;
     if (compiledNode) {
-      strictObject(node.dependencyReasons, `${at}.dependencyReasons`, new Set(node.dependencies));
-      for (const dependencyId of node.dependencies) {
-        nonEmptyString(node.dependencyReasons[dependencyId],
+      strictObject(node.dependencyReasons, `${at}.dependencyReasons`, new Set(compiledDependencies));
+      for (const dependencyId of compiledDependencies) {
+        const reason = nonEmptyString(node.dependencyReasons[dependencyId],
           `${at}.dependencyReasons.${dependencyId}`);
-        node.dependencyReasons[dependencyId] = node.dependencyReasons[dependencyId].trim();
+        node.dependencyReasons[dependencyId] = reason.trim();
       }
     } else {
-      const authoredDependencies = input.nodes[index].dependencies;
-      node.dependencyReasons = Object.fromEntries(node.dependencies.map(dependencyId => [
+      const authoredDependencies = authoredNodes[index]?.dependencies ?? [];
+      node.dependencyReasons = Object.fromEntries(compiledDependencies.map(dependencyId => [
         dependencyId,
-        authoredDependencies.find(dependency => dependency.id === dependencyId).reason.trim(),
+        (() => {
+          const dependency = authoredDependencies.find((item): item is AuthoredDependency =>
+            typeof item !== 'string' && item.id === dependencyId);
+          if (!dependency) return fail(`${at}.dependencies`, `missing ${dependencyId}`);
+          return dependency.reason.trim();
+        })(),
       ]));
     }
   });
@@ -218,28 +403,33 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
   for (const node of definition.nodes) {
     const at = `${source}.nodes.${node.id}.dependencies`;
     for (const dependency of node.dependencies) {
-      if (!nodesById.has(dependency)) fail(at, `unknown parent ${JSON.stringify(dependency)}`);
+      if (!nodesById.has(dependency as string)) fail(at, `unknown parent ${JSON.stringify(dependency)}`);
     }
   }
-  assertAcyclic(nodesById);
+  assertAcyclic(nodesById as Map<string, CompiledProgressionNode>);
   const declaredLevels = new Map(definition.nodes
     .filter(node => node.level !== undefined).map(node => [node.id, node.level]));
   definition.nodes.forEach(node => { delete node.level; });
-  const levelFor = node => {
+  const levelFor = (node: AuthoredNode): number => {
     if (node.level !== undefined) return node.level;
     node.level = node.dependencies.length === 0
       ? 1
-      : 1 + Math.max(...node.dependencies.map(parentId => levelFor(nodesById.get(parentId))));
+      : 1 + Math.max(...node.dependencies.map(parentId => {
+        const parent = nodesById.get(parentId as string);
+        if (!parent) return fail(`${source}.nodes.${node.id}.dependencies`, 'contains an unknown parent');
+        return levelFor(parent);
+      }));
     return node.level;
   };
   definition.nodes.forEach(levelFor);
   for (const [nodeId, declaredLevel] of declaredLevels) {
-    if (nodesById.get(nodeId).level !== declaredLevel) {
+    if (nodesById.get(nodeId)?.level !== declaredLevel) {
       fail(`${source}.nodes.${nodeId}.level`, 'does not match calculated dependency depth');
     }
   }
-  definition.nodes.sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
-  const levels = [...new Set(definition.nodes.map(node => node.level))].sort((a, b) => a - b);
+  definition.nodes.sort((left, right) => (left.level ?? 0) - (right.level ?? 0)
+    || left.id.localeCompare(right.id));
+  const levels = [...new Set(definition.nodes.map(node => node.level as number))].sort((a, b) => a - b);
   if (!catalogOnly) {
     definition.strikes = { levels: compileStrikeBudgets(definition.strikes, levels) };
   }
@@ -247,7 +437,7 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
   if (!Array.isArray(definition.questlines) || definition.questlines.length === 0) {
     fail(`${source}.questlines`, 'must be a non-empty array');
   }
-  const questlineIds = new Set();
+  const questlineIds = new Set<string>();
   definition.questlines.forEach((questline, index) => {
     const at = `${source}.questlines[${index}]`;
     strictObject(questline, at, new Set(['id', 'title', 'nodes']));
@@ -276,75 +466,95 @@ function compileGraphDefinition(input, { source, catalogOnly }) {
     questline.nodes = owned;
   });
   definition.questlines.sort((left, right) => left.id.localeCompare(right.id));
-  return definition;
+  return definition as unknown as CompiledProgressionDefinition;
 }
 
-export function compileFeatureCatalog(input, { source = '<feature-catalog>' } = {}) {
+export function compileFeatureCatalog(input: unknown,
+  { source = '<feature-catalog>' }: { source?: string } = {}): CompiledProgressionDefinition {
   return compileGraphDefinition(input, { source, catalogOnly: true });
 }
 
-export function compileDependencyMode(input, { source = '<dependency-mode>' } = {}) {
-  return compileGraphDefinition(input, { source, catalogOnly: false });
+export function compileDependencyMode(input: unknown,
+  { source = '<dependency-mode>' }: { source?: string } = {}): CompiledDependencyDefinition {
+  return compileGraphDefinition(input, { source, catalogOnly: false }) as CompiledDependencyDefinition;
 }
 
-function nodesAt(definition, level) {
+function nodesAt(definition: CompiledDependencyDefinition, level: number): CompiledProgressionNode[] {
   return definition.nodes.filter(node => node.level === level);
 }
 
-function currentPromptNodeIds(state) {
+function getNodeState(state: ProgressionState, nodeId: string): ProgressionNodeState {
+  const node = state.nodes[nodeId];
+  if (!node) throw new Error(`dependency mode state is missing node ${nodeId}`);
+  return node;
+}
+
+function getDefinitionNode(definition: CompiledDependencyDefinition,
+  nodeId: string): CompiledProgressionNode {
+  const node = definition.nodes.find(candidate => candidate.id === nodeId);
+  if (!node) throw new Error(`unknown dependency node ${nodeId}`);
+  return node;
+}
+
+function currentPromptNodeIds(state: DependencyState): string[] {
   if (state.phase !== 'active') return [];
   const current = nodesAt(state.definition, state.level)
-    .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status))
+    .filter(node => ['active', 'regressed'].includes(getNodeState(state, node.id).status))
     .map(node => node.id);
   const required = new Set([
     ...current,
     ...state.definition.nodes.filter(node => node.level < state.level
-      && state.nodes[node.id].status === 'regressed').map(node => node.id),
+      && getNodeState(state, node.id).status === 'regressed').map(node => node.id),
   ]);
   const nodesById = new Map(state.definition.nodes.map(node => [node.id, node]));
-  const includeRegressedDependencies = nodeId => {
-    for (const parentId of nodesById.get(nodeId).dependencies) {
-      if (state.nodes[parentId].status === 'regressed') required.add(parentId);
+  const includeRegressedDependencies = (nodeId: string): void => {
+    const node = nodesById.get(nodeId);
+    if (!node) return;
+    for (const parentId of node.dependencies) {
+      if (getNodeState(state, parentId).status === 'regressed') required.add(parentId);
       includeRegressedDependencies(parentId);
     }
   };
   current.forEach(includeRegressedDependencies);
   return [...required].sort((left, right) => {
-    const leftNode = nodesById.get(left);
-    const rightNode = nodesById.get(right);
+    const leftNode = getDefinitionNode(state.definition, left);
+    const rightNode = getDefinitionNode(state.definition, right);
     return leftNode.level - rightNode.level || left.localeCompare(right);
   });
 }
 
-function gradingNodeIds(state) {
+function gradingNodeIds(state: DependencyState): string[] {
   const promptIds = currentPromptNodeIds(state);
   const selected = new Set([
     ...promptIds,
     ...state.definition.nodes
-      .filter(node => node.level <= state.level && state.nodes[node.id].status === 'passed')
+      .filter(node => node.level <= state.level && getNodeState(state, node.id).status === 'passed')
       .map(node => node.id),
   ]);
   const nodesById = new Map(state.definition.nodes.map(node => [node.id, node]));
-  const includeDependencies = nodeId => {
-    for (const parentId of nodesById.get(nodeId).dependencies) {
+  const includeDependencies = (nodeId: string): void => {
+    const node = nodesById.get(nodeId);
+    if (!node) return;
+    for (const parentId of node.dependencies) {
       selected.add(parentId);
       includeDependencies(parentId);
     }
   };
   promptIds.forEach(includeDependencies);
   return [...selected].sort((left, right) => {
-    const leftNode = nodesById.get(left);
-    const rightNode = nodesById.get(right);
+    const leftNode = getDefinitionNode(state.definition, left);
+    const rightNode = getDefinitionNode(state.definition, right);
     return leftNode.level - rightNode.level || left.localeCompare(right);
   });
 }
 
-function selectionFor(state, nodeIds, field) {
+function selectionFor(state: DependencyState, nodeIds: string[],
+  field: 'featureRefs' | 'promptModules'): string[] {
   const selected = new Set(nodeIds);
   return state.definition.nodes.filter(node => selected.has(node.id)).flatMap(node => node[field]);
 }
 
-function selectedPromptWork(state) {
+function selectedPromptWork(state: DependencyState): DependencyPromptSelection {
   const nodeIds = currentPromptNodeIds(state);
   return {
     nodeIds,
@@ -353,7 +563,7 @@ function selectedPromptWork(state) {
   };
 }
 
-function selectedGradingWork(state) {
+function selectedGradingWork(state: DependencyState): DependencyGradingSelection {
   const nodeIds = gradingNodeIds(state);
   const selected = new Set(nodeIds);
   return {
@@ -363,17 +573,20 @@ function selectedGradingWork(state) {
   };
 }
 
-export function promptSelection(state) {
-  assertReplayConsistent(state);
-  return selectedPromptWork(state);
+export function promptSelection(state: ProgressionState): DependencyPromptSelection {
+  const dependencyState = asDependencyState(state);
+  assertReplayConsistent(dependencyState);
+  return selectedPromptWork(dependencyState);
 }
 
-export function gradingSelection(state) {
-  assertReplayConsistent(state);
-  return selectedGradingWork(state);
+export function gradingSelection(state: ProgressionState): DependencyGradingSelection {
+  const dependencyState = asDependencyState(state);
+  assertReplayConsistent(dependencyState);
+  return selectedGradingWork(dependencyState);
 }
 
-function terminalOutcome(state, reason, blockedLevel = null) {
+function terminalOutcome(state: DependencyState,
+  reason: ProgressionTerminalOutcome['reason'], blockedLevel: number | null = null): ProgressionTerminalOutcome {
   const statuses = Object.values(state.nodes).map(node => node.status);
   const passed = statuses.filter(status => status === 'passed').length;
   const kind = passed === statuses.length ? 'passed' : passed > 0 ? 'partial' : 'failed';
@@ -381,7 +594,7 @@ function terminalOutcome(state, reason, blockedLevel = null) {
     ...(blockedLevel === null ? {} : { blockedLevel }) };
 }
 
-function openLevel(state, level) {
+function openLevel(state: DependencyState, level: number): void {
   const nodes = nodesAt(state.definition, level);
   if (nodes.length === 0) {
     state.phase = 'terminal';
@@ -391,13 +604,13 @@ function openLevel(state, level) {
   let active = 0;
   let passed = 0;
   for (const node of nodes) {
-    const unlocked = node.dependencies.every(parentId => state.nodes[parentId].status === 'passed');
-    if (state.nodes[node.id].status === 'exhausted') continue;
-    if (state.nodes[node.id].status === 'passed' && unlocked) {
+    const unlocked = node.dependencies.every(parentId => getNodeState(state, parentId).status === 'passed');
+    if (getNodeState(state, node.id).status === 'exhausted') continue;
+    if (getNodeState(state, node.id).status === 'passed' && unlocked) {
       passed += 1;
       continue;
     }
-    state.nodes[node.id].status = unlocked ? 'active' : 'blocked';
+    getNodeState(state, node.id).status = unlocked ? 'active' : 'blocked';
     if (unlocked) active += 1;
   }
   if (active > 0) {
@@ -412,27 +625,26 @@ function openLevel(state, level) {
   }
 }
 
-function initialDependencyState(definition) {
-  const state = {
+function initialDependencyState(definition: CompiledDependencyDefinition): DependencyState {
+  const state: DependencyState = {
     schemaVersion: DEPENDENCY_MODE_SCHEMA_VERSION,
     policy: DEPENDENCY_MODE_POLICY,
     definition,
     phase: 'active',
     terminalOutcome: null,
     level: 1,
-    nodes: Object.fromEntries(definition.nodes.map(node => [node.id, {
-      status: 'locked',
-      exhaustedAtLevel: null,
-      exhaustionReason: null,
-      unchangedFailure: { fingerprint: null, count: 0 },
-      strikes: {
-        initialBudget: definition.strikes.levels[String(node.level)],
-        granted: 0,
-        budget: definition.strikes.levels[String(node.level)],
-        used: 0,
-      },
-      checks: Object.fromEntries(node.gradingChecks.map(check => [check.id, null])),
-    }])),
+    nodes: Object.fromEntries(definition.nodes.map(node => {
+      const budget = definition.strikes.levels[String(node.level)];
+      if (budget === undefined) throw new Error(`missing strike budget for level ${node.level}`);
+      return [node.id, {
+        status: 'locked',
+        exhaustedAtLevel: null,
+        exhaustionReason: null,
+        unchangedFailure: { fingerprint: null, count: 0 },
+        strikes: { initialBudget: budget, granted: 0, budget, used: 0 },
+        checks: Object.fromEntries(node.gradingChecks.map(check => [check.id, null])),
+      }];
+    })),
     attempts: [],
     grants: [],
     events: [],
@@ -441,15 +653,16 @@ function initialDependencyState(definition) {
   return state;
 }
 
-export function initializeDependencyMode(input) {
+export function initializeDependencyMode(input: unknown): DependencyState {
   return initialDependencyState(compileDependencyMode(input));
 }
 
-function assertState(state) {
-  if (!object(state) || state.schemaVersion !== DEPENDENCY_MODE_SCHEMA_VERSION
-    || state.policy !== DEPENDENCY_MODE_POLICY) {
+function assertState(input: unknown): CompiledDependencyDefinition {
+  if (!object(input) || input.schemaVersion !== DEPENDENCY_MODE_SCHEMA_VERSION
+    || input.policy !== DEPENDENCY_MODE_POLICY) {
     throw new Error('invalid dependency mode state');
   }
+  const state = input as unknown as DependencyState;
   const definition = compileDependencyMode(state.definition);
   if (!['active', 'terminal'].includes(state.phase)) throw new Error('invalid dependency mode state phase');
   if (state.phase === 'active' && state.terminalOutcome !== null) {
@@ -473,7 +686,7 @@ function assertState(state) {
     throw new Error('invalid dependency mode state node set');
   }
   for (const node of definition.nodes) {
-    const nodeState = state.nodes[node.id];
+    const nodeState = getNodeState(state, node.id);
     const unchangedFailure = nodeState?.unchangedFailure;
     const strikes = nodeState?.strikes;
     const initialBudget = definition.strikes.levels[String(node.level)];
@@ -500,7 +713,8 @@ function assertState(state) {
     const actualChecks = Object.keys(nodeState.checks);
     if (actualChecks.length !== expectedChecks.size
       || actualChecks.some(checkId => !expectedChecks.has(checkId))
-      || actualChecks.some(checkId => ![null, 'pass', 'fail'].includes(nodeState.checks[checkId]))) {
+      || actualChecks.some(checkId =>
+        ![null, 'pass', 'fail'].includes(nodeState.checks[checkId] ?? null))) {
       throw new Error(`invalid dependency mode check state for node ${node.id}`);
     }
   }
@@ -516,7 +730,8 @@ function assertState(state) {
       || (attempt.runId !== undefined && (typeof attempt.runId !== 'string' || !attempt.runId))
       || (attempt.outcome === 'inconclusive'
         && (typeof attempt.reason !== 'string' || !attempt.reason
-          || !INCONCLUSIVE_CATEGORIES.has(attempt.category)))
+          || typeof attempt.category !== 'string'
+          || !INCONCLUSIVE_CATEGORIES.has(attempt.category as InconclusiveCategory)))
       || (attempt.applicationFailure !== undefined
         && attempt.outcome !== 'conclusive')) {
       throw new Error(`invalid dependency mode attempt at index ${index}`);
@@ -535,7 +750,13 @@ function assertState(state) {
   return definition;
 }
 
-function validateConclusiveResult(state, result) {
+function asDependencyState(input: unknown): DependencyState {
+  assertState(input);
+  return input as DependencyState;
+}
+
+function validateConclusiveResult(state: DependencyState,
+  result: ConclusiveResult): Map<string, Map<string, CheckOutcome>> {
   if (!Array.isArray(result.nodes)) throw new Error('conclusive result nodes must be an array');
   const nodeIds = gradingNodeIds(state);
   const selectedNodes = new Set(nodeIds);
@@ -546,18 +767,20 @@ function validateConclusiveResult(state, result) {
   };
   const expectedNodes = new Map(selected.nodeIds.map(nodeId => [nodeId,
     new Set(selected.checks.filter(check => check.nodeId === nodeId).map(check => check.id))]));
-  const actualNodes = new Map();
+  const actualNodes = new Map<string, Map<string, CheckOutcome>>();
   for (const [index, nodeResult] of result.nodes.entries()) {
     strictObject(nodeResult, `result.nodes[${index}]`, new Set(['id', 'checks']));
     nonEmptyString(nodeResult.id, `result.nodes[${index}].id`);
     if (!expectedNodes.has(nodeResult.id)) throw new Error(`result includes unselected node ${nodeResult.id}`);
     if (actualNodes.has(nodeResult.id)) throw new Error(`result repeats node ${nodeResult.id}`);
     if (!Array.isArray(nodeResult.checks)) throw new Error(`result node ${nodeResult.id} checks must be an array`);
-    const checks = new Map();
+    const expectedChecks = expectedNodes.get(nodeResult.id);
+    if (!expectedChecks) throw new Error(`result includes unselected node ${nodeResult.id}`);
+    const checks = new Map<string, CheckOutcome>();
     for (const [checkIndex, check] of nodeResult.checks.entries()) {
       strictObject(check, `result.nodes[${index}].checks[${checkIndex}]`, new Set(['id', 'outcome']));
       nonEmptyString(check.id, `result.nodes[${index}].checks[${checkIndex}].id`);
-      if (!expectedNodes.get(nodeResult.id).has(check.id)) {
+      if (!expectedChecks.has(check.id)) {
         throw new Error(`result includes unselected check ${check.id} for ${nodeResult.id}`);
       }
       if (checks.has(check.id)) throw new Error(`result repeats check ${check.id}`);
@@ -566,7 +789,7 @@ function validateConclusiveResult(state, result) {
       }
       checks.set(check.id, check.outcome);
     }
-    const missing = [...expectedNodes.get(nodeResult.id)].filter(checkId => !checks.has(checkId));
+    const missing = [...expectedChecks].filter(checkId => !checks.has(checkId));
     if (missing.length) throw new Error(`result node ${nodeResult.id} is missing checks: ${missing.join(', ')}`);
     actualNodes.set(nodeResult.id, checks);
   }
@@ -589,10 +812,10 @@ function validateConclusiveResult(state, result) {
   return actualNodes;
 }
 
-function failureFingerprint(state, nodeIds) {
+function failureFingerprint(state: DependencyState, nodeIds: string[]): string {
   const failedChecks = nodeIds.map(nodeId => ({
     nodeId,
-    checks: Object.entries(state.nodes[nodeId].checks)
+    checks: Object.entries(getNodeState(state, nodeId).checks)
       .filter(([, outcome]) => outcome === 'fail')
       .map(([checkId]) => checkId)
       .sort(),
@@ -600,18 +823,18 @@ function failureFingerprint(state, nodeIds) {
   return createHash('sha256').update(JSON.stringify(failedChecks)).digest('hex');
 }
 
-function stopUnchangedFeatures(state) {
-  const exhausted = new Set();
+function stopUnchangedFeatures(state: DependencyState): void {
+  const exhausted = new Set<string>();
   const failedNodes = state.definition.nodes.filter(node => {
-    const nodeState = state.nodes[node.id];
+    const nodeState = getNodeState(state, node.id);
     return ['active', 'regressed'].includes(nodeState.status)
       && Object.values(nodeState.checks).includes('fail');
   });
   for (const node of failedNodes) {
     const fingerprint = failureFingerprint(state, [node.id]);
-    const prior = state.nodes[node.id].unchangedFailure;
+    const prior = getNodeState(state, node.id).unchangedFailure;
     const count = prior.fingerprint === fingerprint ? prior.count + 1 : 1;
-    state.nodes[node.id].unchangedFailure = {
+    getNodeState(state, node.id).unchangedFailure = {
       fingerprint,
       count,
     };
@@ -621,9 +844,9 @@ function stopUnchangedFeatures(state) {
   }
 
   for (const nodeId of exhausted) {
-    state.nodes[nodeId].status = 'exhausted';
-    state.nodes[nodeId].exhaustedAtLevel = state.level;
-    state.nodes[nodeId].exhaustionReason = 'repeated-findings';
+    getNodeState(state, nodeId).status = 'exhausted';
+    getNodeState(state, nodeId).exhaustedAtLevel = state.level;
+    getNodeState(state, nodeId).exhaustionReason = 'repeated-findings';
   }
 
   // A dependent feature is blocked by an exhausted prerequisite. It does not
@@ -632,9 +855,9 @@ function stopUnchangedFeatures(state) {
   while (changed) {
     changed = false;
     for (const node of state.definition.nodes) {
-      const nodeState = state.nodes[node.id];
+      const nodeState = getNodeState(state, node.id);
       if (!['active', 'regressed'].includes(nodeState.status)) continue;
-      if (node.dependencies.some(parentId => ['exhausted', 'blocked'].includes(state.nodes[parentId].status))) {
+      if (node.dependencies.some(parentId => ['exhausted', 'blocked'].includes(getNodeState(state, parentId).status))) {
         nodeState.status = 'blocked';
         nodeState.exhaustedAtLevel = null;
         nodeState.exhaustionReason = null;
@@ -644,9 +867,9 @@ function stopUnchangedFeatures(state) {
   }
 }
 
-function applyDependencyResult(inputState, inputResult) {
+function applyDependencyResult(inputState: DependencyState, inputResult: DependencyResult): DependencyState {
   if (inputState.phase !== 'active') throw new Error('cannot record a result after progression terminates');
-  const result = structuredClone(inputResult);
+  const result = structuredClone(inputResult) as DependencyResult;
   strictObject(result, 'result', new Set([
     'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
     'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure',
@@ -674,7 +897,7 @@ function applyDependencyResult(inputState, inputResult) {
   if (!['conclusive', 'inconclusive'].includes(result.outcome)) {
     throw new Error('result.outcome must be conclusive or inconclusive');
   }
-  const state = structuredClone(inputState);
+  const state = structuredClone(inputState) as DependencyState;
   if (result.outcome === 'inconclusive') {
     nonEmptyString(result.reason, 'result.reason');
     if (!INCONCLUSIVE_CATEGORIES.has(result.category)) {
@@ -696,37 +919,40 @@ function applyDependencyResult(inputState, inputResult) {
   }
 
   const actual = validateConclusiveResult(state, result);
-  const nodesById = new Map(state.definition.nodes.map(node => [node.id, node]));
   const selectedNodeIds = gradingNodeIds(state);
   for (const nodeId of selectedNodeIds) {
-    const node = nodesById.get(nodeId);
+    const node = getDefinitionNode(state.definition, nodeId);
     const outcomes = actual.get(nodeId);
-    state.nodes[nodeId].checks = Object.fromEntries(node.gradingChecks.map(check => {
+    if (!outcomes) throw new Error(`result is missing node ${nodeId}`);
+    getNodeState(state, nodeId).checks = Object.fromEntries(node.gradingChecks.map(check => {
       const outcome = outcomes.get(check.id);
-      return [check.id, outcome === 'not-run' ? state.nodes[nodeId].checks[check.id] : outcome];
-    }));
+      if (outcome === undefined) throw new Error(`result is missing check ${check.id}`);
+      const prior = getNodeState(state, nodeId).checks[check.id] ?? null;
+      return [check.id, outcome === 'not-run' ? prior : outcome];
+    })) as Record<string, StoredCheckOutcome>;
   }
   for (const nodeId of selectedNodeIds) {
-    const node = nodesById.get(nodeId);
+    const node = getDefinitionNode(state.definition, nodeId);
     const outcomes = actual.get(nodeId);
+    if (!outcomes) throw new Error(`result is missing node ${nodeId}`);
     if ([...outcomes.values()].every(outcome => outcome === 'not-run')) continue;
-    const checksPass = node.gradingChecks.every(check => state.nodes[nodeId].checks[check.id] === 'pass');
+    const checksPass = node.gradingChecks.every(check => getNodeState(state, nodeId).checks[check.id] === 'pass');
     const dependenciesPass = node.dependencies.every(parentId =>
-      state.nodes[parentId].status === 'passed');
-    state.nodes[nodeId].exhaustedAtLevel = null;
-    state.nodes[nodeId].exhaustionReason = null;
+      getNodeState(state, parentId).status === 'passed');
+    getNodeState(state, nodeId).exhaustedAtLevel = null;
+    getNodeState(state, nodeId).exhaustionReason = null;
     if (checksPass && dependenciesPass) {
-      state.nodes[nodeId].status = 'passed';
-      state.nodes[nodeId].unchangedFailure = { fingerprint: null, count: 0 };
-    } else if (node.level < state.level || state.nodes[nodeId].status === 'passed') {
-      state.nodes[nodeId].status = 'regressed';
+      getNodeState(state, nodeId).status = 'passed';
+      getNodeState(state, nodeId).unchangedFailure = { fingerprint: null, count: 0 };
+    } else if (node.level < state.level || getNodeState(state, nodeId).status === 'passed') {
+      getNodeState(state, nodeId).status = 'regressed';
     } else {
-      state.nodes[nodeId].status = 'active';
+      getNodeState(state, nodeId).status = 'active';
     }
   }
   for (const nodeId of selectedNodeIds) {
-    const node = nodesById.get(nodeId);
-    const nodeState = state.nodes[nodeId];
+    const node = getDefinitionNode(state.definition, nodeId);
+    const nodeState = getNodeState(state, nodeId);
     const hasFailedCheck = node.gradingChecks.some(check => nodeState.checks[check.id] === 'fail');
     if (!hasFailedCheck || !['active', 'regressed'].includes(nodeState.status)) continue;
     nodeState.strikes.used += 1;
@@ -745,11 +971,11 @@ function applyDependencyResult(inputState, inputResult) {
       ? { applicationFailure: structuredClone(result.applicationFailure) } : {}) });
 
   let unresolved = nodesAt(state.definition, state.level)
-    .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status));
+    .filter(node => ['active', 'regressed'].includes(getNodeState(state, node.id).status));
   if (unresolved.length > 0) {
     stopUnchangedFeatures(state);
     unresolved = nodesAt(state.definition, state.level)
-      .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status));
+      .filter(node => ['active', 'regressed'].includes(getNodeState(state, node.id).status));
     if (unresolved.length === 0) {
       openLevel(state, state.level + 1);
       return state;
@@ -760,9 +986,10 @@ function applyDependencyResult(inputState, inputResult) {
   return state;
 }
 
-function applyStrikeGrant(inputState, inputGrant) {
+function applyStrikeGrant(inputState: DependencyState,
+  inputGrant: DependencyStrikeGrant): DependencyState {
   if (inputState.phase !== 'terminal') throw new Error('strikes can be granted only after progression terminates');
-  const grant = structuredClone(inputGrant);
+  const grant = structuredClone(inputGrant) as DependencyStrikeGrant;
   strictObject(grant, 'grant', new Set(['grantId', 'level', 'nodeIds', 'strikes']));
   nonEmptyString(grant.grantId, 'grant.grantId');
   positiveInteger(grant.level, 'grant.level');
@@ -774,21 +1001,23 @@ function applyStrikeGrant(inputState, inputGrant) {
   const nodesById = new Map(inputState.definition.nodes.map(node => [node.id, node]));
   const eligible = grant.nodeIds.map(nodeId => nodesById.get(nodeId));
   if (eligible.some(node => !node
-    || inputState.nodes[node.id].status !== 'exhausted'
-    || inputState.nodes[node.id].exhaustedAtLevel !== grant.level)) {
+    || getNodeState(inputState, node.id).status !== 'exhausted'
+    || getNodeState(inputState, node.id).exhaustedAtLevel !== grant.level)) {
     throw new Error(`grant level ${grant.level} includes a feature that is not an exhausted target`);
   }
   for (const node of eligible) {
-    if (!Number.isSafeInteger(inputState.nodes[node.id].strikes.budget + grant.strikes)) {
+    if (!node) continue;
+    if (!Number.isSafeInteger(getNodeState(inputState, node.id).strikes.budget + grant.strikes)) {
       throw new Error(`grant for feature ${node.id} exceeds the safe strike limit`);
     }
   }
-  const state = structuredClone(inputState);
+  const state = structuredClone(inputState) as DependencyState;
   state.level = grant.level;
   state.phase = 'active';
   state.terminalOutcome = null;
   for (const node of eligible) {
-    const nodeState = state.nodes[node.id];
+    if (!node) continue;
+    const nodeState = getNodeState(state, node.id);
     nodeState.strikes.granted += grant.strikes;
     nodeState.strikes.budget += grant.strikes;
     nodeState.status = node.level < grant.level ? 'regressed' : 'active';
@@ -809,7 +1038,7 @@ function applyStrikeGrant(inputState, inputGrant) {
   }
   for (const node of state.definition.nodes.filter(node =>
     !grant.nodeIds.includes(node.id) && node.level >= grant.level && affected.has(node.id))) {
-    const nodeState = state.nodes[node.id];
+    const nodeState = getNodeState(state, node.id);
     nodeState.checks = Object.fromEntries(node.gradingChecks.map(check => [check.id, null]));
     if (nodeState.strikes.used >= nodeState.strikes.budget) {
       nodeState.status = 'exhausted';
@@ -825,7 +1054,7 @@ function applyStrikeGrant(inputState, inputGrant) {
   return state;
 }
 
-function validateEvent(event, index) {
+function validateEvent(event: unknown, index: number): asserts event is DependencyEvent {
   strictObject(event, `events[${index}]`, new Set(['sequence', 'type', 'result', 'grant']));
   if (event.sequence !== index + 1) throw new Error(`event sequence ${event.sequence} must be ${index + 1}`);
   if (event.type === 'attempt-recorded') {
@@ -841,7 +1070,8 @@ function validateEvent(event, index) {
   }
 }
 
-export function replayDependencyMode(inputDefinition, inputEvents = []) {
+export function replayDependencyMode(inputDefinition: unknown,
+  inputEvents: unknown[] = []): DependencyState {
   const definition = compileDependencyMode(inputDefinition);
   if (!Array.isArray(inputEvents)) throw new Error('dependency mode events must be an array');
   let state = initialDependencyState(definition);
@@ -857,7 +1087,7 @@ export function replayDependencyMode(inputDefinition, inputEvents = []) {
   return state;
 }
 
-function assertReplayConsistent(state) {
+function assertReplayConsistent(state: DependencyState): CompiledDependencyDefinition {
   assertState(state);
   const replayed = replayDependencyMode(state.definition, state.events);
   if (!isDeepStrictEqual(replayed, state)) {
@@ -866,38 +1096,47 @@ function assertReplayConsistent(state) {
   return state.definition;
 }
 
-export function resumeDependencyMode(snapshot) {
-  assertReplayConsistent(snapshot);
-  return replayDependencyMode(snapshot.definition, snapshot.events);
-}
-
-export function recordDependencyResult(inputState, inputResult) {
-  assertReplayConsistent(inputState);
-  const event = { sequence: inputState.events.length + 1, type: 'attempt-recorded',
-    result: structuredClone(inputResult) };
-  return replayDependencyMode(inputState.definition, [...inputState.events, event]);
-}
-
-export function grantDependencyStrikes(inputState, grant) {
-  assertReplayConsistent(inputState);
-  const event = { sequence: inputState.events.length + 1, type: 'strikes-granted',
-    grant: structuredClone(grant) };
-  return replayDependencyMode(inputState.definition, [...inputState.events, event]);
-}
-
-export function nextDependencyAction(state) {
+export function resumeDependencyMode(snapshot: ProgressionState): DependencyState {
+  const state = asDependencyState(snapshot);
   assertReplayConsistent(state);
-  if (state.phase === 'terminal') return { type: 'terminal', outcome: { ...state.terminalOutcome } };
+  return replayDependencyMode(state.definition, state.events);
+}
+
+export function recordDependencyResult(inputState: ProgressionState,
+  inputResult: unknown): DependencyState {
+  const state = asDependencyState(inputState);
+  assertReplayConsistent(state);
+  const event: DependencyEvent = { sequence: state.events.length + 1,
+    type: 'attempt-recorded', result: structuredClone(inputResult) as DependencyResult };
+  return replayDependencyMode(state.definition, [...state.events, event]);
+}
+
+export function grantDependencyStrikes(inputState: ProgressionState,
+  inputGrant: unknown): DependencyState {
+  const state = asDependencyState(inputState);
+  assertReplayConsistent(state);
+  const event: DependencyEvent = { sequence: state.events.length + 1,
+    type: 'strikes-granted', grant: structuredClone(inputGrant) as DependencyStrikeGrant };
+  return replayDependencyMode(state.definition, [...state.events, event]);
+}
+
+export function nextDependencyAction(inputState: ProgressionState): ProgressionAction {
+  const state = asDependencyState(inputState);
+  assertReplayConsistent(state);
+  if (state.phase === 'terminal') {
+    if (!state.terminalOutcome) throw new Error('terminal dependency state is missing its outcome');
+    return { type: 'terminal', outcome: { ...state.terminalOutcome } };
+  }
   const prompt = selectedPromptWork(state);
   const grading = selectedGradingWork(state);
   const hasConclusiveAttempt = state.attempts.some(attempt =>
     attempt.level === state.level && attempt.outcome === 'conclusive');
   const featureIds = prompt.nodeIds.filter(nodeId => {
-    const checks = Object.values(state.nodes[nodeId].checks);
+    const checks = Object.values(getNodeState(state, nodeId).checks);
     return checks.every(value => value === null) || checks.some(value => value === 'fail');
   });
   const nodes = featureIds.map(nodeId => {
-    const counter = state.nodes[nodeId].strikes;
+    const counter = getNodeState(state, nodeId).strikes;
     return { nodeId, ...counter, remaining: counter.budget - counter.used };
   });
   const maxRemaining = Math.max(0, ...nodes.map(node => node.remaining));
@@ -910,26 +1149,31 @@ export function nextDependencyAction(state) {
   };
 }
 
-export function activeDependencyNodes(state) {
+export function activeDependencyNodes(inputState: ProgressionState): string[] {
+  const state = asDependencyState(inputState);
   assertReplayConsistent(state);
   return currentPromptNodeIds(state);
 }
 
-function nodePoints(definition, state, nodeId) {
+function nodePoints(definition: CompiledDependencyDefinition,
+  state: DependencyState, nodeId: string): PointTotals {
   const node = definition.nodes.find(candidate => candidate.id === nodeId);
+  if (!node) throw new Error(`unknown dependency node ${nodeId}`);
   const passedPoints = node.gradingChecks.reduce((total, check) =>
-    total + (state.nodes[nodeId].checks[check.id] === 'pass' ? check.points : 0), 0);
+    total + (getNodeState(state, nodeId).checks[check.id] === 'pass' ? check.points : 0), 0);
   const failedPoints = node.gradingChecks.reduce((total, check) =>
-    total + (state.nodes[nodeId].checks[check.id] === 'fail' ? check.points : 0), 0);
+    total + (getNodeState(state, nodeId).checks[check.id] === 'fail' ? check.points : 0), 0);
   const gradedPoints = passedPoints + failedPoints;
   const availablePoints = node.gradingChecks.reduce((total, check) => total + check.points, 0);
   return { passedPoints, failedPoints, gradedPoints,
     ungradedPoints: availablePoints - gradedPoints, availablePoints };
 }
 
-const percentage = ({ passedPoints, availablePoints }) => (passedPoints / availablePoints) * 100;
+const percentage = ({ passedPoints, availablePoints }: PointTotals): number =>
+  (passedPoints / availablePoints) * 100;
 
-export function scoreDependencyMode(state) {
+export function scoreDependencyMode(inputState: ProgressionState): DependencyScore {
+  const state = asDependencyState(inputState);
   const definition = assertReplayConsistent(state);
   const questlines = definition.questlines.map(questline => {
     const points = questline.nodes.reduce((total, nodeId) => {
@@ -960,16 +1204,18 @@ export function scoreDependencyMode(state) {
   const final = state.phase === 'terminal';
   const inconclusiveAttempts = state.attempts.filter(attempt => attempt.outcome === 'inconclusive').length;
   const inconclusiveByCategory = Object.fromEntries([...INCONCLUSIVE_CATEGORIES]
-    .map(category => [category, state.attempts.filter(attempt => attempt.category === category).length]));
+    .map(category => [category, state.attempts.filter(attempt => attempt.category === category).length])) as
+    Record<InconclusiveCategory, number>;
   return {
     status: final ? 'final' : 'provisional',
-    terminalOutcome: final ? { ...state.terminalOutcome } : null,
+    terminalOutcome: final && state.terminalOutcome ? { ...state.terminalOutcome } : null,
     attempts: { total: state.attempts.length, inconclusive: inconclusiveAttempts,
       inconclusiveByCategory,
       conclusive: state.attempts.length - inconclusiveAttempts },
     questlines,
     averagePercentage: final
-      ? questlines.reduce((total, questline) => total + questline.percentage, 0) / questlines.length
+      ? questlines.reduce((total, questline) => total + (questline.percentage ?? 0), 0)
+        / questlines.length
       : null,
     uniqueChecks: { ...uniqueChecks,
       percentage: final ? percentage(uniqueChecks) : null,
@@ -977,7 +1223,12 @@ export function scoreDependencyMode(state) {
   };
 }
 
-export const dependencyModePolicy = Object.freeze({
+export const dependencyModePolicy: Readonly<ProgressionPolicy<
+  CompiledDependencyDefinition,
+  ProgressionState,
+  ProgressionAction,
+  DependencyScore
+>> = Object.freeze({
   id: DEPENDENCY_MODE_POLICY,
   compile: compileDependencyMode,
   initialize: initializeDependencyMode,

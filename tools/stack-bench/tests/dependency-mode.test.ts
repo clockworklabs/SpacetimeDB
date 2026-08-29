@@ -1,12 +1,69 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compileDependencyMode } from '../src/progression/dependency-mode.mjs';
+import {
+  compileDependencyMode,
+  type ConclusiveResult,
+  type DependencyGradingSelection,
+  type DependencyPromptSelection,
+  type DependencyScore,
+} from '../src/progression/dependency-mode.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
-  from '../dist/src/progression/progression-definition.js';
-import { createProgressionEngine, progressionEngine } from '../dist/src/progression/progression-engine.js';
+  from '../src/progression/progression-definition.js';
+import {
+  createProgressionEngine,
+  progressionEngine,
+  type ProgressionWorkAction,
+} from '../src/progression/progression-engine.js';
+import type { ProgressionState } from '../src/progression/progression-state.js';
 
-const node = (id, dependencies, questline, points = [1]) => ({
+interface FixtureDependency {
+  id: string;
+  reason: string;
+}
+
+interface FixtureNode {
+  id: string;
+  title: string;
+  questline: string;
+  dependencies: FixtureDependency[];
+  featureRefs: string[];
+  promptModules: string[];
+  gradingChecks: Array<{ id: string; points: number }>;
+  level?: number;
+}
+
+interface FixtureDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  policy: string;
+  strikes: { default?: number; levels: Record<number, number> };
+  unchangedFailureLimit?: number;
+  nodes: FixtureNode[];
+  questlines: Array<{ id: string; title: string }>;
+}
+
+type Outcome = 'pass' | 'fail' | 'not-run';
+type Outcomes = Record<string, Outcome | Record<string, Outcome>>;
+
+const dependencyPrompt = (state: ProgressionState): DependencyPromptSelection =>
+  progressionEngine.promptSelection(state) as DependencyPromptSelection;
+const dependencyGrading = (state: ProgressionState): DependencyGradingSelection =>
+  progressionEngine.gradingSelection(state) as DependencyGradingSelection;
+const dependencyScore = (state: ProgressionState): DependencyScore =>
+  progressionEngine.score(state);
+const dependencyAction = (state: ProgressionState): ProgressionWorkAction => {
+  const action = progressionEngine.nextAction(state);
+  if (action.type === 'terminal') throw new Error('expected active dependency work');
+  return action;
+};
+
+const node = (id: string, dependencies: string[], questline: string,
+  points: number[] = [1]): FixtureNode => ({
   id,
   title: id,
   questline,
@@ -19,7 +76,7 @@ const node = (id, dependencies, questline, points = [1]) => ({
   gradingChecks: points.map((value, index) => ({ id: `check.${id}.${index + 1}`, points: value })),
 });
 
-const fixture = () => ({
+const fixture = (): FixtureDefinition => ({
   schemaVersion: 3,
   kind: 'progression-mode',
   id: 'storefront-paths',
@@ -42,8 +99,9 @@ const fixture = () => ({
   ],
 });
 
-function conclusive(state, attemptId, outcomes) {
-  const selection = progressionEngine.gradingSelection(state);
+function conclusive(state: ProgressionState, attemptId: string,
+  outcomes: Outcomes): ConclusiveResult {
+  const selection = dependencyGrading(state);
   return {
     attemptId,
     outcome: 'conclusive',
@@ -67,7 +125,7 @@ test('a valid graph compiles in deterministic level and id order', () => {
     'accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery',
   ]);
   assert.deepEqual(compiled.questlines.map(item => item.id), ['discovery', 'identity']);
-  assert.deepEqual(compiled.questlines.find(item => item.id === 'identity').nodes,
+  assert.deepEqual(compiled.questlines.find(item => item.id === 'identity')!.nodes,
     ['accounts', 'ownership', 'recovery']);
   assert.deepEqual(compiled.strikes, { levels: { 1: 2, 2: 1, 3: 2 } });
   assert.equal(compiled.unchangedFailureLimit, 3);
@@ -93,24 +151,24 @@ test('the unchanged failure limit is part of the versioned dependency policy ide
 });
 
 test('invalid graphs, questlines, and strike budgets fail before execution', async t => {
-  const cases = [
-    ['duplicate node', value => value.nodes.push(structuredClone(value.nodes[0])), /duplicates/],
-    ['missing parent', value => { value.nodes[2].dependencies[0].id = 'missing'; }, /unknown parent/],
+  const cases: Array<[string, (value: FixtureDefinition) => void, RegExp]> = [
+    ['duplicate node', value => value.nodes.push(structuredClone(value.nodes[0]!)), /duplicates/],
+    ['missing parent', value => { value.nodes[2]!.dependencies[0]!.id = 'missing'; }, /unknown parent/],
     ['dependency cycle', value => {
-      value.nodes[0].dependencies = [{ id: 'ownership', reason: 'cycle' }];
+      value.nodes[0]!.dependencies = [{ id: 'ownership', reason: 'cycle' }];
     }, /dependency cycle/],
-    ['missing dependency reason', value => { value.nodes[2].dependencies[0].reason = ''; }, /non-empty string/],
-    ['authored level', value => { value.nodes[0].level = 1; }, /compiled level and dependency reasons/],
+    ['missing dependency reason', value => { value.nodes[2]!.dependencies[0]!.reason = ''; }, /non-empty string/],
+    ['authored level', value => { value.nodes[0]!.level = 1; }, /compiled level and dependency reasons/],
     ['invalid default strikes', value => { value.strikes.default = 0; }, /positive integer/],
     ['invalid level strikes', value => { value.strikes.levels[2] = -1; }, /positive integer/],
     ['invalid unchanged failure limit', value => { value.unchangedFailureLimit = 0; },
       /positive integer/],
-    ['negative check points', value => { value.nodes[0].gradingChecks[0].points = -1; }, /positive integer/],
+    ['negative check points', value => { value.nodes[0]!.gradingChecks[0]!.points = -1; }, /positive integer/],
     ['zero-point gate check', value => {
-      value.nodes[0].gradingChecks[0].points = 0;
+      value.nodes[0]!.gradingChecks[0]!.points = 0;
     }, /positive integer/],
     ['missing budget', value => { value.strikes = { levels: { 1: 1 } }; }, /is required/],
-    ['unknown questline', value => { value.nodes[0].questline = 'missing'; }, /unknown questline/],
+    ['unknown questline', value => { value.nodes[0]!.questline = 'missing'; }, /unknown questline/],
     ['empty questline', value => { value.nodes.forEach(item => { item.questline = 'identity'; }); }, /owns no nodes/],
   ];
   for (const [name, mutate, expected] of cases) {
@@ -125,14 +183,14 @@ test('invalid graphs, questlines, and strike budgets fail before execution', asy
 test('the engine dispatches modes through registered policies without mode conditionals', () => {
   const fake = {
     id: 'fake',
-    compile: value => value,
-    initialize: value => ({ policy: value.policy }),
+    compile: (value: Record<string, unknown>) => value,
+    initialize: (value: Record<string, unknown>) => ({ policy: value.policy }),
     activeNodes: () => ['fake'],
     promptSelection: () => ({ fake: 'prompt' }),
     gradingSelection: () => ({ fake: 'grade' }),
-    recordResult: state => state,
-    grantStrikes: state => state,
-    resume: state => state,
+    recordResult: (state: Record<string, unknown>) => state,
+    grantStrikes: (state: Record<string, unknown>) => state,
+    resume: (state: Record<string, unknown>) => state,
     nextAction: () => ({ type: 'complete' }),
     score: () => ({ score: 1 }),
   };
@@ -146,24 +204,24 @@ test('the engine dispatches modes through registered policies without mode condi
 
 test('prompt work contains only unlocked nodes while grading also contains their dependencies', () => {
   let state = progressionEngine.initialize(fixture());
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts', 'catalog']);
-  assert.deepEqual(progressionEngine.promptSelection(state).promptModules,
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts', 'catalog']);
+  assert.deepEqual(dependencyPrompt(state).promptModules,
     ['prompt.accounts@1.0.0', 'prompt.catalog@1.0.0']);
-  assert.doesNotMatch(JSON.stringify(progressionEngine.promptSelection(state)), /ownership|recovery|search/);
+  assert.doesNotMatch(JSON.stringify(dependencyPrompt(state)), /ownership|recovery|search/);
 
   state = progressionEngine.recordResult(state, conclusive(state, 'level-1', {
     accounts: 'pass',
     catalog: 'fail',
   }));
-  assert.equal(progressionEngine.nextAction(state).type, 'repair');
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['catalog']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'catalog']);
+  assert.equal(dependencyAction(state).type, 'repair');
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['catalog']);
+  assert.deepEqual(dependencyGrading(state).nodeIds, ['accounts', 'catalog']);
 
   state = progressionEngine.recordResult(state, conclusive(state, 'level-1-repair', { catalog: 'fail' }));
   assert.equal(state.level, 2);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'ownership']);
-  assert.doesNotMatch(JSON.stringify(progressionEngine.promptSelection(state)), /accounts|recovery|search/);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['ownership']);
+  assert.deepEqual(dependencyGrading(state).nodeIds, ['accounts', 'ownership']);
+  assert.doesNotMatch(JSON.stringify(dependencyPrompt(state)), /accounts|recovery|search/);
 });
 
 test('passed siblings are regraded and return to repair work if they regress', () => {
@@ -173,16 +231,16 @@ test('passed siblings are regraded and return to repair work if they regress', (
   state = progressionEngine.recordResult(state, conclusive(state, 'first-grade', {
     accounts: 'pass', catalog: 'fail',
   }));
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['catalog']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'catalog']);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['catalog']);
+  assert.deepEqual(dependencyGrading(state).nodeIds, ['accounts', 'catalog']);
 
   state = progressionEngine.recordResult(state, conclusive(state, 'sibling-regression', {
     accounts: 'fail', catalog: 'pass',
   }));
-  assert.equal(state.nodes.accounts.status, 'regressed');
-  assert.equal(state.nodes.catalog.status, 'passed');
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'catalog']);
+  assert.equal(state.nodes.accounts!.status, 'regressed');
+  assert.equal(state.nodes.catalog!.status, 'passed');
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
+  assert.deepEqual(dependencyGrading(state).nodeIds, ['accounts', 'catalog']);
 });
 
 test('an application startup failure spends strikes only on current work', () => {
@@ -192,18 +250,18 @@ test('an application startup failure spends strikes only on current work', () =>
   state = progressionEngine.recordResult(state, conclusive(state, 'first-grade', {
     accounts: 'pass', catalog: 'fail',
   }));
-  const guardStrikes = state.nodes.accounts.strikes.used;
+  const guardStrikes = state.nodes.accounts!.strikes.used;
   state = progressionEngine.recordResult(state, {
     ...conclusive(state, 'startup-failure', {
       accounts: 'not-run', catalog: 'fail',
     }),
     applicationFailure: { phase: 'application-start', reason: 'server did not start' },
   });
-  assert.equal(state.nodes.accounts.status, 'passed');
-  assert.equal(state.nodes.accounts.strikes.used, guardStrikes);
-  assert.equal(state.nodes.catalog.status, 'active');
-  assert.equal(state.nodes.catalog.strikes.used, 2);
-  assert.equal(progressionEngine.nextAction(state).type, 'repair');
+  assert.equal(state.nodes.accounts!.status, 'passed');
+  assert.equal(state.nodes.accounts!.strikes.used, guardStrikes);
+  assert.equal(state.nodes.catalog!.status, 'active');
+  assert.equal(state.nodes.catalog!.strikes.used, 2);
+  assert.equal(dependencyAction(state).type, 'repair');
 });
 
 test('one failed branch stops while passed branches continue through any number of levels', () => {
@@ -214,16 +272,16 @@ test('one failed branch stops while passed branches continue through any number 
   state = progressionEngine.recordResult(state, conclusive(state, 'l1-b', {
     catalog: 'fail',
   }));
-  assert.equal(state.nodes.catalog.status, 'exhausted');
-  assert.equal(state.nodes.search.status, 'blocked');
-  assert.equal(state.nodes.ownership.status, 'active');
+  assert.equal(state.nodes.catalog!.status, 'exhausted');
+  assert.equal(state.nodes.search!.status, 'blocked');
+  assert.equal(state.nodes.ownership!.status, 'active');
 
   state = progressionEngine.recordResult(state, conclusive(state, 'l2', {
     accounts: 'pass', ownership: 'pass',
   }));
   assert.equal(state.level, 3);
-  assert.equal(state.nodes.recovery.status, 'active');
-  assert.equal(state.nodes.recommendations.status, 'blocked');
+  assert.equal(state.nodes.recovery!.status, 'active');
+  assert.equal(state.nodes.recommendations!.status, 'blocked');
   state = progressionEngine.recordResult(state, conclusive(state, 'l3', {
     accounts: 'pass', ownership: 'pass', recovery: 'pass',
   }));
@@ -247,19 +305,19 @@ test('an unchanged branch stops without stopping a branch whose failures changed
     catalog: 'fail',
   }));
 
-  assert.equal(state.nodes.catalog.status, 'exhausted');
-  assert.equal(state.nodes.catalog.unchangedFailure.count, 2);
-  assert.equal(state.nodes.accounts.status, 'active');
-  assert.equal(state.nodes.accounts.unchangedFailure.count, 1);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts']);
+  assert.equal(state.nodes.catalog!.status, 'exhausted');
+  assert.equal(state.nodes.catalog!.unchangedFailure.count, 2);
+  assert.equal(state.nodes.accounts!.status, 'active');
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 1);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
 
   state = progressionEngine.recordResult(state, conclusive(state, 'accounts-pass', {
     accounts: 'pass',
   }));
-  assert.equal(state.nodes.accounts.status, 'passed');
-  assert.equal(state.nodes.catalog.status, 'exhausted');
-  assert.equal(state.nodes.ownership.status, 'active');
-  assert.equal(state.nodes.search.status, 'blocked');
+  assert.equal(state.nodes.accounts!.status, 'passed');
+  assert.equal(state.nodes.catalog!.status, 'exhausted');
+  assert.equal(state.nodes.ownership!.status, 'active');
+  assert.equal(state.nodes.search!.status, 'blocked');
 });
 
 test('no passed node at a level stops progression', () => {
@@ -273,16 +331,16 @@ test('no passed node at a level stops progression', () => {
   assert.deepEqual(state.terminalOutcome, {
     kind: 'failed', reason: 'no-unlocked-nodes', level: 1, blockedLevel: 2,
   });
-  assert.equal(state.nodes.ownership.status, 'blocked');
-  assert.equal(state.nodes.search.status, 'blocked');
-  assert.equal(state.nodes.recovery.status, 'locked');
+  assert.equal(state.nodes.ownership!.status, 'blocked');
+  assert.equal(state.nodes.search!.status, 'blocked');
+  assert.equal(state.nodes.recovery!.status, 'locked');
 });
 
 test('inconclusive attempts do not consume strikes or change selections', () => {
   const state = progressionEngine.initialize(fixture());
   const beforeStrikes = Object.fromEntries(Object.entries(state.nodes)
     .map(([nodeId, node]) => [nodeId, node.strikes]));
-  const beforeScore = progressionEngine.score(state);
+  const beforeScore = dependencyScore(state);
   assert.equal(beforeScore.averagePercentage, null);
   assert(beforeScore.questlines.every(questline => questline.percentage === null));
   const next = progressionEngine.recordResult(state, {
@@ -291,9 +349,9 @@ test('inconclusive attempts do not consume strikes or change selections', () => 
   });
   assert.deepEqual(Object.fromEntries(Object.entries(next.nodes)
     .map(([nodeId, node]) => [nodeId, node.strikes])), beforeStrikes);
-  assert.deepEqual(progressionEngine.promptSelection(next), progressionEngine.promptSelection(state));
-  assert.equal(next.attempts.at(-1).outcome, 'inconclusive');
-  const score = progressionEngine.score(next);
+  assert.deepEqual(dependencyPrompt(next), dependencyPrompt(state));
+  assert.equal(next.attempts.at(-1)!.outcome, 'inconclusive');
+  const score = dependencyScore(next);
   assert.equal(score.averagePercentage, null);
   assert.equal(score.attempts.inconclusive, 1);
   assert.equal(score.attempts.inconclusiveByCategory.provider_failure, 1);
@@ -317,17 +375,17 @@ test('a terminal failed run can receive an auditable continuation grant', () => 
     grantId: 'grant-1', level: 1, nodeIds: ['accounts', 'catalog'], strikes: 2,
   });
   assert.equal(state.phase, 'active');
-  assert.deepEqual(state.nodes.accounts.strikes, {
+  assert.deepEqual(state.nodes.accounts!.strikes, {
     initialBudget: 1, granted: 2, budget: 3, used: 1,
   });
-  assert.deepEqual(state.nodes.catalog.strikes, state.nodes.accounts.strikes);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['accounts', 'catalog']);
+  assert.deepEqual(state.nodes.catalog!.strikes, state.nodes.accounts!.strikes);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts', 'catalog']);
   assert.deepEqual(state.events.map(event => event.type), ['attempt-recorded', 'strikes-granted']);
   state = progressionEngine.recordResult(state, conclusive(state, 'continued-l1', {
     accounts: 'pass', catalog: 'pass',
   }));
   assert.equal(state.level, 2);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership', 'search']);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['ownership', 'search']);
 });
 
 test('a continuation grant can reopen an exhausted branch after another branch completed', () => {
@@ -348,17 +406,17 @@ test('a continuation grant can reopen an exhausted branch after another branch c
   state = progressionEngine.grantStrikes(state, {
     grantId: 'catalog-grant', level: 1, nodeIds: ['catalog'], strikes: 1,
   });
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['catalog']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds, ['accounts', 'catalog']);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['catalog']);
+  assert.deepEqual(dependencyGrading(state).nodeIds, ['accounts', 'catalog']);
   state = progressionEngine.recordResult(state, conclusive(state, 'continued-catalog', {
     accounts: 'pass', catalog: 'pass',
   }));
   assert.equal(state.level, 2);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['search']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds,
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['search']);
+  assert.deepEqual(dependencyGrading(state).nodeIds,
     ['accounts', 'catalog', 'ownership', 'search']);
-  assert.equal(state.nodes.ownership.checks['check.ownership.1'], 'pass');
-  assert.equal(state.nodes.recovery.checks['check.recovery.1'], 'pass');
+  assert.equal(state.nodes.ownership!.checks['check.ownership.1'], 'pass');
+  assert.equal(state.nodes.recovery!.checks['check.recovery.1'], 'pass');
 });
 
 test('an earlier grant does not reopen a later exhausted level or retain its evidence', () => {
@@ -372,20 +430,20 @@ test('an earlier grant does not reopen a later exhausted level or retain its evi
     accounts: 'pass', ownership: 'fail',
   }));
   assert.equal(state.phase, 'terminal');
-  assert.equal(state.nodes.catalog.exhaustedAtLevel, 1);
-  assert.equal(state.nodes.ownership.exhaustedAtLevel, 2);
+  assert.equal(state.nodes.catalog!.exhaustedAtLevel, 1);
+  assert.equal(state.nodes.ownership!.exhaustedAtLevel, 2);
 
   state = progressionEngine.grantStrikes(state, {
     grantId: 'l1-only', level: 1, nodeIds: ['catalog'], strikes: 1,
   });
-  assert.equal(state.nodes.ownership.status, 'exhausted');
-  assert.equal(state.nodes.ownership.exhaustedAtLevel, 2);
-  assert.equal(state.nodes.ownership.checks['check.ownership.1'], 'fail');
+  assert.equal(state.nodes.ownership!.status, 'exhausted');
+  assert.equal(state.nodes.ownership!.exhaustedAtLevel, 2);
+  assert.equal(state.nodes.ownership!.checks['check.ownership.1'], 'fail');
   state = progressionEngine.recordResult(state, conclusive(state, 'repair-l1', {
     accounts: 'pass', catalog: 'pass',
   }));
   assert.equal(state.level, 2);
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['search']);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['search']);
   state = progressionEngine.recordResult(state, conclusive(state, 'finish-search', {
     accounts: 'pass', catalog: 'pass', search: 'pass',
   }));
@@ -398,7 +456,7 @@ test('an earlier grant does not reopen a later exhausted level or retain its evi
   /not an exhausted target/);
   state = progressionEngine.grantStrikes(state,
     { grantId: 'l2-needed', level: 2, nodeIds: ['ownership'], strikes: 1 });
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds, ['ownership']);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['ownership']);
 });
 
 test('state resumes by replay and rejects contradictory snapshots or event sequences', () => {
@@ -408,10 +466,10 @@ test('state resumes by replay and rejects contradictory snapshots or event seque
   }));
   assert.deepEqual(progressionEngine.resume(state), state);
   const contradictory = structuredClone(state);
-  contradictory.nodes.accounts.status = 'regressed';
+  contradictory.nodes.accounts!.status = 'regressed';
   assert.throws(() => progressionEngine.resume(contradictory), /contradicts its event history/);
   const missingEvent = structuredClone(state);
-  missingEvent.events[0].sequence = 2;
+  missingEvent.events[0]!.sequence = 2;
   assert.throws(() => progressionEngine.resume(missingEvent), /event sequence 2 must be 1/);
 });
 
@@ -437,14 +495,14 @@ test('a child with multiple parents opens only when every parent passes', () => 
     account: 'pass', cart: 'fail',
   }));
   assert.equal(state.phase, 'terminal');
-  assert.equal(state.nodes.checkout.status, 'blocked');
+  assert.equal(state.nodes.checkout!.status, 'blocked');
 
   state = progressionEngine.initialize(value);
   state = progressionEngine.recordResult(state, conclusive(state, 'both-parents', {
     account: 'pass', cart: 'pass',
   }));
-  assert.equal(state.nodes.checkout.status, 'active');
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds,
+  assert.equal(state.nodes.checkout!.status, 'active');
+  assert.deepEqual(dependencyGrading(state).nodeIds,
     ['account', 'cart', 'checkout']);
 });
 
@@ -455,8 +513,8 @@ test('dependency regressions return to the prompt and prevent descendant passes'
   state = progressionEngine.recordResult(state, conclusive(state, 'l1', {
     accounts: 'pass', catalog: 'pass',
   }));
-  const accountsCheck = progressionEngine.gradingSelection(state).checks
-    .find(check => check.nodeId === 'accounts').id;
+  const accountsCheck = dependencyGrading(state).checks
+    .find(check => check.nodeId === 'accounts')!.id;
   state = progressionEngine.recordResult(state, conclusive(state, 'l2-regression', {
     accounts: { [accountsCheck]: 'fail' },
     ownership: 'pass',
@@ -464,20 +522,20 @@ test('dependency regressions return to the prompt and prevent descendant passes'
     search: 'pass',
   }));
   assert.equal(state.phase, 'active');
-  assert.equal(state.nodes.accounts.status, 'regressed');
-  assert.equal(state.nodes.ownership.status, 'active');
-  assert.equal(state.nodes.search.status, 'passed');
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds,
+  assert.equal(state.nodes.accounts!.status, 'regressed');
+  assert.equal(state.nodes.ownership!.status, 'active');
+  assert.equal(state.nodes.search!.status, 'passed');
+  assert.deepEqual(dependencyPrompt(state).nodeIds,
     ['accounts', 'ownership']);
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds,
+  assert.deepEqual(dependencyGrading(state).nodeIds,
     ['accounts', 'catalog', 'ownership', 'search']);
 
   state = progressionEngine.recordResult(state, conclusive(state, 'l2-repair', {
     accounts: 'pass', ownership: 'pass', search: 'pass',
   }));
   assert.equal(state.level, 3);
-  assert.equal(state.nodes.recovery.status, 'active');
-  assert.equal(state.nodes.recommendations.status, 'active');
+  assert.equal(state.nodes.recovery!.status, 'active');
+  assert.equal(state.nodes.recommendations!.status, 'active');
 });
 
 test('passed nodes outside the active branch are regression guards', () => {
@@ -487,15 +545,15 @@ test('passed nodes outside the active branch are regression guards', () => {
   state = progressionEngine.recordResult(state, conclusive(state, 'l1-pass', {
     accounts: 'pass', catalog: 'pass',
   }));
-  assert.deepEqual(progressionEngine.gradingSelection(state).nodeIds,
+  assert.deepEqual(dependencyGrading(state).nodeIds,
     ['accounts', 'catalog', 'ownership', 'search']);
   state = progressionEngine.recordResult(state, conclusive(state, 'catalog-regressed', {
     accounts: 'pass', catalog: 'fail', ownership: 'pass', search: 'pass',
   }));
-  assert.equal(state.nodes.catalog.status, 'regressed');
-  assert.equal(state.nodes.ownership.status, 'passed');
-  assert.equal(state.nodes.search.status, 'active');
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds,
+  assert.equal(state.nodes.catalog!.status, 'regressed');
+  assert.equal(state.nodes.ownership!.status, 'passed');
+  assert.equal(state.nodes.search!.status, 'active');
+  assert.deepEqual(dependencyPrompt(state).nodeIds,
     ['catalog', 'search']);
 });
 
@@ -510,22 +568,22 @@ test('a continuation grant repairs an exhausted ancestor without charging its ch
     accounts: 'fail', catalog: 'pass', ownership: 'pass', search: 'pass',
   }));
   assert.equal(state.level, 2);
-  assert.equal(state.nodes.accounts.strikes.used, 1);
-  assert.equal(state.nodes.accounts.strikes.budget, 2);
+  assert.equal(state.nodes.accounts!.strikes.used, 1);
+  assert.equal(state.nodes.accounts!.strikes.budget, 2);
   state = progressionEngine.recordResult(state, conclusive(state, 'l2-regression-repair', {
     accounts: 'fail', catalog: 'pass', ownership: 'pass', search: 'pass',
   }));
   assert.equal(state.level, 3);
-  assert.equal(state.nodes.recommendations.status, 'active');
+  assert.equal(state.nodes.recommendations!.status, 'active');
   state = progressionEngine.recordResult(state, conclusive(state, 'l3-other-branch', {
     catalog: 'pass', search: 'pass', recommendations: 'pass',
   }));
   assert.equal(state.phase, 'terminal');
-  assert.equal(state.nodes.accounts.status, 'exhausted');
-  assert.equal(state.nodes.accounts.exhaustedAtLevel, 2);
-  assert.equal(state.nodes.ownership.status, 'blocked');
-  assert.equal(state.nodes.ownership.strikes.used, 0);
-  assert.equal(state.nodes.search.status, 'passed');
+  assert.equal(state.nodes.accounts!.status, 'exhausted');
+  assert.equal(state.nodes.accounts!.exhaustedAtLevel, 2);
+  assert.equal(state.nodes.ownership!.status, 'blocked');
+  assert.equal(state.nodes.ownership!.strikes.used, 0);
+  assert.equal(state.nodes.search!.status, 'passed');
   assert.throws(() => progressionEngine.grantStrikes(state, {
     grantId: 'child-only', level: 2, nodeIds: ['ownership'], strikes: 1,
   }), /not an exhausted target/);
@@ -533,14 +591,14 @@ test('a continuation grant repairs an exhausted ancestor without charging its ch
   state = progressionEngine.grantStrikes(state, {
     grantId: 'repair-regression', level: 2, nodeIds: ['accounts'], strikes: 1,
   });
-  assert.deepEqual(progressionEngine.promptSelection(state).nodeIds,
+  assert.deepEqual(dependencyPrompt(state).nodeIds,
     ['accounts', 'ownership']);
   state = progressionEngine.recordResult(state, conclusive(state, 'l2-repair', {
     accounts: 'pass', catalog: 'pass', ownership: 'pass', search: 'pass',
   }));
   assert.equal(state.level, 3);
-  assert.equal(state.nodes.recovery.status, 'active');
-  assert.equal(state.nodes.recommendations.status, 'passed');
+  assert.equal(state.nodes.recovery!.status, 'active');
+  assert.equal(state.nodes.recommendations!.status, 'passed');
 });
 
 test('questline percentages use partial check points and the overall score weights groups equally', () => {
@@ -551,14 +609,14 @@ test('questline percentages use partial check points and the overall score weigh
     accounts: { 'check.accounts.1': 'pass', 'check.accounts.2': 'fail' },
     catalog: 'pass',
   }));
-  assert.equal(progressionEngine.score(state).averagePercentage, null);
+  assert.equal(dependencyScore(state).averagePercentage, null);
   state = progressionEngine.recordResult(state, conclusive(state, 'search', {
     catalog: 'pass', search: 'pass',
   }));
   state = progressionEngine.recordResult(state, conclusive(state, 'recommendations', {
     catalog: 'pass', search: 'pass', recommendations: 'pass',
   }));
-  const score = progressionEngine.score(state);
+  const score = dependencyScore(state);
   assert.deepEqual(score.questlines.map(item => ({ id: item.id,
     passedPoints: item.passedPoints, availablePoints: item.availablePoints })), [
     { id: 'discovery', passedPoints: 3, availablePoints: 3 },
@@ -582,6 +640,6 @@ test('conclusive results fail closed when selected nodes or checks are missing o
   missing.nodes.pop();
   assert.throws(() => progressionEngine.recordResult(state, missing), /missing nodes/);
   const repeated = conclusive(state, 'repeated', {});
-  repeated.nodes[0].checks.push(structuredClone(repeated.nodes[0].checks[0]));
+  repeated.nodes[0]!.checks.push(structuredClone(repeated.nodes[0]!.checks[0]!));
   assert.throws(() => progressionEngine.recordResult(state, repeated), /repeats check/);
 });

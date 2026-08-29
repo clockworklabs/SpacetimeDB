@@ -14,7 +14,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition }
 import { sha256 } from '../evidence/provenance.mjs';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
   DEFAULT_UNCHANGED_FAILURE_LIMIT, DEPENDENCY_MODE_SCHEMA_VERSION,
-  FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.mjs';
+  FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.js';
 import { progressionEngine } from './progression-engine.js';
 
 export interface CompiledProgressionCheck {

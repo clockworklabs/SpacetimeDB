@@ -1,4 +1,4 @@
-import { dependencyModePolicy } from './dependency-mode.mjs';
+import { dependencyModePolicy } from './dependency-mode.js';
 import type {
   ProgressionState,
   ProgressionTerminalOutcome,
