@@ -6,6 +6,7 @@ import { dirname } from 'node:path';
 import { hashDirectory } from './provenance.js';
 import { validateCheckEvidence } from './check-evidence.js';
 import { RUNNER_OBSERVATION_FIELDS } from '../runtime/runner-environment.mjs';
+import type { CostRun } from './cost-proof.js';
 
 export const ARTIFACT_SCHEMA_VERSION = 2;
 
@@ -34,12 +35,60 @@ export const ARTIFACT_KINDS = Object.freeze([
   'reference_qualification',
   'recovery',
   'source_checkpoint',
-]);
+] as const);
 
-const KIND_SET = new Set(ARTIFACT_KINDS);
+export type ArtifactKind = typeof ARTIFACT_KINDS[number];
+type UnknownRecord = Record<string, unknown>;
+
+export interface ArtifactIdentity {
+  id: string;
+  version: string | null;
+  sha256: string | null;
+  state: string | null;
+}
+
+export interface EngineArtifactIdentity extends ArtifactIdentity {
+  id: 'stack-bench';
+  version: null;
+  sha256: string;
+  state: null;
+}
+
+type ArtifactIdentityKey = typeof IDENTITY_KEYS[number];
+
+export type ArtifactIdentities = Record<ArtifactIdentityKey, ArtifactIdentity | null> & {
+  packs: ArtifactIdentity[];
+};
+
+export interface Artifact<TPayload extends object = UnknownRecord> {
+  artifactSchemaVersion: 2;
+  kind: ArtifactKind;
+  id: string;
+  attempt: { id: string; parentId: string | null };
+  timestamps: { startedAt: string; completedAt: string | null };
+  identities: ArtifactIdentities;
+  payload: TPayload;
+  [key: string]: unknown;
+}
+
+export interface CreateArtifactInput {
+  kind: unknown;
+  id: string;
+  attempt?: unknown;
+  timestamps?: unknown;
+  identities?: unknown;
+  payload?: unknown;
+}
+
+interface ArtifactReadOptions {
+  expectedId?: string | null;
+  expectedKind?: ArtifactKind | null;
+}
+
 const IDENTITY_KEYS = Object.freeze([
   'engine', 'recipe', 'fixture', 'calibration', 'experiment', 'agentAdapter', 'stackAdapter',
-]);
+] as const);
+const KIND_SET = new Set<string>(ARTIFACT_KINDS);
 const SECRET_KEYS = new Set(['apikey', 'leasetoken', 'ownershiptoken', 'password', 'secret']);
 const ENVELOPE_KEYS = new Set([
   'artifactSchemaVersion', 'kind', 'id', 'attempt', 'timestamps', 'identities', 'payload',
@@ -99,54 +148,88 @@ const PAYLOAD_FIELDS = Object.freeze({
 const HASH = /^[a-f0-9]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
-let cachedEngineIdentity = null;
+let cachedEngineIdentity: EngineArtifactIdentity | null = null;
 
-const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = message => { throw new Error(`invalid artifact: ${message}`); };
-
-function normalizeKind(kind) {
-  if (!KIND_SET.has(kind)) fail(`unknown kind ${JSON.stringify(kind)}`);
-  return kind;
+const isObject = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const isSafeInteger = (value: unknown): value is number => Number.isSafeInteger(value);
+const isInteger = (value: unknown): value is number => Number.isInteger(value);
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+const isHash = (value: unknown): value is string => typeof value === 'string' && HASH.test(value);
+function fail(message: string): never {
+  throw new Error(`invalid artifact: ${message}`);
 }
 
-function timestamp(value, at) {
+function asObject(value: unknown, message: string): UnknownRecord {
+  if (!isObject(value)) fail(message);
+  return value;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeKind(kind: unknown): ArtifactKind {
+  if (typeof kind !== 'string' || !KIND_SET.has(kind)) {
+    fail(`unknown kind ${JSON.stringify(kind)}`);
+  }
+  return kind as ArtifactKind;
+}
+
+function timestamp(value: unknown, at: string): string {
   if (typeof value !== 'string' || !ISO.test(value) || Number.isNaN(Date.parse(value))) {
     fail(`${at} must be an ISO-8601 UTC timestamp`);
   }
   return value;
 }
 
-function identity(value, at) {
+function identity(value: unknown, at: string): ArtifactIdentity | null {
   if (value === null) return null;
-  if (!isObject(value)) fail(`${at} must be an object or null`);
+  const candidate = asObject(value, `${at} must be an object or null`);
   const allowed = new Set(['id', 'version', 'sha256', 'state']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) fail(`${at}.${key} is unknown`);
-  if (typeof value.id !== 'string' || !value.id) fail(`${at}.id must be a non-empty string`);
-  if (value.version !== null && value.version !== undefined
-    && (typeof value.version !== 'string' || !value.version)) fail(`${at}.version is invalid`);
-  if (value.sha256 !== null && value.sha256 !== undefined && !HASH.test(value.sha256)) {
+  for (const key of Object.keys(candidate)) if (!allowed.has(key)) fail(`${at}.${key} is unknown`);
+  if (typeof candidate.id !== 'string' || !candidate.id) fail(`${at}.id must be a non-empty string`);
+  if (candidate.version !== null && candidate.version !== undefined
+    && (typeof candidate.version !== 'string' || !candidate.version)) fail(`${at}.version is invalid`);
+  if (candidate.sha256 !== null && candidate.sha256 !== undefined && !isHash(candidate.sha256)) {
     fail(`${at}.sha256 must be 64 lowercase hexadecimal characters`);
   }
-  if (value.state !== null && value.state !== undefined
-    && (typeof value.state !== 'string' || !value.state)) fail(`${at}.state is invalid`);
+  if (candidate.state !== null && candidate.state !== undefined
+    && (typeof candidate.state !== 'string' || !candidate.state)) fail(`${at}.state is invalid`);
   return {
-    id: value.id,
-    version: value.version ?? null,
-    sha256: value.sha256 ?? null,
-    state: value.state ?? null,
+    id: candidate.id,
+    version: candidate.version ?? null,
+    sha256: candidate.sha256 ?? null,
+    state: candidate.state ?? null,
   };
 }
 
-function validateIdentities(value, { requireEngine = false } = {}) {
-  if (!isObject(value)) fail('identities must be an object');
+function validateIdentities(
+  value: unknown,
+  { requireEngine = false }: { requireEngine?: boolean } = {},
+): ArtifactIdentities {
+  const candidate = asObject(value, 'identities must be an object');
   const allowed = new Set([...IDENTITY_KEYS, 'packs']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) fail(`identities.${key} is unknown`);
-  const normalized = Object.fromEntries(IDENTITY_KEYS.map(key => [key, identity(value[key] ?? null,
-    `identities.${key}`)]));
+  for (const key of Object.keys(candidate)) if (!allowed.has(key)) fail(`identities.${key} is unknown`);
+  const packsValue = candidate.packs ?? [];
+  if (!Array.isArray(packsValue)) fail('identities.packs must be an array');
+  const normalized: ArtifactIdentities = {
+    engine: identity(candidate.engine ?? null, 'identities.engine'),
+    recipe: identity(candidate.recipe ?? null, 'identities.recipe'),
+    fixture: identity(candidate.fixture ?? null, 'identities.fixture'),
+    calibration: identity(candidate.calibration ?? null, 'identities.calibration'),
+    experiment: identity(candidate.experiment ?? null, 'identities.experiment'),
+    agentAdapter: identity(candidate.agentAdapter ?? null, 'identities.agentAdapter'),
+    stackAdapter: identity(candidate.stackAdapter ?? null, 'identities.stackAdapter'),
+    packs: packsValue.map((item, index) => {
+      const pack = identity(item, `identities.packs[${index}]`);
+      if (pack === null) fail(`identities.packs[${index}] must not be null`);
+      return pack;
+    }),
+  };
   if (requireEngine && normalized.engine === null) fail('identities.engine is required');
-  if (!Array.isArray(value.packs ?? [])) fail('identities.packs must be an array');
-  normalized.packs = (value.packs ?? []).map((item, index) => identity(item, `identities.packs[${index}]`));
-  const packIds = new Set();
+  const packIds = new Set<string>();
   for (const pack of normalized.packs) {
     const key = `${pack.id}@${pack.version ?? ''}:${pack.sha256 ?? ''}`;
     if (packIds.has(key)) fail(`identities.packs duplicates ${key}`);
@@ -156,53 +239,57 @@ function validateIdentities(value, { requireEngine = false } = {}) {
   return normalized;
 }
 
-function validatePayload(kind, payload) {
-  if (!isObject(payload)) fail('payload must be an object');
+function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
+  const payload = asObject(input, 'payload must be an object');
   for (const key of Object.keys(payload)) {
     if (!PAYLOAD_FIELDS[kind].has(key)) fail(`${kind} payload.${key} is unknown`);
   }
-  const arrayWhenPresent = field => {
-    if (payload[field] !== undefined && !Array.isArray(payload[field])) {
+  const arrayWhenPresent = (field: string): unknown[] | undefined => {
+    const value = payload[field];
+    if (value !== undefined && !Array.isArray(value)) {
       fail(`${kind} payload.${field} must be an array when present`);
     }
+    return value;
   };
-  const objectWhenPresent = field => {
-    if (payload[field] !== undefined && !isObject(payload[field])) {
+  const objectWhenPresent = (field: string): UnknownRecord | undefined => {
+    const value = payload[field];
+    if (value !== undefined && !isObject(value)) {
       fail(`${kind} payload.${field} must be an object when present`);
     }
+    return value;
   };
   const runnerWhenPresent = () => {
-    if (payload.runner === undefined) return;
-    objectWhenPresent('runner');
+    const runner = objectWhenPresent('runner');
+    if (runner === undefined) return;
     const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture',
       ...RUNNER_OBSERVATION_FIELDS]);
-    for (const key of Object.keys(payload.runner)) {
+    for (const key of Object.keys(runner)) {
       if (!allowed.has(key)) fail(`${kind} payload.runner.${key} is unknown`);
     }
-    if (payload.runner.schemaVersion !== 1) fail(`${kind} payload.runner.schemaVersion must be 1`);
-    if (!['appliance', 'local-controller'].includes(payload.runner.mode)) {
+    if (runner.schemaVersion !== 1) fail(`${kind} payload.runner.schemaVersion must be 1`);
+    if (!['appliance', 'local-controller'].includes(String(runner.mode))) {
       fail(`${kind} payload.runner.mode is invalid`);
     }
     for (const field of ['platform', 'architecture']) {
-      if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
+      if (typeof runner[field] !== 'string' || !runner[field]) {
         fail(`${kind} payload.runner.${field} must be a non-empty string`);
       }
     }
-    const observedFields = RUNNER_OBSERVATION_FIELDS.filter(field => payload.runner[field] !== undefined);
-    if (payload.runner.mode === 'appliance' && observedFields.length > 0) {
+    const observedFields = RUNNER_OBSERVATION_FIELDS.filter(field => runner[field] !== undefined);
+    if (runner.mode === 'appliance' && observedFields.length > 0) {
       for (const field of ['dockerEngineVersion', 'dockerOs', 'dockerArchitecture', 'kernelVersion']) {
-        if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
+        if (typeof runner[field] !== 'string' || !runner[field]) {
           fail(`${kind} payload.runner.${field} must be a non-empty string for an appliance runner`);
         }
       }
       for (const field of ['cpuCount', 'memoryBytes']) {
-        if (!Number.isSafeInteger(payload.runner[field]) || payload.runner[field] < 1) {
+        if (!isSafeInteger(runner[field]) || runner[field] < 1) {
           fail(`${kind} payload.runner.${field} must be a positive integer for an appliance runner`);
         }
       }
-    } else if (payload.runner.mode !== 'appliance') {
+    } else if (runner.mode !== 'appliance') {
       for (const field of RUNNER_OBSERVATION_FIELDS) {
-        if (payload.runner[field] !== undefined) {
+        if (runner[field] !== undefined) {
           fail(`${kind} payload.runner.${field} is only valid for an appliance runner`);
         }
       }
@@ -211,62 +298,57 @@ function validatePayload(kind, payload) {
   if (['benchmark_run', 'repair_continuation'].includes(kind)) arrayWhenPresent('levels');
   if (['benchmark_run', 'repair_continuation'].includes(kind)
     && payload.progressionStatus !== undefined) {
-    objectWhenPresent('progressionStatus');
-    if (!isObject(payload.featureCatalog) || !isObject(payload.dependencyPolicy)) {
+    const progressionStatus = objectWhenPresent('progressionStatus');
+    if (progressionStatus === undefined || !isObject(payload.featureCatalog)
+      || !isObject(payload.dependencyPolicy)) {
       fail(`${kind} payload.progressionStatus requires featureCatalog and dependencyPolicy`);
     }
     const fields = new Set(['stateArtifact', 'phase', 'level', 'attempts', 'score']);
-    for (const key of Object.keys(payload.progressionStatus)) {
+    for (const key of Object.keys(progressionStatus)) {
       if (!fields.has(key)) fail(`${kind} payload.progressionStatus.${key} is unknown`);
     }
-    if (payload.progressionStatus.stateArtifact !== 'progression-state.json') {
+    if (progressionStatus.stateArtifact !== 'progression-state.json') {
       fail(`${kind} payload.progressionStatus.stateArtifact is invalid`);
     }
-    if (!['active', 'terminal'].includes(payload.progressionStatus.phase)) {
+    if (!['active', 'terminal'].includes(String(progressionStatus.phase))) {
       fail(`${kind} payload.progressionStatus.phase is invalid`);
     }
-    for (const [field, minimum] of [['level', 1], ['attempts', 0]]) {
-      if (!Number.isSafeInteger(payload.progressionStatus[field])
-        || payload.progressionStatus[field] < minimum) {
+    const numericFields = [['level', 1], ['attempts', 0]] as const;
+    for (const [field, minimum] of numericFields) {
+      if (!isSafeInteger(progressionStatus[field]) || progressionStatus[field] < minimum) {
         fail(`${kind} payload.progressionStatus.${field} is invalid`);
       }
     }
-    if (!isObject(payload.progressionStatus.score)) {
+    if (!isObject(progressionStatus.score)) {
       fail(`${kind} payload.progressionStatus.score must be an object`);
     }
   }
   if (kind === 'benchmark_run' && payload.progressionResume !== undefined) {
-    if (!isObject(payload.progressionResume)) {
-      fail('benchmark_run payload.progressionResume must be an object');
-    }
+    const progressionResume = asObject(payload.progressionResume,
+      'benchmark_run payload.progressionResume must be an object');
     const fields = new Set(['priorRunId', 'priorRunSha256', 'stateSnapshotSha256',
       'action', 'inheritedLevels', 'priorTotals']);
-    for (const key of Object.keys(payload.progressionResume)) {
+    for (const key of Object.keys(progressionResume)) {
       if (!fields.has(key)) fail(`benchmark_run payload.progressionResume.${key} is unknown`);
     }
-    if (typeof payload.progressionResume.priorRunId !== 'string'
-      || !payload.progressionResume.priorRunId) {
+    if (typeof progressionResume.priorRunId !== 'string' || !progressionResume.priorRunId) {
       fail('benchmark_run payload.progressionResume.priorRunId is invalid');
     }
     for (const field of ['priorRunSha256', 'stateSnapshotSha256']) {
-      if (!HASH.test(payload.progressionResume[field] ?? '')) {
+      if (!isHash(progressionResume[field])) {
         fail(`benchmark_run payload.progressionResume.${field} is invalid`);
       }
     }
-    if (!isObject(payload.progressionResume.action)
-      || !['build', 'repair', 'terminal'].includes(payload.progressionResume.action.type)
-      || (payload.progressionResume.action.type !== 'terminal'
-        && (!Number.isSafeInteger(payload.progressionResume.action.level)
-          || payload.progressionResume.action.level < 1))) {
+    const action = progressionResume.action;
+    if (!isObject(action) || !['build', 'repair', 'terminal'].includes(String(action.type))
+      || (action.type !== 'terminal' && (!isSafeInteger(action.level) || action.level < 1))) {
       fail('benchmark_run payload.progressionResume.action is invalid');
     }
-    if (!Array.isArray(payload.progressionResume.inheritedLevels)
-      || payload.progressionResume.inheritedLevels.some(level =>
-        !Number.isSafeInteger(level) || level < 1)) {
+    if (!Array.isArray(progressionResume.inheritedLevels)
+      || progressionResume.inheritedLevels.some(level => !isSafeInteger(level) || level < 1)) {
       fail('benchmark_run payload.progressionResume.inheritedLevels is invalid');
     }
-    if (payload.progressionResume.priorTotals !== null
-      && !isObject(payload.progressionResume.priorTotals)) {
+    if (progressionResume.priorTotals !== null && !isObject(progressionResume.priorTotals)) {
       fail('benchmark_run payload.progressionResume.priorTotals is invalid');
     }
   }
@@ -277,104 +359,106 @@ function validatePayload(kind, payload) {
     objectWhenPresent('dependencyPolicy');
     objectWhenPresent('snapshot');
     arrayWhenPresent('events');
-    if (!HASH.test(payload.snapshotSha256 ?? '')) {
+    if (!isHash(payload.snapshotSha256)) {
       fail('progression_state payload.snapshotSha256 is invalid');
     }
     if (payload.resume !== undefined) {
-      if (!isObject(payload.resume)) fail('progression_state payload.resume must be an object');
+      const resume = asObject(payload.resume, 'progression_state payload.resume must be an object');
       const resumeFields = new Set(['actionSha256', 'source']);
-      for (const key of Object.keys(payload.resume)) {
+      for (const key of Object.keys(resume)) {
         if (!resumeFields.has(key)) fail(`progression_state payload.resume.${key} is unknown`);
       }
-      if (!HASH.test(payload.resume.actionSha256 ?? '')) {
+      if (!isHash(resume.actionSha256)) {
         fail('progression_state payload.resume.actionSha256 is invalid');
       }
-      if (!isObject(payload.resume.source)) {
-        fail('progression_state payload.resume.source must be an object');
-      }
+      const source = asObject(resume.source, 'progression_state payload.resume.source must be an object');
       const sourceFields = new Set(['directory', 'sha256', 'files']);
-      for (const key of Object.keys(payload.resume.source)) {
+      for (const key of Object.keys(source)) {
         if (!sourceFields.has(key)) fail(`progression_state payload.resume.source.${key} is unknown`);
       }
-      if (typeof payload.resume.source.directory !== 'string'
-        || !payload.resume.source.directory) {
+      if (typeof source.directory !== 'string' || !source.directory) {
         fail('progression_state payload.resume.source.directory is invalid');
       }
-      if (!HASH.test(payload.resume.source.sha256 ?? '')) {
+      if (!isHash(source.sha256)) {
         fail('progression_state payload.resume.source.sha256 is invalid');
       }
-      if (!Number.isSafeInteger(payload.resume.source.files)
-        || payload.resume.source.files < 0) {
+      if (!isSafeInteger(source.files) || source.files < 0) {
         fail('progression_state payload.resume.source.files is invalid');
       }
     }
   }
   if (kind === 'repair_continuation') {
-    objectWhenPresent('continuation');
-    if (!isObject(payload.continuation)) fail('repair_continuation payload.continuation is required');
+    const continuation = objectWhenPresent('continuation');
+    if (continuation === undefined) fail('repair_continuation payload.continuation is required');
     const fields = new Set(['schemaVersion', 'rootRunId', 'parentRunId', 'level', 'grantIndex',
       'roundsGranted', 'cumulativeRoundsBefore', 'cumulativeRoundsAfter', 'parentCheckpointSha256',
       'baseline', 'resumeSetup', 'downstreamLevelsToRerun', 'cumulativeCostBeforeUsd',
       'cumulativeCostAfterUsd', 'cumulativeDurationBeforeSec', 'cumulativeDurationAfterSec']);
-    for (const key of Object.keys(payload.continuation)) {
+    for (const key of Object.keys(continuation)) {
       if (!fields.has(key)) fail(`repair_continuation payload.continuation.${key} is unknown`);
     }
-    if (payload.continuation.schemaVersion !== 1) {
+    if (continuation.schemaVersion !== 1) {
       fail('repair_continuation payload.continuation.schemaVersion must be 1');
     }
     for (const field of ['rootRunId', 'parentRunId']) {
-      if (typeof payload.continuation[field] !== 'string' || !payload.continuation[field]) {
+      if (typeof continuation[field] !== 'string' || !continuation[field]) {
         fail(`repair_continuation payload.continuation.${field} is required`);
       }
     }
     for (const field of ['level', 'grantIndex', 'roundsGranted', 'cumulativeRoundsBefore',
       'cumulativeRoundsAfter']) {
-      if (!Number.isSafeInteger(payload.continuation[field]) || payload.continuation[field] < 0) {
+      if (!isSafeInteger(continuation[field]) || continuation[field] < 0) {
         fail(`repair_continuation payload.continuation.${field} must be a non-negative integer`);
       }
     }
-    if (payload.continuation.level < 1 || payload.continuation.grantIndex < 1
-      || payload.continuation.roundsGranted < 1
-      || payload.continuation.cumulativeRoundsAfter < payload.continuation.cumulativeRoundsBefore
-      || payload.continuation.cumulativeRoundsAfter
-        > payload.continuation.cumulativeRoundsBefore + payload.continuation.roundsGranted) {
+    const level = continuation.level;
+    const grantIndex = continuation.grantIndex;
+    const roundsGranted = continuation.roundsGranted;
+    const cumulativeRoundsBefore = continuation.cumulativeRoundsBefore;
+    const cumulativeRoundsAfter = continuation.cumulativeRoundsAfter;
+    if (!isSafeInteger(level) || !isSafeInteger(grantIndex) || !isSafeInteger(roundsGranted)
+      || !isSafeInteger(cumulativeRoundsBefore) || !isSafeInteger(cumulativeRoundsAfter)) {
       fail('repair_continuation payload.continuation round accounting is invalid');
     }
-    if (!HASH.test(payload.continuation.parentCheckpointSha256 ?? '')) {
+    if (level < 1 || grantIndex < 1 || roundsGranted < 1
+      || cumulativeRoundsAfter < cumulativeRoundsBefore
+      || cumulativeRoundsAfter > cumulativeRoundsBefore + roundsGranted) {
+      fail('repair_continuation payload.continuation round accounting is invalid');
+    }
+    if (!isHash(continuation.parentCheckpointSha256)) {
       fail('repair_continuation payload.continuation.parentCheckpointSha256 is invalid');
     }
-    for (const [before, after] of [['cumulativeCostBeforeUsd', 'cumulativeCostAfterUsd'],
-      ['cumulativeDurationBeforeSec', 'cumulativeDurationAfterSec']]) {
-      if (!Number.isFinite(payload.continuation[before]) || payload.continuation[before] < 0
-        || !Number.isFinite(payload.continuation[after])
-        || payload.continuation[after] < payload.continuation[before]) {
+    const cumulativeFields = [['cumulativeCostBeforeUsd', 'cumulativeCostAfterUsd'],
+      ['cumulativeDurationBeforeSec', 'cumulativeDurationAfterSec']] as const;
+    for (const [before, after] of cumulativeFields) {
+      const beforeValue = continuation[before];
+      const afterValue = continuation[after];
+      if (!isFiniteNumber(beforeValue) || beforeValue < 0
+        || !isFiniteNumber(afterValue) || afterValue < beforeValue) {
         fail(`repair_continuation payload.continuation.${after} is invalid`);
       }
     }
-    if (!Array.isArray(payload.continuation.downstreamLevelsToRerun)
-      || payload.continuation.downstreamLevelsToRerun.some(level => !Number.isSafeInteger(level)
-        || level <= payload.continuation.level)
-      || new Set(payload.continuation.downstreamLevelsToRerun).size
-        !== payload.continuation.downstreamLevelsToRerun.length) {
+    const downstreamLevels = continuation.downstreamLevelsToRerun;
+    if (!Array.isArray(downstreamLevels)
+      || downstreamLevels.some(item => !isSafeInteger(item) || item <= level)
+      || new Set(downstreamLevels).size !== downstreamLevels.length) {
       fail('repair_continuation payload.continuation.downstreamLevelsToRerun is invalid');
     }
-    if (payload.continuation.baseline !== null) {
-      if (!isObject(payload.continuation.baseline)) {
-        fail('repair_continuation payload.continuation.baseline must be an object or null');
-      }
+    if (continuation.baseline !== null) {
+      const baseline = asObject(continuation.baseline,
+        'repair_continuation payload.continuation.baseline must be an object or null');
       const baselineFields = new Set(['score', 'max', 'selectionSha256', 'sourceSha256',
         'outcome', 'reproduced', 'mismatches']);
-      for (const key of Object.keys(payload.continuation.baseline)) {
+      for (const key of Object.keys(baseline)) {
         if (!baselineFields.has(key)) fail(`repair_continuation payload.continuation.baseline.${key} is unknown`);
       }
-      const baseline = payload.continuation.baseline;
       const scoreValid = baseline.score === null && baseline.max === null
-        || Number.isSafeInteger(baseline.score) && Number.isSafeInteger(baseline.max)
+        || isSafeInteger(baseline.score) && isSafeInteger(baseline.max)
           && baseline.max >= 1 && baseline.score >= 0 && baseline.score <= baseline.max;
       const sourceValid = baseline.sourceSha256 === null
-        || HASH.test(baseline.sourceSha256 ?? '');
+        || isHash(baseline.sourceSha256);
       if (!scoreValid
-        || (baseline.selectionSha256 !== null && !HASH.test(baseline.selectionSha256 ?? ''))
+        || (baseline.selectionSha256 !== null && !isHash(baseline.selectionSha256))
         || !sourceValid || !isObject(baseline.outcome)
         || typeof baseline.outcome.kind !== 'string' || typeof baseline.reproduced !== 'boolean'
         || !Array.isArray(baseline.mismatches)
@@ -383,20 +467,18 @@ function validatePayload(kind, payload) {
         fail('repair_continuation payload.continuation.baseline is invalid');
       }
     }
-    if (payload.continuation.resumeSetup !== null) {
-      if (!isObject(payload.continuation.resumeSetup)) {
-        fail('repair_continuation payload.continuation.resumeSetup must be an object or null');
-      }
+    if (continuation.resumeSetup !== null) {
+      const setup = asObject(continuation.resumeSetup,
+        'repair_continuation payload.continuation.resumeSetup must be an object or null');
       const setupFields = new Set(['sessionId', 'costUsd', 'durationMs', 'sourceVerified']);
-      for (const key of Object.keys(payload.continuation.resumeSetup)) {
+      for (const key of Object.keys(setup)) {
         if (!setupFields.has(key)) fail(`repair_continuation payload.continuation.resumeSetup.${key} is unknown`);
       }
-      const setup = payload.continuation.resumeSetup;
       if (setup.sessionId !== null && (typeof setup.sessionId !== 'string' || !setup.sessionId)) {
         fail('repair_continuation payload.continuation.resumeSetup.sessionId is invalid');
       }
-      if (!Number.isFinite(setup.costUsd) || setup.costUsd < 0
-        || !Number.isFinite(setup.durationMs) || setup.durationMs < 0
+      if (!isFiniteNumber(setup.costUsd) || setup.costUsd < 0
+        || !isFiniteNumber(setup.durationMs) || setup.durationMs < 0
         || typeof setup.sourceVerified !== 'boolean') {
         fail('repair_continuation payload.continuation.resumeSetup is invalid');
       }
@@ -408,10 +490,10 @@ function validatePayload(kind, payload) {
       fail('campaign_process payload.executionId is required');
     }
     if (payload.runIndex !== undefined
-      && (!Number.isInteger(payload.runIndex) || payload.runIndex < 0)) {
+      && (!isInteger(payload.runIndex) || payload.runIndex < 0)) {
       fail('campaign_process payload.runIndex must be a non-negative integer');
     }
-    if (payload.exitCode !== null && !Number.isInteger(payload.exitCode)) {
+    if (payload.exitCode !== null && !isInteger(payload.exitCode)) {
       fail('campaign_process payload.exitCode must be an integer or null');
     }
     if (payload.signal !== null && typeof payload.signal !== 'string') {
@@ -419,8 +501,9 @@ function validatePayload(kind, payload) {
     }
     if (typeof payload.timedOut !== 'boolean') fail('campaign_process payload.timedOut must be boolean');
     if (payload.streams !== null) {
-      objectWhenPresent('streams');
-      for (const [name, stream] of Object.entries(payload.streams)) {
+      const streams = objectWhenPresent('streams');
+      if (streams === undefined) fail('campaign_process payload.streams must be an object or null');
+      for (const [name, stream] of Object.entries(streams)) {
         if (!['stdout', 'stderr'].includes(name) || !isObject(stream)) {
           fail(`campaign_process payload.streams.${name} is invalid`);
         }
@@ -429,11 +512,14 @@ function validatePayload(kind, payload) {
           if (!allowed.has(key)) fail(`campaign_process payload.streams.${name}.${key} is unknown`);
         }
         if (stream.path !== `process.${name}.log`) fail(`campaign_process payload.streams.${name}.path is invalid`);
-        if (!HASH.test(stream.sha256)) fail(`campaign_process payload.streams.${name}.sha256 is invalid`);
-        if (!Number.isSafeInteger(stream.bytes) || stream.bytes < 0
-          || !Number.isSafeInteger(stream.retainedBytes) || stream.retainedBytes < 0
-          || stream.retainedBytes > stream.bytes) fail(`campaign_process payload.streams.${name} byte counts are invalid`);
-        if (stream.truncated !== (stream.bytes > stream.retainedBytes)) {
+        if (!isHash(stream.sha256)) fail(`campaign_process payload.streams.${name}.sha256 is invalid`);
+        const bytes = stream.bytes;
+        const retainedBytes = stream.retainedBytes;
+        if (!isSafeInteger(bytes) || bytes < 0 || !isSafeInteger(retainedBytes)
+          || retainedBytes < 0 || retainedBytes > bytes) {
+          fail(`campaign_process payload.streams.${name} byte counts are invalid`);
+        }
+        if (stream.truncated !== (bytes > retainedBytes)) {
           fail(`campaign_process payload.streams.${name}.truncated is inconsistent`);
         }
       }
@@ -445,11 +531,11 @@ function validatePayload(kind, payload) {
       fail('repair_process payload.parentRunId is required');
     }
     for (const field of ['level', 'roundsGranted']) {
-      if (!Number.isSafeInteger(payload[field]) || payload[field] < 1) {
+      if (!isSafeInteger(payload[field]) || payload[field] < 1) {
         fail(`repair_process payload.${field} must be a positive integer`);
       }
     }
-    if (payload.exitCode !== null && !Number.isInteger(payload.exitCode)) {
+    if (payload.exitCode !== null && !isInteger(payload.exitCode)) {
       fail('repair_process payload.exitCode must be an integer or null');
     }
     if (payload.signal !== null && typeof payload.signal !== 'string') {
@@ -459,7 +545,9 @@ function validatePayload(kind, payload) {
     if (payload.streams !== null && !isObject(payload.streams)) {
       fail('repair_process payload.streams must be an object or null');
     }
-    for (const [name, stream] of Object.entries(payload.streams ?? {})) {
+    const repairStreams = payload.streams === null ? {} : payload.streams;
+    if (!isObject(repairStreams)) fail('repair_process payload.streams must be an object or null');
+    for (const [name, stream] of Object.entries(repairStreams)) {
       if (!['stdout', 'stderr'].includes(name) || !isObject(stream)) {
         fail(`repair_process payload.streams.${name} is invalid`);
       }
@@ -467,30 +555,34 @@ function validatePayload(kind, payload) {
       for (const key of Object.keys(stream)) {
         if (!allowed.has(key)) fail(`repair_process payload.streams.${name}.${key} is unknown`);
       }
-      if (stream.path !== `process.${name}.log` || !HASH.test(stream.sha256)
-        || !Number.isSafeInteger(stream.bytes) || stream.bytes < 0
-        || !Number.isSafeInteger(stream.retainedBytes) || stream.retainedBytes < 0
-        || stream.retainedBytes > stream.bytes
-        || stream.truncated !== (stream.bytes > stream.retainedBytes)) {
+      const bytes = stream.bytes;
+      const retainedBytes = stream.retainedBytes;
+      if (stream.path !== `process.${name}.log` || !isHash(stream.sha256)
+        || !isSafeInteger(bytes) || bytes < 0
+        || !isSafeInteger(retainedBytes) || retainedBytes < 0
+        || retainedBytes > bytes || stream.truncated !== (bytes > retainedBytes)) {
         fail(`repair_process payload.streams.${name} is inconsistent`);
       }
     }
   }
-  const validateGradeFeatures = (features, at) => {
+  const validateGradeFeatures = (features: unknown, at: string): void => {
     if (!Array.isArray(features)) return;
     features.forEach((feature, featureIndex) => {
       if (!isObject(feature)) fail(`${at}[${featureIndex}] must be an object`);
       if (feature.setupEvidence === undefined) fail(`${at}[${featureIndex}].setupEvidence is required`);
       try { validateCheckEvidence(feature.setupEvidence,
         { at: `${at}[${featureIndex}].setupEvidence` }); }
-      catch (error) { fail(error.message); }
-      if (feature.setupEvidence.phase !== 'setup') {
+      catch (error) { fail(errorMessage(error)); }
+      const setupEvidence = asObject(feature.setupEvidence, `${at}[${featureIndex}].setupEvidence must be an object`);
+      if (setupEvidence.phase !== 'setup') {
         fail(`${at}[${featureIndex}].setupEvidence must use setup phase`);
       }
       if (feature.criteria !== undefined && !Array.isArray(feature.criteria)) {
         fail(`${at}[${featureIndex}].criteria must be an array when present`);
       }
-      (feature.criteria ?? []).forEach((criterion, criterionIndex) => {
+      const criteria = feature.criteria ?? [];
+      if (!Array.isArray(criteria)) fail(`${at}[${featureIndex}].criteria must be an array when present`);
+      criteria.forEach((criterion, criterionIndex) => {
         const criterionAt = `${at}[${featureIndex}].criteria[${criterionIndex}]`;
         if (!isObject(criterion)) fail(`${criterionAt} must be an object`);
         for (const obsolete of ['passed', 'inconclusive', 'detail']) {
@@ -498,7 +590,7 @@ function validatePayload(kind, payload) {
         }
         if (criterion.evidence === undefined) fail(`${criterionAt}.evidence is required`);
         try { validateCheckEvidence(criterion.evidence, { at: `${criterionAt}.evidence` }); }
-        catch (error) { fail(error.message); }
+        catch (error) { fail(errorMessage(error)); }
       });
     });
   };
@@ -509,26 +601,28 @@ function validatePayload(kind, payload) {
   if (kind === 'grade_bundle') {
     objectWhenPresent('suites'); objectWhenPresent('totals');
     const observation = payload.observation ?? 'scored';
-    if (!['scored', 'observed'].includes(observation)) {
+    if (!['scored', 'observed'].includes(String(observation))) {
       fail('grade_bundle payload.observation must be scored or observed');
     }
     if (payload.source !== undefined
       && (!isObject(payload.source) || Object.keys(payload.source).length !== 1
-        || !HASH.test(payload.source.sha256 ?? ''))) {
+        || !isHash(payload.source.sha256))) {
       fail('grade_bundle payload.source must contain its application SHA-256');
     }
     if (observation === 'observed') {
       if (payload.source === undefined) {
         fail('grade_bundle observed payload.source must contain its first-build SHA-256');
       }
-      if (payload.selection?.observation !== 'observed'
-        || payload.selection?.scoredPoints !== 0
-        || !Number.isSafeInteger(payload.selection?.observedPoints)
-        || payload.selection.observedPoints < 0) {
+      const selection = asObject(payload.selection,
+        'grade_bundle observed selection must be diagnostic and contribute zero score');
+      if (selection.observation !== 'observed' || selection.scoredPoints !== 0
+        || !isSafeInteger(selection.observedPoints) || selection.observedPoints < 0) {
         fail('grade_bundle observed selection must be diagnostic and contribute zero score');
       }
     }
-    for (const [suiteId, suite] of Object.entries(payload.suites ?? {})) {
+    const suites = payload.suites ?? {};
+    if (!isObject(suites)) fail('grade_bundle payload.suites must be an object when present');
+    for (const [suiteId, suite] of Object.entries(suites)) {
       if (isObject(suite)) validateGradeFeatures(suite.features, `grade_bundle payload.suites.${suiteId}.features`);
     }
   }
@@ -541,8 +635,8 @@ function validatePayload(kind, payload) {
         if (!allowed.has(key)) fail(`mutation_control payload.shard.${key} is unknown`);
       }
       const { index, count, mutationIds } = payload.shard;
-      if (!Number.isSafeInteger(count) || count < 1
-        || !Number.isSafeInteger(index) || index < 0 || index >= count) {
+      if (!isSafeInteger(count) || count < 1
+        || !isSafeInteger(index) || index < 0 || index >= count) {
         fail('mutation_control payload.shard coordinates are invalid');
       }
       if (!Array.isArray(mutationIds) || mutationIds.length === 0
@@ -550,13 +644,16 @@ function validatePayload(kind, payload) {
         || new Set(mutationIds).size !== mutationIds.length) {
         fail('mutation_control payload.shard.mutationIds must contain unique non-empty strings');
       }
-      const resultIds = (payload.results ?? []).map(result => result?.id);
+      const results = payload.results ?? [];
+      if (!Array.isArray(results)) fail('mutation_control payload.results must be an array when present');
+      const resultIds = results.map(result => isObject(result) ? result.id : undefined);
       if (resultIds.some(id => typeof id !== 'string' || !id)
         || new Set(resultIds).size !== resultIds.length
         || resultIds.some(id => !mutationIds.includes(id))) {
         fail('mutation_control payload.results must be a unique subset of the assigned mutation IDs');
       }
-      const checkpointStatus = payload.checkpoint?.status;
+      const checkpoint = payload.checkpoint;
+      const checkpointStatus = isObject(checkpoint) ? checkpoint.status : undefined;
       const partial = checkpointStatus === 'running' || checkpointStatus === 'incomplete';
       if (!partial && resultIds.length !== mutationIds.length) {
         fail('complete mutation_control payload.shard.mutationIds must match the exact result set');
@@ -584,53 +681,55 @@ function validatePayload(kind, payload) {
         fail(`source_checkpoint payload.${field} must be a non-empty string`);
       }
     }
-    if (!Number.isSafeInteger(payload.level) || payload.level < 1) {
+    if (!isSafeInteger(payload.level) || payload.level < 1) {
       fail('source_checkpoint payload.level must be a positive integer');
     }
-    objectWhenPresent('source');
-    if (!isObject(payload.source)) fail('source_checkpoint payload.source is required');
+    const source = objectWhenPresent('source');
+    if (source === undefined) fail('source_checkpoint payload.source is required');
     const sourceFields = new Set(['directory', 'sha256', 'files']);
-    for (const key of Object.keys(payload.source)) {
+    for (const key of Object.keys(source)) {
       if (!sourceFields.has(key)) fail(`source_checkpoint payload.source.${key} is unknown`);
     }
-    if (payload.source.directory !== `level-l${payload.level}-source`) {
+    if (source.directory !== `level-l${payload.level}-source`) {
       fail('source_checkpoint payload.source.directory does not match its level');
     }
-    if (!HASH.test(payload.source.sha256 ?? '')) {
+    if (!isHash(source.sha256)) {
       fail('source_checkpoint payload.source.sha256 is invalid');
     }
-    if (!Number.isSafeInteger(payload.source.files) || payload.source.files < 0) {
+    if (!isSafeInteger(source.files) || source.files < 0) {
       fail('source_checkpoint payload.source.files must be a non-negative integer');
     }
-    objectWhenPresent('repair');
-    if (!isObject(payload.repair)) fail('source_checkpoint payload.repair is required');
+    const repair = objectWhenPresent('repair');
+    if (repair === undefined) fail('source_checkpoint payload.repair is required');
     const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stallLimitRounds',
       'stopReason', 'strikeScope', 'nodeStrikes']);
-    for (const key of Object.keys(payload.repair)) {
+    for (const key of Object.keys(repair)) {
       if (!repairFields.has(key)) fail(`source_checkpoint payload.repair.${key} is unknown`);
     }
     if (!['ungraded', 'not-needed', 'corrected', 'budget-exhausted', 'incomplete']
-      .includes(payload.repair.status)) fail('source_checkpoint payload.repair.status is invalid');
+      .includes(String(repair.status))) fail('source_checkpoint payload.repair.status is invalid');
     for (const field of ['budgetRounds', 'roundsUsed']) {
-      if (!Number.isSafeInteger(payload.repair[field]) || payload.repair[field] < 0) {
+      if (!isSafeInteger(repair[field]) || repair[field] < 0) {
         fail(`source_checkpoint payload.repair.${field} must be a non-negative integer`);
       }
     }
-    if (payload.repair.stallLimitRounds !== undefined
-      && (!Number.isSafeInteger(payload.repair.stallLimitRounds)
-        || payload.repair.stallLimitRounds < 0)) {
+    if (repair.stallLimitRounds !== undefined
+      && (!isSafeInteger(repair.stallLimitRounds) || repair.stallLimitRounds < 0)) {
       fail('source_checkpoint payload.repair.stallLimitRounds must be a non-negative integer');
     }
-    if (payload.repair.roundsUsed > payload.repair.budgetRounds) {
+    if (!isSafeInteger(repair.roundsUsed) || !isSafeInteger(repair.budgetRounds)) {
+      fail('source_checkpoint payload.repair rounds must be non-negative integers');
+    }
+    if (repair.roundsUsed > repair.budgetRounds) {
       fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');
     }
-    if (payload.repair.strikeScope !== undefined || payload.repair.nodeStrikes !== undefined) {
-      if (payload.repair.strikeScope !== 'feature' || !Array.isArray(payload.repair.nodeStrikes)) {
+    if (repair.strikeScope !== undefined || repair.nodeStrikes !== undefined) {
+      if (repair.strikeScope !== 'feature' || !Array.isArray(repair.nodeStrikes)) {
         fail('source_checkpoint payload.repair feature strikes are invalid');
       }
-      const ids = new Set();
-      let prior = null;
-      for (const [index, counter] of payload.repair.nodeStrikes.entries()) {
+      const ids = new Set<string>();
+      let prior: string | null = null;
+      for (const [index, counter] of repair.nodeStrikes.entries()) {
         if (!isObject(counter)) fail(`source_checkpoint payload.repair.nodeStrikes[${index}] is invalid`);
         const fields = new Set(['nodeId', 'initialBudget', 'granted', 'budget', 'used',
           'remaining', 'exhaustionReason']);
@@ -639,28 +738,29 @@ function validatePayload(kind, payload) {
         }
         if (typeof counter.nodeId !== 'string' || !counter.nodeId || ids.has(counter.nodeId)
           || (prior !== null && prior.localeCompare(counter.nodeId) >= 0)
-          || !Number.isSafeInteger(counter.initialBudget) || counter.initialBudget < 1
-          || !Number.isSafeInteger(counter.granted) || counter.granted < 0
-          || !Number.isSafeInteger(counter.budget) || counter.budget < 1
+          || !isSafeInteger(counter.initialBudget) || counter.initialBudget < 1
+          || !isSafeInteger(counter.granted) || counter.granted < 0
+          || !isSafeInteger(counter.budget) || counter.budget < 1
           || counter.budget !== counter.initialBudget + counter.granted
-          || !Number.isSafeInteger(counter.used) || counter.used < 0
+          || !isSafeInteger(counter.used) || counter.used < 0
           || counter.used > counter.budget
           || counter.remaining !== counter.budget - counter.used
           || (counter.exhaustionReason !== null
-            && !['strikes-exhausted', 'repeated-findings'].includes(counter.exhaustionReason))) {
+            && (typeof counter.exhaustionReason !== 'string'
+              || !['strikes-exhausted', 'repeated-findings'].includes(counter.exhaustionReason)))) {
           fail(`source_checkpoint payload.repair.nodeStrikes[${index}] is invalid`);
         }
         ids.add(counter.nodeId);
         prior = counter.nodeId;
       }
     }
-    if (payload.repair.stopReason !== null && typeof payload.repair.stopReason !== 'string') {
+    if (repair.stopReason !== null && typeof repair.stopReason !== 'string') {
       fail('source_checkpoint payload.repair.stopReason must be a string or null');
     }
     objectWhenPresent('outcome');
     if (!isObject(payload.outcome) || typeof payload.outcome.kind !== 'string'
       || !payload.outcome.kind) fail('source_checkpoint payload.outcome.kind is required');
-    if (payload.selectionSha256 !== null && !HASH.test(payload.selectionSha256 ?? '')) {
+    if (payload.selectionSha256 !== null && !isHash(payload.selectionSha256)) {
       fail('source_checkpoint payload.selectionSha256 is invalid');
     }
   }
@@ -669,7 +769,7 @@ function validatePayload(kind, payload) {
   return payload;
 }
 
-function rejectSecrets(value, at = '$', seen = new Set()) {
+function rejectSecrets(value: unknown, at: string = '$', seen: Set<object> = new Set()): void {
   if (value === null || typeof value !== 'object') return;
   if (seen.has(value)) fail(`${at} contains a cycle`);
   seen.add(value);
@@ -683,12 +783,12 @@ function rejectSecrets(value, at = '$', seen = new Set()) {
   seen.delete(value);
 }
 
-export function emptyArtifactIdentities(overrides = {}) {
+export function emptyArtifactIdentities(overrides: UnknownRecord = {}): ArtifactIdentities {
   return validateIdentities({ engine: currentEngineIdentity(), packs: [], ...overrides },
     { requireEngine: true });
 }
 
-export function currentEngineIdentity() {
+export function currentEngineIdentity(): EngineArtifactIdentity {
   if (cachedEngineIdentity) return structuredClone(cachedEngineIdentity);
   const excludedRoots = new Set([
     'archive',
@@ -703,7 +803,7 @@ export function currentEngineIdentity() {
   ]);
   const executable = hashDirectory(ROOT, { exclude: (name, entry) => {
     const parts = name.split('/');
-    if (parts.some(part => part.startsWith('.')) || excludedRoots.has(parts[0])
+    if (parts.some(part => part.startsWith('.')) || excludedRoots.has(parts[0] ?? '')
       || parts.includes('node_modules')
     ) return true;
     if (entry.isDirectory()) return false;
@@ -717,50 +817,72 @@ export function currentEngineIdentity() {
   return structuredClone(cachedEngineIdentity);
 }
 
-export function recipeArtifactIdentities(recipeRelease, overrides = {}) {
+export function recipeArtifactIdentities(
+  recipeRelease: unknown,
+  overrides: UnknownRecord = {},
+): ArtifactIdentities {
   if (!recipeRelease) return emptyArtifactIdentities(overrides);
+  const release = asObject(recipeRelease, 'recipe release must be an object');
+  const components = release.components === undefined
+    ? {} : asObject(release.components, 'recipe release components must be an object');
+  const fixture = components.fixture == null
+    ? null : asObject(components.fixture, 'recipe release fixture must be an object');
+  const packsValue = components.packs ?? [];
+  if (!Array.isArray(packsValue)) fail('recipe release packs must be an array');
   return emptyArtifactIdentities({
-    recipe: { id: recipeRelease.id, version: recipeRelease.version,
-      sha256: recipeRelease.contentSha256, state: recipeRelease.state },
-    fixture: recipeRelease.components?.fixture ? {
-      id: recipeRelease.components.fixture.id,
-      version: recipeRelease.components.fixture.version,
-      sha256: recipeRelease.components.fixture.sha256 ?? null,
-      state: recipeRelease.components.fixture.state,
+    recipe: { id: release.id, version: release.version,
+      sha256: release.contentSha256, state: release.state },
+    fixture: fixture ? {
+      id: fixture.id,
+      version: fixture.version,
+      sha256: fixture.sha256 ?? null,
+      state: fixture.state,
     } : null,
-    packs: (recipeRelease.components?.packs ?? []).map(pack => ({
+    packs: packsValue.map((value, index) => {
+      const pack = asObject(value, `recipe release packs[${index}] must be an object`);
+      return {
       id: pack.id, version: pack.version, sha256: pack.sha256 ?? null, state: pack.state,
-    })),
+      };
+    }),
     ...overrides,
   });
 }
 
-export function createArtifact({ kind, id, attempt = null, timestamps = null,
-  identities = null, payload = {} }) {
+export function createArtifact<TPayload extends object>(
+  input: CreateArtifactInput & { payload: TPayload },
+): Artifact<TPayload>;
+export function createArtifact(input: CreateArtifactInput): Artifact;
+export function createArtifact(input: CreateArtifactInput): Artifact {
+  const { kind, id, attempt = null, timestamps = null, identities = null, payload = {} } = input;
   const normalizedKind = normalizeKind(kind);
   if (typeof id !== 'string' || !id) fail('id must be a non-empty string');
   const now = new Date().toISOString();
-  const startedAt = timestamp(timestamps?.startedAt ?? now, 'timestamps.startedAt');
-  const completedAt = timestamps?.completedAt == null
-    ? null : timestamp(timestamps.completedAt, 'timestamps.completedAt');
+  const normalizedTimestamps = timestamps === null
+    ? {} : asObject(timestamps, 'timestamps must be an object or null');
+  const startedAt = timestamp(normalizedTimestamps.startedAt ?? now, 'timestamps.startedAt');
+  const completedAt = normalizedTimestamps.completedAt == null
+    ? null : timestamp(normalizedTimestamps.completedAt, 'timestamps.completedAt');
   if (completedAt && Date.parse(completedAt) < Date.parse(startedAt)) {
     fail('timestamps.completedAt precedes timestamps.startedAt');
   }
-  const normalizedAttempt = attempt ?? { id, parentId: null };
-  if (!isObject(normalizedAttempt) || typeof normalizedAttempt.id !== 'string' || !normalizedAttempt.id) {
+  const normalizedAttempt = attempt === null
+    ? { id, parentId: null } : asObject(attempt, 'attempt must be an object or null');
+  if (typeof normalizedAttempt.id !== 'string' || !normalizedAttempt.id) {
     fail('attempt.id must be a non-empty string');
   }
   if (normalizedAttempt.parentId !== null && normalizedAttempt.parentId !== undefined
     && (typeof normalizedAttempt.parentId !== 'string' || !normalizedAttempt.parentId)) {
     fail('attempt.parentId must be a non-empty string or null');
   }
-  const artifact = {
+  const identityInput = identities === null
+    ? {} : asObject(identities, 'identities must be an object or null');
+  const artifact: Artifact = {
     artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
     kind: normalizedKind,
     id,
     attempt: { id: normalizedAttempt.id, parentId: normalizedAttempt.parentId ?? null },
     timestamps: { startedAt, completedAt },
-    identities: validateIdentities({ engine: currentEngineIdentity(), packs: [], ...(identities ?? {}) },
+    identities: validateIdentities({ engine: currentEngineIdentity(), packs: [], ...identityInput },
       { requireEngine: true }),
     payload: validatePayload(normalizedKind, structuredClone(payload)),
   };
@@ -768,35 +890,51 @@ export function createArtifact({ kind, id, attempt = null, timestamps = null,
   return artifact;
 }
 
-export function validateArtifact(input, { source = '<artifact>' } = {}) {
-  if (!isObject(input)) fail(`${source} must be an object`);
-  if (input.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
-    fail(`${source} uses unsupported schema ${input.artifactSchemaVersion ?? 'missing'}`);
+export function validateArtifact<TPayload extends object = UnknownRecord>(
+  input: unknown,
+  options?: { source?: string },
+): Artifact<TPayload>;
+export function validateArtifact(
+  input: unknown,
+  { source = '<artifact>' }: { source?: string } = {},
+): Artifact {
+  const candidate = asObject(input, `${source} must be an object`);
+  if (candidate.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
+    fail(`${source} uses unsupported schema ${candidate.artifactSchemaVersion ?? 'missing'}`);
   }
-  for (const key of Object.keys(input)) {
+  for (const key of Object.keys(candidate)) {
     if (!ENVELOPE_KEYS.has(key)) fail(`${source}.${key} is unknown`);
   }
   for (const key of ENVELOPE_KEYS) {
-    if (!Object.hasOwn(input, key)) fail(`${source}.${key} is required`);
+    if (!Object.hasOwn(candidate, key)) fail(`${source}.${key} is required`);
   }
-  if (!isObject(input.attempt) || !Object.hasOwn(input.attempt, 'id')
-    || !Object.hasOwn(input.attempt, 'parentId')) fail(`${source}.attempt is incomplete`);
-  if (!isObject(input.timestamps) || !Object.hasOwn(input.timestamps, 'startedAt')
-    || !Object.hasOwn(input.timestamps, 'completedAt')) fail(`${source}.timestamps is incomplete`);
-  if (!isObject(input.identities)) fail(`${source}.identities must be an object`);
+  if (!isObject(candidate.attempt) || !Object.hasOwn(candidate.attempt, 'id')
+    || !Object.hasOwn(candidate.attempt, 'parentId')) fail(`${source}.attempt is incomplete`);
+  if (!isObject(candidate.timestamps) || !Object.hasOwn(candidate.timestamps, 'startedAt')
+    || !Object.hasOwn(candidate.timestamps, 'completedAt')) fail(`${source}.timestamps is incomplete`);
+  if (!isObject(candidate.identities)) fail(`${source}.identities must be an object`);
   for (const key of [...IDENTITY_KEYS, 'packs']) {
-    if (!Object.hasOwn(input.identities, key)) fail(`${source}.identities.${key} is required`);
+    if (!Object.hasOwn(candidate.identities, key)) fail(`${source}.identities.${key} is required`);
   }
-  return createArtifact(input);
+  if (typeof candidate.id !== 'string') fail(`${source}.id must be a string`);
+  return createArtifact({ kind: candidate.kind, id: candidate.id, attempt: candidate.attempt,
+    timestamps: candidate.timestamps, identities: candidate.identities, payload: candidate.payload });
 }
 
-export function writeArtifact(path, input) {
-  if (input?.artifactSchemaVersion !== undefined
-    && input.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
-    fail(`${path} uses unsupported schema ${input.artifactSchemaVersion}`);
+export function writeArtifact(path: string, input: unknown): Artifact {
+  const candidate = asObject(input, `${path} must be an object`);
+  if (candidate.artifactSchemaVersion !== undefined
+    && candidate.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
+    fail(`${path} uses unsupported schema ${candidate.artifactSchemaVersion}`);
   }
-  const artifact = input?.artifactSchemaVersion === ARTIFACT_SCHEMA_VERSION
-    ? validateArtifact(input, { source: path }) : createArtifact(input);
+  let artifact: Artifact;
+  if (candidate.artifactSchemaVersion === ARTIFACT_SCHEMA_VERSION) {
+    artifact = validateArtifact(candidate, { source: path });
+  } else {
+    if (typeof candidate.id !== 'string') fail(`${path}.id must be a string`);
+    artifact = createArtifact({ kind: candidate.kind, id: candidate.id, attempt: candidate.attempt,
+      timestamps: candidate.timestamps, identities: candidate.identities, payload: candidate.payload });
+  }
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
   const json = `${JSON.stringify(artifact, null, 2)}\n`;
@@ -807,7 +945,10 @@ export function writeArtifact(path, input) {
   return artifact;
 }
 
-export function readArtifact(path, { expectedId = null, expectedKind = null } = {}) {
+export function readArtifact<TPayload extends object = UnknownRecord>(
+  path: string,
+  { expectedId = null, expectedKind = null }: ArtifactReadOptions = {},
+): Artifact<TPayload> {
   const input = JSON.parse(readFileSync(path, 'utf8'));
   const artifact = validateArtifact(input, { source: path });
   if (expectedId !== null && artifact.id !== expectedId) {
@@ -816,10 +957,10 @@ export function readArtifact(path, { expectedId = null, expectedKind = null } = 
   if (expectedKind !== null && artifact.kind !== normalizeKind(expectedKind)) {
     throw new Error(`artifact ${path} is ${artifact.kind}, not ${normalizeKind(expectedKind)}`);
   }
-  return artifact;
+  return artifact as Artifact<TPayload>;
 }
 
-export function artifactPayload(artifact) {
+export function artifactPayload<TPayload extends object>(artifact: Artifact<TPayload>): TPayload & UnknownRecord {
   return { ...artifact.payload, artifactSchemaVersion: artifact.artifactSchemaVersion,
     kind: artifact.kind, id: artifact.id, artifactEnvelope: {
       attempt: artifact.attempt,
@@ -828,13 +969,16 @@ export function artifactPayload(artifact) {
     } };
 }
 
-export function readArtifactPayload(path, options = {}) {
-  return artifactPayload(readArtifact(path, options));
+export function readArtifactPayload<TPayload extends object = UnknownRecord>(
+  path: string,
+  options: ArtifactReadOptions = {},
+): TPayload & UnknownRecord {
+  return artifactPayload(readArtifact<TPayload>(path, options));
 }
 
 // Convenience surface for the top-level run producer. New bytes are always
 // written through the same strict schema-v2 envelope.
-export function writeRunJson(path, run) {
+export function writeRunJson(path: string, run: unknown): Artifact {
   if (!isObject(run) || typeof run.id !== 'string' || !run.id) {
     throw new Error('run artifact requires a non-empty id');
   }
@@ -860,6 +1004,6 @@ export function writeRunJson(path, run) {
   });
 }
 
-export function readRunJson(path, expectedRunId) {
-  return readArtifactPayload(path, { expectedId: expectedRunId });
+export function readRunJson(path: string, expectedRunId?: string): CostRun & UnknownRecord {
+  return readArtifactPayload(path, { expectedId: expectedRunId }) as CostRun & UnknownRecord;
 }

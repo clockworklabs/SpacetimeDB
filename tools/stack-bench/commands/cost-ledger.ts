@@ -3,7 +3,7 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { readRunJson } from '../src/evidence/artifacts.mjs';
+import { readRunJson } from '../src/evidence/artifacts.js';
 import { durableCostLedger } from '../src/evidence/cost-proof.js';
 
 export { durableCostLedger } from '../src/evidence/cost-proof.js';

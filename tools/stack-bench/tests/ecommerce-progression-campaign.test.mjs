@@ -10,7 +10,7 @@ import { compileCampaignFile, validateCompiledCampaignPlan }
 import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { parseArgs } from '../commands/bench.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
-import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { writeArtifact } from '../dist/src/evidence/artifacts.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';

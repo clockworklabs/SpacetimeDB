@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { writeArtifact } from '../evidence/artifacts.mjs';
+import { writeArtifact } from '../evidence/artifacts.js';
 import { hashDirectory } from '../evidence/provenance.js';
 import { hashAppSource, snapshotAppSource } from './source-snapshot.js';
 

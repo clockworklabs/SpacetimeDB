@@ -12,7 +12,7 @@ import { campaignUsesNoExternalResources, runCampaignAdmission }
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { readCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
-import { readArtifact } from '../src/evidence/artifacts.mjs';
+import { readArtifact } from '../dist/src/evidence/artifacts.js';
 import { validateProgressionCampaignLevelScope } from '../commands/bench.mjs';
 import { replayDependencyMode } from '../dist/src/progression/dependency-mode.js';
 import { dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';

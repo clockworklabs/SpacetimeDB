@@ -33,7 +33,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
-  writeRunJson } from "../src/evidence/artifacts.mjs";
+  writeRunJson } from "../src/evidence/artifacts.js";
 import { controlBackend } from "../src/runtime/backend-control.mjs";
 import {
   classifyMutationResult,

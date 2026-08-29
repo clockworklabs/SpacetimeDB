@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from '../evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from '../evidence/artifacts.js';
 import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';

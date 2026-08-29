@@ -6,7 +6,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-pl
 import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.mjs';
-import { readArtifact } from '../evidence/artifacts.mjs';
+import { readArtifact } from '../evidence/artifacts.js';
 import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';

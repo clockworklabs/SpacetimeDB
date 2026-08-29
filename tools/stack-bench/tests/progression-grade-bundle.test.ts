@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import type { CheckEvidence, CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
-import { createArtifact, emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
+import { createArtifact, emptyArtifactIdentities } from '../src/evidence/artifacts.js';
 import { gradeBundleToProgressionResult }
   from '../src/progression/grade-bundle-result.js';
 

@@ -20,7 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { answers as hostAnswers } from '../src/runtime/platform.mjs';
 import { controlBackend } from '../src/runtime/backend-control.mjs';
-import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { contractControlIds } from '../src/composition/agent-visible-contract.mjs';

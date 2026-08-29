@@ -11,7 +11,7 @@ import { calibrationCoversAlias, calibrationQualificationIdentity,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
 import type { CalibrationContext, CalibrationDefinition, CalibrationEvidence,
   CalibrationPlan } from '../src/composition/calibration-compiler.mjs';
-import { readArtifact } from '../src/evidence/artifacts.mjs';
+import { readArtifact } from '../src/evidence/artifacts.js';
 import { checkCalibrations } from '../commands/check-calibration.js';
 import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import type { RecipeExecution } from '../src/composition/recipe-release.mjs';

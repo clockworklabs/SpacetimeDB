@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.js';
 import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
 import { renderRepairDiagnostic } from '../src/evidence/evidence-presentation.js';
 

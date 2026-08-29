@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { runSessionRecord } from '../commands/bench.mjs';
-import { readRunJson, writeRunJson } from '../dist/src/evidence/artifacts.mjs';
+import { readRunJson, writeRunJson } from '../dist/src/evidence/artifacts.js';
 
 function receipt() {
   return [{ invocation: 1, receipt: { schemaVersion: 2, source: 'credential-broker',

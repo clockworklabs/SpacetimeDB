@@ -6,7 +6,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
-import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
+import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';

@@ -11,7 +11,7 @@ import { grantProgressionState, readProgressionState, writeProgressionState }
   from '../src/progression/progression-state.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
-import { emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities } from '../src/evidence/artifacts.js';
 
 interface TestState extends Record<string, unknown> {
   phase: string;

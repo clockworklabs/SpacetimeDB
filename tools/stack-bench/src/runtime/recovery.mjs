@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
-import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
 import { publicBackendLease, readBackendLease } from './backend-lease.mjs';
 import { releaseBackendLease } from './backend-teardown.mjs';
 

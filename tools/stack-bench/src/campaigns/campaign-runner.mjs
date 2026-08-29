@@ -4,7 +4,7 @@ import { join, relative, resolve, sep } from 'node:path';
 
 
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
-  writeArtifact } from '../evidence/artifacts.mjs';
+  writeArtifact } from '../evidence/artifacts.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
 import { compileCampaignFile } from './campaign-compiler.js';
 import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,

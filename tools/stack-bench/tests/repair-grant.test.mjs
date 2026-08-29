@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { emptyArtifactIdentities, writeRunJson } from '../dist/src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, writeRunJson } from '../dist/src/evidence/artifacts.js';
 import { compareRepairBaseline, createRepairGrant, inspectRepairParent } from '../dist/src/runtime/repair-grant.mjs';
 import { preserveLevelCheckpoint } from '../dist/src/runtime/source-checkpoint.js';
 

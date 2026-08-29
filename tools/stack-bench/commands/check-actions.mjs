@@ -25,7 +25,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 

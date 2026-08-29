@@ -11,7 +11,7 @@ import type { CalibrationResolver, CompilerOptions }
 import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.js';
 import { sha256 } from '../src/evidence/provenance.js';
 
 const APPLIANCE_ROOT = resolve(import.meta.dirname, '..', '..', 'appliance');

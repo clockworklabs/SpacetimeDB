@@ -5,7 +5,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { artifactPayload, currentEngineIdentity, readArtifact, recipeArtifactIdentities,
-  writeArtifact } from '../evidence/artifacts.mjs';
+  writeArtifact } from '../evidence/artifacts.js';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { canonicalDefinitionJson } from './definition-plan.mjs';
 import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';

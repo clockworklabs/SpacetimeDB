@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';

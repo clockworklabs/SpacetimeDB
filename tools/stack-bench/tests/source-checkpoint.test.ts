@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createArtifact, readArtifact } from '../src/evidence/artifacts.mjs';
+import { createArtifact, readArtifact } from '../src/evidence/artifacts.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 
 interface CheckpointPayload extends Record<string, unknown> {

@@ -1,6 +1,6 @@
 import { validateCheckEvidence } from '../evidence/check-evidence.js';
 import type { CheckEvidence } from '../evidence/check-evidence.js';
-import { validateArtifact } from '../evidence/artifacts.mjs';
+import { validateArtifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import { validateProgressionOwner } from './progression-state.js';
@@ -152,15 +152,12 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     ...(object(action.prompt) ? { prompt: action.prompt } : {}),
   };
   const bundle = artifact.payload;
-  const runAgentAdapter = object(run.identities.agentAdapter)
-    ? run.identities.agentAdapter : {};
-  const runStackAdapter = object(run.identities.stackAdapter)
-    ? run.identities.stackAdapter : {};
-  const runEngine = object(run.identities.engine) ? run.identities.engine : {};
-  const gradeStackAdapter = object(artifact.identities.stackAdapter)
-    ? artifact.identities.stackAdapter : {};
-  const gradeEngine = object(artifact.identities.engine) ? artifact.identities.engine : {};
-  const gradeRecipe = object(artifact.identities.recipe) ? artifact.identities.recipe : {};
+  const runAgentAdapter = run.identities.agentAdapter;
+  const runStackAdapter = run.identities.stackAdapter;
+  const runEngine = run.identities.engine;
+  const gradeStackAdapter = artifact.identities.stackAdapter;
+  const gradeEngine = artifact.identities.engine;
+  const gradeRecipe = artifact.identities.recipe;
   if (sequence !== undefined && (!Number.isSafeInteger(sequence) || sequence < 1)) {
     throw new Error('progression grading sequence must be a positive integer');
   }
@@ -202,12 +199,12 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     !== canonicalDefinitionJson(featureCatalogIdentity), 'run.featureCatalog');
   mismatch(canonicalDefinitionJson(run.payload.dependencyPolicy)
     !== canonicalDefinitionJson(dependencyPolicyIdentity), 'run.dependencyPolicy');
-  mismatch(runAgentAdapter.id !== validatedOwner.attempt.agentAdapter,
+  mismatch(runAgentAdapter?.id !== validatedOwner.attempt.agentAdapter,
     'run.agentAdapter');
-  mismatch(runStackAdapter.id !== validatedOwner.attempt.stack, 'run.stackAdapter');
-  mismatch(gradeEngine.sha256 !== runEngine.sha256,
+  mismatch(runStackAdapter?.id !== validatedOwner.attempt.stack, 'run.stackAdapter');
+  mismatch(gradeEngine?.sha256 !== runEngine?.sha256,
     'grade.engine');
-  mismatch(gradeStackAdapter.id !== validatedOwner.attempt.stack,
+  mismatch(gradeStackAdapter?.id !== validatedOwner.attempt.stack,
     'grade.stackAdapter');
   if (ownerMismatches.length) {
     throw new Error(`grade bundle benchmark owner does not match the progression campaign attempt: ${ownerMismatches.join(', ')}`);
@@ -215,7 +212,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
   if (!object(recipeIdentity) || typeof recipeIdentity.id !== 'string'
     || typeof recipeIdentity.version !== 'string'
     || typeof recipeIdentity.sha256 !== 'string' || !HASH.test(recipeIdentity.sha256)
-    || gradeRecipe.id !== recipeIdentity.id
+    || gradeRecipe?.id !== recipeIdentity.id
     || gradeRecipe.version !== recipeIdentity.version
     || gradeRecipe.sha256 !== recipeIdentity.sha256) {
     throw new Error('grade bundle recipe identity does not match the progression grading selection');

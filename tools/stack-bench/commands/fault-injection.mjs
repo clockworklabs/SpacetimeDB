@@ -14,7 +14,7 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
-import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
+import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { killTree, pidsOnPort } from '../src/runtime/platform.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 

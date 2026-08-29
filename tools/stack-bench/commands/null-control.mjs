@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
   resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';

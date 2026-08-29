@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
-import { currentEngineIdentity } from '../evidence/artifacts.mjs';
+import { currentEngineIdentity } from '../evidence/artifacts.js';
 import { sha256 } from '../evidence/provenance.js';
 import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
   from '../evidence/pricing-authority.js';
@@ -119,8 +119,8 @@ export interface CampaignDefinition {
 
 interface Identity {
   id: string;
-  version: string;
-  sha256: string;
+  version: string | null;
+  sha256: string | null;
 }
 
 interface RecipeIdentity extends UnknownRecord {

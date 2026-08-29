@@ -1,4 +1,4 @@
-import type { Artifact } from '../evidence/artifacts.mjs';
+import type { Artifact } from '../evidence/artifacts.js';
 
 export interface RepairParentPayload {
   id: string;

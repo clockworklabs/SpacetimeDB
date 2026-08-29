@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }

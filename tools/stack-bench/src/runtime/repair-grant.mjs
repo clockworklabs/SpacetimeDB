@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
-import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.mjs';
+import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { hashDirectory } from '../evidence/provenance.js';
 

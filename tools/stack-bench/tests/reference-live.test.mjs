@@ -19,7 +19,7 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
   rescueSupervisedLease, runBounded,
   targetedMutationCheckKeys } from '../src/references/reference-live.mjs';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
-  from '../dist/src/evidence/artifacts.mjs';
+  from '../dist/src/evidence/artifacts.js';
 import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';

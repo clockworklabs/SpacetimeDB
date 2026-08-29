@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
 import { campaignIdentity, validateCompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';

@@ -15,7 +15,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { readArtifact, readRunJson } from '../src/evidence/artifacts.mjs';
+import { readArtifact, readRunJson } from '../src/evidence/artifacts.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const WORK = join(ROOT, '.loop-test');

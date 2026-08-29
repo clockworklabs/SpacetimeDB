@@ -25,7 +25,7 @@ import { harnessBrowserFailure, harnessProcessFailure,
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { materializeScenarioCredentials } from '../src/composition/credential-aliases.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.mjs';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';

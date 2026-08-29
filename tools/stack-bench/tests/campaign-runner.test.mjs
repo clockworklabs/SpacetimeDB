@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
-  writeArtifact } from '../dist/src/evidence/artifacts.mjs';
+  writeArtifact } from '../dist/src/evidence/artifacts.js';
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   expectedDependencyRunOutcomeKind, processFailureDetail, remainingAttemptCostBudget,
@@ -790,7 +790,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
           stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log'),
         });
         const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
-        const { emptyArtifactIdentities, writeRunJson } = await import('../dist/src/evidence/artifacts.mjs');
+        const { emptyArtifactIdentities, writeRunJson } = await import('../dist/src/evidence/artifacts.js');
         const completedAt = new Date().toISOString();
         const attempt = planned.attempts.find(item => item.id === parent);
         const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
@@ -913,7 +913,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
         const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
         const stack = planned.stacks.find(item => item.id === attempt.stack);
         const completedAt = new Date().toISOString();
-        const { writeRunJson } = await import('../dist/src/evidence/artifacts.mjs');
+        const { writeRunJson } = await import('../dist/src/evidence/artifacts.js');
         const levels = attempt.levels.map(level => {
           const selection = plannedSelection(attempt, level);
           const max = selection.scoredPoints;

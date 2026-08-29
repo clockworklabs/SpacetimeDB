@@ -3,8 +3,8 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import type { RecipeBinding } from '../composition/recipe-release.mjs';
-import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.mjs';
-import type { Artifact } from '../evidence/artifacts.mjs';
+import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
+import type { Artifact } from '../evidence/artifacts.js';
 import { classifyBundle } from '../evidence/outcomes.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
@@ -254,9 +254,9 @@ export function createLiveProgressionExecution(
     const runState = lastEvent?.type === 'strikes-granted'
       ? replayDependencyMode(stored.state.definition, stored.state.events.slice(0, -1))
       : stored.state;
-    const engine = object(artifact.identities.engine) ? artifact.identities.engine : {};
+    const engine = artifact.identities.engine;
     if (artifact.attempt.parentId !== owner.attempt.id
-      || engine.sha256 !== currentEngineIdentity().sha256
+      || engine?.sha256 !== currentEngineIdentity().sha256
       || canonicalDefinitionJson(runOwner)
         !== canonicalDefinitionJson({ schemaVersion: 1, campaign: owner.campaign,
           attempt: owner.attempt })
@@ -289,10 +289,10 @@ export function createLiveProgressionExecution(
     const from = join(root, 'progression', `attempt-${String(index + 1).padStart(3, '0')}`);
     const bundle = readArtifact<GradeBundlePayload>(join(from, 'bundle.json'),
       { expectedKind: 'grade_bundle' });
-    const engine = object(bundle.identities.engine) ? bundle.identities.engine : {};
+    const engine = bundle.identities.engine;
     if (bundle.id !== evidence.id
       || sha256(canonicalDefinitionJson(bundle)) !== evidence.sha256
-      || engine.sha256 !== currentEngineIdentity().sha256
+      || engine?.sha256 !== currentEngineIdentity().sha256
       || bundle.payload.source?.sha256 !== attempt.sourceSha256
       || bundle.payload.selection?.sha256 !== attempt.selectionSha256) {
       throw new Error('saved repair evidence does not match its progression attempt');

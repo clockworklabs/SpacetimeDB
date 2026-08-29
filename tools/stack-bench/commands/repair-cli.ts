@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { acquireCampaignLock, releaseCampaignLock } from '../src/campaigns/campaign-lock.js';
-import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../src/evidence/artifacts.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
 import type { BoundedProcessResult, RunBoundedOptions }

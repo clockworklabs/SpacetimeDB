@@ -1,7 +1,7 @@
 import { join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
-import { readArtifact } from '../evidence/artifacts.mjs';
+import { readArtifact } from '../evidence/artifacts.js';
 
 const SMOKE_REUSE_MS = 15 * 60_000;
 type UnknownRecord = Record<string, unknown>;

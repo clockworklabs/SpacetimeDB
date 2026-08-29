@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { emptyArtifactIdentities, readArtifact, writeArtifact,
-  writeRunJson } from '../src/evidence/artifacts.mjs';
+  writeRunJson } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan } from '../src/campaigns/campaign-compiler.js';
 import { buildCampaignReport, generateCampaignReport,

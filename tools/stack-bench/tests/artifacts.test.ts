@@ -6,28 +6,28 @@ import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { ARTIFACT_SCHEMA_VERSION, createArtifact, readArtifact, readArtifactPayload,
-  readRunJson, writeArtifact, writeRunJson } from '../dist/src/evidence/artifacts.mjs';
-import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
+  readRunJson, writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 
-const BENCH_ROOT = join(import.meta.dirname, '..');
+const BENCH_ROOT = join(import.meta.dirname, '..', '..');
 
-function freshEngineIdentity(root = BENCH_ROOT) {
-  const artifactsUrl = pathToFileURL(join(root, 'dist', 'src', 'evidence', 'artifacts.mjs')).href;
+function freshEngineIdentity(root: string = BENCH_ROOT): unknown {
+  const artifactsUrl = pathToFileURL(join(root, 'dist', 'src', 'evidence', 'artifacts.js')).href;
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
     `import { currentEngineIdentity } from ${JSON.stringify(artifactsUrl)}; console.log(JSON.stringify(currentEngineIdentity()));`],
   { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout);
+  return JSON.parse(result.stdout ?? '');
 }
 
-function writableEngineRoot() {
+function writableEngineRoot(): { temp: string; root: string } {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-engine-'));
   const root = join(temp, 'stack-bench');
   const excluded = new Set(['archive', 'local-notes', 'media', 'node_modules',
     'qualification-evidence', 'reference-apps', 'results', 'tests', 'tracks', 'transcripts']);
   cpSync(BENCH_ROOT, root, { recursive: true, filter: source => {
     if (source === BENCH_ROOT) return true;
-    return !excluded.has(relative(BENCH_ROOT, source).split(/[\\/]/)[0]);
+    return !excluded.has(relative(BENCH_ROOT, source).split(/[\\/]/)[0] ?? '');
   } });
   return { temp, root };
 }
@@ -110,8 +110,8 @@ test('v2 envelopes preserve exact identities, timestamps, and attempt ancestry',
     });
     const artifact = readArtifact(path, { expectedKind: 'grade', expectedId: 'grade-child' });
     assert.equal(artifact.attempt.parentId, 'bundle-parent');
-    assert.equal(artifact.identities.recipe.sha256, digest);
-    assert.equal(artifact.identities.packs[0].sha256, digest);
+    assert.equal(artifact.identities.recipe?.sha256, digest);
+    assert.equal(artifact.identities.packs[0]?.sha256, digest);
     assert.equal(artifact.timestamps.completedAt, '2026-08-12T12:00:01.000Z');
     assert.deepEqual(readArtifactPayload(path).features, []);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -139,13 +139,17 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   /precedes/);
   const valid = createArtifact({ kind: 'grade', id: 'x' });
   assert.throws(() => writeArtifact('unused.json', { ...valid, surprise: true }), /surprise is unknown/);
-  const missingIdentities = structuredClone(valid);
+  const missingIdentities: Partial<typeof valid> = structuredClone(valid);
   delete missingIdentities.identities;
   assert.throws(() => writeArtifact('unused.json', missingIdentities), /identities is required/);
-  const incompleteTimestamps = structuredClone(valid);
+  const incompleteTimestamps: Omit<typeof valid, 'timestamps'> & {
+    timestamps: Partial<typeof valid.timestamps>;
+  } = structuredClone(valid);
   delete incompleteTimestamps.timestamps.completedAt;
   assert.throws(() => writeArtifact('unused.json', incompleteTimestamps), /timestamps is incomplete/);
-  const missingIdentitySlot = structuredClone(valid);
+  const missingIdentitySlot: Omit<typeof valid, 'identities'> & {
+    identities: Partial<typeof valid.identities>;
+  } = structuredClone(valid);
   delete missingIdentitySlot.identities.experiment;
   assert.throws(() => writeArtifact('unused.json', missingIdentitySlot), /identities\.experiment is required/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x', identities: { engine: null } }),
