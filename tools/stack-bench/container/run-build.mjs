@@ -24,13 +24,13 @@ import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.mjs';
-import { resolveContainerImage } from '../src/runtime/container-image.mjs';
+import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
   from '../src/composition/product-config.mjs';
-import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
-import { dockerHostGatewayArguments } from '../src/runtime/docker-network.mjs';
+import { dockerMountArguments } from '../src/runtime/container-mount.js';
+import { dockerHostGatewayArguments } from '../src/runtime/docker-network.js';
 import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.mjs';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt, startCredentialBroker,
   stopCredentialBroker } from './credential-broker.mjs';

@@ -15,7 +15,7 @@ import { writeRunJson } from '../evidence/artifacts.mjs';
 import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
   publicBackendLease, readBackendLease, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../runtime/backend-lease.mjs';
-import { resolveContainerImage } from '../runtime/container-image.mjs';
+import { resolveContainerImage } from '../runtime/container-image.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';

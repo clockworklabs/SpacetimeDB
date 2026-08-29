@@ -7,9 +7,9 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
-import { isExactImageReference, parseImageId } from './container-image.mjs';
-import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.mjs';
-import { dockerMountArguments } from './container-mount.mjs';
+import { isExactImageReference, parseImageId } from './container-image.js';
+import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.js';
+import { dockerMountArguments } from './container-mount.js';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   preflightResourceFloors } from '../composition/product-config.mjs';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';

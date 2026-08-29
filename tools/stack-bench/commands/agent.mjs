@@ -24,12 +24,12 @@ import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
 import { writeSandbox } from '../src/runtime/sandbox.mjs';
 import { leaseFromEnv } from '../src/runtime/backend-lease.mjs';
-import { resolveContainerImage } from '../src/runtime/container-image.mjs';
+import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
-import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
+import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
   runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';

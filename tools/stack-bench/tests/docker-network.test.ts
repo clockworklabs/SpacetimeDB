@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { dockerHostGatewayArguments, dockerHostServiceAddress } from '../src/runtime/docker-network.mjs';
+import { dockerHostGatewayArguments, dockerHostServiceAddress } from '../src/runtime/docker-network.js';
 
 test('bridge containers bind the portable Docker host gateway alias', () => {
   assert.deepEqual(dockerHostGatewayArguments('bridge'),

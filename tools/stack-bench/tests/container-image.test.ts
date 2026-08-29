@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseImageId, resolveContainerImage } from '../src/runtime/container-image.mjs';
+import { parseImageId, resolveContainerImage } from '../src/runtime/container-image.js';
 
 const ID = `sha256:${'a'.repeat(64)}`;
 
 test('container image references resolve to immutable content ids', () => {
-  let invocation = null;
+  let invocation: { command: string; args: readonly string[] } | null = null;
   const result = resolveContainerImage('stack-bench-build:test', (command, args) => {
     invocation = { command, args };
     return `${ID}\n`;

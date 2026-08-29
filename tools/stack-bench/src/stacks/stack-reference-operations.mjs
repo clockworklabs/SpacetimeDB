@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { dockerHostServiceAddress } from '../runtime/docker-network.mjs';
+import { dockerHostServiceAddress } from '../runtime/docker-network.js';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.mjs';
 import { referenceInstallSteps } from '../references/reference-install.mjs';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.mjs';
