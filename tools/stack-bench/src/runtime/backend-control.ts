@@ -1,10 +1,28 @@
+import type { execFileSync } from 'node:child_process';
+
 import { leaseFromEnv } from './backend-lease.mjs';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 
 export { hostedStopScript } from '../stacks/stack-lifecycle-operations.mjs';
 
-export function captureBackendDiagnostics(output, { exec } = {}) {
+interface BackendControlSpec extends Record<string, unknown> {
+  backend: string;
+  app: string;
+}
+
+interface DiagnosticsOptions {
+  exec?: typeof execFileSync;
+}
+
+interface BackendControlOptions {
+  signal?: AbortSignal | null;
+}
+
+export function captureBackendDiagnostics(
+  output: string,
+  { exec }: DiagnosticsOptions = {},
+): unknown {
   const { lease } = leaseFromEnv(process.env, { active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(lease.backend);
   try {
@@ -18,7 +36,11 @@ export function captureBackendDiagnostics(output, { exec } = {}) {
   }
 }
 
-export async function controlBackend(spec, mode = 'restart', { signal = null } = {}) {
+export async function controlBackend(
+  spec: BackendControlSpec | null | undefined,
+  mode = 'restart',
+  { signal = null }: BackendControlOptions = {},
+): Promise<unknown> {
   if (!spec || !spec.backend || !spec.app) throw new Error('backend control spec is incomplete');
   if (!['restart', 'stop', 'start'].includes(mode)) throw new Error(`unknown backend control mode ${mode}`);
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });

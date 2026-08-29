@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeRunJson } from "../src/evidence/artifacts.js";
-import { controlBackend } from "../src/runtime/backend-control.mjs";
+import { controlBackend } from "../src/runtime/backend-control.js";
 import {
   classifyMutationResult,
   groupMutationsByScenario,

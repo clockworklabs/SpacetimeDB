@@ -34,7 +34,7 @@ import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
-import { captureBackendDiagnostics } from '../src/runtime/backend-control.mjs';
+import { captureBackendDiagnostics } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';

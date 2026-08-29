@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../src/runtime/backend-control.mjs';
+import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../dist/src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { controlHosted } from '../src/stacks/stack-lifecycle-operations.mjs';
 
@@ -32,7 +32,8 @@ test('restart diagnostics are copied only from the exact leased build container'
     container: { name: 'database', id: 'd'.repeat(64) } });
   lease.state = 'active';
   lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
-    running: true, owned: true, image: `sha256:${'b'.repeat(64)}` };
+    running: true, owned: true, image: `sha256:${'b'.repeat(64)}`,
+    resourceLimits: { cpuCount: 2, memoryBytes: 1024, memorySwapBytes: 1024, pids: 32 } };
   writeBackendLease(leasePath, lease);
   const priorPath = process.env.STACK_BENCH_LEASE;
   const priorToken = process.env.STACK_BENCH_LEASE_TOKEN;
