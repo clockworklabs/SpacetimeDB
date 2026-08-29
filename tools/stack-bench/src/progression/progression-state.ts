@@ -46,8 +46,30 @@ export interface PersistedProgressionAttempt extends Record<string, unknown> {
   selectionSha256?: string;
 }
 
+export interface PersistedProgressionNodeDefinition extends Record<string, unknown> {
+  id: string;
+  title: string;
+  level: number;
+  questline: string;
+  dependencies: string[];
+}
+
+export interface PersistedProgressionNodeState extends Record<string, unknown> {
+  status: string;
+  strikes: { budget: number; used: number };
+  exhaustionReason: unknown;
+  checks: Record<string, string>;
+}
+
 export interface ProgressionState extends Record<string, unknown> {
-  definition: unknown;
+  policy: string;
+  phase: string;
+  level: number;
+  definition: {
+    nodes: PersistedProgressionNodeDefinition[];
+    questlines: Array<{ id: string; title: string; nodes: string[] }>;
+  };
+  nodes: Record<string, PersistedProgressionNodeState>;
   events: unknown[];
   attempts: PersistedProgressionAttempt[];
 }

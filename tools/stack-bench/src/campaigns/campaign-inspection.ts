@@ -8,40 +8,6 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
 
-interface ProgressionNodeDefinition {
-  id: string;
-  title: string;
-  level: number;
-  questline: string;
-  dependencies: string[];
-}
-
-interface ProgressionNodeState {
-  status: string;
-  strikes: { budget: number; used: number };
-  exhaustionReason: unknown;
-  checks: Record<string, string>;
-}
-
-interface ProgressionAttempt {
-  level: number;
-  outcome: unknown;
-  runId?: string;
-  sourceSha256?: string;
-  selectionSha256?: string;
-}
-
-interface ProgressionStateView {
-  phase: string;
-  level: number;
-  definition: {
-    nodes: ProgressionNodeDefinition[];
-    questlines: Array<{ id: string; title: string; nodes: string[] }>;
-  };
-  nodes: Record<string, ProgressionNodeState>;
-  attempts: ProgressionAttempt[];
-}
-
 interface ProgressionAction {
   type: string;
   strikes?: { maxRemaining: number; nodes: Array<Record<string, unknown>> };
@@ -108,7 +74,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
       featureCatalogIdentity: plan.featureCatalog.identity,
       dependencyPolicyIdentity: plan.dependencyPolicy.identity,
       owner: progressionOwner(plan, attempt),
-    }) as { state: ProgressionStateView; snapshotSha256: string };
+    });
     const state = stored.state;
     const definitions = new Map(state.definition.nodes.map(node => [node.id, node]));
     const nodes = Object.entries(state.nodes).map(([id, node]) => {
