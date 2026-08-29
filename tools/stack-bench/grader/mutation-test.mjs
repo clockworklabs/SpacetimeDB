@@ -54,7 +54,7 @@ import { fetchStatus } from "../src/runtime/readiness.js";
 import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
 import { mutationShard } from "../src/evidence/mutation-shards.mjs";
-import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.mjs";
+import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
   from "../src/evidence/mutation-control.mjs";
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";

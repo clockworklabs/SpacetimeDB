@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { reusableMutationEvidence } from '../src/evidence/mutation-checkpoint.mjs';
+import { reusableMutationEvidence } from '../src/evidence/mutation-checkpoint.js';
+import type { MutationCheckpointEvidence, MutationCheckpointIdentity }
+  from '../src/evidence/mutation-checkpoint.js';
 
-function identity() {
+function identity(): MutationCheckpointIdentity {
   return {
     schemaVersion: 1,
     engineSha256: 'a'.repeat(64),
@@ -23,7 +25,7 @@ function identity() {
   };
 }
 
-function evidence(checkpoint = identity()) {
+function evidence(checkpoint: MutationCheckpointIdentity = identity()): MutationCheckpointEvidence {
   return { checkpoint, results: [
     { id: 'm1', scenario: 'first.json', status: 'CAUGHT' },
     { id: 'm2', scenario: 'second.json', status: 'CAUGHT' },
@@ -35,15 +37,16 @@ function evidence(checkpoint = identity()) {
 
 test('mutation checkpoints reuse only unchanged scenario groups', () => {
   const current = identity();
-  current.groups[1].identitySha256 = 'f'.repeat(64);
+  current.groups[1]!.identitySha256 = 'f'.repeat(64);
   const reusable = reusableMutationEvidence(evidence(), current);
   assert.deepEqual(reusable.results.map(result => result.id), ['m1']);
   assert.deepEqual(reusable.baselines.map(result => result.scenario), ['first.json']);
 });
 
 test('mutation checkpoints fail closed when a global identity changes', () => {
-  for (const field of ['engineSha256', 'recipeSha256', 'fixtureSha256',
-    'calibrationSha256', 'imageId', 'backend', 'track', 'level', 'trackSha256']) {
+  const fields = ['engineSha256', 'recipeSha256', 'fixtureSha256',
+    'calibrationSha256', 'imageId', 'backend', 'track', 'level', 'trackSha256'] as const;
+  for (const field of fields) {
     const current = identity();
     current[field] = `changed-${field}`;
     assert.throws(() => reusableMutationEvidence(evidence(), current),
