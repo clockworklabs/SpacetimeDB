@@ -3,6 +3,8 @@ export interface StackAdapter {
   capabilities: Record<string, unknown>;
 }
 
+export class StackCapabilityUnsupportedError extends Error {}
+
 export function executeStackCapability(
   adapter: StackAdapter,
   capabilityName: string,

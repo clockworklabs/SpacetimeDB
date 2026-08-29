@@ -2,20 +2,35 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
   databaseWriteFailureDetail,
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-} from '../src/actions/lifecycle-concurrency-action-executors.mjs';
+} from '../src/actions/lifecycle-concurrency-action-executors.js';
 
-const sleep = async () => {};
+type UnknownRecord = Record<string, unknown>;
+type Event = string | readonly [string, boolean, number];
 
-function services(actors = new Map(), overrides = {}) {
+interface ServiceOverrides {
+  readonly applicationLifecycle?: unknown;
+  readonly backendLifecycle?: unknown;
+  readonly browser?: unknown;
+  readonly clock?: unknown;
+  readonly concurrency?: unknown;
+  readonly databaseWrite?: unknown;
+}
+
+const sleep = async (_milliseconds?: number, _signal?: AbortSignal): Promise<void> => {};
+
+function services(
+  actors: ReadonlyMap<string, unknown> = new Map(),
+  overrides: ServiceOverrides = {},
+): Record<string, unknown> {
   return {
-    actors: { get: name => actors.get(name) },
+    actors: { get: (name: string) => actors.get(name) },
     'application-lifecycle': overrides.applicationLifecycle
       ?? createLifecycleCapability({ sleep }),
     'backend-lifecycle': overrides.backendLifecycle
@@ -28,20 +43,26 @@ function services(actors = new Map(), overrides = {}) {
     concurrency: overrides.concurrency ?? {
       defaultWithin: 5000,
       dispatch: async () => null,
-      expand: value => value,
+      expand: (value: string | undefined) => value,
       sleep,
-      testId: id => `[data-testid="${id}"]`,
+      testId: (id: string) => `[data-testid="${id}"]`,
     },
-    'database-write': overrides.databaseWrite ?? { setStock: async input => input },
+    'database-write': overrides.databaseWrite ?? { setStock: async (input: unknown) => input },
   };
 }
 
-async function run(input, capabilities) {
-  return executeAction(ACTION_REGISTRY, input.do, input, createActionRunContext({
+async function run(input: UnknownRecord, capabilities: Record<string, unknown>) {
+  const action = String(input.do);
+  return executeAction(ACTION_REGISTRY, action, input, createActionRunContext({
     capabilities,
     implementations: LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-    attempt: { id: `test-${input.do}` },
+    attempt: { id: `test-${action}` },
   }));
+}
+
+function observation(result: { readonly observation: unknown }): UnknownRecord {
+  assert(result.observation !== null && typeof result.observation === 'object');
+  return result.observation as UnknownRecord;
 }
 
 test('the final executor registry covers exactly the lifecycle/concurrency action ids', () => {
@@ -53,16 +74,16 @@ test('the final executor registry covers exactly the lifecycle/concurrency actio
 });
 
 test('race preserves branch ordering while overlapping branches through registered dispatch', async () => {
-  const events = [];
+  const events: string[] = [];
   const capability = services(new Map(), { concurrency: {
     defaultWithin: 5000,
-    expand: value => value,
+    expand: (value: string | undefined) => value,
     sleep,
-    testId: id => id,
-    dispatch: async step => {
-      events.push(`start-${step.actor}-${step.ms}`);
+    testId: (id: string) => id,
+    dispatch: async (step: UnknownRecord) => {
+      events.push(`start-${String(step.actor)}-${String(step.ms)}`);
       if (step.ms === 1) await new Promise(resolve => setImmediate(resolve));
-      events.push(`end-${step.actor}-${step.ms}`);
+      events.push(`end-${String(step.actor)}-${String(step.ms)}`);
     },
   } });
   const result = await run({ do: 'race', settleMs: 0, branches: [
@@ -80,7 +101,8 @@ test('race preserves branch ordering while overlapping branches through register
   const failed = await run({ do: 'race', settleMs: 0, branches: [
     [{ do: 'wait', actor: 'a', ms: 1 }], [{ do: 'wait', actor: 'b', ms: 1 }],
   ] }, services(new Map(), { concurrency: {
-    defaultWithin: 5000, expand: value => value, sleep, testId: id => id,
+    defaultWithin: 5000, expand: (value: string | undefined) => value, sleep,
+    testId: (id: string) => id,
     dispatch: async () => { throw nestedFailure; },
   } }));
   assert.equal(failed.status, 'failed');
@@ -92,13 +114,13 @@ test('concurrent replay refuses to invent contention when fewer than two writes 
   const result = await run({ do: 'replayConcurrently', actors: ['a', 'b'],
     settleMs: 0 }, services(new Map([['a', actor], ['b', actor]])));
   assert.equal(result.status, 'inconclusive');
-  assert.match(result.summary, /fewer than two/);
+  assert.match(result.summary ?? '', /fewer than two/);
 });
 
 test('lifecycle operations distinguish missing control, unsafe refusal, and success', async () => {
   const missing = await run({ do: 'restartBackend', settleMs: 0 }, services());
   assert.equal(missing.status, 'inconclusive');
-  assert.match(missing.summary, /no backend control/);
+  assert.match(missing.summary ?? '', /no backend control/);
 
   const refusedError = Object.assign(new Error('refused'), { status: 3 });
   const refusedCapability = createLifecycleCapability({ restartSpec: { kind: 'test' }, sleep,
@@ -106,11 +128,11 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   const refused = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: refusedCapability }));
   assert.equal(refused.status, 'inconclusive');
-  assert.match(refused.summary, /benchmark-owned instance/);
+  assert.match(refused.summary ?? '', /benchmark-owned instance/);
 
-  const calls = [];
+  const calls: Array<readonly [unknown, string]> = [];
   const successful = createLifecycleCapability({ restartSpec: { kind: 'test' }, sleep,
-    control: async (spec, mode) => calls.push([spec, mode]) });
+    control: async (spec, mode) => { calls.push([spec, mode]); } });
   const passed = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: successful }));
   assert.equal(passed.status, 'passed');
@@ -124,7 +146,7 @@ test('a generated app server timing out is an application failure, not a harness
   const appResult = await run({ do: 'startAppServer', settleMs: 0 },
     services(new Map(), { applicationLifecycle }));
   assert.equal(appResult.status, 'failed');
-  assert.match(appResult.summary, /could not start the app server/);
+  assert.match(appResult.summary ?? '', /could not start the app server/);
 
   const backendLifecycle = createLifecycleCapability({ restartCmd: 'restart-backend', sleep,
     exec: () => { throw timedOut; } });
@@ -134,8 +156,8 @@ test('a generated app server timing out is an application failure, not a harness
 });
 
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
-  const calls = [];
-  const waits = [];
+  const calls: Array<readonly [string, readonly string[]]> = [];
+  const waits: number[] = [];
   const capability = createDatabaseWriteCapability({
     backend: 'postgres',
     dbName: 'bench',
@@ -145,11 +167,11 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
   const passed = await run({ do: 'dbSetStock', item: "Kid's Keyboard", warehouse: 'Main',
     quantity: 7, settleMs: 17 }, {
     ...services(new Map(), { databaseWrite: capability, clock: {
-      sleep: async ms => waits.push(ms),
+      sleep: async (ms: number) => { waits.push(ms); },
     } }),
   });
   assert.equal(passed.status, 'passed');
-  assert.match(calls[0][1].at(-1), /Kid''s Keyboard/);
+  assert.match(calls[0]?.[1].at(-1) ?? '', /Kid''s Keyboard/);
   assert.deepEqual(waits, [17]);
 
   const missed = createDatabaseWriteCapability({ backend: 'postgres', dbName: 'bench',
@@ -157,7 +179,7 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
   const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
   assert.equal(failed.status, 'failed');
-  assert.match(failed.summary, /was not updated/);
+  assert.match(failed.summary ?? '', /was not updated/);
 });
 
 test('database-write feedback preserves the actionable schema error ahead of terse process output', async () => {
@@ -171,12 +193,12 @@ test('database-write feedback preserves the actionable schema error ahead of ter
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
   assert.equal(result.status, 'failed');
-  assert.match(result.summary, /singular collections `item`, `warehouse`, and `stock`/);
-  assert.match(result.summary, /MISSING/);
+  assert.match(result.summary ?? '', /singular collections `item`, `warehouse`, and `stock`/);
+  assert.match(result.summary ?? '', /MISSING/);
 });
 
 test('direct database writes target the container selected by the run lease', async () => {
-  const calls = [];
+  const calls: Array<readonly [string, readonly string[]]> = [];
   const capability = createDatabaseWriteCapability({
     backend: 'mongodb',
     dbName: 'bench',
@@ -187,33 +209,33 @@ test('direct database writes target the container selected by the run lease', as
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
   assert.equal(result.status, 'passed');
-  assert.deepEqual(calls[0][1].slice(0, 2), ['exec', 'leased-mongodb']);
+  assert.deepEqual(calls[0]?.[1].slice(0, 2), ['exec', 'leased-mongodb']);
 });
 
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {
-  const offlineStates = [];
-  const waits = [];
+  const offlineStates: boolean[] = [];
+  const waits: number[] = [];
   let browserOnline = true;
   const actor = { page: {
     evaluate: async () => browserOnline,
     context: () => ({
-    setOffline: async value => {
+    setOffline: async (value: boolean) => {
       offlineStates.push(value);
       browserOnline = !value;
     },
   }) } };
   const capabilities = services(new Map([['a', actor]]), { browser: {
     clients: { open: async () => {}, fresh: async () => 'a-fresh' },
-    sleep: async ms => waits.push(ms),
+    sleep: async (ms: number) => { waits.push(ms); },
   } });
   const disconnected = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 10 },
     capabilities);
   const reconnected = await run({ do: 'setOffline', actor: 'a', offline: false, settleMs: 20 },
     capabilities);
   assert.equal(disconnected.status, 'passed');
-  assert.equal(disconnected.observation.browserOnline, false);
+  assert.equal(observation(disconnected).browserOnline, false);
   assert.equal(reconnected.status, 'passed');
-  assert.equal(reconnected.observation.browserOnline, true);
+  assert.equal(observation(reconnected).browserOnline, true);
   assert.deepEqual(offlineStates, [true, false]);
   assert.deepEqual(waits, [10, 20]);
 });
@@ -224,15 +246,17 @@ test('offline lifecycle fails closed when browser network state does not change'
   const result = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 1 },
     services(new Map([['a', actor]])));
   assert.equal(result.status, 'harness_failure');
-  assert.match(result.summary, /navigator\.onLine remained true/);
+  assert.match(result.summary ?? '', /navigator\.onLine remained true/);
 });
 
 test('client lifecycle delegates through the narrow browser capability', async () => {
-  const events = [];
+  const events: Event[] = [];
   const actor = { page: { close: async () => events.push('close') } };
   const capabilities = services(new Map([['a', actor]]), { browser: {
     clients: {
-      open: async (value, settleMs) => events.push(['open', value === actor, settleMs]),
+      open: async (value: unknown, settleMs: number) => {
+        events.push(['open', value === actor, settleMs]);
+      },
       fresh: async () => { events.push('fresh'); return 'a-fresh'; },
     },
     sleep,

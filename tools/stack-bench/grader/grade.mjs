@@ -52,7 +52,7 @@ import {
   createLifecycleCapability,
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-} from '../src/actions/lifecycle-concurrency-action-executors.mjs';
+} from '../src/actions/lifecycle-concurrency-action-executors.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WITHIN = 5000;

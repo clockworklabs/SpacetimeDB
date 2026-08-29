@@ -123,7 +123,10 @@ interface TransportCapability {
 }
 
 interface NamedActionParameter {
+  readonly in?: 'body' | 'path';
   readonly name: string;
+  readonly placeholder?: string;
+  readonly wireType?: string;
 }
 
 interface NamedAction {

@@ -13,7 +13,7 @@ import {
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { BROWSER_ACTION_IDS } from '../src/actions/browser-action-executors.js';
 import { ACTOR_TRANSPORT_ACTION_IDS } from '../src/actions/actor-transport-action-executors.js';
-import { LIFECYCLE_CONCURRENCY_ACTION_IDS } from '../src/actions/lifecycle-concurrency-action-executors.mjs';
+import { LIFECYCLE_CONCURRENCY_ACTION_IDS } from '../src/actions/lifecycle-concurrency-action-executors.js';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';
 
 function currentDefinitions() {
