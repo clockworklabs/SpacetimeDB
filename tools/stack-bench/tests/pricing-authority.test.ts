@@ -4,7 +4,7 @@ import test from 'node:test';
 import { CLAUDE_SONNET_RATES, claudeRatesForModel, priceClaudeUsage }
   from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_UNIT, validatePricingAuthority }
-  from '../src/evidence/pricing-authority.mjs';
+  from '../src/evidence/pricing-authority.js';
 
 test('the direct Sonnet 5 fallback uses the recorded five-rate schedule', () => {
   assert.deepEqual(CLAUDE_SONNET_RATES, {

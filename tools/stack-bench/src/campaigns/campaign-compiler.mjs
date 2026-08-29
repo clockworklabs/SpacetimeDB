@@ -8,7 +8,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/
 import { currentEngineIdentity } from '../evidence/artifacts.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
-  from '../evidence/pricing-authority.mjs';
+  from '../evidence/pricing-authority.js';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,

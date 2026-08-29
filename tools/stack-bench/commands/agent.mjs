@@ -37,7 +37,7 @@ import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_UNIT, validatePricingAuthority }
-  from '../src/evidence/pricing-authority.mjs';
+  from '../src/evidence/pricing-authority.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const REPO = resolve(ROOT, '..', '..');

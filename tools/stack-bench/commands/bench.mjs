@@ -70,7 +70,7 @@ import { gradingRunTimeoutMs, selectedGradingSourceCount }
   from '../src/runtime/grading-timeout.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_UNIT, validatePricingAuthority }
-  from '../src/evidence/pricing-authority.mjs';
+  from '../src/evidence/pricing-authority.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;

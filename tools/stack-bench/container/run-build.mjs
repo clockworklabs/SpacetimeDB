@@ -45,7 +45,7 @@ import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.mjs';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_UNIT, validatePricingAuthority }
-  from '../src/evidence/pricing-authority.mjs';
+  from '../src/evidence/pricing-authority.js';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };

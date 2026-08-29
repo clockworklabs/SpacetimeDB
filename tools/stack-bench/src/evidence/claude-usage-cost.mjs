@@ -1,4 +1,4 @@
-import { validatePricingRates } from './pricing-authority.mjs';
+import { validatePricingRates } from './pricing-authority.js';
 
 export const CLAUDE_SONNET_RATES = Object.freeze({
   input: 2.00,

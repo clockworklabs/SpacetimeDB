@@ -14,7 +14,7 @@ import { containerAuthSecret } from './container-auth.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.mjs';
 import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
-  from '../src/evidence/pricing-authority.mjs';
+  from '../src/evidence/pricing-authority.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const MAX_REQUESTS = 512;

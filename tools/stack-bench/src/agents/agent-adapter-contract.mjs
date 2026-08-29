@@ -1,5 +1,5 @@
 import { pricingRatesEqual, validatePricingAuthority }
-  from '../evidence/pricing-authority.mjs';
+  from '../evidence/pricing-authority.js';
 
 export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
 export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
