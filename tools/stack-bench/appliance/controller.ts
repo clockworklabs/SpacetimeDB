@@ -17,7 +17,7 @@ const COMMANDS = Object.freeze({
   'qualification': [join(RUNTIME_ROOT, 'commands', 'qualification-cli.mjs')],
   'pack-budget': [join(RUNTIME_ROOT, 'src', 'composition', 'pack-budget.mjs')],
   'campaign': [join(RUNTIME_ROOT, 'commands', 'campaign-cli.mjs')],
-  'dashboard': [join(RUNTIME_ROOT, 'dashboard', 'dashboard-server.mjs')],
+  'dashboard': [join(RUNTIME_ROOT, 'dashboard', 'dashboard-server.js')],
   'repair': [join(RUNTIME_ROOT, 'commands', 'repair-cli.js')],
   'run': [join(RUNTIME_ROOT, 'commands', 'bench.mjs')],
   'verify-release': [join(RUNTIME_ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],

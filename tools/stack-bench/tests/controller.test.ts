@@ -51,7 +51,7 @@ test('controller exposes a small explicit operator command surface', () => {
   assert.deepEqual(campaignRun.args.slice(1), ['run', '/plans/campaign.json',
     '--out', '/results/campaign-001']);
   const dashboard = command(['dashboard', '--port', '7331']);
-  assert.match(dashboard.args[0] ?? '', /dashboard[\\/]dashboard-server\.mjs$/);
+  assert.match(dashboard.args[0] ?? '', /dashboard[\\/]dashboard-server\.js$/);
   assert.deepEqual(dashboard.args.slice(1), ['--port', '7331']);
   assert.match(command(['qualify-reference']).args[0] ?? '', /reference-live\.mjs$/);
   assert.match(command(['qualify-null']).args[0] ?? '', /null-control\.mjs$/);

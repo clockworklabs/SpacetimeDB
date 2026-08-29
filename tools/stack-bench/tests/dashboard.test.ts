@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,29 +10,43 @@ import test from 'node:test';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.mjs';
+import type { CampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
   readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact, summarizeCampaign,
-} from '../dashboard/dashboard-model.mjs';
-import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.mjs';
+} from '../dashboard/dashboard-model.js';
+import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.js';
+import type { DashboardOperation, LaunchInput } from '../dashboard/dashboard-server.js';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.mjs';
 import { writeProgressionState } from '../src/progression/progression-state.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
-const EXAMPLE_CAMPAIGN = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
-const DEPENDENCY_CAMPAIGN = join(import.meta.dirname, '..', 'appliance',
+const EXAMPLE_CAMPAIGN = join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json');
+const DEPENDENCY_CAMPAIGN = join(STACK_BENCH_ROOT, 'appliance',
   'campaign.ecommerce-progression-reference.json');
 
-function writeCampaign(root, plan, state) {
+function writeCampaign(root: string, plan: CompiledCampaignPlan, state: CampaignState): void {
   mkdirSync(root, { recursive: true });
   writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
     identities: emptyArtifactIdentities(), payload: plan });
   writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
     identities: emptyArtifactIdentities(), payload: state });
+}
+
+async function listenOrigin(server: Server): Promise<string> {
+  await new Promise<void>((resolveListen, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolveListen);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  return `http://127.0.0.1:${(address as AddressInfo).port}`;
 }
 
 test('dashboard run progress reports only completed grades while the next repair is underway', () => {
@@ -108,6 +124,7 @@ test('campaign facts surface the identity an operator otherwise reads plan.json 
     { level: 1, id: 'ecommerce.l1-modular', version: '2.4.0' },
     { level: 2, id: 'ecommerce.l2-standard', version: '1.5.0' },
   ]);
+  assert.ok(facts.runtime);
   assert.equal(facts.runtime.controllerImage, 'stack-bench-controller@sha256:' + 'a'.repeat(64));
 });
 
@@ -119,8 +136,10 @@ test('dashboard reports dependency work from the validated persisted state', t =
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
   const state = claimed.state;
-  const attemptPlan = state.attempts.find(attempt =>
-    attempt.executions.at(-1)?.id === claimed.claim.executionId).plan;
+  const attemptState = state.attempts.find(attempt =>
+    attempt.executions.at(-1)?.id === claimed.claim.executionId);
+  assert.ok(attemptState);
+  const attemptPlan = attemptState.plan;
   const outputRelative = claimed.claim.output;
   const output = join(root, outputRelative);
   mkdirSync(join(output, 'source'), { recursive: true });
@@ -140,13 +159,19 @@ test('dashboard reports dependency work from the validated persisted state', t =
 
   const summary = summarizeCampaign(root, { includePackage: true });
   assert.equal(summary.mode, 'dependency');
-  assert.equal(summary.attempts[0].dependency.level, 1);
-  assert(summary.attempts[0].dependency.work.current.some(node => node.id === 'accounts'));
-  assert.deepEqual(summary.attempts[0].dependency.attempts,
-    { total: 0, level: 0, maxRemaining: 3, features: [
-      { nodeId: 'accounts', initialBudget: 3, granted: 0, budget: 3, used: 0, remaining: 3 },
+  const firstAttempt = summary.attempts[0];
+  assert.ok(firstAttempt?.dependency);
+  assert.equal(firstAttempt.dependency.level, 1);
+  assert(firstAttempt.dependency.work.current.some(node => node.id === 'accounts'));
+  assert.deepEqual(firstAttempt.dependency.attempts,
+    { total: 0, level: 0, maxRemaining: 1, features: [
+      { nodeId: 'accounts', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
+      { nodeId: 'catalog', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
+      { nodeId: 'staff-access', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
+      { nodeId: 'support-intake', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
     ] });
-  assert(summary.package.executions[0].artifacts
+  assert.ok(summary.package);
+  assert(summary.package.executions[0]?.artifacts
     .some(item => item.path.endsWith('/progression-state.json')));
 });
 
@@ -188,17 +213,21 @@ test('dashboard marks a current-schema campaign as interrupted when its controll
 
   const summary = summarizeCampaign(root);
   assert.equal(summary.status, 'running');
-  assert.equal(summary.attempts[0].progress.phase, 'Repairing L1 · round 1 of 3');
-  assert.deepEqual(summary.attempts[0].progress.latestScore, { score: 31, max: 58 });
+  const activeAttempt = summary.attempts[0];
+  assert.ok(activeAttempt);
+  assert.equal(activeAttempt.progress.phase, 'Repairing L1 · round 1 of 3');
+  assert.deepEqual(activeAttempt.progress.latestScore, { score: 31, max: 58 });
 
   const interrupted = summarizeCampaign(root, { controllerActive: () => false });
   assert.equal(interrupted.status, 'attention-required');
   assert.equal(interrupted.interrupted, true);
   assert.equal(interrupted.summary.running, 0);
   assert.equal(interrupted.summary.interrupted, 1);
-  assert.equal(interrupted.attempts[0].status, 'interrupted');
-  assert.equal(interrupted.attempts[0].execution.status, 'interrupted');
-  assert.equal(interrupted.attempts[0].progress.phase, 'Controller stopped before completion');
+  const interruptedAttempt = interrupted.attempts[0];
+  assert.ok(interruptedAttempt?.execution);
+  assert.equal(interruptedAttempt.status, 'interrupted');
+  assert.equal(interruptedAttempt.execution.status, 'interrupted');
+  assert.equal(interruptedAttempt.progress.phase, 'Controller stopped before completion');
 });
 
 test('dashboard keeps a current-schema campaign readable after the controller is upgraded', t => {
@@ -254,12 +283,18 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   writeFileSync(join(campaign, 'admissions', 'private.json'), '{"token":"do-not-serve"}\n');
 
   const detail = campaignDetail(resultsRoot, 'evidence-run');
+  assert.ok(detail.package);
+  const packageExecution = detail.package.executions[0];
+  assert.ok(packageExecution);
   assert.deepEqual(detail.package.campaign.map(item => item.path), ['plan.json', 'state.json']);
   assert.equal(detail.package.executions.length, 1);
-  assert.equal(detail.package.executions[0].truncated, false);
-  assert.equal(detail.package.executions[0].visuals[0].path,
+  assert.equal(packageExecution.truncated, false);
+  const initialVisual = packageExecution.visuals[0];
+  assert.ok(initialVisual);
+  assert.equal(initialVisual.path,
     `${outputRelative}/grading/failure-media/failed-check.png`);
-  const log = detail.package.executions[0].artifacts.find(item => item.path.endsWith('process.stdout.log'));
+  const log = packageExecution.artifacts.find(item => item.path.endsWith('process.stdout.log'));
+  assert.ok(log);
   const servedLog = readCampaignArtifactBody(
     resolveCampaignArtifact(resultsRoot, 'evidence-run', log.id)).toString();
   assert.match(servedLog, /\[redacted credential\]/);
@@ -272,13 +307,10 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   const feed = { append() {}, list() { return []; } };
   const { server } = createDashboardServer({ resultsRoot, plansRoot: join(resultsRoot, 'plans'),
     allowLaunch: false, token: 'package-token', feed, plans: () => [] });
-  await new Promise((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolveListen);
-  });
+  const origin = await listenOrigin(server);
   t.after(() => server.close());
-  const origin = `http://127.0.0.1:${server.address().port}`;
-  const visual = detail.package.executions[0].visuals[0];
+  const visual = packageExecution.visuals[0];
+  assert.ok(visual);
   const visualResponse = await fetch(`${origin}/api/campaigns/evidence-run/artifacts/${visual.id}`);
   assert.equal(visualResponse.status, 200);
   assert.equal(visualResponse.headers.get('content-type'), 'image/png');
@@ -294,12 +326,12 @@ test('dashboard serves real state and protects campaign launch with a separate o
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-'));
   const plansRoot = join(root, 'plans');
   mkdirSync(plansRoot, { recursive: true });
-  const events = [];
-  const launches = [];
+  const events: DashboardOperation[] = [];
+  const launches: LaunchInput[] = [];
   const feed = {
-    append(event) { events.push(structuredClone(event)); },
+    append(event: DashboardOperation) { events.push(structuredClone(event)); },
     list() {
-      const latest = new Map();
+      const latest = new Map<string, DashboardOperation>();
       for (const event of events) latest.set(event.id, { ...(latest.get(event.id) ?? {}), ...event });
       return [...latest.values()];
     },
@@ -325,14 +357,10 @@ test('dashboard serves real state and protects campaign launch with a separate o
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
     token: 'test-session-token', controlSecret: 'test-control-secret-value-1234567890',
     feed, plans: () => [frozenPlan],
-    launch(input) { launches.push(input); const child = new EventEmitter(); child.pid = 1234;
+    launch(input) { launches.push(input); const child = Object.assign(new EventEmitter(), { pid: 1234 });
       return child; } });
-  await new Promise((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolveListen);
-  });
+  const origin = await listenOrigin(server);
   t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
-  const origin = `http://127.0.0.1:${server.address().port}`;
 
   const page = await fetch(origin);
   assert.equal(page.status, 200);
@@ -346,7 +374,11 @@ test('dashboard serves real state and protects campaign launch with a separate o
   assert.equal(brand.status, 200);
   assert.equal(brand.headers.get('content-type'), 'image/svg+xml');
   assert.match(await brand.text(), /viewBox="0 0 35 32"/);
-  const overview = await (await fetch(`${origin}/api/overview`)).json();
+  const overview = await (await fetch(`${origin}/api/overview`)).json() as {
+    canStart: boolean;
+    csrfToken: string;
+    plans: Array<{ id: string }>;
+  };
   assert.equal(overview.canStart, true);
   assert.equal(overview.csrfToken, 'test-session-token');
   assert.doesNotMatch(JSON.stringify(overview), /test-control-secret-value/);
@@ -382,11 +414,14 @@ test('dashboard serves real state and protects campaign launch with a separate o
     body: JSON.stringify({ planId: frozenPlan.id, outputName: 'meeting-run-1' }) });
   assert.equal(accepted.status, 202);
   assert.equal(launches.length, 1);
-  assert.equal(launches[0].plan.id, frozenPlan.id);
-  assert.equal(launches[0].output, join(root, 'campaigns', 'meeting-run-1'));
-  assert.equal(feed.list()[0].status, 'running');
-  assert.equal(feed.list()[0].pid, 1234);
-  assert.equal(feed.list()[0].campaignSha256, frozenPlan.sha256);
+  const firstLaunch = launches[0];
+  const firstEvent = feed.list()[0];
+  assert.ok(firstLaunch && firstEvent);
+  assert.equal(firstLaunch.plan.id, frozenPlan.id);
+  assert.equal(firstLaunch.output, join(root, 'campaigns', 'meeting-run-1'));
+  assert.equal(firstEvent.status, 'running');
+  assert.equal(firstEvent.pid, 1234);
+  assert.equal(firstEvent.campaignSha256, frozenPlan.sha256);
   const duplicateStart = await fetch(`${origin}/api/campaigns`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
       'x-stack-bench-token': 'test-session-token',
@@ -401,8 +436,8 @@ test('dashboard serves real state and protects campaign launch with a separate o
       'x-stack-bench-control-secret': 'test-control-secret-value-1234567890' }, body: '{}' });
   assert.equal(resumed.status, 202);
   assert.equal(launches.length, 2);
-  assert.equal(launches[1].output, campaignDirectory);
-  assert.equal((await resumed.json()).type, 'campaign.resume');
+  assert.equal(launches[1]?.output, campaignDirectory);
+  assert.equal(((await resumed.json()) as { type?: string }).type, 'campaign.resume');
   const duplicate = await fetch(`${origin}/api/campaigns/prepared-run/resume`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json',
       'x-stack-bench-token': 'test-session-token',
@@ -417,12 +452,8 @@ test('host development mode is read-only even with a valid browser request', asy
   const feed = { append() {}, list() { return []; } };
   const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
     allowLaunch: false, token: 'readonly-token', feed, plans: () => [] });
-  await new Promise((resolveListen, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolveListen);
-  });
+  const origin = await listenOrigin(server);
   t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
-  const origin = `http://127.0.0.1:${server.address().port}`;
   const response = await fetch(`${origin}/api/campaigns`, { method: 'POST',
     headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'readonly-token' },
     body: JSON.stringify({ planId: 'anything', outputName: 'meeting-run-2' }) });

@@ -22,4 +22,19 @@ function copyModules(directory: string): void {
   }
 }
 
+function copyDirectory(directory: string): void {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const source = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectory(source);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const target = join(output, relative(root, source));
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(source, target);
+  }
+}
+
 for (const directory of sourceDirectories) copyModules(join(root, directory));
+copyDirectory(join(root, 'dashboard', 'public'));
