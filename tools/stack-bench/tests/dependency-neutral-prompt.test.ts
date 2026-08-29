@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
+import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
@@ -13,7 +14,9 @@ import { agentVisibleContractText } from '../src/composition/agent-visible-contr
 
 const AGENT = new URL('../commands/agent.mjs', import.meta.url).pathname
   .replace(/^\/(?:[A-Za-z]:)/, value => value.slice(1));
-const STACKS = ['mongodb', 'postgres', 'spacetime'];
+const STACKS = ['mongodb', 'postgres', 'spacetime'] as const;
+type Stack = typeof STACKS[number];
+type Level = 1 | 2 | 3;
 const EXPECTED = {
   1: {
     mongodb: ['590f69da54ab3904c6c1588bc3e8eb0eb9d4ea5f81f68b8eef2eb522c3dde162', 3659],
@@ -30,14 +33,23 @@ const EXPECTED = {
     postgres: ['5766e1a30058b0f97562e4ec9047c343c1b5ecd23f787d085dbd684c07a84d2d', 9533],
     spacetime: ['aaa2831aa10f323c6f1073692180e2327c1f5ecc5b656af70e33f0e568abe51a', 31278],
   },
-};
+} satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
 test('agent contract cleanup changes only complete evaluation phrases', () => {
   assert.equal(agentVisibleContractText('Use this test action. Keep the contest action.'),
     'Use this application action. Keep the contest action.');
 });
 
-function renderPrompt({ level, stack, task, guidance }) {
+function renderPrompt({ level, stack, task, guidance }: {
+  level: Level;
+  stack: Stack;
+  task: unknown;
+  guidance: ResolvedGuidanceProfile;
+}): string {
+  const document = guidance.documents[stack];
+  const skills = guidance.skills[stack];
+  assert.notEqual(document, undefined);
+  assert.ok(skills);
   return execFileSync(process.execPath, [AGENT,
     '--mode', level === 1 ? 'build' : 'upgrade',
     '--backend', stack,
@@ -46,9 +58,9 @@ function renderPrompt({ level, stack, task, guidance }) {
     '--run-index', '0',
     '--app', '/prompt-review/app',
     '--guidance', 'neutral',
-    '--guidance-document-json', JSON.stringify(guidance.documents[stack]),
+    '--guidance-document-json', JSON.stringify(document),
     '--credential-aliases-json', JSON.stringify(guidance.credentialAliases),
-    '--skills-json', JSON.stringify(guidance.skills[stack].ids),
+    '--skills-json', JSON.stringify(skills.ids),
     '--recipe-task-json', JSON.stringify(task),
     '--print-prompt',
   ], {
@@ -64,7 +76,7 @@ test('neutral dependency prompts through L3 are exact, symmetric software reques
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('ecommerce.questlines@1.1.0', track);
   const guidance = resolveGuidanceProfile('neutral@1.2.0', STACKS);
-  for (const level of [1, 2, 3]) {
+  for (const level of [1, 2, 3] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-l1-l3@1.1.0');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
       { cumulative: true });
