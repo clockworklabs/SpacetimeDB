@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyseNullReports } from '../src/evidence/null-control-analysis.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
+import {
+  createCheckEvidence,
+  type CheckEvidenceStatus,
+} from '../src/evidence/check-evidence.mjs';
 
-const criterion = (id, points, status, phase = 'assertion', summary = null) => ({
+const criterion = (
+  id: string,
+  points: number,
+  status: CheckEvidenceStatus,
+  phase: 'setup' | 'assertion' = 'assertion',
+  summary: string | null = null,
+) => ({
   id, points, evidence: createCheckEvidence({ status,
     code: status === 'passed' ? 'completed' : 'test_result', phase, summary,
     startedAtMs: 1, completedAtMs: 2 }),
@@ -59,6 +68,6 @@ test('typed null analysis gets failure phase from evidence, not detail wording',
     report: { features: [{ id: 1, criteria: [
       { id: 'a', points: 1, evidence },
     ] }] } }]);
-  assert.equal(result.criteria[0].failureStage, 'setup');
+  assert.equal(result.criteria[0]?.failureStage, 'setup');
   assert.equal(result.ok, true);
 });
