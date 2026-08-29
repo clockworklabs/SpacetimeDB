@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { ACTION_REGISTRY, legacyActionPlugin } from '../src/actions/action-catalog.mjs';
@@ -13,17 +13,41 @@ import {
   createActionRegistry,
   createActionRunContext,
   executeAction,
-} from '../src/actions/action-contract.mjs';
+} from '../src/actions/action-contract.js';
+import type {
+  ActionExecutionArguments,
+  ActionImplementation,
+  ActionPlugin,
+} from '../src/actions/action-contract.js';
 import { ACTION_IDS } from '../src/composition/definition-compiler.mjs';
 
-const fixture = JSON.parse(readFileSync(
-  join(import.meta.dirname, 'fixtures', 'definitions', 'all-actions.json'), 'utf8'));
+interface FixtureStep {
+  do: string;
+  branches?: FixtureStep[][];
+}
 
-function steps(value) {
-  const out = [];
-  const visit = step => {
+interface FixtureCriterion {
+  steps: FixtureStep[];
+}
+
+interface FixtureFeature {
+  setup: FixtureStep[];
+  criteria: FixtureCriterion[];
+}
+
+interface FixtureDefinition {
+  features: FixtureFeature[];
+}
+
+const fixture = JSON.parse(readFileSync(
+  join(resolve(import.meta.dirname, '..', '..'), 'tests', 'fixtures', 'definitions', 'all-actions.json'),
+  'utf8')) as FixtureDefinition;
+
+function steps(value: FixtureDefinition): FixtureStep[] {
+  const out: FixtureStep[] = [];
+  const visit = (step: FixtureStep): void => {
     out.push(step);
-    if (step.do === 'race') step.branches.flat().forEach(visit);
+    if (step.do === 'race') (step.branches ?? []).flat().forEach(visit);
   };
   for (const feature of value.features) {
     [...feature.setup, ...feature.criteria.flatMap(criterion => criterion.steps)].forEach(visit);
@@ -31,28 +55,33 @@ function steps(value) {
   return out;
 }
 
-function plugin(overrides = {}) {
+function plugin(overrides: Partial<ActionPlugin> = {}): ActionPlugin {
   return {
     schemaVersion: ACTION_PLUGIN_SCHEMA_VERSION,
     id: 'fakeAction', version: '1.0.0',
     input: { schemaVersion: ACTION_INPUT_SCHEMA_VERSION,
-      compile: input => {
-        if (input?.do !== 'fakeAction') throw new Error('wrong fake input');
+      compile: (input: unknown) => {
+        if (typeof input !== 'object' || input === null || !('do' in input)
+          || input.do !== 'fakeAction') throw new Error('wrong fake input');
         return structuredClone(input);
       } },
     capabilities: ['clock'],
     deadline: { timeoutMs: 250 },
     evidence: { schemaVersion: ACTION_EVIDENCE_SCHEMA_VERSION, type: 'fake-evidence',
-      validate: value => value?.ok === true },
+      validate: (value: unknown) => typeof value === 'object' && value !== null
+        && 'ok' in value && value.ok === true },
     redaction: { sensitivity: ['public'], fields: [] },
     renderer: { label: 'fake action', category: 'test' },
-    execute: ({ input, capabilities, signal, implementation, attempt }) =>
+    execute: ({ input, capabilities, signal, implementation, attempt }: ActionExecutionArguments) =>
       implementation({ input, capabilities, signal, attempt }),
     ...overrides,
   };
 }
 
-function context(implementation, overrides = {}) {
+function context(
+  implementation: ActionImplementation,
+  overrides: Record<string, unknown> = {},
+) {
   return createActionRunContext({ capabilities: { clock: {}, hidden: 'must not leak' },
     implementations: { fakeAction: implementation }, attempt: { id: 'attempt-a' }, ...overrides });
 }
@@ -90,6 +119,7 @@ test('a successful action sees only declared capabilities and returns structured
   const result = await executeAction(registry, 'fakeAction', { do: 'fakeAction' },
     context(({ capabilities, attempt }) => {
       assert.deepEqual(Object.keys(capabilities), ['clock']);
+      assert.ok(attempt);
       assert.equal(attempt.id, 'attempt-a');
       return { ok: true, value: 7 };
     }));
@@ -104,7 +134,7 @@ test('action evidence remains coherent if an injected wall clock moves backward'
   const registry = createActionRegistry([plugin()]);
   const ticks = [100, 95];
   const result = await executeAction(registry, 'fakeAction', { do: 'fakeAction' },
-    context(() => ({ ok: true })), { now: () => ticks.shift() });
+    context(() => ({ ok: true })), { now: () => ticks.shift() ?? 0 });
   assert.deepEqual(result.timing, {
     startedAtMs: 100,
     completedAtMs: 100,
@@ -129,7 +159,7 @@ test('application failure and inconclusive results stay distinct', async () => {
 
 test('deadline, cancellation, and unclassified exceptions are fail-closed evidence', async () => {
   const quick = createActionRegistry([plugin({ deadline: { timeoutMs: 20 } })]);
-  const never = ({ signal }) => new Promise((_resolve, reject) =>
+  const never: ActionImplementation = ({ signal }) => new Promise((_resolve, reject) =>
     signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
   const timedOut = await executeAction(quick, 'fakeAction', { do: 'fakeAction' }, context(never));
   assert.equal(timedOut.status, 'harness_failure');
@@ -164,7 +194,7 @@ test('invalid input, missing services, and malformed observations never become p
     context(() => ({ ok: false })));
   assert.equal(malformed.code, 'invalid_evidence');
   assert.equal(malformed.status, 'harness_failure');
-  const cyclic = { ok: true };
+  const cyclic: { ok: boolean; self?: unknown } = { ok: true };
   cyclic.self = cyclic;
   const nonSerializable = await executeAction(registry, 'fakeAction', { do: 'fakeAction' },
     context(() => cyclic));

@@ -4,7 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import {
   ActionApplicationFailure,
   ActionInconclusive,
-} from './action-contract.mjs';
+} from './action-contract.js';
 import { browserApplicationBoundary } from './browser-action-executors.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';

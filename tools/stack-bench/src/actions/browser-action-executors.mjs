@@ -1,4 +1,4 @@
-import { ActionApplicationFailure } from './action-contract.mjs';
+import { ActionApplicationFailure } from './action-contract.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.mjs';
 import { harnessBrowserFailure } from '../evidence/harness-errors.mjs';
 

@@ -30,14 +30,14 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.mjs';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.mjs';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
-import { stableElementSelector } from '../src/actions/element-selector.mjs';
+import { stableElementSelector } from '../src/actions/element-selector.js';
 import {
   BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,

@@ -3,7 +3,7 @@ import {
   ACTION_INPUT_SCHEMA_VERSION,
   ACTION_PLUGIN_SCHEMA_VERSION,
   createActionRegistry,
-} from './action-contract.mjs';
+} from './action-contract.js';
 import { ACTION_IDS, compileActionInput } from '../composition/definition-compiler.mjs';
 
 const OBSERVATIONS = new Set([

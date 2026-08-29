@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { ActionApplicationFailure, ActionInconclusive } from './action-contract.mjs';
+import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
 import { evidenceDisposition } from '../evidence/check-evidence.mjs';
 import { replayHeaders } from './actor-transport-action-executors.mjs';
 import { browserApplicationBoundary } from './browser-action-executors.mjs';

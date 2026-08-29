@@ -14,7 +14,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
-import { stableElementSelector } from '../src/actions/element-selector.mjs';
+import { stableElementSelector } from '../src/actions/element-selector.js';
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK_TIMEOUT = 5000;
