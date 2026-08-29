@@ -9,7 +9,7 @@ import { mutationFileEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
-  selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
+  selectReferenceFixture } from '../dist/src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

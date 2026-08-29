@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileRecipeFile } from '../src/composition/composition-compiler.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { compileRecipeFile } from '../dist/src/composition/composition-compiler.js';
+import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
-import { TRACKS_DIR } from '../src/composition/tracks.js';
+import { selectScenarioChecks } from '../dist/src/composition/recipe-selection.js';
+import { TRACKS_DIR } from '../dist/src/composition/tracks.js';
 
 const root = join(TRACKS_DIR, 'ecommerce');
 const recipe = version => join(root, 'composition', 'recipes', `l1-modular-${version}.json`);

@@ -8,7 +8,7 @@ import ts from 'typescript';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { mutationFileEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
-import { prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
+import { prepareReferenceFixtureSource } from '../dist/src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

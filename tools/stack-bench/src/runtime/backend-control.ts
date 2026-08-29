@@ -4,7 +4,7 @@ import { leaseFromEnv } from './backend-lease.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 
-export { hostedStopScript } from '../stacks/stack-lifecycle-operations.mjs';
+export { hostedStopScript } from '../stacks/stack-lifecycle-operations.js';
 
 interface BackendControlSpec extends Record<string, unknown> {
   backend: string;

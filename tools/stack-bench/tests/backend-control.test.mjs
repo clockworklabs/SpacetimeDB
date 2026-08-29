@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../dist/src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../dist/src/runtime/backend-lease.js';
-import { controlHosted } from '../dist/src/stacks/stack-lifecycle-operations.mjs';
+import { controlHosted } from '../dist/src/stacks/stack-lifecycle-operations.js';
 
 test('backend control refuses without an authenticated lease', async () => {
   const priorPath = process.env.STACK_BENCH_LEASE;

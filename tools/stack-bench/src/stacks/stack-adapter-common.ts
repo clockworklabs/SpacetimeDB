@@ -1,7 +1,7 @@
 import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
   STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
 import type { StackAdapter, StackCapability, StackOperationHandler } from './stack-adapter-contract.js';
-import { controlHosted } from './stack-lifecycle-operations.mjs';
+import { controlHosted } from './stack-lifecycle-operations.js';
 
 type AdapterId = keyof typeof PORT_BASES;
 type OperationMap = Readonly<Record<string, StackOperationHandler>>;
@@ -105,8 +105,14 @@ export function controlHostedFor(adapter: StackAdapter, input: unknown): unknown
   if (networkMode !== null && networkMode !== undefined && typeof networkMode !== 'string') {
     throw new Error('hosted backend control network mode must be a string or null');
   }
-  return controlHosted({ ...request, environment: leasedDatabaseEnvironment(adapter, {
-    database,
-    networkMode,
-  }) });
+  return controlHosted({
+    adapterId: request.adapterId,
+    app: request.app,
+    port: request.port,
+    probe: request.probe,
+    mode: request.mode,
+    signal: request.signal,
+    lease: { resources },
+    environment: leasedDatabaseEnvironment(adapter, { database, networkMode }),
+  });
 }

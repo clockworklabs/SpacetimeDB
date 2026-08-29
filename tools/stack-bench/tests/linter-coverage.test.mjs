@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { completeAbortedHooks, completeUnvisitedHooks, selectHooks } from '../linter/lint.mjs';
-import { stableElementSelector } from '../src/actions/element-selector.mjs';
+import { completeAbortedHooks, completeUnvisitedHooks, selectHooks } from '../dist/linter/lint.mjs';
+import { stableElementSelector } from '../dist/src/actions/element-selector.js';
 
 test('stable element selectors support ordinary ids and existing test ids', () => {
   assert.equal(stableElementSelector('account-name'),

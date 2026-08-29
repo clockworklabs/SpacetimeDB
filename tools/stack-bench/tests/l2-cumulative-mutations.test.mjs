@@ -7,7 +7,7 @@ import ts from 'typescript';
 
 import { mutationEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
-import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../dist/src/references/reference-fixtures.mjs';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 
 const ROOT = join(import.meta.dirname, '..');

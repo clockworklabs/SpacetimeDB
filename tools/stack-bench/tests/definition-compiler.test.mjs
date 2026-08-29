@@ -9,13 +9,13 @@ import {
   DEFINITION_SCHEMA_VERSION,
   compileScenarioDefinition,
   compileTrackManifest,
-} from '../src/composition/definition-compiler.js';
+} from '../dist/src/composition/definition-compiler.js';
 import { ACTION_REGISTRY } from '../dist/src/actions/action-catalog.js';
 import { BROWSER_ACTION_IDS } from '../dist/src/actions/browser-action-executors.js';
 import { ACTOR_TRANSPORT_ACTION_IDS } from '../dist/src/actions/actor-transport-action-executors.js';
 import { LIFECYCLE_CONCURRENCY_ACTION_IDS }
   from '../dist/src/actions/lifecycle-concurrency-action-executors.js';
-import { TRACKS_DIR } from '../src/composition/tracks.js';
+import { TRACKS_DIR } from '../dist/src/composition/tracks.js';
 
 function currentDefinitions() {
   const definitions = [];
@@ -89,7 +89,7 @@ test('the scenario language is an explicit 51-action registry', () => {
 });
 
 test('the extracted executor modules cover every action exactly once', () => {
-  const grader = readFileSync(join(TRACKS_DIR, '..', 'grader', 'grade.mjs'), 'utf8');
+  const grader = readFileSync(join(TRACKS_DIR, '..', 'dist', 'grader', 'grade.mjs'), 'utf8');
   const runtime = grader.slice(grader.indexOf('async function runStep('),
     grader.indexOf('// ─── Feature grading'));
   const legacyOccurrences = [
@@ -216,7 +216,7 @@ test('the live grader rejects malformed definitions before launching a browser',
     writeFileSync(spec, JSON.stringify(scenario(
       { do: 'wait', actor: 'a', ms: 1, miliseconds: 1 })));
     assert.throws(() => execFileSync(process.execPath,
-      [join(TRACKS_DIR, '..', 'grader', 'grade.mjs'), '--url', 'http://127.0.0.1:1',
+      [join(TRACKS_DIR, '..', 'dist', 'grader', 'grade.mjs'), '--url', 'http://127.0.0.1:1',
         '--level', '1', '--spec', spec], { encoding: 'utf8', stdio: 'pipe', timeout: 10_000 }),
     error => {
       assert.match(`${error.stdout ?? ''}${error.stderr ?? ''}`, /miliseconds: unknown field/);

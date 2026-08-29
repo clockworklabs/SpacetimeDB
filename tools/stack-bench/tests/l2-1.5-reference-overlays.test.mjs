@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { loadReferenceRegistry, prepareReferenceFixtureSource, selectReferenceFixture }
-  from '../src/references/reference-fixtures.mjs';
+  from '../dist/src/references/reference-fixtures.mjs';
 
 const recipe = 'ecommerce.l2-standard@1.5.0';
 const expected = new Map([

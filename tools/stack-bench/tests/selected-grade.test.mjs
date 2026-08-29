@@ -7,10 +7,10 @@ import test from 'node:test';
 
 import { readArtifactPayload } from '../dist/src/evidence/artifacts.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { resolveRecipeSelection } from '../src/composition/recipe-selection.js';
-import { loadTrack } from '../src/composition/tracks.js';
+import { resolveRecipeSelection } from '../dist/src/composition/recipe-selection.js';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 
-const GRADER = join(import.meta.dirname, '..', 'grader', 'grade.mjs');
+const GRADER = join(import.meta.dirname, '..', 'dist', 'grader', 'grade.mjs');
 
 function startBlankApp(html = '<!doctype html><html><body></body></html>') {
   const source = `

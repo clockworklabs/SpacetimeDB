@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compilePackDefinition } from '../src/composition/composition-compiler.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { compilePackDefinition } from '../dist/src/composition/composition-compiler.js';
+import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.js';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'));

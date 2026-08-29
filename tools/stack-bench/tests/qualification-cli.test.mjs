@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { mutationWorkerCount, parseQualificationArgs, qualificationReadiness }
-  from '../commands/qualification-cli.mjs';
+  from '../dist/commands/qualification-cli.mjs';
 
 function assertQualificationIsCurrent(status) {
   assert.equal(status.promotion.ready, true);

@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
-import { compilePackDefinition, compileRecipeFile } from '../src/composition/composition-compiler.js';
-import { loadTrack } from '../src/composition/tracks.js';
+import { compilePackDefinition, compileRecipeFile } from '../dist/src/composition/composition-compiler.js';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.js';
 import { compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,
   dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';

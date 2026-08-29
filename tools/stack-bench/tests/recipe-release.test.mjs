@@ -373,7 +373,7 @@ test('promoting a cumulative recipe cannot drop checks retained from earlier rel
 });
 
 test('the grader rejects parent/child recipe drift before launching a browser', () => {
-  const grader = join(import.meta.dirname, '..', 'grader', 'grade.mjs');
+  const grader = join(import.meta.dirname, '..', 'dist', 'grader', 'grade.mjs');
   const result = spawnSync(process.execPath, [grader,
     '--url', 'http://127.0.0.1:1',
     '--level', '1',
@@ -387,7 +387,7 @@ test('the grader rejects parent/child recipe drift before launching a browser', 
 });
 
 test('the grader rejects a stale selected check before launching a browser', () => {
-  const grader = join(import.meta.dirname, '..', 'grader', 'grade.mjs');
+  const grader = join(import.meta.dirname, '..', 'dist', 'grader', 'grade.mjs');
   const result = spawnSync(process.execPath, [grader,
     '--url', 'http://127.0.0.1:1',
     '--level', '1',

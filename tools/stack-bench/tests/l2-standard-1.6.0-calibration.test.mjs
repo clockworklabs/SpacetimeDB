@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { qualificationReadiness } from '../commands/qualification-cli.mjs';
+import { qualificationReadiness } from '../dist/commands/qualification-cli.mjs';
 import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.js';
-import { compilePromotionFile } from '../src/composition/composition-compiler.js';
+import { compilePromotionFile } from '../dist/src/composition/composition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
+import { loadReferenceRegistry, validateReferenceRegistry } from '../dist/src/references/reference-fixtures.mjs';
 
 const BENCH = join(import.meta.dirname, '..');
 const TRACK_ROOT = join(BENCH, 'tracks', 'ecommerce');

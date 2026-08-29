@@ -9,7 +9,7 @@ import test from 'node:test';
 import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { campaignUsesNoExternalResources, runCampaignAdmission }
   from '../dist/src/campaigns/campaign-runner.js';
-import { loadTrack } from '../src/composition/tracks.js';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { readCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
 import { readArtifact } from '../dist/src/evidence/artifacts.js';

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileRecipeFile } from '../src/composition/composition-compiler.js';
+import { compileRecipeFile } from '../dist/src/composition/composition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 
 const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
