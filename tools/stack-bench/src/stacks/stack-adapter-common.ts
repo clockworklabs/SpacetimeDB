@@ -2,6 +2,9 @@ import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
   STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
 import type { StackAdapter, StackCapability, StackOperationHandler } from './stack-adapter-contract.js';
 import { controlHosted } from './stack-lifecycle-operations.js';
+import type { execFileSync } from 'node:child_process';
+
+type Exec = typeof execFileSync;
 
 type AdapterId = keyof typeof PORT_BASES;
 type OperationMap = Readonly<Record<string, StackOperationHandler>>;
@@ -105,6 +108,7 @@ export function controlHostedFor(adapter: StackAdapter, input: unknown): unknown
   if (networkMode !== null && networkMode !== undefined && typeof networkMode !== 'string') {
     throw new Error('hosted backend control network mode must be a string or null');
   }
+  const exec = request.exec;
   return controlHosted({
     adapterId: request.adapterId,
     app: request.app,
@@ -112,6 +116,9 @@ export function controlHostedFor(adapter: StackAdapter, input: unknown): unknown
     probe: request.probe,
     mode: request.mode,
     signal: request.signal,
+    // Tests inject a command double through the dispatch; the shape cannot be
+    // proven structurally, so the boundary trusts any function here.
+    ...(typeof exec === 'function' ? { exec: exec as Exec } : {}),
     lease: { resources },
     environment: leasedDatabaseEnvironment(adapter, { database, networkMode }),
   });

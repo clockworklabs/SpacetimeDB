@@ -29,7 +29,13 @@ type Exec = typeof execFileSync;
 const isOwnedContainer = (value: unknown): value is BackendLeaseContainer =>
   value !== null && typeof value === 'object' && 'owned' in value && Boolean(value.owned);
 
-// A SpacetimeDB lease always records the host it claimed.
+// A SpacetimeDB lease always records the host it claimed and where it keeps
+// its data.
+const leaseDataDir = (dataDir: string | null | undefined): string => {
+  if (!dataDir) throw new Error('SpacetimeDB lease records no data directory');
+  return dataDir;
+};
+
 const leaseUrl = (serverUri: string | null): URL => {
   if (!serverUri) throw new Error('SpacetimeDB lease records no server URI');
   return new URL(serverUri);
@@ -130,8 +136,7 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
 export async function controlHosted({ adapterId: backend, lease, app, port, probe, mode,
   environment = {}, signal, exec = execFileSync }: HostedControlInput): Promise<void> {
   const abort = signal instanceof AbortSignal ? signal : null;
-  if (!Number.isInteger(Number(port)) || Number(port) <= 0 || typeof probe !== 'string'
-    || typeof app !== 'string') {
+  if (!Number.isInteger(Number(port)) || Number(port) <= 0 || typeof probe !== 'string') {
     throw new Error('hosted backend control requires a port and probe');
   }
   const container = inspectBuildContainer(lease, exec);
@@ -146,6 +151,7 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
       30_000, `${backend} API to stop`, abort);
   }
   if (mode === 'stop') return;
+  if (typeof app !== 'string') throw new Error('hosted backend control requires an app directory');
   exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted backend port is still owned by $pids" >&2; exit 4; }'],
@@ -212,7 +218,7 @@ export async function controlSpacetime({ lease, mode, signal = null }: {
   let child: ChildProcess | null = null;
   try {
     const started = spawn(cli, ['start', '--listen-addr', `127.0.0.1:${port}`,
-      '--data-dir', lease.resources.dataDir ?? ''], { detached: true, stdio: 'ignore', windowsHide: true });
+      '--data-dir', leaseDataDir(lease.resources.dataDir)], { detached: true, stdio: 'ignore', windowsHide: true });
     child = started;
     const spawnFailed = new Promise<never>((_, reject) => started.once('error', reject));
     started.unref();
@@ -263,7 +269,7 @@ export function activateSpacetime({ leasePath, leaseToken, lease, cli }: {
   }
   if (!cli || !existsSync(cli)) throw new Error(`SpacetimeDB CLI is unavailable: ${cli ?? '<unset>'}`);
   console.log(`  spacetime   ... not running, starting a benchmark-owned host on :${port}`);
-  mkdirSync(lease.resources.dataDir ?? '', { recursive: true });
+  mkdirSync(leaseDataDir(lease.resources.dataDir), { recursive: true });
   updateBackendLease(leasePath,
     { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
       next.state = 'starting';
@@ -272,7 +278,7 @@ export function activateSpacetime({ leasePath, leaseToken, lease, cli }: {
   let child: ChildProcess | null = null;
   try {
     const started = spawn(cli,
-      ['start', '--listen-addr', `127.0.0.1:${port}`, '--data-dir', lease.resources.dataDir ?? ''],
+      ['start', '--listen-addr', `127.0.0.1:${port}`, '--data-dir', leaseDataDir(lease.resources.dataDir)],
       { detached: true, stdio: 'ignore', windowsHide: true });
     child = started;
     started.once('error', () => { /* surfaced by the missing-pid guard below */ });

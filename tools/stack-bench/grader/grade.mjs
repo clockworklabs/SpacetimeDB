@@ -54,7 +54,7 @@ import {
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/lifecycle-concurrency-action-executors.js';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const DEFAULT_WITHIN = 5000;
 const SETUP_WITHIN = 20000;
 const REGISTERED_ACTIONS = new Set([

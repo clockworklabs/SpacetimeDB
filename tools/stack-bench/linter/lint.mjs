@@ -16,7 +16,7 @@ import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 
-const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
+import { STACK_BENCH_ROOT as ROOT_DIR } from '../src/package-root.js';
 const CHECK_TIMEOUT = 5000;
 
 function parseArgs(argv) {
