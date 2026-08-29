@@ -33,7 +33,7 @@ import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
   runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
-import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
+import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { addCostUsd, finalizeRunTotals } from '../dist/commands/bench.mjs';
 import { checkDatabaseProvenance } from '../dist/commands/run-suite.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS, CODING_SESSION_TIMEOUT_MS }
-  from '../dist/src/agents/coding-session-timeouts.mjs';
+  from '../dist/src/agents/coding-session-timeouts.js';
 import { summarizeSessions } from '../dist/src/evidence/session-metrics.js';
 
 test('database provenance accepts the leased environment and rejects an unrelated literal', () => {
