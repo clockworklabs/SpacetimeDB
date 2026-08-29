@@ -10,7 +10,7 @@ import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
 import { grantProgressionState, readProgressionState }
   from '../progression/progression-state.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
-import { inspectCampaign } from './campaign-runner.mjs';
+import { inspectCampaign } from './campaign-runner.js';
 import { scheduleDependencyContinuation, writeCampaignState }
   from './campaign-scheduler.js';
 

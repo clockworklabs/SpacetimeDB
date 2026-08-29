@@ -8,9 +8,9 @@ import { campaignAdmissionSmokeReuse } from '../src/campaigns/campaign-admission
 import type { CampaignAdmissionSmokeInput, CampaignAdmissionSmokeRequest }
   from '../src/campaigns/campaign-admission.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
+import { runCampaignAdmission } from '../src/campaigns/campaign-runner.js';
 import type { CampaignAdmissionPreflightRequest }
-  from '../src/campaigns/campaign-runner.mjs';
+  from '../src/campaigns/campaign-runner.js';
 import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
 const createdAt = '2026-08-27T12:00:00.000Z';
@@ -91,11 +91,11 @@ test('campaign admission receives only the feature catalog levels in the compile
 
     assert.equal(result.payload.ok, true);
     assert.equal(requests.length, plan.summary.parallelism);
-    assert(requests.every(request => request.featureCatalog.definition.nodes
+    assert(requests.every(request => request.featureCatalog!.definition.nodes
       .every(node => node.level <= 3)));
     assert(plan.featureCatalog);
     const identity = plan.featureCatalog.identity;
-    assert(requests.every(request => request.featureCatalog.identity.sha256 === identity.sha256));
+    assert(requests.every(request => request.featureCatalog!.identity.sha256 === identity.sha256));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

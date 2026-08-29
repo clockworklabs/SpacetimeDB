@@ -23,7 +23,7 @@ import type { ProgressionRecipeAction, ProgressionRecipeSelections }
   from '../src/progression/progression-recipe-selection.js';
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionNodeState } from '../src/progression/progression-state.js';
-import { validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
+import { validateCampaignRun } from '../src/campaigns/campaign-runner.js';
 
 interface FixtureDependency {
   id: string;

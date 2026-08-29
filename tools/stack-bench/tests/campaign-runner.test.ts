@@ -4,36 +4,93 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan }
+  from '../src/campaigns/campaign-compiler.js';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
-  writeArtifact } from '../dist/src/evidence/artifacts.js';
+  writeArtifact } from '../src/evidence/artifacts.js';
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   expectedDependencyRunOutcomeKind, processFailureDetail, remainingAttemptCostBudget,
-  validateCampaignRun } from '../dist/src/campaigns/campaign-runner.mjs';
-import { hashDirectory, sha256 } from '../dist/src/evidence/provenance.js';
+  validateCampaignRun } from '../src/campaigns/campaign-runner.js';
+import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../dist/src/progression/progression-definition.js';
-import { progressionEngine } from '../dist/src/progression/progression-engine.js';
-import { liveProgressionStatus } from '../dist/src/progression/live-progression.js';
-import { writeProgressionState } from '../dist/src/progression/progression-state.js';
+  from '../src/progression/progression-definition.js';
+import { progressionEngine } from '../src/progression/progression-engine.js';
+import { liveProgressionStatus } from '../src/progression/live-progression.js';
+import { writeProgressionState } from '../src/progression/progression-state.js';
 import { claimNextAttempt, initializeCampaignDirectory,
-  writeCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
+  writeCampaignState } from '../src/campaigns/campaign-scheduler.js';
+import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 
-const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
-const productBrief = join(import.meta.dirname, '..', 'appliance',
+type UnknownRecord = Record<string, unknown>;
+interface MutableSelection extends UnknownRecord {
+  sha256: string;
+  scoredPoints: number;
+  specifications?: { requested: string[]; expected: string[]; observed: string[] };
+  scoredChecks?: Array<UnknownRecord & { stableKey: string; points: number }>;
+  observedChecks?: Array<UnknownRecord & { stableKey: string; points: number }>;
+}
+type CampaignExecute = NonNullable<NonNullable<Parameters<typeof executeCampaign>[2]>['execute']>;
+type ExecuteCall = {
+  command: Parameters<CampaignExecute>[0];
+  argv: Parameters<CampaignExecute>[1];
+  options: Parameters<CampaignExecute>[2];
+};
+type AdmissionOptions = NonNullable<Parameters<typeof runCampaignAdmission>[2]>;
+type PreflightRequest = Parameters<NonNullable<AdmissionOptions['preflight']>>[0];
+interface MutableOutcome extends UnknownRecord {
+  kind: string;
+  phase?: string;
+  reason?: string | null;
+  appFailures?: string[];
+  inconclusive?: unknown[];
+  harnessFailures?: unknown[];
+}
+interface MutableLevel extends UnknownRecord {
+  level: number;
+  selection?: MutableSelection;
+  score?: number | null;
+  max?: number | null;
+  fixRounds?: number;
+  graded?: boolean;
+  error?: string;
+  contractPass?: boolean | null;
+  regression?: { score: number; max: number } | null;
+  firstBuild?: UnknownRecord & { score?: number; max?: number; outcome?: MutableOutcome;
+    observations?: UnknownRecord & { sourceSha256: string; selectionSha256: string;
+      selectedChecks: string[]; reportedChecks: string[]; passedPoints: number;
+      observedPoints: number; scoreContribution: boolean; repairVisible: boolean } };
+  buildSession?: UnknownRecord & { costReceipts?: unknown[] };
+  repair?: { status: string; budgetRounds: number; roundsUsed: number;
+    stopReason: string | null };
+  outcome?: MutableOutcome;
+}
+interface MutableRun extends UnknownRecord {
+  artifactEnvelope: { attempt: { parentId: string }; identities: UnknownRecord };
+  levels: MutableLevel[];
+  outcome: MutableOutcome;
+  totals?: { costUsd?: number; costComplete?: boolean };
+  validation?: { ladder: UnknownRecord & { blockedLevels: number[] } };
+}
+
+const APPLIANCE_ROOT = resolve(import.meta.dirname, '..', '..', 'appliance');
+const example = join(APPLIANCE_ROOT, 'campaign.example.json');
+const productBrief = join(APPLIANCE_ROOT,
   'campaign.product-brief-reference.json');
-const dependencyModelFree = join(import.meta.dirname, 'fixtures',
+const dependencyModelFree = resolve(import.meta.dirname, '..', '..', 'tests', 'fixtures',
   'dependency-model-free-campaign.json');
 
 // A valid run artifact carries the exact planned selection for each level; the
 // modular example selection made this mandatory for level-1 fixtures.
-const plannedSelection = (attempt, level) => structuredClone(
-  attempt.condition.requested.levels.find(item => item.level === level).selection);
-const experimentIdentity = plan => ({ id: plan.id, version: plan.version,
+const plannedSelection = (attempt: CampaignAttemptPlan, level: number): MutableSelection =>
+  structuredClone(attempt.condition.requested.levels.find(item => item.level === level)!
+    .selection) as MutableSelection;
+const experimentIdentity = (plan: CompiledCampaignPlan) => ({ id: plan.id, version: plan.version,
   sha256: plan.contentSha256, state: plan.state });
 
-function writeFakePackageEvidence(output, level) {
+function writeFakePackageEvidence(output: string,
+  level: MutableLevel & { selection: MutableSelection }): void {
   const source = join(output, 'source');
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, 'app.js'), 'export const ready = true;\n');
@@ -86,7 +143,7 @@ test('dependency completion does not hide a whole-app failure', () => {
   ], { kind: 'partial' }), null);
 });
 
-function frozenRuntime(root) {
+function frozenRuntime(root: string) {
   const digests = {
     controller: 'b'.repeat(64),
     'build-sandbox': 'c'.repeat(64),
@@ -101,7 +158,7 @@ function frozenRuntime(root) {
     platform: 'linux/amd64',
     sbomPath: `sbom/${role}.spdx.json`,
   }));
-  const file = (path, role) => ({ path, role, sha256: 'f'.repeat(64), bytes: 1 });
+  const file = (path: string, role: string) => ({ path, role, sha256: 'f'.repeat(64), bytes: 1 });
   const manifest = {
     schemaVersion: 2,
     id: 'stack-bench-v1',
@@ -125,8 +182,8 @@ function frozenRuntime(root) {
   writeFileSync(path, content);
   return { path, manifest, runtime: {
     releaseManifestSha256: sha256(content),
-    controllerImage: images.find(image => image.role === 'controller').reference,
-    buildImage: images.find(image => image.role === 'build-sandbox').reference,
+    controllerImage: images.find(image => image.role === 'controller')!.reference,
+    buildImage: images.find(image => image.role === 'build-sandbox')!.reference,
     platform: 'linux/amd64',
   } };
 }
@@ -183,7 +240,8 @@ test('campaign retry budget subtracts every prior execution cost', () => {
     const claim = { attempt: { id: 'one' }, priorOutputs: ['attempts/one/execution-1'] };
     assert.equal(remainingAttemptCostBudget(campaign, claim, root), 6.75);
 
-    const artifact = readArtifact(join(output, 'run.json'));
+    const artifact = readArtifact<{ totals: { costUsd: number; costComplete: boolean } }>(
+      join(output, 'run.json'));
     artifact.payload.totals.costComplete = false;
     writeFileSync(join(output, 'run.json'), `${JSON.stringify(artifact)}\n`);
     assert.throws(() => remainingAttemptCostBudget(campaign, claim, root),
@@ -201,9 +259,9 @@ test('dependency attempts pass separate catalog and policy identities with no le
   assert(index > 0);
   assert.equal(argv[index + 1], resolve('/campaign/plan.json'));
   assert.equal(argv[argv.indexOf('--feature-catalog-sha256') + 1],
-    dependencyPlan.featureCatalog.identity.sha256);
+    dependencyPlan.featureCatalog!.identity.sha256);
   assert.equal(argv[argv.indexOf('--dependency-policy-sha256') + 1],
-    dependencyPlan.dependencyPolicy.identity.sha256);
+    dependencyPlan.dependencyPolicy!.identity.sha256);
   assert.equal(argv[argv.indexOf('--campaign-sha256') + 1], dependencyPlan.contentSha256);
   assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
   for (const option of ['--guidance-document-json', '--condition-json', '--selection-json',
@@ -223,9 +281,9 @@ test('dependency attempts pass separate catalog and policy identities with no le
 test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts.find(item => item.levels.length > 1) ?? { ...plan.attempts[0], levels: [1, 2] };
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-  const stack = plan.stacks.find(item => item.id === attempt.stack);
-  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
+  const run: MutableRun = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
@@ -242,10 +300,12 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   assert.throws(() => validateCampaignRun(plan, attempt, { ...run,
     artifactEnvelope: { ...run.artifactEnvelope, identities: {
       ...run.artifactEnvelope.identities,
-      experiment: { ...run.artifactEnvelope.identities.experiment, sha256: 'a'.repeat(64) },
+      experiment: { ...(run.artifactEnvelope.identities.experiment as UnknownRecord),
+        sha256: 'a'.repeat(64) },
     } } }, { buildImage: 'test-build-image' }), /does not match.*identities\.experiment/);
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, levels: [{ level: 1 }] }, { buildImage: 'test-build-image' }), error => {
+    assert(error instanceof Error);
     assert.match(error.message, /levels\.L1\.selection/);
     assert.doesNotMatch(error.message, /canonical JSON data/);
     return true;
@@ -255,7 +315,7 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   /does not match.*levels/);
   const appFailure = { kind: 'app_failure', phase: 'grading', reason: null,
     appFailures: ['restock-race/202/202a'], inconclusive: [], harnessFailures: [] };
-  const gated = { ...run,
+  const gated: MutableRun = { ...run,
     validation: { ladder: { policy: 'pass-before-next-level', requestedLevels: [1, 2],
       completedLevels: [1], stoppedAfterLevel: 1, blockedLevels: [2] } },
     levels: [{ level: 1, selection: plannedSelection(attempt, 1),
@@ -267,7 +327,7 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   assert.equal(validateCampaignRun(plan, attempt, gated,
     { buildImage: 'test-build-image' }), gated);
   assert.throws(() => validateCampaignRun(plan, attempt, { ...gated,
-    validation: { ladder: { ...gated.validation.ladder, blockedLevels: [] } } },
+    validation: { ladder: { ...gated.validation!.ladder, blockedLevels: [] } } },
   { buildImage: 'test-build-image' }), /does not match.*levels/);
 });
 
@@ -276,9 +336,9 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   const plan = { ...compiled, definition: { ...compiled.definition,
     budgets: { ...compiled.definition.budgets, maxCostUsdPerAttempt: 100 } } };
   const attempt = { ...plan.attempts[0], levels: [1, 2] };
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-  const stack = plan.stacks.find(item => item.id === attempt.stack);
-  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
+  const run: MutableRun = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
@@ -300,11 +360,11 @@ test('paid campaign validation requires complete receipt-backed cost evidence', 
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts.find(item => item.levels.length > 1)
     ?? { ...plan.attempts[0], levels: [1, 2] };
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
   agent.costLimit = 'native';
-  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
   const receipt = { complete: true, reconciled: true, error: null, costUsd: 1.25 };
-  const run = {
+  const run: MutableRun = {
     artifactEnvelope: { attempt: { parentId: attempt.id },
       identities: emptyArtifactIdentities({ engine: plan.identities.engine,
         experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
@@ -325,13 +385,13 @@ test('paid campaign validation requires complete receipt-backed cost evidence', 
     ...run, totals: { ...run.totals, costComplete: false },
   }, { buildImage: 'test-build-image' }), /totals\.costComplete.*costEvidence/);
   assert.throws(() => validateCampaignRun(plan, attempt, {
-    ...run, levels: [{ ...run.levels[0], buildSession: {
-      ...run.levels[0].buildSession, costReceipts: [],
+    ...run, levels: [{ ...run.levels[0]!, buildSession: {
+      ...run.levels[0]!.buildSession, costReceipts: [],
     } }],
   }, { buildImage: 'test-build-image' }), /costEvidence/);
   assert.throws(() => validateCampaignRun(plan, attempt, {
-    ...run, levels: [{ ...run.levels[0], buildSession: {
-      ...run.levels[0].buildSession, costReceipts: [{ invocation: 1,
+    ...run, levels: [{ ...run.levels[0]!, buildSession: {
+      ...run.levels[0]!.buildSession, costReceipts: [{ invocation: 1,
         receipt: { ...receipt, reconciled: false, error: 'not reconciled' } }],
     } }],
   }, { buildImage: 'test-build-image' }), /costEvidence/);
@@ -342,8 +402,8 @@ test('dependency validation keeps a conclusive grade when its repair session is 
   try {
     const plan = compileCampaignFile(dependencyModelFree);
     const attempt = plan.attempts[0];
-    const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-    const stack = plan.stacks.find(item => item.id === attempt.stack);
+    const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+    const stack = plan.stacks.find(item => item.id === attempt.stack)!;
     const owner = { schemaVersion: 1,
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
@@ -351,7 +411,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
         conditionSha256: attempt.condition.sha256 },
       workspace: { appDirectory: 'source' } };
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
-      plan.featureCatalog, plan.dependencyPolicy));
+      plan.featureCatalog!, plan.dependencyPolicy!));
     let state = progressionEngine.initialize(progression.definition);
     const selection = progressionEngine.gradingSelection(state);
     state = progressionEngine.recordResult(state, {
@@ -361,10 +421,10 @@ test('dependency validation keeps a conclusive grade when its repair session is 
           .map(check => ({ id: check.id, outcome: 'fail' })) })),
     });
     writeProgressionState(join(root, 'progression-state.json'), {
-      progression, featureCatalogIdentity: plan.featureCatalog.identity,
-      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state,
+      progression, featureCatalogIdentity: plan.featureCatalog!.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy!.identity, owner, state,
     });
-    const run = {
+    const run: MutableRun = {
       artifactEnvelope: { attempt: { parentId: attempt.id },
         identities: emptyArtifactIdentities({ engine: plan.identities.engine,
           experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
@@ -392,8 +452,8 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
   try {
     const plan = compileCampaignFile(dependencyModelFree);
     const attempt = plan.attempts[0];
-    const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-    const stack = plan.stacks.find(item => item.id === attempt.stack);
+    const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+    const stack = plan.stacks.find(item => item.id === attempt.stack)!;
     const owner = { schemaVersion: 1,
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
@@ -401,17 +461,17 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
         conditionSha256: attempt.condition.sha256 },
       workspace: { appDirectory: 'source' } };
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
-      plan.featureCatalog, plan.dependencyPolicy));
+      plan.featureCatalog!, plan.dependencyPolicy!));
     const emptyState = progressionEngine.initialize(progression.definition);
     const state = progressionEngine.recordResult(emptyState, {
       attemptId: 'pre-grade-harness-failure', outcome: 'inconclusive',
       category: 'harness_failure', reason: 'coding-session-failed',
     });
     writeProgressionState(join(root, 'progression-state.json'), {
-      progression, featureCatalogIdentity: plan.featureCatalog.identity,
-      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state,
+      progression, featureCatalogIdentity: plan.featureCatalog!.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy!.identity, owner, state,
     });
-    const run = {
+    const run: MutableRun = {
       artifactEnvelope: { attempt: { parentId: attempt.id },
         identities: emptyArtifactIdentities({ engine: plan.identities.engine,
           experiment: experimentIdentity(plan), agentAdapter: agent.identity,
@@ -436,8 +496,8 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
       buildImage: 'test-build-image', resultDir: root,
     }), run);
     writeProgressionState(join(root, 'progression-state.json'), {
-      progression, featureCatalogIdentity: plan.featureCatalog.identity,
-      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state: emptyState,
+      progression, featureCatalogIdentity: plan.featureCatalog!.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy!.identity, owner, state: emptyState,
     });
     const withoutAttempt = { ...run, progressionStatus: liveProgressionStatus(emptyState) };
     assert.throws(() => validateCampaignRun(plan, attempt, withoutAttempt, {
@@ -449,8 +509,8 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
       category: 'inconclusive_evidence', reason: 'one selected check could not be measured',
     });
     writeProgressionState(join(root, 'progression-state.json'), {
-      progression, featureCatalogIdentity: plan.featureCatalog.identity,
-      dependencyPolicyIdentity: plan.dependencyPolicy.identity, owner, state: gradingState,
+      progression, featureCatalogIdentity: plan.featureCatalog!.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy!.identity, owner, state: gradingState,
     });
     const gradingRun = structuredClone(run);
     gradingRun.progressionStatus = liveProgressionStatus(gradingState);
@@ -468,9 +528,9 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
 test('campaign validation accepts an explicit repeated-findings pause but rejects an unexplained stop', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts[0];
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-  const stack = plan.stacks.find(item => item.id === attempt.stack);
-  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
+  const run: MutableRun = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
@@ -484,30 +544,30 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
     outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.repair/);
-  run.levels[0] = { ...run.levels[0],
+  run.levels[0] = { ...run.levels[0]!,
     repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1,
       stopReason: 'repeated-findings' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  run.levels[0] = { ...run.levels[0], fixRounds: 3,
+  run.levels[0] = { ...run.levels[0]!, fixRounds: 3,
     repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  run.levels[0] = { ...run.levels[0], score: 58 };
+  run.levels[0] = { ...run.levels[0]!, score: 58 };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.score/);
-  run.levels[0] = { ...run.levels[0], contractPass: false,
+  run.levels[0] = { ...run.levels[0]!, contractPass: false,
     outcome: { kind: 'app_failure', appFailures: ['contract-lint'] } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run,
     'a behaviorally perfect app may still fail the separately reported contract lint');
-  run.levels[0] = { ...run.levels[0], regression: { score: 0, max: 1 } };
+  run.levels[0] = { ...run.levels[0]!, regression: { score: 0, max: 1 } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.regression/,
     'L1 has no earlier level and cannot report an inherited regression');
-  run.levels[0] = { ...run.levels[0], regression: null, contractPass: null,
+  run.levels[0] = { ...run.levels[0]!, regression: null, contractPass: null,
     outcome: { kind: 'app_failure', appFailures: ['systems/diagnostic'] } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.score/,
     'test-development evidence cannot turn a perfect scored result into an application failure');
-  run.levels[0] = { ...run.levels[0], score: 0, outcome: { kind: 'passed' },
+  run.levels[0] = { ...run.levels[0]!, score: 0, outcome: { kind: 'passed' },
     repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /outcome\.kind/);
@@ -516,10 +576,10 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
 test('campaign validation requires complete first-build and final measurement coverage', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts[0];
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
   const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+  const run: MutableRun = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
@@ -541,32 +601,32 @@ test('campaign validation requires complete first-build and final measurement co
   } finally { rmSync(missingPackage, { recursive: true, force: true }); }
 
   const missingFirstBuildPoint = structuredClone(run);
-  missingFirstBuildPoint.levels[0].firstBuild.score = 57;
-  missingFirstBuildPoint.levels[0].firstBuild.max = 57;
+  missingFirstBuildPoint.levels[0]!.firstBuild!.score = 57;
+  missingFirstBuildPoint.levels[0]!.firstBuild!.max = 57;
   assert.throws(() => validateCampaignRun(plan, attempt, missingFirstBuildPoint,
     { buildImage: 'test-build-image' }), /firstBuild\.max/);
 
   const missingFinalPoint = structuredClone(run);
-  missingFinalPoint.levels[0].max = 57;
-  missingFinalPoint.levels[0].score = 57;
+  missingFinalPoint.levels[0]!.max = 57;
+  missingFinalPoint.levels[0]!.score = 57;
   assert.throws(() => validateCampaignRun(plan, attempt, missingFinalPoint,
     { buildImage: 'test-build-image' }), /levels\.L1\.max/);
 
   const inconclusiveFirstBuild = structuredClone(run);
-  inconclusiveFirstBuild.levels[0].firstBuild.outcome = { kind: 'app_failure',
+  inconclusiveFirstBuild.levels[0]!.firstBuild!.outcome = { kind: 'app_failure',
     appFailures: ['feature/accounts'],
     inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] };
   assert.throws(() => validateCampaignRun(plan, attempt, inconclusiveFirstBuild,
     { buildImage: 'test-build-image' }), /firstBuild\.outcome\.inconclusive/);
 
   const inconclusiveFinal = structuredClone(run);
-  inconclusiveFinal.levels[0].outcome = { kind: 'app_failure',
+  inconclusiveFinal.levels[0]!.outcome = { kind: 'app_failure',
     appFailures: ['feature/accounts'],
     inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] };
   inconclusiveFinal.outcome = { kind: 'app_failure' };
-  inconclusiveFinal.levels[0].score = 57;
-  inconclusiveFinal.levels[0].fixRounds = 3;
-  inconclusiveFinal.levels[0].repair = { status: 'budget-exhausted', budgetRounds: 3,
+  inconclusiveFinal.levels[0]!.score = 57;
+  inconclusiveFinal.levels[0]!.fixRounds = 3;
+  inconclusiveFinal.levels[0]!.repair = { status: 'budget-exhausted', budgetRounds: 3,
     roundsUsed: 3, stopReason: null };
   assert.throws(() => validateCampaignRun(plan, attempt, inconclusiveFinal,
     { buildImage: 'test-build-image' }), /final\.outcome\.inconclusive/);
@@ -577,25 +637,28 @@ test('campaign validation binds observed-only evidence to its exact first-build 
   const sourceSha256 = 'a'.repeat(64);
   const selectionSha256 = 'b'.repeat(64);
   const scoredChecks = [
-    { stableKey: 'feature/accounts', points: 1, treatment: 'requested' },
-    { stableKey: 'authorization/session', points: 1, treatment: 'expected' },
+    { stableKey: 'feature/accounts', points: 1, treatment: 'requested' as const },
+    { stableKey: 'authorization/session', points: 1, treatment: 'expected' as const },
   ];
   const observedChecks = [
-    { stableKey: 'durability/session', points: 1, treatment: 'observed' },
+    { stableKey: 'durability/session', points: 1, treatment: 'observed' as const },
   ];
   const selectedObservedKeys = observedChecks.map(check => check.stableKey);
   const specifications = { requested: [], expected: ['authorization@1.0.0'],
     observed: ['durability@1.0.0'] };
   const baseAttempt = compiled.attempts[0];
-  const condition = { ...baseAttempt.condition, requested: { levels: [{ level: 1,
-    selection: { schemaVersion: 3, sha256: selectionSha256, scoredPoints: 2,
-      specifications, scoredChecks, observedChecks } }] } };
+  const baseLevel = baseAttempt.condition.requested.levels[0];
+  const requestedLevels: CampaignAttemptPlan['condition']['requested']['levels'] = [{
+    ...baseLevel, level: 1, selection: { ...baseLevel.selection, schemaVersion: 3,
+      sha256: selectionSha256, scoredPoints: 2, specifications, scoredChecks, observedChecks } }];
+  const condition = { ...baseAttempt.condition, requested: {
+    ...baseAttempt.condition.requested, levels: requestedLevels } };
   const plan = { ...compiled, conditions: compiled.conditions.map(item =>
-    item.sha256 === condition.sha256 ? condition : item) };
-  const attempt = { ...baseAttempt, condition };
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
-  const stack = plan.stacks.find(item => item.id === attempt.stack);
-  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+    item.sha256 === condition.sha256 ? condition : item) } as CompiledCampaignPlan;
+  const attempt: CampaignAttemptPlan = { ...baseAttempt, condition };
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
+  const run: MutableRun = { artifactEnvelope: { attempt: { parentId: attempt.id },
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       experiment: experimentIdentity(plan), agentAdapter: agent.identity, stackAdapter: stack }) },
   mode: attempt.mode, track: plan.definition.track, backend: attempt.stack, model: attempt.model,
@@ -619,33 +682,33 @@ test('campaign validation binds observed-only evidence to its exact first-build 
   outcome: { kind: 'app_failure' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   const wrongExpected = structuredClone(run);
-  wrongExpected.levels[0].selection.specifications.expected = [];
+  wrongExpected.levels[0]!.selection!.specifications!.expected = [];
   assert.throws(() => validateCampaignRun(plan, attempt, wrongExpected,
     { buildImage: 'test-build-image' }), /selection\.specifications/);
   const visibleToRepair = structuredClone(run);
-  visibleToRepair.levels[0].firstBuild.observations.repairVisible = true;
+  visibleToRepair.levels[0]!.firstBuild!.observations!.repairVisible = true;
   assert.throws(() => validateCampaignRun(plan, attempt, visibleToRepair,
     { buildImage: 'test-build-image' }), /firstBuild\.observations\.repairVisible/);
   const wrongSource = structuredClone(run);
-  wrongSource.levels[0].firstBuild.observations.sourceSha256 = 'c'.repeat(64);
+  wrongSource.levels[0]!.firstBuild!.observations!.sourceSha256 = 'c'.repeat(64);
   assert.throws(() => validateCampaignRun(plan, attempt, wrongSource,
     { buildImage: 'test-build-image' }), /firstBuild\.observations\.sourceSha256/);
   const wrongDenominator = structuredClone(run);
-  wrongDenominator.levels[0].firstBuild.observations.observedPoints = 2;
+  wrongDenominator.levels[0]!.firstBuild!.observations!.observedPoints = 2;
   assert.throws(() => validateCampaignRun(plan, attempt, wrongDenominator,
     { buildImage: 'test-build-image' }), /firstBuild\.observations\.observedPoints/);
   const wrongWeight = structuredClone(run);
-  wrongWeight.levels[0].selection.observedChecks[0].points = 2;
+  wrongWeight.levels[0]!.selection!.observedChecks![0]!.points = 2;
   assert.throws(() => validateCampaignRun(plan, attempt, wrongWeight,
     { buildImage: 'test-build-image' }), /selection\.observedChecks/);
   const wrongScoreDenominator = structuredClone(run);
-  wrongScoreDenominator.levels[0].max = 1;
+  wrongScoreDenominator.levels[0]!.max = 1;
   assert.throws(() => validateCampaignRun(plan, attempt, wrongScoreDenominator,
     { buildImage: 'test-build-image' }), /levels\.L1\.max/);
   const wrongPlannedSelection = structuredClone(run);
-  wrongPlannedSelection.levels[0].selection.observedChecks[0].stableKey = 'durability/cart';
-  wrongPlannedSelection.levels[0].firstBuild.observations.selectedChecks = ['durability/cart'];
-  wrongPlannedSelection.levels[0].firstBuild.observations.reportedChecks = ['durability/cart'];
+  wrongPlannedSelection.levels[0]!.selection!.observedChecks![0]!.stableKey = 'durability/cart';
+  wrongPlannedSelection.levels[0]!.firstBuild!.observations!.selectedChecks = ['durability/cart'];
+  wrongPlannedSelection.levels[0]!.firstBuild!.observations!.reportedChecks = ['durability/cart'];
   assert.throws(() => validateCampaignRun(plan, attempt, wrongPlannedSelection,
     { buildImage: 'test-build-image' }), /selection\.observedChecks/);
 });
@@ -698,7 +761,7 @@ test('failed campaign admission leaves every attempt pending and unclaimed', asy
       admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
       execute: async () => { throw new Error('must not launch'); },
     }), /admission failed/);
-    const { readCampaignState } = await import('../dist/src/campaigns/campaign-scheduler.js');
+    const { readCampaignState } = await import('../src/campaigns/campaign-scheduler.js');
     const state = readCampaignState(root).state;
     assert.equal(state.status, 'prepared');
     assert.equal(state.summary.executions, 0);
@@ -729,7 +792,7 @@ test('a frozen campaign proves its release and both runtime images before admiss
     assert.throws(() => campaignExecutionEnvironment(plan, { ...env,
       STACK_BENCH_IMAGE: `registry.example/build@sha256:${'2'.repeat(64)}` }), /conflicts/);
     const wrongImages = structuredClone(manifest);
-    const wrongController = wrongImages.images.find(image => image.role === 'controller');
+    const wrongController = wrongImages.images.find(image => image.role === 'controller')!;
     wrongController.digest = '1'.repeat(64);
     wrongController.reference = `registry.example/stack-bench/controller@sha256:${wrongController.digest}`;
     const wrongContent = `${JSON.stringify(wrongImages, null, 2)}\n`;
@@ -776,25 +839,25 @@ test('only explicit transient provider failures receive campaign retry authority
 
 test('model-free campaign execution checkpoints an authorized retry and every completed attempt', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-'));
-  const calls = [];
+  const calls: ExecuteCall[] = [];
   const planned = compileCampaignFile(example);
   try {
     const state = await executeCampaign(example, root, { mode: 'model-free-trial',
       admit: () => ({ id: 'admission-1', payload: { ok: true } }),
       execute: async (command, argv, options) => {
         calls.push({ command, argv, options });
-        const output = argv[argv.indexOf('--out') + 1];
+        const output = argv[argv.indexOf('--out') + 1]!;
         assert.equal(existsSync(output), true,
           'every execution, including a retry, must have a preflight-mountable output directory');
         assert.deepEqual(options.logs, {
           stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log'),
         });
-        const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
-        const { emptyArtifactIdentities, writeRunJson } = await import('../dist/src/evidence/artifacts.js');
+        const parent = argv[argv.indexOf('--parent-attempt-id') + 1]!;
+        const { emptyArtifactIdentities, writeRunJson } = await import('../src/evidence/artifacts.js');
         const completedAt = new Date().toISOString();
-        const attempt = planned.attempts.find(item => item.id === parent);
-        const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
-        const stack = planned.stacks.find(item => item.id === attempt.stack);
+        const attempt = planned.attempts.find(item => item.id === parent)!;
+        const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter)!;
+        const stack = planned.stacks.find(item => item.id === attempt.stack)!;
         if (calls.length === 1) {
           writeRunJson(join(output, 'run.json'), { id: 'fake-provider-failure',
             parentAttemptId: parent, startedAt: completedAt, completedAt,
@@ -829,7 +892,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
             repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
             outcome };
         });
-        writeFakePackageEvidence(output, levels.at(-1));
+        writeFakePackageEvidence(output, levels.at(-1)!);
         writeRunJson(join(output, 'run.json'), { id: `fake-${calls.length}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
           identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
@@ -847,11 +910,12 @@ test('model-free campaign execution checkpoints an authorized retry and every co
     assert.equal(state.status, 'completed');
     assert.equal(state.summary.completed, 9);
     assert.equal(state.summary.executions, 10);
-    assert.deepEqual(state.attempts[0].executions.map(item => item.status), ['invalid', 'completed']);
+    assert.deepEqual(state.attempts[0]!.executions.map(item => item.status), ['invalid', 'completed']);
     assert.equal(calls.every(call => call.options.timeoutMs === 240 * 60_000), true);
-    const processArtifact = readArtifact(join(root, state.attempts[0].executions[0].output, 'process.json'),
+    const processArtifact = readArtifact(join(root,
+      state.attempts[0]!.executions[0]!.output, 'process.json'),
       { expectedKind: 'campaign_process' });
-    assert.equal(processArtifact.payload.executionId, state.attempts[0].executions[0].id);
+    assert.equal(processArtifact.payload.executionId, state.attempts[0]!.executions[0]!.id);
     assert.equal(processArtifact.payload.exitCode, 3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -875,8 +939,8 @@ test('campaign cancellation stops new claims and reaches the active process tree
     assert.equal(state.summary.executions, 1);
     assert.equal(state.summary.running, 0);
     assert.equal(state.summary.invalid, 1);
-    assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
-    assert.match(state.attempts[0].executions[0].reason, /cancellation requested/);
+    assert.equal(state.attempts[0]!.executions[0]!.outcome, 'scheduler_interrupted');
+    assert.match(state.attempts[0]!.executions[0]!.reason!, /cancellation requested/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -887,7 +951,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
     definition.id = 'postgres-parallel-proof';
     definition.repetitions = 1;
     definition.parallelism = 3;
-    definition.stacks = [definition.stacks.find(stack => stack.id === 'postgres')];
+    definition.stacks = [definition.stacks.find((stack: UnknownRecord) => stack.id === 'postgres')];
     definition.stacks[0].repetitions = 3;
     const campaignPath = join(root, 'campaign.json');
     const results = join(root, 'results');
@@ -895,23 +959,23 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
     const planned = compileCampaignFile(campaignPath);
     let active = 0;
     let maxActive = 0;
-    const started = [];
-    let releaseFirstWave;
-    const firstWave = new Promise(resolve => { releaseFirstWave = resolve; });
+    const started: Array<{ parent: string; runIndex: number }> = [];
+    let releaseFirstWave: (() => void) | null = null;
+    const firstWave = new Promise<void>(resolve => { releaseFirstWave = resolve; });
     const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
       admit: () => ({ id: 'parallel-admission', payload: { ok: true } }),
       execute: async (command, argv, options) => {
         const runIndex = Number(argv[argv.indexOf('--run-index') + 1]);
-        const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
-        const output = argv[argv.indexOf('--out') + 1];
+        const parent = argv[argv.indexOf('--parent-attempt-id') + 1]!;
+        const output = argv[argv.indexOf('--out') + 1]!;
         active += 1;
         maxActive = Math.max(maxActive, active);
         started.push({ parent, runIndex });
-        if (started.length === 3) releaseFirstWave();
+        if (started.length === 3) releaseFirstWave?.();
         await firstWave;
-        const attempt = planned.attempts.find(item => item.id === parent);
-        const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
-        const stack = planned.stacks.find(item => item.id === attempt.stack);
+        const attempt = planned.attempts.find(item => item.id === parent)!;
+        const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter)!;
+        const stack = planned.stacks.find(item => item.id === attempt.stack)!;
         const completedAt = new Date().toISOString();
         const { writeRunJson } = await import('../dist/src/evidence/artifacts.js');
         const levels = attempt.levels.map(level => {
@@ -923,7 +987,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
             repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
             outcome };
         });
-        writeFakePackageEvidence(output, levels.at(-1));
+        writeFakePackageEvidence(output, levels.at(-1)!);
         writeRunJson(join(output, 'run.json'), { id: `parallel-${runIndex}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
           identities: emptyArtifactIdentities({ experiment: experimentIdentity(planned),
@@ -942,8 +1006,8 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
     assert.deepEqual(started.map(item => item.runIndex).sort((a, b) => a - b), [0, 1, 2]);
     assert.equal(new Set(started.map(item => item.parent)).size, 3);
     assert(state.attempts.every(attempt => attempt.status === 'completed'));
-    assert(state.attempts.every(attempt => attempt.executions[0].runIndex >= 0
-      && attempt.executions[0].runIndex < 3));
+    assert(state.attempts.every(attempt => attempt.executions[0]!.runIndex >= 0
+      && attempt.executions[0]!.runIndex < 3));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -972,7 +1036,7 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
       }),
       execute: async (_command, argv, options) => {
         mkdirSync(join(results, '.private'), { recursive: true });
-        writeFileSync(options.env.STACK_BENCH_SUPERVISOR_STATE, '{}');
+        writeFileSync(options.env.STACK_BENCH_SUPERVISOR_STATE!, '{}');
         return { code: 1, timedOut: false };
       },
       rescue: () => { throw new Error('runtime still owns a process'); },
@@ -981,14 +1045,14 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
     assert.equal(state.summary.running, 1);
     assert.equal(state.summary.invalid, 0);
 
-    const rescued = [];
+    const rescued: unknown[] = [];
     const reconciled = reconcileCampaign(campaignPath, results, {
       rescue: supervisor => { rescued.push(supervisor); },
     });
     assert.equal(rescued.length, 1);
     assert.equal(reconciled.summary.running, 0);
     assert.equal(reconciled.summary.invalid, 1);
-    assert.equal(reconciled.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+    assert.equal(reconciled.attempts[0]!.executions[0]!.outcome, 'scheduler_interrupted');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1025,15 +1089,16 @@ test('interrupted parallel work advances only after every exact cleanup is prove
     const executions = running.attempts.filter(attempt => attempt.status === 'running')
       .map(attempt => attempt.executions.at(-1));
     for (const execution of executions) {
+      assert(execution);
       writeFileSync(join(privateDir, `${execution.id}.supervisor.json`), '{}');
     }
-    const rescued = [];
+    const rescued: unknown[] = [];
     const state = reconcileCampaign(campaignPath, root,
       { rescue: supervisor => { rescued.push(supervisor); } });
     assert.equal(rescued.length, 2);
     assert.equal(state.summary.invalid, 2);
     assert(state.attempts.filter(attempt => attempt.status === 'invalid')
-      .every(attempt => attempt.executions[0].outcome === 'scheduler_interrupted'));
+      .every(attempt => attempt.executions[0]!.outcome === 'scheduler_interrupted'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1056,14 +1121,14 @@ test('reconciliation accepts the clean public proof left by authenticated recove
     const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
       admissionId: admission.id }).state;
     writeCampaignState(initialized.paths.state, plan, running);
-    const execution = running.attempts[0].executions[0];
+    const execution = running.attempts[0]!.executions[0]!;
     const output = join(root, execution.output);
     mkdirSync(output, { recursive: true });
     writeArtifact(join(output, 'recovery.json'), { kind: 'recovery', id: 'recovered-run-recovery',
       attempt: { id: 'recovered-run-recovery', parentId: 'recovered-run' },
-      identities: emptyArtifactIdentities({ stackAdapter: { id: running.attempts[0].plan.stack } }),
+      identities: emptyArtifactIdentities({ stackAdapter: { id: running.attempts[0]!.plan.stack } }),
       payload: { schemaVersion: 1, status: 'clean', runId: 'recovered-run',
-        backend: running.attempts[0].plan.stack, reason: null,
+        backend: running.attempts[0]!.plan.stack, reason: null,
         cleanup: { succeeded: true, retained: false },
         resources: { backendState: 'released', buildContainer: { id: 'container-id',
           name: 'container-name', running: false }, listenerPids: [],
@@ -1072,8 +1137,8 @@ test('reconciliation accepts the clean public proof left by authenticated recove
     const state = reconcileCampaign(example, root, {
       rescue: () => { throw new Error('private recovery must not run without private authority'); },
     });
-    assert.equal(state.attempts[0].status, 'invalid');
-    assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+    assert.equal(state.attempts[0]!.status, 'invalid');
+    assert.equal(state.attempts[0]!.executions[0]!.outcome, 'scheduler_interrupted');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -1081,7 +1146,7 @@ test('campaign admission covers every stack once per distinct agent adapter and 
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-admission-'));
   try {
     const plan = compileCampaignFile(example);
-    const calls = [];
+    const calls: PreflightRequest[] = [];
     const admission = runCampaignAdmission(plan, root, {
       env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
@@ -1098,9 +1163,9 @@ test('campaign admission covers every stack once per distinct agent adapter and 
     assert.equal(admission.payload.ok, true);
     assert.deepEqual(admission.payload.runtime, plan.definition.runtime);
     assert.equal(calls.length, 1);
-    assert.deepEqual([...calls[0].backends].sort(), ['mongodb', 'postgres', 'spacetime']);
-    assert.equal(new Set(calls[0].backends).size, 3);
-    assert.equal(calls[0].smoke, true);
+    assert.deepEqual([...calls[0]!.backends].sort(), ['mongodb', 'postgres', 'spacetime']);
+    assert.equal(new Set(calls[0]!.backends).size, 3);
+    assert.equal(calls[0]!.smoke, true);
     assert.equal(readArtifact(admission.path,
       { expectedKind: 'campaign_admission' }).payload.campaignSha256, plan.contentSha256);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -1110,7 +1175,7 @@ test('campaign admission accepts a modular level selection without legacy pack f
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-modular-campaign-admission-'));
   try {
     const plan = compileCampaignFile(productBrief);
-    const calls = [];
+    const calls: PreflightRequest[] = [];
     const admission = runCampaignAdmission(plan, root, {
       env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
       preflight: request => {
@@ -1126,8 +1191,10 @@ test('campaign admission accepts a modular level selection without legacy pack f
     });
     assert.equal(admission.payload.ok, true);
     assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0].packIds, []);
-    assert.deepEqual(calls[0].checkKeys, []);
-    assert.equal(calls[0].requestedScopes[0].levels[0].selection.schemaVersion, 3);
+    assert.deepEqual(calls[0]!.packIds, []);
+    assert.deepEqual(calls[0]!.checkKeys, []);
+    const scope = calls[0]!.requestedScopes[0] as { levels: Array<{
+      selection: { schemaVersion: number } }> };
+    assert.equal(scope.levels[0]!.selection.schemaVersion, 3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -111,7 +111,9 @@ test('an aborted first grade is classified, not treated as a scored zero', () =>
 
 test('campaign facts surface the identity an operator otherwise reads plan.json for', () => {
   const facts = campaignFacts({
-    agents: [{ adapter: 'claude-code', adapterVersion: '1.12.0', model: 'claude-sonnet-5' }],
+    agents: [{ adapter: 'claude-code', adapterVersion: '1.12.0', model: 'claude-sonnet-5',
+      costLimit: 'native', identity: { id: 'claude-code', version: '1.12.0',
+        sha256: 'b'.repeat(64) } }],
     attempts: [{ condition: { requested: { levels: [
       { level: 1, recipe: { id: 'ecommerce.l1-modular', version: '2.4.0' } },
       { level: 2, recipe: { id: 'ecommerce.l2-standard', version: '1.5.0' } },

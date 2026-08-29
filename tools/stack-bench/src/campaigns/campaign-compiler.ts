@@ -187,7 +187,7 @@ interface ResolvedStackIdentity extends UnknownRecord {
 
 interface ResolvedAgent extends CampaignAgentSelection, UnknownRecord {
   costLimit: string;
-  identity: UnknownRecord & { id?: string; version?: string };
+  identity: UnknownRecord & { id: string; version: string; sha256: string };
 }
 
 interface CampaignResolvedInputs {
@@ -230,8 +230,8 @@ export interface CompiledCampaignPlan {
   bindings: PublicBinding[];
   stacks: ResolvedStackIdentity[];
   agents: Array<CampaignAgentSelection & {
-    costLimit?: string;
-    identity?: UnknownRecord & { id?: string; version?: string };
+    costLimit: string;
+    identity: UnknownRecord & { id: string; version: string; sha256: string };
   }>;
   conditions: NonEmpty<ResolvedStudyCondition>;
   attempts: NonEmpty<CampaignAttemptPlan>;

@@ -8,7 +8,7 @@ import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
   validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import type { CalibrationResolver, CompilerOptions }
   from '../src/campaigns/campaign-compiler.js';
-import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
+import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.js';
 import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { writeArtifact } from '../src/evidence/artifacts.js';

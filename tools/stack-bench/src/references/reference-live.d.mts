@@ -24,6 +24,7 @@ export interface RunBoundedOptions {
   stdio?: 'inherit';
   timeoutMs: number;
   logs?: { stdout: string; stderr: string; maxBytes?: number } | null;
+  signal?: AbortSignal | null;
 }
 
 export function runBounded(command: string, argv: string[],

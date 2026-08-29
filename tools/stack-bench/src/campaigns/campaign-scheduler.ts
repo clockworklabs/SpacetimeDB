@@ -104,7 +104,7 @@ export interface CampaignExecutionResult {
     transient?: boolean;
     recoveryClean?: boolean;
     budgetKnown?: boolean;
-    cause?: string;
+    cause?: string | null;
   };
 }
 

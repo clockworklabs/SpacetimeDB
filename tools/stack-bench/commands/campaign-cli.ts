@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { CAMPAIGN_MODE_REGISTRY } from '../src/campaigns/campaign-mode.js';
 import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
-  from '../src/campaigns/campaign-runner.mjs';
+  from '../src/campaigns/campaign-runner.js';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js';
 import { generateCampaignReport } from '../src/campaigns/campaign-report.js';
 import { grantCampaignDependencyStrikes }

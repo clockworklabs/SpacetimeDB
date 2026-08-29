@@ -7,9 +7,14 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeArtifact } from '../evidence/artifacts.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
 import { compileCampaignFile } from './campaign-compiler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
   markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.js';
+import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, CampaignState }
+  from './campaign-scheduler.js';
 import { rescueSupervisedLease, runBounded } from '../references/reference-live.mjs';
+import type { BoundedProcessResult, RunBoundedOptions }
+  from '../references/reference-live.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { runPreflight } from '../runtime/preflight.mjs';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
@@ -30,13 +35,226 @@ import { readCampaignAdmission, validateCampaignAdmission } from './campaign-adm
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
 
-export function expectedDependencyRunOutcomeKind(levels, terminalOutcome) {
+type UnknownRecord = Record<string, unknown>;
+type PlannedLevel = CompiledCampaignPlan['conditions'][number]['requested']['levels'][number];
+type PlannedCheck = NonNullable<PlannedLevel['selection']['scoredChecks']>[number];
+const integer = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value);
+const safeInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value);
+const finite = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+interface RunOutcome extends UnknownRecord {
+  kind?: string;
+  phase?: string;
+  reason?: string;
+  inconclusive?: unknown[];
+  harnessFailures?: unknown[];
+  provider?: { providerStatus?: number | null };
+}
+
+interface RunRegression { score?: number; max?: number }
+interface RunSelection extends UnknownRecord {
+  schemaVersion?: number;
+  sha256?: string;
+  specifications?: unknown;
+  scoredChecks?: PlannedCheck[];
+  observedChecks?: PlannedCheck[];
+  regressionChecks?: Array<{ stableKey?: string; points?: number }>;
+  scoredPoints?: number;
+  evaluationSha256?: string;
+  regressionPoints?: number;
+}
+
+interface RunObservation extends UnknownRecord {
+  selectedChecks?: unknown;
+  selectionSha256?: unknown;
+  scoreContribution?: unknown;
+  repairVisible?: unknown;
+  sourceSha256?: unknown;
+  reportedChecks?: unknown;
+  observedPoints?: unknown;
+  passedPoints?: unknown;
+  artifact?: unknown;
+}
+
+interface RunLevel extends UnknownRecord {
+  level: number;
+  score?: number;
+  max?: number;
+  graded?: boolean;
+  fixRounds?: number;
+  contractPass?: boolean;
+  selection?: RunSelection;
+  outcome?: RunOutcome;
+  repair?: { status?: string; budgetRounds?: number; roundsUsed?: number; stopReason?: string };
+  regression?: RunRegression | null;
+  firstBuild?: {
+    score?: number;
+    max?: number;
+    outcome?: RunOutcome;
+    regression?: RunRegression | null;
+    observations?: RunObservation;
+    source?: { sha256?: string };
+  };
+}
+
+interface BenchmarkRun extends UnknownRecord {
+  id?: string | null;
+  artifactEnvelope?: {
+    attempt?: { parentId?: string };
+    identities?: {
+      agentAdapter?: { sha256?: string };
+      engine?: { sha256?: string };
+      experiment?: { id?: string; version?: string; sha256?: string; state?: string };
+      stackAdapter?: { id?: string; version?: string };
+    };
+  };
+  mode?: unknown;
+  track?: string;
+  backend?: string;
+  model?: string;
+  pricing?: unknown;
+  guidance?: string;
+  condition?: unknown;
+  selectionRequest?: unknown;
+  featureCatalog?: unknown;
+  dependencyPolicy?: unknown;
+  progressionOwner?: unknown;
+  progressionStatus?: unknown;
+  skills?: unknown;
+  levels?: RunLevel[];
+  outcome?: RunOutcome;
+  validation?: { ladder?: {
+    policy?: string;
+    requestedLevels?: unknown;
+    completedLevels?: unknown;
+    stoppedAfterLevel?: unknown;
+    blockedLevels?: unknown;
+  } };
+  runtime?: { buildImage?: string | null };
+  totals?: { costUsd?: number | null; costComplete?: boolean };
+}
+
+interface GradeBundle extends UnknownRecord {
+  source?: { sha256?: string };
+  selection?: { sha256?: string };
+  totals?: { score?: number; max?: number };
+}
+
+interface RecoveryArtifact extends UnknownRecord {
+  status?: string;
+  backend?: string;
+  cleanup?: { succeeded?: boolean; retained?: boolean };
+  resources?: {
+    backendState?: string;
+    buildContainer?: { running?: boolean };
+    locks?: Array<{ released?: boolean }>;
+  };
+}
+
+interface ProgressionAttemptRecord {
+  level: number;
+  outcome: string;
+  category?: string;
+  reason?: string;
+  selectionSha256?: string;
+}
+
+interface StoredProgressionState {
+  phase: string;
+  attempts: ProgressionAttemptRecord[];
+  terminalOutcome?: { kind?: string };
+}
+
+interface RunnerProcessResult {
+  ok?: boolean;
+  code: number | null;
+  signal?: NodeJS.Signals | null;
+  timedOut: boolean;
+  cancelled?: boolean;
+  error?: Error | null;
+  logs?: BoundedProcessResult['logs'];
+  stdoutTail?: string;
+  stderrTail?: string;
+  buildImage?: string | null;
+}
+type ExecuteProcess = (command: string, argv: string[], options: RunBoundedOptions & {
+  signal?: AbortSignal | null;
+}) => Promise<RunnerProcessResult>;
+
+export interface CampaignAdmissionPreflightRequest extends UnknownRecord {
+  backends: string[];
+  track: string;
+  levels: string;
+  levelList: number[];
+  runIndex: number;
+  parallelism: number;
+  agentAdapter: string;
+  packIds: string[];
+  checkKeys: string[];
+  requestedScopes: unknown[];
+  featureCatalog: CompiledCampaignPlan['featureCatalog'];
+  mode: CompiledCampaignPlan['definition']['mode'];
+  smoke: boolean;
+  image: string;
+  resultsDir: string;
+}
+
+interface AdmissionReport extends UnknownRecord { ok: boolean }
+type Preflight = (request: CampaignAdmissionPreflightRequest,
+  options?: { env: NodeJS.ProcessEnv }) => AdmissionReport;
+type UuidFactory = () => string;
+
+interface CampaignAdmissionResult {
+  id: string;
+  path: string;
+  payload: { ok: boolean } & UnknownRecord;
+}
+
+interface CampaignAdmissionAuthority {
+  id: string;
+  payload: { ok: boolean };
+}
+
+interface CampaignRuntimePlan {
+  state: string;
+  identities: { engine?: { sha256?: string } };
+  definition: { runtime: {
+    releaseManifestSha256: string | null;
+    controllerImage: string | null;
+    buildImage: string | null;
+    platform: string;
+  } };
+}
+
+interface CampaignInspection extends CampaignDirectory {
+  state: CampaignState;
+}
+
+interface RetryAuthority {
+  transient: boolean;
+  recoveryClean: boolean;
+  budgetKnown: boolean;
+  cause: string | null | undefined;
+}
+
+interface AttemptResult extends CampaignExecutionResult {
+  run?: BenchmarkRun | null;
+  retryAuthority?: RetryAuthority;
+  cleanupRequired?: boolean;
+  reason?: string;
+}
+
+export function expectedDependencyRunOutcomeKind(levels: Array<{ outcome?: { kind?: string } }>,
+  terminalOutcome: { kind?: string } | null | undefined): string | null {
   const expected = aggregateRunOutcome(levels ?? []).kind;
   if (terminalOutcome?.kind !== 'passed' && expected === 'passed') return null;
   return expected;
 }
 
-function contained(root, path, label) {
+function contained(root: string, path: string, label: string): string {
   const absoluteRoot = resolve(root);
   const absolute = resolve(absoluteRoot, path);
   const rel = relative(absoluteRoot, absolute);
@@ -46,9 +264,11 @@ function contained(root, path, label) {
   return absolute;
 }
 
-export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = null,
-  progressionResumeFrom = null, campaignAdmissionId = null, maxBudgetUsd = undefined) {
-  if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
+export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+  output: string, runIndex: unknown = undefined, campaignPlanPath: string | null = null,
+  progressionResumeFrom: string | null = null, campaignAdmissionId: string | null = null,
+  maxBudgetUsd: number | null | undefined = undefined): string[] {
+  if (!integer(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
   const levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
@@ -85,14 +305,22 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
     args.push('--campaign-admission-id', campaignAdmissionId);
   }
   if (hasFeatureCatalog) {
+    const featureCatalogIdentity = attempt.featureCatalog;
+    if (!featureCatalogIdentity) {
+      throw new Error(`attempt ${attempt.id} feature catalog does not match its campaign`);
+    }
     if (canonicalDefinitionJson(attempt.featureCatalog)
       !== canonicalDefinitionJson(plan.featureCatalog?.identity)) {
       throw new Error(`attempt ${attempt.id} feature catalog identity does not match its campaign`);
     }
-    args.push('--feature-catalog-sha256', attempt.featureCatalog.sha256);
+    args.push('--feature-catalog-sha256', featureCatalogIdentity.sha256);
   }
   if (dependencyMode) {
-    args.push('--dependency-policy-sha256', attempt.dependencyPolicy.sha256);
+    const dependencyPolicyIdentity = attempt.dependencyPolicy;
+    if (!dependencyPolicyIdentity) {
+      throw new Error(`attempt ${attempt.id} mode and dependency policy do not match`);
+    }
+    args.push('--dependency-policy-sha256', dependencyPolicyIdentity.sha256);
   }
   if (dependencyMode) {
     if (progressionResumeFrom !== null) {
@@ -136,9 +364,11 @@ export function attemptArgv(plan, attempt, output, runIndex, campaignPlanPath = 
   return args;
 }
 
-export function validateCampaignRun(plan, attempt, run, {
+export function validateCampaignRun(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+  input: unknown, {
   buildImage = null, resultDir = null,
-} = {}) {
+}: { buildImage?: string | null; resultDir?: string | null } = {}): BenchmarkRun {
+  const run = input as BenchmarkRun;
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
     && item.model === attempt.model);
   const condition = plan.conditions.find(item => item.sha256 === attempt.condition?.sha256);
@@ -161,17 +391,19 @@ export function validateCampaignRun(plan, attempt, run, {
     && run.levels.at(-1)?.repair?.status === 'budget-exhausted';
   const interruptedPrefix = actualLevels.length < expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
-    && ['provider_failure', 'harness_failure', 'ungraded'].includes(run.outcome?.kind);
+    && ['provider_failure', 'harness_failure', 'ungraded'].includes(run.outcome?.kind ?? '');
   const dependencyPrefix = dependencyMode && actualLevels.length > 0
     && actualLevels.length <= expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
     && run.validation?.ladder?.policy === 'dependency-gated';
-  const mismatches = [];
-  const mismatch = (condition, field) => { if (condition) mismatches.push(field); };
-  const finalGradedLevel = (run.levels ?? []).filter(level => Number.isSafeInteger(level.score)
-    && Number.isSafeInteger(level.max) && level.max > 0).at(-1) ?? null;
+  const mismatches: string[] = [];
+  const mismatch = (condition: unknown, field: string): void => {
+    if (condition) mismatches.push(field);
+  };
+  const finalGradedLevel = (run.levels ?? []).filter(level => safeInteger(level.score)
+    && safeInteger(level.max) && level.max > 0).at(-1) ?? null;
   if (resultDir !== null && finalGradedLevel
-    && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
+    && ['passed', 'app_failure'].includes(run.outcome?.kind ?? '')) {
     if (typeof resultDir !== 'string' || !resultDir) {
       mismatch(true, 'packageEvidence');
     } else {
@@ -187,7 +419,7 @@ export function validateCampaignRun(plan, attempt, run, {
       try {
         const bundlePath = join(resolve(resultDir), 'grading', 'bundle.json');
         if (!existsSync(bundlePath)) throw new Error('missing grading bundle');
-        grading = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' });
+        grading = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' }) as GradeBundle;
       } catch {
         mismatch(true, 'packageEvidence.grading');
       }
@@ -251,14 +483,14 @@ export function validateCampaignRun(plan, attempt, run, {
     const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
     if (plannedLevel?.selection?.schemaVersion === 3) {
       const selectionAt = `levels.L${level.level}.selection`;
-      const projectChecks = checks => checks?.map(check => ({
+      const projectChecks = (checks: PlannedCheck[] | undefined) => checks?.map(check => ({
         stableKey: check?.stableKey, points: check?.points, treatment: check?.treatment,
       }));
       // A run that omits a selection field entirely must register as a
       // mismatch, not crash canonicalization: the crash message names no
       // field, and a validator that throws for a reason other than its own
       // verdict hides which identity actually diverged.
-      const canonicalOrMissing = value => value === undefined
+      const canonicalOrMissing = (value: unknown) => value === undefined
         ? '"<missing>"' : canonicalDefinitionJson(value);
       mismatch(level.selection?.schemaVersion !== 3, `${selectionAt}.schemaVersion`);
       mismatch(level.selection?.sha256 !== plannedLevel.selection.sha256,
@@ -295,9 +527,11 @@ export function validateCampaignRun(plan, attempt, run, {
           `${selectionAt}.evaluationSha256`);
         mismatch(level.selection?.regressionPoints !== regressionPoints,
           `${selectionAt}.regressionPoints`);
-        for (const [name, regression] of [['firstBuild', level.firstBuild?.regression],
-          ['final', level.regression]]) {
-          mismatch(!Number.isSafeInteger(regression?.score)
+        const regressions: Array<[string, RunRegression | null | undefined]> = [
+          ['firstBuild', level.firstBuild?.regression], ['final', level.regression],
+        ];
+        for (const [name, regression] of regressions) {
+          mismatch(!safeInteger(regression?.score) || !safeInteger(regression?.max)
             || regression.max !== regressionPoints || regression.score < 0
             || regression.score > regression.max, `levels.L${level.level}.${name}.regression`);
         }
@@ -325,12 +559,12 @@ export function validateCampaignRun(plan, attempt, run, {
       || selectedKeys.some(key => typeof key !== 'string' || !key), `${at}.selectedChecks`);
     mismatch(canonicalDefinitionJson(observation.selectedChecks)
       !== canonicalDefinitionJson(selectedKeys), `${at}.selectedChecks`);
-    mismatch(!plannedLevel || plannedLevel.selection?.sha256 !== level.selection.sha256,
+    mismatch(!plannedLevel || plannedLevel.selection?.sha256 !== level.selection?.sha256,
       `levels.L${level.level}.selection.sha256`);
     mismatch(!Array.isArray(plannedKeys)
       || canonicalDefinitionJson(plannedKeys) !== canonicalDefinitionJson(selectedKeys),
     `levels.L${level.level}.selection.observedChecks`);
-    mismatch(observation.selectionSha256 !== level.selection.sha256, `${at}.selectionSha256`);
+    mismatch(observation.selectionSha256 !== level.selection?.sha256, `${at}.selectionSha256`);
     mismatch(observation.scoreContribution !== false, `${at}.scoreContribution`);
     mismatch(observation.repairVisible !== false, `${at}.repairVisible`);
     mismatch(observation.sourceSha256 !== (level.firstBuild?.source?.sha256 ?? null),
@@ -341,25 +575,27 @@ export function validateCampaignRun(plan, attempt, run, {
     const reportedPoints = Array.isArray(observation.reportedChecks)
       ? observation.reportedChecks.reduce((total, key) => total
         + (selectedChecks.find(check => check.stableKey === key)?.points ?? 0), 0) : null;
-    const numericEvidence = Number.isSafeInteger(observation.observedPoints)
-      && observation.observedPoints >= 0 && Number.isSafeInteger(observation.passedPoints)
+    const numericEvidence = safeInteger(observation.observedPoints)
+      && observation.observedPoints >= 0 && safeInteger(observation.passedPoints)
       && observation.passedPoints >= 0 && observation.passedPoints <= observation.observedPoints;
     mismatch(observation.observedPoints !== null && !numericEvidence, `${at}.observedPoints`);
     mismatch(observation.passedPoints !== null && !numericEvidence, `${at}.passedPoints`);
     mismatch(numericEvidence && (selectedPoints === null
-      || observation.observedPoints > selectedPoints
-      || observation.observedPoints !== reportedPoints), `${at}.observedPoints`);
+      || (safeInteger(observation.observedPoints)
+        && (observation.observedPoints > selectedPoints
+          || observation.observedPoints !== reportedPoints))), `${at}.observedPoints`);
     const exactArtifact = `first-build-l${level.level}-observed/bundle.json`;
     mismatch(observation.artifact !== null && observation.artifact !== exactArtifact, `${at}.artifact`);
     mismatch(observation.artifact === null && numericEvidence, `${at}.artifact`);
     mismatch(observation.artifact !== null && !numericEvidence, `${at}.artifact`);
   }
   if (!dependencyMode && (exactLevels || gatedPrefix)
-    && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
+    && ['passed', 'app_failure'].includes(run.outcome?.kind ?? '')) {
+    const runOutcome = run.outcome!;
     const levelOutcomes = (run.levels ?? []).map(level => level.outcome?.kind);
-    mismatch(run.outcome.kind === 'passed' && levelOutcomes.some(kind => kind !== 'passed'),
+    mismatch(runOutcome.kind === 'passed' && levelOutcomes.some(kind => kind !== 'passed'),
       'outcome.kind');
-    mismatch(run.outcome.kind === 'app_failure'
+    mismatch(runOutcome.kind === 'app_failure'
       && !levelOutcomes.some(kind => kind === 'app_failure'), 'outcome.kind');
     for (const level of run.levels ?? []) {
       const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
@@ -368,36 +604,40 @@ export function validateCampaignRun(plan, attempt, run, {
       const validObject = repair && typeof repair === 'object' && !Array.isArray(repair);
       mismatch(!validObject, at);
       if (!validObject) continue;
-      mismatch(!Number.isInteger(level.fixRounds) || level.fixRounds < 0
+      mismatch(!integer(level.fixRounds) || level.fixRounds < 0
         || level.fixRounds > plan.definition.budgets.fixRounds, `levels.L${level.level}.fixRounds`);
       mismatch(repair.budgetRounds !== plan.definition.budgets.fixRounds, `${at}.budgetRounds`);
       mismatch(repair.roundsUsed !== level.fixRounds, `${at}.roundsUsed`);
-      const validScore = Number.isInteger(level.score) && Number.isInteger(level.max)
+      const validScore = integer(level.score) && integer(level.max)
         && level.max > 0 && level.score >= 0 && level.score <= level.max;
       mismatch(!validScore, `levels.L${level.level}.score`);
       const declaredPoints = plannedLevel?.selection?.scoredPoints;
-      mismatch(!Number.isSafeInteger(declaredPoints) || declaredPoints <= 0,
+      mismatch(!safeInteger(declaredPoints) || declaredPoints <= 0,
         `levels.L${level.level}.plannedSelection.scoredPoints`);
       mismatch(validScore && level.max !== declaredPoints, `levels.L${level.level}.max`);
       const firstBuildScore = level.firstBuild?.score;
       const firstBuildMax = level.firstBuild?.max;
-      const validFirstBuildScore = Number.isInteger(firstBuildScore)
-        && Number.isInteger(firstBuildMax) && firstBuildMax > 0
+      const validFirstBuildScore = integer(firstBuildScore)
+        && integer(firstBuildMax) && firstBuildMax > 0
         && firstBuildScore >= 0 && firstBuildScore <= firstBuildMax;
       mismatch(!validFirstBuildScore, `levels.L${level.level}.firstBuild.score`);
       mismatch(validFirstBuildScore && firstBuildMax !== declaredPoints,
         `levels.L${level.level}.firstBuild.max`);
-      for (const [phase, outcome] of [['firstBuild', level.firstBuild?.outcome],
-        ['final', level.outcome]]) {
+      const outcomes: Array<[string, RunOutcome | undefined]> = [
+        ['firstBuild', level.firstBuild?.outcome], ['final', level.outcome],
+      ];
+      for (const [phase, outcome] of outcomes) {
         const atOutcome = `levels.L${level.level}.${phase}.outcome`;
-        mismatch(!outcome || !['passed', 'app_failure'].includes(outcome.kind), `${atOutcome}.kind`);
+        mismatch(!outcome || !['passed', 'app_failure'].includes(outcome.kind ?? ''),
+          `${atOutcome}.kind`);
         mismatch(Array.isArray(outcome?.inconclusive) && outcome.inconclusive.length > 0,
           `${atOutcome}.inconclusive`);
         mismatch(Array.isArray(outcome?.harnessFailures) && outcome.harnessFailures.length > 0,
           `${atOutcome}.harnessFailures`);
       }
       if (level.outcome?.kind === 'passed') {
-        const expected = level.fixRounds > 0 ? 'corrected' : 'not-needed';
+        const expected = integer(level.fixRounds) && level.fixRounds > 0
+          ? 'corrected' : 'not-needed';
         mismatch(repair.status !== expected, `${at}.status`);
         mismatch(validScore && level.score !== level.max, `levels.L${level.level}.score`);
       } else if (level.outcome?.kind === 'app_failure') {
@@ -405,14 +645,15 @@ export function validateCampaignRun(plan, attempt, run, {
           && repair.roundsUsed === repair.budgetRounds;
         const paused = repair.status === 'incomplete'
           && repair.stopReason === 'repeated-findings'
+          && integer(repair.roundsUsed) && integer(repair.budgetRounds)
           && repair.roundsUsed > 0 && repair.roundsUsed < repair.budgetRounds;
         mismatch(!exhausted && !paused, `${at}.status`);
         // The level score covers only the newly requested criteria. A level can
         // earn every one of those points and still fail if an inherited
         // guarantee regressed. Test-development checks cannot create an
         // ordinary application failure.
-        const inheritedDeficit = Number.isInteger(level.regression?.score)
-          && Number.isInteger(level.regression?.max)
+        const inheritedDeficit = integer(level.regression?.score)
+          && integer(level.regression?.max)
           && level.regression.max > 0
           && level.regression.score < level.regression.max;
         const contractFailure = level.contractPass === false;
@@ -430,14 +671,16 @@ export function validateCampaignRun(plan, attempt, run, {
       try {
         const owner = { ...expectedProgressionOwner,
           workspace: { appDirectory: 'source' } };
+        const featureCatalog = plan.featureCatalog!;
+        const dependencyPolicy = plan.dependencyPolicy!;
         const progression = compileProgressionInput(dependencyRuntimeDefinition(
-          plan.featureCatalog, plan.dependencyPolicy));
+          featureCatalog, dependencyPolicy));
         const stored = readProgressionState(join(resolve(resultDir), 'progression-state.json'), {
           progression,
-          featureCatalogIdentity: plan.featureCatalog.identity,
-          dependencyPolicyIdentity: plan.dependencyPolicy.identity,
+          featureCatalogIdentity: featureCatalog.identity,
+          dependencyPolicyIdentity: dependencyPolicy.identity,
           owner,
-        });
+        }) as { state: StoredProgressionState; snapshotSha256: string };
         const storedStatus = liveProgressionStatus(stored.state);
         mismatch(canonicalDefinitionJson(run.progressionStatus)
           !== canonicalDefinitionJson(storedStatus), 'progressionStatus');
@@ -454,7 +697,7 @@ export function validateCampaignRun(plan, attempt, run, {
           if (!last) continue;
           mismatch(last?.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
             `levels.L${level.level}.selection.sha256`);
-          const validScore = Number.isSafeInteger(level.score) && Number.isSafeInteger(level.max)
+          const validScore = safeInteger(level.score) && safeInteger(level.max)
             && level.max > 0 && level.score >= 0 && level.score <= level.max;
           mismatch(last?.outcome === 'conclusive' && !validScore,
             `levels.L${level.level}.score`);
@@ -472,7 +715,7 @@ export function validateCampaignRun(plan, attempt, run, {
           // whole-app checks such as the UI contract and inherited guarantees.
           // A graph can therefore finish while one of those checks still fails.
           const expectedOutcome = expectedDependencyRunOutcomeKind(
-            run.levels, stored.state.terminalOutcome);
+            run.levels ?? [], stored.state.terminalOutcome);
           mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
         } else if (!interruptedPrefix) {
           mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
@@ -486,12 +729,13 @@ export function validateCampaignRun(plan, attempt, run, {
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     const cost = run.totals?.costUsd;
     const missingAllowed = interruptedPrefix && actualLevels.length === 0 && cost == null;
-    mismatch(!missingAllowed && (!Number.isFinite(cost)
+    mismatch(!missingAllowed && (!finite(cost)
       || cost > plan.definition.budgets.maxCostUsdPerAttempt), 'totals.costUsd');
   }
   if (agent?.costLimit === 'native') {
     mismatch(run.totals?.costComplete !== true, 'totals.costComplete');
-    mismatch(!durableCostLedger(run).complete, 'costEvidence');
+    mismatch(!durableCostLedger(run as Parameters<typeof durableCostLedger>[0]).complete,
+      'costEvidence');
   }
   if (mismatches.length) {
     throw new Error(`run.json does not match its planned campaign attempt: ${mismatches.join(', ')}`);
@@ -501,21 +745,24 @@ export function validateCampaignRun(plan, attempt, run, {
 
 const TRANSIENT_PROVIDER_STATUSES = new Set([500, 502, 503, 504, 529]);
 
-export function campaignRetryAuthority(run, { recoveryClean = false, requireCostReceipt = false } = {}) {
+export function campaignRetryAuthority(run: BenchmarkRun | null | undefined, {
+  recoveryClean = false, requireCostReceipt = false,
+}: { recoveryClean?: boolean; requireCostReceipt?: boolean } = {}): RetryAuthority {
   const outcome = run?.outcome;
   const providerStatus = outcome?.provider?.providerStatus;
   const legacyTransient = outcome?.kind === 'harness_failure'
     && outcome.phase === 'coding-session'
     && outcome.reason !== 'provider-throttle-exhausted'
-    && TRANSIENT_PROVIDER_STATUSES.has(providerStatus);
+    && typeof providerStatus === 'number' && TRANSIENT_PROVIDER_STATUSES.has(providerStatus);
   const providerTransient = outcome?.kind === 'provider_failure'
     && outcome.phase === 'coding-session'
     && outcome.reason !== 'provider-throttle-exhausted'
-    && (TRANSIENT_PROVIDER_STATUSES.has(providerStatus)
-      || ['provider-api-error', 'provider-connection-error'].includes(outcome.reason));
+    && ((typeof providerStatus === 'number' && TRANSIENT_PROVIDER_STATUSES.has(providerStatus))
+      || ['provider-api-error', 'provider-connection-error'].includes(outcome.reason ?? ''));
   const transient = legacyTransient || providerTransient;
+  const cost = run?.totals?.costUsd;
   const budgetKnown = !requireCostReceipt || (run?.totals?.costComplete === true
-    && Number.isFinite(run?.totals?.costUsd) && run.totals.costUsd >= 0);
+    && finite(cost) && cost >= 0);
   return {
     transient,
     recoveryClean: recoveryClean === true,
@@ -527,8 +774,9 @@ export function campaignRetryAuthority(run, { recoveryClean = false, requireCost
   };
 }
 
-function readAttemptResult(plan, attempt, output, processResult) {
-  const withRetryAuthority = result => ({ ...result,
+function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+  output: string, processResult: RunnerProcessResult): AttemptResult {
+  const withRetryAuthority = (result: AttemptResult): AttemptResult => ({ ...result,
     retryAuthority: campaignRetryAuthority(result.run, {
       recoveryClean: publicRecoveryProvesCleanup(output, attempt.stack),
       requireCostReceipt: plan.definition.budgets.maxCostUsdPerAttempt !== null,
@@ -543,13 +791,13 @@ function readAttemptResult(plan, attempt, output, processResult) {
   let artifactError = null;
   if (existsSync(runPath)) {
     try {
-      run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
+      run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' }) as BenchmarkRun;
       validateCampaignRun(plan, attempt, run, {
         buildImage: processResult.buildImage,
         resultDir: output,
       });
     }
-    catch (error) { artifactError = error; }
+    catch (error) { artifactError = error instanceof Error ? error : new Error(String(error)); }
   }
   if (artifactError) {
     const processDetail = processResult.code !== 0
@@ -566,7 +814,10 @@ function readAttemptResult(plan, attempt, output, processResult) {
   return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut, run });
 }
 
-export function remainingAttemptCostBudget(plan, claim, directory) {
+export function remainingAttemptCostBudget(
+  plan: { definition: { budgets: { maxCostUsdPerAttempt: number | null } } },
+  claim: { attempt: { id: string }; priorOutputs?: string[] },
+  directory: string): number | null {
   const cap = plan.definition.budgets.maxCostUsdPerAttempt;
   if (cap === null) return null;
   let spent = 0;
@@ -575,12 +826,12 @@ export function remainingAttemptCostBudget(plan, claim, directory) {
     if (!existsSync(runPath)) {
       throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
     }
-    const run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
-    if (run.totals?.costComplete !== true || !Number.isFinite(run.totals?.costUsd)
-      || run.totals.costUsd < 0) {
+    const run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' }) as BenchmarkRun;
+    const cost = run.totals?.costUsd;
+    if (run.totals?.costComplete !== true || !finite(cost) || cost < 0) {
       throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
     }
-    spent += run.totals.costUsd;
+    spent += cost;
   }
   const remaining = Number((cap - spent).toFixed(6));
   if (remaining <= 0) {
@@ -589,7 +840,7 @@ export function remainingAttemptCostBudget(plan, claim, directory) {
   return remaining;
 }
 
-export function processFailureDetail(processResult) {
+export function processFailureDetail(processResult: Partial<RunnerProcessResult>): string {
   const text = processResult.stderrTail || processResult.stdoutTail
     || processResult.error?.message || '';
   const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -597,7 +848,8 @@ export function processFailureDetail(processResult) {
   return (explicit ?? lines.slice(-4).join(' | ')).slice(0, 800);
 }
 
-export function verifyCampaignRuntime(plan, env = process.env) {
+export function verifyCampaignRuntime(plan: CampaignRuntimePlan,
+  env: NodeJS.ProcessEnv = process.env): CampaignRuntimePlan['definition']['runtime'] {
   if (plan.state !== 'frozen') return structuredClone(plan.definition.runtime);
   const expected = plan.definition.runtime;
   const plannedEngine = plan.identities?.engine;
@@ -615,7 +867,8 @@ export function verifyCampaignRuntime(plan, env = process.env) {
   let bytes;
   try { bytes = readFileSync(resolve(env.STACK_BENCH_RELEASE_MANIFEST)); }
   catch (error) {
-    throw new Error(`cannot read frozen campaign release manifest: ${error.message}`, { cause: error });
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`cannot read frozen campaign release manifest: ${message}`, { cause: error });
   }
   if (sha256(bytes) !== expected.releaseManifestSha256) {
     throw new Error('release manifest does not match the frozen campaign');
@@ -623,7 +876,8 @@ export function verifyCampaignRuntime(plan, env = process.env) {
   let manifest;
   try { manifest = validateReleaseManifest(JSON.parse(bytes.toString('utf8'))); }
   catch (error) {
-    throw new Error(`frozen campaign release manifest is invalid: ${error.message}`, { cause: error });
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`frozen campaign release manifest is invalid: ${message}`, { cause: error });
   }
   const controller = manifest.images.find(image => image.role === 'controller');
   const build = manifest.images.find(image => image.role === 'build-sandbox');
@@ -636,7 +890,8 @@ export function verifyCampaignRuntime(plan, env = process.env) {
   return structuredClone(expected);
 }
 
-export function campaignExecutionEnvironment(plan, env = process.env) {
+export function campaignExecutionEnvironment(plan: CampaignRuntimePlan,
+  env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const executionEnv = { ...env };
   if (plan.definition.runtime.buildImage !== null) {
     if (executionEnv.STACK_BENCH_IMAGE
@@ -649,7 +904,8 @@ export function campaignExecutionEnvironment(plan, env = process.env) {
   return executionEnv;
 }
 
-export function campaignSlotEnvironment(env, stack, runIndex) {
+export function campaignSlotEnvironment(env: NodeJS.ProcessEnv, stack: string | null,
+  runIndex: number): NodeJS.ProcessEnv {
   const executionEnv = { ...env };
   if (stack !== 'spacetime') return executionEnv;
   const base = new URL(executionEnv.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210');
@@ -667,7 +923,8 @@ export function campaignSlotEnvironment(env, stack, runIndex) {
   return executionEnv;
 }
 
-function assertAdmissionReferences(plan, directory, state) {
+function assertAdmissionReferences(plan: CompiledCampaignPlan, directory: string,
+  state: CampaignState): CampaignState {
   const ids = [...new Set(state.attempts.flatMap(attempt =>
     attempt.executions.map(execution => execution.admissionId)))];
   for (const id of ids) {
@@ -685,7 +942,9 @@ const RESOURCE_FREE_REQUIREMENTS = Object.freeze({
   providerAccess: false,
 });
 
-function hasNoAgentResources(agent) {
+type AgentAdapter = ReturnType<typeof AGENT_ADAPTER_REGISTRY.get>;
+
+function hasNoAgentResources(agent: NonNullable<AgentAdapter>): boolean {
   return agent.costLimit === 'non-billable'
     && agent.apiKeyEnvironmentVariable === null
     && agent.credentialEnvironmentVariables.length === 0
@@ -695,20 +954,26 @@ function hasNoAgentResources(agent) {
     && agent.credentialStatusCommand === null;
 }
 
-function hasNoStackResources(stack) {
+function hasNoStackResources(stack: CompiledCampaignPlan['stacks'][number]): boolean {
   const adapter = STACK_ADAPTER_REGISTRY.get(stack.id);
+  if (!adapter) return false;
   const capability = adapter.capabilities.admission;
-  if (!capability?.operations.includes('requirements')) return false;
+  if (!capability || typeof capability !== 'object' || !('operations' in capability)
+    || !Array.isArray(capability.operations)
+    || !capability.operations.includes('requirements')) return false;
   return canonicalDefinitionJson(executeStackCapability(adapter, 'admission', 'requirements'))
     === canonicalDefinitionJson(RESOURCE_FREE_REQUIREMENTS);
 }
 
-export function campaignUsesNoExternalResources(plan) {
+export function campaignUsesNoExternalResources(plan: CompiledCampaignPlan): boolean {
   return plan.stacks.every(hasNoStackResources)
-    && plan.agents.every(agent => hasNoAgentResources(AGENT_ADAPTER_REGISTRY.get(agent.adapter)));
+    && plan.agents.every(agent => {
+      const adapter = AGENT_ADAPTER_REGISTRY.get(agent.adapter);
+      return adapter ? hasNoAgentResources(adapter) : false;
+    });
 }
 
-function resourceFreeAdmissionReport(request) {
+function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest): AdmissionReport {
   return {
     schemaVersion: 1,
     request: {
@@ -734,16 +999,18 @@ function resourceFreeAdmissionReport(request) {
   };
 }
 
-export function inspectCampaign(directory, { requireCurrentInputs = true } = {}) {
+export function inspectCampaign(directory: string, {
+  requireCurrentInputs = true,
+}: { requireCurrentInputs?: boolean } = {}): CampaignInspection {
   const current = readCampaignState(directory, { requireCurrentInputs });
   return { ...current,
     state: assertAdmissionReferences(current.plan, current.paths.root, current.state) };
 }
 
-function publicRecoveryProvesCleanup(output, backend) {
+function publicRecoveryProvesCleanup(output: string, backend: string): boolean {
   const path = join(output, 'recovery.json');
   if (!existsSync(path)) return false;
-  const recovery = readArtifactPayload(path, { expectedKind: 'recovery' });
+  const recovery = readArtifactPayload(path, { expectedKind: 'recovery' }) as RecoveryArtifact;
   return recovery.status === 'clean'
     && recovery.backend === backend
     && recovery.cleanup?.succeeded === true
@@ -754,15 +1021,20 @@ function publicRecoveryProvesCleanup(output, backend) {
     && recovery.resources.locks.every(resource => resource.released === true);
 }
 
-export function runCampaignAdmission(plan, directory,
+export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: string,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
-    uuid = randomUUID } = {}) {
+    uuid = randomUUID as UuidFactory }: {
+      env?: NodeJS.ProcessEnv;
+      preflight?: Preflight;
+      now?: string;
+      uuid?: UuidFactory;
+    } = {}): CampaignAdmissionResult {
   const executionEnv = campaignExecutionEnvironment(plan, env);
-  const reports = [];
+  const reports: AdmissionReport[] = [];
   const resourceFree = campaignUsesNoExternalResources(plan);
   for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
     for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
-      const request = {
+      const request: CampaignAdmissionPreflightRequest = {
         backends: plan.stacks.map(stack => stack.id),
         track: plan.definition.track,
         levels: `${Math.min(...plan.definition.levels)}-${Math.max(...plan.definition.levels)}`,
@@ -802,15 +1074,17 @@ export function runCampaignAdmission(plan, directory,
   return { id, path, payload };
 }
 
-export function prepareCampaign(campaignFile, directory) {
+export function prepareCampaign(campaignFile: string, directory: string): CampaignInspection {
   const plan = compileCampaignFile(resolve(campaignFile));
   const lock = acquireCampaignLock(directory, plan);
   try { return initializeCampaignDirectory(plan, directory); }
   finally { releaseCampaignLock(lock); }
 }
 
-export function reconcileCampaign(campaignFile, directory,
-  { rescue = rescueSupervisedLease } = {}) {
+export function reconcileCampaign(campaignFile: string, directory: string,
+  { rescue = rescueSupervisedLease }: {
+    rescue?: (supervisorState: string, output: string) => void;
+  } = {}): CampaignState {
   const plan = compileCampaignFile(resolve(campaignFile));
   const lock = acquireCampaignLock(directory, plan);
   try {
@@ -819,7 +1093,7 @@ export function reconcileCampaign(campaignFile, directory,
     const running = state.attempts.filter(item => item.status === 'running');
     if (!running.length) throw new Error('campaign has no running attempt to reconcile');
     for (const attempt of running) {
-      const execution = attempt.executions.at(-1);
+      const execution = attempt.executions.at(-1)!;
       const output = contained(initialized.paths.root, execution.output, 'attempt output');
       const supervisorState = contained(initialized.paths.root,
         join('.private', `${execution.id}.supervisor.json`), 'supervisor state');
@@ -831,7 +1105,7 @@ export function reconcileCampaign(campaignFile, directory,
     }
     let reconciled = state;
     for (const attempt of running) {
-      reconciled = markInterruptedExecution(reconciled, attempt.executions.at(-1).id, {
+      reconciled = markInterruptedExecution(reconciled, attempt.executions.at(-1)!.id, {
         reason: 'controller ended before recording completion; exact-owned cleanup was proven',
       });
     }
@@ -840,9 +1114,17 @@ export function reconcileCampaign(campaignFile, directory,
   } finally { releaseCampaignLock(lock); }
 }
 
-export async function executeCampaign(campaignFile, directory,
-  { mode = 'frozen', env = process.env, execute = runBounded,
-    admit = runCampaignAdmission, rescue = rescueSupervisedLease, signal = null } = {}) {
+export async function executeCampaign(campaignFile: string, directory: string,
+  { mode = 'frozen', env = process.env, execute = runBounded as ExecuteProcess,
+    admit = runCampaignAdmission, rescue = rescueSupervisedLease, signal = null }: {
+      mode?: 'frozen' | 'model-free-trial';
+      env?: NodeJS.ProcessEnv;
+      execute?: ExecuteProcess;
+      admit?: (plan: CompiledCampaignPlan, directory: string,
+        options: { env: NodeJS.ProcessEnv }) => CampaignAdmissionAuthority;
+      rescue?: (supervisorState: string, output: string) => void;
+      signal?: AbortSignal | null;
+    } = {}): Promise<CampaignState> {
   const plan = compileCampaignFile(resolve(campaignFile));
   if (!['frozen', 'model-free-trial'].includes(mode)) {
     throw new Error(`unknown campaign execution mode ${JSON.stringify(mode)}`);
@@ -879,7 +1161,7 @@ export async function executeCampaign(campaignFile, directory,
     if (!admission?.payload?.ok || typeof admission.id !== 'string' || !admission.id) {
       throw new Error('campaign-wide preflight admission failed; no attempt was claimed');
     }
-    const runClaim = async claim => {
+    const runClaim = async (claim: CampaignClaim): Promise<AttemptResult> => {
       const output = contained(initialized.paths.root, claim.output, 'attempt output');
       // Preflight bind-mounts the exact attempt output to prove that evidence is
       // durable. The first execution's parent may already exist, while a retry's
@@ -888,7 +1170,7 @@ export async function executeCampaign(campaignFile, directory,
       mkdirSync(output, { recursive: true });
       const supervisorState = contained(initialized.paths.root,
         join('.private', `${claim.executionId}.supervisor.json`), 'supervisor state');
-      let processResult;
+      let processResult: RunnerProcessResult;
       try {
         const remainingBudget = remainingAttemptCostBudget(plan, claim, initialized.paths.root);
         processResult = await execute(process.execPath,
@@ -906,12 +1188,15 @@ export async function executeCampaign(campaignFile, directory,
         });
         processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
       } catch (error) {
-        let reason = `attempt launcher failed: ${error.message}`;
+        const message = error instanceof Error ? error.message : String(error);
+        let reason = `attempt launcher failed: ${message}`;
         if (existsSync(supervisorState)) {
           try { rescue(supervisorState, output); }
           catch (cleanupError) {
+            const cleanupMessage = cleanupError instanceof Error
+              ? cleanupError.message : String(cleanupError);
             return { cleanupRequired: true,
-              reason: `${reason}; cleanup failed: ${cleanupError.message}` };
+              reason: `${reason}; cleanup failed: ${cleanupMessage}` };
           }
         }
         return { exitCode: null, timedOut: false,
@@ -930,21 +1215,26 @@ export async function executeCampaign(campaignFile, directory,
             streams: processResult.logs ? Object.fromEntries(Object.entries(processResult.logs)
               .map(([name, log]) => [name, { ...log, path: `process.${name}.log` }])) : null } });
       } catch (error) {
-        let reason = `could not record campaign process evidence: ${error.message}`;
+        const message = error instanceof Error ? error.message : String(error);
+        let reason = `could not record campaign process evidence: ${message}`;
         if (existsSync(supervisorState)) {
           try { rescue(supervisorState, output); }
           catch (cleanupError) {
+            const cleanupMessage = cleanupError instanceof Error
+              ? cleanupError.message : String(cleanupError);
             return { cleanupRequired: true,
-              reason: `${reason}; cleanup failed: ${cleanupError.message}` };
+              reason: `${reason}; cleanup failed: ${cleanupMessage}` };
           }
         }
         return { exitCode: processResult.code ?? null, timedOut: false,
           run: { outcome: { kind: 'harness_failure', reason } } };
       }
-      let cleanupError = null;
+      let cleanupError: Error | null = null;
       if (!processResult.ok && existsSync(supervisorState)) {
         try { rescue(supervisorState, output); }
-        catch (error) { cleanupError = error; }
+        catch (error) {
+          cleanupError = error instanceof Error ? error : new Error(String(error));
+        }
       }
       if (cleanupError) {
         return { cleanupRequired: true,
@@ -952,7 +1242,7 @@ export async function executeCampaign(campaignFile, directory,
       }
       return readAttemptResult(plan, claim.attempt, output, processResult);
     };
-    const active = new Map();
+    const active = new Map<string, Promise<{ claim: CampaignClaim; result: AttemptResult }>>();
     const invalidAtStart = state.summary.invalid;
     let stopLaunching = signal?.aborted === true;
     while (true) {
@@ -960,12 +1250,14 @@ export async function executeCampaign(campaignFile, directory,
         const next = claimNextAttempt(state, { admissionId: admission.id });
         state = next.state;
         if (!next.claim) break;
+        const claim = next.claim;
         writeCampaignState(initialized.paths.state, plan, state);
-        const promise = runClaim(next.claim).then(result => ({ claim: next.claim, result }),
-          error => ({ claim: next.claim, result: { exitCode: null, timedOut: false,
+        const promise = runClaim(claim).then(result => ({ claim, result }),
+          error => ({ claim, result: { exitCode: null, timedOut: false,
             run: { outcome: { kind: 'harness_failure',
-              reason: `campaign worker failed: ${error.message}` } } } }));
-        active.set(next.claim.executionId, promise);
+              reason: `campaign worker failed: ${error instanceof Error
+                ? error.message : String(error)}` } } } }));
+        active.set(claim.executionId, promise);
       }
       if (!active.size) return state;
       const completed = await Promise.race(active.values());

@@ -1,7 +1,7 @@
 export interface StackAdapter {
   id: string;
   version: string;
-  capabilities: Record<string, unknown>;
+  capabilities: Record<string, { operations: string[] } | undefined>;
 }
 
 export class StackCapabilityUnsupportedError extends Error {}

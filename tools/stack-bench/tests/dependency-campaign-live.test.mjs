@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { campaignUsesNoExternalResources, runCampaignAdmission }
-  from '../src/campaigns/campaign-runner.mjs';
+  from '../dist/src/campaigns/campaign-runner.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { readCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../dist/src/campaigns/campaign-compiler.js';
-import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
+import { attemptArgv, runCampaignAdmission } from '../dist/src/campaigns/campaign-runner.js';
 import { parseArgs } from '../commands/bench.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { writeArtifact } from '../dist/src/evidence/artifacts.js';

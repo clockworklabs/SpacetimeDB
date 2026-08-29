@@ -5,7 +5,7 @@ import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
-import { inspectCampaign, validateCampaignRun } from './campaign-runner.mjs';
+import { inspectCampaign, validateCampaignRun } from './campaign-runner.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
