@@ -19,7 +19,7 @@ import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindin
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';
-import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
+import { resolveStudyConditions, validateConditionReference } from './condition-compiler.js';
 import { validateCampaignMode } from './campaign-mode.js';
 
 export const CAMPAIGN_SCHEMA_VERSION = 5;

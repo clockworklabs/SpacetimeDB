@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { resolveGuidanceProfile, resolveStudyConditions,
-  validateConditionReference } from '../src/campaigns/condition-compiler.mjs';
+  validateConditionReference } from '../src/campaigns/condition-compiler.js';
 
 const prescribed = { id: 'prescribed', version: '1.0.0',
   guidanceProfile: 'prescribed@1.0.0', repairPolicy: 'scored-only@1.0.0' };
@@ -31,7 +31,7 @@ const modularRequested = { track: 'example', levels: [{ ...requested.levels[0],
     ], observedChecks: [] },
 }] };
 
-const writeJson = (path, value) => {
+const writeJson = (path: string, value: unknown): void => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
@@ -43,16 +43,22 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.equal(condition.guidance.mode, 'prescribed');
   assert.equal(condition.guidance.material.designAdvice, true);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
-  assert.deepEqual(condition.guidance.skills.spacetime.ids,
+  const spacetimeSkills = condition.guidance.skills.spacetime;
+  const mongodbSkills = condition.guidance.skills.mongodb;
+  assert.ok(spacetimeSkills);
+  assert.ok(mongodbSkills);
+  assert.deepEqual(spacetimeSkills.ids,
     ['typescript-server', 'typescript-client']);
-  assert.deepEqual(condition.guidance.skills.mongodb.ids, []);
-  assert.match(condition.guidance.skills.spacetime.sha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(mongodbSkills.ids, []);
+  assert.match(spacetimeSkills.sha256, /^[a-f0-9]{64}$/);
   assert.equal(condition.repair.scoredEvidence, true);
   assert.equal(condition.repair.observedEvidence, false);
   assert.deepEqual(condition.requested, requested);
+  const requestedLevel = requested.levels[0];
+  assert.ok(requestedLevel);
   const [changed] = resolveStudyConditions([prescribed], ['mongodb', 'postgres', 'spacetime'],
-    { requested: { ...requested, levels: [{ ...requested.levels[0], selection: {
-      ...requested.levels[0].selection, sha256: 'e'.repeat(64),
+    { requested: { ...requested, levels: [{ ...requestedLevel, selection: {
+      ...requestedLevel.selection, sha256: 'e'.repeat(64),
     } }] } });
   assert.notEqual(changed.sha256, condition.sha256);
 });
@@ -100,7 +106,9 @@ test('expected modular specifications are scored under the ordinary repair polic
     repairPolicy: 'scored-only@1.0.0' };
   const [condition] = resolveStudyConditions([selected], ['mongodb', 'postgres', 'spacetime'],
     { requested: modularRequested });
-  assert.deepEqual(condition.requested.levels[0].selection.specifications.expected,
+  const selectedLevel = condition.requested.levels[0];
+  assert.ok(selectedLevel?.selection.specifications);
+  assert.deepEqual(selectedLevel.selection.specifications.expected,
     ['example.spec@1.0.0']);
   assert.equal(condition.repair.scoredEvidence, true);
 });
@@ -120,6 +128,7 @@ test('modular condition references are canonical without mutating caller-owned i
   const original = structuredClone(input);
   const validated = validateConditionReference(input);
   assert.deepEqual(input, original);
+  assert.ok(validated.specifications);
   assert.deepEqual(validated.specifications.levels.map(entry => entry.level), [1, 2]);
   assert.throws(() => validateConditionReference({ ...prescribed, specifications: { levels: [
     { level: 1, requested: ['example.spec.same@1.0.0'],

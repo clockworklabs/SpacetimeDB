@@ -8,7 +8,7 @@ import test from 'node:test';
 import { agentRecipeRequest, agentScenarioPaths } from '../commands/agent.mjs';
 import { agentVisibleContractText, contractControlIds }
   from '../src/composition/agent-visible-contract.mjs';
-import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
+import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
   createRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';

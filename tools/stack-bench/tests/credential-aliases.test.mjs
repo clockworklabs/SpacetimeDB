@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { gradeArgv } from '../commands/bench.mjs';
 import { agentRequestArgv } from '../src/agents/agent-adapter-contract.mjs';
-import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
+import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
 import { materializeScenarioCredentials, validateCredentialAliases }
   from '../src/composition/credential-aliases.mjs';

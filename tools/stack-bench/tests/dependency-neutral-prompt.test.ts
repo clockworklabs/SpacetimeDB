@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
-import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
-import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
+import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
+import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
