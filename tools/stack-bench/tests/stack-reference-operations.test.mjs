@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { deployMongoDbReference, deployPostgresReference, deploySpacetimeReference }
-  from '../src/stacks/stack-reference-operations.mjs';
+  from '../dist/src/stacks/stack-reference-operations.mjs';
 
 test('PostgreSQL reference deployment uses its locked schema tool', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-postgres-reference-'));

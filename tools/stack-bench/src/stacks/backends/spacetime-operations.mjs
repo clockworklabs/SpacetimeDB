@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
-import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.mjs';
-import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.mjs';
+import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
+import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../../runtime/coding-container-policy.js';
 

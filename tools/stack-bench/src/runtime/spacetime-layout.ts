@@ -6,21 +6,54 @@ const SKIP_DIRECTORIES = new Set([
 ]);
 
 export class GeneratedAppLayoutError extends Error {
-  constructor(message) {
+  readonly code = 'generated_app_layout';
+
+  constructor(message: string) {
     super(message);
     this.name = 'GeneratedAppLayoutError';
-    this.code = 'generated_app_layout';
   }
 }
 
-const fail = message => { throw new GeneratedAppLayoutError(message); };
+interface ModuleTarget {
+  path: string;
+  configPath: string | null;
+}
 
-function inside(root, candidate) {
+export interface SpacetimeModuleLayout {
+  moduleDirectory: string;
+  hostPath: string;
+  containerPath: string;
+  configPath: string | null;
+  source: 'spacetime.json' | 'required-directory' | 'server-sdk-import';
+}
+
+function fail(message: string): never {
+  throw new GeneratedAppLayoutError(message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readConfig(appRoot: string, path: string): Record<string, unknown> {
+  let config: unknown;
+  try { config = JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    fail(`${relative(appRoot, path)} is not valid JSON: ${detail}`);
+  }
+  if (!isRecord(config)) {
+    fail(`${relative(appRoot, path)} is not valid JSON: expected an object`);
+  }
+  return config;
+}
+
+function inside(root: string, candidate: string): boolean {
   const rel = relative(root, candidate);
   return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 }
 
-function walk(root, visit) {
+function walk(root: string, visit: (path: string, name: string) => void): void {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (entry.isSymbolicLink()) continue;
     const path = join(root, entry.name);
@@ -32,30 +65,29 @@ function walk(root, visit) {
   }
 }
 
-function configuredPath(appRoot, configPath, modulePath) {
+function configuredPath(appRoot: string, configPath: string, modulePath: string): string {
   const normalized = modulePath.replaceAll('\\', '/');
   if (normalized === '/app') return appRoot;
   if (normalized.startsWith('/app/')) return resolve(appRoot, normalized.slice('/app/'.length));
   return resolve(dirname(configPath), modulePath);
 }
 
-function configTargets(appRoot) {
-  const targets = [];
+function configTargets(appRoot: string): ModuleTarget[] {
+  const targets: ModuleTarget[] = [];
   walk(appRoot, (path, name) => {
     if (name !== 'spacetime.json') return;
-    let config;
-    try { config = JSON.parse(readFileSync(path, 'utf8')); }
-    catch (error) { fail(`${relative(appRoot, path)} is not valid JSON: ${error.message}`); }
-    if (config['module-path'] === undefined) return;
-    if (typeof config['module-path'] !== 'string' || !config['module-path'].trim()) {
+    const config = readConfig(appRoot, path);
+    const modulePath = config['module-path'];
+    if (modulePath === undefined) return;
+    if (typeof modulePath !== 'string' || !modulePath.trim()) {
       fail(`${relative(appRoot, path)} has an invalid module-path`);
     }
-    targets.push({ path: configuredPath(appRoot, path, config['module-path']), configPath: path });
+    targets.push({ path: configuredPath(appRoot, path, modulePath), configPath: path });
   });
   return targets;
 }
 
-function importsServerSdk(directory) {
+function importsServerSdk(directory: string): boolean {
   const src = join(directory, 'src');
   if (!existsSync(src) || !lstatSync(src).isDirectory()) return false;
   let found = false;
@@ -67,8 +99,8 @@ function importsServerSdk(directory) {
   return found;
 }
 
-function discoveredTargets(appRoot) {
-  const targets = [];
+function discoveredTargets(appRoot: string): ModuleTarget[] {
+  const targets: ModuleTarget[] = [];
   walk(appRoot, (path, name) => {
     if (name !== 'package.json') return;
     const directory = dirname(path);
@@ -77,7 +109,7 @@ function discoveredTargets(appRoot) {
   return targets;
 }
 
-function validateTarget(appRoot, target) {
+function validateTarget(appRoot: string, target: ModuleTarget): Omit<SpacetimeModuleLayout, 'source'> {
   const unresolved = resolve(target.path);
   if (!inside(appRoot, unresolved)) {
     fail(`SpacetimeDB module path escapes the application: ${unresolved}`);
@@ -102,14 +134,14 @@ function validateTarget(appRoot, target) {
   };
 }
 
-export function resolveSpacetimeModuleLayout(app) {
+export function resolveSpacetimeModuleLayout(app: string): SpacetimeModuleLayout {
   if (!existsSync(app) || !lstatSync(app).isDirectory()) {
     fail(`application directory is missing: ${resolve(app)}`);
   }
   const appRoot = realpathSync(app);
   const declared = configTargets(appRoot);
   let candidates = declared;
-  let source = 'spacetime.json';
+  let source: SpacetimeModuleLayout['source'] = 'spacetime.json';
   if (!candidates.length) {
     const conventional = join(appRoot, 'backend', 'spacetimedb');
     if (existsSync(conventional)) {
@@ -128,5 +160,7 @@ export function resolveSpacetimeModuleLayout(app) {
     fail(`multiple SpacetimeDB module directories were found: ${[...unique.keys()]
       .map(path => relative(appRoot, path)).sort().join(', ')}`);
   }
-  return { ...validateTarget(appRoot, [...unique.values()][0]), source };
+  const target = unique.values().next().value;
+  if (target === undefined) throw new GeneratedAppLayoutError('no SpacetimeDB TypeScript module was found');
+  return { ...validateTarget(appRoot, target), source };
 }

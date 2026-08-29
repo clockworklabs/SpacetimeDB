@@ -1,4 +1,4 @@
-import { leasedSpacetimeTarget } from '../runtime/spacetime-target.mjs';
+import { leasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 
 interface NamedActionParameter {
   readonly name: string;

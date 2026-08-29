@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { GENERATED_APP_LAYOUT_EXIT_CODE, resetBackend } from '../src/stacks/backend-reset.mjs';
-import { GeneratedAppLayoutError } from '../src/runtime/spacetime-layout.mjs';
+import { GeneratedAppLayoutError } from '../src/runtime/spacetime-layout.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 
 const [backend, app] = process.argv.slice(2);

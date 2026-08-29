@@ -16,7 +16,7 @@ import { killTree, pidsOnPort } from '../src/runtime/platform.mjs';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { fetchStatus } from '../src/runtime/readiness.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
-import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
+import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
 import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';

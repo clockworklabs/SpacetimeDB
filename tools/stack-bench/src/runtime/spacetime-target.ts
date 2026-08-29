@@ -4,8 +4,26 @@
 
 import { execFileSync } from 'node:child_process';
 import { leaseFromEnv } from './backend-lease.mjs';
+import type { BackendLeaseContainer } from './backend-lease.mjs';
 
-export function containerReachableSpacetimeUri(lease, networkMode = null) {
+interface SpacetimeTargetLease {
+  resources: {
+    serverUri: string;
+    buildContainer?: Pick<BackendLeaseContainer, 'networkMode'> | null;
+  };
+}
+
+export interface LeasedSpacetimeTarget {
+  mod: string;
+  uri: string;
+  containerUri: string;
+  buildContainer: BackendLeaseContainer | null;
+}
+
+export function containerReachableSpacetimeUri(
+  lease: SpacetimeTargetLease,
+  networkMode: string | null = null,
+): string {
   const mode = networkMode ?? lease.resources.buildContainer?.networkMode ?? 'bridge';
   if (mode === 'host') return lease.resources.serverUri;
   if (mode !== 'bridge') throw new Error(`unsupported build container network mode ${mode}`);
@@ -14,9 +32,15 @@ export function containerReachableSpacetimeUri(lease, networkMode = null) {
     .replace('localhost', 'host.docker.internal');
 }
 
-export function leasedSpacetimeTarget({ requireBuildContainer = false, exec = execFileSync } = {}) {
+export function leasedSpacetimeTarget({
+  requireBuildContainer = false,
+  exec = execFileSync,
+}: {
+  requireBuildContainer?: boolean;
+  exec?: typeof execFileSync;
+} = {}): LeasedSpacetimeTarget {
   const { lease } = leaseFromEnv(process.env, { backend: 'spacetime', active: true });
-  const target = {
+  const target: LeasedSpacetimeTarget = {
     mod: lease.resources.module,
     uri: lease.resources.serverUri,
     containerUri: containerReachableSpacetimeUri(lease),
