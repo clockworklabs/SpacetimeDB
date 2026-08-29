@@ -28,7 +28,7 @@ import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,

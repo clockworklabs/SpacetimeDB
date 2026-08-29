@@ -24,7 +24,14 @@ export const ADDITIONAL_ATTEMPT_RESOURCE_FLOORS = Object.freeze({
   memoryBytes: BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes + (2 * 1024 ** 3),
 });
 
-export function preflightResourceFloors(parallelism = 1) {
+export interface ResourceFloors {
+  readonly cpuCount: number;
+  readonly memoryBytes: number;
+  readonly resultDiskBytes: number;
+  readonly clockSkewMs: number;
+}
+
+export function preflightResourceFloors(parallelism = 1): Readonly<ResourceFloors> {
   if (!Number.isInteger(parallelism) || parallelism < 1) {
     throw new Error('parallelism must be a positive integer');
   }

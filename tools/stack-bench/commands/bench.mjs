@@ -45,7 +45,7 @@ import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
   validateAgentResult } from '../src/agents/agent-adapter-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.mjs';
 import { runPreflight } from '../src/runtime/preflight.mjs';
-import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { resolveAgentCredential } from '../src/agents/agent-credentials.js';
 import { sandboxProbeMode } from '../src/runtime/sandbox.js';

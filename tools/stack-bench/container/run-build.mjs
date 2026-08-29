@@ -28,7 +28,7 @@ import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
-  from '../src/composition/product-config.mjs';
+  from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.js';
 import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.mjs';

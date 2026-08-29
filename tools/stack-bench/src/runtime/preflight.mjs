@@ -11,7 +11,7 @@ import { isExactImageReference, parseImageId } from './container-image.js';
 import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.js';
 import { dockerMountArguments } from './container-mount.js';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
-  preflightResourceFloors } from '../composition/product-config.mjs';
+  preflightResourceFloors } from '../composition/product-config.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.mjs';
 import { validateFeatureCatalogInput } from '../progression/progression-definition.js';

@@ -17,7 +17,7 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   from '../runtime/coding-container-policy.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';
 import { resolveReferenceSelection } from './reference-selection.js';

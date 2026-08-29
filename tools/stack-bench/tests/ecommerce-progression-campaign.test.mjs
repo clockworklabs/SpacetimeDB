@@ -4,19 +4,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
+import { AGENT_ADAPTER_REGISTRY } from '../dist/src/agents/agent-adapters.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../dist/src/campaigns/campaign-compiler.js';
 import { attemptArgv, runCampaignAdmission } from '../dist/src/campaigns/campaign-runner.js';
-import { parseArgs } from '../commands/bench.mjs';
-import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { parseArgs } from '../dist/commands/bench.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../dist/src/composition/product-config.js';
 import { writeArtifact } from '../dist/src/evidence/artifacts.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 import { parseReferenceAgentArgs } from '../dist/src/references/reference-agent.mjs';
 import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistry }
-  from '../src/references/reference-fixtures.mjs';
+  from '../dist/src/references/reference-fixtures.mjs';
 
 const root = join(import.meta.dirname, '..');
 const campaignPath = join(root, 'appliance', 'campaign.ecommerce-progression-reference.json');

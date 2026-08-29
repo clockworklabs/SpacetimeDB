@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
-import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
