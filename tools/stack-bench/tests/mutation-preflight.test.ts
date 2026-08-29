@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationControlArgv, mutationControlTimeoutMs,
-  mutationGradeTimeoutMs } from '../src/evidence/mutation-control.mjs';
+  mutationGradeTimeoutMs } from '../src/evidence/mutation-control.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -93,7 +93,11 @@ test('mutation checkpoint controls reach the mutation runner', () => {
       sha256: 'calibration-sha', state: 'qualified' } };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
-  const after = flag => argv[argv.indexOf(flag) + 1];
+  const after = (flag: string): string => {
+    const value = argv[argv.indexOf(flag) + 1];
+    if (value === undefined) throw new Error(`missing value for ${flag}`);
+    return value;
+  };
   assert.equal(after('--resume-from'), 'prior.json');
   assert.equal(after('--checkpoint-out'), 'next.json');
   assert.equal(after('--max-runtime-minutes'), '30');

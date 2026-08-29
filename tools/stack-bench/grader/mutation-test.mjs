@@ -56,7 +56,7 @@ import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
 import { mutationShard } from "../src/evidence/mutation-shards.js";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
-  from "../src/evidence/mutation-control.mjs";
+  from "../src/evidence/mutation-control.js";
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";
 
 // Resolve tooling relative to this file so the runner works from any directory.

@@ -2,12 +2,47 @@ import { join } from 'node:path';
 
 import { agentRecipeIdentity } from '../agents/agent-adapter-contract.mjs';
 import { portsFor } from '../composition/tracks.mjs';
+import type { Track } from '../composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../package-root.js';
+
+interface SelectedCheck {
+  stableKey?: unknown;
+}
+
+interface MutationRecipeTask {
+  agentRequest?: unknown;
+  request?: unknown;
+  selection?: {
+    scoredChecks?: Array<string | SelectedCheck>;
+    checks?: Array<string | SelectedCheck>;
+  };
+}
+
+export interface MutationControlArgs {
+  levelList?: number[];
+  level?: number;
+  out: string;
+  recipeTasks?: Map<number, MutationRecipeTask>;
+  recipe?: string | null;
+  mutations: string;
+  backend: string;
+  track: string;
+  runIndex: number;
+  parentAttemptId: string;
+  mutationShardIndex?: number;
+  mutationShardCount?: number;
+  mutationResumeFrom?: string;
+  mutationCheckpointOut?: string;
+  mutationBaselineBundle?: string;
+  expectedMutationCalibration?: unknown;
+  mutationMaxRuntimeMinutes?: number;
+  mutationImageId?: string;
+}
 
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 export const MUTATION_GRADE_MAX_TIMEOUT_MS = 15 * 60_000;
 
-export function mutationGradeTimeoutMs(deadlineMs, nowMs = Date.now()) {
+export function mutationGradeTimeoutMs(deadlineMs: number, nowMs: number = Date.now()): number {
   if (!Number.isFinite(deadlineMs) || !Number.isFinite(nowMs)) {
     throw new Error('mutation grade deadline must be finite');
   }
@@ -16,15 +51,25 @@ export function mutationGradeTimeoutMs(deadlineMs, nowMs = Date.now()) {
   return Math.min(MUTATION_GRADE_MAX_TIMEOUT_MS, remainingMs);
 }
 
-function restartSpecFor(args, appDir, track) {
+function restartSpecFor(args: MutationControlArgs, appDir: string, track: Track): {
+  backend: string;
+  app: string;
+  port: number | null;
+  probe: string;
+} {
   const port = portsFor(track, args.backend, args.runIndex).express ?? null;
   return { backend: args.backend, app: appDir, port: port == null ? null : Number(port),
     probe: track.restartProbe };
 }
 
-export function mutationControlArgv(args, appDir, url, track) {
+export function mutationControlArgv(
+  args: MutationControlArgs,
+  appDir: string,
+  url: string,
+  track: Track,
+): string[] {
   const level = args.levelList?.at(-1) ?? args.level;
-  if (!Number.isSafeInteger(level) || level < 1) {
+  if (typeof level !== 'number' || !Number.isSafeInteger(level) || level < 1) {
     throw new Error('mutation control requires a positive integer run level');
   }
   const output = join(args.out, 'mutation-control.json');
@@ -34,7 +79,7 @@ export function mutationControlArgv(args, appDir, url, track) {
   const selection = args.recipeTasks?.get(level)?.selection;
   const selectedCheckKeys = (selection?.scoredChecks ?? selection?.checks ?? [])
     .map(check => typeof check === 'string' ? check : check?.stableKey)
-    .filter(Boolean);
+    .filter((stableKey): stableKey is string => typeof stableKey === 'string' && Boolean(stableKey));
   return [join(STACK_BENCH_ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
     '--url', url, '--mutations', args.mutations, '--backend', args.backend,
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
@@ -59,7 +104,10 @@ export function mutationControlArgv(args, appDir, url, track) {
     ...(recipe ? ['--recipe', recipe] : [])];
 }
 
-export function mutationControlTimeoutMs(manifest, maxRuntimeMinutes = 60) {
+export function mutationControlTimeoutMs(
+  manifest: { mutations?: unknown } | null | undefined,
+  maxRuntimeMinutes: number = 60,
+): number {
   if (!Array.isArray(manifest?.mutations)) {
     throw new Error('mutation control timeout requires a mutation manifest');
   }

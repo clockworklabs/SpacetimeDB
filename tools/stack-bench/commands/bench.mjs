@@ -54,7 +54,7 @@ import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
-import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
+import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels,
   validateFeatureCatalogInput, validateProgressionInput }

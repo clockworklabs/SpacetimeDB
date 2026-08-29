@@ -39,3 +39,7 @@ export interface TrackSuite {
 export function loadTrack(name?: string): Track;
 export function isDeclaredLevel(track: TrackDefinition, level: number): boolean;
 export function suitesFor(track: TrackDefinition, level: number): TrackSuite[];
+export function portsFor(track: TrackDefinition, backend: string, runIndex: number): {
+  express?: number;
+  [key: string]: number | undefined;
+};
