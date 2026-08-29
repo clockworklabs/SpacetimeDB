@@ -29,7 +29,7 @@ interface AdapterOptions {
   deadlineMs?: number;
 }
 
-export interface AgentAdapterIdentity {
+export interface AgentAdapterIdentity extends Record<string, unknown> {
   id: string;
   version: string;
   sha256: string;
