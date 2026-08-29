@@ -10,7 +10,7 @@ import { readArtifact } from '../evidence/artifacts.mjs';
 import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';
-import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
+import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
 

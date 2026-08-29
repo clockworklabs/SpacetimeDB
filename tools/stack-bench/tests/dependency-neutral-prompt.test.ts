@@ -7,7 +7,7 @@ import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compile
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
-import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.mjs';
+import { resolveFeatureCatalog } from '../dist/src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.mjs';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';

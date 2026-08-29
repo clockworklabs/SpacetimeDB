@@ -34,7 +34,7 @@ import { controllerRunner } from '../runtime/runner-environment.mjs';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.mjs';
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
-import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
+import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }

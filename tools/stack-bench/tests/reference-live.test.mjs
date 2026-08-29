@@ -24,7 +24,7 @@ import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.mjs';
+import { resolveFeatureCatalog } from '../dist/src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.mjs';
 
