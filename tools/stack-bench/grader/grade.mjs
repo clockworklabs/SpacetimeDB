@@ -21,7 +21,7 @@ import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { harnessBrowserFailure, harnessProcessFailure,
-  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.mjs';
+  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { materializeScenarioCredentials } from '../src/composition/credential-aliases.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';

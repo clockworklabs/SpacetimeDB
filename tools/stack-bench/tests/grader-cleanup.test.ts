@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { closeActorContexts } from '../grader/grade.mjs';
 import { harnessBrowserFailure,
-  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.mjs';
+  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 
 test('grader context cleanup records browser failures instead of throwing away the report', async () => {
   const context = {
@@ -32,12 +32,12 @@ test('grader context cleanup stays silent when cleanup succeeds', async () => {
 });
 
 test('browser setup operations are harness failures but app navigation is not', async () => {
-  let infrastructure;
+  let infrastructure: unknown;
   try {
     await runBrowserInfrastructureOperation('page creation', async () => {
       throw new Error('page allocation failed');
     });
   } catch (error) { infrastructure = error; }
-  assert.match(harnessBrowserFailure(infrastructure), /browser page creation failed/);
+  assert.match(harnessBrowserFailure(infrastructure) ?? '', /browser page creation failed/);
   assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
 });

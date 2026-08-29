@@ -10,7 +10,7 @@ import type { CheckEvidenceStatus } from '../evidence/check-evidence.mjs';
 import { replayHeaders } from './actor-transport-action-executors.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { controlBackend } from '../runtime/backend-control.mjs';
-import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.mjs';
+import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { databaseContainerName } from '../stacks/database-containers.mjs';

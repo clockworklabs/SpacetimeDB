@@ -12,7 +12,7 @@ import type {
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
-import { harnessProcessFailure } from '../evidence/harness-errors.mjs';
+import { harnessProcessFailure } from '../evidence/harness-errors.js';
 
 type UnknownRecord = Record<string, unknown>;
 type HeaderRecord = Record<string, string>;

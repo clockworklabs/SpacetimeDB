@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { harnessBrowserFailure, harnessProcessFailure } from '../src/evidence/harness-errors.mjs';
+import { harnessBrowserFailure, harnessProcessFailure } from '../src/evidence/harness-errors.js';
 
 test('child-process timeouts are harness failures, not application findings', () => {
   const error = Object.assign(new Error('spawnSync docker ETIMEDOUT'), {
@@ -26,7 +26,7 @@ test('a missing harness database container is not blamed on the application', ()
 });
 
 test('a crashed browser target is inconclusive harness evidence', () => {
-  assert.match(harnessBrowserFailure(new Error('browserContext.setOffline: Target crashed ')),
+  assert.match(harnessBrowserFailure(new Error('browserContext.setOffline: Target crashed ')) ?? '',
     /^browser target failed in the harness/);
   assert.equal(harnessBrowserFailure(new Error('expected stock 15, saw 20')), null);
 });

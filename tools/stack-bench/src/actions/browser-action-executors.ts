@@ -4,7 +4,7 @@ import type {
   ActionImplementationArguments,
 } from './action-contract.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.mjs';
-import { harnessBrowserFailure } from '../evidence/harness-errors.mjs';
+import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 
 interface Locator {
   click(options?: unknown): Promise<void>;
