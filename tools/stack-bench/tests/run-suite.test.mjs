@@ -4,17 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   applicationDatabaseMarker, checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
   contractLintArgv, databaseContainerForGrading, databaseNameForGrading, runGraderChild,
   verifyReseedProbe, waitForReseedProbe }
-  from '../commands/run-suite.mjs';
+  from '../dist/commands/run-suite.mjs';
 import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
-import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../dist/src/stacks/backend-reset.js';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 

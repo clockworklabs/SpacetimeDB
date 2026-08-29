@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { GENERATED_APP_LAYOUT_EXIT_CODE, resetBackend } from '../src/stacks/backend-reset.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE, resetBackend } from '../src/stacks/backend-reset.js';
 import { GeneratedAppLayoutError } from '../src/runtime/spacetime-layout.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 
