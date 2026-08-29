@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.mjs';
+import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 

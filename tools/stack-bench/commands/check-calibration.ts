@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { compileCalibrationDefinition, compileCalibrationFile } from '../src/composition/calibration-compiler.mjs';
+import { compileCalibrationDefinition, compileCalibrationFile } from '../src/composition/calibration-compiler.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { listTracks, TRACKS_DIR } from '../src/composition/tracks.js';
 

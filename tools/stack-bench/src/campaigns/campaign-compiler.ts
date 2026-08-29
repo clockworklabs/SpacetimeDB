@@ -2,7 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
-import { resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
+import { resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { currentEngineIdentity } from '../evidence/artifacts.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -10,6 +10,7 @@ import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
   from '../evidence/pricing-authority.js';
 import type { PricingRates } from '../evidence/pricing-authority.js';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.js';
+import type { RecipeRelease } from '../composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
 import type { RecipeTaskRequestResult } from '../composition/recipe-selection.mjs';
 import type { RecipeBinding } from '../composition/recipe-release.js';
@@ -248,7 +249,7 @@ export interface CompiledCampaignPlan {
   dependencyPolicy: DependencyPolicyInput | null;
 }
 
-export type CalibrationResolver = (release: Parameters<typeof resolveCalibrationForRelease>[0], options: {
+export type CalibrationResolver = (release: RecipeRelease, options: {
   trackRoot: string; stackBenchRoot: string;
 }) => ResolvedCalibration | null;
 

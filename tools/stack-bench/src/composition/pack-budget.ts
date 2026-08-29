@@ -8,8 +8,8 @@ import { artifactPayload, currentEngineIdentity, readArtifact, recipeArtifactIde
   writeArtifact } from '../evidence/artifacts.js';
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
-import type { CalibrationPlan } from './calibration-compiler.mjs';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.js';
+import type { CalibrationPlan } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';

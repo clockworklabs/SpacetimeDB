@@ -24,7 +24,7 @@ import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '..
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { contractControlIds } from '../src/composition/agent-visible-contract.js';
-import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';

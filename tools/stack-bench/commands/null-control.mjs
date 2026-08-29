@@ -10,7 +10,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
-  resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+  resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';

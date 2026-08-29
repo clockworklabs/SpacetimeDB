@@ -24,7 +24,7 @@ import { killTree } from '../runtime/platform.js';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.js';
 import { calibrationQualificationIdentity, mutationExecutionSha256,
-  resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
+  resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../composition/qualification-scope.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';

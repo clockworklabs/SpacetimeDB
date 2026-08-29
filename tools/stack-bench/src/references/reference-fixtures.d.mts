@@ -6,6 +6,7 @@ export interface ReferenceFixture {
   status: string;
   recipes?: string[];
   actionLevels?: number[];
+  targetPath?: string;
   [key: string]: unknown;
 }
 
@@ -25,3 +26,10 @@ export function selectReferenceFixture(
   registry: ReferenceRegistry,
   selector?: ReferenceFixtureSelector,
 ): ReferenceFixture;
+
+export function loadReferenceRegistry(path?: string): ReferenceRegistry;
+
+export function validateReferenceRegistry(
+  registry: unknown,
+  options?: { root?: string },
+): { ok: boolean; issues: string[] };

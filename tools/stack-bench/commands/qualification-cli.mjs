@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/tracks.js';
 import { PACK_BUDGET_POLICY } from '../src/composition/pack-budget.js';

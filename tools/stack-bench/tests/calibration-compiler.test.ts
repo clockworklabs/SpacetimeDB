@@ -8,9 +8,9 @@ import { calibrationCoversAlias, calibrationQualificationIdentity,
   calibrationQualificationRelease, canReuseQualificationScope,
   compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, hasExactSelectedPackRuntime, resolveCalibrationForRelease,
-  validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
+  validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.js';
 import type { CalibrationContext, CalibrationDefinition, CalibrationEvidence,
-  CalibrationPlan } from '../src/composition/calibration-compiler.mjs';
+  CalibrationPlan } from '../src/composition/calibration-compiler.js';
 import { readArtifact } from '../src/evidence/artifacts.js';
 import { checkCalibrations } from '../commands/check-calibration.js';
 import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, parsePackBudgetArgs,
   recommendPackBudgets } from '../src/composition/pack-budget.js';

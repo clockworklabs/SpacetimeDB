@@ -26,7 +26,7 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { materializeScenarioCredentials } from '../src/composition/credential-aliases.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
