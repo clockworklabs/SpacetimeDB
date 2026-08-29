@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { readBackendGuidanceDocument } from '../dist/commands/agent.mjs';
-import { normalizePromptText } from '../src/agents/agent-materials.mjs';
+import { normalizePromptText } from '../dist/src/agents/agent-materials.js';
 import { sha256 } from '../dist/src/evidence/provenance.js';
 
 const documentPath = 'backends/postgres.md';

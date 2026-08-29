@@ -30,7 +30,7 @@ import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
-import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
+import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
   runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';

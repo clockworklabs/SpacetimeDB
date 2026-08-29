@@ -22,7 +22,7 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.mjs';
 import { pidsOnPort } from './platform.js';
-import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.mjs';
+import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const REPO = resolve(ROOT, '..', '..');
