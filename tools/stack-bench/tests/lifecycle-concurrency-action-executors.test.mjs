@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
 import {
   createDatabaseWriteCapability,

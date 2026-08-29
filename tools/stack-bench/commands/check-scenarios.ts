@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { compileRecipeFile, type CompiledOwnedTaskFragment, type CompiledRecipeRelease }
   from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition, type CompiledStep }

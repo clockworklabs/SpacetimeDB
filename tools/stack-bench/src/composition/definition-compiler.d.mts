@@ -43,6 +43,11 @@ export interface CompiledScenarioDefinition {
 export const DEFINITION_SCHEMA_VERSION: number;
 export const ACTION_IDS: readonly string[];
 
+export function compileActionInput(
+  input: unknown,
+  options?: { source?: string; expectedAction?: string },
+): CompiledStep;
+
 export function compileScenarioDefinition(
   input: unknown,
   options?: { source?: string; expectedLevel?: number | null },

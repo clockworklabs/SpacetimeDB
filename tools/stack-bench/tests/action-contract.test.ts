@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { ACTION_REGISTRY, legacyActionPlugin } from '../src/actions/action-catalog.mjs';
+import { ACTION_REGISTRY, actionPlugin } from '../src/actions/action-catalog.js';
 import {
   ACTION_EVIDENCE_SCHEMA_VERSION,
   ACTION_INPUT_SCHEMA_VERSION,
@@ -111,7 +111,7 @@ test('duplicate, unknown, malformed, and incomplete registrations fail at startu
   assert.throws(() => createActionRegistry([{ ...plugin(), deadline: { timeoutMs: 0 } }]),
     /positive integer/);
   assert.throws(() => createActionRegistry([{ ...plugin(), mystery: true }]), /mystery is unknown/);
-  assert.throws(() => legacyActionPlugin('notReal'), /unknown compatibility action/);
+  assert.throws(() => actionPlugin('notReal'), /unknown action/);
 });
 
 test('a successful action sees only declared capabilities and returns structured evidence', async () => {

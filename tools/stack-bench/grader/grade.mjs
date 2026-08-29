@@ -29,7 +29,7 @@ import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifac
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.mjs';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
-import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.mjs';
