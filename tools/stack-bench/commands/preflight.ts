@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { parsePreflightArgs, printPreflightReport, runPreflight,
-  writePreflightReport } from '../src/runtime/preflight.mjs';
+  writePreflightReport } from '../src/runtime/preflight.js';
 
 let request;
 try {

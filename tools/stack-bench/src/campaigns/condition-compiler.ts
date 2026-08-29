@@ -66,12 +66,20 @@ export interface ConditionReference {
   specifications?: ConditionSpecifications;
 }
 
+export interface RequestedSelectionScope {
+  features?: string[];
+  packs?: string[];
+  checks: string[];
+  specifications?: { requested?: string[]; expected?: string[]; observed?: string[] };
+  dependencyExpansion?: string;
+}
+
 interface RequestedSelection extends UnknownRecord {
   schemaVersion?: number;
   sha256: string;
   scoredPoints: number;
   completeness?: string;
-  requested: UnknownRecord;
+  requested: RequestedSelectionScope;
   taskPacks?: string[];
   promptPacks?: string[];
   features?: string[];
@@ -358,7 +366,7 @@ function validateRequestedScope(input: unknown): RequestedScope {
         || !['full', 'subset'].includes(entry.selection.completeness)))) {
       fail(`${at}.selection`, 'has an invalid identity');
     }
-    const requested = structuredClone(entry.selection.requested) as UnknownRecord;
+    const requested: UnknownRecord = { ...structuredClone(entry.selection.requested) };
     const dependencyExpansion = requested?.dependencyExpansion;
     if (modular) delete requested.dependencyExpansion;
     strict(requested, `${at}.selection.requested`, modular

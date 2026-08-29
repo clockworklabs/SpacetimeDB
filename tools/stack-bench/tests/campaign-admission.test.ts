@@ -77,6 +77,7 @@ test('campaign admission receives only the feature catalog levels in the compile
         requests.push(request);
         return {
           schemaVersion: 1,
+          generatedAt: createdAt,
           request: { backends: request.backends, track: request.track, levels: request.levelList,
             runIndex: request.runIndex, parallelism: request.parallelism,
             agentAdapter: request.agentAdapter,

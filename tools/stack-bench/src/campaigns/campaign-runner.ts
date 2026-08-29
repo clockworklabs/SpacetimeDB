@@ -16,7 +16,9 @@ import { rescueSupervisedLease, runBounded } from '../references/reference-live.
 import type { BoundedProcessResult, RunBoundedOptions }
   from '../references/reference-live.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { runPreflight } from '../runtime/preflight.mjs';
+import { runPreflight } from '../runtime/preflight.js';
+import type { RequestedScope } from './condition-compiler.js';
+import type { PreflightReport } from '../runtime/preflight.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
@@ -180,7 +182,7 @@ export interface CampaignAdmissionPreflightRequest extends UnknownRecord {
   agentAdapter: string;
   packIds: string[];
   checkKeys: string[];
-  requestedScopes: unknown[];
+  requestedScopes: RequestedScope[];
   featureCatalog: CompiledCampaignPlan['featureCatalog'];
   mode: CompiledCampaignPlan['definition']['mode'];
   smoke: boolean;
@@ -188,7 +190,7 @@ export interface CampaignAdmissionPreflightRequest extends UnknownRecord {
   resultsDir: string;
 }
 
-interface AdmissionReport extends UnknownRecord { ok: boolean }
+type AdmissionReport = PreflightReport;
 type Preflight = (request: CampaignAdmissionPreflightRequest,
   options?: { env: NodeJS.ProcessEnv }) => AdmissionReport;
 type UuidFactory = () => string;
@@ -1003,9 +1005,11 @@ export function campaignUsesNoExternalResources(plan: CompiledCampaignPlan): boo
     });
 }
 
-function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest): AdmissionReport {
+function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
+  generatedAt: string): AdmissionReport {
   return {
     schemaVersion: 1,
+    generatedAt,
     request: {
       backends: request.backends,
       track: request.track,
@@ -1082,7 +1086,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
           ?? DEFAULT_BUILD_IMAGE,
         resultsDir: resolve(directory),
       };
-      reports.push(resourceFree ? resourceFreeAdmissionReport(request) : preflight(request,
+      reports.push(resourceFree ? resourceFreeAdmissionReport(request, now) : preflight(request,
         { env: campaignSlotEnvironment(executionEnv,
           plan.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
     }

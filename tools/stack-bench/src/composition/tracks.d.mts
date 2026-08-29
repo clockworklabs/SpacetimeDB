@@ -44,6 +44,7 @@ export interface TrackSuiteSource {
   suites: Record<string, unknown[]>;
 }
 
+export function assertNoPortCollisions(): void;
 export function loadTrack(name?: string): Track;
 export function isDeclaredLevel(track: TrackDefinition, level: number): boolean;
 export function suitesFor(track: TrackSuiteSource, level: number): TrackSuite[];

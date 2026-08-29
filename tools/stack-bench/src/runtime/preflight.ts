@@ -7,6 +7,8 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
+import type { AgentAdapter } from '../agents/agent-adapter-contract.js';
+import type { RequestedScope } from '../campaigns/condition-compiler.js';
 import { isExactImageReference, parseImageId } from './container-image.js';
 import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.js';
 import { dockerMountArguments } from './container-mount.js';
@@ -31,40 +33,172 @@ const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
   ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 const GIB = 1024 ** 3;
 
-function splitList(value) {
+type CheckStatus = 'pass' | 'fail' | 'warn';
+
+export interface PreflightRequest {
+  backends: string[];
+  track: string;
+  levels?: string;
+  levelList: number[];
+  runIndex: number;
+  parallelism?: number;
+  agentAdapter: string;
+  packIds: string[];
+  checkKeys: string[];
+  smoke: boolean;
+  image: string;
+  resultsDir: string;
+  recipe?: string;
+  report?: string;
+  json?: boolean;
+  supervisorState?: string;
+  requestedScopes?: RequestedScope[];
+  featureCatalog?: unknown;
+  mode?: { id?: string };
+  admittedSmoke?: { id: string; [key: string]: unknown };
+  agentSkills?: string[] | null;
+}
+
+export interface PreflightCheck {
+  id: string;
+  status: CheckStatus;
+  summary: string;
+  remediation?: string;
+  evidence?: unknown;
+}
+
+export interface PreflightReport {
+  schemaVersion: 1;
+  generatedAt: string;
+  request: Record<string, unknown>;
+  ok: boolean;
+  summary: { passed: number; failed: number; warnings: number };
+  checks: PreflightCheck[];
+}
+
+type Command = (file: string, args: string[], options?: Record<string, unknown>) => unknown;
+type PortProbe = (port: number | string) => { free: boolean };
+
+interface PreflightDependencies {
+  run?: Command;
+  env?: NodeJS.ProcessEnv;
+  now?: number | (() => number);
+  home?: string;
+  exists?: (path: string) => boolean;
+  statfs?: (path: string) => { bavail: bigint; bsize: bigint };
+  pidsOnPort?: (port: number) => Array<number | string>;
+  probePort?: PortProbe;
+  readCompose?: () => string;
+}
+
+interface CredentialStatus {
+  ok: boolean;
+  kind?: string;
+  source?: string | null;
+  reason?: string;
+  environment?: string | null;
+  files?: readonly string[];
+  credentialEnvironments?: readonly string[];
+  variable?: string;
+  path?: string;
+}
+
+interface SmokeResult {
+  platform: string;
+  arch: string;
+  node: string;
+  reached: Array<{ url: string; status: number }>;
+  tcpReached: number[];
+  executables: Record<string, string>;
+  credentialStatus: string;
+  diskFreeBytes: number;
+}
+
+interface DockerInfo {
+  OSType: string;
+  Architecture: string;
+  ServerVersion?: string;
+  NCPU: number;
+  MemTotal: number;
+  SystemTime: string;
+}
+
+interface DockerContainerInspection {
+  Image?: string;
+  State?: { Running?: boolean; Health?: { Status?: string } };
+  NetworkSettings?: { Ports?: Record<string, Array<{ HostPort?: string }>> };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function spacetimeServerUri(value: unknown): string {
+  if (!isRecord(value) || !isRecord(value.lease) || typeof value.lease.serverUri !== 'string') {
+    throw new Error('SpacetimeDB orchestrator config did not provide a server URI');
+  }
+  return value.lease.serverUri;
+}
+
+function requestIdentity(value: unknown): { selectionSha256: string; taskSha256: string } {
+  if (!isRecord(value) || !isRecord(value.selection) || !isRecord(value.task)
+    || typeof value.selection.sha256 !== 'string' || typeof value.task.sha256 !== 'string') {
+    throw new Error('resolved request is missing selection or task identity');
+  }
+  return { selectionSha256: value.selection.sha256, taskSha256: value.task.sha256 };
+}
+
+function splitList(value: unknown): string[] {
   return String(value).split(',').map(item => item.trim()).filter(Boolean);
 }
 
-export function verifyPostgresServiceIdentity(containerName, { execute = execFileSync } = {}) {
+function nextArgument(argv: string[], index: number): string {
+  const value = argv[index];
+  if (value === undefined) throw new Error(`missing value after ${argv[index - 1] ?? 'argument'}`);
+  return value;
+}
+
+export function verifyPostgresServiceIdentity(
+  containerName: string,
+  { execute = execFileSync }: { execute?: Command } = {},
+): string {
   const { user, password, defaultDatabase: database } = POSTGRES_APPLICATION_IDENTITY;
-  const output = execute('docker', ['exec', '-e', `PGPASSWORD=${password}`, containerName,
+  const output = String(execute('docker', ['exec', '-e', `PGPASSWORD=${password}`, containerName,
     'psql', '-h', '127.0.0.1', '-U', user, '-d', database,
     '-v', 'ON_ERROR_STOP=1', '-Atc', "SELECT current_user || '|' || current_database();"],
-  { encoding: 'utf8', stdio: 'pipe' }).trim();
+  { encoding: 'utf8', stdio: 'pipe' })).trim();
   const expected = `${user}|${database}`;
   if (output !== expected) throw new Error(`expected ${expected}, received ${output || 'no output'}`);
   return expected;
 }
 
-export function parsePreflightArgs(argv, { env = process.env } = {}) {
-  const request = { backends: [], track: 'ecommerce', levels: '1', runIndex: 0, parallelism: 1,
+export function parsePreflightArgs(
+  argv: string[],
+  { env = process.env }: { env?: NodeJS.ProcessEnv } = {},
+): PreflightRequest {
+  const request: PreflightRequest = { backends: [], track: 'ecommerce', levels: '1', levelList: [],
+    runIndex: 0, parallelism: 1,
     agentAdapter: 'claude-code', packIds: [], checkKeys: [], smoke: false,
     image: env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
     resultsDir: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')) };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
-      case '--backend': request.backends.push(...splitList(argv[++i])); break;
-      case '--track': request.track = argv[++i]; break;
-      case '--levels': request.levels = argv[++i]; break;
-      case '--recipe': request.recipe = argv[++i]; break;
-      case '--run-index': request.runIndex = Number(argv[++i]); break;
-      case '--parallelism': request.parallelism = Number(argv[++i]); break;
-      case '--agent-adapter': request.agentAdapter = argv[++i]; break;
-      case '--pack': request.packIds.push(...splitList(argv[++i])); break;
-      case '--check': request.checkKeys.push(...splitList(argv[++i])); break;
-      case '--image': request.image = argv[++i]; break;
-      case '--results-dir': request.resultsDir = resolve(argv[++i]); break;
-      case '--report': request.report = resolve(argv[++i]); break;
+      case '--backend': request.backends.push(...splitList(nextArgument(argv, ++i))); break;
+      case '--track': request.track = nextArgument(argv, ++i); break;
+      case '--levels': request.levels = nextArgument(argv, ++i); break;
+      case '--recipe': request.recipe = nextArgument(argv, ++i); break;
+      case '--run-index': request.runIndex = Number(nextArgument(argv, ++i)); break;
+      case '--parallelism': request.parallelism = Number(nextArgument(argv, ++i)); break;
+      case '--agent-adapter': request.agentAdapter = nextArgument(argv, ++i); break;
+      case '--pack': request.packIds.push(...splitList(nextArgument(argv, ++i))); break;
+      case '--check': request.checkKeys.push(...splitList(nextArgument(argv, ++i))); break;
+      case '--image': request.image = nextArgument(argv, ++i); break;
+      case '--results-dir': request.resultsDir = resolve(nextArgument(argv, ++i)); break;
+      case '--report': request.report = resolve(nextArgument(argv, ++i)); break;
       case '--smoke': request.smoke = true; break;
       case '--json': request.json = true; break;
       default: throw new Error(`unknown argument: ${argv[i]}`);
@@ -73,7 +207,7 @@ export function parsePreflightArgs(argv, { env = process.env } = {}) {
   if (!request.backends.length) throw new Error('--backend is required (comma-separated values are accepted)');
   request.backends = [...new Set(request.backends)].sort();
   if (!Number.isInteger(request.runIndex) || request.runIndex < 0) throw new Error('--run-index must be a non-negative integer');
-  if (!Number.isInteger(request.parallelism) || request.parallelism < 1) {
+  if (!Number.isInteger(request.parallelism) || (request.parallelism ?? 0) < 1) {
     throw new Error('--parallelism must be a positive integer');
   }
   const match = String(request.levels).match(/^(\d+)(?:-(\d+))?$/);
@@ -86,27 +220,38 @@ export function parsePreflightArgs(argv, { env = process.env } = {}) {
   return request;
 }
 
-function commandRunner(run) {
-  return (file, args) => String(run(file, args, {
+function commandRunner(run: Command): (file: string, args: string[]) => string {
+  return (file: string, args: string[]): string => String(run(file, args, {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
   })).trim();
 }
 
-function bytes(value) {
+function bytes(value: number | bigint): string {
   return `${(Number(value) / GIB).toFixed(1)} GiB`;
 }
 
-function composeImageReference(service, text) {
+function composeImageReference(service: string, text: string): string | null {
   const section = text.match(new RegExp(`^  ${service}:\\r?\\n([\\s\\S]*?)(?=^  [a-z][a-z0-9-]*:|^volumes:)`, 'm'))?.[1] ?? '';
   return section.match(/^    image:\s*(\S+)\s*$/m)?.[1] ?? null;
 }
 
-function checkResult(id, status, summary, remediation = null, evidence = null) {
+function checkResult(
+  id: string,
+  status: CheckStatus,
+  summary: string,
+  remediation: string | null = null,
+  evidence: unknown = null,
+): PreflightCheck {
   return { id, status, summary, ...(remediation ? { remediation } : {}),
     ...(evidence ? { evidence } : {}) };
 }
 
-function credentialReady(adapter, env, home, exists) {
+function credentialReady(
+  adapter: AgentAdapter,
+  env: NodeJS.ProcessEnv,
+  home: string,
+  exists: (path: string) => boolean,
+): CredentialStatus {
   const environment = adapter.apiKeyEnvironmentVariable;
   let apiKey = null;
   if (environment && env[environment]) {
@@ -146,7 +291,7 @@ function credentialReady(adapter, env, home, exists) {
     credentialEnvironments: adapter.credentialEnvironmentVariables };
 }
 
-function inspectLinuxCli(path = LINUX_CLI) {
+function inspectLinuxCli(path: string = LINUX_CLI): { ok: boolean; arch: string | null } {
   if (!existsSync(path)) return { ok: false, arch: null };
   const header = Buffer.alloc(20);
   try {
@@ -161,7 +306,10 @@ function inspectLinuxCli(path = LINUX_CLI) {
   } catch { return { ok: false, arch: null }; }
 }
 
-export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
+export function probeLoopbackPort(
+  port: number | string,
+  { spawn = spawnSync }: { spawn?: typeof spawnSync } = {},
+): { free: boolean } {
   if (!Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) {
     throw new Error(`invalid TCP port ${port}`);
   }
@@ -177,7 +325,19 @@ export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
 }
 
 function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requiredExecutables,
-  credentialStatusCommand, credentialMount, credentialEnvironment, marker, networkMode }) {
+  credentialStatusCommand, credentialMount, credentialEnvironment, marker, networkMode }: {
+  command: (file: string, args: string[]) => string;
+  imageId: string;
+  resultsDir: string;
+  destinations: string[];
+  tcpPorts: number[];
+  requiredExecutables: readonly string[];
+  credentialStatusCommand: readonly string[] | null;
+  credentialMount: { kind: string; source: string; target: string; readOnly: boolean } | null;
+  credentialEnvironment: { name: string; file?: string } | null;
+  marker: string;
+  networkMode: 'host' | 'bridge';
+}): SmokeResult {
   const hostAddress = dockerHostServiceAddress(networkMode);
   const script = `const fs=require('node:fs'),net=require('node:net'),path=require('node:path');`
     + `const {spawnSync}=require('node:child_process');`
@@ -212,23 +372,30 @@ function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requir
     '-v', `${resultsDir}:/results`, imageId, 'node', '-e', script,
     JSON.stringify(destinations), JSON.stringify(tcpPorts), JSON.stringify(requiredExecutables),
     JSON.stringify(credentialStatusCommand), JSON.stringify(credentialEnvironment), marker]);
-  return JSON.parse(output);
+  const parsed: SmokeResult = JSON.parse(output);
+  return parsed;
 }
 
-export function runPreflight(request, dependencies = {}) {
+export function runPreflight(
+  request: PreflightRequest,
+  dependencies: PreflightDependencies = {},
+): PreflightReport {
   const run = commandRunner(dependencies.run ?? execFileSync);
   const env = dependencies.env ?? process.env;
-  const readNow = typeof dependencies.now === 'function'
-    ? dependencies.now : dependencies.now === undefined ? Date.now : () => dependencies.now;
+  const suppliedNow = dependencies.now;
+  const readNow: () => number = typeof suppliedNow === 'function'
+    ? suppliedNow : suppliedNow === undefined ? Date.now : () => suppliedNow;
   const startedAt = readNow();
   const home = dependencies.home ?? homedir();
   const exists = dependencies.exists ?? existsSync;
-  const statfs = dependencies.statfs ?? statfsSync;
+  const statfs = dependencies.statfs ?? ((path: string) => statfsSync(path, { bigint: true }));
   const inspectPorts = dependencies.pidsOnPort ?? pidsOnPort;
   const probePort = dependencies.probePort ?? probeLoopbackPort;
-  const checks = [];
+  const checks: PreflightCheck[] = [];
   const resourceFloors = preflightResourceFloors(request.parallelism ?? 1);
-  const add = (...args) => checks.push(checkResult(...args));
+  const add = (...args: Parameters<typeof checkResult>): void => {
+    checks.push(checkResult(...args));
+  };
   let track;
   let agent;
 
@@ -267,8 +434,9 @@ export function runPreflight(request, dependencies = {}) {
                   observedSpecifications: selection.specifications?.observed,
                   checkKeys: selection.checks }
               : { packIds: selection.packs, checkKeys: selection.checks }).request;
-          if (resolvedRequest.selection.sha256 !== requested.selection.sha256
-            || resolvedRequest.task.sha256 !== requested.task.sha256) {
+          const identity = requestIdentity(resolvedRequest);
+          if (identity.selectionSha256 !== requested.selection.sha256
+            || identity.taskSha256 !== requested.task.sha256) {
             throw new Error(`L${requested.level} requested scope changed`);
           }
         }
@@ -284,7 +452,8 @@ export function runPreflight(request, dependencies = {}) {
     }
     add('request.scope', 'pass', `${request.track} L${request.levelList.join(',L')} on ${request.backends.join(', ')}`);
   } catch (error) {
-    add('request.scope', 'fail', String(error.message), 'Correct the requested track, level, pack, check, or adapter.');
+    add('request.scope', 'fail', errorMessage(error),
+      'Correct the requested track, level, pack, check, or adapter.');
   }
 
   const nodeMajor = Number(process.versions.node.split('.')[0]);
@@ -347,28 +516,29 @@ export function runPreflight(request, dependencies = {}) {
   try {
     writeFileSync(join(request.resultsDir, hostMarker), 'host-write-ok', { flag: 'wx', mode: 0o600 });
     rmSync(join(request.resultsDir, hostMarker));
-    const stats = statfs(request.resultsDir, { bigint: true });
+    const stats = statfs(request.resultsDir);
     const free = stats.bavail * stats.bsize;
     add('storage.results', free >= BigInt(resourceFloors.resultDiskBytes) ? 'pass' : 'fail',
       `${bytes(free)} free at ${request.resultsDir}`,
       free >= BigInt(resourceFloors.resultDiskBytes) ? null
         : `Provide at least ${bytes(resourceFloors.resultDiskBytes)} free for persistent results.`);
   } catch (error) {
-    add('storage.results', 'fail', `Result directory is not safely writable: ${error.message}`,
+    add('storage.results', 'fail', `Result directory is not safely writable: ${errorMessage(error)}`,
       'Choose a persistent writable result directory with --results-dir.');
   }
 
-  let dockerInfo = null;
-  let imageId = null;
+  let dockerInfo: DockerInfo | null = null;
+  let imageId: string | null = null;
   try {
     const dockerInfoStartedAt = readNow();
-    dockerInfo = JSON.parse(run('docker', ['info', '--format', '{{json .}}']));
+    const info: DockerInfo = JSON.parse(run('docker', ['info', '--format', '{{json .}}']));
+    dockerInfo = info;
     const dockerInfoFinishedAt = readNow();
-    const ok = dockerInfo.OSType === 'linux' && (appliance
-      ? dockerInfo.Architecture === 'x86_64'
-      : ['x86_64', 'aarch64'].includes(dockerInfo.Architecture));
+    const ok = info.OSType === 'linux' && (appliance
+      ? info.Architecture === 'x86_64'
+      : ['x86_64', 'aarch64'].includes(info.Architecture));
     add('docker.engine', ok ? 'pass' : 'fail',
-      `Docker ${dockerInfo.ServerVersion ?? 'unknown'} (${dockerInfo.OSType}/${dockerInfo.Architecture})`,
+      `Docker ${info.ServerVersion ?? 'unknown'} (${info.OSType}/${info.Architecture})`,
       ok ? null : 'Use a supported x86_64 or aarch64 Linux-container Docker engine.');
     try {
       add('docker.compose', 'pass', `Docker Compose ${run('docker', ['compose', 'version', '--short'])}`);
@@ -376,14 +546,14 @@ export function runPreflight(request, dependencies = {}) {
       add('docker.compose', 'fail', 'Docker Compose plugin is unavailable',
         'Install the Docker Compose v2 plugin.');
     }
-    const enoughCpu = dockerInfo.NCPU >= resourceFloors.cpuCount;
-    add('docker.cpu', enoughCpu ? 'pass' : 'fail', `${dockerInfo.NCPU} CPUs available`,
+    const enoughCpu = info.NCPU >= resourceFloors.cpuCount;
+    add('docker.cpu', enoughCpu ? 'pass' : 'fail', `${info.NCPU} CPUs available`,
       enoughCpu ? null : `Allocate at least ${resourceFloors.cpuCount} CPUs to Docker.`);
-    const enoughMemory = dockerInfo.MemTotal >= resourceFloors.memoryBytes;
+    const enoughMemory = info.MemTotal >= resourceFloors.memoryBytes;
     add('docker.memory', enoughMemory ? 'pass' : 'fail',
-      `${bytes(dockerInfo.MemTotal)} available`,
+      `${bytes(info.MemTotal)} available`,
       enoughMemory ? null : `Allocate at least ${bytes(resourceFloors.memoryBytes)} to Docker.`);
-    const engineTime = Date.parse(dockerInfo.SystemTime);
+    const engineTime = Date.parse(info.SystemTime);
     const skew = !Number.isFinite(engineTime) ? Number.NaN
       : engineTime < dockerInfoStartedAt ? dockerInfoStartedAt - engineTime
         : engineTime > dockerInfoFinishedAt ? engineTime - dockerInfoFinishedAt : 0;
@@ -392,7 +562,7 @@ export function runPreflight(request, dependencies = {}) {
       `host/engine skew ${Number.isFinite(skew) ? skew : 'unknown'} ms`,
       clockReady ? null : 'Synchronize the host and Docker clocks.');
   } catch (error) {
-    add('docker.engine', 'fail', `Docker is unavailable: ${String(error.message).split('\n')[0]}`,
+    add('docker.engine', 'fail', `Docker is unavailable: ${errorMessage(error).split('\n')[0]}`,
       'Start a local Docker engine and ensure the docker CLI can reach it.');
   }
 
@@ -420,6 +590,7 @@ export function runPreflight(request, dependencies = {}) {
 
   const composeText = exists(COMPOSE) ? String(dependencies.readCompose?.() ?? readFileSync(COMPOSE, 'utf8')) : '';
   for (const backend of (track ? request.backends : []).filter(item => ['postgres', 'mongodb'].includes(item))) {
+    if (!track) continue;
     const service = backend === 'postgres' ? 'postgres' : 'mongodb';
     const containerName = `stack-bench-${backend}`;
     const reference = composeImageReference(service, composeText);
@@ -430,13 +601,17 @@ export function runPreflight(request, dependencies = {}) {
     }
     try {
       const expectedId = parseImageId(run('docker', ['image', 'inspect', '--format', '{{.Id}}', reference]));
-      const inspected = JSON.parse(run('docker', ['container', 'inspect', containerName]))[0];
+      const inspections: DockerContainerInspection[] = JSON.parse(
+        run('docker', ['container', 'inspect', containerName]),
+      );
+      const inspected = inspections[0];
+      if (!inspected) throw new Error(`${containerName} inspection returned no container`);
       const allocated = portsFor(track, backend, request.runIndex);
       const hostPort = String(allocated.dbPort ?? allocated.db);
       const mapping = inspected.NetworkSettings?.Ports?.[`${backend === 'postgres' ? 5432 : 27017}/tcp`] ?? [];
       const healthy = !inspected.State?.Health || inspected.State.Health.Status === 'healthy';
       const ready = inspected.State?.Running === true && healthy && inspected.Image === expectedId
-        && mapping.some(item => item.HostPort === hostPort);
+        && mapping.some((item: { HostPort?: string }) => item.HostPort === hostPort);
       add(`service.${backend}`, ready ? 'pass' : 'fail', ready
         ? `${containerName} is running exact image ${expectedId}`
         : `${containerName} is absent, stopped/unhealthy, on the wrong image, or mapped to the wrong port`,
@@ -447,7 +622,7 @@ export function runPreflight(request, dependencies = {}) {
           add('service.postgres.identity', 'pass', `Authenticated as ${identity}`);
         } catch (error) {
           add('service.postgres.identity', 'fail',
-            `PostgreSQL application identity is unavailable: ${error.message}`,
+            `PostgreSQL application identity is unavailable: ${errorMessage(error)}`,
             `Recreate or migrate the Stack Bench PostgreSQL volume, then restart ${containerName}.`);
         }
       }
@@ -461,8 +636,10 @@ export function runPreflight(request, dependencies = {}) {
     for (const backend of request.backends) {
       const defaults = executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend),
         'agent', 'default-skills');
+      const defaultSkills = Array.isArray(defaults)
+        ? defaults.filter((skill): skill is string => typeof skill === 'string') : [];
       const skills = agent?.usesStackSkills
-        ? selectAgentSkills(defaults, request.agentSkills ?? null) : [];
+        ? selectAgentSkills(defaultSkills, request.agentSkills ?? null) : [];
       const missingSkills = agentSkillPaths(REPO, skills).filter(path => !exists(path));
       add(`materials.${backend}.skills`, missingSkills.length ? 'fail' : 'pass', skills.length
         ? `${skills.length} selected skill document(s) are present`
@@ -491,7 +668,7 @@ export function runPreflight(request, dependencies = {}) {
     try {
       const runtime = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
         'orchestrator', 'config', { root: ROOT, env, helpers: { exists } });
-      const port = Number(new URL(runtime.lease.serverUri).port);
+      const port = Number(new URL(spacetimeServerUri(runtime)).port);
       const availability = probePort(port);
       const listeners = availability.free ? [] : inspectPorts(port);
       add('port.spacetime.host', availability.free ? 'pass' : 'fail', availability.free
@@ -499,7 +676,8 @@ export function runPreflight(request, dependencies = {}) {
         : `Dedicated host port ${port} is already in use${listeners.length ? ` by PID(s) ${listeners.join(', ')}` : ''}`,
       availability.free ? null : 'Stop the listener or choose another loopback STACK_BENCH_STDB_URI port.');
     } catch (error) {
-      add('port.spacetime.host', 'fail', `Cannot validate the dedicated SpacetimeDB host port: ${error.message}`,
+      add('port.spacetime.host', 'fail',
+        `Cannot validate the dedicated SpacetimeDB host port: ${errorMessage(error)}`,
         'Use an explicit, free loopback STACK_BENCH_STDB_URI port.');
     }
     const cli = inspectLinuxCli();
@@ -516,17 +694,21 @@ export function runPreflight(request, dependencies = {}) {
     const destinations = [...new Set([...BUILD_OUTBOUND_DESTINATIONS,
       ...(agent?.outboundDestinations ?? [])])].sort();
     const tcpPorts = track ? request.backends.filter(backend => ['postgres', 'mongodb'].includes(backend))
-      .map(backend => portsFor(track, backend, request.runIndex).dbPort).sort((a, b) => a - b) : [];
-    const credentialStatusCommand = ['credential-file', 'credential-environment',
-      'credential-secret-file'].includes(auth.kind) ? agent?.credentialStatusCommand ?? null : null;
+      .map(backend => portsFor(track, backend, request.runIndex).dbPort)
+      .filter((port): port is number => port !== undefined).sort((a, b) => a - b) : [];
+    const credentialStatusCommand = auth.kind !== undefined && ['credential-file',
+      'credential-environment', 'credential-secret-file'].includes(auth.kind)
+      ? agent?.credentialStatusCommand ?? null : null;
     const credentialMount = auth.kind === 'credential-file' && credentialStatusCommand
+      && auth.path && auth.source
       ? { kind: 'bind', source: auth.path,
         target: `/root/${auth.source.slice('file:'.length)}`, readOnly: true }
-      : auth.kind === 'credential-secret-file' && credentialStatusCommand
+      : auth.kind === 'credential-secret-file' && credentialStatusCommand && auth.path
         ? { kind: 'bind', source: auth.path, target: '/run/secrets/agent-credential', readOnly: true }
         : null;
-    const credentialEnvironment = ['credential-environment', 'credential-secret-file'].includes(auth.kind)
-      && credentialStatusCommand ? { name: auth.variable,
+    const credentialEnvironment = auth.kind !== undefined
+      && ['credential-environment', 'credential-secret-file'].includes(auth.kind)
+      && credentialStatusCommand && auth.variable ? { name: auth.variable,
         ...(auth.kind === 'credential-secret-file' ? { file: '/run/secrets/agent-credential' } : {}) }
         : null;
     try {
@@ -561,12 +743,13 @@ export function runPreflight(request, dependencies = {}) {
         'Refresh/login before a campaign if the credential has not completed a recent provider request.');
     } catch (error) {
       rmSync(join(request.resultsDir, marker), { force: true });
-      add('smoke.container', 'fail', `No-model container smoke failed: ${String(error.message).split('\n')[0]}`,
+      add('smoke.container', 'fail',
+        `No-model container smoke failed: ${errorMessage(error).split('\n')[0]}`,
         'Fix build-image startup, outbound TLS/DNS, host routing, or the result-volume mount.');
     }
   }
 
-  const report = {
+  const report: PreflightReport = {
     schemaVersion: 1,
     generatedAt: new Date(startedAt).toISOString(),
     request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -587,14 +770,14 @@ export function runPreflight(request, dependencies = {}) {
   return report;
 }
 
-export function writePreflightReport(path, report) {
+export function writePreflightReport(path: string, report: PreflightReport): void {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${process.pid}`;
   writeFileSync(temporary, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   renameSync(temporary, path);
 }
 
-export function printPreflightReport(report) {
+export function printPreflightReport(report: PreflightReport): void {
   console.log(`Stack Bench preflight: ${report.ok ? 'READY' : 'NOT READY'}`);
   for (const check of report.checks) {
     const mark = check.status === 'pass' ? 'PASS' : check.status === 'warn' ? 'WARN' : 'FAIL';

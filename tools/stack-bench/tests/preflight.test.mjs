@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { parsePreflightArgs, probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
-  from '../dist/src/runtime/preflight.mjs';
+  from '../dist/src/runtime/preflight.js';
 import { isExactImageReference } from '../dist/src/runtime/container-image.js';
 import { createArtifact, validateArtifact } from '../dist/src/evidence/artifacts.js';
 import { AGENT_ADAPTER_REGISTRY } from '../dist/src/agents/agent-adapters.js';
