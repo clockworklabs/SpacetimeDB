@@ -8,7 +8,7 @@ import { CAMPAIGN_MODE_REGISTRY } from '../src/campaigns/campaign-mode.js';
 import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
   from '../src/campaigns/campaign-runner.mjs';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js';
-import { generateCampaignReport } from '../src/campaigns/campaign-report.mjs';
+import { generateCampaignReport } from '../src/campaigns/campaign-report.js';
 import { grantCampaignDependencyStrikes }
   from '../src/campaigns/campaign-progression-grant.js';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }

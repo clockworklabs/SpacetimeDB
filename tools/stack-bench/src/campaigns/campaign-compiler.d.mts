@@ -6,13 +6,23 @@ export interface CampaignAttemptPlan {
   repetition: number;
   levels: number[];
   agentAdapter: string;
+  skills?: unknown;
+  pricing?: unknown;
   mode?: { id?: string; version?: string; [key: string]: unknown };
   condition: {
+    id: string;
+    version: string;
     sha256: string;
     requested?: {
       levels?: Array<{
         level: number;
         recipe?: { id?: string; version?: string };
+        selection?: {
+          checks?: unknown[];
+          observedChecks?: unknown[];
+          specifications?: { requested: string[]; expected: string[]; observed: string[] };
+          schemaVersion?: number;
+        };
       }>;
     };
   };
@@ -31,8 +41,13 @@ export interface CompiledCampaignPlan {
     repetitions: number;
     budgets: { fixRounds: number; [key: string]: unknown };
     runtime?: { controllerImage?: string | null; buildImage?: string | null };
+    analysis: { primaryMetric: string; secondaryMetrics: string[]; dispersion: string;
+      [key: string]: unknown };
+    selection: unknown;
+    pricing: Record<string, unknown>;
   };
-  summary: { attempts: number; parallelism: number; [key: string]: unknown };
+  summary: { attempts: number; parallelism: number;
+    repetitionsByStack: Record<string, number>; [key: string]: unknown };
   attempts: CampaignAttemptPlan[];
   stacks: Array<{ id: string }>;
   agents: Array<{

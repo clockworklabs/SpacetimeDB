@@ -21,3 +21,4 @@ export function readArtifactPayload<TPayload = Record<string, unknown>>(path: st
   options?: { expectedId?: string | null; expectedKind?: string | null }): TPayload;
 export function readRunJson(path: string, expectedRunId?: string): CostRun;
 export function writeArtifact(path: string, input: unknown): Artifact;
+export function writeRunJson(path: string, input: unknown): Artifact;
