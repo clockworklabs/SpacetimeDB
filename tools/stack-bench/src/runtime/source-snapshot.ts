@@ -2,6 +2,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'n
 import { basename, join } from 'node:path';
 
 import { hashDirectory } from '../evidence/provenance.js';
+import type { HashFilesResult } from '../evidence/provenance.js';
 
 // Runtime state, dependencies, evidence, and harness-owned control files are
 // deliberately not part of the model-authored source snapshot.
@@ -19,19 +20,22 @@ const ROOT_HARNESS_FILES = new Set([
 ]);
 const RUNTIME_LOG_FILES = new Set(['client.log', 'server.log', 'vite.log']);
 
-const parts = value => value.split(/[\\/]/).filter(Boolean);
+type DirectoryDisposition = 'preserve' | 'transient' | 'source';
 
-function rootHarnessFile(rel) {
+const parts = (value: string): string[] => value.split(/[\\/]/).filter(Boolean);
+
+function rootHarnessFile(rel: string): boolean {
   const names = parts(rel);
-  if (names.length !== 1) return false;
-  return ROOT_HARNESS_FILES.has(names[0]) || /^\.(?:prompt|session)-/.test(names[0]);
+  const name = names[0];
+  if (names.length !== 1 || !name) return false;
+  return ROOT_HARNESS_FILES.has(name) || /^\.(?:prompt|session)-/.test(name);
 }
 
-function preservedRuntimeFile(rel) {
+function preservedRuntimeFile(rel: string): boolean {
   return rootHarnessFile(rel) || RUNTIME_LOG_FILES.has(basename(rel));
 }
 
-function directoryDisposition(rel) {
+function directoryDisposition(rel: string): DirectoryDisposition {
   const normalized = rel.replaceAll('\\', '/');
   if (TRANSIENT_PATHS.has(normalized)) return 'transient';
   const name = basename(rel);
@@ -40,7 +44,7 @@ function directoryDisposition(rel) {
   return 'source';
 }
 
-function copySourceTree(from, to, rel = '') {
+function copySourceTree(from: string, to: string, rel = ''): void {
   if (!existsSync(from)) return;
   mkdirSync(to, { recursive: true });
   for (const entry of readdirSync(from, { withFileTypes: true })) {
@@ -56,7 +60,7 @@ function copySourceTree(from, to, rel = '') {
 
 // Remove model-authored paths absent from the snapshot by walking them in
 // place. Active directory watchers and nested dependency folders survive.
-function removeAbsent(path, rel) {
+function removeAbsent(path: string, rel: string): void {
   const stat = lstatSync(path);
   if (!stat.isDirectory()) {
     if (!preservedRuntimeFile(rel)) rmSync(path, { force: true });
@@ -74,7 +78,7 @@ function removeAbsent(path, rel) {
   if (readdirSync(path).length === 0) rmSync(path, { force: true });
 }
 
-function syncSourceTree(snapshot, appDir, rel = '') {
+function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
   mkdirSync(appDir, { recursive: true });
   const snapshotNames = new Set(readdirSync(snapshot));
 
@@ -106,17 +110,18 @@ function syncSourceTree(snapshot, appDir, rel = '') {
   }
 }
 
-export function snapshotAppSource(appDir, to) {
+export function snapshotAppSource(appDir: string, to: string): void {
   rmSync(to, { recursive: true, force: true });
   copySourceTree(appDir, to);
 }
 
-export function hashAppSource(appDir) {
+export function hashAppSource(appDir: string): HashFilesResult {
   return hashDirectory(appDir, { exclude: (rel, entry) => entry.isDirectory()
     ? directoryDisposition(rel) !== 'source' : preservedRuntimeFile(rel) });
 }
 
-export function assertAppSourceIdentity(appDir, expectedSha256, context = 'application source') {
+export function assertAppSourceIdentity(appDir: string, expectedSha256: string,
+  context = 'application source'): HashFilesResult {
   const actual = hashAppSource(appDir);
   if (actual.sha256 !== expectedSha256) {
     throw new Error(`${context} hash ${actual.sha256} does not match ${expectedSha256}`);
@@ -127,10 +132,10 @@ export function assertAppSourceIdentity(appDir, expectedSha256, context = 'appli
 // Validate only the files that belong to the source identity. Dependency,
 // build-output, and harness directories can contain links created by their
 // own tools and are excluded from the source snapshot and hash.
-export function assertPlainAppSourceTree(appDir) {
+export function assertPlainAppSourceTree(appDir: string): void {
   if (!existsSync(appDir)) return;
   if (!lstatSync(appDir).isDirectory()) throw new Error('application source root is not a plain directory');
-  const walk = (directory, rel = '') => {
+  const walk = (directory: string, rel = ''): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const childRel = rel ? join(rel, entry.name) : entry.name;
       if (entry.isDirectory() && directoryDisposition(childRel) !== 'source') continue;
@@ -144,12 +149,12 @@ export function assertPlainAppSourceTree(appDir) {
   walk(appDir);
 }
 
-export function restoreAppSource(from, appDir) {
+export function restoreAppSource(from: string, appDir: string): void {
   if (!existsSync(from)) throw new Error(`source snapshot does not exist: ${from}`);
   syncSourceTree(from, appDir);
 }
 
-export function seedAppSource(from, appDir) {
+export function seedAppSource(from: string, appDir: string): void {
   if (!existsSync(from)) throw new Error(`source seed does not exist: ${from}`);
   copySourceTree(from, appDir);
 }

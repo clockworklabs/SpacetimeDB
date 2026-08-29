@@ -9,11 +9,11 @@ import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
   levelGradeIsUsable, parseArgs, preserveFinalPackageEvidence,
   pristineMutationBaselinePath, repairHistoryEntry, repairProgressState,
   sourceBoundFirstBuildOutcome }
-  from '../commands/bench.mjs';
-import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+  from '../dist/commands/bench.mjs';
+import { repairEvidenceDecision } from '../dist/src/evidence/repair-evidence.js';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 import { writeArtifact } from '../dist/src/evidence/artifacts.mjs';
-import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+import { hashAppSource } from '../dist/src/runtime/source-snapshot.js';
 
 test('final package preservation verifies both source and grading before success', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-final-package-'));

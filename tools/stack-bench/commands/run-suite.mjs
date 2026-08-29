@@ -30,7 +30,7 @@ import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
-import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 import { readBackendLease } from '../src/runtime/backend-lease.mjs';
 import { databaseContainerName } from '../src/stacks/database-containers.js';

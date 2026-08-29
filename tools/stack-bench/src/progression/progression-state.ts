@@ -7,7 +7,7 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
-import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.mjs';
+import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.js';
 import {
   progressionEngine,
 } from './progression-engine.js';

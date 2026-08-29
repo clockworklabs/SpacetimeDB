@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { writeArtifact } from '../evidence/artifacts.mjs';
 import { hashDirectory } from '../evidence/provenance.js';
-import { hashAppSource, snapshotAppSource } from './source-snapshot.mjs';
+import { hashAppSource, snapshotAppSource } from './source-snapshot.js';
 
 const HASH = /^[a-f0-9]{64}$/;
 

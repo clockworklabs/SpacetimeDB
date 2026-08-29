@@ -8,7 +8,7 @@ import test from 'node:test';
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+import { hashAppSource } from '../src/runtime/source-snapshot.js';
 
 const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
 

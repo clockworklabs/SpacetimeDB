@@ -49,7 +49,7 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.mjs';
 import { resolveAgentCredential } from '../src/agents/agent-credentials.mjs';
 import { sandboxProbeMode } from '../src/runtime/sandbox.mjs';
-import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.mjs';
+import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';

@@ -11,7 +11,7 @@ import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact
   from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import type { CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
-import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, compileProgressionInput }
   from '../src/progression/progression-definition.js';
 import type { ProgressionInput } from '../src/progression/progression-definition.js';

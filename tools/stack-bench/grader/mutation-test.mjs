@@ -57,7 +57,7 @@ import { mutationShard } from "../src/evidence/mutation-shards.mjs";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.mjs";
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
   from "../src/evidence/mutation-control.mjs";
-import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.mjs";
+import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";
 
 // Resolve tooling relative to this file so the runner works from any directory.
 const HERE = dirname(fileURLToPath(import.meta.url));

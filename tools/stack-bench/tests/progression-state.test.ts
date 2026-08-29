@@ -9,7 +9,7 @@ import { compileProgressionInput } from '../src/progression/progression-definiti
 import { runPersistedProgressionMode } from '../src/progression/progression-runner.js';
 import { grantProgressionState, readProgressionState, writeProgressionState }
   from '../src/progression/progression-state.js';
-import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 import { emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
 

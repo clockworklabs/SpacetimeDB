@@ -21,7 +21,7 @@ import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';
 import { resolveReferenceSelection } from './reference-selection.mjs';
-import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.mjs';
+import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');

@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { assertAppSourceIdentity, hashAppSource, restoreAppSource, seedAppSource,
-  snapshotAppSource } from '../src/runtime/source-snapshot.mjs';
+  snapshotAppSource } from '../src/runtime/source-snapshot.js';
 
-const put = (path, content) => {
+const put = (path: string, content: string): void => {
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, content);
 };
