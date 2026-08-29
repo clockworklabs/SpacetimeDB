@@ -14,6 +14,16 @@ export interface Artifact<TPayload = Record<string, unknown>> {
 }
 
 export function emptyArtifactIdentities(overrides?: Record<string, unknown>): unknown;
+export function createArtifact<TPayload = Record<string, unknown>>(input: {
+  kind: string;
+  id: string;
+  attempt?: { id: string; parentId?: string | null } | null;
+  timestamps?: { startedAt?: string; completedAt?: string | null } | null;
+  identities?: unknown;
+  payload?: TPayload;
+}): Artifact<TPayload>;
+export function validateArtifact<TPayload = Record<string, unknown>>(input: unknown,
+  options?: { source?: string }): Artifact<TPayload>;
 export function currentEngineIdentity(): { sha256: string; [key: string]: unknown };
 export function readArtifact<TPayload = Record<string, unknown>>(path: string,
   options?: { expectedId?: string | null; expectedKind?: string | null }): Artifact<TPayload>;

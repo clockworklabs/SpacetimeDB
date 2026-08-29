@@ -10,7 +10,7 @@ import { hashAppSource, restoreAppSource, snapshotAppSource }
 import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.mjs';
 import { progressionEngine } from './progression-engine.js';
 import { replayDependencyMode } from './dependency-mode.js';
-import { gradeBundleToProgressionResult } from './grade-bundle-result.mjs';
+import { gradeBundleToProgressionResult } from './grade-bundle-result.js';
 import { resolveProgressionRecipeAction } from './progression-recipe-selection.js';
 import { progressionStateExists, readProgressionState, validateProgressionOwner,
   writeProgressionState } from './progression-state.js';

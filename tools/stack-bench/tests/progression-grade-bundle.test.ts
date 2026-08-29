@@ -2,11 +2,31 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import type { CheckEvidence, CheckEvidenceStatus } from '../src/evidence/check-evidence.mjs';
 import { createArtifact, emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
 import { gradeBundleToProgressionResult }
-  from '../src/progression/grade-bundle-result.mjs';
+  from '../src/progression/grade-bundle-result.js';
 
-const evidence = status => createCheckEvidence({
+interface BundleFixture {
+  observation: string;
+  source: { sha256: string };
+  selection: {
+    sha256: string;
+    checks: Array<{ stableKey: string; points: number }>;
+    attemptedChecks: string[];
+    reportedChecks: string[];
+    notRun: Array<{ stableKey: string; reason: string }>;
+  };
+  outcome?: { kind: string; reason: string; phase?: string };
+  totals: { score: number; max: number; regression: { score: number; max: number } | null };
+  suites: { application: { features: Array<{
+    id: number;
+    setupEvidence: CheckEvidence;
+    criteria: Array<{ stableKey: string; points: number; evidence: CheckEvidence }>;
+  }> } };
+}
+
+const evidence = (status: CheckEvidenceStatus): CheckEvidence => createCheckEvidence({
   status,
   code: status === 'passed' ? 'completed' : 'test_result',
   phase: 'assertion',
@@ -48,7 +68,7 @@ const action = () => ({
   },
 });
 
-const bundle = () => ({
+const bundle = (): BundleFixture => ({
   observation: 'scored',
   source: { sha256: sourceSha256 },
   selection: {
@@ -101,12 +121,12 @@ test('grade bundle conversion rejects incomplete, duplicate, or changed grading 
   assert.throws(() => gradeBundleToProgressionResult(artifact(missing, 'missing'),
     action(), conversion), /complete progression evidence/);
   const duplicate = bundle();
-  duplicate.suites.application.features[0].criteria.push(
-    structuredClone(duplicate.suites.application.features[0].criteria[0]));
+  duplicate.suites.application.features[0]!.criteria.push(
+    structuredClone(duplicate.suites.application.features[0]!.criteria[0]!));
   assert.throws(() => gradeBundleToProgressionResult(artifact(duplicate, 'duplicate'),
     action(), conversion), /repeats check/);
   const points = bundle();
-  points.selection.checks[0].points = 2;
+  points.selection.checks[0]!.points = 2;
   assert.throws(() => gradeBundleToProgressionResult(artifact(points, 'points'),
     action(), conversion), /points.*do not match/);
   assert.throws(() => gradeBundleToProgressionResult(artifact(), action(), {
@@ -144,7 +164,7 @@ test('grade bundle conversion binds the artifact owner, source, stack, recipe, a
   assert.throws(() => gradeBundleToProgressionResult(artifact(), badNodes, conversion),
     /node ownership/);
   const foreign = action();
-  foreign.grading.checks[0].nodeId = 'foreign';
+  foreign.grading.checks[0]!.nodeId = 'foreign';
   assert.throws(() => gradeBundleToProgressionResult(artifact(), foreign, conversion),
     /node ownership/);
 });
@@ -166,13 +186,15 @@ test('a typed application abort charges current work but not earlier regression 
   failed.selection.attemptedChecks = [];
   failed.selection.reportedChecks = [];
   failed.selection.notRun = failed.selection.checks.map(check => ({
-    stableKey: check.stableKey, reason: failed.outcome.reason,
+    stableKey: check.stableKey, reason: failed.outcome!.reason,
   }));
   failed.totals = { score: 0, max: 3, regression: null };
   const selected = action();
   selected.prompt.nodeIds = ['catalog'];
   const result = gradeBundleToProgressionResult(artifact(failed, 'app-failure'),
     selected, conversion);
+  assert.equal(result.outcome, 'conclusive');
+  if (result.outcome !== 'conclusive') throw new Error('expected a conclusive result');
   assert.deepEqual(result.applicationFailure, {
     phase: 'application-start', reason: 'the generated application did not start',
   });

@@ -9,7 +9,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
-import { gradeBundleToProgressionResult } from '../src/progression/grade-bundle-result.mjs';
+import { gradeBundleToProgressionResult } from '../dist/src/progression/grade-bundle-result.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput,
   compileProgressionDefinitionFile, compileProgressionInput, dependencyRuntimeDefinition }
   from '../dist/src/progression/progression-definition.js';
