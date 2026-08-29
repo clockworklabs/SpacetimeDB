@@ -32,7 +32,7 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
-  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
+  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';

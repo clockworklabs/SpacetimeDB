@@ -9,7 +9,7 @@ import type {
   AgentSandboxProbe,
 } from './agent-adapter-contract.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.js';
-import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.mjs';
+import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.js';
 import { sha256 } from '../evidence/provenance.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';

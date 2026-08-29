@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ensureDatabase, hostServiceAddress } from '../dist/commands/agent.mjs';
-import { codingSessionFailure } from '../src/agents/coding-session-recovery.mjs';
+import { codingSessionFailure } from '../dist/src/agents/coding-session-recovery.js';
 import { createBackendLease, writeBackendLease } from '../dist/src/runtime/backend-lease.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 
 const track = loadTrack('ecommerce');
 

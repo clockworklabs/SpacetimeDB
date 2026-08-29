@@ -8,12 +8,12 @@ import test from 'node:test';
 
 import { aggregateCodingSessionResults, codingSessionInterruption,
   parseCodingSessionResult, providerSessionFailure,
-  runCodingSessionWithRecovery } from '../dist/src/agents/coding-session-recovery.mjs';
+  runCodingSessionWithRecovery } from '../dist/src/agents/coding-session-recovery.js';
 import { agentSessionFailure } from '../dist/src/agents/agent-adapter-contract.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../dist/src/runtime/backend-lease.js';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
   startCredentialBroker, stopCredentialBroker } from '../dist/container/credential-broker.mjs';
-import { recoverStoppedBuildContainer } from '../container/recover-build-container.mjs';
+import { recoverStoppedBuildContainer } from '../dist/container/recover-build-container.mjs';
 
 function brokerReceipt(costUsd, maxBudgetUsd = 10) {
   return { schemaVersion: 2, source: 'credential-broker', model: 'claude-sonnet-5',

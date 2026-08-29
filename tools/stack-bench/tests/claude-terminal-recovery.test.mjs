@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { recoverClaudeTerminalResult, runTranscriptAwareProcess,
-  snapshotClaudeTranscripts } from '../src/agents/claude-terminal-recovery.mjs';
+  snapshotClaudeTranscripts } from '../dist/src/agents/claude-terminal-recovery.js';
 
 const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7a';
 const assistant = ({ text = 'FIX_COMPLETE', stop = 'end_turn', request = 'request-1',

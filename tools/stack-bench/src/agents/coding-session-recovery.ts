@@ -1,6 +1,98 @@
 import { AGENT_COST_RECEIPT_TOLERANCE_USD } from './agent-adapter-contract.js';
 
-function text(value) {
+type UnknownRecord = Record<string, unknown>;
+
+export interface CodingSessionResult extends UnknownRecord {
+  api_error_status?: number | null;
+  terminal_reason?: string;
+  result?: string;
+  is_error?: boolean;
+  session_id?: string;
+  total_cost_usd?: number;
+  num_turns?: number;
+  usage?: UnknownRecord;
+  stack_bench_cost_receipt?: UnknownRecord;
+  stack_bench_credential_broker?: { endpointKind?: string };
+}
+
+interface CodingProcessError extends UnknownRecord {
+  code?: string;
+  status?: number;
+  stdout?: unknown;
+  stderr?: unknown;
+}
+
+interface CodingProcessDiagnostic extends UnknownRecord {
+  status?: unknown;
+  signal?: unknown;
+  cgroupMemory?: unknown;
+  container?: { ExitCode?: unknown; OOMKilled?: unknown };
+}
+
+export interface ProviderSessionFailure {
+  code: 'provider-throttle' | 'provider-api-error' | 'credential-broker-unavailable'
+    | 'provider-connection-error' | 'provider-session-error';
+  status: number | null;
+}
+
+export interface CodingSessionInterruption extends UnknownRecord {
+  kind: 'provider-throttled' | 'provider-api-error' | 'credential-broker-unavailable'
+    | 'provider-connection-error' | 'coding-session-timeout' | 'coding-process-killed';
+  resumeSession: string | null;
+  recoverStoppedContainer: boolean;
+  terminalReason: string | null;
+  providerStatus: number | null;
+}
+
+export interface CodingSessionInvocation {
+  input: string;
+  maxBudgetUsd: number | null;
+  resumeSession: string | null;
+  recoverStoppedContainer: boolean;
+  invocation: number;
+}
+
+export interface CodingSessionRecoveryOptions {
+  invoke: (invocation: CodingSessionInvocation) => unknown;
+  prompt: string;
+  retryLimit: number;
+  maxBudgetUsd?: number | null;
+  throttleMaxWaitMs?: number;
+  throttleJitterMs?: number;
+  sleep?: (milliseconds: number) => void;
+  log?: ((message: string) => void) | null;
+}
+
+export interface AggregatedCodingSessionResult extends CodingSessionResult {
+  total_cost_usd: number;
+  num_turns: number;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+  };
+  stack_bench_cost_receipts: Array<{ invocation: number; receipt: unknown }>;
+}
+
+export interface CodingSessionRecoveryResult {
+  raw: string;
+  spawnError: string | null;
+  sessionResults: CodingSessionResult[];
+  interruptions: Array<CodingSessionInterruption & UnknownRecord>;
+  throttle: {
+    waits: number;
+    waitedMs: number;
+    maxWaitMs: number;
+    jitterMs: number;
+  };
+  result: AggregatedCodingSessionResult;
+}
+
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function text(value: unknown): string {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
 }
 
@@ -18,12 +110,16 @@ const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
 export const DEFAULT_THROTTLE_MAX_WAIT_MS = 300 * 60_000;
 const BROKER_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
 
-export function providerSessionFailure(result) {
+export function providerSessionFailure(
+  result: CodingSessionResult | null | undefined,
+): ProviderSessionFailure | null {
   const status = result?.api_error_status ?? null;
-  if (result?.terminal_reason === 'api_error' && THROTTLE_STATUSES.has(status)) {
+  if (result?.terminal_reason === 'api_error' && status !== null
+    && THROTTLE_STATUSES.has(status)) {
     return { code: 'provider-throttle', status };
   }
-  if (result?.terminal_reason === 'api_error' && TRANSIENT_API_STATUSES.has(status)) {
+  if (result?.terminal_reason === 'api_error' && status !== null
+    && TRANSIENT_API_STATUSES.has(status)) {
     return { code: 'provider-api-error', status };
   }
   const detail = typeof result?.result === 'string' ? result.result : '';
@@ -43,44 +139,51 @@ export function providerSessionFailure(result) {
 // Synchronous by design: the surrounding loop drives execFileSync invocations,
 // and each chunk is at most 15 minutes so a pending SIGTERM is honoured at the
 // next chunk boundary rather than never.
-function synchronousSleep(ms) {
+function synchronousSleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-export function parseCodingSessionResult(raw) {
+export function parseCodingSessionResult(raw: unknown): CodingSessionResult | null {
   const value = text(raw).trim();
   if (!value) return null;
-  try { return JSON.parse(value); } catch { /* try the last JSON line */ }
+  try { return JSON.parse(value) as CodingSessionResult; } catch { /* try the last JSON line */ }
   for (const line of value.split(/\r?\n/).reverse()) {
-    try { return JSON.parse(line); } catch { /* keep looking */ }
+    try { return JSON.parse(line) as CodingSessionResult; } catch { /* keep looking */ }
   }
   return null;
 }
 
-function codingProcessDiagnostic(error) {
+function codingProcessDiagnostic(
+  error: CodingProcessError | null | undefined,
+): CodingProcessDiagnostic | null {
   const line = text(error?.stderr).split(/\r?\n/)
     .find(item => item.startsWith('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '));
   if (!line) return null;
-  try { return JSON.parse(line.slice('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '.length)); }
+  try {
+    const parsed: unknown = JSON.parse(
+      line.slice('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '.length));
+    return parsed as CodingProcessDiagnostic;
+  }
   catch { return null; }
 }
 
-function completeBrokerReceiptCost(result) {
+function completeBrokerReceiptCost(result: CodingSessionResult | null): number | null {
   const receipt = result?.stack_bench_cost_receipt;
   const resultCostUsd = result?.total_cost_usd;
-  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)
+  const nonNegative = (value: unknown): value is number => typeof value === 'number'
+    && Number.isFinite(value) && value >= 0;
+  if (!object(receipt)
     || receipt.schemaVersion !== 2 || receipt.source !== 'credential-broker'
     || typeof receipt.model !== 'string' || !receipt.model
-    || !Number.isFinite(receipt.maxBudgetUsd) || receipt.maxBudgetUsd <= 0
-    || !Number.isFinite(receipt.costUsd) || receipt.costUsd < 0
-    || !Number.isFinite(receipt.cliCostUsd) || receipt.cliCostUsd < 0
-    || !Number.isFinite(receipt.calculatedCostUsd) || receipt.calculatedCostUsd < 0
+    || !nonNegative(receipt.maxBudgetUsd) || receipt.maxBudgetUsd === 0
+    || !nonNegative(receipt.costUsd)
+    || !nonNegative(receipt.cliCostUsd)
+    || !nonNegative(receipt.calculatedCostUsd)
     || receipt.complete !== true || receipt.reconciled !== true || receipt.error !== null
-    || !Number.isFinite(resultCostUsd) || resultCostUsd < 0) return null;
+    || !nonNegative(resultCostUsd)) return null;
   for (const field of ['usage', 'pricingRates']) {
     const values = receipt[field];
-    if (!values || typeof values !== 'object' || Array.isArray(values)
-      || BROKER_USAGE_FIELDS.some(key => !Number.isFinite(values[key]) || values[key] < 0)) {
+    if (!object(values) || BROKER_USAGE_FIELDS.some(key => !nonNegative(values[key]))) {
       return null;
     }
   }
@@ -88,19 +191,23 @@ function completeBrokerReceiptCost(result) {
     ? receipt.costUsd : null;
 }
 
-export function codingSessionInterruption(error, result) {
-  if (result?.terminal_reason === 'api_error'
-    && THROTTLE_STATUSES.has(result.api_error_status ?? null)) {
+export function codingSessionInterruption(
+  error: CodingProcessError | null,
+  result: CodingSessionResult | null,
+): CodingSessionInterruption | null {
+  const apiStatus = result?.api_error_status ?? null;
+  if (result?.terminal_reason === 'api_error' && apiStatus !== null
+    && THROTTLE_STATUSES.has(apiStatus)) {
     // A throttled first request has no session yet; a null resumeSession makes
     // the retry restart from the existing files instead of resuming.
     return { kind: 'provider-throttled',
       resumeSession: typeof result.session_id === 'string' && result.session_id
         ? result.session_id : null,
       recoverStoppedContainer: false, terminalReason: 'api_error',
-      providerStatus: result.api_error_status };
+      providerStatus: apiStatus };
   }
-  if (result?.terminal_reason === 'api_error'
-    && TRANSIENT_API_STATUSES.has(result.api_error_status ?? null)
+  if (result?.terminal_reason === 'api_error' && apiStatus !== null
+    && TRANSIENT_API_STATUSES.has(apiStatus)
     && typeof result.session_id === 'string' && result.session_id) {
     return { kind: 'provider-api-error', resumeSession: result.session_id,
       recoverStoppedContainer: false, terminalReason: 'api_error',
@@ -108,13 +215,13 @@ export function codingSessionInterruption(error, result) {
   }
   const providerFailure = providerSessionFailure(result);
   if (providerFailure?.code === 'credential-broker-unavailable'
-    && typeof result.session_id === 'string' && result.session_id) {
+    && result && typeof result.session_id === 'string' && result.session_id) {
     return { kind: 'credential-broker-unavailable', resumeSession: result.session_id,
       recoverStoppedContainer: false, terminalReason: result.terminal_reason ?? null,
       providerStatus: null };
   }
   if (providerFailure?.code === 'provider-connection-error'
-    && typeof result.session_id === 'string' && result.session_id) {
+    && result && typeof result.session_id === 'string' && result.session_id) {
     return { kind: 'provider-connection-error', resumeSession: result.session_id,
       recoverStoppedContainer: false, terminalReason: result.terminal_reason ?? null,
       providerStatus: providerFailure.status };
@@ -138,13 +245,17 @@ export function codingSessionInterruption(error, result) {
     } : null };
 }
 
-export function aggregateCodingSessionResults(results) {
-  const sessions = results.filter(Boolean);
+export function aggregateCodingSessionResults(
+  results: Array<CodingSessionResult | null | undefined>,
+): AggregatedCodingSessionResult {
+  const sessions = results.filter((result): result is CodingSessionResult => Boolean(result));
   const last = sessions.at(-1) ?? {};
   const usage = { input_tokens: 0, output_tokens: 0,
     cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const usageKeys = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens',
+    'cache_read_input_tokens'] as const;
   for (const result of sessions) {
-    for (const key of Object.keys(usage)) usage[key] += Number(result.usage?.[key] ?? 0);
+    for (const key of usageKeys) usage[key] += Number(result.usage?.[key] ?? 0);
   }
   return {
     ...last,
@@ -158,7 +269,7 @@ export function aggregateCodingSessionResults(results) {
   };
 }
 
-export function codingSessionFailure(error) {
+export function codingSessionFailure(error: CodingProcessError): string {
   const status = Number.isInteger(error?.status) ? `exit ${error.status}` : null;
   const code = typeof error?.code === 'string' && error.code ? error.code : null;
   const reason = code ?? status ?? 'nonzero exit';
@@ -178,7 +289,7 @@ export function codingSessionFailure(error) {
 
 export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null,
   throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, throttleJitterMs = 0,
-  sleep = synchronousSleep, log = null }) {
+  sleep = synchronousSleep, log = null }: CodingSessionRecoveryOptions): CodingSessionRecoveryResult {
   if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('coding interruption retry limit must be an integer from 0 to 3');
@@ -189,12 +300,12 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
   if (!Number.isInteger(throttleJitterMs) || throttleJitterMs < 0 || throttleJitterMs > 60_000) {
     throw new Error('provider throttle jitter must be an integer from 0 to 60000 milliseconds');
   }
-  const say = log ?? (message => console.error(message));
+  const say = log ?? ((message: string) => console.error(message));
   let raw = '';
-  let spawnError = null;
-  const sessionResults = [];
-  const interruptions = [];
-  let resumeSession = null;
+  let spawnError: string | null = null;
+  const sessionResults: CodingSessionResult[] = [];
+  const interruptions: Array<CodingSessionInterruption & UnknownRecord> = [];
+  let resumeSession: string | null = null;
   let recoverStoppedContainer = false;
   // Interruption retries are a bounded count; throttle waits are a bounded
   // TIME. A throttled provider can reject dozens of near-free probe requests
@@ -218,13 +329,13 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
       : invocation === 0 ? prompt
         : 'A prior coding process was terminated. Continue this task from the existing files; do not start over.\n\n'
           + prompt;
-    let error = null;
+    let error: CodingProcessError | null = null;
     try {
       raw = text(invoke({ input, maxBudgetUsd: invocationBudget, resumeSession,
         recoverStoppedContainer, invocation }));
     } catch (err) {
-      error = err;
-      raw = text(err.stdout);
+      error = object(err) ? err : {};
+      raw = text(error.stdout);
     }
     const result = parseCodingSessionResult(raw);
     if (result) sessionResults.push(result);
@@ -246,8 +357,8 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
       break;
     }
     if (interruption?.kind === 'provider-throttled') {
-      const delay = THROTTLE_DELAYS_MS[Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)]
-        + throttleJitterMs;
+      const delay = (THROTTLE_DELAYS_MS[
+        Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)] ?? 900_000) + throttleJitterMs;
       if (throttleWaitedMs + delay > throttleMaxWaitMs) {
         spawnError = `provider stayed throttled (status ${interruption.providerStatus}) after `
           + `${Math.round(throttleWaitedMs / 60_000)} minutes of waiting across `

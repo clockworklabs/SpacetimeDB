@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync,
   readdirSync, statSync } from 'node:fs';
 import { basename, join, sep } from 'node:path';
@@ -6,13 +6,136 @@ import { basename, join, sep } from 'node:path';
 import { claudeRatesForModel, normalizeClaudeUsage,
   priceClaudeUsage } from '../evidence/claude-usage-cost.js';
 import { validatePricingRates } from '../evidence/pricing-authority.js';
+import type { PricingRates } from '../evidence/pricing-authority.js';
 
 const UUID_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.jsonl$/i;
 
-export function snapshotClaudeTranscripts(directory) {
-  const snapshot = new Map();
+export type ClaudeTranscriptSnapshot = Map<string, number>;
+
+type JsonObject = Record<string, unknown>;
+
+interface ClaudeCliResult extends JsonObject {
+  is_error: boolean;
+  session_id: string;
+  result: string;
+  total_cost_usd: number;
+  num_turns: number;
+  usage: JsonObject;
+}
+
+interface TranscriptMessage extends JsonObject {
+  id?: unknown;
+  model?: unknown;
+  stop_reason?: unknown;
+  content?: unknown;
+  usage?: unknown;
+}
+
+interface TranscriptRecord extends JsonObject {
+  type?: unknown;
+  isSidechain?: unknown;
+  sessionId?: unknown;
+  requestId?: unknown;
+  uuid?: unknown;
+  message?: unknown;
+}
+
+interface AssistantUsageRecord extends TranscriptRecord {
+  message: TranscriptMessage;
+}
+
+export interface ClaudeTerminalRecoveryEvidence {
+  schemaVersion: 1;
+  kind: 'terminal-transcript';
+  marker: string;
+  transcript: string;
+  costSource: 'transcript-usage';
+  pricedModels: unknown[];
+}
+
+export interface RecoveredClaudeTerminalResult {
+  is_error: false;
+  session_id: string;
+  result: string;
+  total_cost_usd: number;
+  num_turns: number;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+  };
+  terminal_recovery: ClaudeTerminalRecoveryEvidence;
+}
+
+interface RecoverClaudeTerminalOptions {
+  directory: string;
+  snapshot: ClaudeTranscriptSnapshot;
+  marker: string;
+  model: string;
+  pricingRates?: PricingRates | null;
+  resumeSession?: string | null;
+}
+
+export interface TerminalProcessRecoveryEvidence {
+  schemaVersion: 1;
+  kind: 'terminal-process';
+  marker: string;
+  transcript: string;
+  resultSource: 'cli-json';
+}
+
+export interface TranscriptAwareProcessResult {
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  error: unknown;
+  terminalRecovery?: ClaudeTerminalRecoveryEvidence | TerminalProcessRecoveryEvidence;
+}
+
+interface RunTranscriptAwareProcessOptions {
+  command: string;
+  args: string[];
+  input?: string | null;
+  env?: NodeJS.ProcessEnv;
+  timeoutMs: number;
+  transcriptDirectory: string;
+  transcriptSnapshot: ClaudeTranscriptSnapshot;
+  marker: string;
+  model: string;
+  resumeSession?: string | null;
+  pricingRates?: PricingRates | null;
+  exitGraceMs?: number;
+  pollMs?: number;
+  maxBuffer?: number;
+  terminate?: (
+    child: ChildProcessWithoutNullStreams,
+    reason: string,
+  ) => unknown | PromiseLike<unknown>;
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function transcriptMessage(value: unknown): TranscriptMessage | null {
+  return isJsonObject(value) ? value : null;
+}
+
+function transcriptContent(message: TranscriptMessage): JsonObject[] {
+  return Array.isArray(message.content) ? message.content.filter(isJsonObject) : [];
+}
+
+function isAssistantUsageRecord(record: TranscriptRecord): record is AssistantUsageRecord {
+  const message = transcriptMessage(record.message);
+  return record.type === 'assistant' && message !== null && Boolean(message.usage);
+}
+
+export function snapshotClaudeTranscripts(directory: string): ClaudeTranscriptSnapshot {
+  const snapshot: ClaudeTranscriptSnapshot = new Map();
   if (!existsSync(directory)) return snapshot;
-  (function walk(path) {
+  (function walk(path: string): void {
     for (const entry of readdirSync(path, { withFileTypes: true })) {
       const child = join(path, entry.name);
       if (entry.isDirectory()) walk(child);
@@ -22,43 +145,52 @@ export function snapshotClaudeTranscripts(directory) {
   return snapshot;
 }
 
-function markerPresent(text, marker) {
+function markerPresent(text: string, marker: string): boolean {
   return new RegExp(`(?:^|\\s)${marker}(?=\\s|$)`).test(text);
 }
 
-function addedRecords(path, initialSize) {
+function addedRecords(path: string, initialSize: number): TranscriptRecord[] {
   const value = readFileSync(path, 'utf8');
   // Transcript records are ASCII JSON around UTF-8 string content. Slicing the
   // byte buffer, not the JavaScript string, keeps the saved offset exact.
   const tail = Buffer.from(value).subarray(initialSize).toString('utf8');
-  return tail.split(/\r?\n/).filter(Boolean).flatMap(line => {
-    try { return [JSON.parse(line)]; } catch { return []; }
+  return tail.split(/\r?\n/).filter(Boolean).flatMap((line): TranscriptRecord[] => {
+    try {
+      const parsed: unknown = JSON.parse(line);
+      return isJsonObject(parsed) ? [parsed] : [];
+    } catch { return []; }
   });
 }
 
-export function parseCompleteClaudeCliResult(raw) {
+export function parseCompleteClaudeCliResult(raw: unknown): ClaudeCliResult | null {
   const value = String(raw ?? '').trim();
   if (!value) return null;
-  let parsed = null;
+  let parsed: unknown = null;
   try { parsed = JSON.parse(value); } catch {
     for (const line of value.split(/\r?\n/).reverse()) {
       try { parsed = JSON.parse(line); break; } catch { /* keep looking */ }
     }
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+  if (!isJsonObject(parsed)
     || typeof parsed.is_error !== 'boolean'
     || typeof parsed.session_id !== 'string' || !parsed.session_id
     || typeof parsed.result !== 'string'
+    || typeof parsed.total_cost_usd !== 'number'
     || !Number.isFinite(parsed.total_cost_usd) || parsed.total_cost_usd < 0
+    || typeof parsed.num_turns !== 'number'
     || !Number.isSafeInteger(parsed.num_turns) || parsed.num_turns < 0
-    || !parsed.usage || typeof parsed.usage !== 'object' || Array.isArray(parsed.usage)) {
+    || !isJsonObject(parsed.usage)) {
     return null;
   }
   try { normalizeClaudeUsage(parsed.usage); } catch { return null; }
-  return parsed;
+  return parsed as ClaudeCliResult;
 }
 
-function candidateTranscriptPaths(directory, snapshot, resumeSession) {
+function candidateTranscriptPaths(
+  directory: string,
+  snapshot: ClaudeTranscriptSnapshot,
+  resumeSession: string | null | undefined,
+): string[] {
   const normalizedResume = resumeSession?.toLowerCase() ?? null;
   if (normalizedResume) return [join(directory, `${normalizedResume}.jsonl`)];
   return existsSync(directory)
@@ -67,7 +199,12 @@ function candidateTranscriptPaths(directory, snapshot, resumeSession) {
     : [];
 }
 
-function hasCompletionMarker(directory, snapshot, marker, resumeSession) {
+function hasCompletionMarker(
+  directory: string,
+  snapshot: ClaudeTranscriptSnapshot,
+  marker: string,
+  resumeSession: string | null | undefined,
+): boolean {
   for (const path of candidateTranscriptPaths(directory, snapshot, resumeSession)) {
     if (!existsSync(path)) continue;
     const size = statSync(path).size;
@@ -87,12 +224,13 @@ function hasCompletionMarker(directory, snapshot, marker, resumeSession) {
 }
 
 export function recoverClaudeTerminalResult({ directory, snapshot, marker, model,
-  pricingRates = null, resumeSession = null }) {
+  pricingRates = null, resumeSession = null }:
+  RecoverClaudeTerminalOptions): RecoveredClaudeTerminalResult | null {
   const requestedRates = pricingRates === null ? null
     : validatePricingRates(pricingRates, { at: 'terminal recovery pricing rates' });
   const normalizedResume = resumeSession?.toLowerCase() ?? null;
   const candidates = candidateTranscriptPaths(directory, snapshot, resumeSession);
-  const matches = [];
+  const matches: RecoveredClaudeTerminalResult[] = [];
   for (const path of candidates) {
     if (!existsSync(path)) continue;
     const initialSize = snapshot.get(path) ?? 0;
@@ -100,11 +238,11 @@ export function recoverClaudeTerminalResult({ directory, snapshot, marker, model
     const sessionId = basename(path).match(UUID_FILE)?.[1];
     if (!sessionId || (normalizedResume && sessionId.toLowerCase() !== normalizedResume)) continue;
     const mainRecords = addedRecords(path, initialSize)
-      .filter(record => record?.type === 'assistant' && record.isSidechain !== true
-        && record.sessionId === sessionId && record?.message?.usage);
+      .filter((record): record is AssistantUsageRecord => isAssistantUsageRecord(record)
+        && record.isSidechain !== true && record.sessionId === sessionId);
     const terminal = mainRecords.findLast(record => record.message.stop_reason === 'end_turn'
-      && (record.message.content ?? []).some(content => content.type === 'text'
-        && markerPresent(content.text ?? '', marker)));
+      && transcriptContent(record.message).some(content => content.type === 'text'
+        && markerPresent(String(content.text ?? ''), marker)));
     if (!terminal) continue;
     const records = [...mainRecords];
     const nestedRoot = join(directory, sessionId);
@@ -112,21 +250,21 @@ export function recoverClaudeTerminalResult({ directory, snapshot, marker, model
       for (const nestedPath of snapshotClaudeTranscripts(nestedRoot).keys()) {
         if (!nestedPath.startsWith(`${nestedRoot}${sep}`)) continue;
         records.push(...addedRecords(nestedPath, snapshot.get(nestedPath) ?? 0)
-          .filter(record => record?.type === 'assistant' && record?.message?.usage));
+          .filter(isAssistantUsageRecord));
       }
     }
-    const billed = new Map();
+    const billed = new Map<unknown, AssistantUsageRecord>();
     for (const record of records) {
-      const requestId = record.requestId ?? record.message?.id ?? record.uuid;
+      const requestId = record.requestId ?? record.message.id ?? record.uuid;
       if (requestId && !billed.has(requestId)) billed.set(requestId, record);
     }
     if (!billed.size) throw new Error('terminal transcript has no billable assistant usage');
     const usage = { input_tokens: 0, output_tokens: 0,
       cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
     let totalCostUsd = 0;
-    const pricedModels = new Set();
+    const pricedModels = new Set<unknown>();
     for (const record of billed.values()) {
-      const actualModel = record.message?.model ?? model;
+      const actualModel = record.message.model ?? model;
       const rates = requestedRates ?? claudeRatesForModel(actualModel);
       if (!rates) {
         throw Object.assign(
@@ -142,7 +280,7 @@ export function recoverClaudeTerminalResult({ directory, snapshot, marker, model
       usage.cache_creation_input_tokens += tokens.cacheWrite5m + tokens.cacheWrite1h;
       usage.cache_read_input_tokens += tokens.cacheRead;
     }
-    const result = (terminal.message.content ?? [])
+    const result = transcriptContent(terminal.message)
       .filter(content => content.type === 'text').map(content => content.text).join('\n');
     matches.push({ is_error: false, session_id: sessionId, result,
       total_cost_usd: totalCostUsd, num_turns: billed.size, usage,
@@ -160,24 +298,24 @@ export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs
   transcriptDirectory, transcriptSnapshot, marker, model, resumeSession = null,
   pricingRates = null,
   exitGraceMs = 15_000, pollMs = 250, maxBuffer = 256 * 1024 * 1024,
-  terminate }) {
-  return new Promise(resolve => {
+  terminate }: RunTranscriptAwareProcessOptions): Promise<TranscriptAwareProcessResult> {
+  return new Promise<TranscriptAwareProcessResult>(resolve => {
     const child = spawn(command, args, { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    const stdout = [];
-    const stderr = [];
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
-    let error = null;
-    let recovered = null;
-    let recoveryError = null;
-    let terminalSeenAt = null;
+    let error: unknown = null;
+    let recovered: RecoveredClaudeTerminalResult | null = null;
+    let recoveryError: unknown = null;
+    let terminalSeenAt: number | null = null;
     let stopping = false;
-    const stop = reason => {
+    const stop = (reason: string): void => {
       if (stopping) return;
       stopping = true;
       Promise.resolve(terminate?.(child, reason)).catch(() => child.kill('SIGKILL'));
     };
-    const append = (target, chunk, stdoutStream) => {
+    const append = (target: Buffer[], chunk: Buffer, stdoutStream: boolean): void => {
       target.push(chunk);
       if (stdoutStream) stdoutBytes += chunk.length; else stderrBytes += chunk.length;
       if (stdoutBytes + stderrBytes > maxBuffer && !error) {
@@ -211,7 +349,9 @@ export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs
         }
       } catch (value) {
         recoveryError = value;
-        if (value?.code === 'CLAUDE_TERMINAL_RECOVERY_UNAVAILABLE') terminalSeenAt = Date.now();
+        if (isJsonObject(value) && value.code === 'CLAUDE_TERMINAL_RECOVERY_UNAVAILABLE') {
+          terminalSeenAt = Date.now();
+        }
       }
     }, pollMs);
     const timeout = setTimeout(() => {
@@ -230,7 +370,8 @@ export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs
       if (recovered) {
         const cliResult = parseCompleteClaudeCliResult(stdoutText);
         if (cliResult) {
-          const terminalRecovery = { schemaVersion: 1, kind: 'terminal-process', marker,
+          const terminalRecovery: TerminalProcessRecoveryEvidence = {
+            schemaVersion: 1, kind: 'terminal-process', marker,
             transcript: recovered.terminal_recovery.transcript, resultSource: 'cli-json' };
           resolve({ status: 0, signal,
             stdout: `${JSON.stringify({ ...cliResult, terminal_recovery: terminalRecovery })}\n`,
