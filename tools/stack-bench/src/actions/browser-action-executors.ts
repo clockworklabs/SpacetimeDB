@@ -3,7 +3,7 @@ import type {
   ActionImplementation,
   ActionImplementationArguments,
 } from './action-contract.js';
-import { settledLocatorCount } from '../evidence/browser-evidence.mjs';
+import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 
 interface Locator {
