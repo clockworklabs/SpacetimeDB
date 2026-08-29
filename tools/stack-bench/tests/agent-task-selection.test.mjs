@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { agentRecipeRequest, agentScenarioPaths } from '../commands/agent.mjs';
+import { agentRecipeRequest, agentScenarioPaths } from '../dist/commands/agent.mjs';
 import { agentVisibleContractText, contractControlIds }
   from '../src/composition/agent-visible-contract.mjs';
 import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
@@ -15,7 +15,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
-const AGENT = join(ROOT, 'commands', 'agent.mjs');
+const AGENT = join(ROOT, 'dist', 'commands', 'agent.mjs');
 const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1);
 
 test('selected hook linting uses only public test ids from the composed contract', () => {

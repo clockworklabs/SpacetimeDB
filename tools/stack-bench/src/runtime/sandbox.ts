@@ -24,6 +24,7 @@ export const DENY = [
   'Read(**/stack-bench/levels/**)',
   // Harness source and its own documentation.
   'Read(**/stack-bench/*.mjs)',
+  'Read(**/stack-bench/*.ts)',
   'Read(**/stack-bench/*.md)',
   'Read(**/stack-bench/*.sh)',
   'Read(**/stack-bench/backends/**)',
@@ -59,13 +60,17 @@ export const ALLOW = ['Bash'];
 // controller deliberately has no model CLI, while the coding container has no
 // harness, scenarios, result history, or Docker socket to probe against.
 export function sandboxProbeMode({ appliance = false, explicitlySkipped = false,
-  stackRequired = false } = {}) {
+  stackRequired = false }: {
+  appliance?: boolean;
+  explicitlySkipped?: boolean;
+  stackRequired?: boolean;
+} = {}): 'not-required' | 'explicitly-skipped' | 'container-isolation' | 'direct-cli' {
   if (!stackRequired) return 'not-required';
   if (explicitlySkipped) return 'explicitly-skipped';
   return appliance ? 'container-isolation' : 'direct-cli';
 }
 
-export function writeSandbox(appDir) {
+export function writeSandbox(appDir: string): string {
   const p = join(appDir, '.sandbox-settings.json');
   writeFileSync(p, JSON.stringify({ permissions: { allow: ALLOW, deny: DENY } }, null, 2));
   return p;

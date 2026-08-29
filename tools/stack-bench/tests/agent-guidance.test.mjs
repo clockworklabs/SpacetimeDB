@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { readBackendGuidanceDocument } from '../commands/agent.mjs';
+import { readBackendGuidanceDocument } from '../dist/commands/agent.mjs';
 import { normalizePromptText } from '../src/agents/agent-materials.mjs';
 import { sha256 } from '../dist/src/evidence/provenance.js';
 

@@ -12,7 +12,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
 
-const AGENT = new URL('../commands/agent.mjs', import.meta.url).pathname
+const AGENT = new URL('../dist/commands/agent.mjs', import.meta.url).pathname
   .replace(/^\/(?:[A-Za-z]:)/, value => value.slice(1));
 const STACKS = ['mongodb', 'postgres', 'spacetime'] as const;
 type Stack = typeof STACKS[number];

@@ -22,7 +22,7 @@ import { join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 
 import { randomUUID } from 'node:crypto';
-import { writeSandbox } from '../src/runtime/sandbox.mjs';
+import { writeSandbox } from '../src/runtime/sandbox.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');

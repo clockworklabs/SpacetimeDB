@@ -48,7 +48,7 @@ import { runPreflight } from '../src/runtime/preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.mjs';
 import { resolveAgentCredential } from '../src/agents/agent-credentials.js';
-import { sandboxProbeMode } from '../src/runtime/sandbox.mjs';
+import { sandboxProbeMode } from '../src/runtime/sandbox.js';
 import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
