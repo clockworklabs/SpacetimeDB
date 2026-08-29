@@ -16,6 +16,7 @@
     "commands/**/*.ts",
     "dashboard/**/*.ts",
     "grader/**/*.ts",
+    "scripts/**/*.ts",
     "src/**/*.ts",
     "tests/*.test.ts"
   ]
