@@ -2,7 +2,7 @@ import {
   evidenceDisposition,
   evidenceIsRepairable,
   type CheckEvidence,
-} from './check-evidence.mjs';
+} from './check-evidence.js';
 import { humaniseDiagnostic, sanitiseDiagnostic } from './diagnostic-sanitizer.js';
 
 export function evidenceStatusLabel(evidence: CheckEvidence): string {

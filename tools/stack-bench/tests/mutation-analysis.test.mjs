@@ -5,7 +5,7 @@ import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
   mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
   releaseScenarioCheckKeys, resolveMutationFile, reusableMutationBaseline,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 

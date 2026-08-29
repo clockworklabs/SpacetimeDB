@@ -9,7 +9,7 @@ import {
   criterionEvidence,
   evidenceDisposition,
   type CheckEvidenceStatus,
-} from './check-evidence.mjs';
+} from './check-evidence.js';
 
 interface ScoredCriterion {
   id?: string;

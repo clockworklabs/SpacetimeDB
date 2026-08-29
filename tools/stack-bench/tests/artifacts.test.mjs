@@ -6,13 +6,13 @@ import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { ARTIFACT_SCHEMA_VERSION, createArtifact, readArtifact, readArtifactPayload,
-  readRunJson, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+  readRunJson, writeArtifact, writeRunJson } from '../dist/src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 
 const BENCH_ROOT = join(import.meta.dirname, '..');
 
 function freshEngineIdentity(root = BENCH_ROOT) {
-  const artifactsUrl = pathToFileURL(join(root, 'src', 'evidence', 'artifacts.mjs')).href;
+  const artifactsUrl = pathToFileURL(join(root, 'dist', 'src', 'evidence', 'artifacts.mjs')).href;
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
     `import { currentEngineIdentity } from ${JSON.stringify(artifactsUrl)}; console.log(JSON.stringify(currentEngineIdentity()));`],
   { cwd: root, encoding: 'utf8' });

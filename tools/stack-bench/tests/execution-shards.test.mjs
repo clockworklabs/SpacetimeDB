@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { mergeExecutionSourceShardResults, planExecutionSourceShards }
   from '../src/grading/execution-shards.mjs';
 

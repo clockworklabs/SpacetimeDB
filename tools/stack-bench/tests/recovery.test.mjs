@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { readArtifactPayload } from '../src/evidence/artifacts.mjs';
+import { readArtifactPayload } from '../dist/src/evidence/artifacts.mjs';
 import { acquireResourceLock, createBackendLease, readBackendLease,
   writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,

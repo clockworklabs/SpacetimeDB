@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../dist/src/evidence/artifacts.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.mjs';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, parsePackBudgetArgs,

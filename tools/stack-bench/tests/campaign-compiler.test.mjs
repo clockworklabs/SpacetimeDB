@@ -9,7 +9,7 @@ import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
 import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { writeArtifact } from '../dist/src/evidence/artifacts.mjs';
 import { sha256 } from '../dist/src/evidence/provenance.js';
 
 function definition(overrides = {}) {

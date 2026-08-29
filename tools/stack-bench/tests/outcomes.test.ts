@@ -3,7 +3,7 @@ import test from 'node:test';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode, type OutcomeCriterion } from '../src/evidence/outcomes.js';
 import { createCheckEvidence, type CheckEvidence,
-  type CheckEvidenceStatus } from '../src/evidence/check-evidence.mjs';
+  type CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
 
 interface TestFeature {
   cleanupEvidence?: { status: string; failures: readonly unknown[] };

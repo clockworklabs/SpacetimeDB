@@ -1,6 +1,6 @@
 import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.mjs';
-import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.mjs';
+import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { sha256 } from '../evidence/provenance.js';
 
 export const EXECUTION_SHARD_SCHEMA_VERSION = 1;

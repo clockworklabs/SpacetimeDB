@@ -8,8 +8,8 @@ import test from 'node:test';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact }
-  from '../src/evidence/artifacts.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+  from '../dist/src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, compileProgressionInput }
   from '../dist/src/progression/progression-definition.js';

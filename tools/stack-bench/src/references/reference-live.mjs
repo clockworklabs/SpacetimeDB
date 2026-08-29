@@ -21,7 +21,7 @@ import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtur
   validateReferenceRegistry } from './reference-fixtures.mjs';
 import { resolveReferenceSelection } from './reference-selection.mjs';
 import { killTree } from '../runtime/platform.mjs';
-import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.mjs';
+import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
 import { calibrationQualificationIdentity, mutationExecutionSha256,
   resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 

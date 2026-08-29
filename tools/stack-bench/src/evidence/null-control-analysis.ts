@@ -2,7 +2,7 @@ import {
   criterionEvidence,
   evidenceDisposition,
   type CheckEvidenceStatus,
-} from './check-evidence.mjs';
+} from './check-evidence.js';
 
 type FailureStage = 'setup' | 'assertion';
 type NullCriterionStatus = 'expected_fail' | 'vacuous_pass' | 'oracle_gap';

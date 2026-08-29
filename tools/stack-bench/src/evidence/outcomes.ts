@@ -1,4 +1,4 @@
-import { criterionEvidence, evidenceDisposition } from './check-evidence.mjs';
+import { criterionEvidence, evidenceDisposition } from './check-evidence.js';
 
 interface CleanupEvidence {
   readonly status?: string;

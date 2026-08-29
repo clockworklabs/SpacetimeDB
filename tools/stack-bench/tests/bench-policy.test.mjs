@@ -12,7 +12,7 @@ import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
   from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { writeArtifact } from '../dist/src/evidence/artifacts.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 
 test('final package preservation verifies both source and grading before success', () => {

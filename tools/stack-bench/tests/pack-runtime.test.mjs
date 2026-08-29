@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { aggregatePackRuntime, exceededPackBudgets, measureGradePackRuntime,
   PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.mjs';
 

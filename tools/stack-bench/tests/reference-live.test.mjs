@@ -19,8 +19,8 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
   rescueSupervisedLease, runBounded,
   targetedMutationCheckKeys } from '../src/references/reference-live.mjs';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
-  from '../src/evidence/artifacts.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+  from '../dist/src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';

@@ -1,4 +1,4 @@
-import { criterionEvidence, validateCheckEvidence } from '../evidence/check-evidence.mjs';
+import { criterionEvidence, validateCheckEvidence } from '../evidence/check-evidence.js';
 
 export const PACK_RUNTIME_METRIC = 'pack-check-wall-clock-sum-v1';
 

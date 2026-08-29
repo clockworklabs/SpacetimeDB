@@ -5,8 +5,8 @@ import type {
   ActionImplementation,
   ActionImplementationArguments,
 } from './action-contract.js';
-import { evidenceDisposition } from '../evidence/check-evidence.mjs';
-import type { CheckEvidenceStatus } from '../evidence/check-evidence.mjs';
+import { evidenceDisposition } from '../evidence/check-evidence.js';
+import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { controlBackend } from '../runtime/backend-control.mjs';

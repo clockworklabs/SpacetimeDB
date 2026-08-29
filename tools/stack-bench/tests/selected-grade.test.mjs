@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { readArtifactPayload } from '../src/evidence/artifacts.mjs';
+import { readArtifactPayload } from '../dist/src/evidence/artifacts.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { resolveRecipeSelection } from '../src/composition/recipe-selection.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { parsePreflightArgs, probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
   from '../src/runtime/preflight.mjs';
 import { isExactImageReference } from '../src/runtime/container-image.js';
-import { createArtifact, validateArtifact } from '../src/evidence/artifacts.mjs';
+import { createArtifact, validateArtifact } from '../dist/src/evidence/artifacts.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 

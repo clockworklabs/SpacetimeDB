@@ -12,7 +12,7 @@ import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, f
   contractLintArgv, databaseContainerForGrading, databaseNameForGrading, runGraderChild,
   verifyReseedProbe, waitForReseedProbe }
   from '../commands/run-suite.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 

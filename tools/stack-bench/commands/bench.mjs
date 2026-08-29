@@ -38,7 +38,7 @@ import { captureBackendDiagnostics } from '../src/runtime/backend-control.mjs';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
-import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.mjs';
+import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,

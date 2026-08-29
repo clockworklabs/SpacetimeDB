@@ -13,7 +13,7 @@ import {
   validateCheckEvidence,
   type CheckEvidence,
   type CheckEvidenceStatus,
-} from '../src/evidence/check-evidence.mjs';
+} from '../src/evidence/check-evidence.js';
 import {
   evidenceStatusLabel,
   renderEvidenceConsoleLine,

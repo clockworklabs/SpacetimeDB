@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
-import type { CheckEvidence, CheckEvidenceStatus } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import type { CheckEvidence, CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
 import { createArtifact, emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
 import { gradeBundleToProgressionResult }
   from '../src/progression/grade-bundle-result.js';

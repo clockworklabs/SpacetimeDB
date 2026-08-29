@@ -4,7 +4,7 @@ import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import {
   createCheckEvidence,
   type CheckEvidenceStatus,
-} from '../src/evidence/check-evidence.mjs';
+} from '../src/evidence/check-evidence.js';
 
 const criterion = (
   id: string,

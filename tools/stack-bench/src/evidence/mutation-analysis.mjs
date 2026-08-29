@@ -1,5 +1,5 @@
 import { resolve, sep } from 'node:path';
-import { criterionEvidence, evidenceDisposition } from './check-evidence.mjs';
+import { criterionEvidence, evidenceDisposition } from './check-evidence.js';
 
 function featureKey(id) {
   return String(id);

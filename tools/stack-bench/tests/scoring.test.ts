@@ -5,7 +5,7 @@ import { compareCriterionEvidence, formatRepairProgress } from '../src/evidence/
 import {
   createCheckEvidence,
   type CheckEvidenceStatus,
-} from '../src/evidence/check-evidence.mjs';
+} from '../src/evidence/check-evidence.js';
 
 const typedCriterion = (id: string, status: CheckEvidenceStatus, summary: string | null) => {
   const evidence = createCheckEvidence({ status, code: 'test_result', phase: 'assertion', summary,
