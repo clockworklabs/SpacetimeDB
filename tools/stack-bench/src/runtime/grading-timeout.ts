@@ -5,7 +5,14 @@ export const GRADER_SOURCE_TIMEOUT_MS = 15 * 60_000;
 const MIN_GRADING_RUN_TIMEOUT_MS = 20 * 60_000;
 const MAX_GRADING_RUN_TIMEOUT_MS = 120 * 60_000;
 
-export function selectedGradingSourceCount(...checkLists) {
+interface GradingCheck {
+  executionId?: string;
+  source?: string;
+}
+
+export function selectedGradingSourceCount(
+  ...checkLists: ReadonlyArray<ReadonlyArray<GradingCheck> | null | undefined>
+): number {
   const sources = new Set();
   for (const checks of checkLists) {
     for (const check of checks ?? []) {
@@ -16,7 +23,7 @@ export function selectedGradingSourceCount(...checkLists) {
   return sources.size;
 }
 
-export function gradingRunTimeoutMs(sourceCount) {
+export function gradingRunTimeoutMs(sourceCount: number): number {
   if (!Number.isSafeInteger(sourceCount) || sourceCount < 0) {
     throw new Error('grading source count must be a non-negative safe integer');
   }

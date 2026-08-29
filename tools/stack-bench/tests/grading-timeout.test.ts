@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { GRADER_SOURCE_TIMEOUT_MS, gradingRunTimeoutMs, selectedGradingSourceCount }
-  from '../src/runtime/grading-timeout.mjs';
+  from '../src/runtime/grading-timeout.js';
 
 test('grading source count deduplicates checks that share one scenario source', () => {
   assert.equal(selectedGradingSourceCount(
