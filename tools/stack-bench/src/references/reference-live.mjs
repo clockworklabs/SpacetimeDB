@@ -43,8 +43,8 @@ import { mutationTargetKeys } from '../evidence/mutation-analysis.js';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
-const BENCH = join(ROOT, 'commands', 'bench.mjs');
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../package-root.js';
+const BENCH = stagedEntrypoint('commands', 'bench.mjs');
 const DEFAULT_SPACETIME_PORT = 3310;
 
 function qualificationInputs() {

@@ -849,6 +849,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
         fail('levels', `L${record.level} did not resolve a modular recipe task`);
       }
       const modular: ModularRecipeTaskRequestResult = selected;
+      const taskMode = requestedTaskMode(modular.request);
       return {
         level: record.level,
         recipe: {
@@ -876,8 +877,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
         task: {
           // The mode the request actually carries: only an action recipe
           // records one, and this level reports what was requested.
-          ...(requestedTaskMode(modular.request) === undefined
-            ? {} : { mode: requestedTaskMode(modular.request) }),
+          ...(taskMode === undefined ? {} : { mode: taskMode }),
           sha256: modular.task.sha256,
           requirementSha256: modular.task.requirementSha256,
           contractSha256: modular.task.contractSha256,
