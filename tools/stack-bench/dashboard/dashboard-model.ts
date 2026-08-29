@@ -12,7 +12,7 @@ import { campaignLockIsActive } from '../src/campaigns/campaign-lock.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { validateCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 import { dependencyProgress } from '../src/campaigns/campaign-inspection.mjs';
-import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
+import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 
 const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;

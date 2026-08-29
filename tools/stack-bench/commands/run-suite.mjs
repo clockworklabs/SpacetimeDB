@@ -26,7 +26,7 @@ import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../
 import { contractControlIds } from '../src/composition/agent-visible-contract.mjs';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.mjs';
-import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.mjs';
+import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
@@ -34,7 +34,7 @@ import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 import { readBackendLease } from '../src/runtime/backend-lease.mjs';
 import { databaseContainerName } from '../src/stacks/database-containers.mjs';
-import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
+import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.mjs';

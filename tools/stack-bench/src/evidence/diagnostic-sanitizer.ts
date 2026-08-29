@@ -8,7 +8,7 @@ const BEARER_CREDENTIAL = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-
 const NAMED_CREDENTIAL = /["']?(?:anthropic_api_key|claude_code_oauth_token|api[_-]?key|access[_-]?token|auth[_-]?token|oauth[_-]?token|password|secret)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
 const PREFIXED_CREDENTIAL = /\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/g;
 
-function publicControlName(value) {
+function publicControlName(value: unknown): string | null {
   const raw = String(value ?? '');
   const match = raw.match(/\[(?:data-testid|data-test|data-cy)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\]\s]+))\]/i)
     ?? raw.match(/(?:getByTestId|locator)\(\s*["']([^"']+)["']/i);
@@ -17,27 +17,32 @@ function publicControlName(value) {
   return name.replace(/[-_.:]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-export function redactCredentials(value) {
+export function redactCredentials(value: unknown): string {
   return String(value ?? '')
     .replace(BEARER_CREDENTIAL, '[redacted credential]')
     .replace(NAMED_CREDENTIAL, '[redacted credential]')
     .replace(PREFIXED_CREDENTIAL, '[redacted credential]');
 }
 
-function clean(value, limit, { callLog = true } = {}) {
+interface CleanOptions {
+  callLog?: boolean;
+}
+
+function clean(value: unknown, limit: number, { callLog = true }: CleanOptions = {}): string {
   let raw = String(value ?? '').replace(ANSI, ' ');
   let reasons = '';
   if (callLog) {
     const callLogAt = raw.search(/Call log:/i);
     if (callLogAt !== -1) {
       const log = raw.slice(callLogAt);
-      reasons = [...log.matchAll(/^\s*-\s+(.*)$/gm)]
-        .map(match => match[1].trim())
+      const selectedReasons = [...log.matchAll(/^\s*-\s+(.*)$/gm)]
+        .map(match => match[1]?.trim() ?? '')
+        .filter(line => line.length > 0)
         .filter(line => !/^(?:waiting for|retrying|attempting|scrolling|done scrolling|waiting \d|\d+\s*[×x]\s+)/i.test(line))
         .filter(line => !/^locator resolved to/i.test(line))
         .map(line => clean(line, 120, { callLog: false }))
         .filter(Boolean);
-      reasons = [...new Set(reasons)].slice(0, 2).join('; ');
+      reasons = [...new Set(selectedReasons)].slice(0, 2).join('; ');
       raw = raw.slice(0, callLogAt);
     }
   }
@@ -61,23 +66,25 @@ function clean(value, limit, { callLog = true } = {}) {
   return result.length > limit ? `${result.slice(0, limit - 3)}...` : result;
 }
 
-export function sanitiseDiagnostic(detail = '', limit = 220) {
+export function sanitiseDiagnostic(detail: unknown = '', limit = 220): string {
   return clean(detail, limit);
 }
 
-export function sanitiseConsoleError(detail = '') {
+export function sanitiseConsoleError(detail: unknown = ''): string {
   return sanitiseDiagnostic(detail, 360).replaceAll('`', "'");
 }
 
-export function humaniseDiagnostic(detail = '') {
+export function humaniseDiagnostic(detail: unknown = ''): string {
   const raw = String(detail ?? '');
   if (/still visible after/i.test(raw)) return 'it was still showing when it should have disappeared';
   if (/not visible within/i.test(raw)) return 'it never appeared';
   if (/missing, \d+ duplicated/i.test(raw)) {
     const match = raw.match(/(\d+) missing, (\d+) duplicated/i);
-    const parts = [];
-    if (Number(match?.[1])) parts.push(`${match[1]} never arrived`);
-    if (Number(match?.[2])) parts.push(`${match[2]} arrived more than once`);
+    const missing = Number(match?.[1]);
+    const duplicated = Number(match?.[2]);
+    const parts: string[] = [];
+    if (missing) parts.push(`${missing} never arrived`);
+    if (duplicated) parts.push(`${duplicated} arrived more than once`);
     return parts.join(' and ');
   }
   if (/order differs between/i.test(raw)) return 'the two users saw the messages in different orders';
@@ -95,8 +102,9 @@ export function humaniseDiagnostic(detail = '') {
 
   const setup = raw.match(/setup failed:\s*(.*)$/is);
   if (setup) {
-    const why = sanitiseDiagnostic(setup[1]);
-    if (/current-user|signed-in|session/i.test(setup[1]))
+    const setupDetail = setup[1] ?? '';
+    const why = sanitiseDiagnostic(setupDetail);
+    if (/current-user|signed-in|session/i.test(setupDetail))
       return 'signing in never completed, so nothing behind it could be reached';
     return why ? `the feature could not be set up: ${why}` : 'the feature could not be reached at all';
   }

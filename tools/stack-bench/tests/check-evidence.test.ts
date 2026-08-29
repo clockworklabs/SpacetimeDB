@@ -11,14 +11,18 @@ import {
   evidenceIsRepairable,
   evidencePassed,
   validateCheckEvidence,
+  type CheckEvidence,
+  type CheckEvidenceStatus,
 } from '../src/evidence/check-evidence.mjs';
 import {
   evidenceStatusLabel,
   renderEvidenceConsoleLine,
   renderRepairDiagnostic,
-} from '../src/evidence/evidence-presentation.mjs';
+} from '../src/evidence/evidence-presentation.js';
 
-function evidence(overrides = {}) {
+type EvidenceInput = Parameters<typeof createCheckEvidence>[0];
+
+function evidence(overrides: Partial<EvidenceInput> = {}): CheckEvidence {
   return createCheckEvidence({
     status: 'failed',
     code: 'application_failure',
@@ -45,8 +49,8 @@ test('criterion verdict ignores wording when typed evidence exists', () => {
 });
 
 test('criteria without typed evidence are rejected', () => {
-  assert.throws(() => criterionEvidence({ id: 'old', passed: false,
-    detail: 'INCONCLUSIVE: unavailable' }), /evidence is required/);
+  const legacyCriterion = { id: 'old', passed: false, detail: 'INCONCLUSIVE: unavailable' };
+  assert.throws(() => criterionEvidence(legacyCriterion), /evidence is required/);
 });
 
 test('unknown fields and inconsistent timing are rejected', () => {
@@ -98,6 +102,6 @@ test('all semantic helpers and renderers obey typed status, never diagnostic wor
 });
 
 test('unknown status cannot fall through to a default classification', () => {
-  assert.throws(() => evidenceDisposition('mystery'), /status is invalid/);
-  assert.throws(() => evidenceStatusLabel({}), /status is invalid/);
+  assert.throws(() => evidenceDisposition('mystery' as CheckEvidenceStatus), /status is invalid/);
+  assert.throws(() => evidenceStatusLabel({} as CheckEvidence), /status is invalid/);
 });

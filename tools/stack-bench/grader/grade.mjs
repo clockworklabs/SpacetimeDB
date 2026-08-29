@@ -33,7 +33,7 @@ import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.mjs';
-import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.mjs';
+import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
