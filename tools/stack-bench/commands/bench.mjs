@@ -29,7 +29,7 @@ import { formatRepairProgress } from '../src/evidence/scoring.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode } from '../src/evidence/outcomes.js';
-import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
+import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.mjs';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,

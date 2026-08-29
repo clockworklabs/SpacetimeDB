@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { addCostUsd, finalizeRunTotals } from '../commands/bench.mjs';
-import { checkDatabaseProvenance } from '../commands/run-suite.mjs';
+import { addCostUsd, finalizeRunTotals } from '../dist/commands/bench.mjs';
+import { checkDatabaseProvenance } from '../dist/commands/run-suite.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS, CODING_SESSION_TIMEOUT_MS }
-  from '../src/agents/coding-session-timeouts.mjs';
-import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
+  from '../dist/src/agents/coding-session-timeouts.mjs';
+import { summarizeSessions } from '../dist/src/evidence/session-metrics.js';
 
 test('database provenance accepts the leased environment and rejects an unrelated literal', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-database-provenance-'));

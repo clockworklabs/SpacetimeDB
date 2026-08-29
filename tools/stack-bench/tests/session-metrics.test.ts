@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
+import { summarizeSessions } from '../src/evidence/session-metrics.js';
 
 test('session totals include build and every fix without treating missing metrics as data', () => {
   const totals = summarizeSessions([
@@ -15,7 +15,7 @@ test('session totals include build and every fix without treating missing metric
 
   assert.deepEqual(totals, {
     sessions: 3,
-    costUsd: 1.4333,
+    costUsd: 1.43333,
     tokens: 150,
     outputTokens: 15,
     turns: 3,
