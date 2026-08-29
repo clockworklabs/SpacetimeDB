@@ -8,7 +8,7 @@ import { stopHostedHost } from '../stack-teardown-operations.mjs';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
   setMongoDbStock } from './mongodb-operations.mjs';
-import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.mjs';
+import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.mjs';
 

@@ -5,7 +5,7 @@ import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.m
 import type { BackendLeaseExpectation } from '../src/runtime/backend-lease.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import type { StackAdapter } from '../src/stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
 const [command, requestedBackend] = process.argv.slice(2);
 

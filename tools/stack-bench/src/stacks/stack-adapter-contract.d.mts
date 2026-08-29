@@ -1,7 +1,17 @@
+export interface StackCapability {
+  readonly operations: readonly string[];
+  execute(operation: string, input: unknown): unknown;
+}
+
 export interface StackAdapter {
   id: string;
   version: string;
-  capabilities: Record<string, { operations: string[] } | undefined>;
+  capabilities: Readonly<Record<string, StackCapability | undefined>>;
+}
+
+export interface StackAdapterRegistry {
+  readonly ids: readonly string[];
+  get(id: string): StackAdapter;
 }
 
 export class StackCapabilityUnsupportedError extends Error {}
@@ -19,3 +29,7 @@ export function executeStackCapability(
   operation: string,
   input?: unknown,
 ): unknown;
+
+export function createStackAdapterRegistry(
+  adapters: readonly StackAdapter[],
+): StackAdapterRegistry;

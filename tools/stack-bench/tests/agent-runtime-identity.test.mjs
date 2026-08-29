@@ -9,7 +9,7 @@ import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,
   codingContainerAgentExecOptions } from '../dist/src/runtime/coding-container-policy.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
-  from '../dist/src/stacks/stack-adapters.mjs';
+  from '../dist/src/stacks/stack-adapters.js';
 import { POSTGRES_APPLICATION_IDENTITY }
   from '../dist/src/stacks/hosted-database-identity.js';
 import { spacetimeBuildContainerPlan } from '../dist/src/stacks/stack-agent-operations.mjs';

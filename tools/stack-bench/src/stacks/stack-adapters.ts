@@ -14,7 +14,7 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
   stubAdapter,
 ]);
 
-export function stackPortAllocations() {
+export function stackPortAllocations(): Record<string, unknown> {
   return Object.fromEntries(STACK_ADAPTER_REGISTRY.ids.map(id => [id,
     executeStackCapability(STACK_ADAPTER_REGISTRY.get(id), 'ports', 'allocations')]));
 }

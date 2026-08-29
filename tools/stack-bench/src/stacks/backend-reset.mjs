@@ -2,7 +2,7 @@
 
 import { leaseFromEnv } from '../runtime/backend-lease.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from './stack-adapters.js';
 
 export const GENERATED_APP_LAYOUT_EXIT_CODE = 10;
 

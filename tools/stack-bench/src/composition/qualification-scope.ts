@@ -3,7 +3,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { hashFiles, sha256 } from '../evidence/provenance.js';
-import { stackAdapterVersion } from '../stacks/stack-identities.mjs';
+import { stackAdapterVersion } from '../stacks/stack-identities.js';
 
 export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 2;
 
@@ -89,19 +89,19 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
 });
 const STACK_OWNED_MODULES = new Map<string, string>([
   ['src/stacks/backends/mongodb-adapter.mjs', 'mongodb'],
-  ['src/stacks/backends/mongodb-identity.mjs', 'mongodb'],
+  ['src/stacks/backends/mongodb-identity.ts', 'mongodb'],
   ['src/stacks/backends/mongodb-operations.mjs', 'mongodb'],
   ['src/stacks/backends/postgres-adapter.mjs', 'postgres'],
-  ['src/stacks/backends/postgres-identity.mjs', 'postgres'],
+  ['src/stacks/backends/postgres-identity.ts', 'postgres'],
   ['src/stacks/backends/postgres-operations.mjs', 'postgres'],
   ['src/stacks/backends/spacetime-adapter.mjs', 'spacetime'],
-  ['src/stacks/backends/spacetime-identity.mjs', 'spacetime'],
+  ['src/stacks/backends/spacetime-identity.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-operations.mjs', 'spacetime'],
   ['src/stacks/backends/stub-adapter.mjs', 'stub'],
-  ['src/stacks/backends/stub-identity.mjs', 'stub'],
+  ['src/stacks/backends/stub-identity.ts', 'stub'],
 ]);
 const STACK_OWNED_ROOT = 'src/stacks/backends/';
-const BACKEND_ONLY_MODULES = new Set(['src/stacks/stack-adapters.mjs']);
+const BACKEND_ONLY_MODULES = new Set(['src/stacks/stack-adapters.ts']);
 const RUNTIME_INPUTS = Object.freeze([
   'package.json',
   'package-lock.json',

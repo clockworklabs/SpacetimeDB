@@ -2,7 +2,7 @@ import type { execFileSync } from 'node:child_process';
 
 import { leaseFromEnv } from './backend-lease.mjs';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 
 export { hostedStopScript } from '../stacks/stack-lifecycle-operations.mjs';
 

@@ -8,7 +8,7 @@ import { stopHostedHost } from '../stack-teardown-operations.mjs';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
 import { preparePostgresDatabase, provePostgresUse, resetPostgres,
   setPostgresStock } from './postgres-operations.mjs';
-import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.mjs';
+import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.mjs';
 

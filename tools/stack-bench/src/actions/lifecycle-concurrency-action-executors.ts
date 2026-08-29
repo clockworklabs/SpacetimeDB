@@ -12,7 +12,7 @@ import { browserApplicationBoundary } from './browser-action-executors.js';
 import { controlBackend } from '../runtime/backend-control.js';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainerName } from '../stacks/database-containers.js';
 
 type UnknownRecord = Record<string, unknown>;

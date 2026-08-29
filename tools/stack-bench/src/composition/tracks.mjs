@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 
 import { compileTrackManifest } from './definition-compiler.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 export const TRACKS_DIR = join(ROOT, 'tracks');

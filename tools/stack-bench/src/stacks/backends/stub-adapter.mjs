@@ -5,7 +5,7 @@ import { emptySetupMetadata, noConnectionUrl,
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
 import { stopHostedHost } from '../stack-teardown-operations.mjs';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
-import { STUB_ADAPTER_VERSION } from './stub-identity.mjs';
+import { STUB_ADAPTER_VERSION } from './stub-identity.js';
 import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.mjs';
 
 export const stubAdapter = defineStackAdapter('stub', stackLeaseCapability('stub'), {

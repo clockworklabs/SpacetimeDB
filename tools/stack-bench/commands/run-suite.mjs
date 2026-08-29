@@ -28,7 +28,7 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';

@@ -25,7 +25,7 @@ import { liveProgressionStatus } from '../progression/live-progression.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { aggregateRunOutcome } from '../evidence/outcomes.js';

@@ -48,23 +48,23 @@ function fixture(): string {
   ]) write(root, path, `${path}\n`);
   write(root, 'src/references/reference-live.mjs',
     "import '../evidence/provenance.js';\n");
-  write(root, 'commands/bench.mjs', "import '../src/stacks/stack-adapters.mjs';\n");
-  write(root, 'grader/grade.mjs', "import '../src/stacks/stack-adapters.mjs';\n");
-  write(root, 'src/stacks/stack-adapters.mjs', [
+  write(root, 'commands/bench.mjs', "import '../src/stacks/stack-adapters.js';\n");
+  write(root, 'grader/grade.mjs', "import '../src/stacks/stack-adapters.js';\n");
+  write(root, 'src/stacks/stack-adapters.ts', [
     "import './backends/mongodb-adapter.mjs';",
-    "import './backends/mongodb-identity.mjs';",
+    "import './backends/mongodb-identity.js';",
     "import './backends/mongodb-operations.mjs';",
     "import './backends/postgres-adapter.mjs';",
-    "import './backends/postgres-identity.mjs';",
+    "import './backends/postgres-identity.js';",
     "import './backends/postgres-operations.mjs';",
     "import './backends/spacetime-adapter.mjs';",
-    "import './backends/spacetime-identity.mjs';",
+    "import './backends/spacetime-identity.js';",
     "import './backends/spacetime-operations.mjs';",
     '',
   ].join('\n'));
   for (const stack of ['mongodb', 'postgres', 'spacetime']) {
     write(root, `src/stacks/backends/${stack}-adapter.mjs`, `${stack} adapter\n`);
-    write(root, `src/stacks/backends/${stack}-identity.mjs`, `${stack} identity\n`);
+    write(root, `src/stacks/backends/${stack}-identity.ts`, `${stack} identity\n`);
     write(root, `src/stacks/backends/${stack}-operations.mjs`, `${stack} operations\n`);
   }
   return root;
@@ -129,7 +129,7 @@ test('stack-owned reset and version changes invalidate only their stack', () => 
     const afterResetMongo = scoped(root, 'reference', 'mongodb');
     const afterResetPostgres = scoped(root, 'reference', 'postgres');
     const afterResetNull = scoped(root, 'null');
-    write(root, 'src/stacks/backends/postgres-identity.mjs', 'changed postgres version\n');
+    write(root, 'src/stacks/backends/postgres-identity.ts', 'changed postgres version\n');
     assert.deepEqual(scoped(root, 'reference', 'mongodb'), afterResetMongo);
     assert.notEqual(scoped(root, 'reference', 'postgres').sha256, afterResetPostgres.sha256);
     assert.deepEqual(scoped(root, 'null'), afterResetNull);
@@ -215,7 +215,7 @@ test('unmapped executable imports and tampered identities fail closed', () => {
     assert.throws(() => validateQualificationScopeIdentity({ ...identity, sha256: digest('0') }),
       /does not match/);
 
-    write(root, 'src/stacks/stack-adapters.mjs',
+    write(root, 'src/stacks/stack-adapters.ts',
       "import './backends/unowned-reset.mjs';\n");
     write(root, 'src/stacks/backends/unowned-reset.mjs', 'unowned\n');
     assert.throws(() => scoped(root, 'reference', 'mongodb'), /unmapped stack-owned module/);

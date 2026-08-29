@@ -40,7 +40,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
   validateAgentResult } from '../src/agents/agent-adapter-contract.mjs';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.mjs';

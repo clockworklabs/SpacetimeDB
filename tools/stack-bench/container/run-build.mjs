@@ -26,7 +26,7 @@ import { homedir } from 'node:os';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
-import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
   from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';

@@ -19,7 +19,7 @@ import { resolveContainerImage } from '../runtime/container-image.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { loadTrack } from '../composition/tracks.mjs';
 import { inspectImportedReference, loadReferenceRegistry,

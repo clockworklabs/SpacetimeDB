@@ -4,7 +4,8 @@ import test from 'node:test';
 
 import { createStackAdapterRegistry, executeStackCapability,
   STACK_ADAPTER_SCHEMA_VERSION, STACK_CAPABILITY_SCHEMA_VERSION } from '../src/stacks/stack-adapter-contract.mjs';
-import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../dist/src/stacks/stack-adapters.js';
+import { stackAdapterVersion } from '../dist/src/stacks/stack-identities.js';
 import { setSpacetimeStock } from '../dist/src/stacks/backends/spacetime-operations.mjs';
 
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
@@ -14,6 +15,8 @@ test('built-in and deterministic test stack adapters preserve the proven port gr
   assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.2.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.0.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.0.0');
+  assert.equal(stackAdapterVersion('postgres'), '1.3.0');
+  assert.throws(() => stackAdapterVersion('unknown'), /unknown stack adapter/);
   assert.deepEqual(executeStackCapability(postgres, 'ports', 'for-run',
     { trackOffset: 100, runIndex: 2 }), { vite: 6375, express: 6103, dbPort: 6532 });
   const prepared = executeStackCapability(postgres, 'lease', 'prepare', {

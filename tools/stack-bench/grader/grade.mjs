@@ -36,7 +36,7 @@ import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import {
   BROWSER_ACTION_IDS,
