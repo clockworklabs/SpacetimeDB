@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
-import { answers as hostAnswers } from '../src/runtime/platform.mjs';
+import { answers as hostAnswers } from '../src/runtime/platform.js';
 import { controlBackend } from '../src/runtime/backend-control.js';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';

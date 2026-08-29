@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { pidsOnPort } from '../src/runtime/platform.mjs';
+import { pidsOnPort } from '../src/runtime/platform.js';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.mjs';
 import type { BackendLeaseExpectation } from '../src/runtime/backend-lease.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';

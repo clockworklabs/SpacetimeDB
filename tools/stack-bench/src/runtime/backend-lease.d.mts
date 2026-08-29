@@ -30,7 +30,7 @@ export interface BackendLeaseResource {
   buildContainer: BackendLeaseContainer | null;
   locks: BackendResourceLock[];
   launchedPid: number | null;
-  listenerPids: number[];
+  listenerPids: Array<number | string>;
 }
 
 export interface BackendLease {

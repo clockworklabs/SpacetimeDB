@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { updateBackendLease } from '../runtime/backend-lease.mjs';
-import { answers as answersSync, killDetachedTree, killTree, pidsOnPort, sleepSync } from '../runtime/platform.mjs';
+import { answers as answersSync, killDetachedTree, killTree, pidsOnPort, sleepSync } from '../runtime/platform.js';
 import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';

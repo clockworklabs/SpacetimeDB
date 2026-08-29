@@ -11,7 +11,7 @@ import { gzipSync } from 'node:zlib';
 
 import { createCredentialBroker, credentialBrokerDiagnostics, readCredentialBrokerLedger,
   reconcileCredentialBrokerReceipt, startCredentialBroker,
-  stopCredentialBroker } from '../container/credential-broker.mjs';
+  stopCredentialBroker } from '../dist/container/credential-broker.mjs';
 
 const PRICING_RATES = {
   input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3,
@@ -635,7 +635,7 @@ test('credential broker diagnostics retain child exit, stderr, and the final led
 
 test('credential broker closes an active request after its parent exits',
   { timeout: 10_000 }, async () => {
-    const moduleUrl = new URL('../container/credential-broker.mjs', import.meta.url).href;
+    const moduleUrl = new URL('../dist/container/credential-broker.mjs', import.meta.url).href;
     const script = `
       import { startCredentialBroker } from ${JSON.stringify(moduleUrl)};
       const broker = startCredentialBroker({ mode: 'api-key',

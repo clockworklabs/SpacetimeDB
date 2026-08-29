@@ -14,8 +14,8 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { killTree, pidsOnPort } from '../src/runtime/platform.js';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
-import { killTree, pidsOnPort } from '../src/runtime/platform.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';

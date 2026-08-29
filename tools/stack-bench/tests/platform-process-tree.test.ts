@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { processTreePids } from '../src/runtime/platform.mjs';
+import { processTreePids } from '../src/runtime/platform.js';
 
 test('process trees are ordered deepest-child-first for safe teardown', () => {
   const rows = `

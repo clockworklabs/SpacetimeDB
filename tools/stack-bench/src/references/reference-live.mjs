@@ -20,7 +20,7 @@ import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';
 import { resolveReferenceSelection } from './reference-selection.js';
-import { killTree } from '../runtime/platform.mjs';
+import { killTree } from '../runtime/platform.js';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
 import { calibrationQualificationIdentity, mutationExecutionSha256,

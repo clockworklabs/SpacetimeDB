@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
 import { containerAuthSecret } from './container-auth.mjs';
-import { killTree } from '../src/runtime/platform.mjs';
+import { killTree } from '../src/runtime/platform.js';
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_RATE_FIELDS, validatePricingRates as validateSharedPricingRates }
   from '../src/evidence/pricing-authority.js';

@@ -17,9 +17,20 @@ export const isWindows = process.platform === 'win32';
 /** Discard a command's output the way this platform expects. */
 export const nullDevice = isWindows ? 'NUL' : '/dev/null';
 
-const run = (cmd, args) => {
+interface CommandResult {
+  ok: boolean;
+  code: number | null;
+  output: string;
+  error?: unknown;
+}
+
+function errorField(error: unknown, field: 'status' | 'stdout'): unknown {
+  return typeof error === 'object' && error !== null ? Reflect.get(error, field) : undefined;
+}
+
+const run = (cmd: string, args: readonly string[]): string => {
   try {
-    return execFileSync(cmd, args, {
+    return execFileSync(cmd, [...args], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 30_000,
@@ -27,19 +38,28 @@ const run = (cmd, args) => {
   } catch { return ''; }
 };
 
-const runResult = (cmd, args) => {
+const runResult = (cmd: string, args: readonly string[]): CommandResult => {
   try {
-    return { ok: true, code: 0, output: execFileSync(cmd, args, {
+    return { ok: true, code: 0, output: execFileSync(cmd, [...args], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000,
     }) };
   } catch (error) {
-    return { ok: false, code: error.status ?? null, output: `${error.stdout ?? ''}`, error };
+    const status = errorField(error, 'status');
+    return {
+      ok: false,
+      code: typeof status === 'number' ? status : null,
+      output: `${errorField(error, 'stdout') ?? ''}`,
+      error,
+    };
   }
 };
 
 /** PIDs listening on a TCP port. */
-export function pidsOnPort(port, { strict = false } = {}) {
-  const out = new Set();
+export function pidsOnPort(
+  port: string | number,
+  { strict = false }: { strict?: boolean } = {},
+): string[] {
+  const out = new Set<string>();
   if (isWindows) {
     const result = runResult('netstat', ['-ano']);
     if (!result.ok && strict) throw new Error(`could not inspect listeners on :${port}`);
@@ -58,7 +78,10 @@ export function pidsOnPort(port, { strict = false } = {}) {
     if (!ss.ok) throw new Error(`could not inspect listeners on :${port}`);
     for (const line of ss.output.split('\n')) {
       if (!new RegExp(`(?:^|\\s)(?:\\[[^\\]]+\\]|\\S+):${port}\\s`).test(line)) continue;
-      for (const match of line.matchAll(/pid=(\d+)/g)) out.add(match[1]);
+      for (const match of line.matchAll(/pid=(\d+)/g)) {
+        const pid = match[1];
+        if (pid !== undefined) out.add(pid);
+      }
     }
     return [...out];
   }
@@ -73,7 +96,10 @@ export function pidsOnPort(port, { strict = false } = {}) {
     }
     for (const line of ss.output.split('\n')) {
       if (!new RegExp(`(?:^|\\s)(?:\\[[^\\]]+\\]|\\S+):${port}\\s`).test(line)) continue;
-      for (const match of line.matchAll(/pid=(\d+)/g)) out.add(match[1]);
+      for (const match of line.matchAll(/pid=(\d+)/g)) {
+        const pid = match[1];
+        if (pid !== undefined) out.add(pid);
+      }
     }
   }
   return [...out];
@@ -98,34 +124,44 @@ export function pidsOnPort(port, { strict = false } = {}) {
 // which is not hypothetical: an invocation carrying the app path in its own
 // `--app` argument matched itself, killTree took out the invoking bash, and
 // the command died with no output and nothing to debug from.
-function ancestorPids() {
-  const chain = new Set([process.pid]);
+function ancestorPids(): Set<number> {
+  const chain = new Set<number>([process.pid]);
   try {
     if (isWindows) {
       const out = run('powershell', ['-NoProfile', '-Command',
         'Get-CimInstance Win32_Process | ForEach-Object { "{0} {1}" -f $_.ProcessId, $_.ParentProcessId }']);
-      const parent = new Map();
+      const parent = new Map<number, number>();
       for (const line of out.split(/\r?\n/)) {
         const [pid, ppid] = line.trim().split(/\s+/);
         if (pid) parent.set(Number(pid), Number(ppid));
       }
       let p = process.pid;
-      while (parent.has(p) && !chain.has(parent.get(p))) { p = parent.get(p); chain.add(p); }
+      while (parent.has(p)) {
+        const next = parent.get(p);
+        if (next === undefined || chain.has(next)) break;
+        p = next;
+        chain.add(p);
+      }
     } else {
       const out = run('ps', ['-eo', 'pid=,ppid=']);
-      const parent = new Map();
+      const parent = new Map<number, number>();
       for (const line of out.split('\n')) {
         const [pid, ppid] = line.trim().split(/\s+/);
         if (pid) parent.set(Number(pid), Number(ppid));
       }
       let p = process.pid;
-      while (parent.has(p) && !chain.has(parent.get(p))) { p = parent.get(p); chain.add(p); }
+      while (parent.has(p)) {
+        const next = parent.get(p);
+        if (next === undefined || chain.has(next)) break;
+        p = next;
+        chain.add(p);
+      }
     }
   } catch { /* a partial chain still protects this process itself */ }
   return chain;
 }
 
-export function pidsMatching(needle) {
+export function pidsMatching(needle: string): string[] {
   const protectedPids = ancestorPids();
   let found;
   if (isWindows) {
@@ -139,21 +175,25 @@ export function pidsMatching(needle) {
   return found.filter(Boolean).filter(p => !protectedPids.has(Number(p)));
 }
 
-export function processTreePids(rootPid, processRows) {
+export function processTreePids(rootPid: string | number, processRows: unknown): number[] {
   const root = Number(rootPid);
   if (!Number.isSafeInteger(root) || root <= 0) return [];
-  const children = new Map();
+  const children = new Map<number, number[]>();
   for (const line of String(processRows ?? '').split(/\r?\n/)) {
     const match = line.trim().match(/^(\d+)\s+(\d+)$/);
     if (!match) continue;
-    const pid = Number(match[1]);
-    const parent = Number(match[2]);
-    if (!children.has(parent)) children.set(parent, []);
-    children.get(parent).push(pid);
+    const pidText = match[1];
+    const parentText = match[2];
+    if (pidText === undefined || parentText === undefined) continue;
+    const pid = Number(pidText);
+    const parent = Number(parentText);
+    const siblings = children.get(parent) ?? [];
+    if (!children.has(parent)) children.set(parent, siblings);
+    siblings.push(pid);
   }
-  const ordered = [];
-  const seen = new Set([root]);
-  const visit = pid => {
+  const ordered: number[] = [];
+  const seen = new Set<number>([root]);
+  const visit = (pid: number): void => {
     for (const child of children.get(pid) ?? []) {
       if (seen.has(child)) continue;
       seen.add(child);
@@ -167,7 +207,7 @@ export function processTreePids(rootPid, processRows) {
 }
 
 /** Kill a process and its descendants. Never throws — it may already be gone. */
-export function killTree(pid) {
+export function killTree(pid: string | number | null | undefined): void {
   if (!pid || String(pid) === '0' || Number(pid) === process.pid) return;
   if (isWindows) run('taskkill', ['/F', '/PID', String(pid), '/T']);
   else {
@@ -177,7 +217,7 @@ export function killTree(pid) {
 }
 
 /** Kill a child spawned with detached:true, including its process group. */
-export function killDetachedTree(pid) {
+export function killDetachedTree(pid: string | number | null | undefined): void {
   if (!pid || String(pid) === '0' || Number(pid) === process.pid) return;
   if (isWindows) { killTree(pid); return; }
   try { process.kill(-Number(pid), 'SIGKILL'); }
@@ -185,7 +225,7 @@ export function killDetachedTree(pid) {
 }
 
 /** Block for `ms` without a child process — `timeout` needs a console on Windows. */
-export function sleepSync(ms) {
+export function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
@@ -198,8 +238,8 @@ export function sleepSync(ms) {
  * samples produces negative CPU. CPU is cumulative for the process, so the
  * difference between two samples is the work done in between.
  */
-export function sampleProcesses(needle) {
-  const byPid = new Map();
+export function sampleProcesses(needle: string): { byPid: Map<string, number>; rss: number } {
+  const byPid = new Map<string, number>();
   let rss = 0;
   if (isWindows) {
     const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${needle}*' -or $_.Name -like '*${needle}*' } | ForEach-Object {
@@ -218,7 +258,10 @@ export function sampleProcesses(needle) {
     if (!line.includes(needle)) continue;
     const m = line.trim().match(/^(\d+)\s+([\d:-]+)\s+(\d+)\s/);
     if (!m) continue;
-    const [, pid, time, kb] = m;
+    const pid = m[1];
+    const time = m[2];
+    const kb = m[3];
+    if (pid === undefined || time === undefined || kb === undefined) continue;
     const parts = time.replace('-', ':').split(':').map(Number);
     const secs = parts.reduce((acc, v) => acc * 60 + v, 0);
     byPid.set(pid, secs);
@@ -228,7 +271,7 @@ export function sampleProcesses(needle) {
 }
 
 /** Is something answering at this URL? Any response counts. */
-export function answers(url, timeoutSec = 3) {
+export function answers(url: string, timeoutSec = 3): boolean {
   try {
     execFileSync('curl', ['-s', '-m', String(timeoutSec), '-o', nullDevice, url], { stdio: 'ignore' });
     return true;

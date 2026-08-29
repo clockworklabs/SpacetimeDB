@@ -12,7 +12,7 @@ import { aggregateCodingSessionResults, codingSessionInterruption,
 import { agentSessionFailure } from '../src/agents/agent-adapter-contract.mjs';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
-  startCredentialBroker, stopCredentialBroker } from '../container/credential-broker.mjs';
+  startCredentialBroker, stopCredentialBroker } from '../dist/container/credential-broker.mjs';
 import { recoverStoppedBuildContainer } from '../container/recover-build-container.mjs';
 
 function brokerReceipt(costUsd, maxBudgetUsd = 10) {
