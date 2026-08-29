@@ -39,7 +39,7 @@ import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
   validateAgentResult } from '../src/agents/agent-adapter-contract.js';

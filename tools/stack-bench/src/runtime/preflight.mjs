@@ -17,7 +17,7 @@ import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composi
 import { validateFeatureCatalogInput } from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.mjs';

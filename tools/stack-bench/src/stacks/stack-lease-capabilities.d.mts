@@ -1,4 +1,4 @@
-import type { StackCapability } from './stack-adapter-contract.mjs';
+import type { StackCapability } from './stack-adapter-contract.js';
 
 export function stackLeaseCapability(backend: string): StackCapability;
 export function executeStackLeaseCapability(

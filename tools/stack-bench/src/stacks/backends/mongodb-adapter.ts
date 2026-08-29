@@ -11,7 +11,7 @@ import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.js';
-import type { StackAdapter } from '../stack-adapter-contract.mjs';
+import type { StackAdapter } from '../stack-adapter-contract.js';
 
 let mongodbAdapter: StackAdapter;
 mongodbAdapter = defineStackAdapter('mongodb', stackLeaseCapability('mongodb'), {

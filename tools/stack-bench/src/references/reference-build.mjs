@@ -18,7 +18,7 @@ import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
 import { resolveContainerImage } from '../runtime/container-image.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack } from '../composition/tracks.mjs';

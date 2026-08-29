@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { executeStackCapability, STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.mjs';
+import { executeStackCapability, STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
 
 function capability(id, operations, execute) {
   return { schemaVersion: STACK_CAPABILITY_SCHEMA_VERSION, id, version: '1.0.0', operations, execute };

@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { compileTrackManifest } from './definition-compiler.mjs';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';

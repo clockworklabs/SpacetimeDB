@@ -25,7 +25,7 @@ import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
   from '../src/composition/product-config.js';

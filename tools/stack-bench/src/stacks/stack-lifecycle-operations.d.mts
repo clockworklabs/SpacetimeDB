@@ -1,4 +1,4 @@
-import type { StackOperationHandler } from './stack-adapter-contract.mjs';
+import type { StackOperationHandler } from './stack-adapter-contract.js';
 
 export function hostedStopScript(port: number | string): string;
 export const captureHostedDiagnostics: StackOperationHandler;

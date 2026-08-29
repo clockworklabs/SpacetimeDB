@@ -1,4 +1,4 @@
-import type { StackOperationHandler } from '../stack-adapter-contract.mjs';
+import type { StackOperationHandler } from '../stack-adapter-contract.js';
 
 export const resetMongoDb: StackOperationHandler;
 export const proveMongoDbUse: StackOperationHandler;

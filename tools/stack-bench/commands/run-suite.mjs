@@ -27,7 +27,7 @@ import { contractControlIds } from '../src/composition/agent-visible-contract.js
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';

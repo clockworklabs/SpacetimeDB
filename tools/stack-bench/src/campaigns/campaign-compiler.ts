@@ -24,7 +24,7 @@ import type { ProgressionRecipeSelections as ProgressionLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import type { StackAdapter } from '../stacks/stack-adapter-contract.mjs';
+import type { StackAdapter } from '../stacks/stack-adapter-contract.js';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import type { ConditionReference, ResolvedStudyCondition } from './condition-compiler.js';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.js';

@@ -15,7 +15,7 @@ import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,

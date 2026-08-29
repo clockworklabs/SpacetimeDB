@@ -11,7 +11,7 @@ import { replayHeaders } from './actor-transport-action-executors.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { controlBackend } from '../runtime/backend-control.js';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
-import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainerName } from '../stacks/database-containers.js';
 

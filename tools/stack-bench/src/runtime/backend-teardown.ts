@@ -3,7 +3,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { readBackendLease, releaseResourceLocks, updateBackendLease } from './backend-lease.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 
 const DOCKER_TIMEOUT_MS = 120_000;

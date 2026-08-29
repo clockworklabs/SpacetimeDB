@@ -1,5 +1,5 @@
 import { createStackAdapterRegistry, executeStackCapability }
-  from './stack-adapter-contract.mjs';
+  from './stack-adapter-contract.js';
 import { mongodbAdapter } from './backends/mongodb-adapter.js';
 import { postgresAdapter } from './backends/postgres-adapter.js';
 import { spacetimeAdapter } from './backends/spacetime-adapter.js';

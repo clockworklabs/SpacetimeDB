@@ -1,6 +1,6 @@
 import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
-  STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.mjs';
-import type { StackAdapter, StackCapability, StackOperationHandler } from './stack-adapter-contract.mjs';
+  STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
+import type { StackAdapter, StackCapability, StackOperationHandler } from './stack-adapter-contract.js';
 import { controlHosted } from './stack-lifecycle-operations.mjs';
 
 type AdapterId = keyof typeof PORT_BASES;

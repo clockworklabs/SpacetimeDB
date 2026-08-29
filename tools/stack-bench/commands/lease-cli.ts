@@ -3,8 +3,8 @@
 import { pidsOnPort } from '../src/runtime/platform.js';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import type { BackendLeaseExpectation } from '../src/runtime/backend-lease.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
-import type { StackAdapter } from '../src/stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
+import type { StackAdapter } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
 const [command, requestedBackend] = process.argv.slice(2);

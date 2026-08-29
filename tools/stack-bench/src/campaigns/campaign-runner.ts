@@ -26,7 +26,7 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { aggregateRunOutcome } from '../evidence/outcomes.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';

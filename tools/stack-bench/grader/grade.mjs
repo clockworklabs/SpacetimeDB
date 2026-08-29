@@ -35,7 +35,7 @@ import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import {

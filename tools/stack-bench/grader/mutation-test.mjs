@@ -51,7 +51,7 @@ import { dbName, loadTrack } from "../src/composition/tracks.mjs";
 import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
 import { resetBackend } from "../src/stacks/backend-reset.mjs";
 import { fetchStatus } from "../src/runtime/readiness.js";
-import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
+import { executeStackCapability } from "../src/stacks/stack-adapter-contract.js";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.js";
 import { mutationShard } from "../src/evidence/mutation-shards.js";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
