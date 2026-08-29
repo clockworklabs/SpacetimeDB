@@ -22,6 +22,9 @@ export const DENY = [
   'Read(**/stack-bench/grader/**)',
   'Read(**/stack-bench/linter/**)',
   'Read(**/stack-bench/levels/**)',
+  // The staged tree: dist carries copies of all of the above beside the
+  // compiled harness, and it is what production actually runs.
+  'Read(**/stack-bench/dist/**)',
   // Harness source and its own documentation.
   'Read(**/stack-bench/*.mjs)',
   'Read(**/stack-bench/*.ts)',

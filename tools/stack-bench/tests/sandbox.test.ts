@@ -18,6 +18,10 @@ test('the sandbox denies migrated TypeScript harness source', () => {
   assert.ok(DENY.includes('Read(**/stack-bench/*.ts)'));
 });
 
+test('the sandbox denies the staged tree that runs the benchmark', () => {
+  assert.ok(DENY.includes('Read(**/stack-bench/dist/**)'));
+});
+
 test('sandbox settings contain the shared allow and deny policy', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-sandbox-'));
   try {
