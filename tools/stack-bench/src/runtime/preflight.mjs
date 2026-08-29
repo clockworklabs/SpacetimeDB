@@ -6,7 +6,7 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
+import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { isExactImageReference, parseImageId } from './container-image.js';
 import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.js';
 import { dockerMountArguments } from './container-mount.js';

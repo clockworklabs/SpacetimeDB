@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
-import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
+import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { currentEngineIdentity } from '../evidence/artifacts.js';

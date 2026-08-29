@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { AGENT_ADAPTER_REGISTRY } from '../dist/src/agents/agent-adapters.mjs';
+import { AGENT_ADAPTER_REGISTRY } from '../dist/src/agents/agent-adapters.js';
 import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../dist/src/campaigns/campaign-compiler.js';
 import { attemptArgv, runCampaignAdmission } from '../dist/src/campaigns/campaign-runner.js';

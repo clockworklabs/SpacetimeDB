@@ -5,7 +5,7 @@ import { AGENT_ADAPTER_SCHEMA_VERSION, agentRecipeIdentity, agentRequestArgv, cr
   agentSessionFailure, defineAgentAdapter, validateAgentResult }
   from '../dist/src/agents/agent-adapter-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity }
-  from '../dist/src/agents/agent-adapters.mjs';
+  from '../dist/src/agents/agent-adapters.js';
 
 const request = { mode: 'build', level: 1, app: 'C:\\bench\\app', backend: 'stub',
   track: 'loop', runIndex: 0, model: 'deterministic', guidance: 'prescribed', skills: null };

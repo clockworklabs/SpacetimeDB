@@ -2,23 +2,50 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { AGENT_ADAPTER_SCHEMA_VERSION, createAgentAdapterRegistry } from './agent-adapter-contract.js';
+import type {
+  AgentAdapter,
+  AgentCostLimit,
+  AgentMode,
+  AgentSandboxProbe,
+} from './agent-adapter-contract.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.js';
 import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.mjs';
 import { sha256 } from '../evidence/provenance.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
+
+interface AdapterOptions {
+  modes?: AgentMode[];
+  apiKeyEnvironmentVariable?: string | null;
+  credentialEnvironmentVariables?: string[];
+  credentialFiles?: string[];
+  outboundDestinations?: string[];
+  requiredExecutables?: string[];
+  credentialStatusCommand?: string[] | null;
+  usesStackSkills?: boolean;
+  costLimit?: AgentCostLimit;
+  sandboxProbe?: AgentSandboxProbe;
+  version?: string;
+  deadlineMs?: number;
+}
+
+export interface AgentAdapterIdentity {
+  id: string;
+  version: string;
+  sha256: string;
+}
 const CLAUDE_SUBSCRIPTION_STATUS_COMMAND = ['node', '-e',
   "const {spawnSync}=require('node:child_process');"
   + "const r=spawnSync('claude',['auth','status','--json'],{encoding:'utf8'});"
   + "let s=null;try{s=JSON.parse(r.stdout)}catch{};"
   + "process.exit(r.status===0&&s?.loggedIn===true&&['claude.ai','oauth_token'].includes(s?.authMethod)?0:1)"];
-const adapter = (id, entrypoint, defaultModel,
+const adapter = (id: string, entrypoint: string, defaultModel: string,
   { modes = ['build', 'upgrade', 'resume', 'fix'], apiKeyEnvironmentVariable = null,
     credentialEnvironmentVariables = [], credentialFiles = [], outboundDestinations = [],
     requiredExecutables = [],
     credentialStatusCommand = null, usesStackSkills = false,
     costLimit = 'unsupported', sandboxProbe = 'none', version = '1.0.0',
-    deadlineMs = 75 * 60_000 } = {}) => ({
+    deadlineMs = 75 * 60_000 }: AdapterOptions = {}): AgentAdapter => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
   id, version, entrypoint: join(ROOT, entrypoint), modes, defaultModel,
   apiKeyEnvironmentVariable, credentialEnvironmentVariables, credentialFiles,
@@ -48,7 +75,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
     { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', version: '1.3.0' }),
 ]);
 
-export function agentAdapterIdentity(value) {
+export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity {
   return {
     id: value.id,
     version: value.version,
