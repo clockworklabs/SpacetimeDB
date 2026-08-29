@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.mjs';
-import { classifyBundle } from '../evidence/outcomes.mjs';
+import { classifyBundle } from '../evidence/outcomes.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.mjs';

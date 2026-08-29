@@ -1,6 +1,83 @@
 import { criterionEvidence, evidenceDisposition } from './check-evidence.mjs';
 
-function criteria(bundle) {
+interface CleanupEvidence {
+  readonly status?: string;
+}
+
+export interface OutcomeCriterion {
+  readonly evidence?: unknown;
+  readonly id?: string;
+  readonly name?: string;
+  readonly points?: number;
+  readonly stableKey?: string;
+}
+
+export interface OutcomeFeature {
+  readonly cleanupEvidence?: CleanupEvidence;
+  readonly criteria?: readonly OutcomeCriterion[];
+  readonly id?: string;
+  readonly name?: string;
+}
+
+interface OutcomeSuite {
+  readonly cleanupEvidence?: CleanupEvidence;
+  readonly features?: readonly OutcomeFeature[];
+  readonly pass?: boolean;
+}
+
+interface SelectedCheck {
+  readonly points: number;
+  readonly stableKey: string;
+}
+
+interface OutcomeSelection {
+  readonly checks?: readonly SelectedCheck[];
+  readonly notRun?: readonly unknown[];
+  readonly reportedChecks?: readonly string[];
+}
+
+interface ScoreTotals {
+  readonly max?: number | null;
+  readonly regression?: { readonly max?: number | null; readonly score?: number | null } | null;
+  readonly score?: number | null;
+}
+
+export interface RunOutcome {
+  readonly kind: string;
+  readonly phase?: string;
+  readonly reason?: string | null;
+  readonly appFailures?: readonly string[];
+  readonly inconclusive?: readonly string[];
+  readonly harnessFailures?: readonly string[];
+  readonly provider?: unknown;
+}
+
+export interface OutcomeBundle {
+  readonly error?: string;
+  readonly outcome?: RunOutcome;
+  readonly selection?: OutcomeSelection;
+  readonly suites?: Readonly<Record<string, OutcomeSuite>>;
+  readonly totals?: ScoreTotals;
+}
+
+interface KeyedCriterion extends OutcomeCriterion { readonly key: string }
+
+interface ClassifiedOutcome extends RunOutcome {
+  readonly appFailures: readonly string[];
+  readonly harnessFailures: readonly string[];
+  readonly inconclusive: readonly string[];
+}
+
+interface LevelResult {
+  readonly level: number | string;
+  readonly outcome?: RunOutcome;
+}
+
+interface AggregateOutcome extends RunOutcome {
+  readonly levels: Readonly<Record<string, RunOutcome>>;
+}
+
+function criteria(bundle: OutcomeBundle): KeyedCriterion[] {
   return Object.entries(bundle?.suites ?? {}).flatMap(([suiteId, suite]) =>
     (suite?.features ?? []).flatMap(feature =>
       (feature.criteria ?? []).map(criterion => ({
@@ -9,7 +86,7 @@ function criteria(bundle) {
       }))));
 }
 
-function cleanupFailureKeys(bundle) {
+function cleanupFailureKeys(bundle: OutcomeBundle): string[] {
   return Object.entries(bundle?.suites ?? {}).flatMap(([suiteId, suite]) => {
     const keys = suite?.cleanupEvidence?.status === 'harness_failure'
       ? [`${suiteId}/cleanup`] : [];
@@ -22,7 +99,7 @@ function cleanupFailureKeys(bundle) {
   });
 }
 
-function selectedScoreMismatch(bundle, all) {
+function selectedScoreMismatch(bundle: OutcomeBundle, all: readonly KeyedCriterion[]): string | null {
   const selection = bundle?.selection;
   if (!Array.isArray(selection?.checks) || !Array.isArray(selection?.reportedChecks)
       || selection.notRun?.length !== 0
@@ -46,20 +123,21 @@ function selectedScoreMismatch(bundle, all) {
   let evidenceMax = 0;
   for (const criterion of reported) {
     const planned = selected.get(criterion.stableKey);
+    const points = criterion.points;
     if (!Number.isSafeInteger(planned?.points) || planned.points < 0
-        || criterion.points !== planned.points) {
+        || typeof points !== 'number' || points !== planned.points) {
       return `graded points disagree with the selected definition for ${criterion.stableKey}`;
     }
-    if (criterion.points <= 0) continue;
-    evidenceMax += criterion.points;
-    if (evidenceDisposition(criterionEvidence(criterion)).passed) evidenceScore += criterion.points;
+    if (points <= 0) continue;
+    evidenceMax += points;
+    if (evidenceDisposition(criterionEvidence(criterion)).passed) evidenceScore += points;
   }
 
   const regression = bundle.totals?.regression;
   const totalScore = bundle.totals?.score;
   const totalMax = bundle.totals?.max;
-  const reportedScore = totalScore + (regression?.score ?? 0);
-  const reportedMax = totalMax + (regression?.max ?? 0);
+  const reportedScore = Number(totalScore) + Number(regression?.score ?? 0);
+  const reportedMax = Number(totalMax) + Number(regression?.max ?? 0);
   if (![totalScore, totalMax, reportedScore, reportedMax].every(Number.isSafeInteger)
       || reportedScore !== evidenceScore || reportedMax !== evidenceMax) {
     return `reported score ${String(reportedScore)}/${String(reportedMax)} disagrees with `
@@ -68,7 +146,7 @@ function selectedScoreMismatch(bundle, all) {
   return null;
 }
 
-export function classifyBundle(bundle) {
+export function classifyBundle(bundle: OutcomeBundle | null | undefined): ClassifiedOutcome {
   if (!bundle) return { kind: 'ungraded', phase: 'grading', reason: 'no grading bundle was produced',
     appFailures: [], inconclusive: [], harnessFailures: [] };
   const cleanupFailures = cleanupFailureKeys(bundle);
@@ -78,8 +156,9 @@ export function classifyBundle(bundle) {
       appFailures: bundle.outcome?.appFailures ?? [], inconclusive: [],
       harnessFailures: cleanupFailures };
   }
-  if (['provider_failure', 'harness_failure'].includes(bundle.outcome?.kind)) {
-    return { ...bundle.outcome, appFailures: [], inconclusive: [], harnessFailures: [] };
+  const declaredOutcome = bundle.outcome;
+  if (declaredOutcome && ['provider_failure', 'harness_failure'].includes(declaredOutcome.kind)) {
+    return { ...declaredOutcome, appFailures: [], inconclusive: [], harnessFailures: [] };
   }
   if (bundle.outcome?.kind === 'app_failure') {
     return { ...bundle.outcome, appFailures: bundle.outcome.appFailures ?? [], inconclusive: [],
@@ -89,7 +168,7 @@ export function classifyBundle(bundle) {
     && bundle.selection.checks.length > 0
     && bundle.selection.notRun?.length === 0
     && bundle.selection.reportedChecks?.length === bundle.selection.checks.length;
-  if (!(bundle.totals?.max > 0) && !selectedScopeComplete) {
+  if (!((bundle.totals?.max ?? 0) > 0) && !selectedScopeComplete) {
     return { kind: 'ungraded', phase: 'grading', reason: bundle.error ?? 'bundle has no scored denominator',
       appFailures: [], inconclusive: [], harnessFailures: [] };
   }
@@ -109,8 +188,9 @@ export function classifyBundle(bundle) {
     const evidence = criterionEvidence(criterion);
     return { disposition: evidenceDisposition(evidence), key: criterion.key };
   });
-  const keysFor = kind => classified.filter(item => item.disposition.outcomeKind === kind)
-    .map(item => item.key);
+  const keysFor = (kind: string): string[] =>
+    classified.filter(item => item.disposition.outcomeKind === kind)
+      .map(item => item.key);
   const harnessFailures = keysFor('harness_failure');
   const inconclusive = keysFor('inconclusive');
   const appFailures = keysFor('app_failure');
@@ -120,12 +200,13 @@ export function classifyBundle(bundle) {
   return { kind, phase: 'grading', reason: null, appFailures, inconclusive, harnessFailures };
 }
 
-export function aggregateRunOutcome(levels) {
+export function aggregateRunOutcome(levels: readonly LevelResult[]): AggregateOutcome {
   const priority = ['harness_failure', 'provider_failure', 'ungraded', 'app_failure',
     'inconclusive', 'passed'];
   const kinds = levels.map(level => level.outcome?.kind ?? 'ungraded');
   const kind = priority.find(candidate => kinds.includes(candidate)) ?? 'ungraded';
-  const selected = levels.find(level => (level.outcome?.kind ?? 'ungraded') === kind)?.outcome ?? {};
+  const selected = levels.find(level => (level.outcome?.kind ?? 'ungraded') === kind)?.outcome
+    ?? { kind };
   return {
     ...selected,
     kind,
@@ -135,16 +216,16 @@ export function aggregateRunOutcome(levels) {
   };
 }
 
-export function runExitCode(outcome) {
+export function runExitCode(outcome: RunOutcome | null | undefined): 0 | 1 {
   return ['provider_failure', 'harness_failure', 'ungraded', 'incomplete']
-    .includes(outcome?.kind) ? 1 : 0;
+    .includes(outcome?.kind ?? '') ? 1 : 0;
 }
 
 // A ladder level builds on the source produced by the previous level. If that
 // level was not graded, proceeding would spend another model session on an
 // artifact whose baseline is unknown and produce a run that cannot be compared.
-export function ladderMayContinue(outcome) {
-  return !['provider_failure', 'harness_failure', 'ungraded'].includes(outcome?.kind);
+export function ladderMayContinue(outcome: RunOutcome | null | undefined): boolean {
+  return !['provider_failure', 'harness_failure', 'ungraded'].includes(outcome?.kind ?? '');
 }
 
 // Building and repairing a level can continue while its failures are ordinary
@@ -152,10 +233,10 @@ export function ladderMayContinue(outcome) {
 // upgrade must start from a level that actually passed, otherwise later work
 // hides unresolved lower-level defects and has to be thrown away when that
 // lower level is repaired.
-export function ladderMayAdvance(outcome) {
+export function ladderMayAdvance(outcome: RunOutcome | null | undefined): boolean {
   return outcome?.kind === 'passed';
 }
 
-export function mutationControlEligible(outcome) {
+export function mutationControlEligible(outcome: RunOutcome | null | undefined): boolean {
   return outcome?.kind === 'passed';
 }

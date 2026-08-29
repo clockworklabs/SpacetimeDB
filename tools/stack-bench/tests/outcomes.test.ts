@@ -1,14 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
-  mutationControlEligible, runExitCode } from '../src/evidence/outcomes.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+  mutationControlEligible, runExitCode, type OutcomeCriterion } from '../src/evidence/outcomes.js';
+import { createCheckEvidence, type CheckEvidence,
+  type CheckEvidenceStatus } from '../src/evidence/check-evidence.mjs';
 
-const bundle = criteria => ({ totals: { score: 1, max: 2 }, suites: {
-  feature: { features: [{ id: 'f', criteria }] }, lint: { pass: true },
-} });
+interface TestFeature {
+  cleanupEvidence?: { status: string; failures: readonly unknown[] };
+  criteria: OutcomeCriterion[];
+  id: string;
+}
 
-const typed = (id, status, summary, points = 1) => {
+interface TestBundle {
+  readonly totals: { score: number; max: number };
+  readonly suites: {
+    readonly feature: { readonly features: TestFeature[] };
+    readonly lint: { readonly pass: boolean };
+  };
+}
+
+const bundle = (criteria: OutcomeCriterion[]): TestBundle => ({
+  totals: { score: 1, max: 2 },
+  suites: { feature: { features: [{ id: 'f', criteria }] }, lint: { pass: true } },
+});
+
+const typed = (
+  id: string,
+  status: CheckEvidenceStatus,
+  summary: string | null,
+  points = 1,
+): OutcomeCriterion & { readonly evidence: CheckEvidence; readonly id: string; readonly points: number } => {
   const evidence = createCheckEvidence({ status, code: status === 'passed' ? 'completed' : 'test_result',
     phase: 'assertion', summary, startedAtMs: 1, completedAtMs: 2 });
   return { id, points, evidence };
@@ -111,7 +132,9 @@ test('typed harness failures outrank prose and application failures', () => {
 
 test('grader cleanup failures invalidate the bundle', () => {
   const scoped = bundle([typed('works', 'passed', null)]);
-  scoped.suites.feature.features[0].cleanupEvidence = {
+  const feature = scoped.suites.feature.features[0];
+  assert(feature);
+  feature.cleanupEvidence = {
     status: 'harness_failure', failures: [{ stage: 'context-close' }],
   };
   const outcome = classifyBundle(scoped);
@@ -153,7 +176,7 @@ test('recipe-bound scores must exactly match their check evidence', () => {
   const outcome = classifyBundle(scoped);
   assert.equal(outcome.kind, 'harness_failure');
   assert.equal(outcome.phase, 'grading');
-  assert.match(outcome.reason, /reported score 1\/2 disagrees with check evidence 2\/2/);
+  assert.match(outcome.reason ?? '', /reported score 1\/2 disagrees with check evidence 2\/2/);
 
   scoped.totals.score = 2;
   assert.equal(classifyBundle(scoped).kind, 'passed');
@@ -161,7 +184,9 @@ test('recipe-bound scores must exactly match their check evidence', () => {
   scoped.selection.checks.push({ stableKey: 'pack.feature.other', points: 2 });
   scoped.selection.reportedChecks.push('pack.feature.other');
   scoped.selection.attemptedChecks.push('pack.feature.other');
-  scoped.suites.feature.features[0].criteria.push({ ...passed, id: 'duplicate' });
+  const feature = scoped.suites.feature.features[0];
+  assert(feature);
+  feature.criteria.push({ ...passed, id: 'duplicate' });
   scoped.totals = { score: 4, max: 4, regression: null };
   assert.equal(classifyBundle(scoped).kind, 'harness_failure',
     'duplicating one check must not stand in for a different selected check');
@@ -180,5 +205,5 @@ test('run aggregation preserves every level and prioritizes harness failure', ()
     { level: 2, outcome: { kind: 'harness_failure', phase: 'grading' } },
   ]);
   assert.equal(outcome.kind, 'harness_failure');
-  assert.equal(outcome.levels['1'].kind, 'app_failure');
+  assert.equal(outcome.levels['1']?.kind, 'app_failure');
 });
