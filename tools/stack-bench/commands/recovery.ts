@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { recoverBackendLease, recoverSupervisedRun } from '../src/runtime/recovery.mjs';
+import { recoverBackendLease, recoverSupervisedRun } from '../src/runtime/recovery.js';
 
 const [command, statePath, option, output] = process.argv.slice(2);
 const supervisorRequest = command === 'recover' && statePath !== undefined && process.argv.length === 4;

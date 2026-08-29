@@ -9,7 +9,7 @@ import { readArtifactPayload } from '../dist/src/evidence/artifacts.js';
 import { acquireResourceLock, createBackendLease, readBackendLease,
   writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
-  validateSupervisorState } from '../dist/src/runtime/recovery.mjs';
+  validateSupervisorState } from '../dist/src/runtime/recovery.js';
 
 function fixture({ state = 'active' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-recovery-'));

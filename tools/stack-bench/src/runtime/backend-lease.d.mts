@@ -42,6 +42,10 @@ export interface BackendLease {
   resources: BackendLeaseResource;
 }
 
+export type PublicBackendLease = Omit<BackendLease, 'ownershipToken'> & {
+  ownership: { markerSha256: string };
+};
+
 export interface SpacetimeBackendLease extends BackendLease {
   backend: 'spacetime';
   resources: BackendLeaseResource & {
@@ -70,6 +74,8 @@ export function readBackendLease(
   path: string,
   expected?: BackendLeaseExpectation & { token?: string },
 ): BackendLease;
+
+export function publicBackendLease(lease: BackendLease): PublicBackendLease;
 
 export function releaseResourceLocks(lease: BackendLease): void;
 

@@ -22,7 +22,7 @@ import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtur
 import { resolveReferenceSelection } from './reference-selection.js';
 import { killTree } from '../runtime/platform.js';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
-import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
+import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.js';
 import { calibrationQualificationIdentity, mutationExecutionSha256,
   resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { qualificationScopeIdentity } from '../composition/qualification-scope.js';
