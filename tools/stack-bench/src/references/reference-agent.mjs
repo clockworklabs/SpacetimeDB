@@ -11,7 +11,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { leaseFromEnv } from '../runtime/backend-lease.mjs';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.mjs';
-import { fetchStatus } from '../runtime/readiness.mjs';
+import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.mjs';

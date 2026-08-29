@@ -3,11 +3,25 @@
 // reach beforeExit(0) while still awaiting fetch(). Keep an ordinary timer
 // referenced, abort the request at the deadline, and race even a non-cooperative
 // fetch implementation so every probe has a terminal result.
-export async function fetchStatus(url, { timeoutMs = 5000, init = {}, fetchImpl = globalThis.fetch } = {}) {
+type FetchStatusImplementation = (
+  url: string,
+  init: RequestInit,
+) => PromiseLike<{ status: number }> | { status: number };
+
+interface FetchStatusOptions {
+  fetchImpl?: FetchStatusImplementation;
+  init?: RequestInit;
+  timeoutMs?: number;
+}
+
+export async function fetchStatus(
+  url: string,
+  { timeoutMs = 5000, init = {}, fetchImpl = globalThis.fetch }: FetchStatusOptions = {},
+): Promise<number | null> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('fetch timeout must be positive');
   const controller = new AbortController();
-  let timer;
-  const timedOut = new Promise(resolve => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>(resolve => {
     timer = setTimeout(() => {
       controller.abort();
       resolve(null);
@@ -15,7 +29,7 @@ export async function fetchStatus(url, { timeoutMs = 5000, init = {}, fetchImpl 
   });
   const requested = Promise.resolve()
     .then(() => fetchImpl(url, { ...init, signal: controller.signal }))
-    .then(response => response.status, () => null);
+    .then(response => response.status, (): null => null);
   try {
     return await Promise.race([requested, timedOut]);
   } finally {
