@@ -22,7 +22,7 @@ import { resolveProgressionRecipeLevelSelection }
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
-import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.mjs';
+import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.js';
 import { pidsOnPort } from './platform.js';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.js';
 

@@ -1,5 +1,5 @@
 import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-release.js';
-import type { Track } from './tracks.mjs';
+import type { Track } from './tracks.js';
 
 export interface CalibrationReference {
   backend: string;

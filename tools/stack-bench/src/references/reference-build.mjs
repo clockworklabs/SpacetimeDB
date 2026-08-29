@@ -21,7 +21,7 @@ import { codingContainerAgentCommand, codingContainerAgentExecOptions }
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
-import { loadTrack } from '../composition/tracks.mjs';
+import { loadTrack } from '../composition/tracks.js';
 import { inspectImportedReference, loadReferenceRegistry,
   prepareReferenceFixtureSource, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { referenceInstallSteps } from './reference-install.js';

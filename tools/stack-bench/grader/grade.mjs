@@ -24,7 +24,7 @@ import { harnessBrowserFailure, harnessProcessFailure,
   runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { materializeScenarioCredentials } from '../src/composition/credential-aliases.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';

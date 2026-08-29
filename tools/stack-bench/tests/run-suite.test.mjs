@@ -13,7 +13,7 @@ import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, f
   verifyReseedProbe, waitForReseedProbe }
   from '../dist/commands/run-suite.mjs';
 import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../dist/src/stacks/backend-reset.js';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');

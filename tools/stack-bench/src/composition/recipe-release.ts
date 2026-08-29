@@ -5,14 +5,14 @@ import { compilePromotionFile, compileRecipeFile } from './composition-compiler.
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
-import { suitesFor } from './tracks.mjs';
+import { suitesFor } from './tracks.js';
 import type {
   CompiledOwnedTaskFragment,
   CompiledPromotionCatalog,
   CompiledRecipePlan,
 } from './composition-compiler.mjs';
 import type { CompiledStep } from './definition-compiler.mjs';
-import type { Track, TrackSuiteSource } from './tracks.mjs';
+import type { Track, TrackSuiteSource } from './tracks.js';
 
 export const RECIPE_RELEASE_SCHEMA_VERSION = 1;
 

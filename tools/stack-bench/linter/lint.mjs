@@ -12,7 +12,7 @@ import { chromium } from 'playwright';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
+import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 

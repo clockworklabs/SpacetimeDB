@@ -4,7 +4,7 @@ import { extname, join } from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { mutationFileEdits } from '../dist/src/evidence/mutation-analysis.js';
 import { rebaseMutationManifest } from '../dist/src/evidence/mutation-rebase.js';

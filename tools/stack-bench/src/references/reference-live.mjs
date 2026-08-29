@@ -28,8 +28,8 @@ import { calibrationQualificationIdentity, mutationExecutionSha256,
 import { qualificationScopeIdentity } from '../composition/qualification-scope.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
-import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mjs';
-import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.js';
+import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { controllerRunner } from '../runtime/runner-environment.js';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.js';

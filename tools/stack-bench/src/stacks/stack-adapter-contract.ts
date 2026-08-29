@@ -31,6 +31,10 @@ export class StackCapabilityUnsupportedError extends Error {
 }
 
 export type StackCapabilityExecutor = (operation: string, input: unknown) => unknown;
+export interface StackPortAllocation {
+  readonly [port: string]: number | undefined;
+}
+
 export type StackOperation = (input: unknown) => unknown;
 export type StackOperationHandler = (input: never) => unknown;
 
@@ -138,6 +142,12 @@ export function executeStackCapability(
   operation: 'host',
   input?: unknown,
 ): boolean;
+export function executeStackCapability(
+  adapter: StackAdapter,
+  capabilityName: 'ports',
+  operation: 'for-run' | 'allocations',
+  input?: unknown,
+): StackPortAllocation;
 export function executeStackCapability(
   adapter: StackAdapter,
   capabilityName: string,

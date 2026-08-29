@@ -5,7 +5,7 @@ import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidenc
 import { campaignIdentity, validateCompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
+import { RUN_INDEX_CAP } from '../composition/tracks.js';
 
 export const CAMPAIGN_STATE_SCHEMA_VERSION = 2;
 type AttemptStatus = 'pending' | 'running' | 'completed' | 'invalid';

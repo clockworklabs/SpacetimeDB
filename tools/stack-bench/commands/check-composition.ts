@@ -8,7 +8,7 @@ import {
   compilePromotionFile,
   compileRecipeFile,
 } from '../src/composition/composition-compiler.mjs';
-import { TRACKS_DIR, listTracks } from '../src/composition/tracks.mjs';
+import { TRACKS_DIR, listTracks } from '../src/composition/tracks.js';
 
 function json(path: string): unknown {
   try { return JSON.parse(readFileSync(path, 'utf8')); }

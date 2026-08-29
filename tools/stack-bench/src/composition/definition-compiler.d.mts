@@ -49,6 +49,17 @@ export interface CompiledTrackSuite {
 export interface CompiledTrackManifest extends Record<string, unknown> {
   schemaVersion: number;
   suites: Record<string, CompiledTrackSuite[]>;
+  title?: string;
+  slug?: string;
+  internal?: boolean;
+  validatedThrough?: number;
+  plannedThrough?: number;
+  portOffset?: number;
+  restartProbe?: string;
+  reseedOnReset?: boolean;
+  reseedProbeExpectation?: unknown;
+  databaseProvenance?: { scenario: string; [key: string]: unknown };
+  actions?: unknown[];
 }
 
 export const DEFINITION_SCHEMA_VERSION: number;

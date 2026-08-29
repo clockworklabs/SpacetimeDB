@@ -21,7 +21,7 @@ import type { RequestedScope } from './condition-compiler.js';
 import type { PreflightReport } from '../runtime/preflight.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
-import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
+import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { liveProgressionStatus } from '../progression/live-progression.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }

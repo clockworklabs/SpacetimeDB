@@ -8,7 +8,7 @@ import test from 'node:test';
 import { diffRecipeFiles, selectRecipeRelease, validatePackFile,
   validateRecipeFile, showRecipeFile } from '../commands/composition-cli.js';
 import { hashDirectory } from '../src/evidence/provenance.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 
 const SOURCE = loadTrack('ecommerce').dir;
 const CLI = join(import.meta.dirname, '..', 'commands', 'composition-cli.js');

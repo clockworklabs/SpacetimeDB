@@ -4,8 +4,8 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recipeReleaseIdentity, resolveRecipeRelease }
   from '../composition/recipe-release.js';
 import type { RecipeBinding, RecipeRelease } from '../composition/recipe-release.js';
-import { loadTrack } from '../composition/tracks.mjs';
-import type { Track } from '../composition/tracks.mjs';
+import { loadTrack } from '../composition/tracks.js';
+import type { Track } from '../composition/tracks.js';
 import { auditProgressionReferenceRun }
   from '../progression/progression-reference-audit.js';
 import type { ProgressionReferenceAuditReport }

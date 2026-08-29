@@ -23,7 +23,7 @@ import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
-  moduleName, dbName, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
+  moduleName, dbName, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { killTree } from '../src/runtime/platform.js';
 import { formatRepairProgress } from '../src/evidence/scoring.js';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';

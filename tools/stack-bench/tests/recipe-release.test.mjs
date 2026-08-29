@@ -13,7 +13,7 @@ import {
   resolveGradeRecipeRelease,
   resolveRecipeRelease,
 } from '../dist/src/composition/recipe-release.js';
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.1.0.json');

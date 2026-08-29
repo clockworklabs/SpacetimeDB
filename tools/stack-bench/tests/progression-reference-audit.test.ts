@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';

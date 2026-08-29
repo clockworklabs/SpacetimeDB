@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { leaseFromEnv } from '../runtime/backend-lease.js';
-import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.mjs';
+import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.js';
 import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentCommand, codingContainerAgentExecOptions }

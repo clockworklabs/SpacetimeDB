@@ -16,7 +16,7 @@ import { checkCalibrations } from '../commands/check-calibration.js';
 import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeExecution } from '../src/composition/recipe-release.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 
 const ROOT = STACK_BENCH_ROOT;

@@ -6,7 +6,7 @@ import test from 'node:test';
 import { compilePackDefinition } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');

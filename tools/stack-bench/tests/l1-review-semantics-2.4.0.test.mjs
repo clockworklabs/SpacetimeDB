@@ -7,7 +7,7 @@ import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
-import { TRACKS_DIR } from '../src/composition/tracks.mjs';
+import { TRACKS_DIR } from '../src/composition/tracks.js';
 
 const root = join(TRACKS_DIR, 'ecommerce');
 const recipe = version => join(root, 'composition', 'recipes', `l1-modular-${version}.json`);

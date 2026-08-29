@@ -6,7 +6,7 @@ import {
   compileScenarioDefinition,
   compileTrackManifest,
 } from './definition-compiler.mjs';
-import { TRACKS_DIR } from './tracks.mjs';
+import { TRACKS_DIR } from './tracks.js';
 
 export type CanonicalDefinition = null | boolean | number | string
   | CanonicalDefinition[] | { [key: string]: CanonicalDefinition };

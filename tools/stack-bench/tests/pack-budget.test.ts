@@ -13,7 +13,7 @@ import type { PackBudgetEvidence, PackRuntime, ReferenceQualificationPayload,
   RunnerObservation } from '../src/composition/pack-budget.js';
 import type { Artifact, ArtifactIdentity } from '../src/evidence/artifacts.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 
 const track = loadTrack('ecommerce');
 const binding = resolveRecipeRelease(track, 1);

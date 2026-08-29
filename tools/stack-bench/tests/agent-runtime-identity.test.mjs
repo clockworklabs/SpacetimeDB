@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { dbName, moduleName } from '../dist/src/composition/tracks.mjs';
+import { dbName, moduleName } from '../dist/src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../dist/src/package-root.js';
 import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,

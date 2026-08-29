@@ -9,8 +9,8 @@ import { compileRecipeFile, type CompiledOwnedTaskFragment, type CompiledRecipeR
   from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition, type CompiledStep }
   from '../src/composition/definition-compiler.mjs';
-import { DEFAULT_TRACK, listTracks, loadTrack, type LoadedTrack }
-  from '../src/composition/tracks.mjs';
+import { DEFAULT_TRACK, listTracks, loadTrack, type Track }
+  from '../src/composition/tracks.js';
 
 interface ScenarioScope {
   features: Map<number, Set<string>>;
@@ -78,7 +78,7 @@ function contractHookIds(path: string): string[] {
 }
 
 // Contract levels are cumulative. A level can use hooks introduced earlier.
-function hooksByLevel(track: LoadedTrack): HooksByLevel {
+function hooksByLevel(track: Track): HooksByLevel {
   const perFile = new Map<string, string[]>();
   for (const file of readdirSync(track.contracts).filter(name => /^\d\d-.*\.json$/.test(name))) {
     perFile.set(file.slice(0, 2), contractHookIds(join(track.contracts, file)));
@@ -104,7 +104,7 @@ function ownedFragment(
   return fragment.owners.some(owner => owners.has(owner));
 }
 
-function recipeScenarioScopes(track: LoadedTrack, recipeFile: string): Map<string, ScenarioScope> {
+function recipeScenarioScopes(track: Track, recipeFile: string): Map<string, ScenarioScope> {
   const recipeDir = join(track.dir, 'composition', 'recipes');
   const chain: CompiledRecipeRelease[] = [];
   const seen = new Set<string>();
@@ -183,7 +183,7 @@ function normalizeText(text: string): string {
   return text.replace(/\*\*/g, '').replace(/—/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-function promptFor(track: LoadedTrack, level: string): string | null {
+function promptFor(track: Track, level: string): string | null {
   const dir = join(track.dir, 'prompts');
   if (!existsSync(dir)) return null;
   const file = readdirSync(dir).find(name => name.startsWith(`${level}-`) && name.endsWith('.md'));

@@ -9,7 +9,7 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
-import { TRACKS_DIR } from '../src/composition/tracks.mjs';
+import { TRACKS_DIR } from '../src/composition/tracks.js';
 import type { CompiledPackDefinition, CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
 import type { RecipeCheck, RecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeSelectionOptions, SelectedRecipeRelease } from '../src/composition/recipe-selection.mjs';

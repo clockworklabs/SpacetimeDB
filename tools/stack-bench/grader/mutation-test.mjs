@@ -47,7 +47,7 @@ import {
   validateMutationBaseline,
   validateMutationDefinitions,
 } from "../src/evidence/mutation-analysis.js";
-import { dbName, loadTrack } from "../src/composition/tracks.mjs";
+import { dbName, loadTrack } from "../src/composition/tracks.js";
 import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
 import { resetBackend } from "../src/stacks/backend-reset.js";
 import { fetchStatus } from "../src/runtime/readiness.js";

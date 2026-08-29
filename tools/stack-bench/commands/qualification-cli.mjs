@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/tracks.js';
 import { PACK_BUDGET_POLICY } from '../src/composition/pack-budget.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 

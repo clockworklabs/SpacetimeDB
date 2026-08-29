@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 
 test('feature catalogs resolve by exact identity', () => {

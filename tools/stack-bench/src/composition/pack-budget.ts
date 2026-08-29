@@ -16,7 +16,7 @@ import { sha256 } from '../evidence/provenance.js';
 import { resolveRecipeRelease } from './recipe-release.js';
 import type { RecipeBinding } from './recipe-release.js';
 import { missingRunnerObservation } from '../runtime/runner-environment.js';
-import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack } from './tracks.js';
 
 type UnknownRecord = Record<string, unknown>;
 

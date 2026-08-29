@@ -8,7 +8,7 @@ import { nullControlSuites, parseNullControlArgs,
   selectNullQualificationBinding } from '../dist/commands/null-control.mjs';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../dist/src/composition/recipe-selection.mjs';
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 
 test('null qualification can select one exact track and level', () => {
   const args = parseNullControlArgs(['node', 'null-control.mjs',

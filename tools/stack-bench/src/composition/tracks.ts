@@ -12,14 +12,60 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { compileTrackManifest } from './definition-compiler.mjs';
+import type { StackPortAllocation } from '../stacks/stack-adapter-contract.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
+
+export interface TrackSuite {
+  id: string;
+  spec: string;
+  inherit?: 'none' | 'all-higher-levels';
+  inherited?: boolean;
+  fromLevel?: number;
+}
+
+export interface TrackDatabaseProvenance {
+  scenario: string;
+  [key: string]: unknown;
+}
+
+export interface Track {
+  name: string;
+  dir: string;
+  schemaVersion: number;
+  title: string;
+  slug: string;
+  internal: boolean;
+  validatedThrough: number;
+  plannedThrough: number;
+  portOffset: number;
+  restartProbe: string;
+  reseedOnReset: boolean;
+  reseedProbeExpectation: unknown;
+  databaseProvenance: TrackDatabaseProvenance | null;
+  suites: Record<string, TrackSuite[]>;
+  actions: unknown[];
+  prompts: string;
+  contracts: string;
+  scenarios: string;
+  walk: string;
+}
+
+export type TrackDefinition = Track;
+
+// A compiled manifest resolves suites without the paths loadTrack adds.
+export interface TrackSuiteSource {
+  name: string;
+  dir: string;
+  suites: Record<string, TrackSuite[]>;
+}
+
 export const TRACKS_DIR = join(ROOT, 'tracks');
 export const DEFAULT_TRACK = 'chat';
 
-export function listTracks({ includeInternal = false } = {}) {
+export function listTracks({ includeInternal = false }: { includeInternal?: boolean } = {}): string[] {
   if (!existsSync(TRACKS_DIR)) return [];
   return readdirSync(TRACKS_DIR, { withFileTypes: true })
     .filter(e => e.isDirectory() && existsSync(join(TRACKS_DIR, e.name, 'track.json')))
@@ -28,14 +74,15 @@ export function listTracks({ includeInternal = false } = {}) {
     .sort();
 }
 
-export function loadTrack(name = DEFAULT_TRACK) {
+export function loadTrack(name: string = DEFAULT_TRACK): Track {
   const dir = join(TRACKS_DIR, name);
   const manifest = join(dir, 'track.json');
   if (!existsSync(manifest)) {
     console.error(`Unknown track "${name}". Available: ${listTracks({ includeInternal: true }).join(', ') || 'none'}`);
     process.exit(2);
   }
-  const m = compileTrackManifest(JSON.parse(readFileSync(manifest, 'utf8')), { source: manifest });
+  const m = compileTrackManifest(JSON.parse(readFileSync(manifest, 'utf8')) as unknown,
+    { source: manifest });
   return {
     name,
     dir,
@@ -77,7 +124,7 @@ export function loadTrack(name = DEFAULT_TRACK) {
   };
 }
 
-export function isDeclaredLevel(track, level) {
+export function isDeclaredLevel(track: TrackDefinition | null | undefined, level: number): boolean {
   return Number.isInteger(level) && level >= 1 && Boolean(track?.suites?.[String(level)]);
 }
 
@@ -96,7 +143,7 @@ export const PORT_BASES = Object.freeze(stackPortAllocations());
 // beyond anything this benchmark does.
 export const RUN_INDEX_CAP = 20;
 
-export function portsFor(track, backend, runIndex) {
+export function portsFor(track: TrackDefinition, backend: string, runIndex: number): StackPortAllocation {
   if (runIndex > RUN_INDEX_CAP) {
     throw new Error(`--run-index ${runIndex} exceeds ${RUN_INDEX_CAP}; the port grid is only proven collision-free below that`);
   }
@@ -110,8 +157,8 @@ export function portsFor(track, backend, runIndex) {
 // Every (track, backend, run-index) combination must own its ports outright.
 // Run at startup: a new track whose offset collides with an existing window
 // fails loudly here, instead of silently grading the wrong application.
-export function assertNoPortCollisions() {
-  const owner = new Map();
+export function assertNoPortCollisions(): void {
+  const owner = new Map<number, string>();
   // The database containers' host ports are fixed and shared by design, but no
   // track window may land on them either.
   for (const [backend, base] of Object.entries(PORT_BASES)) {
@@ -149,22 +196,23 @@ export function assertNoPortCollisions() {
 // The platform temp directory is also considerably shorter than the repo path,
 // which buys headroom against the Windows 260-character limit that deep
 // node_modules trees run into.
-export function workRoot() {
+export function workRoot(): string {
   return process.env.STACK_BENCH_WORK_DIR ?? join(tmpdir(), 'stack-bench-runs');
 }
 
 // A stamped directory isolates each run while allowing its levels to share the
 // same application source for cumulative upgrades.
-export const workDirFor = (track, backend, runIndex, stamp) =>
+export const workDirFor = (track: TrackDefinition, backend: string, runIndex: number,
+  stamp?: string): string =>
   join(workRoot(), resultsName(track, backend, runIndex) + (stamp ? `-${stamp}` : ''));
 
 // Old run directories are deleted on the way in, so finished work does not
 // accumulate in temp forever. Best-effort by design: one locked leftover must
 // not stop the run that is starting. Returns what it could not remove, for the
 // caller to say out loud rather than hide.
-export function sweepWorkRoot(maxAgeHours = 12) {
+export function sweepWorkRoot(maxAgeHours: number = 12): string[] {
   const root = workRoot();
-  const stuck = [];
+  const stuck: string[] = [];
   if (!existsSync(root)) return stuck;
   const cutoff = Date.now() - maxAgeHours * 3600_000;
   for (const name of readdirSync(root)) {
@@ -179,16 +227,16 @@ export function sweepWorkRoot(maxAgeHours = 12) {
 
 // Each run gets a separate application database and module. Result names remain
 // operator-facing and include the selected stack.
-export const dbName = (track, runIndex) =>
+export const dbName = (track: TrackDefinition, runIndex: number): string =>
   `app${track.slug ? `_${track.slug}` : ''}_run${runIndex}`;
 
-export const moduleName = (track, runIndex) =>
+export const moduleName = (track: TrackDefinition, runIndex: number): string =>
   `app${track.slug ? `-${track.slug}` : ''}-run${runIndex}`;
 
-export const resultsName = (track, backend, runIndex) =>
+export const resultsName = (track: TrackDefinition, backend: string, runIndex: number): string =>
   `${backend}${track.slug ? `-${track.slug}` : ''}-run${runIndex}`;
 
-export function levelPrompt(track, level) {
+export function levelPrompt(track: TrackDefinition, level: number): string {
   const prefix = String(level).padStart(2, '0') + '-';
   const file = existsSync(track.prompts)
     ? readdirSync(track.prompts).find(f => f.startsWith(prefix))
@@ -197,7 +245,7 @@ export function levelPrompt(track, level) {
   return readFileSync(join(track.prompts, file), 'utf8');
 }
 
-export function appendix(track, level) {
+export function appendix(track: TrackDefinition, level: number): string {
   const f = join(track.contracts, `appendix-${String(level).padStart(2, '0')}.md`);
   return existsSync(f) ? readFileSync(f, 'utf8') : '';
 }
@@ -215,8 +263,9 @@ export function appendix(track, level) {
 // updates"; a stack that maintains propagation by hand pays for every new write
 // path, and the failure shows up here rather than in the feature score. Without
 // it, L3 never re-checks L1's promises and a regression is invisible.
-export function suitesFor(track, level) {
-  const at = lvl => (track.suites[String(lvl)] ?? []).map(s => ({ ...s, spec: join(track.dir, s.spec) }));
+export function suitesFor(track: TrackSuiteSource, level: number): TrackSuite[] {
+  const at = (lvl: number): TrackSuite[] => (track.suites[String(lvl)] ?? [])
+    .map(suite => ({ ...suite, spec: join(track.dir, suite.spec) }));
   if (!track.suites[String(level)]) {
     throw new Error(`No scenario suites declared for ${track.name} level ${level}`);
   }
@@ -226,15 +275,15 @@ export function suitesFor(track, level) {
   // declared at several levels (01-contention is listed at 1 and 2) is one
   // suite, and the current level's own declaration always wins so it keeps its
   // plain id and its points.
-  const seen = new Set(declared.map(s => s.spec));
-  const inherited = [];
+  const seen = new Set(declared.map(suite => suite.spec));
+  const inherited: TrackSuite[] = [];
   for (let lvl = 1; lvl < level; lvl++) {
-    for (const s of at(lvl)) {
-      if (s.inherit !== 'all-higher-levels' || seen.has(s.spec)) continue;
-      seen.add(s.spec);
+    for (const suite of at(lvl)) {
+      if (suite.inherit !== 'all-higher-levels' || seen.has(suite.spec)) continue;
+      seen.add(suite.spec);
       // A distinct id, because the bundle keys suites by id and a collision
       // would silently overwrite one result with another.
-      inherited.push({ ...s, id: `${s.id}@L${lvl}`, inherited: true, fromLevel: lvl });
+      inherited.push({ ...suite, id: `${suite.id}@L${lvl}`, inherited: true, fromLevel: lvl });
     }
   }
   return [...declared, ...inherited];

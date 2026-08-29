@@ -5,7 +5,7 @@ import test from 'node:test';
 import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.mjs';
 import { buildRecipeRelease, resolveRecipeRelease }
   from '../dist/src/composition/recipe-release.js';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { loadTrack } from '../src/composition/tracks.js';
 import { compileFeatureCatalogInput, compileProgressionDefinitionFile,
   selectFeatureCatalogLevels } from '../dist/src/progression/progression-definition.js';
 

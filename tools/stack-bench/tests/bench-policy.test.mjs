@@ -11,7 +11,7 @@ import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
   sourceBoundFirstBuildOutcome }
   from '../dist/commands/bench.mjs';
 import { repairEvidenceDecision } from '../dist/src/evidence/repair-evidence.js';
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 import { writeArtifact } from '../dist/src/evidence/artifacts.js';
 import { hashAppSource } from '../dist/src/runtime/source-snapshot.js';
 

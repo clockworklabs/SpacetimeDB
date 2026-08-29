@@ -15,7 +15,7 @@ import { BROWSER_ACTION_IDS } from '../dist/src/actions/browser-action-executors
 import { ACTOR_TRANSPORT_ACTION_IDS } from '../dist/src/actions/actor-transport-action-executors.js';
 import { LIFECYCLE_CONCURRENCY_ACTION_IDS }
   from '../dist/src/actions/lifecycle-concurrency-action-executors.js';
-import { TRACKS_DIR } from '../src/composition/tracks.mjs';
+import { TRACKS_DIR } from '../src/composition/tracks.js';
 
 function currentDefinitions() {
   const definitions = [];

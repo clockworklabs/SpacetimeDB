@@ -7,7 +7,7 @@ import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler
 import { agentVisibleContractText } from '../dist/src/composition/agent-visible-contract.js';
 import { materializeScenarioCredentials, validateCredentialAliases }
   from '../dist/src/composition/credential-aliases.js';
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 import { seededAdminPassword } from '../dist/tracks/ecommerce/walk.mjs';
 
 const aliases = {

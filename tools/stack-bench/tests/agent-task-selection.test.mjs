@@ -12,7 +12,7 @@ import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
   createRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { loadTrack } from '../dist/src/composition/tracks.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const AGENT = join(ROOT, 'dist', 'commands', 'agent.mjs');
