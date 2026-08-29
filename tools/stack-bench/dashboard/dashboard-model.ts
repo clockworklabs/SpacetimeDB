@@ -9,7 +9,7 @@ import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.j
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { validateCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { dependencyProgress } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';

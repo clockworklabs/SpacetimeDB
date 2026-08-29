@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 import { compilePromotionFile, compileRecipeFile } from './composition-compiler.mjs';
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.mjs';
-import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
+import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { suitesFor } from './tracks.mjs';
 

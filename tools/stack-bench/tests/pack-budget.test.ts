@@ -4,27 +4,35 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../dist/src/evidence/artifacts.js';
+import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.mjs';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, parsePackBudgetArgs,
-  recommendPackBudgets } from '../src/composition/pack-budget.mjs';
+  recommendPackBudgets } from '../src/composition/pack-budget.js';
+import type { PackBudgetEvidence, PackRuntime, ReferenceQualificationPayload,
+  RunnerObservation } from '../src/composition/pack-budget.js';
+import type { Artifact, ArtifactIdentity } from '../src/evidence/artifacts.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const track = loadTrack('ecommerce');
 const binding = resolveRecipeRelease(track, 1);
-const calibration = structuredClone(resolveCalibrationForRelease(binding.release, { trackRoot: track.dir }));
+const resolvedCalibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
+assert(resolvedCalibration);
+const calibration = structuredClone(resolvedCalibration);
 calibration.qualification.runner = {
   schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
 };
-const applianceRunner = Object.freeze({ ...calibration.qualification.runner,
+const applianceRunner: RunnerObservation = Object.freeze({ ...calibration.qualification.runner,
   dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
   kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 });
 
-function runtime(stackIndex, repetition) {
-  const counts = new Map(binding.release.checkCatalog.map(check => [check.packId, 0]));
-  for (const check of binding.release.checkCatalog) counts.set(check.packId, counts.get(check.packId) + 1);
+function runtime(stackIndex: number, repetition: number): PackRuntime {
+  const counts = new Map<string, number>(binding.plan.packs.map(pack => [pack.id, 0]));
+  for (const check of binding.release.checkCatalog) {
+    if (!check.packId) throw new Error(`check ${check.stableKey} has no pack`);
+    counts.set(check.packId, (counts.get(check.packId) ?? 0) + 1);
+  }
   return { schemaVersion: 1, metric: PACK_RUNTIME_METRIC,
     packs: [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([id, checkCount], packIndex) => {
       const measuredRuntimeMs = 1_000 + stackIndex * 100 + repetition * 10 + packIndex;
@@ -33,9 +41,11 @@ function runtime(stackIndex, repetition) {
     }) };
 }
 
-function reference(stack, stackIndex, overrides = {}) {
+function reference(stack: string, stackIndex: number,
+  overrides: Partial<ReferenceQualificationPayload> = {}): Artifact<ReferenceQualificationPayload> {
   const identity = calibrationQualificationIdentity(calibration);
   const fixture = calibration.references.entries.find(entry => entry.backend === stack);
+  assert(fixture);
   return createArtifact({ kind: 'reference_qualification', id: `reference-${stack}`,
     identities: recipeArtifactIdentities(binding.release, {
       engine: currentEngineIdentity(), calibration: identity, stackAdapter: { id: stack },
@@ -49,12 +59,23 @@ function reference(stack, stackIndex, overrides = {}) {
       ...overrides } });
 }
 
-function exactEvidence() {
+function exactEvidence(): PackBudgetEvidence[] {
   return ['mongodb', 'postgres', 'spacetime'].map((stack, index) => ({
     path: `${stack}.json`, sha256: String(index).repeat(64), artifact: reference(stack, index),
     runtimeCalibration: { id: calibration.id, version: calibration.version,
       sha256: calibration.contentSha256 },
   }));
+}
+
+function evidenceAt(evidence: PackBudgetEvidence[], index: number): PackBudgetEvidence {
+  const item = evidence[index];
+  assert(item);
+  return item;
+}
+
+function identity(value: ArtifactIdentity | null): ArtifactIdentity {
+  assert(value);
+  return value;
 }
 
 test('budget recommendation requires every exact reference repetition and applies the published rule', () => {
@@ -70,56 +91,62 @@ test('budget recommendation requires every exact reference repetition and applie
 
 test('budget recommendation rejects mutation, duplicate, incomplete, and cross-scope evidence', () => {
   const mutation = exactEvidence();
-  mutation[0].artifact.payload.mutationControl = true;
+  evidenceAt(mutation, 0).artifact.payload.mutationControl = true;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mutation }), /mutation evidence/);
   const duplicate = exactEvidence();
-  duplicate[2].artifact.identities.stackAdapter.id = 'postgres';
+  identity(evidenceAt(duplicate, 2).artifact.identities.stackAdapter).id = 'postgres';
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: duplicate }), /repeats stack/);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: exactEvidence().slice(1) }),
     /cover each supported stack/);
   const stale = exactEvidence();
-  stale[0].artifact.identities.recipe.sha256 = 'f'.repeat(64);
+  identity(evidenceAt(stale, 0).artifact.identities.recipe).sha256 = 'f'.repeat(64);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: stale }),
     /does not match the selected qualification scope/);
   const staleRuntime = exactEvidence();
-  staleRuntime[0].runtimeCalibration.sha256 = 'f'.repeat(64);
+  const staleRuntimeIdentity = evidenceAt(staleRuntime, 0).runtimeCalibration;
+  assert(staleRuntimeIdentity);
+  staleRuntimeIdentity.sha256 = 'f'.repeat(64);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: staleRuntime }),
     /retainedRuntimeCalibration.sha256/);
 });
 
 test('budget recommendation rejects timing captured outside the Linux appliance', () => {
   const local = exactEvidence();
-  local[0].artifact.payload.runner.mode = 'local-controller';
-  local[0].artifact.payload.runner.platform = 'win32';
+  const localRunner = evidenceAt(local, 0).artifact.payload.runner;
+  assert(localRunner);
+  localRunner.mode = 'local-controller';
+  localRunner.platform = 'win32';
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: local }),
     /not supported appliance timing evidence/);
 
   const legacy = exactEvidence();
-  delete legacy[0].artifact.payload.runner;
+  delete evidenceAt(legacy, 0).artifact.payload.runner;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: legacy }),
     /runner\.schemaVersion must be 1/);
 
   const unobserved = exactEvidence();
-  unobserved[0].artifact.payload.runner = { ...calibration.qualification.runner };
+  evidenceAt(unobserved, 0).artifact.payload.runner = { ...calibration.qualification.runner };
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: unobserved }),
     /runner observation is missing/);
 
   const mixed = exactEvidence();
-  mixed[1].artifact.payload.runner.cpuCount = 16;
+  const mixedRunner = evidenceAt(mixed, 1).artifact.payload.runner;
+  assert(mixedRunner);
+  mixedRunner.cpuCount = 16;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mixed }),
     /different appliance runner environment/);
 });
 
 test('budget CLI parsing requires explicit unique evidence and output', () => {
-  const parsed = parsePackBudgetArgs(['node', 'pack-budget.mjs', 'recommend', '--track', 'ecommerce',
+  const parsed = parsePackBudgetArgs(['node', 'pack-budget.js', 'recommend', '--track', 'ecommerce',
     '--level', '1', '--evidence', 'mongo.json', '--out', 'budgets.json']);
   assert.equal(parsed.command, 'recommend');
   assert.equal(parsed.evidence.length, 1);
-  assert.equal(parsePackBudgetArgs(['node', 'pack-budget.mjs', 'recommend', '--track', 'ecommerce',
+  assert.equal(parsePackBudgetArgs(['node', 'pack-budget.js', 'recommend', '--track', 'ecommerce',
     '--level', '1', '--recipe', 'ecommerce.l1-standard@1.1.0',
     '--evidence', 'mongo.json', '--out', 'budgets.json']).recipe,
   'ecommerce.l1-standard@1.1.0');
-  assert.throws(() => parsePackBudgetArgs(['node', 'pack-budget.mjs', 'recommend',
+  assert.throws(() => parsePackBudgetArgs(['node', 'pack-budget.js', 'recommend',
     '--track', 'ecommerce', '--level', '1']), /usage/);
 });
 
@@ -146,8 +173,10 @@ test('budget evidence loader verifies retained raw runs against their summary', 
     writeArtifact(path, artifact);
     const loaded = loadPackBudgetEvidence([path]);
     assert.equal(loaded.length, 1);
-    assert.match(loaded[0].sha256, /^[a-f0-9]{64}$/);
-    assert.equal(loaded[0].runtimeCalibration.sha256, calibration.contentSha256);
+    const loadedEvidence = evidenceAt(loaded, 0);
+    assert.match(loadedEvidence.sha256, /^[a-f0-9]{64}$/);
+    assert(loadedEvidence.runtimeCalibration);
+    assert.equal(loadedEvidence.runtimeCalibration.sha256, calibration.contentSha256);
 
     const bundlePath = join(root, 'mongodb.runs', 'r1', 'grading', 'bundle.json');
     const changed = createArtifact({ kind: 'grade_bundle', id: 'changed',

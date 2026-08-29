@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { checkDefinitionGoldens } from '../commands/definition-goldens.js';
 import { ACTION_IDS, compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';
 
 test('committed normalized definition plans have no semantic drift', () => {

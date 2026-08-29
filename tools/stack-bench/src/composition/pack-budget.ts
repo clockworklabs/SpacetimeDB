@@ -6,13 +6,102 @@ import { pathToFileURL } from 'node:url';
 
 import { artifactPayload, currentEngineIdentity, readArtifact, recipeArtifactIdentities,
   writeArtifact } from '../evidence/artifacts.js';
+import type { Artifact, ArtifactIdentity }
+  from '../evidence/artifacts.js';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
-import { canonicalDefinitionJson } from './definition-plan.mjs';
+import type { CalibrationPlan } from './calibration-compiler.mjs';
+import { canonicalDefinitionJson } from './definition-plan.js';
 import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import { resolveRecipeRelease } from './recipe-release.mjs';
+import type { RecipeBinding } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
+
+type UnknownRecord = Record<string, unknown>;
+
+interface PackBudgetArgs {
+  command: 'recommend';
+  track: string;
+  level: number;
+  evidence: string[];
+  out: string;
+  recipe?: string;
+}
+
+export interface PackRuntimeEntry {
+  id: string;
+  checkCount: unknown;
+  setupRuntimeMs: unknown;
+  criterionRuntimeMs: unknown;
+  measuredRuntimeMs: unknown;
+}
+
+export interface PackRuntime {
+  schemaVersion: number;
+  metric: string;
+  packs: PackRuntimeEntry[];
+}
+
+export interface ReferenceRun {
+  repetition: number;
+  ok: boolean;
+  output?: string;
+  packRuntime: PackRuntime;
+}
+
+export interface RunnerObservation extends UnknownRecord {
+  schemaVersion?: number;
+  mode?: string;
+  platform?: string;
+  architecture?: string;
+}
+
+export interface ReferenceQualificationPayload {
+  fixture: string;
+  fixtureSha256: string;
+  requiredRepetitions: number;
+  isolation: string;
+  mutationControl: boolean;
+  runner?: RunnerObservation;
+  stable: boolean;
+  sameImage: boolean;
+  sameHarness: boolean;
+  ok: boolean;
+  runs: ReferenceRun[];
+}
+
+export interface PackBudgetEvidence {
+  path: string;
+  sha256: string;
+  artifact: Artifact<ReferenceQualificationPayload>;
+  runtimeCalibration: Pick<ArtifactIdentity, 'id' | 'version' | 'sha256'> | null;
+}
+
+export interface PackRuntimeSample {
+  stack: string;
+  repetition: number;
+  packId: string;
+  checkCount: number;
+  setupRuntimeMs: number;
+  criterionRuntimeMs: number;
+  measuredRuntimeMs: number;
+}
+
+export interface PackBudgetRecommendation {
+  packId: string;
+  sampleCount: number;
+  observedMinRuntimeMs: number;
+  observedMaxRuntimeMs: number;
+  maxRuntimeMs: number;
+}
+
+export interface PackBudgetResult {
+  measuredEngine: ArtifactIdentity;
+  measuredRunner: RunnerObservation;
+  samples: PackRuntimeSample[];
+  recommendations: PackBudgetRecommendation[];
+}
 
 export const PACK_BUDGET_POLICY = Object.freeze({
   id: 'max-observed-times-two-rounded-up-1s-v1',
@@ -22,10 +111,11 @@ export const PACK_BUDGET_POLICY = Object.freeze({
   minimumMs: 1_000,
 });
 
-function requireSupportedBudgetRunner(runner, expectedRunner, path) {
+function requireSupportedBudgetRunner(runner: RunnerObservation | undefined,
+  expectedRunner: object | null | undefined, path: string): void {
   if (!expectedRunner) throw new Error('selected calibration does not declare a qualification runner');
   for (const [field, expected] of Object.entries(expectedRunner)) {
-    if (runner?.[field] !== expected) {
+    if (identityField(runner, field) !== expected) {
       throw new Error(`${path} is not supported appliance timing evidence: runner.${field} must be ${expected}`);
     }
   }
@@ -35,48 +125,71 @@ function requireSupportedBudgetRunner(runner, expectedRunner, path) {
   }
 }
 
-export function parsePackBudgetArgs(argv) {
-  const args = { command: argv[2], track: null, level: null, evidence: [] };
+export function parsePackBudgetArgs(argv: string[]): PackBudgetArgs {
+  const args: {
+    command?: string; track?: string; level?: number; recipe?: string;
+    evidence: string[]; out?: string;
+  } = { command: argv[2], evidence: [] };
   for (let index = 3; index < argv.length; index += 1) {
     if (argv[index] === '--track') args.track = argv[++index];
     else if (argv[index] === '--level') args.level = Number(argv[++index]);
     else if (argv[index] === '--recipe') args.recipe = argv[++index];
-    else if (argv[index] === '--evidence') args.evidence.push(resolve(argv[++index]));
-    else if (argv[index] === '--out') args.out = resolve(argv[++index]);
+    else if (argv[index] === '--evidence') {
+      const path = argv[++index];
+      if (path !== undefined) args.evidence.push(resolve(path));
+    } else if (argv[index] === '--out') {
+      const path = argv[++index];
+      if (path !== undefined) args.out = resolve(path);
+    }
     else throw new Error(`unknown pack-budget option ${argv[index]}`);
   }
   if (args.command !== 'recommend' || typeof args.track !== 'string' || !args.track
-    || !Number.isInteger(args.level) || args.level < 1 || !args.evidence.length || !args.out) {
-    throw new Error('usage: pack-budget.mjs recommend --track <name> --level <n> '
+    || typeof args.level !== 'number' || !Number.isInteger(args.level) || args.level < 1
+    || !args.evidence.length || !args.out) {
+    throw new Error('usage: pack-budget.js recommend --track <name> --level <n> '
       + '[--recipe <id>@<version>] --evidence <reference.json> [--evidence ...] '
       + '--out <measurement.json>');
   }
   if (new Set(args.evidence).size !== args.evidence.length) throw new Error('--evidence paths must be unique');
-  return args;
+  return { command: 'recommend', track: args.track, level: args.level,
+    evidence: args.evidence, out: args.out,
+    ...(args.recipe === undefined ? {} : { recipe: args.recipe }) };
 }
 
-function equalIdentity(actual, expected, at) {
+function identityField(value: unknown, field: string): unknown {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Reflect.get(value, field) : null;
+}
+
+function equalIdentity(actual: unknown, expected: unknown, at: string): void {
   for (const field of ['id', 'version', 'sha256']) {
-    if ((actual?.[field] ?? null) !== (expected?.[field] ?? null)) {
+    if ((identityField(actual, field) ?? null) !== (identityField(expected, field) ?? null)) {
       throw new Error(`${at}.${field} does not match the selected qualification scope`);
     }
   }
 }
 
-function equalIdentityFields(actual, expected, fields, at) {
+function equalIdentityFields(actual: unknown, expected: unknown, fields: readonly string[],
+  at: string): void {
   for (const field of fields) {
-    if ((actual?.[field] ?? null) !== (expected?.[field] ?? null)) {
+    if ((identityField(actual, field) ?? null) !== (identityField(expected, field) ?? null)) {
       throw new Error(`${at}.${field} does not match the selected qualification scope`);
     }
   }
 }
 
-function positiveInteger(value, at) {
-  if (!Number.isInteger(value) || value < 0) throw new Error(`${at} must be a non-negative integer`);
+function positiveInteger(value: unknown, at: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${at} must be a non-negative integer`);
+  }
   return value;
 }
 
-export function recommendPackBudgets({ binding, calibration, evidence }) {
+export function recommendPackBudgets({ binding, calibration, evidence }: {
+  binding: RecipeBinding;
+  calibration: CalibrationPlan;
+  evidence: PackBudgetEvidence[];
+}): PackBudgetResult {
   if (!binding?.release || !binding?.plan || !calibration) {
     throw new Error('pack budget recommendation requires a compiled recipe and calibration');
   }
@@ -86,10 +199,10 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
     .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
   const expectedPackCounts = new Map(binding.plan.packs.map(pack => [pack.id,
     binding.release.checkCatalog.filter(check => check.packId === pack.id).length]));
-  const stacks = new Set();
-  const samples = [];
-  let measuredEngine = null;
-  let measuredRunner = null;
+  const stacks = new Set<string>();
+  const samples: PackRuntimeSample[] = [];
+  let measuredEngine: ArtifactIdentity | null = null;
+  let measuredRunner: RunnerObservation | null = null;
 
   for (const item of evidence) {
     const artifact = item.artifact;
@@ -106,10 +219,13 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
     equalIdentity(item.runtimeCalibration, { id: calibration.id, version: calibration.version,
       sha256: calibration.contentSha256 }, `${item.path}.retainedRuntimeCalibration`);
     const stack = artifact.identities.stackAdapter?.id;
-    if (!expectedStacks.includes(stack)) throw new Error(`${item.path} has unexpected stack ${stack ?? '<missing>'}`);
+    if (typeof stack !== 'string' || !expectedStacks.includes(stack)) {
+      throw new Error(`${item.path} has unexpected stack ${stack ?? '<missing>'}`);
+    }
     if (stacks.has(stack)) throw new Error(`reference evidence repeats stack ${stack}`);
     stacks.add(stack);
     const expectedReference = calibration.references.entries.find(entry => entry.backend === stack);
+    if (!expectedReference) throw new Error(`${item.path} has unexpected stack ${stack}`);
     equalIdentity(artifact.identities.fixture, { id: expectedReference.id, version: null,
       sha256: expectedReference.sourceSha256 }, `${item.path}.identities.fixture`);
     if (payload.fixture !== expectedReference.id || payload.fixtureSha256 !== expectedReference.sourceSha256) {
@@ -117,7 +233,10 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
     }
     if (payload.isolation !== 'docker') throw new Error(`${item.path} was not produced in Docker`);
     requireSupportedBudgetRunner(payload.runner, calibration.qualification.runner, item.path);
-    if (measuredRunner === null) measuredRunner = payload.runner;
+    if (measuredRunner === null) {
+      if (!payload.runner) throw new Error(`${item.path} has no runner observation`);
+      measuredRunner = payload.runner;
+    }
     else if (canonicalDefinitionJson(payload.runner) !== canonicalDefinitionJson(measuredRunner)) {
       throw new Error(`${item.path} was measured on a different appliance runner environment`);
     }
@@ -125,7 +244,10 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
       || payload.runs?.length !== payload.requiredRepetitions) {
       throw new Error(`${item.path} does not contain the declared reference repetitions`);
     }
-    if (measuredEngine === null) measuredEngine = artifact.identities.engine;
+    if (measuredEngine === null) {
+      if (!artifact.identities.engine) throw new Error(`${item.path} has no engine identity`);
+      measuredEngine = artifact.identities.engine;
+    }
     else equalIdentity(artifact.identities.engine, measuredEngine, `${item.path}.identities.engine`);
 
     const repetitions = new Set();
@@ -169,6 +291,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
   if (missingStacks.length || stacks.size !== expectedStacks.length) {
     throw new Error(`reference evidence must cover each supported stack exactly once; missing ${missingStacks.join(', ') || 'none'}`);
   }
+  if (!measuredEngine || !measuredRunner) throw new Error('reference evidence is incomplete');
   equalIdentity(measuredEngine, currentEngineIdentity(), 'reference evidence engine');
   samples.sort((a, b) => a.packId.localeCompare(b.packId)
     || a.stack.localeCompare(b.stack) || a.repetition - b.repetition);
@@ -184,7 +307,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
   return { measuredEngine, measuredRunner, samples, recommendations };
 }
 
-function containedRunPath(artifactPath, runOutput) {
+function containedRunPath(artifactPath: string, runOutput: unknown): string {
   if (typeof runOutput !== 'string' || !runOutput || isAbsolute(runOutput)) {
     throw new Error(`${artifactPath} contains an invalid absolute run output`);
   }
@@ -198,10 +321,11 @@ function containedRunPath(artifactPath, runOutput) {
   return output;
 }
 
-export function loadPackBudgetEvidence(paths) {
+export function loadPackBudgetEvidence(paths: string[]): PackBudgetEvidence[] {
   return paths.map(path => {
-    const artifact = readArtifact(path, { expectedKind: 'reference_qualification' });
-    let runtimeCalibration = null;
+    const artifact = readArtifact<ReferenceQualificationPayload>(path,
+      { expectedKind: 'reference_qualification' });
+    let runtimeCalibration: ArtifactIdentity | null = null;
     for (const run of artifact.payload.runs ?? []) {
       const output = containedRunPath(path, run.output);
       const bundlePath = resolve(output, 'grading', 'bundle.json');
@@ -209,14 +333,15 @@ export function loadPackBudgetEvidence(paths) {
       if (!existsSync(runPath)) throw new Error(`${path} retained run is missing ${runPath}`);
       if (!existsSync(bundlePath)) throw new Error(`${path} retained run is missing ${bundlePath}`);
       const raw = readArtifact(runPath, { expectedKind: 'benchmark_run' });
-      const bundle = readArtifact(bundlePath, { expectedKind: 'grade_bundle' });
+      const bundle = readArtifact<{ packRuntime: PackRuntime }>(bundlePath,
+        { expectedKind: 'grade_bundle' });
       equalIdentity(raw.identities.engine, artifact.identities.engine,
         `${path} retained run ${run.repetition}.identities.engine`);
       equalIdentityFields(raw.identities.stackAdapter, artifact.identities.stackAdapter, ['id'],
         `${path} retained run ${run.repetition}.identities.stackAdapter`);
       equalIdentityFields(raw.identities.agentAdapter, { id: 'reference-fixture' }, ['id'],
         `${path} retained run ${run.repetition}.identities.agentAdapter`);
-      for (const identity of ['engine', 'recipe', 'stackAdapter']) {
+      for (const identity of ['engine', 'recipe', 'stackAdapter'] as const) {
         equalIdentity(bundle.identities[identity], artifact.identities[identity],
           `${path} retained run ${run.repetition}.identities.${identity}`);
       }
@@ -233,7 +358,7 @@ export function loadPackBudgetEvidence(paths) {
   });
 }
 
-function main() {
+function main(): void {
   const args = parsePackBudgetArgs(process.argv);
   if (!listTracks().includes(args.track)) throw new Error(`unknown track ${args.track}`);
   const track = loadTrack(args.track);
@@ -252,13 +377,20 @@ function main() {
     }),
     payload: { schemaVersion: 1, track: args.track, level: args.level, policy: PACK_BUDGET_POLICY,
       runner: result.measuredRunner,
-      evidence: loaded.map(item => ({ path: relative(dirname(args.out), item.path).replaceAll('\\', '/'),
-        sha256: item.sha256, stack: item.artifact.identities.stackAdapter.id })),
+      evidence: loaded.map(item => {
+        const stackAdapter = item.artifact.identities.stackAdapter;
+        if (!stackAdapter) throw new Error(`${item.path} has no stack adapter identity`);
+        return { path: relative(dirname(args.out), item.path).replaceAll('\\', '/'),
+          sha256: item.sha256, stack: stackAdapter.id };
+      }),
       samples: result.samples, recommendations: result.recommendations } });
   console.log(JSON.stringify(artifactPayload(artifact), null, 2));
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   try { main(); }
-  catch (error) { console.error(error.message); process.exitCode = 2; }
+  catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 2;
+  }
 }

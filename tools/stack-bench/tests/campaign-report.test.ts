@@ -12,7 +12,7 @@ import { buildCampaignReport, generateCampaignReport,
   campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
 import type { BenchmarkRun, RunSelection } from '../src/campaigns/campaign-report.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-runner.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,

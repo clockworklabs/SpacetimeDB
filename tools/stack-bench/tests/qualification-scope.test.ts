@@ -5,9 +5,12 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { qualificationScopeIdentity, validateQualificationScopeIdentity }
-  from '../src/composition/qualification-scope.mjs';
+  from '../src/composition/qualification-scope.js';
+import type { QualificationKind } from '../src/composition/qualification-scope.js';
 
-const digest = character => character.repeat(64);
+type TestStack = 'mongodb' | 'postgres';
+
+const digest = (character: string): string => character.repeat(64);
 const release = {
   id: 'ecommerce.l1', version: '1.0.0', contentSha256: digest('a'), track: 'ecommerce',
   checkCatalog: [
@@ -17,22 +20,22 @@ const release = {
       featureId: '1', criterionId: 'b', points: 2 },
   ],
 };
-const references = {
+const references: Record<TestStack, { backend: TestStack; id: string; sourceSha256: string }> = {
   mongodb: { backend: 'mongodb', id: 'mongo-reference', sourceSha256: digest('b') },
   postgres: { backend: 'postgres', id: 'postgres-reference', sourceSha256: digest('c') },
 };
-const mutations = {
+const mutations: Record<TestStack, { backend: TestStack; executionSha256: string }> = {
   mongodb: { backend: 'mongodb', executionSha256: digest('d') },
   postgres: { backend: 'postgres', executionSha256: digest('e') },
 };
 
-function write(root, path, source = '') {
+function write(root: string, path: string, source = ''): void {
   const target = join(root, path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, source);
 }
 
-function fixture() {
+function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-qualification-scope-'));
   for (const path of [
     'commands/run-suite.mjs', 'commands/check-actions.mjs', 'commands/reset-backend.mjs',
@@ -41,8 +44,10 @@ function fixture() {
     'src/references/reference-agent.mjs', 'container/run-build.mjs', 'grader/grade.mjs',
     'grader/mutation-test.mjs', 'linter/lint.mjs', 'package.json', 'package-lock.json',
     'docker-compose.yaml', 'appliance/Controller.Dockerfile', 'appliance/docker-compose.yaml',
-    'tracks/ecommerce/walk.mjs',
+    'tracks/ecommerce/walk.mjs', 'src/evidence/provenance.ts',
   ]) write(root, path, `${path}\n`);
+  write(root, 'src/references/reference-live.mjs',
+    "import '../evidence/provenance.js';\n");
   write(root, 'commands/bench.mjs', "import '../src/stacks/stack-adapters.mjs';\n");
   write(root, 'grader/grade.mjs', "import '../src/stacks/stack-adapters.mjs';\n");
   write(root, 'src/stacks/stack-adapters.mjs', [
@@ -65,13 +70,14 @@ function fixture() {
   return root;
 }
 
-function scoped(root, kind, stack = null, changedRelease = release) {
+function scoped(root: string, kind: QualificationKind, stack: TestStack | null = null,
+  changedRelease = release) {
   return qualificationScopeIdentity({
     kind,
     release: changedRelease,
     stack,
     reference: stack === null ? null : references[stack],
-    mutation: kind === 'mutation' ? mutations[stack] : null,
+    mutation: kind === 'mutation' && stack !== null ? mutations[stack] : null,
     stackBenchRoot: root,
   });
 }
@@ -89,7 +95,9 @@ test('qualification identities isolate stack, mutation, and selected-check input
     assert.notEqual(mongoReference.executableSha256, mongoMutation.executableSha256);
 
     const changedChecks = structuredClone(release);
-    changedChecks.checkCatalog[0].points = 3;
+    const firstCheck = changedChecks.checkCatalog[0];
+    assert(firstCheck);
+    firstCheck.points = 3;
     assert.notEqual(scoped(root, 'reference', 'mongodb', changedChecks).checksSha256,
       mongoReference.checksSha256);
 

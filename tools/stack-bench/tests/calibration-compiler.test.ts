@@ -17,7 +17,7 @@ import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/rec
 import type { RecipeExecution } from '../src/composition/recipe-release.mjs';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
+import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = loadTrack('ecommerce');

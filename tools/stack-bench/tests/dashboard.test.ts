@@ -14,7 +14,7 @@ import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
   readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from '../dashboard/dashboard-model.js';

@@ -3,7 +3,7 @@ import { join, relative, resolve, sep } from 'node:path';
 
 import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { hashDirectory } from '../evidence/provenance.js';
 
 export interface RepairOutcome extends Record<string, unknown> {

@@ -2,7 +2,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSy
   from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,

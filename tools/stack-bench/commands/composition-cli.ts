@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';

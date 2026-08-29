@@ -2,7 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 
-import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import { validateCredentialAliases } from '../composition/credential-aliases.mjs';

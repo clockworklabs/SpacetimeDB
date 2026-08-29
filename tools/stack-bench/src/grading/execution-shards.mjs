@@ -1,5 +1,5 @@
 import { canonicalDefinitionJson, canonicalizeDefinition }
-  from '../composition/definition-plan.mjs';
+  from '../composition/definition-plan.js';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
 import { sha256 } from '../evidence/provenance.js';
 

@@ -6,7 +6,7 @@ import { join, relative, resolve, sep } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
 import { inspectCampaign, validateCampaignRun } from './campaign-runner.js';
-import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExecution, CampaignState } from './campaign-scheduler.js';

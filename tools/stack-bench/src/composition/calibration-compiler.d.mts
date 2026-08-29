@@ -144,7 +144,7 @@ export function calibrationQualificationRelease<T extends Pick<RecipeRelease, 's
 
 export function resolveCalibrationForRelease(
   release: RecipeRelease,
-  options: { trackRoot: string; stackBenchRoot: string; alias?: string },
+  options: { trackRoot: string; stackBenchRoot?: string; alias?: string | null },
 ): CalibrationPlan | null;
 
 export function calibrationCoversAlias(

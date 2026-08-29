@@ -10,7 +10,7 @@ import {
   type CompiledScenarioDefinition,
 } from '../composition/definition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition }
-  from '../composition/definition-plan.mjs';
+  from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
   DEFAULT_UNCHANGED_FAILURE_LIMIT, DEPENDENCY_MODE_SCHEMA_VERSION,

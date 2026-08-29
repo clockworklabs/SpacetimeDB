@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { readArtifact } from '../evidence/artifacts.js';
 import type { RecipeBinding, RecipeCheck } from '../composition/recipe-release.mjs';
 import { progressionEngine } from './progression-engine.js';

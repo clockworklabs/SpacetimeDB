@@ -1,4 +1,4 @@
-import { canonicalDefinitionJson } from './definition-plan.mjs';
+import { canonicalDefinitionJson } from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 
 function unique(values, label) {

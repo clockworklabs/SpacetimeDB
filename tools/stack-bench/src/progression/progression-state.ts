@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../evidence/artifacts.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';

@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
-import { canonicalDefinitionJson, compileTrackPlan } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson, compileTrackPlan } from '../src/composition/definition-plan.js';
 import { listTracks } from '../src/composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 

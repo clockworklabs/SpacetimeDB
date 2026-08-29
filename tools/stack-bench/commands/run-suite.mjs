@@ -35,7 +35,7 @@ import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs'
 import { readBackendLease } from '../src/runtime/backend-lease.mjs';
 import { databaseContainerName } from '../src/stacks/database-containers.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
 import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.js';
 

@@ -1,6 +1,6 @@
 import { join, relative, resolve, sep } from 'node:path';
 
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { readArtifact } from '../evidence/artifacts.js';
 
 const SMOKE_REUSE_MS = 15 * 60_000;

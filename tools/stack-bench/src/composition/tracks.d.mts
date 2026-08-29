@@ -37,4 +37,5 @@ export interface TrackSuite {
   [key: string]: unknown;
 }
 export function loadTrack(name?: string): Track;
+export function isDeclaredLevel(track: TrackDefinition, level: number): boolean;
 export function suitesFor(track: TrackDefinition, level: number): TrackSuite[];

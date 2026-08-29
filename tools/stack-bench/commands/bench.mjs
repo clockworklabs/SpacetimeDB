@@ -52,7 +52,7 @@ import { sandboxProbeMode } from '../src/runtime/sandbox.mjs';
 import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
 import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.js';

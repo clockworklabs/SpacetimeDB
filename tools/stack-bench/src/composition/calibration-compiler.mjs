@@ -2,14 +2,14 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { compilePromotionFile } from './composition-compiler.mjs';
-import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
+import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
 import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.mjs';
 import { readArtifact } from '../evidence/artifacts.js';
 import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
-import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';
+import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';

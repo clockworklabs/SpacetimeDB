@@ -25,7 +25,7 @@ import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js
 import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
 import { calibrationQualificationIdentity, mutationExecutionSha256,
   resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
-import { qualificationScopeIdentity } from '../composition/qualification-scope.mjs';
+import { qualificationScopeIdentity } from '../composition/qualification-scope.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mjs';

@@ -1,6 +1,6 @@
 import { join, relative, resolve, sep } from 'node:path';
 
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recipeReleaseIdentity, resolveRecipeRelease }
   from '../composition/recipe-release.mjs';
 import type { RecipeBinding, RecipeRelease } from '../composition/recipe-release.mjs';

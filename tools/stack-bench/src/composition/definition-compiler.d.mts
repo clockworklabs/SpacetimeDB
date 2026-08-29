@@ -40,6 +40,17 @@ export interface CompiledScenarioDefinition {
   [key: string]: unknown;
 }
 
+export interface CompiledTrackSuite {
+  id: string;
+  inherit: 'none' | 'all-higher-levels';
+  spec: string;
+}
+
+export interface CompiledTrackManifest extends Record<string, unknown> {
+  schemaVersion: number;
+  suites: Record<string, CompiledTrackSuite[]>;
+}
+
 export const DEFINITION_SCHEMA_VERSION: number;
 export const ACTION_IDS: readonly string[];
 
@@ -56,4 +67,4 @@ export function compileScenarioDefinition(
 export function compileTrackManifest(
   input: unknown,
   options?: { source?: string },
-): Record<string, unknown>;
+): CompiledTrackManifest;

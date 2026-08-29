@@ -1,7 +1,7 @@
 import { validateCheckEvidence } from '../evidence/check-evidence.js';
 import type { CheckEvidence } from '../evidence/check-evidence.js';
 import { validateArtifact } from '../evidence/artifacts.js';
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { validateProgressionOwner } from './progression-state.js';
 

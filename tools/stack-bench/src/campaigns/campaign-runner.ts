@@ -15,7 +15,7 @@ import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, Campaig
 import { rescueSupervisedLease, runBounded } from '../references/reference-live.mjs';
 import type { BoundedProcessResult, RunBoundedOptions }
   from '../references/reference-live.mjs';
-import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { runPreflight } from '../runtime/preflight.mjs';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';

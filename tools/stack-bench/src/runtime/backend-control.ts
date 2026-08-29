@@ -37,14 +37,21 @@ export function captureBackendDiagnostics(
 }
 
 export async function controlBackend(
-  spec: BackendControlSpec | null | undefined,
+  spec: unknown,
   mode = 'restart',
   { signal = null }: BackendControlOptions = {},
 ): Promise<unknown> {
-  if (!spec || !spec.backend || !spec.app) throw new Error('backend control spec is incomplete');
-  if (!['restart', 'stop', 'start'].includes(mode)) throw new Error(`unknown backend control mode ${mode}`);
-  const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
-  const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)
+    || !('backend' in spec) || typeof spec.backend !== 'string' || !spec.backend
+    || !('app' in spec) || typeof spec.app !== 'string' || !spec.app) {
+    throw new Error('backend control spec is incomplete');
+  }
+  const controlSpec: BackendControlSpec = { ...spec, backend: spec.backend, app: spec.app };
+  if (!['restart', 'stop', 'start'].includes(mode)) {
+    throw new Error(`unknown backend control mode ${mode}`);
+  }
+  const { lease } = leaseFromEnv(process.env, { backend: controlSpec.backend, active: true });
+  const adapter = STACK_ADAPTER_REGISTRY.get(controlSpec.backend);
   return executeStackCapability(adapter, 'lifecycle', 'control',
-    { ...spec, adapterId: adapter.id, lease, mode, signal });
+    { ...controlSpec, adapterId: adapter.id, lease, mode, signal });
 }

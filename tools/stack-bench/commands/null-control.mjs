@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
   resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
-import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
+import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.mjs';
