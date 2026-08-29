@@ -13,7 +13,7 @@ import { rescueSupervisedLease, runBounded } from '../references/reference-live.
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { runPreflight } from '../runtime/preflight.mjs';
 import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
-import { validateReleaseManifest } from '../releases/release-manifest.mjs';
+import { validateReleaseManifest } from '../releases/release-manifest.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { readProgressionState } from '../progression/progression-state.mjs';
 import { liveProgressionStatus } from '../progression/live-progression.mjs';

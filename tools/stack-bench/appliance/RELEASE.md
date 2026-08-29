@@ -22,7 +22,7 @@ Docker Scout correctly reports the selected child-manifest digest, so an index
 digest cannot satisfy the one-image/one-SBOM identity contract.
 
 ```sh
-node src/releases/release-bundle.mjs sbom registry.example/controller@sha256:DIGEST \
+node dist/src/releases/release-bundle.js sbom registry.example/controller@sha256:DIGEST \
   --output bundle/sbom/controller.spdx.json
 ```
 
@@ -36,9 +36,9 @@ every input below the bundle root, then materialize immutable size and SHA-256
 metadata:
 
 ```sh
-node src/releases/release-bundle.mjs assemble release-spec.json \
+node dist/src/releases/release-bundle.js assemble release-spec.json \
   --root bundle --output bundle/release.json
-node src/releases/release-manifest.mjs verify bundle/release.json --root bundle
+node dist/src/releases/release-manifest.js verify bundle/release.json --root bundle
 ```
 
 Candidate verification reports `candidate-file-integrity`. It validates all
@@ -82,7 +82,7 @@ Verify with the trusted public key copied to a path outside the downloaded
 bundle:
 
 ```sh
-node src/releases/release-manifest.mjs verify bundle/release.json --root bundle \
+node dist/src/releases/release-manifest.js verify bundle/release.json --root bundle \
   --trusted-key /operator/trust/stack-bench-cosign.pub
 ```
 

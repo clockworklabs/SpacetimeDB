@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { generateSpdxImageSbom, materializeReleaseManifest } from '../src/releases/release-bundle.mjs';
-import { RELEASE_MANIFEST_SCHEMA_VERSION } from '../src/releases/release-manifest.mjs';
+import { generateSpdxImageSbom, materializeReleaseManifest } from '../src/releases/release-bundle.js';
+import { RELEASE_MANIFEST_SCHEMA_VERSION } from '../src/releases/release-manifest.js';
 
 const digest = 'a'.repeat(64);
 const reference = `registry.example/controller@sha256:${digest}`;
@@ -21,17 +21,17 @@ test('SBOM generation uses registry resolution, verifies digest binding, and ref
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-sbom-'));
   try {
     const outputPath = join(root, 'controller.spdx.json');
-    const calls = [];
+    const calls: Array<{ executable: string; args: string[] }> = [];
     const result = generateSpdxImageSbom({ reference, outputPath,
-      runCommand: (executable, args) => {
+      runCommand: (executable: string, args: string[]) => {
         calls.push({ executable, args });
-        writeFileSync(args[args.indexOf('--output') + 1], JSON.stringify(document()));
+        writeFileSync(args[args.indexOf('--output') + 1]!, JSON.stringify(document()));
       } });
     assert.equal(result.image, reference);
     assert.equal(result.bytes, readFileSync(outputPath).length);
-    assert.equal(calls[0].executable, 'docker');
-    assert.equal(calls[0].args.at(-1), `registry://${reference}`);
-    assert.ok(calls[0].args.includes('linux/amd64'));
+    assert.equal(calls[0]!.executable, 'docker');
+    assert.equal(calls[0]!.args.at(-1), `registry://${reference}`);
+    assert.ok(calls[0]!.args.includes('linux/amd64'));
     assert.throws(() => generateSpdxImageSbom({ reference, outputPath, runCommand: () => {} }),
       /refusing to overwrite/);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -42,7 +42,7 @@ test('SBOM generation leaves no output after invalid or unbound tool output', ()
   try {
     const outputPath = join(root, 'controller.spdx.json');
     assert.throws(() => generateSpdxImageSbom({ reference, outputPath,
-      runCommand: (_executable, args) => writeFileSync(args[args.indexOf('--output') + 1],
+      runCommand: (_executable: string, args: string[]) => writeFileSync(args[args.indexOf('--output') + 1]!,
         JSON.stringify(document('b'.repeat(64)))) }), /does not bind image digest/);
     assert.equal(existsSync(outputPath), false);
     assert.throws(() => generateSpdxImageSbom({ reference: `https://${reference}`,
@@ -51,7 +51,7 @@ test('SBOM generation leaves no output after invalid or unbound tool output', ()
 });
 
 test('release bundle CLI rejects unknown and duplicate options', () => {
-  const script = join(import.meta.dirname, '..', 'src', 'releases', 'release-bundle.mjs');
+  const script = join(import.meta.dirname, '..', 'src', 'releases', 'release-bundle.js');
   const unknown = spawnSync(process.execPath, [script, 'sbom', reference,
     '--output', 'x', '--surprise', 'y'], { encoding: 'utf8' });
   assert.equal(unknown.status, 2);
@@ -71,9 +71,9 @@ test('manifest assembly computes file metadata and rejects missing and escaping 
       ...roles.map(role => [`sbom/${role}.json`, 'sbom'])]
       .map(([path, role]) => ({ path, role }));
     for (const { path } of files) {
-      const absolute = join(root, ...path.split('/'));
+      const absolute = join(root, ...path!.split('/'));
       mkdirSync(dirname(absolute), { recursive: true });
-      writeFileSync(absolute, path.startsWith('sbom/') ? JSON.stringify(document()) : path);
+      writeFileSync(absolute, path!.startsWith('sbom/') ? JSON.stringify(document()) : path!);
     }
     const specification = { schemaVersion: RELEASE_MANIFEST_SCHEMA_VERSION,
       id: 'stack-bench', version: '1.0.0', state: 'candidate', sourceRevision: 'a'.repeat(40),

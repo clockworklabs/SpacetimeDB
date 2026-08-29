@@ -20,7 +20,7 @@ const COMMANDS = Object.freeze({
   'dashboard': [join(RUNTIME_ROOT, 'dashboard', 'dashboard-server.js')],
   'repair': [join(RUNTIME_ROOT, 'commands', 'repair-cli.js')],
   'run': [join(RUNTIME_ROOT, 'commands', 'bench.mjs')],
-  'verify-release': [join(RUNTIME_ROOT, 'src', 'releases', 'release-manifest.mjs'), 'verify'],
+  'verify-release': [join(RUNTIME_ROOT, 'src', 'releases', 'release-manifest.js'), 'verify'],
   'recover': [join(RUNTIME_ROOT, 'commands', 'recovery.js'), 'recover'],
   'recover-lease': [join(RUNTIME_ROOT, 'commands', 'recovery.js'), 'recover-lease'],
 } satisfies Record<string, readonly string[]>);
