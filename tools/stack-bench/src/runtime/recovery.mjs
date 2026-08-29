@@ -3,7 +3,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
 import { publicBackendLease, readBackendLease } from './backend-lease.mjs';
-import { releaseBackendLease } from './backend-teardown.mjs';
+import { releaseBackendLease } from './backend-teardown.js';
 
 export const SUPERVISOR_STATE_VERSION = 2;
 

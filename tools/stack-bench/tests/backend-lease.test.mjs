@@ -19,7 +19,7 @@ import {
   updateBackendLease,
   writeBackendLease,
 } from '../src/runtime/backend-lease.mjs';
-import { releaseBackendLease } from '../src/runtime/backend-teardown.mjs';
+import { releaseBackendLease } from '../dist/src/runtime/backend-teardown.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

@@ -35,7 +35,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { captureBackendDiagnostics } from '../src/runtime/backend-control.js';
-import { releaseBackendLease } from '../src/runtime/backend-teardown.mjs';
+import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';

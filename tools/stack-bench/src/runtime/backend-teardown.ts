@@ -8,11 +8,17 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 
 const DOCKER_TIMEOUT_MS = 120_000;
 
-function dockerMissing(error) {
-  return /No such (object|container)/i.test(`${error?.stderr ?? ''}${error?.message ?? ''}`);
+function errorField(error: unknown, field: 'stderr' | 'message'): unknown {
+  return typeof error === 'object' && error !== null ? Reflect.get(error, field) : undefined;
 }
 
-export function stopLeasedContainer(leasePath, leaseToken) {
+function dockerMissing(error: unknown): boolean {
+  return /No such (object|container)/i.test(
+    `${errorField(error, 'stderr') ?? ''}${errorField(error, 'message') ?? ''}`,
+  );
+}
+
+export function stopLeasedContainer(leasePath: string, leaseToken: string): boolean {
   const lease = readBackendLease(leasePath, { token: leaseToken });
   const container = lease.resources.buildContainer;
   if (!container || container.running === false) return true;
@@ -45,14 +51,18 @@ export function stopLeasedContainer(leasePath, leaseToken) {
   }
   updateBackendLease(leasePath,
     { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
-      next.resources.buildContainer.running = false;
-      next.resources.buildContainer.removedAt ??= new Date().toISOString();
+      next.resources.buildContainer!.running = false;
+      next.resources.buildContainer!.removedAt ??= new Date().toISOString();
       return next;
     });
   return true;
 }
 
-export function releaseBackendLease(leasePath, leaseToken, { retainBackend = false } = {}) {
+export function releaseBackendLease(
+  leasePath: string,
+  leaseToken: string,
+  { retainBackend = false }: { retainBackend?: boolean } = {},
+): boolean {
   let lease = readBackendLease(leasePath, { token: leaseToken });
   if (lease.state === 'released') return true;
   let released = stopLeasedContainer(leasePath, leaseToken);
