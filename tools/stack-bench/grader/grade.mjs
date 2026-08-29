@@ -46,7 +46,7 @@ import {
   ACTOR_TRANSPORT_ACTION_IDS,
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   createNamedActionsCapability,
-} from '../src/actions/actor-transport-action-executors.mjs';
+} from '../src/actions/actor-transport-action-executors.js';
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
@@ -395,7 +395,7 @@ function browserActionCapabilities(actors, ctx) {
   const runtimeValues = Object.freeze({
     defaultWithin,
     expand: value => expand(value, ctx),
-    legacyScopedUser: name => `${name}-${ctx.scope}`,
+    hyphenatedScopedUser: name => `${name}-${ctx.scope}`,
     roomName: base => ctx.roomName(base),
     scopedUser: name => `${name}${ctx.scope}`,
     recorded: Object.freeze({
