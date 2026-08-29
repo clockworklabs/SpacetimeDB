@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { qualificationReadiness } from '../commands/qualification-cli.mjs';
-import { compileCalibrationFile } from '../src/composition/calibration-compiler.mjs';
+import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.mjs';
 import { compilePromotionFile } from '../src/composition/composition-compiler.mjs';
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';

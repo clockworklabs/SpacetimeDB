@@ -3,12 +3,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.mjs';
 import { nullControlSuites, parseNullControlArgs,
-  selectNullQualificationBinding } from '../commands/null-control.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
+  selectNullQualificationBinding } from '../dist/commands/null-control.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { selectScenarioChecks } from '../dist/src/composition/recipe-selection.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 
 test('null qualification can select one exact track and level', () => {
   const args = parseNullControlArgs(['node', 'null-control.mjs',

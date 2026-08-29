@@ -17,13 +17,13 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
   referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, referenceRunFromMutationBaseline,
   rescueSupervisedLease, runBounded,
-  targetedMutationCheckKeys } from '../src/references/reference-live.mjs';
+  targetedMutationCheckKeys } from '../dist/src/references/reference-live.mjs';
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
   from '../dist/src/evidence/artifacts.js';
 import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
-import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
+import { createBoundRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 import { resolveFeatureCatalog } from '../dist/src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../dist/src/progression/progression-recipe-selection.js';

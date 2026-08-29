@@ -15,7 +15,7 @@ import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import { resolveRecipeRelease } from './recipe-release.mjs';
 import type { RecipeBinding } from './recipe-release.mjs';
-import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
+import { missingRunnerObservation } from '../runtime/runner-environment.js';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 
 type UnknownRecord = Record<string, unknown>;

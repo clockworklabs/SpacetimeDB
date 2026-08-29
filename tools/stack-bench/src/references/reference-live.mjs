@@ -30,7 +30,7 @@ import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
-import { controllerRunner } from '../runtime/runner-environment.mjs';
+import { controllerRunner } from '../runtime/runner-environment.js';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.js';
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
@@ -41,7 +41,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { mutationTargetKeys } from '../evidence/mutation-analysis.js';
 
-export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
+export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');

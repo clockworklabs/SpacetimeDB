@@ -15,7 +15,7 @@ import { qualificationScopeIdentity } from '../src/composition/qualification-sco
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.mjs';
-import { controllerRunner } from '../src/runtime/runner-environment.mjs';
+import { controllerRunner } from '../src/runtime/runner-environment.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const GRADE = join(ROOT, 'grader', 'grade.mjs');

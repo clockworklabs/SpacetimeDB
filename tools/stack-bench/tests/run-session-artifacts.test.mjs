@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runSessionRecord } from '../commands/bench.mjs';
+import { runSessionRecord } from '../dist/commands/bench.mjs';
 import { readRunJson, writeRunJson } from '../dist/src/evidence/artifacts.js';
 
 function receipt() {
