@@ -9,7 +9,7 @@ import { classifyBundle } from '../evidence/outcomes.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.js';
-import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.mjs';
+import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.js';
 import { replayDependencyMode } from './dependency-mode.js';
 import type { DependencyScore } from './dependency-mode.js';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.js';

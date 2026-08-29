@@ -10,7 +10,7 @@ import { runPersistedProgressionMode } from '../src/progression/progression-runn
 import { grantProgressionState, readProgressionState, writeProgressionState }
   from '../src/progression/progression-state.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
-import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
+import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
 
 interface TestState extends Record<string, unknown> {

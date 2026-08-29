@@ -4,8 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createArtifact, readArtifact } from '../dist/src/evidence/artifacts.mjs';
-import { preserveLevelCheckpoint } from '../dist/src/runtime/source-checkpoint.mjs';
+import { createArtifact, readArtifact } from '../src/evidence/artifacts.mjs';
+import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
+
+interface CheckpointPayload extends Record<string, unknown> {
+  source: { sha256: string; directory: string };
+}
 
 test('a level checkpoint preserves only source and binds it to the parent run', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-level-checkpoint-'));
@@ -31,7 +35,7 @@ test('a level checkpoint preserves only source and binds it to the parent run', 
       selectionSha256: 'a'.repeat(64),
     });
 
-    const artifact = readArtifact(join(output, checkpoint.artifact),
+    const artifact = readArtifact<CheckpointPayload>(join(output, checkpoint.artifact),
       { expectedKind: 'source_checkpoint', expectedId: 'run-parent-l1-checkpoint' });
     assert.equal(artifact.attempt.parentId, 'run-parent');
     assert.equal(artifact.payload.source.sha256, checkpoint.sha256);

@@ -6,8 +6,29 @@ import { hashAppSource, snapshotAppSource } from './source-snapshot.js';
 
 const HASH = /^[a-f0-9]{64}$/;
 
+export interface LevelCheckpoint {
+  artifact: string;
+  directory: string;
+  sha256: string;
+  files: number;
+}
+
+export interface PreserveLevelCheckpointOptions {
+  appDir: string;
+  outputDir: string;
+  runId: string;
+  identities?: unknown;
+  track: string;
+  backend: string;
+  level: number;
+  repair: unknown;
+  outcome: unknown;
+  selectionSha256?: string | null;
+}
+
 export function preserveLevelCheckpoint({ appDir, outputDir, runId, identities,
-  track, backend, level, repair, outcome, selectionSha256 = null }) {
+  track, backend, level, repair, outcome, selectionSha256 = null }:
+  PreserveLevelCheckpointOptions): LevelCheckpoint {
   if (typeof runId !== 'string' || !runId) throw new Error('source checkpoint requires a run id');
   if (!Number.isSafeInteger(level) || level < 1) throw new Error('source checkpoint level is invalid');
   if (selectionSha256 !== null && !HASH.test(selectionSha256)) {

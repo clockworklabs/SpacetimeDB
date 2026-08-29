@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { emptyArtifactIdentities, writeRunJson } from '../dist/src/evidence/artifacts.mjs';
-import { compareRepairBaseline, createRepairGrant, inspectRepairParent } from '../src/runtime/repair-grant.mjs';
-import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
+import { compareRepairBaseline, createRepairGrant, inspectRepairParent } from '../dist/src/runtime/repair-grant.mjs';
+import { preserveLevelCheckpoint } from '../dist/src/runtime/source-checkpoint.js';
 
 function parentFixture(root, overrides = {}) {
   const app = join(root, 'app');
