@@ -16,6 +16,7 @@ export interface RecipeCheck {
   featureId?: number;
   criterionId?: string;
   description?: string;
+  treatment?: string;
 }
 
 export interface RecipeTaskFragment {
@@ -81,10 +82,15 @@ export interface RecipeExecution {
 export interface RecipeBinding {
   alias: string;
   status: string;
+  catalog: unknown;
   plan: CompiledRecipePlan;
   release: RecipeRelease;
   execution: RecipeExecution[];
 }
+
+export function recipeReleaseIdentity(release: RecipeRelease): Pick<RecipeRelease,
+  'id' | 'version' | 'state' | 'track' | 'meaningSha256' | 'executionSha256'
+  | 'contentSha256' | 'sourceManifestSha256'>;
 
 export function buildRecipeRelease(
   recipePath: string,

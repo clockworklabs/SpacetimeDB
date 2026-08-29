@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { claimNextAttempt, classifyCampaignExecution, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, markInterruptedExecution, readCampaignState,
   scheduleDependencyContinuation, validateCampaignState, writeCampaignState }

@@ -2,6 +2,7 @@ import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../composition/recipe-selection.mjs';
 import type {
   ComposedRecipeTask,
+  RecipeTaskRequestResult,
 } from '../composition/recipe-selection.mjs';
 import type {
   RecipeBinding,
@@ -47,16 +48,16 @@ interface ModularRequestSelection extends Record<string, unknown> {
   promptPacks: string[];
 }
 
-interface ModularTaskRequest extends Record<string, unknown> {
+type ModularTaskRequest = RecipeTaskRequestResult['request'] & {
   selection: ModularRequestSelection;
-}
+};
 
-interface ModularBoundSelection extends Record<string, unknown> {
+type ModularBoundSelection = RecipeTaskRequestResult['selection'] & {
   sha256: string;
   requested: ModularRequestSelection['requested'];
   promptPacks: string[];
   scoredChecks: RecipeCheck[];
-}
+};
 
 interface ModularBoundTask {
   request: ModularTaskRequest;

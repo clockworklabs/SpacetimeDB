@@ -9,7 +9,7 @@ import { parsePreflightArgs, probeLoopbackPort, runPreflight, verifyPostgresServ
 import { isExactImageReference } from '../src/runtime/container-image.js';
 import { createArtifact, validateArtifact } from '../dist/src/evidence/artifacts.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
 const EXACT_IMAGE = `registry.example/stack-bench/build@${IMAGE_ID}`;

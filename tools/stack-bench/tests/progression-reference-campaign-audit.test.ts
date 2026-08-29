@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';

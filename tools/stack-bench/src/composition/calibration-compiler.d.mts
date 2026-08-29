@@ -65,7 +65,7 @@ export interface CalibrationDefinition {
     runner?: { schemaVersion: number; mode: string; platform: string; architecture: string };
     stacks: Array<{ id: string; status: string }>;
     evidence: CalibrationEvidence[];
-    buildImage?: unknown;
+    buildImage?: string;
   };
   equivalenceDecisions: Array<{
     fromExecutionSha256: string;
@@ -97,7 +97,7 @@ export interface CalibrationDefinition {
 export interface CalibrationPlan extends CalibrationDefinition {
   contentSha256: string;
   qualificationSha256: string;
-  qualificationStaleness: unknown;
+  qualificationStaleness: unknown[];
 }
 
 export interface CalibrationContext {

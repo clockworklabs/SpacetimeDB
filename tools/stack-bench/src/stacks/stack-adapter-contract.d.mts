@@ -1,5 +1,6 @@
 export interface StackAdapter {
   id: string;
+  version: string;
   capabilities: Record<string, unknown>;
 }
 

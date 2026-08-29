@@ -3,7 +3,7 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { CAMPAIGN_MODE_REGISTRY } from '../src/campaigns/campaign-mode.js';
 import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
   from '../src/campaigns/campaign-runner.mjs';

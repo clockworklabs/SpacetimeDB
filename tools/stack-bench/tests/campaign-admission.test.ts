@@ -7,7 +7,7 @@ import test from 'node:test';
 import { campaignAdmissionSmokeReuse } from '../src/campaigns/campaign-admission.js';
 import type { CampaignAdmissionSmokeInput, CampaignAdmissionSmokeRequest }
   from '../src/campaigns/campaign-admission.js';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import type { CampaignAdmissionPreflightRequest }
   from '../src/campaigns/campaign-runner.mjs';
@@ -93,7 +93,8 @@ test('campaign admission receives only the feature catalog levels in the compile
     assert.equal(requests.length, plan.summary.parallelism);
     assert(requests.every(request => request.featureCatalog.definition.nodes
       .every(node => node.level <= 3)));
-    const identity = plan.featureCatalog.identity as { sha256: string };
+    assert(plan.featureCatalog);
+    const identity = plan.featureCatalog.identity;
     assert(requests.every(request => request.featureCatalog.identity.sha256 === identity.sha256));
   } finally {
     rmSync(root, { recursive: true, force: true });

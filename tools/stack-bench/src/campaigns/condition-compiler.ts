@@ -91,7 +91,7 @@ interface RequestedLevel extends UnknownRecord {
     contractIds: string[] };
 }
 
-export interface RequestedScope { track: string; levels: RequestedLevel[] }
+export interface RequestedScope { track: string; levels: [RequestedLevel, ...RequestedLevel[]] }
 
 export interface ResolvedStudyCondition {
   id: string;

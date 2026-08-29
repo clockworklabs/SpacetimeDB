@@ -38,6 +38,35 @@ export interface ComposedRecipeTask {
   contractText: string;
 }
 
+export interface RecipeTaskRequestResult {
+  request: {
+    schemaVersion: number;
+    task: { mode?: string };
+    [key: string]: unknown;
+  };
+  selection: RecipeSelection & {
+    requested: Record<string, unknown>;
+    promptPacks?: string[];
+    features?: string[];
+    specifications?: { requested: string[]; expected: string[]; observed: string[] };
+    scoredChecks: RecipeCheck[];
+    observedChecks: RecipeCheck[];
+  };
+  task: ComposedRecipeTask;
+}
+
+export function createRecipeTaskRequest(binding: import('./recipe-release.mjs').RecipeBinding,
+  options?: RecipeSelectionOptions): RecipeTaskRequestResult;
+export function createBoundRecipeTaskRequest(binding: import('./recipe-release.mjs').RecipeBinding,
+  options?: RecipeSelectionOptions & {
+    featureIds?: string[];
+    requestedSpecifications?: string[];
+    expectedSpecifications?: string[];
+    observedSpecifications?: string[];
+    dependencyExpansion?: string;
+    taskMode?: string;
+  }): RecipeTaskRequestResult;
+
 export function resolveRecipeSelection(
   release: RecipeRelease,
   options?: RecipeSelectionOptions,

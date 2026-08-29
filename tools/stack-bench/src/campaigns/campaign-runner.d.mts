@@ -1,4 +1,4 @@
-import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignState } from './campaign-scheduler.js';
 
 export interface InspectedCampaign {
@@ -27,6 +27,11 @@ export interface CampaignAdmissionPreflightRequest {
   image: string;
   resultsDir: string;
 }
+
+export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+  output: string, runIndex: number, campaignPlanPath?: string | null,
+  progressionResume?: string | null, campaignAdmissionId?: string | null,
+  options?: Record<string, unknown>): string[];
 
 export function runCampaignAdmission(
   plan: CompiledCampaignPlan,

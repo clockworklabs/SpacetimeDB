@@ -6,8 +6,8 @@ import test from 'node:test';
 
 import { emptyArtifactIdentities, readArtifact, writeArtifact,
   writeRunJson } from '../src/evidence/artifacts.mjs';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
-import type { CampaignAttemptPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import type { CampaignAttemptPlan } from '../src/campaigns/campaign-compiler.js';
 import { buildCampaignReport, generateCampaignReport,
   campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';

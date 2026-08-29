@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { campaignUsesNoExternalResources, runCampaignAdmission }
   from '../src/campaigns/campaign-runner.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';

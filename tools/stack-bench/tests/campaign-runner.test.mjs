@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../dist/src/evidence/artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,

@@ -1,18 +1,64 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
-  validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+  validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
+import type { CalibrationResolver, CompilerOptions }
+  from '../src/campaigns/campaign-compiler.js';
 import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { writeArtifact } from '../dist/src/evidence/artifacts.mjs';
-import { sha256 } from '../dist/src/evidence/provenance.js';
+import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { sha256 } from '../src/evidence/provenance.js';
 
-function definition(overrides = {}) {
+const APPLIANCE_ROOT = resolve(import.meta.dirname, '..', '..', 'appliance');
+
+interface TestCondition {
+  id: string;
+  version: string;
+  guidanceProfile: string;
+  repairPolicy: string;
+  specifications?: { levels: Array<{
+    level: number; requested: string[]; expected: string[]; observed: string[];
+  }> };
+}
+
+interface TestCampaignDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  track: string;
+  mode: { id: string; version: string; strikes?: { default?: number; levels: Record<string, number> } };
+  levels?: number[];
+  selection: {
+    packs?: string[];
+    checks?: string[];
+    levels?: Array<{ level: number; recipe: string; features?: string[]; checks?: string[] }>;
+  };
+  stacks: Array<{ id: string; adapterVersion: string; repetitions?: number }>;
+  agents: Array<{ adapter: string; adapterVersion: string; model: string }>;
+  conditions: TestCondition[];
+  repetitions: number;
+  ordering: { method: string; seed: string };
+  parallelism?: number;
+  budgets: { fixRounds: number; attemptTimeoutMinutes: number; maxCostUsdPerAttempt: number | null };
+  attemptPolicy: { retries: number; retryOn: string[]; excludeFromAnalysis: string[] };
+  runtime: { releaseManifestSha256: string | null; controllerImage: string | null;
+    buildImage: string | null; platform: string };
+  pricing: { currency: string; unit: string; capturedAt: string; source: string;
+    models: Record<string, Record<string, number>> };
+  analysis: { primaryMetric: string; secondaryMetrics: string[]; dispersion: string;
+    invalidAttempts: string; missingData: string; comparisonUnit: string };
+  featureCatalog?: unknown;
+}
+
+function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampaignDefinition {
   return {
     schemaVersion: 5,
     kind: 'campaign-manifest',
@@ -53,7 +99,7 @@ function definition(overrides = {}) {
   };
 }
 
-function compile(value, options = {}) {
+function compile(value: unknown, options: CompilerOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-'));
   const path = join(root, 'campaign.json');
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -63,7 +109,7 @@ function compile(value, options = {}) {
 
 const QUALIFIED_BUILD_IMAGE = `sha256:${'d'.repeat(64)}`;
 
-function resolvedQualification(release) {
+const resolvedQualification: CalibrationResolver = release => {
   return {
     id: `${release.id}-test-calibration`,
     version: release.version,
@@ -78,9 +124,9 @@ function resolvedQualification(release) {
     },
     qualificationStaleness: [],
   };
-}
+};
 
-const resolvedQualificationOptions = { calibrationResolver: resolvedQualification };
+const resolvedQualificationOptions: CompilerOptions = { calibrationResolver: resolvedQualification };
 
 const modularFeatures = [
   'ecommerce.feature.accounts',
@@ -91,12 +137,13 @@ const modularFeatures = [
   'ecommerce.feature.warehouse-admin',
 ];
 
-function modularDefinition({ requested = [], expected = [], observed = [] } = {}) {
+function modularDefinition({ requested = [], expected = [], observed = [] }:
+  { requested?: string[]; expected?: string[]; observed?: string[] } = {}): TestCampaignDefinition {
   return definition({
     repetitions: 1,
     selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.5.0',
       features: modularFeatures, checks: [] }] },
-    conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
+    conditions: [{ ...definition().conditions[0]!, specifications: { levels: [{ level: 1,
       requested, expected, observed }] } }],
   });
 }
@@ -106,9 +153,9 @@ function dependencyDefinition() {
   value.mode = { id: 'dependency', version: '2.1.0',
     strikes: { default: 2, levels: {} } };
   delete value.levels;
-  delete value.selection.levels[0].features;
-  delete value.selection.levels[0].checks;
-  delete value.conditions[0].specifications;
+  delete value.selection.levels![0]!.features;
+  delete value.selection.levels![0]!.checks;
+  delete value.conditions[0]!.specifications;
   value.featureCatalog = {
     schemaVersion: 1,
     kind: 'feature-catalog',
@@ -127,10 +174,10 @@ function dependencyDefinition() {
 test('campaign compilation binds exact inputs and expands a balanced immutable attempt plan', () => {
   const plan = compile(definition(), resolvedQualificationOptions);
   assert.equal(plan.summary.attempts, 9);
-  assert.equal(plan.bindings[0].recipe.id, 'ecommerce.l1-modular');
-  assert.match(plan.bindings[0].recipe.contentSha256, /^[a-f0-9]{64}$/);
-  assert.equal(plan.bindings[0].calibration.id, 'ecommerce.l1-modular-test-calibration');
-  assert.equal(plan.bindings[0].selection.completeness, 'full');
+  assert.equal(plan.bindings[0]!.recipe.id, 'ecommerce.l1-modular');
+  assert.match(plan.bindings[0]!.recipe.contentSha256, /^[a-f0-9]{64}$/);
+  assert.equal(plan.bindings[0]!.calibration!.id, 'ecommerce.l1-modular-test-calibration');
+  assert.equal(plan.bindings[0]!.selection!.completeness, 'full');
   assert.deepEqual(campaignIdentity(plan, resolvedQualificationOptions), {
     id: plan.id, version: '1.0.0', sha256: plan.contentSha256, state: 'draft',
   });
@@ -148,6 +195,7 @@ test('campaign compilation binds exact inputs and expands a balanced immutable a
 
 test('dependency campaigns bind separate catalog and policy identities in every attempt', () => {
   const plan = compile(dependencyDefinition());
+  assert(plan.featureCatalog && plan.dependencyPolicy);
   assert.deepEqual(plan.definition.levels, [1]);
   assert.equal(plan.definition.featureCatalog, undefined);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce-dependency');
@@ -155,42 +203,44 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.match(plan.featureCatalog.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.dependencyPolicy)
-      === canonicalDefinitionJson(plan.dependencyPolicy.identity)));
+      === canonicalDefinitionJson(plan.dependencyPolicy!.identity)));
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.featureCatalog)
-      === canonicalDefinitionJson(plan.featureCatalog.identity)));
+      === canonicalDefinitionJson(plan.featureCatalog!.identity)));
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
   assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
     /levels.*feature catalog/);
 });
 
 test('dependency campaign plans bind only the selected feature catalog levels', () => {
-  const value = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'appliance',
+  const value = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
     'campaign.ecommerce-progression-reference.json'), 'utf8'));
   value.levels = [1, 2, 3];
-  value.selection.levels = value.selection.levels.filter(entry => entry.level <= 3);
+  value.selection.levels = value.selection.levels.filter((entry: { level: number }) => entry.level <= 3);
   const plan = compile(value);
+  assert(plan.featureCatalog && plan.dependencyPolicy);
 
   assert.deepEqual([...new Set(plan.featureCatalog.definition.nodes.map(node => node.level))],
     [1, 2, 3]);
   assert(plan.featureCatalog.definition.nodes.every(node => node.level <= 3));
   assert(plan.featureCatalog.definition.questlines.every(questline => questline.nodes.every(nodeId =>
-    plan.featureCatalog.definition.nodes.some(node => node.id === nodeId))));
+    plan.featureCatalog!.definition.nodes.some(node => node.id === nodeId))));
   assert.equal(plan.featureCatalog.definition.state, 'draft');
   assert.deepEqual(plan.dependencyPolicy.definition.levels, [1, 2, 3]);
   assert.equal(plan.featureCatalog.identity.sha256,
     sha256(canonicalDefinitionJson(plan.featureCatalog.definition)));
   assert(plan.attempts.every(attempt => canonicalDefinitionJson(attempt.featureCatalog)
-    === canonicalDefinitionJson(plan.featureCatalog.identity)));
+    === canonicalDefinitionJson(plan.featureCatalog!.identity)));
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
 });
 
 test('campaign graph version must match its recipe calibration', () => {
-  const value = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'appliance',
+  const value = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
     'campaign.ecommerce-progression-reference.json'), 'utf8'));
   value.featureCatalog = 'ecommerce.questlines@1.1.0';
-  const calibrationResolver = release => {
-    const calibration = resolvedQualification(release);
+  const calibrationResolver: CalibrationResolver = (release, options) => {
+    const calibration = resolvedQualification(release, options);
+    assert(calibration);
     calibration.qualification.featureCatalog = {
       id: 'ecommerce.questlines',
       version: '1.0.0',
@@ -204,11 +254,13 @@ test('campaign graph version must match its recipe calibration', () => {
 
 test('sequential campaigns can use the same feature catalog without dependency gating', () => {
   const dependencyPlan = compile(dependencyDefinition());
+  assert(dependencyPlan.featureCatalog);
   const definition = dependencyDefinition();
   definition.mode = { id: 'sequential', version: '1.0.0' };
   const plan = compile(definition);
-  assert.equal(plan.attempts[0].dependencyPolicy, undefined);
-  assert.deepEqual(plan.attempts[0].featureCatalog, plan.featureCatalog.identity);
+  assert(plan.featureCatalog);
+  assert.equal(plan.attempts[0]!.dependencyPolicy, undefined);
+  assert.deepEqual(plan.attempts[0]!.featureCatalog, plan.featureCatalog.identity);
   assert.equal(plan.featureCatalog.identity.sha256,
     dependencyPlan.featureCatalog.identity.sha256);
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
@@ -217,13 +269,15 @@ test('sequential campaigns can use the same feature catalog without dependency g
 test('strike changes affect dependency policy but not the shared feature catalog', () => {
   const first = compile(dependencyDefinition());
   const changed = dependencyDefinition();
-  changed.mode.strikes.default = 5;
+  changed.mode.strikes!.default = 5;
   const second = compile(changed);
+  assert(first.featureCatalog && first.dependencyPolicy);
+  assert(second.featureCatalog && second.dependencyPolicy);
   assert.equal(first.featureCatalog.identity.sha256, second.featureCatalog.identity.sha256);
   assert.notEqual(first.dependencyPolicy.identity.sha256,
     second.dependencyPolicy.identity.sha256);
   const changedIdentity = structuredClone(first);
-  changedIdentity.dependencyPolicy.identity.sha256 = 'a'.repeat(64);
+  changedIdentity.dependencyPolicy!.identity.sha256 = 'a'.repeat(64);
   assert.throws(() => validateCompiledCampaignPlan(changedIdentity),
     /dependency policy identity/);
   assert.throws(() => validateCompiledCampaignPlan({ ...first, dependencyPolicy: null }),
@@ -234,9 +288,11 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-plan-'));
   try {
     const plan = compile(dependencyDefinition());
+    assert(plan.featureCatalog && plan.dependencyPolicy);
     const planPath = join(root, 'plan.json');
     writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
     const attempt = plan.attempts[0];
+    assert(attempt);
     const argv = attemptArgv(plan, attempt, join(root, 'result'), 0, planPath);
     const args = parseArgs(['node', ...argv]);
     assert.deepEqual(args.pricing, attempt.pricing);
@@ -288,12 +344,13 @@ test('sequential bench input uses the catalog for selection without live gating'
     const definition = dependencyDefinition();
     definition.mode = { id: 'sequential', version: '1.0.0' };
     const plan = compile(definition);
+    assert(plan.featureCatalog);
     const planPath = join(root, 'plan.json');
     writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
-    const argv = attemptArgv(plan, plan.attempts[0], join(root, 'result'), 0, planPath);
+    const argv = attemptArgv(plan, plan.attempts[0]!, join(root, 'result'), 0, planPath);
     assert(argv.includes('--levels'));
     const args = parseArgs(['node', ...argv]);
-    assert.deepEqual(args.runMode, plan.attempts[0].mode);
+    assert.deepEqual(args.runMode, plan.attempts[0]!.mode);
     assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
     assert.equal(args.progression, undefined);
     assert.deepEqual(args.featureCatalog, plan.featureCatalog);
@@ -306,11 +363,12 @@ test('sequential bench input uses the catalog for selection without live gating'
 test('sequential campaign input retains its campaign and mode without a feature catalog', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-plan-'));
   try {
-    const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
+    const plan = compileCampaignFile(join(APPLIANCE_ROOT,
       'campaign.example.json'));
     const planPath = join(root, 'plan.json');
     writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
     const attempt = plan.attempts[0];
+    assert(attempt);
     const argv = attemptArgv(plan, attempt, join(root, 'result'), 0, planPath);
     assert.equal(argv.includes('--feature-catalog-sha256'), false);
     const args = parseArgs(['node', ...argv]);
@@ -330,10 +388,10 @@ test('dependency campaigns derive product scope and reject duplicate author scop
     ['ecommerce.feature.accounts']);
   assert.deepEqual(plan.conditions[0].requested.levels[0].selection.requested.checks,
     ['ecommerce.feature.accounts.accounts.1a']);
-  value.selection.levels[0].features = ['ecommerce.feature.accounts'];
+  value.selection.levels![0]!.features = ['ecommerce.feature.accounts'];
   assert.throws(() => compile(value), /features: is unknown/);
   const specifications = dependencyDefinition();
-  specifications.conditions[0].specifications = { levels: [{ level: 1,
+  specifications.conditions[0]!.specifications = { levels: [{ level: 1,
     requested: [], expected: [], observed: [] }] };
   assert.throws(() => compile(specifications), /progression graph owns specification scope/);
   const legacy = dependencyDefinition();
@@ -357,17 +415,17 @@ test('campaign identity ignores JSON formatting but changes with study semantics
     checks: ['ecommerce.feature.accounts.accounts.1a'] } }));
   assert.notEqual(partial.conditions[0].sha256, first.conditions[0].sha256);
   assert.equal(partial.conditions[0].requested.levels[0].task.sha256,
-    partial.bindings[0].task.sha256);
+    partial.bindings[0]!.task!.sha256);
   assert.deepEqual(partial.conditions[0].requested.levels[0].selection.taskPacks,
-    partial.bindings[0].selection.taskPacks);
+    partial.bindings[0]!.selection!.taskPacks);
   const identityOnly = compile(definition({ selection: {
     packs: ['ecommerce.feature.accounts'], checks: [],
   } }));
-  assert.deepEqual(identityOnly.bindings[0].selection.taskPacks,
+  assert.deepEqual(identityOnly.bindings[0]!.selection!.taskPacks,
     ['ecommerce.feature.accounts']);
-  assert.notEqual(identityOnly.bindings[0].task.sha256, first.bindings[0].task.sha256);
+  assert.notEqual(identityOnly.bindings[0]!.task!.sha256, first.bindings[0]!.task!.sha256);
   assert.notEqual(identityOnly.conditions[0].sha256, first.conditions[0].sha256);
-  const multiAgent = definition({ agents: [definition().agents[0],
+  const multiAgent = definition({ agents: [definition().agents[0]!,
     { adapter: 'fault-injection', adapterVersion: '1.1.0', model: 'deterministic' }] });
   const multiAgentReordered = structuredClone(multiAgent);
   multiAgentReordered.agents.reverse();
@@ -409,17 +467,17 @@ test('modular campaigns bind requested, expected, and observed specifications in
   const observed = compile(modularDefinition({ requested: requestedSpecifications,
     observed: ['ecommerce.spec.state-durability@1.1.0'] }));
   const selected = expected.conditions[0].requested.levels[0];
-  assert.equal(expected.bindings[0].recipe.id, 'ecommerce.l1-modular');
-  assert.equal(expected.bindings[0].promotion.status, 'promoted');
-  assert.equal(expected.bindings[0].selection, null,
+  assert.equal(expected.bindings[0]!.recipe.id, 'ecommerce.l1-modular');
+  assert.equal(expected.bindings[0]!.promotion.status, 'promoted');
+  assert.equal(expected.bindings[0]!.selection, null,
     'condition-specific specification choices must not be flattened into a shared binding');
   assert.equal(selected.selection.schemaVersion, 3);
   assert.deepEqual(selected.selection.features, modularFeatures);
   assert.deepEqual(selected.selection.specifications, { requested: requestedSpecifications,
     expected: ['ecommerce.spec.state-durability@1.1.0'], observed: [] });
-  assert(selected.selection.scoredChecks.length > 0);
-  assert.equal(selected.selection.observedChecks.length, 0);
-  assert.equal(observed.conditions[0].requested.levels[0].selection.observedChecks.length, 4);
+  assert(selected.selection.scoredChecks!.length > 0);
+  assert.equal(selected.selection.observedChecks!.length, 0);
+  assert.equal(observed.conditions[0].requested.levels[0].selection.observedChecks!.length, 4);
   assert.equal(expected.conditions[0].requested.levels[0].task.sha256,
     observed.conditions[0].requested.levels[0].task.sha256,
     'changing an undisclosed treatment must not change the task shown to the agent');
@@ -435,7 +493,7 @@ test('campaigns reject unavailable specification versions and legacy mixing', ()
   assert.throws(() => compile(modularDefinition({
     expected: ['ecommerce.spec.external-data-sync@1.0.0'],
   })), /has no expected specification/);
-  assert.throws(() => compile(definition({ conditions: [{ ...definition().conditions[0],
+  assert.throws(() => compile(definition({ conditions: [{ ...definition().conditions[0]!,
     specifications: { levels: [{ level: 1, requested: [], expected: [], observed: [] }] },
   }] })), /legacy selection cannot declare modular specifications/);
 });
@@ -532,7 +590,7 @@ test('frozen campaigns require exact runtime images', () => {
 test('frozen campaigns accept a resolved qualification result for every selected level', () => {
   const qualifiedBuildImages = new Set(compile(definition({ levels: [1, 2] }),
     resolvedQualificationOptions).bindings
-    .map(binding => binding.calibration.buildImage));
+    .map(binding => binding.calibration!.buildImage));
   assert.equal(qualifiedBuildImages.size, 1);
   const [qualifiedBuildImage] = qualifiedBuildImages;
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
@@ -575,16 +633,18 @@ test('frozen dependency campaigns require calibration coverage for every selecte
     buildImage: `registry.example/stack-bench-build@${QUALIFIED_BUILD_IMAGE}`,
     platform: 'linux/amd64',
   };
-  const calibrationResolver = release => {
-    const calibration = resolvedQualification(release);
+  const calibrationResolver: CalibrationResolver = (release, options) => {
+    const calibration = resolvedQualification(release, options);
+    assert(calibration);
     calibration.qualification.checks = [];
     return calibration;
   };
   assert.throws(() => compile(value, { calibrationResolver }),
     /calibration does not cover 1 selected checks/);
 
-  const coveredResolver = release => {
-    const calibration = resolvedQualification(release);
+  const coveredResolver: CalibrationResolver = (release, options) => {
+    const calibration = resolvedQualification(release, options);
+    assert(calibration);
     calibration.qualification.checks = ['ecommerce.feature.accounts.accounts.1a'];
     return calibration;
   };
@@ -593,19 +653,19 @@ test('frozen dependency campaigns require calibration coverage for every selecte
 
 test('frozen manifest validation does not hard-code an agent provider', () => {
   const qualifiedBuildImage = compile(definition(), resolvedQualificationOptions)
-    .bindings[0].calibration.buildImage;
+    .bindings[0]!.calibration!.buildImage;
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
     platform: 'linux/amd64' };
   const validated = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
-  assert.equal(validated.agents[0].adapter, 'deterministic');
-  assert.equal(compile(validated, resolvedQualificationOptions).agents[0].adapter, 'deterministic');
+  assert.equal(validated.agents[0]!.adapter, 'deterministic');
+  assert.equal(compile(validated, resolvedQualificationOptions).agents[0]!.adapter, 'deterministic');
 });
 
 test('the packaged model-free campaign example compiles without starting work', () => {
-  const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance', 'campaign.example.json'));
+  const plan = compileCampaignFile(join(APPLIANCE_ROOT, 'campaign.example.json'));
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 9, conditions: 1,
     parallelism: 1, repetitions: 3,
@@ -613,14 +673,15 @@ test('the packaged model-free campaign example compiles without starting work', 
 });
 
 test('the packaged modular reference gate scores quality specifications without prompting them', () => {
-  const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
+  const plan = compileCampaignFile(join(APPLIANCE_ROOT,
     'campaign.product-brief-reference.json'));
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 6, conditions: 1,
     parallelism: 1, repetitions: 2,
     repetitionsByStack: { mongodb: 2, postgres: 2, spacetime: 2 }, stacks: 3 });
-  assert.equal(plan.agents[0].adapter, 'reference-fixture');
+  assert.equal(plan.agents[0]!.adapter, 'reference-fixture');
   const expected = plan.conditions.find(condition => condition.id === 'product-brief-quality');
+  assert(expected);
   assert.deepEqual(expected.requested.levels[0].selection.specifications,
     { requested: [], expected: [
       'ecommerce.spec.access-control@1.2.0',
@@ -630,9 +691,9 @@ test('the packaged modular reference gate scores quality specifications without 
       'ecommerce.spec.state-durability@1.1.0',
       'ecommerce.spec.transactional-integrity@1.3.0',
     ], observed: [] });
-  assert.equal(expected.requested.levels[0].selection.observedChecks.length, 0);
+  assert.equal(expected.requested.levels[0].selection.observedChecks!.length, 0);
   assert.equal(expected.requested.levels[0].selection.scoredPoints, 58);
-  assert(expected.requested.levels[0].selection.scoredChecks
+  assert(expected.requested.levels[0].selection.scoredChecks!
     .some(check => check.treatment === 'expected'));
 });
 
@@ -645,7 +706,7 @@ test('compiled campaign validation rejects a rewritten identity, schedule, or su
   schedule.attempts[0].stack = schedule.attempts[0].stack === 'postgres' ? 'mongodb' : 'postgres';
   assert.throws(() => validateCompiledCampaignPlan(schedule), /attempt schedule/);
   const resolved = structuredClone(plan);
-  resolved.bindings[0].promotion.status = 'candidate';
+  resolved.bindings[0]!.promotion.status = 'candidate';
   assert.throws(() => validateCompiledCampaignPlan(resolved), /bindings.*current resolved inputs/);
   assert.throws(() => validateCompiledCampaignPlan({ ...plan,
     summary: { ...plan.summary, attempts: 99 } }), /summary/);

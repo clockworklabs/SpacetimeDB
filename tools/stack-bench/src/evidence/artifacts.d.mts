@@ -24,7 +24,12 @@ export function createArtifact<TPayload = Record<string, unknown>>(input: {
 }): Artifact<TPayload>;
 export function validateArtifact<TPayload = Record<string, unknown>>(input: unknown,
   options?: { source?: string }): Artifact<TPayload>;
-export function currentEngineIdentity(): { sha256: string; [key: string]: unknown };
+export function currentEngineIdentity(): {
+  id: string;
+  version: string;
+  sha256: string;
+  [key: string]: unknown;
+};
 export function readArtifact<TPayload = Record<string, unknown>>(path: string,
   options?: { expectedId?: string | null; expectedKind?: string | null }): Artifact<TPayload>;
 export function readArtifactPayload<TPayload = Record<string, unknown>>(path: string,

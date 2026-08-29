@@ -6,7 +6,7 @@ import { progressionEngine } from '../progression/progression-engine.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
-import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 
 export interface DependencyProgressNode {
   id: string;

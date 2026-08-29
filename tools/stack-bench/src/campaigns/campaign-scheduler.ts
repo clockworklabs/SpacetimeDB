@@ -2,8 +2,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.mjs';
-import { campaignIdentity, validateCompiledCampaignPlan } from './campaign-compiler.mjs';
-import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
+import { campaignIdentity, validateCompiledCampaignPlan } from './campaign-compiler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 

@@ -5,6 +5,8 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
+import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
+  ProgressionInput } from '../progression/progression-definition.js';
 import { grantProgressionState, readProgressionState }
   from '../progression/progression-state.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
@@ -53,8 +55,8 @@ interface GrantCampaignSnapshot {
     version: string;
     contentSha256: string;
     definition: { mode?: { id?: string }; track: string };
-    featureCatalog?: { identity: unknown };
-    dependencyPolicy?: { identity: unknown };
+    featureCatalog: ProgressionInput<CompiledProgressionDefinition> | null;
+    dependencyPolicy: ProgressionInput<CompiledDependencyPolicyDefinition> | null;
   };
   state: {
     status: string;

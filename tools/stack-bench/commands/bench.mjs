@@ -63,7 +63,7 @@ import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection 
   from '../src/progression/progression-recipe-selection.js';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
-import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { campaignAdmissionSmokeReuse, readCampaignAdmission }
   from '../src/campaigns/campaign-admission.js';
 import { gradingRunTimeoutMs, selectedGradingSourceCount }

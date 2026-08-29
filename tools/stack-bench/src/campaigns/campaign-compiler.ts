@@ -1,7 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
-
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
@@ -9,18 +8,259 @@ import { currentEngineIdentity } from '../evidence/artifacts.mjs';
 import { sha256 } from '../evidence/provenance.js';
 import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
   from '../evidence/pricing-authority.js';
+import type { PricingRates } from '../evidence/pricing-authority.js';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
+import type { RecipeTaskRequestResult } from '../composition/recipe-selection.mjs';
+import type { RecipeBinding } from '../composition/recipe-release.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,
   selectFeatureCatalogLevels, validateDependencyPolicyInput, validateFeatureCatalogInput }
   from '../progression/progression-definition.js';
+import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
+  ProgressionInput } from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
+  from '../progression/progression-recipe-selection.js';
+import type { ProgressionRecipeSelections as ProgressionLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import type { StackAdapter } from '../stacks/stack-adapter-contract.mjs';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';
+import type { ConditionReference, ResolvedStudyCondition } from './condition-compiler.js';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.js';
+import type { CampaignModeInput } from './campaign-mode.js';
 import { validateCampaignMode } from './campaign-mode.js';
+
+type UnknownRecord = Record<string, unknown>;
+type CampaignState = 'draft' | 'frozen';
+type NonEmpty<T> = [T, ...T[]];
+type FeatureCatalogInput = ProgressionInput<CompiledProgressionDefinition>;
+type DependencyPolicyInput = ProgressionInput<CompiledDependencyPolicyDefinition>;
+
+interface CampaignMode extends CampaignModeInput {
+  strikes?: UnknownRecord;
+}
+
+export interface CampaignStackSelection {
+  id: string;
+  adapterVersion: string;
+  repetitions?: number;
+}
+
+export interface CampaignAgentSelection {
+  adapter: string;
+  adapterVersion: string;
+  model: string;
+}
+
+export interface CampaignLevelSelection {
+  level: number;
+  recipe: string;
+  features?: string[];
+  checks?: string[];
+}
+
+export interface CampaignSelection {
+  packs?: string[];
+  checks?: string[];
+  levels?: CampaignLevelSelection[];
+}
+
+export interface CampaignDefinition {
+  schemaVersion: number;
+  kind: 'campaign-manifest';
+  id: string;
+  version: string;
+  state: CampaignState;
+  title: string;
+  track: string;
+  mode: CampaignMode;
+  levels: number[];
+  selection: CampaignSelection;
+  stacks: CampaignStackSelection[];
+  agents: CampaignAgentSelection[];
+  conditions: ConditionReference[];
+  repetitions: number;
+  ordering: { method: 'balanced-rotation'; seed: string };
+  parallelism: number;
+  budgets: {
+    fixRounds: number;
+    attemptTimeoutMinutes: number;
+    maxCostUsdPerAttempt: number | null;
+  };
+  attemptPolicy: {
+    retries: number;
+    retryOn: string[];
+    excludeFromAnalysis: string[];
+  };
+  pricing: {
+    currency: 'USD';
+    unit: string;
+    capturedAt: string;
+    source: string;
+    models: Record<string, PricingRates>;
+  };
+  analysis: {
+    primaryMetric: string;
+    secondaryMetrics: string[];
+    dispersion: string;
+    invalidAttempts: 'report-separately';
+    missingData: 'no-imputation';
+    comparisonUnit: 'stack-agent-condition-recipe';
+  };
+  runtime: {
+    releaseManifestSha256: string | null;
+    controllerImage: string | null;
+    buildImage: string | null;
+    platform: 'linux/amd64';
+  };
+  featureCatalog?: string | FeatureCatalogInput['definition'];
+}
+
+interface Identity {
+  id: string;
+  version: string;
+  sha256: string;
+}
+
+interface RecipeIdentity extends UnknownRecord {
+  id: string;
+  version: string;
+  state: string;
+  contentSha256: string;
+  meaningSha256: string;
+  executionSha256: string;
+}
+
+interface PublicBinding extends UnknownRecord {
+  level: number;
+  promotion: { alias: string; status: string; catalog?: unknown };
+  recipe: RecipeIdentity;
+  fixture: UnknownRecord & { state: string };
+  calibration: (Identity & { state: string; buildImage: string | null }) | null;
+  qualifiedStacks: Array<{ id: string; status: string }>;
+  selection: {
+    sha256: string;
+    completeness: string;
+    scoredPoints: number;
+    taskPacks: string[];
+    requested: unknown;
+  } | null;
+  task: {
+    sha256: string;
+    requirementSha256: string;
+    contractSha256: string;
+    requirementIds: string[];
+    contractIds: string[];
+  } | null;
+}
+
+interface BindingRecord {
+  level: number;
+  modular: CampaignLevelSelection | null;
+  binding: RecipeBinding;
+  calibration: ResolvedCalibration | null;
+  publicBinding: PublicBinding;
+  qualificationStaleness: unknown[];
+}
+
+interface ResolvedCalibration {
+  id: string;
+  version: string;
+  state: string;
+  contentSha256: string;
+  qualification: {
+    buildImage?: string;
+    stacks: Array<{ id: string; status: string }>;
+    checks?: string[];
+    featureCatalog?: { id: string; version: string; sha256: string };
+  };
+  qualificationStaleness: unknown[];
+}
+
+interface ResolvedStackIdentity extends UnknownRecord {
+  id: string;
+  version: string;
+  sha256: string | null;
+  state: string | null;
+}
+
+interface ResolvedAgent extends CampaignAgentSelection, UnknownRecord {
+  costLimit: string;
+  identity: UnknownRecord & { id?: string; version?: string };
+}
+
+interface CampaignResolvedInputs {
+  bindings: PublicBinding[];
+  stacks: ResolvedStackIdentity[];
+  agents: ResolvedAgent[];
+  conditions: ResolvedStudyCondition[];
+  featureCatalog: FeatureCatalogInput | null;
+  dependencyPolicy: DependencyPolicyInput | null;
+}
+
+export interface CampaignAttemptPlan extends UnknownRecord {
+  id: string;
+  stack: string;
+  model: string;
+  guidance: string;
+  repetition: number;
+  order: number;
+  levels: number[];
+  agentAdapter: string;
+  skills: string[];
+  pricing: { unit: string; rates: PricingRates };
+  mode: CampaignMode;
+  condition: ResolvedStudyCondition;
+  featureCatalog?: Identity;
+  dependencyPolicy?: Identity;
+  parentAttemptId: string;
+}
+
+export interface CompiledCampaignPlan {
+  campaignSchemaVersion: number;
+  id: string;
+  version: string;
+  title: string;
+  state: CampaignState;
+  source: { sha256: string };
+  contentSha256: string;
+  definition: CampaignDefinition;
+  identities: { engine: Identity; [key: string]: unknown };
+  bindings: PublicBinding[];
+  stacks: ResolvedStackIdentity[];
+  agents: Array<CampaignAgentSelection & {
+    costLimit?: string;
+    identity?: UnknownRecord & { id?: string; version?: string };
+  }>;
+  conditions: NonEmpty<ResolvedStudyCondition>;
+  attempts: NonEmpty<CampaignAttemptPlan>;
+  summary: {
+    attempts: number;
+    stacks: number;
+    agents: number;
+    conditions: number;
+    repetitions: number;
+    repetitionsByStack: Record<string, number>;
+    parallelism: number;
+  };
+  featureCatalog: FeatureCatalogInput | null;
+  dependencyPolicy: DependencyPolicyInput | null;
+}
+
+export type CalibrationResolver = (release: Parameters<typeof resolveCalibrationForRelease>[0], options: {
+  trackRoot: string; stackBenchRoot: string;
+}) => ResolvedCalibration | null;
+
+export interface CompilerOptions {
+  stackBenchRoot?: string;
+  calibrationResolver?: CalibrationResolver;
+}
+
+interface ValidationOptions {
+  requireCurrentInputs?: boolean;
+  calibrationResolver?: CalibrationResolver;
+}
 
 export const CAMPAIGN_SCHEMA_VERSION = 5;
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
@@ -57,50 +297,72 @@ const IMAGE_DIGEST = /^[^\s@]+@sha256:[a-f0-9]{64}$/;
 const EXACT_REF = /^([a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = (at, message) => { throw new Error(`invalid campaign at ${at}: ${message}`); };
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+function fail(at: string, message: string): never {
+  throw new Error(`invalid campaign at ${at}: ${message}`);
+}
 
-function strict(value, at, fields) {
-  if (!object(value)) fail(at, 'must be an object');
+function strict<T>(value: T, at: string, fields: ReadonlySet<string>):
+  asserts value is T & UnknownRecord {
+  if (!object(value)) throw new Error(`invalid campaign at ${at}: must be an object`);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
 }
 
-function string(value, at) {
-  if (typeof value !== 'string' || !value.trim()) fail(at, 'must be a non-empty string');
+function string(value: unknown, at: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`invalid campaign at ${at}: must be a non-empty string`);
+  }
   return value;
 }
 
-function identifier(value, at) {
-  if (typeof value !== 'string' || !ID.test(value)) fail(at, 'is invalid');
+function identifier(value: unknown, at: string): string {
+  if (typeof value !== 'string' || !ID.test(value)) {
+    throw new Error(`invalid campaign at ${at}: is invalid`);
+  }
   return value;
 }
 
-function version(value, at) {
-  if (typeof value !== 'string' || !VERSION.test(value)) fail(at, 'must be a semantic version');
+function version(value: unknown, at: string): string {
+  if (typeof value !== 'string' || !VERSION.test(value)) {
+    throw new Error(`invalid campaign at ${at}: must be a semantic version`);
+  }
   return value;
 }
 
-function integer(value, at, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
-  if (!Number.isInteger(value) || value < min || value > max) fail(at, `must be an integer from ${min} through ${max}`);
+function integer(value: unknown, at: string, { min = 0, max = Number.MAX_SAFE_INTEGER }:
+  { min?: number; max?: number } = {}): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`invalid campaign at ${at}: must be an integer from ${min} through ${max}`);
+  }
   return value;
 }
 
-function finite(value, at, { min = 0 } = {}) {
-  if (!Number.isFinite(value) || value < min) fail(at, `must be a number of at least ${min}`);
+function finite(value: unknown, at: string, { min = 0 }: { min?: number } = {}): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min) {
+    throw new Error(`invalid campaign at ${at}: must be a number of at least ${min}`);
+  }
   return value;
 }
 
-function exactArray(value, at, validate, { nonEmpty = false, sort = false } = {}) {
-  if (!Array.isArray(value) || (nonEmpty && value.length === 0)) fail(at, `must be ${nonEmpty ? 'a non-empty' : 'an'} array`);
+function exactArray<T>(value: unknown, at: string,
+  validate: (value: unknown, at: string) => T,
+  { nonEmpty = false, sort = false }: { nonEmpty?: boolean; sort?: boolean } = {}): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`invalid campaign at ${at}: must be ${nonEmpty ? 'a non-empty' : 'an'} array`);
+  }
+  if (nonEmpty && value.length === 0) fail(at, 'must be a non-empty array');
   const normalized = value.map((item, index) => validate(item, `${at}[${index}]`));
   const keys = normalized.map(item => typeof item === 'string' ? item : canonicalDefinitionJson(item));
   if (new Set(keys).size !== keys.length) fail(at, 'must not contain duplicates');
   return sort ? normalized.sort((a, b) => canonicalDefinitionJson(a).localeCompare(canonicalDefinitionJson(b))) : normalized;
 }
 
-export function validateCampaignDefinition(input, { source = '<campaign>' } = {}) {
-  const value = structuredClone(input);
-  strict(value, source, ROOT_FIELDS);
+export function validateCampaignDefinition(input: unknown,
+  { source = '<campaign>' }: { source?: string } = {}): CampaignDefinition {
+  const cloned = structuredClone(input);
+  strict(cloned, source, ROOT_FIELDS);
+  const value = cloned as unknown as CampaignDefinition;
   if (value.schemaVersion !== CAMPAIGN_SCHEMA_VERSION) fail(`${source}.schemaVersion`, 'is unsupported');
   if (value.kind !== 'campaign-manifest') fail(`${source}.kind`, 'must be campaign-manifest');
   identifier(value.id, `${source}.id`);
@@ -108,7 +370,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   if (!['draft', 'frozen'].includes(value.state)) fail(`${source}.state`, 'must be draft or frozen');
   string(value.title, `${source}.title`);
   identifier(value.track, `${source}.track`);
-  value.mode = validateCampaignMode(value.mode, { at: `${source}.mode` });
+  value.mode = validateCampaignMode(value.mode, { at: `${source}.mode` }) as CampaignMode;
   if (value.mode.id === 'dependency' && value.featureCatalog === undefined) {
     fail(`${source}.featureCatalog`, 'is required for dependency mode');
   }
@@ -129,7 +391,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
       if (value.levels.some(level => !availableLevels.includes(level))) {
         fail(`${source}.levels`, 'must exist in feature catalog');
       }
-      if (value.levels[0] !== availableLevels[0]) {
+      if (value.levels.at(0) !== availableLevels.at(0)) {
         fail(`${source}.levels`, 'must start at the first feature catalog level');
       }
     }
@@ -138,7 +400,9 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
       (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
   }
   for (let index = 1; index < value.levels.length; index += 1) {
-    if (value.levels[index] !== value.levels[index - 1] + 1) fail(`${source}.levels`, 'must be ascending and contiguous');
+    if (value.levels[index] !== value.levels[index - 1]! + 1) {
+      fail(`${source}.levels`, 'must be ascending and contiguous');
+    }
   }
 
   const modularSelection = object(value.selection)
@@ -150,7 +414,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     modularSelection ? MODULAR_SELECTION_FIELDS : LEGACY_SELECTION_FIELDS);
   if (modularSelection) {
     value.selection.levels = exactArray(value.selection.levels, `${source}.selection.levels`,
-      (entry, at) => {
+      (entry, at): CampaignLevelSelection => {
         strict(entry, at, value.featureCatalog ? PROGRESSION_LEVEL_FIELDS : MODULAR_LEVEL_FIELDS);
         integer(entry.level, `${at}.level`, { min: 1 });
         if (typeof entry.recipe !== 'string'
@@ -162,7 +426,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
             { nonEmpty: true, sort: true });
           entry.checks = exactArray(entry.checks, `${at}.checks`, string, { sort: true });
         }
-        return entry;
+        return entry as unknown as CampaignLevelSelection;
       }, { nonEmpty: true });
     if (canonicalDefinitionJson(value.selection.levels.map(entry => entry.level))
       !== canonicalDefinitionJson(value.levels)) {
@@ -175,24 +439,24 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
       { sort: true });
   }
 
-  value.stacks = exactArray(value.stacks, `${source}.stacks`, (stack, at) => {
+  value.stacks = exactArray(value.stacks, `${source}.stacks`, (stack, at): CampaignStackSelection => {
     strict(stack, at, STACK_FIELDS);
     identifier(stack.id, `${at}.id`);
     version(stack.adapterVersion, `${at}.adapterVersion`);
     if (stack.repetitions !== undefined) {
       integer(stack.repetitions, `${at}.repetitions`, { min: 1, max: 100 });
     }
-    return stack;
+    return stack as unknown as CampaignStackSelection;
   }, { nonEmpty: true, sort: true });
   if (new Set(value.stacks.map(stack => stack.id)).size !== value.stacks.length) {
     fail(`${source}.stacks`, 'must name each stack once');
   }
-  value.agents = exactArray(value.agents, `${source}.agents`, (agent, at) => {
+  value.agents = exactArray(value.agents, `${source}.agents`, (agent, at): CampaignAgentSelection => {
     strict(agent, at, AGENT_FIELDS);
     identifier(agent.adapter, `${at}.adapter`);
     version(agent.adapterVersion, `${at}.adapterVersion`);
     string(agent.model, `${at}.model`);
-    return agent;
+    return agent as unknown as CampaignAgentSelection;
   }, { nonEmpty: true, sort: true });
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));
   if (new Set(agentKeys).size !== agentKeys.length) fail(`${source}.agents`, 'contains a duplicate configuration');
@@ -218,18 +482,20 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   integer(value.attemptPolicy.retries, `${source}.attemptPolicy.retries`, { min: 0, max: 10 });
   value.attemptPolicy.retryOn = exactArray(value.attemptPolicy.retryOn,
     `${source}.attemptPolicy.retryOn`, (item, at) => {
-      if (!RETRY_CAUSES.has(item)) fail(at, 'has an unsupported retry cause'); return item;
+      if (typeof item !== 'string' || !RETRY_CAUSES.has(item)) fail(at, 'has an unsupported retry cause');
+      return item;
     }, { sort: true });
   value.attemptPolicy.excludeFromAnalysis = exactArray(value.attemptPolicy.excludeFromAnalysis,
     `${source}.attemptPolicy.excludeFromAnalysis`, (item, at) => {
-      if (!EXCLUSION_CAUSES.has(item)) fail(at, 'has an unsupported exclusion cause'); return item;
+      if (typeof item !== 'string' || !EXCLUSION_CAUSES.has(item)) fail(at, 'has an unsupported exclusion cause');
+      return item;
     }, { sort: true });
   if (value.attemptPolicy.retries > 0 && value.attemptPolicy.retryOn.length === 0) {
     fail(`${source}.attemptPolicy.retryOn`, 'must name a cause when retries are enabled');
   }
 
   strict(value.runtime, `${source}.runtime`, RUNTIME_FIELDS);
-  for (const field of ['releaseManifestSha256', 'controllerImage', 'buildImage']) {
+  for (const field of ['releaseManifestSha256', 'controllerImage', 'buildImage'] as const) {
     if (value.runtime[field] !== null && typeof value.runtime[field] !== 'string') {
       fail(`${source}.runtime.${field}`, 'must be a string or null');
     }
@@ -237,7 +503,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   if (value.runtime.releaseManifestSha256 !== null && !HASH.test(value.runtime.releaseManifestSha256)) {
     fail(`${source}.runtime.releaseManifestSha256`, 'must be a SHA-256 digest or null');
   }
-  for (const field of ['controllerImage', 'buildImage']) {
+  for (const field of ['controllerImage', 'buildImage'] as const) {
     if (value.runtime[field] !== null && !IMAGE_DIGEST.test(value.runtime[field])) {
       fail(`${source}.runtime.${field}`, 'must be an exact image digest reference or null');
     }
@@ -264,7 +530,8 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
       value.pricing.models[model] = validatePricingRates(rates,
         { at: `${source}.pricing.models.${model}` });
     } catch (error) {
-      fail(`${source}.pricing.models.${model}`, error.message
+      const message = error instanceof Error ? error.message : String(error);
+      fail(`${source}.pricing.models.${model}`, message
         .replace(`${source}.pricing.models.${model} `, ''));
     }
   }
@@ -277,7 +544,8 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   if (!OUTCOME_METRICS.has(value.analysis.primaryMetric)) fail(`${source}.analysis.primaryMetric`, 'is unsupported');
   value.analysis.secondaryMetrics = exactArray(value.analysis.secondaryMetrics,
     `${source}.analysis.secondaryMetrics`, (item, at) => {
-      if (!OUTCOME_METRICS.has(item)) fail(at, 'is unsupported'); return item;
+      if (typeof item !== 'string' || !OUTCOME_METRICS.has(item)) fail(at, 'is unsupported');
+      return item;
     });
   if (value.analysis.secondaryMetrics.includes(value.analysis.primaryMetric)) {
     fail(`${source}.analysis.secondaryMetrics`, 'must not repeat the primary metric');
@@ -294,50 +562,57 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     if (value.budgets.maxCostUsdPerAttempt === null) {
       fail(`${source}.budgets.maxCostUsdPerAttempt`, 'is required for a frozen campaign');
     }
-    for (const field of ['controllerImage', 'buildImage']) {
+    for (const field of ['controllerImage', 'buildImage'] as const) {
       if (value.runtime[field] === null) fail(`${source}.runtime.${field}`, 'is required for a frozen campaign');
     }
   }
-  return canonicalizeDefinition(value);
+  return canonicalizeDefinition(value) as unknown as CampaignDefinition;
 }
 
-function loadJson(path) {
+function loadJson(path: string): unknown {
   try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) { throw new Error(`cannot read campaign ${path}: ${error.message}`, { cause: error }); }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`cannot read campaign ${path}: ${message}`, { cause: error });
+  }
 }
 
-function exactSource(path) {
+function exactSource(path: string): string {
   if (!isAbsolute(path)) throw new Error('campaign path must be absolute after resolution');
   return realpathSync(path);
 }
 
-function rotate(values, offset) {
+function rotate<T>(values: T[], offset: number): T[] {
   return [...values.slice(offset), ...values.slice(0, offset)];
 }
 
-function identityForStack(adapter) {
+function identityForStack(adapter: StackAdapter): ResolvedStackIdentity {
   return { id: adapter.id, version: adapter.version, sha256: null, state: null };
 }
 
-function calibrationIdentity(value) {
+function calibrationIdentity(value: ResolvedCalibration | null): PublicBinding['calibration'] {
   return value ? { id: value.id, version: value.version, sha256: value.contentSha256,
     state: value.state, buildImage: value.qualification?.buildImage ?? null } : null;
 }
 
-function imageContentDigest(value) {
+function imageContentDigest(value: string | null): string | null {
   return value?.slice(value.lastIndexOf('@') + 1) ?? null;
 }
 
-function campaignIdentityDocument(definition, engine, featureCatalog, dependencyPolicy,
-  bindings, stacks, agents, conditions) {
+function campaignIdentityDocument(definition: CampaignDefinition, engine: Identity,
+  featureCatalog: FeatureCatalogInput | null, dependencyPolicy: DependencyPolicyInput | null,
+  bindings: PublicBinding[], stacks: ResolvedStackIdentity[], agents: CompiledCampaignPlan['agents'],
+  conditions: ResolvedStudyCondition[]): unknown {
   return canonicalizeDefinition({ campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
     definition, engine, ...(featureCatalog ? { featureCatalog } : {}),
     ...(dependencyPolicy ? { dependencyPolicy } : {}),
     bindings, stacks, agents, conditions });
 }
 
-function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dependencyPolicyIdentity,
-  stacks, agents, studyConditions) {
+function expandAttempts(definition: CampaignDefinition, requestedLevels: number[],
+  featureCatalogIdentity: Identity | null, dependencyPolicyIdentity: Identity | null,
+  stacks: ResolvedStackIdentity[], agents: CompiledCampaignPlan['agents'],
+  studyConditions: ResolvedStudyCondition[]): CampaignAttemptPlan[] {
   const repetitionsByStack = new Map(definition.stacks.map(stack =>
     [stack.id, stack.repetitions ?? definition.repetitions]));
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
@@ -350,11 +625,11 @@ function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dep
     const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
     return leftHash.localeCompare(rightHash) || left.key.localeCompare(right.key);
   });
-  const attempts = [];
+  const attempts: CampaignAttemptPlan[] = [];
   const repetitions = Math.max(...repetitionsByStack.values());
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
     rotate(conditions, (repetition - 1) % conditions.length)
-      .filter(({ stack }) => repetition <= repetitionsByStack.get(stack.id))
+      .filter(({ stack }) => repetition <= (repetitionsByStack.get(stack.id) ?? 0))
       .forEach(({ agent, agentIndex, condition, conditionIndex, stack }, order) => attempts.push({
         id: `${definition.id}-r${repetition}-c${conditionIndex + 1}-a${agentIndex + 1}-${stack.id}`,
         repetition,
@@ -363,12 +638,12 @@ function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dep
         agentAdapter: agent.adapter,
         model: agent.model,
         pricing: { unit: definition.pricing.unit,
-          rates: definition.pricing.models[agent.model] },
+          rates: definition.pricing.models[agent.model]! },
         condition: { id: condition.id, version: condition.version, sha256: condition.sha256,
           requested: condition.requested, guidance: condition.guidance,
           repair: condition.repair },
         guidance: condition.guidance.mode,
-        skills: condition.guidance.skills[stack.id].ids,
+        skills: condition.guidance.skills[stack.id]!.ids,
         mode: { id: definition.mode.id, version: definition.mode.version },
         levels: requestedLevels,
         ...(featureCatalogIdentity ? { featureCatalog: featureCatalogIdentity } : {}),
@@ -379,10 +654,10 @@ function expandAttempts(definition, requestedLevels, featureCatalogIdentity, dep
   return attempts;
 }
 
-function resolveCampaignInputs(definition, {
+function resolveCampaignInputs(definition: CampaignDefinition, {
   stackBenchRoot = ROOT,
   calibrationResolver = resolveCalibrationForRelease,
-} = {}) {
+}: CompilerOptions = {}): CampaignResolvedInputs {
   if (!listTracks({ includeInternal: true }).includes(definition.track)) {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
@@ -391,7 +666,10 @@ function resolveCampaignInputs(definition, {
   try {
     resolvedFeatureCatalog = definition.featureCatalog
       ? resolveFeatureCatalog(definition.featureCatalog, track) : null;
-  } catch (error) { fail('featureCatalog', error.message.replace(/^feature catalog /, '')); }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    fail('featureCatalog', message.replace(/^feature catalog /, ''));
+  }
   if (resolvedFeatureCatalog
     && definition.levels.some(level => !progressionLevels(resolvedFeatureCatalog).includes(level))) {
     fail('levels', 'must exist in feature catalog');
@@ -402,9 +680,9 @@ function resolveCampaignInputs(definition, {
   }
   const featureCatalog = resolvedFeatureCatalog
     ? selectFeatureCatalogLevels(resolvedFeatureCatalog, definition.levels) : null;
-  const modularLevels = new Map((definition.selection.levels ?? [])
+  const modularLevels = new Map<number, CampaignLevelSelection>((definition.selection.levels ?? [])
     .map(selection => [selection.level, selection]));
-  const bindingRecords = definition.levels.map(level => {
+  const bindingRecords: BindingRecord[] = definition.levels.map(level => {
     const modular = modularLevels.get(level) ?? null;
     const binding = resolveRecipeRelease(track, level, modular?.recipe ?? null);
     if (!binding) fail('levels', `L${level} has no recipe release`);
@@ -413,7 +691,7 @@ function resolveCampaignInputs(definition, {
     const calibration = calibrationResolver(binding.release, {
       trackRoot: track.dir, stackBenchRoot: resolve(stackBenchRoot),
     });
-    const publicBinding = {
+    const publicBinding: PublicBinding = {
       level,
       promotion: { alias: binding.alias, status: binding.status, catalog: binding.catalog },
       recipe: recipeReleaseIdentity(binding.release),
@@ -436,15 +714,15 @@ function resolveCampaignInputs(definition, {
   if (featureCatalog) {
     for (const record of bindingRecords) {
       const qualifiedCatalog = record.calibration?.qualification.featureCatalog;
-      if (qualifiedCatalog && (qualifiedCatalog.id !== resolvedFeatureCatalog.identity.id
-        || qualifiedCatalog.version !== resolvedFeatureCatalog.identity.version)) {
+      if (qualifiedCatalog && (qualifiedCatalog.id !== resolvedFeatureCatalog!.identity.id
+        || qualifiedCatalog.version !== resolvedFeatureCatalog!.identity.version)) {
         fail('featureCatalog', `L${record.level} calibration qualifies `
           + `${qualifiedCatalog.id}@${qualifiedCatalog.version}, not `
-          + `${resolvedFeatureCatalog.identity.id}@${resolvedFeatureCatalog.identity.version}`);
+          + `${resolvedFeatureCatalog!.identity.id}@${resolvedFeatureCatalog!.identity.version}`);
       }
     }
   }
-  let progressionSelections = null;
+  let progressionSelections: Map<number, ProgressionLevelSelection> | null = null;
   if (featureCatalog) {
     validateProgressionRecipeBindings(featureCatalog, bindingRecords, { levels: definition.levels });
     progressionSelections = new Map(bindingRecords.map(record =>
@@ -454,7 +732,7 @@ function resolveCampaignInputs(definition, {
   if (definition.state === 'frozen') {
     if (progressionSelections) {
       for (const record of bindingRecords) {
-        const selected = progressionSelections.get(record.level).grader.checkKeys;
+        const selected = progressionSelections.get(record.level)?.grader.checkKeys ?? [];
         const qualified = new Set(record.calibration?.qualification.checks
           ?? record.binding.release.checkCatalog.map(check => check.stableKey));
         const missing = selected.filter(check => !qualified.has(check));
@@ -492,11 +770,13 @@ function resolveCampaignInputs(definition, {
 
   const stacks = definition.stacks.map(selection => {
     const adapter = STACK_ADAPTER_REGISTRY.get(selection.id);
+    if (!adapter) fail('stacks', `has unknown adapter ${selection.id}`);
     if (adapter.version !== selection.adapterVersion) fail('stacks', `${adapter.id} adapter is ${adapter.version}, not ${selection.adapterVersion}`);
     return identityForStack(adapter);
   });
   const agents = definition.agents.map(selection => {
     const adapter = AGENT_ADAPTER_REGISTRY.get(selection.adapter);
+    if (!adapter) fail('agents', `has unknown adapter ${selection.adapter}`);
     if (adapter.version !== selection.adapterVersion) fail('agents', `${adapter.id} adapter is ${adapter.version}, not ${selection.adapterVersion}`);
     return { ...selection, costLimit: adapter.costLimit, identity: agentAdapterIdentity(adapter) };
   });
@@ -512,16 +792,16 @@ function resolveCampaignInputs(definition, {
       executionSha256: binding.recipe.executionSha256,
       state: binding.recipe.state,
     },
-    selection: {
-      sha256: binding.selection.sha256,
-      completeness: binding.selection.completeness,
-      scoredPoints: binding.selection.scoredPoints,
-      taskPacks: binding.selection.taskPacks,
-      requested: binding.selection.requested,
+      selection: {
+      sha256: binding.selection!.sha256,
+      completeness: binding.selection!.completeness,
+      scoredPoints: binding.selection!.scoredPoints,
+      taskPacks: binding.selection!.taskPacks,
+      requested: binding.selection!.requested,
     },
-    task: binding.task,
+    task: binding.task!,
   })) };
-  const requestedForCondition = ref => {
+  const requestedForCondition = (ref: ConditionReference): unknown => {
     if (!modularLevels.size) {
       if (ref.specifications !== undefined) {
         fail('conditions', 'legacy selection cannot declare modular specifications');
@@ -534,21 +814,24 @@ function resolveCampaignInputs(definition, {
     if (!progressionSelections && !ref.specifications) {
       fail('conditions', 'modular selection requires specifications by level');
     }
-    const specifications = progressionSelections ? null
-      : new Map(ref.specifications.levels.map(entry => [entry.level, entry]));
+    const declared = ref.specifications;
+    const specifications: Map<number, {
+      level: number; requested: string[]; expected: string[]; observed: string[];
+    }> | null = progressionSelections ? null
+      : new Map(declared!.levels.map(entry => [entry.level, entry]));
     if (specifications && (specifications.size !== bindingRecords.length
       || bindingRecords.some(record => !specifications.has(record.level)))) {
       fail('conditions', 'specifications must bind every selected level exactly once');
     }
     return { track: definition.track, levels: bindingRecords.map(record => {
       const declaredSpecifications = specifications?.get(record.level) ?? null;
-      const selected = progressionSelections?.get(record.level)?.grader
+      const selected: RecipeTaskRequestResult = progressionSelections?.get(record.level)?.grader
         ?? createBoundRecipeTaskRequest(record.binding, {
-          featureIds: record.modular.features,
-          checkKeys: record.modular.checks,
-          requestedSpecifications: declaredSpecifications.requested,
-          expectedSpecifications: declaredSpecifications.expected,
-          observedSpecifications: declaredSpecifications.observed,
+          featureIds: record.modular!.features,
+          checkKeys: record.modular!.checks,
+          requestedSpecifications: declaredSpecifications!.requested,
+          expectedSpecifications: declaredSpecifications!.expected,
+          observedSpecifications: declaredSpecifications!.observed,
         });
       return {
         level: record.level,
@@ -591,15 +874,15 @@ function resolveCampaignInputs(definition, {
     requested: requestedForCondition,
   });
   const dependencyPolicy = definition.mode.id === 'dependency'
-    ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog,
+    ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog!,
       definition.levels) : null;
   return { bindings, stacks, agents, conditions, featureCatalog, dependencyPolicy };
 }
 
-export function compileCampaignFile(path, {
+export function compileCampaignFile(path: string, {
   stackBenchRoot = ROOT,
   calibrationResolver = resolveCalibrationForRelease,
-} = {}) {
+}: CompilerOptions = {}): CompiledCampaignPlan {
   const absolute = exactSource(resolve(path));
   const sourceDefinition = validateCampaignDefinition(loadJson(absolute), {
     source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
@@ -607,7 +890,7 @@ export function compileCampaignFile(path, {
   const requestedLevels = sourceDefinition.levels;
   const { bindings, stacks, agents, conditions, featureCatalog, dependencyPolicy } =
     resolveCampaignInputs(sourceDefinition, { stackBenchRoot, calibrationResolver });
-  const resolvedDefinition = featureCatalog
+  const resolvedDefinition: CampaignDefinition = featureCatalog
     ? { ...sourceDefinition, featureCatalog: featureCatalog.definition }
     : sourceDefinition;
   const definition = structuredClone(resolvedDefinition);
@@ -622,7 +905,7 @@ export function compileCampaignFile(path, {
   const attempts = expandAttempts(definition, requestedLevels, featureCatalog?.identity ?? null,
     dependencyPolicy?.identity ?? null, stacks, agents, conditions);
   const repetitionsByStack = Object.fromEntries(definition.stacks.map(stack =>
-    [stack.id, stack.repetitions ?? definition.repetitions]).sort(([left], [right]) =>
+    [stack.id, stack.repetitions ?? definition.repetitions] as const).sort(([left], [right]) =>
     left.localeCompare(right)));
   return canonicalizeDefinition({
     campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
@@ -644,15 +927,15 @@ export function compileCampaignFile(path, {
     summary: { attempts: attempts.length, stacks: stacks.length, agents: agents.length,
       conditions: conditions.length, repetitions: definition.repetitions,
       repetitionsByStack, parallelism: definition.parallelism ?? 1 },
-  });
+  }) as unknown as CompiledCampaignPlan;
 }
 
-export function validateCompiledCampaignPlan(input, {
+export function validateCompiledCampaignPlan(input: unknown, {
   requireCurrentInputs = true,
   calibrationResolver = resolveCalibrationForRelease,
-} = {}) {
+}: ValidationOptions = {}): CompiledCampaignPlan {
   if (!object(input)) throw new Error('compiled campaign plan must be an object');
-  const plan = canonicalizeDefinition(input);
+  const plan = canonicalizeDefinition(input) as unknown as CompiledCampaignPlan;
   const fields = new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
     'attempts', 'summary', 'featureCatalog', 'dependencyPolicy']);
@@ -673,7 +956,7 @@ export function validateCompiledCampaignPlan(input, {
   if (canonicalDefinitionJson(storedDefinition) !== canonicalDefinitionJson(plan.definition)) {
     throw new Error('compiled campaign definition does not match its feature catalog');
   }
-  for (const field of ['id', 'version', 'state', 'title']) {
+  for (const field of ['id', 'version', 'state', 'title'] as const) {
     if (plan[field] !== definition[field]) throw new Error(`compiled campaign ${field} does not match its definition`);
   }
   if (!object(plan.source) || Object.keys(plan.source).length !== 1 || !HASH.test(plan.source.sha256)) {
@@ -695,7 +978,7 @@ export function validateCompiledCampaignPlan(input, {
     }
     const resolved = resolveCampaignInputs(definition, { calibrationResolver });
     for (const field of ['bindings', 'stacks', 'agents', 'conditions', 'featureCatalog',
-      'dependencyPolicy']) {
+      'dependencyPolicy'] as const) {
       if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
         throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
       }
@@ -713,7 +996,7 @@ export function validateCompiledCampaignPlan(input, {
     throw new Error('compiled campaign attempt schedule does not match its inputs');
   }
   const repetitionsByStack = Object.fromEntries(definition.stacks.map(stack =>
-    [stack.id, stack.repetitions ?? definition.repetitions]).sort(([left], [right]) =>
+    [stack.id, stack.repetitions ?? definition.repetitions] as const).sort(([left], [right]) =>
     left.localeCompare(right)));
   const expectedSummary = { attempts: expectedAttempts.length, stacks: plan.stacks.length,
     agents: plan.agents.length, conditions: plan.conditions.length,
@@ -725,7 +1008,9 @@ export function validateCompiledCampaignPlan(input, {
   return plan;
 }
 
-export function campaignIdentity(plan, options = {}) {
+export function campaignIdentity(plan: CompiledCampaignPlan, options: ValidationOptions = {}): {
+  id: string; version: string; sha256: string; state: CampaignState;
+} {
   const validated = validateCompiledCampaignPlan(plan, options);
   return { id: validated.id, version: validated.version, sha256: validated.contentSha256,
     state: validated.state };

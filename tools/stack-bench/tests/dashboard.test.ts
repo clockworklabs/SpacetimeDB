@@ -9,8 +9,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
-import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
@@ -154,6 +154,7 @@ test('dashboard reports dependency work from the validated persisted state', t =
       agentAdapter: attemptPlan.agentAdapter, model: attemptPlan.model,
       conditionSha256: attemptPlan.condition.sha256 },
     workspace: { appDirectory: 'source' } };
+  assert(plan.featureCatalog && plan.dependencyPolicy);
   writeProgressionState(join(output, 'progression-state.json'), { progression,
     featureCatalogIdentity: plan.featureCatalog.identity,
     dependencyPolicyIdentity: plan.dependencyPolicy.identity,

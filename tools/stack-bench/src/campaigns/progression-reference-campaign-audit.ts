@@ -11,7 +11,7 @@ import { auditProgressionReferenceRun }
 import type { ProgressionReferenceAuditReport }
   from '../progression/progression-reference-audit.js';
 import { readCampaignState } from './campaign-scheduler.js';
-import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { ProgressionInput } from '../progression/progression-definition.js';
@@ -193,6 +193,8 @@ export function auditProgressionReferenceCampaign(directory: string, {
   }
   const progression = compileProgressionInput(dependencyRuntimeDefinition(
     plan.featureCatalog, plan.dependencyPolicy));
+  const featureCatalogIdentity = plan.featureCatalog.identity;
+  const dependencyPolicyIdentity = plan.dependencyPolicy.identity;
   const { bindings, release } = exactRecipeBindings(plan, resolveRelease);
   const attempts = selected.map(attempt => {
     if (attempt.status !== 'completed') {
@@ -205,8 +207,8 @@ export function auditProgressionReferenceCampaign(directory: string, {
     const audit = auditRun({
       outputDir: childPath(paths.root, execution.output),
       progression,
-      featureCatalogIdentity: plan.featureCatalog.identity,
-      dependencyPolicyIdentity: plan.dependencyPolicy.identity,
+      featureCatalogIdentity,
+      dependencyPolicyIdentity,
       owner: progressionOwner(plan, attempt.plan),
       recipeBindings: bindings,
       release,
