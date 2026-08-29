@@ -3,20 +3,47 @@ import { CODING_CONTAINER_AGENT } from '../runtime/coding-container-policy.js';
 import { databaseContainerName } from './database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
 
-export function postgresConnectionUrl({ dbPort, database, hostUrl }) {
+type HostUrl = (url: string) => string;
+
+export interface StackSetupMetadata {
+  spacetime: string | null;
+  spacetimeBindings: string | null;
+  database: string | null;
+}
+
+export interface BuildContainerPlan {
+  networkNamespace: string | null;
+  requiredPaths: string[];
+  ensureDirectories: string[];
+  mounts: Array<{ kind: string; source: string; target: string; readOnly: boolean }>;
+  init: string;
+  readyFile: string | null;
+  readyDescription: string | null;
+}
+
+export function postgresConnectionUrl({ dbPort, database, hostUrl }:
+  { dbPort: number; database: string; hostUrl: HostUrl }): string {
   const { user, password } = POSTGRES_APPLICATION_IDENTITY;
   return hostUrl(`postgresql://${user}:${password}@localhost:${dbPort}/${database}`);
 }
 
-export function mongoDbConnectionUrl({ dbPort, database, hostUrl }) {
+export function mongoDbConnectionUrl({ dbPort, database, hostUrl }:
+  { dbPort: number; database: string; hostUrl: HostUrl }): string {
   return hostUrl(`mongodb://localhost:${dbPort}/${database}`);
 }
 
-export function noConnectionUrl() {
+export function noConnectionUrl(): null {
   return null;
 }
 
-export function spacetimeSetupMetadata({ imageId, localPackage, helpers }) {
+export function spacetimeSetupMetadata({ imageId, localPackage, helpers }: {
+  imageId: string;
+  localPackage: string;
+  helpers: {
+    linuxSpacetimeVersion: (imageId: string) => string;
+    bindingsIdentity: (localPackage: string) => string;
+  };
+}): StackSetupMetadata {
   return {
     spacetime: helpers.linuxSpacetimeVersion(imageId),
     spacetimeBindings: helpers.bindingsIdentity(localPackage),
@@ -24,7 +51,10 @@ export function spacetimeSetupMetadata({ imageId, localPackage, helpers }) {
   };
 }
 
-export function postgresSetupMetadata({ helpers, env }) {
+export function postgresSetupMetadata({ helpers, env }: {
+  helpers: { containerImage: (container: string) => string };
+  env?: NodeJS.ProcessEnv;
+}): StackSetupMetadata {
   return {
     spacetime: null,
     spacetimeBindings: null,
@@ -32,7 +62,10 @@ export function postgresSetupMetadata({ helpers, env }) {
   };
 }
 
-export function mongoDbSetupMetadata({ helpers, env }) {
+export function mongoDbSetupMetadata({ helpers, env }: {
+  helpers: { containerImage: (container: string) => string };
+  env?: NodeJS.ProcessEnv;
+}): StackSetupMetadata {
   return {
     spacetime: null,
     spacetimeBindings: null,
@@ -40,11 +73,13 @@ export function mongoDbSetupMetadata({ helpers, env }) {
   };
 }
 
-export function emptySetupMetadata() {
+export function emptySetupMetadata(): StackSetupMetadata {
   return { spacetime: null, spacetimeBindings: null, database: null };
 }
 
-export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
+export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
+  repo: string; appDir: string; env?: NodeJS.ProcessEnv;
+}): BuildContainerPlan {
   const bindings = join(repo, 'crates', 'bindings-typescript');
   const cli = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-cli');
   const standalone = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-standalone');
@@ -100,7 +135,8 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
   };
 }
 
-export function standardBuildContainerPlan({ env = {} } = {}) {
+export function standardBuildContainerPlan({ env = {} }:
+  { env?: NodeJS.ProcessEnv } = {}): BuildContainerPlan {
   return {
     networkNamespace: env.STACK_BENCH_APPLIANCE === '1' ? 'host' : null,
     requiredPaths: [], ensureDirectories: [], mounts: [],

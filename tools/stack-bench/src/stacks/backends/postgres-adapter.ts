@@ -1,13 +1,13 @@
 import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.js';
 import { captureHostedDiagnostics, activateHosted } from '../stack-lifecycle-operations.mjs';
 import { postgresConnectionUrl, postgresSetupMetadata,
-  standardBuildContainerPlan } from '../stack-agent-operations.mjs';
+  standardBuildContainerPlan } from '../stack-agent-operations.js';
 import { deployPostgresReference } from '../stack-reference-operations.mjs';
-import { standardOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
-import { stopHostedHost } from '../stack-teardown-operations.mjs';
+import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
+import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
 import { preparePostgresDatabase, provePostgresUse, resetPostgres,
-  setPostgresStock } from './postgres-operations.mjs';
+  setPostgresStock } from './postgres-operations.js';
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.js';

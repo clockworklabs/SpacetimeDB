@@ -1,9 +1,9 @@
 import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.js';
 import { activateHosted } from '../stack-lifecycle-operations.mjs';
 import { emptySetupMetadata, noConnectionUrl,
-  standardBuildContainerPlan } from '../stack-agent-operations.mjs';
-import { standardOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
-import { stopHostedHost } from '../stack-teardown-operations.mjs';
+  standardBuildContainerPlan } from '../stack-agent-operations.js';
+import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
+import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
 import { STUB_ADAPTER_VERSION } from './stub-identity.js';
 import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';

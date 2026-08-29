@@ -58,6 +58,8 @@ export interface BackendLease {
   createdAt: string;
   state: BackendLeaseState;
   releasedAt?: string;
+  // Teardown stamps this when it stops a host it started.
+  stoppedAt?: string;
   resources: BackendLeaseResource;
 }
 

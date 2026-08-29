@@ -1,6 +1,17 @@
 import { join } from 'node:path';
 
-export function spacetimeOrchestratorConfig({ root, env, helpers }) {
+export interface OrchestratorConfig {
+  environment: Record<string, string>;
+  lease: { serverUri: string | null };
+  lifecycle: { cli?: string };
+  windowsEnvironmentBridge: string[];
+}
+
+export function spacetimeOrchestratorConfig({ root, env, helpers }: {
+  root: string;
+  env: NodeJS.ProcessEnv;
+  helpers: { exists: (path: string) => boolean };
+}): OrchestratorConfig {
   const serverUri = env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
   const target = new URL(serverUri);
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) || !target.port) {
@@ -15,6 +26,6 @@ export function spacetimeOrchestratorConfig({ root, env, helpers }) {
   };
 }
 
-export function standardOrchestratorConfig() {
+export function standardOrchestratorConfig(): OrchestratorConfig {
   return { environment: {}, lease: { serverUri: null }, lifecycle: {}, windowsEnvironmentBridge: [] };
 }

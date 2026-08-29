@@ -1,7 +1,16 @@
 import { readBackendLease, updateBackendLease } from '../runtime/backend-lease.js';
 import { killDetachedTree, killTree, pidsOnPort, sleepSync } from '../runtime/platform.js';
+import type { BackendLease } from '../runtime/backend-lease.js';
 
-export function stopHostedHost({ leasePath, leaseToken, lease, retainHost = false }) {
+// A SpacetimeDB lease always records the host it claimed.
+const leaseUrl = (serverUri: string | null): URL => {
+  if (!serverUri) throw new Error('SpacetimeDB lease records no server URI');
+  return new URL(serverUri);
+};
+
+export function stopHostedHost({ leasePath, leaseToken, lease, retainHost = false }: {
+  leasePath: string; leaseToken: string; lease: BackendLease; retainHost?: boolean;
+}): boolean {
   updateBackendLease(leasePath,
     { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
       next.state = retainHost ? 'retained' : 'stopped';
@@ -11,7 +20,9 @@ export function stopHostedHost({ leasePath, leaseToken, lease, retainHost = fals
   return true;
 }
 
-export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false }) {
+export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false }: {
+  leasePath: string; leaseToken: string; retainHost?: boolean;
+}): boolean {
   const lease = readBackendLease(leasePath, { token: leaseToken, backend: 'spacetime' });
   if (retainHost) {
     updateBackendLease(leasePath,
@@ -23,7 +34,7 @@ export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false })
   }
   if (['stopped', 'released'].includes(lease.state)) return true;
   if (lease.state === 'created') {
-    const url = new URL(lease.resources.serverUri);
+    const url = leaseUrl(lease.resources.serverUri);
     const port = Number(url.port);
     const actual = pidsOnPort(port, { strict: true });
     if (lease.resources.launchedPid || lease.resources.listenerPids?.length || actual.length) {
@@ -39,7 +50,7 @@ export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false })
     return true;
   }
   if (lease.state === 'starting') {
-    const url = new URL(lease.resources.serverUri);
+    const url = leaseUrl(lease.resources.serverUri);
     const port = Number(url.port);
     if (!lease.resources.launchedPid) {
       console.error(`  REFUSED to release starting lease ${lease.runId}: launched PID was not recorded`);
@@ -65,7 +76,7 @@ export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false })
     console.error(`  REFUSED to stop SpacetimeDB from lease state ${lease.state}`);
     return false;
   }
-  const url = new URL(lease.resources.serverUri);
+  const url = leaseUrl(lease.resources.serverUri);
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port) {
     console.error(`  REFUSED to stop non-loopback SpacetimeDB target ${lease.resources.serverUri}`);
     return false;

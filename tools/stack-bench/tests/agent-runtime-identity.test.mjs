@@ -12,7 +12,7 @@ import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
   from '../dist/src/stacks/stack-adapters.js';
 import { POSTGRES_APPLICATION_IDENTITY }
   from '../dist/src/stacks/hosted-database-identity.js';
-import { spacetimeBuildContainerPlan } from '../dist/src/stacks/stack-agent-operations.mjs';
+import { spacetimeBuildContainerPlan } from '../dist/src/stacks/stack-agent-operations.js';
 
 const FORBIDDEN_IDENTITY = /stackbench|stack[-_ ]bench|benchmark|harness|test|grader/i;
 

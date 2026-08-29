@@ -90,13 +90,13 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
 const STACK_OWNED_MODULES = new Map<string, string>([
   ['src/stacks/backends/mongodb-adapter.ts', 'mongodb'],
   ['src/stacks/backends/mongodb-identity.ts', 'mongodb'],
-  ['src/stacks/backends/mongodb-operations.mjs', 'mongodb'],
+  ['src/stacks/backends/mongodb-operations.ts', 'mongodb'],
   ['src/stacks/backends/postgres-adapter.ts', 'postgres'],
   ['src/stacks/backends/postgres-identity.ts', 'postgres'],
-  ['src/stacks/backends/postgres-operations.mjs', 'postgres'],
+  ['src/stacks/backends/postgres-operations.ts', 'postgres'],
   ['src/stacks/backends/spacetime-adapter.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-identity.ts', 'spacetime'],
-  ['src/stacks/backends/spacetime-operations.mjs', 'spacetime'],
+  ['src/stacks/backends/spacetime-operations.ts', 'spacetime'],
   ['src/stacks/backends/stub-adapter.ts', 'stub'],
   ['src/stacks/backends/stub-identity.ts', 'stub'],
 ]);

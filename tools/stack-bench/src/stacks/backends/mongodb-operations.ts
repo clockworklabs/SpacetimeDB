@@ -6,14 +6,29 @@ import { databaseContainerName } from '../database-containers.js';
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
 
-export function resetMongoDb({ lease, exec = execFileSync }) {
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object';
+
+// A failed child process carries its output on the error.
+const streams = (error: unknown, ...keys: readonly string[]): string =>
+  record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
+
+type Exec = typeof execFileSync;
+type LeasedDatabase = {
+  resources: { container: { id: string; name: string }; database: string };
+};
+
+export function resetMongoDb({ lease, exec = execFileSync }:
+  { lease: LeasedDatabase; exec?: Exec }): string {
   assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
   exec('docker', ['exec', lease.resources.container.name, 'mongosh', lease.resources.database,
     '--quiet', '--eval', 'db.dropDatabase()'], { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   return `reset mongodb database ${lease.resources.database}`;
 }
 
-export function proveMongoDbUse({ lease, marker, exec = execFileSync }) {
+export function proveMongoDbUse({ lease, marker, exec = execFileSync }:
+  { lease: LeasedDatabase; marker: unknown; exec?: Exec }):
+  { ok: boolean; verified: boolean; matches: number; reason: string } {
   if (typeof marker !== 'string' || !marker) {
     throw new Error('MongoDB provenance requires a non-empty application marker');
   }
@@ -48,7 +63,10 @@ print(matches);`;
 }
 
 export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = execFileSync,
-  containers = {} }) {
+  containers = {} }: {
+  item: string; warehouse: string; quantity: number; dbName: string;
+  exec?: Exec; containers?: { mongodb?: string };
+}): { backend: string; item: string; warehouse: string; quantity: number } {
   const container = containers.mongodb ?? databaseContainerName('mongodb');
   const script = `
     const it = db.item.findOne({ name: ${JSON.stringify(item)} });
@@ -60,16 +78,17 @@ export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = exec
       { $set: { quantity: ${quantity} } });
     print(r.matchedCount === 1 ? 'OK' : 'NOMATCH');
   `;
-  let output;
+  let output: string;
   try {
     output = exec('docker', ['exec', container,
       'mongosh', dbName, '--quiet', '--eval', script],
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   } catch (error) {
-    const detail = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-160);
+    const detail = streams(error, 'stdout', 'stderr').trim().slice(-160);
     throw new Error('direct stock correction requires singular collections '
       + '`item`, `warehouse`, and `stock`; stock rows must use '
-      + `item_id/warehouse_id or itemId/warehouseId: ${detail || error.message}`, { cause: error });
+      + `item_id/warehouse_id or itemId/warehouseId: ${detail || streams(error, 'message')}`,
+    { cause: error });
   }
   if (!/OK/.test(output)) {
     throw new Error(`could not find ${item} / ${warehouse} in the required collections `
@@ -78,7 +97,10 @@ export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = exec
   return { backend: 'mongodb', item, warehouse, quantity };
 }
 
-export function prepareMongoDbDatabase({ lease, name, expectedName, wipe, exec = execFileSync }) {
+export function prepareMongoDbDatabase({ lease, name, expectedName, wipe,
+  exec = execFileSync }: {
+  lease: LeasedDatabase; name: string; expectedName: string; wipe: boolean; exec?: Exec;
+}): string {
   if (name !== expectedName) {
     throw new Error(`backend lease database ${name} does not match harness target ${expectedName}`);
   }
@@ -89,7 +111,8 @@ export function prepareMongoDbDatabase({ lease, name, expectedName, wipe, exec =
         '--eval', 'db.dropDatabase()'], { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
       console.error(`  wiped ${name} — a build starts on an empty database`);
     } catch (error) {
-      throw new Error(`could not wipe ${name}: ${String(error.message).split('\n')[0]}`, { cause: error });
+      throw new Error(`could not wipe ${name}: ${streams(error, 'message').split('\n')[0]}`,
+      { cause: error });
     }
   }
   return name;

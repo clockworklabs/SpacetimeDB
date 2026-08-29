@@ -8,7 +8,7 @@ import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../dist/src/runtime/backend-lease.js';
 import { resetBackend } from '../dist/src/stacks/backend-reset.js';
 import { proveMongoDbUse, provePostgresUse,
-  resetPostgres } from '../dist/src/stacks/stack-backend-operations.mjs';
+  resetPostgres } from '../dist/src/stacks/stack-backend-operations.js';
 import { containerReachableSpacetimeUri } from '../dist/src/runtime/spacetime-target.js';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout }
   from '../dist/src/runtime/spacetime-layout.js';

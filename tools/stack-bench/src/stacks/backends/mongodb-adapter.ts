@@ -1,13 +1,13 @@
 import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.js';
 import { captureHostedDiagnostics, activateHosted } from '../stack-lifecycle-operations.mjs';
 import { mongoDbConnectionUrl, mongoDbSetupMetadata,
-  standardBuildContainerPlan } from '../stack-agent-operations.mjs';
+  standardBuildContainerPlan } from '../stack-agent-operations.js';
 import { deployMongoDbReference } from '../stack-reference-operations.mjs';
-import { standardOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
-import { stopHostedHost } from '../stack-teardown-operations.mjs';
+import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
+import { stopHostedHost } from '../stack-teardown-operations.js';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
-  setMongoDbStock } from './mongodb-operations.mjs';
+  setMongoDbStock } from './mongodb-operations.js';
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.js';

@@ -1,15 +1,29 @@
 import { execFileSync } from 'node:child_process';
 
+
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import { databaseContainerName } from '../database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../hosted-database-identity.js';
 
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
-const sqlString = value => `'${String(value).replaceAll("'", "''")}'`;
+const sqlString = (value: unknown): string => `'${String(value).replaceAll("'", "''")}'`;
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object';
+
+// A failed child process carries its output on the error.
+const streams = (error: unknown, ...keys: readonly string[]): string =>
+  record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
+
+type Exec = typeof execFileSync;
+type LeasedDatabase = {
+  resources: { container: { id: string; name: string }; database: string };
+};
 const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;
 
-export function resetPostgres({ lease, exec = execFileSync }) {
+export function resetPostgres({ lease, exec = execFileSync }:
+  { lease: LeasedDatabase; exec?: Exec }): string {
   assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
   exec('docker', ['exec', lease.resources.container.name, 'psql', '-U', POSTGRES_USER,
     '-d', lease.resources.database, '-v', 'ON_ERROR_STOP=1', '-c',
@@ -22,7 +36,9 @@ export function resetPostgres({ lease, exec = execFileSync }) {
   return `reset postgres database ${lease.resources.database}`;
 }
 
-export function provePostgresUse({ lease, marker, exec = execFileSync }) {
+export function provePostgresUse({ lease, marker, exec = execFileSync }:
+  { lease: LeasedDatabase; marker: unknown; exec?: Exec }):
+  { ok: boolean; verified: boolean; matches: number; reason: string } {
   if (typeof marker !== 'string' || !marker) {
     throw new Error('PostgreSQL provenance requires a non-empty application marker');
   }
@@ -44,21 +60,25 @@ export function provePostgresUse({ lease, marker, exec = execFileSync }) {
 }
 
 export function setPostgresStock({ item, warehouse, quantity, dbName, exec = execFileSync,
-  containers = {} }) {
+  containers = {} }: {
+  item: string; warehouse: string; quantity: number; dbName: string;
+  exec?: Exec; containers?: { postgres?: string };
+}): { backend: string; item: string; warehouse: string; quantity: number } {
   const container = containers.postgres ?? databaseContainerName('postgres');
   const sql = `UPDATE stock SET quantity = ${quantity} WHERE item_id = `
     + `(SELECT id FROM item WHERE name = ${sqlString(item)}) AND warehouse_id = `
     + `(SELECT id FROM warehouse WHERE name = ${sqlString(warehouse)})`;
-  let output;
+  let output: string;
   try {
     output = exec('docker', ['exec', container,
       'psql', '-U', POSTGRES_USER, '-d', dbName, '-c', sql],
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   } catch (error) {
-    const detail = `${error.stderr ?? ''}${error.stdout ?? ''}`.trim().slice(-240);
+    const detail = streams(error, 'stderr', 'stdout').trim().slice(-240);
     throw new Error('direct stock correction requires singular tables '
       + '`item(id, name)`, `warehouse(id, name)`, and '
-      + `\`stock(item_id, warehouse_id, quantity)\`: ${detail || error.message}`, { cause: error });
+      + `\`stock(item_id, warehouse_id, quantity)\`: ${detail || streams(error, 'message')}`,
+    { cause: error });
   }
   if (!/UPDATE 1\b/.test(output)) {
     throw new Error(`stock row for ${item} / ${warehouse} was not updated (${output.trim().slice(-120)})`);
@@ -66,7 +86,10 @@ export function setPostgresStock({ item, warehouse, quantity, dbName, exec = exe
   return { backend: 'postgres', item, warehouse, quantity };
 }
 
-export function preparePostgresDatabase({ lease, name, expectedName, wipe, exec = execFileSync }) {
+export function preparePostgresDatabase({ lease, name, expectedName, wipe,
+  exec = execFileSync }: {
+  lease: LeasedDatabase; name: string; expectedName: string; wipe: boolean; exec?: Exec;
+}): string {
   if (name !== expectedName) {
     throw new Error(`backend lease database ${name} does not match harness target ${expectedName}`);
   }
@@ -90,7 +113,8 @@ export function preparePostgresDatabase({ lease, name, expectedName, wipe, exec 
       { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
       console.error(`  wiped ${name} (schema dropped) — a build starts on an empty database`);
     } catch (error) {
-      throw new Error(`could not wipe ${name}: ${String(error.message).split('\n')[0]}`, { cause: error });
+      throw new Error(`could not wipe ${name}: ${streams(error, 'message').split('\n')[0]}`,
+      { cause: error });
     }
   }
   return name;

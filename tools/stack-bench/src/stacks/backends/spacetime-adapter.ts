@@ -2,12 +2,12 @@ import { createSpacetimeGradingContext,
   spacetimeNamedActionRequest } from '../../actions/stack-action-operations.js';
 import { activateSpacetime, controlSpacetime } from '../stack-lifecycle-operations.mjs';
 import { noConnectionUrl, spacetimeBuildContainerPlan,
-  spacetimeSetupMetadata } from '../stack-agent-operations.mjs';
+  spacetimeSetupMetadata } from '../stack-agent-operations.js';
 import { deploySpacetimeReference } from '../stack-reference-operations.mjs';
-import { spacetimeOrchestratorConfig } from '../stack-orchestrator-operations.mjs';
-import { stopSpacetimeHost } from '../stack-teardown-operations.mjs';
+import { spacetimeOrchestratorConfig } from '../stack-orchestrator-operations.js';
+import { stopSpacetimeHost } from '../stack-teardown-operations.js';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
-import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './spacetime-operations.mjs';
+import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './spacetime-operations.js';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';
 

@@ -6,7 +6,7 @@ import { createStackAdapterRegistry, executeStackCapability,
   STACK_ADAPTER_SCHEMA_VERSION, STACK_CAPABILITY_SCHEMA_VERSION } from '../dist/src/stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../dist/src/stacks/stack-adapters.js';
 import { stackAdapterVersion } from '../dist/src/stacks/stack-identities.js';
-import { setSpacetimeStock } from '../dist/src/stacks/backends/spacetime-operations.mjs';
+import { setSpacetimeStock } from '../dist/src/stacks/backends/spacetime-operations.js';
 
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);

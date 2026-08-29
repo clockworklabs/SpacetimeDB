@@ -53,13 +53,13 @@ function fixture(): string {
   write(root, 'src/stacks/stack-adapters.ts', [
     "import './backends/mongodb-adapter.js';",
     "import './backends/mongodb-identity.js';",
-    "import './backends/mongodb-operations.mjs';",
+    "import './backends/mongodb-operations.js';",
     "import './backends/postgres-adapter.js';",
     "import './backends/postgres-identity.js';",
-    "import './backends/postgres-operations.mjs';",
+    "import './backends/postgres-operations.js';",
     "import './backends/spacetime-adapter.js';",
     "import './backends/spacetime-identity.js';",
-    "import './backends/spacetime-operations.mjs';",
+    "import './backends/spacetime-operations.js';",
     '',
   ].join('\n'));
   write(root, 'src/stacks/stack-adapter-common.ts', 'shared adapter helpers\n');
@@ -67,7 +67,7 @@ function fixture(): string {
     write(root, `src/stacks/backends/${stack}-adapter.ts`,
       `import '../stack-adapter-common.js';\n${stack} adapter\n`);
     write(root, `src/stacks/backends/${stack}-identity.ts`, `${stack} identity\n`);
-    write(root, `src/stacks/backends/${stack}-operations.mjs`, `${stack} operations\n`);
+    write(root, `src/stacks/backends/${stack}-operations.ts`, `${stack} operations\n`);
   }
   return root;
 }
@@ -121,7 +121,7 @@ test('stack-owned reset and version changes invalidate only their stack', () => 
     const beforePostgresMutation = scoped(root, 'mutation', 'postgres');
     const beforeNull = scoped(root, 'null');
 
-    write(root, 'src/stacks/backends/postgres-operations.mjs', 'changed postgres reset\n');
+    write(root, 'src/stacks/backends/postgres-operations.ts', 'changed postgres reset\n');
     assert.deepEqual(scoped(root, 'reference', 'mongodb'), beforeMongoReference);
     assert.deepEqual(scoped(root, 'mutation', 'mongodb'), beforeMongoMutation);
     assert.notEqual(scoped(root, 'reference', 'postgres').sha256, beforePostgresReference.sha256);
