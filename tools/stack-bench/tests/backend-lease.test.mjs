@@ -227,7 +227,7 @@ test('listener operations refuse a process not captured by the lease', async () 
     lease.resources.listenerPids = [process.pid + 1000];
     writeBackendLease(path, lease);
     assert.throws(() => execFileSync(process.execPath,
-      [join(HERE, '..', 'commands', 'lease-cli.mjs'), 'listener-pid', 'spacetime'], {
+      [join(HERE, '..', 'dist', 'commands', 'lease-cli.js'), 'listener-pid', 'spacetime'], {
         env: { ...process.env, STACK_BENCH_LEASE: path,
           STACK_BENCH_LEASE_TOKEN: lease.ownershipToken },
         stdio: 'pipe',
