@@ -78,7 +78,7 @@ test('timing executes through the contract and still rejects an unknown actor', 
   assert.equal(missing.summary, 'unknown actor "missing"');
 });
 
-test('interaction actions receive scoped values and preserve the legacy click options', async () => {
+test('interaction actions receive scoped values and preserve click options', async () => {
   const calls: unknown[][] = [];
   const locator = {
     click: async (options: unknown) => { calls.push(['click', options]); },
