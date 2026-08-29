@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
 import { mergeExecutionSourceShardResults, planExecutionSourceShards }
-  from '../src/grading/execution-shards.mjs';
+  from '../dist/src/grading/execution-shards.js';
 
 const execution = [
   { id: 'accounts', source: 'scenarios/accounts.json' },

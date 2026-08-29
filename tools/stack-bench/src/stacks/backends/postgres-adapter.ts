@@ -10,7 +10,7 @@ import { preparePostgresDatabase, provePostgresUse, resetPostgres,
   setPostgresStock } from './postgres-operations.mjs';
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
-  runPolicyProvider } from '../stack-adapter-common.mjs';
+  runPolicyProvider } from '../stack-adapter-common.js';
 
 let postgresAdapter;
 postgresAdapter = defineStackAdapter('postgres', stackLeaseCapability('postgres'), {

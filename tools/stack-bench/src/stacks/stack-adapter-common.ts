@@ -1,5 +1,6 @@
 import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
   STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.mjs';
+import type { StackAdapter, StackCapability } from './stack-adapter-contract.mjs';
 import { controlHosted } from './stack-lifecycle-operations.mjs';
 
 const PORT_BASES = Object.freeze({

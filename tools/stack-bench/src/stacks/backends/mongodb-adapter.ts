@@ -10,7 +10,7 @@ import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
   setMongoDbStock } from './mongodb-operations.mjs';
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
-  runPolicyProvider } from '../stack-adapter-common.mjs';
+  runPolicyProvider } from '../stack-adapter-common.js';
 
 let mongodbAdapter;
 mongodbAdapter = defineStackAdapter('mongodb', stackLeaseCapability('mongodb'), {

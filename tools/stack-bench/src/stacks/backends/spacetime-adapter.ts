@@ -9,7 +9,7 @@ import { stopSpacetimeHost } from '../stack-teardown-operations.mjs';
 import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
 import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './spacetime-operations.mjs';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
-import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.mjs';
+import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';
 
 export const spacetimeAdapter = defineStackAdapter('spacetime', stackLeaseCapability('spacetime'), {
   reset: operationProvider('spacetime', 'reset',
