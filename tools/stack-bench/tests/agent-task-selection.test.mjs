@@ -7,12 +7,12 @@ import test from 'node:test';
 
 import { agentRecipeRequest, agentScenarioPaths } from '../dist/commands/agent.mjs';
 import { agentVisibleContractText, contractControlIds }
-  from '../src/composition/agent-visible-contract.mjs';
+  from '../dist/src/composition/agent-visible-contract.js';
 import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
-  createRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
+  createRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const AGENT = join(ROOT, 'dist', 'commands', 'agent.mjs');

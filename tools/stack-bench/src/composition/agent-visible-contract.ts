@@ -1,8 +1,11 @@
 import { applyCredentialAliases } from './credential-aliases.js';
 
-// Contract sources keep internal grading terms. Coding agents receive only the
+// Contract sources use internal grading terms. Coding agents receive only the
 // public application requirements and stable interface names.
-export function agentVisibleContractText(value, credentialAliases = {}) {
+export function agentVisibleContractText(
+  value: unknown,
+  credentialAliases: Readonly<Record<string, string>> = {},
+): string {
   return applyCredentialAliases(value, credentialAliases)
     .replace(/\bso (?:Stack Bench|the grader) can verify that\b/gi, 'so that')
     .replace(/\bso Stack Bench can verify\b/gi, 'to support')
@@ -45,10 +48,15 @@ export function agentVisibleContractText(value, credentialAliases = {}) {
     .replace(/\bgrader|grading\b/gi, 'runtime');
 }
 
-// Contract fragments use backticks for stable element IDs. Passwords
-// and custom data attributes share the notation but are not element IDs.
-export function contractControlIds(contractText) {
-  return [...new Set([...String(contractText ?? '').matchAll(
-    /`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g)].map(match => match[1])
-    .filter(id => !id.startsWith('stackbench-') && !id.startsWith('data-')))].sort();
+// Contract fragments use backticks for stable element IDs. Passwords and
+// custom data attributes share the notation but are not element IDs.
+export function contractControlIds(contractText: unknown): string[] {
+  const matches = String(contractText ?? '').matchAll(
+    /`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g,
+  );
+  const ids = [...matches]
+    .map((match) => match[1])
+    .filter((id): id is string => id !== undefined)
+    .filter((id) => !id.startsWith('stackbench-') && !id.startsWith('data-'));
+  return [...new Set(ids)].sort();
 }

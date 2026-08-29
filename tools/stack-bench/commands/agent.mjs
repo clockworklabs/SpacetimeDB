@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
-import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
+import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
 import { writeSandbox } from '../src/runtime/sandbox.js';
 import { leaseFromEnv } from '../src/runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../src/runtime/container-image.js';

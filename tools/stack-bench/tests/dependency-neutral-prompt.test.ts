@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
@@ -10,10 +11,10 @@ import { sha256 } from '../src/evidence/provenance.js';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
-import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
+import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
-const AGENT = new URL('../dist/commands/agent.mjs', import.meta.url).pathname
-  .replace(/^\/(?:[A-Za-z]:)/, value => value.slice(1));
+const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.mjs');
 const STACKS = ['mongodb', 'postgres', 'spacetime'] as const;
 type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;

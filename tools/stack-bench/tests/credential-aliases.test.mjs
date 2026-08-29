@@ -4,7 +4,7 @@ import test from 'node:test';
 import { gradeArgv } from '../dist/commands/bench.mjs';
 import { agentRequestArgv } from '../dist/src/agents/agent-adapter-contract.js';
 import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
-import { agentVisibleContractText } from '../dist/src/composition/agent-visible-contract.mjs';
+import { agentVisibleContractText } from '../dist/src/composition/agent-visible-contract.js';
 import { materializeScenarioCredentials, validateCredentialAliases }
   from '../dist/src/composition/credential-aliases.js';
 import { loadTrack } from '../dist/src/composition/tracks.mjs';
