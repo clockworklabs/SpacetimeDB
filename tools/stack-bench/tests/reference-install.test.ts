@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { referenceInstallSteps } from '../src/references/reference-install.mjs';
+import { referenceInstallSteps } from '../src/references/reference-install.js';
 
 test('Spacetime references use the checked-in release SDK lock', () => {
   assert.deepEqual(referenceInstallSteps({

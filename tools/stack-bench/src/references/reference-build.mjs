@@ -24,7 +24,7 @@ import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { loadTrack } from '../composition/tracks.mjs';
 import { inspectImportedReference, loadReferenceRegistry,
   prepareReferenceFixtureSource, validateReferenceRegistry } from './reference-fixtures.mjs';
-import { referenceInstallSteps } from './reference-install.mjs';
+import { referenceInstallSteps } from './reference-install.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
