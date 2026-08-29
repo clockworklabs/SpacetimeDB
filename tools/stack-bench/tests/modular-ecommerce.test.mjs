@@ -7,7 +7,7 @@ import { compileRecipeFile } from '../src/composition/composition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
   resolveBoundRecipeTaskRequest, resolveModularRecipeSelection, selectScenarioChecks }
-  from '../src/composition/recipe-selection.mjs';
+  from '../src/composition/recipe-selection.js';
 
 const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
   'recipes', 'l1-modular-2.0.0.json');

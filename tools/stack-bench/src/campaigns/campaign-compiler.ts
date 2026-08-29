@@ -11,8 +11,10 @@ import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
 import type { PricingRates } from '../evidence/pricing-authority.js';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.js';
 import type { RecipeRelease } from '../composition/recipe-release.js';
-import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
-import type { RecipeTaskRequestResult } from '../composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, createRecipeTaskRequest,
+  isModularRecipeTaskRequest } from '../composition/recipe-selection.js';
+import type { BoundRecipeTaskRequestResult,
+  ModularRecipeTaskRequestResult } from '../composition/recipe-selection.js';
 import type { RecipeBinding } from '../composition/recipe-release.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,
   selectFeatureCatalogLevels, validateDependencyPolicyInput, validateFeatureCatalogInput }
@@ -827,7 +829,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     }
     return { track: definition.track, levels: bindingRecords.map(record => {
       const declaredSpecifications = specifications?.get(record.level) ?? null;
-      const selected: RecipeTaskRequestResult = progressionSelections?.get(record.level)?.grader
+      const selected: BoundRecipeTaskRequestResult = progressionSelections?.get(record.level)?.grader
         ?? createBoundRecipeTaskRequest(record.binding, {
           featureIds: record.modular!.features,
           checkKeys: record.modular!.checks,
@@ -835,6 +837,11 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
           expectedSpecifications: declaredSpecifications!.expected,
           observedSpecifications: declaredSpecifications!.observed,
         });
+      // Every level here binds a modular recipe, so its task resolves per treatment.
+      if (!isModularRecipeTaskRequest(selected)) {
+        fail('levels', `L${record.level} did not resolve a modular recipe task`);
+      }
+      const modular: ModularRecipeTaskRequestResult = selected;
       return {
         level: record.level,
         recipe: {
@@ -846,27 +853,27 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
         },
         selection: {
           schemaVersion: 3,
-          sha256: selected.selection.sha256,
-          scoredPoints: selected.selection.scoredPoints,
-          requested: selected.selection.requested,
-          promptPacks: selected.selection.promptPacks,
-          features: selected.selection.features,
-          specifications: selected.selection.specifications,
-          scoredChecks: selected.selection.scoredChecks.map(check => ({
+          sha256: modular.selection.sha256,
+          scoredPoints: modular.selection.scoredPoints,
+          requested: modular.selection.requested,
+          promptPacks: modular.selection.promptPacks,
+          features: modular.selection.features,
+          specifications: modular.selection.specifications,
+          scoredChecks: modular.selection.scoredChecks.map(check => ({
             stableKey: check.stableKey, points: check.points, treatment: check.treatment,
           })),
-          observedChecks: selected.selection.observedChecks.map(check => ({
+          observedChecks: modular.selection.observedChecks.map(check => ({
             stableKey: check.stableKey, points: check.points, treatment: check.treatment,
           })),
         },
         task: {
-          ...(selected.request.task.mode === undefined
-            ? {} : { mode: selected.request.task.mode }),
-          sha256: selected.task.sha256,
-          requirementSha256: selected.task.requirementSha256,
-          contractSha256: selected.task.contractSha256,
-          requirementIds: selected.task.requirementIds,
-          contractIds: selected.task.contractIds,
+          ...(modular.taskMode === undefined || modular.taskMode === null
+            ? {} : { mode: modular.taskMode }),
+          sha256: modular.task.sha256,
+          requirementSha256: modular.task.requirementSha256,
+          contractSha256: modular.task.contractSha256,
+          requirementIds: modular.task.requirementIds,
+          contractIds: modular.task.contractIds,
         },
       };
     }) };

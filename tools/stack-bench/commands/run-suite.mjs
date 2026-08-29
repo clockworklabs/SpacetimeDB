@@ -22,7 +22,7 @@ import { answers as hostAnswers } from '../src/runtime/platform.js';
 import { controlBackend } from '../src/runtime/backend-control.js';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { contractControlIds } from '../src/composition/agent-visible-contract.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';

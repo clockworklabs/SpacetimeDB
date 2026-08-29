@@ -10,7 +10,7 @@ import { agentVisibleContractText, contractControlIds }
   from '../dist/src/composition/agent-visible-contract.js';
 import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
-  createRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
+  createRecipeTaskRequest } from '../dist/src/composition/recipe-selection.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadTrack } from '../dist/src/composition/tracks.js';
 

@@ -28,7 +28,7 @@ import { loadTrack } from '../src/composition/tracks.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
-import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
+import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';

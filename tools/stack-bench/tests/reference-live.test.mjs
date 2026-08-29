@@ -21,7 +21,7 @@ import { auditMutationWorkerRun, auditReferenceRun, parseReferenceQualificationA
 import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
   from '../dist/src/evidence/artifacts.js';
 import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
-import { createBoundRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest } from '../dist/src/composition/recipe-selection.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadTrack } from '../dist/src/composition/tracks.js';
 import { resolveFeatureCatalog } from '../dist/src/progression/feature-catalog-selection.js';

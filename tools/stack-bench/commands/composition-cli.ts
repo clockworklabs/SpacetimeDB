@@ -8,13 +8,13 @@ import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '.
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
-import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
+import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.js';
 import { TRACKS_DIR } from '../src/composition/tracks.js';
 import type { CompiledPackDefinition, CompiledRecipePlan } from '../src/composition/composition-compiler.js';
 import type { RecipeCheck, RecipeRelease } from '../src/composition/recipe-release.js';
-import type { RecipeSelectionOptions, SelectedRecipeRelease } from '../src/composition/recipe-selection.mjs';
+import type { RecipeSelectionOptions, SelectedRecipeRelease } from '../src/composition/recipe-selection.js';
 
-export { selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
+export { selectRecipeRelease } from '../src/composition/recipe-selection.js';
 
 interface TrackRootOptions {
   trackRoot: string;

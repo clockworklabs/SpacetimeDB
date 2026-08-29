@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { compileRecipeFile } from '../src/composition/composition-compiler.js';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { createModularRecipeTaskRequest, resolveModularRecipeSelection } from '../src/composition/recipe-selection.mjs';
+import { createModularRecipeTaskRequest, resolveModularRecipeSelection } from '../src/composition/recipe-selection.js';
 
 const TRACK = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const recipe = name => join(TRACK, 'composition', 'recipes', name);

@@ -27,7 +27,7 @@ import { calibrationQualificationIdentity, mutationExecutionSha256,
   resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { qualificationScopeIdentity } from '../composition/qualification-scope.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
-import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
+import { isModularRecipeRelease } from '../composition/recipe-selection.js';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { controllerRunner } from '../runtime/runner-environment.js';

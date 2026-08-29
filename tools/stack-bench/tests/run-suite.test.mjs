@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createBoundRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest } from '../dist/src/composition/recipe-selection.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,

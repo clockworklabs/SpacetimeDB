@@ -1,9 +1,9 @@
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
-  from '../composition/recipe-selection.mjs';
+  from '../composition/recipe-selection.js';
 import type {
   ComposedRecipeTask,
-  RecipeTaskRequestResult,
-} from '../composition/recipe-selection.mjs';
+  ModularRecipeTaskRequestResult,
+} from '../composition/recipe-selection.js';
 import type {
   RecipeBinding,
   RecipeCheck,
@@ -48,12 +48,12 @@ interface ModularRequestSelection extends Record<string, unknown> {
   promptPacks: string[];
 }
 
-type ModularTaskRequest = RecipeTaskRequestResult['request'] & {
+type ModularTaskRequest = ModularRecipeTaskRequestResult['request'] & {
   recipe: { id: string; version: string; contentSha256: string };
   selection: ModularRequestSelection;
 };
 
-type ModularBoundSelection = RecipeTaskRequestResult['selection'] & {
+type ModularBoundSelection = ModularRecipeTaskRequestResult['selection'] & {
   sha256: string;
   requested: ModularRequestSelection['requested'];
   promptPacks: string[];
@@ -280,7 +280,7 @@ function resolveSelections(binding: RecipeBinding, definition: CompiledProgressi
   }
   const requestedRefs = new Set(gradingRequested.map(item => item.ref));
   const checkKeys = gradingChecks.map(check => check.id);
-  const expectedSpecifications = new Set();
+  const expectedSpecifications = new Set<string>();
   const requiredGradingFeatureIds = new Set(gradingFeatures.map(item => item.id));
   for (const selected of gradingChecks) {
     const check = checkCatalog.get(selected.id);

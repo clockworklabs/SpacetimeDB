@@ -37,7 +37,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
 import { captureBackendDiagnostics } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';

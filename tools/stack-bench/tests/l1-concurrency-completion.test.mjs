@@ -10,7 +10,7 @@ import { mutationEdits, mutationScenario, mutationTargetKeys,
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
+import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

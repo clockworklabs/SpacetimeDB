@@ -20,7 +20,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
 import { writeSandbox } from '../src/runtime/sandbox.js';
 import { leaseFromEnv } from '../src/runtime/backend-lease.js';

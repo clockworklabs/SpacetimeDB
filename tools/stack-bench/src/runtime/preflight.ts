@@ -15,7 +15,7 @@ import { dockerMountArguments } from './container-mount.js';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   preflightResourceFloors } from '../composition/product-config.js';
 import { resolveRecipeRelease } from '../composition/recipe-release.js';
-import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.js';
 import { validateFeatureCatalogInput } from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
