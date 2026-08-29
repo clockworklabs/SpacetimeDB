@@ -5,8 +5,8 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../evidence/artifacts.mjs';
 import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
-import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.mjs';
-import type { CampaignLock } from '../campaigns/campaign-lock.mjs';
+import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
+import type { CampaignLock } from '../campaigns/campaign-lock.js';
 import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.mjs';
 import {
   progressionEngine,

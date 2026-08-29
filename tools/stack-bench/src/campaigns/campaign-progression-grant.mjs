@@ -7,7 +7,7 @@ import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import { grantProgressionState, readProgressionState }
   from '../progression/progression-state.js';
-import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
+import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
 import { inspectCampaign } from './campaign-runner.mjs';
 import { scheduleDependencyContinuation, writeCampaignState }
   from './campaign-scheduler.js';

@@ -8,7 +8,7 @@ import type { CampaignAttemptPlan, CompiledCampaignPlan }
 import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
-import { campaignLockIsActive } from '../src/campaigns/campaign-lock.mjs';
+import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { validateCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { dependencyProgress } from '../src/campaigns/campaign-inspection.js';

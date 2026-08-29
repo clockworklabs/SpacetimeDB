@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { acquireCampaignLock, campaignLockIsActive, controllerInstance,
-  ownerAlive, releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
+  ownerAlive, releaseCampaignLock } from '../src/campaigns/campaign-lock.js';
 
 const campaign = { id: 'ecommerce-l1-example', contentSha256: 'a'.repeat(64) };
 
@@ -102,12 +102,15 @@ test('a reused pid in a different dead controller does not keep a stale lock ali
   try {
     const first = acquireCampaignLock(root, campaign, { ownerPid: 14,
       ownerInstance: 'old-container', uuid: () => 'old-token', alive: () => false });
-    let inspected;
+    const inspected: Array<{
+      record: { ownerInstance: string; ownerPid: number };
+      current: string;
+    }> = [];
     const second = acquireCampaignLock(root, campaign, { ownerPid: 14,
       ownerInstance: 'new-container', uuid: () => 'new-token',
-      alive: (record, current) => { inspected = { record, current }; return false; } });
-    assert.equal(inspected.record.ownerInstance, 'old-container');
-    assert.equal(inspected.current, 'new-container');
+      alive: (record, current) => { inspected.push({ record, current }); return false; } });
+    assert.equal(inspected[0]?.record.ownerInstance, 'old-container');
+    assert.equal(inspected[0]?.current, 'new-container');
     assert.equal(second.record.ownerInstance, 'new-container');
     assert.throws(() => releaseCampaignLock(first), /no longer belongs/);
     assert.equal(releaseCampaignLock(second), true);
