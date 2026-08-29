@@ -10,12 +10,12 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   expectedDependencyRunOutcomeKind, processFailureDetail, remainingAttemptCostBudget,
-  validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
+  validateCampaignRun } from '../dist/src/campaigns/campaign-runner.mjs';
 import { hashDirectory, sha256 } from '../dist/src/evidence/provenance.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../dist/src/progression/progression-definition.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
-import { liveProgressionStatus } from '../src/progression/live-progression.mjs';
+import { liveProgressionStatus } from '../dist/src/progression/live-progression.js';
 import { writeProgressionState } from '../dist/src/progression/progression-state.js';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';

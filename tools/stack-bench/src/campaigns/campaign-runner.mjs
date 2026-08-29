@@ -16,7 +16,7 @@ import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { readProgressionState } from '../progression/progression-state.js';
-import { liveProgressionStatus } from '../progression/live-progression.mjs';
+import { liveProgressionStatus } from '../progression/live-progression.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';

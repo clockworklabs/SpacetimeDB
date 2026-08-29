@@ -52,6 +52,12 @@ export function validateCampaignRun(plan: CompiledCampaignPlan, attempt: Campaig
   input: unknown, options?: { buildImage?: string | null; resultDir?: string | null }): unknown;
 export function prepareCampaign(campaignFile: string, directory: string): InspectedCampaign;
 export function reconcileCampaign(campaignFile: string, directory: string): CampaignState;
+export function validateCampaignRun<T extends Record<string, unknown>>(
+  plan: unknown,
+  attempt: unknown,
+  run: T,
+  options?: { resultDir?: string | null },
+): T;
 export function executeCampaign(campaignFile: string, directory: string, options: {
   mode: 'model-free-trial' | 'frozen';
   signal: AbortSignal;

@@ -49,6 +49,7 @@ interface ModularRequestSelection extends Record<string, unknown> {
 }
 
 type ModularTaskRequest = RecipeTaskRequestResult['request'] & {
+  recipe: { id: string; version: string; contentSha256: string };
   selection: ModularRequestSelection;
 };
 

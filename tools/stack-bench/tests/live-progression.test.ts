@@ -8,16 +8,98 @@ import test from 'node:test';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact }
-  from '../dist/src/evidence/artifacts.mjs';
-import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
+  from '../src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import type { CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, compileProgressionInput }
-  from '../dist/src/progression/progression-definition.js';
-import { createLiveProgressionExecution }
-  from '../src/progression/live-progression.mjs';
+  from '../src/progression/progression-definition.js';
+import type { ProgressionInput } from '../src/progression/progression-definition.js';
+import { createLiveProgressionExecution, type LiveProgressionExecution,
+  type LiveProgressionStatus }
+  from '../src/progression/live-progression.js';
+import type { ProgressionWorkAction } from '../src/progression/progression-engine.js';
+import type { ProgressionRecipeAction, ProgressionRecipeSelections }
+  from '../src/progression/progression-recipe-selection.js';
+import type { ProgressionState } from '../src/progression/progression-state.js';
+import type { ProgressionNodeState } from '../src/progression/progression-state.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 
-const definition = () => ({
+interface FixtureDependency {
+  id: string;
+  reason: string;
+}
+
+interface FixtureNode {
+  id: string;
+  title: string;
+  questline: string;
+  dependencies: FixtureDependency[];
+  featureRefs: string[];
+  promptModules: string[];
+  gradingChecks: Array<{ id: string; points: number }>;
+}
+
+interface FixtureQuestline {
+  id: string;
+  title: string;
+  nodes?: string[];
+}
+
+interface FixtureDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  policy: string;
+  strikes: { default: number; levels: Record<string, number> };
+  nodes: FixtureNode[];
+  questlines: FixtureQuestline[];
+}
+
+type WorkSelection = { action: ProgressionWorkAction } & ProgressionRecipeSelections;
+
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function workSelection(selected: ProgressionRecipeAction): WorkSelection {
+  assert('grader' in selected, 'expected a progression work action');
+  return selected;
+}
+
+function executionState(execution: LiveProgressionExecution): ProgressionState {
+  assert(execution.state, 'expected initialized progression state');
+  return execution.state;
+}
+
+function nodeState(state: ProgressionState, id: string): ProgressionNodeState {
+  const node = state.nodes[id];
+  assert(node, `expected progression node ${id}`);
+  return node;
+}
+
+function latestStatus(states: LiveProgressionStatus[]): LiveProgressionStatus {
+  const status = states.at(-1);
+  assert(status, 'expected a reported progression status');
+  return status;
+}
+
+function workAction(action: ProgressionRecipeAction['action']): ProgressionWorkAction {
+  assert.notEqual(action.type, 'terminal');
+  return action as ProgressionWorkAction;
+}
+
+function identityVersion(value: unknown): unknown {
+  return object(value) ? value.version : undefined;
+}
+
+function identity(identities: unknown, key: string): unknown {
+  return object(identities) ? identities[key] : undefined;
+}
+
+const definition = (): FixtureDefinition => ({
   schemaVersion: 3,
   kind: 'progression-mode',
   id: 'live-fixture',
@@ -37,9 +119,10 @@ const definition = () => ({
   }],
   questlines: [{ id: 'identity', title: 'Identity' }],
 });
-const splitIdentities = progression => {
+const splitIdentities = (progression: ProgressionInput) => {
   const { policy: _policy, strikes, unchangedFailureLimit: _limit,
     ...catalogDefinition } = progression.definition;
+  assert(strikes);
   const featureCatalog = compileFeatureCatalogInput({ ...catalogDefinition,
     schemaVersion: 1, kind: 'feature-catalog' });
   const dependencyPolicy = compileDependencyPolicyInput({ levels: strikes.levels }, featureCatalog);
@@ -48,7 +131,7 @@ const splitIdentities = progression => {
     dependencyPolicyIdentity: dependencyPolicy.identity };
 };
 
-const evidence = status => createCheckEvidence({
+const evidence = (status: CheckEvidenceStatus) => createCheckEvidence({
   status,
   code: status === 'passed' ? 'completed' : 'test_result',
   phase: 'assertion',
@@ -103,7 +186,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
       },
     });
-    const states = [];
+    const states: LiveProgressionStatus[] = [];
     const execution = createLiveProgressionExecution({
       progression,
       ...split,
@@ -120,7 +203,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       onState: status => states.push(status),
     });
     execution.initialize();
-    const selected = execution.bind(1);
+    const selected = workSelection(execution.bind(1));
     const source = hashAppSource(appDir);
     const key = selected.grader.checkKeys[0];
     const recipe = selected.grader.request.recipe;
@@ -140,7 +223,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       ] }] } },
       outcome: { kind: 'passed' },
     };
-    writeArtifact(join(appDir, 'stack-bench', 'bundle.json'), {
+    const gradeArtifact = {
       kind: 'grade_bundle',
       id: 'grade-1',
       attempt: { id: 'grade-1', parentId: 'run-1' },
@@ -149,7 +232,10 @@ test('live progression binds, records, checkpoints, and persists one exact actio
         stackAdapter: { id: owner.attempt.stack },
       }),
       payload: grade,
-    });
+    };
+    writeArtifact(join(appDir, 'stack-bench', 'bundle.json'), gradeArtifact);
+    mkdirSync(join(outputDir, 'grading'), { recursive: true });
+    writeArtifact(join(outputDir, 'grading', 'bundle.json'), gradeArtifact);
 
     const next = execution.record({ selected, bundle: grade, level: 1,
       repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
@@ -157,19 +243,22 @@ test('live progression binds, records, checkpoints, and persists one exact actio
           { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
             remaining: 2, exhaustionReason: null },
         ] } });
+    assert(next);
     assert.equal(next.type, 'terminal');
-    assert.equal(execution.state.nodes.accounts.status, 'passed');
-    assert.equal(states.at(-1).score.averagePercentage, 100);
+    assert.equal(nodeState(executionState(execution), 'accounts').status, 'passed');
+    assert.equal(latestStatus(states).score.averagePercentage, 100);
     assert(existsSync(join(outputDir, 'progression-state.json')));
     assert(existsSync(join(outputDir, 'progression', 'attempt-001', 'bundle.json')));
     assert(existsSync(join(outputDir, 'level-l1-checkpoint.json')));
     assert(existsSync(join(outputDir, 'source', 'index.js')));
     assert.doesNotThrow(() => createArtifact({
       ...runArtifact,
+      attempt: { id: 'run-1', parentId: owner.attempt.id },
       payload: { ...runArtifact.payload, progressionStatus: states.at(-1) },
     }));
     assert.throws(() => createArtifact({
       ...runArtifact,
+      attempt: { id: 'run-1', parentId: owner.attempt.id },
       payload: { ...runArtifact.payload,
         progressionStatus: { ...states.at(-1), stateArtifact: '../state.json' } },
     }), /stateArtifact is invalid/);
@@ -197,13 +286,15 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       definition: { track: owner.attempt.track, selection: { levels: [] },
         runtime: { buildImage: null }, budgets: { maxCostUsdPerAttempt: null } },
       agents: [{ adapter: owner.attempt.agentAdapter, model: owner.attempt.model,
-        identity: identities.agentAdapter }],
-      stacks: [{ id: owner.attempt.stack, version: identities.stackAdapter.version }],
+        identity: identity(identities, 'agentAdapter') }],
+      stacks: [{ id: owner.attempt.stack,
+        version: identityVersion(identity(identities, 'stackAdapter')) }],
       conditions: [attempt.condition],
-      identities: { engine: identities.engine },
+      identities: { engine: identity(identities, 'engine') },
     };
     const completedRun = artifactPayload(createArtifact({
       ...runArtifact,
+      attempt: { id: 'run-1', parentId: owner.attempt.id },
       payload: {
         ...runArtifact.payload,
         track: owner.attempt.track,
@@ -265,15 +356,18 @@ test('live progression records provider interruptions without consuming a strike
       identities, recipeBindings: new Map([[1, binding]]),
       getRunArtifact: () => runArtifact });
     execution.initialize();
-    const selected = execution.bind(1);
+    const selected = workSelection(execution.bind(1));
     execution.record({ selected, bundle: null, level: 1,
       failure: { kind: 'provider_failure', reason: 'provider-connection-error' },
       repair: { status: 'ungraded', budgetRounds: 1, roundsUsed: 0,
         stopReason: 'agent-session-failure' } });
-    assert.equal(execution.state.attempts.length, 1);
-    assert.equal(execution.state.attempts[0].outcome, 'inconclusive');
-    assert.equal(execution.state.attempts[0].category, 'provider_failure');
-    assert.equal(execution.state.nodes.accounts.strikes.used, 0);
+    const state = executionState(execution);
+    const attempt = state.attempts[0];
+    assert(attempt);
+    assert.equal(state.attempts.length, 1);
+    assert.equal(attempt.outcome, 'inconclusive');
+    assert.equal(attempt.category, 'provider_failure');
+    assert.equal(nodeState(state, 'accounts').strikes.used, 0);
     assert.equal(existsSync(join(outputDir, 'progression', 'attempt-001')), false);
     assert.equal(existsSync(join(outputDir, 'progression-state.json')), true);
   } finally {
@@ -295,8 +389,10 @@ test('an interrupted execution restores the saved source and resumes the next gr
     writeFileSync(join(secondApp, 'index.js'), 'export const interrupted = true;\n');
 
     const value = definition();
+    const accounts = value.nodes[0];
+    assert(accounts);
     value.nodes = [
-      value.nodes[0],
+      accounts,
       { id: 'catalog', title: 'Catalog', questline: 'catalog', dependencies: [],
         featureRefs: ['ecommerce.feature.catalog@1.1.0'], promptModules: [],
         gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog.2a', points: 1 }] },
@@ -341,7 +437,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
       recipeBindings: new Map([[1, binding], [2, binding]]),
       getRunArtifact: () => runArtifact });
     assert.equal(first.initialize().resumed, false);
-    const selected = first.bind(1);
+    const selected = workSelection(first.bind(1));
     const source = hashAppSource(firstApp);
     const checks = selected.grader.checkKeys.map(stableKey => ({ stableKey, points: 1 }));
     const recipe = selected.grader.request.recipe;
@@ -363,14 +459,16 @@ test('an interrupted execution restores the saved source and resumes the next gr
         sha256: recipe.contentSha256 }, stackAdapter: { id: owner.attempt.stack } }),
       payload: grade,
     });
-    assert.equal(first.record({ selected, bundle: grade, level: 1,
+    const next = first.record({ selected, bundle: grade, level: 1,
       repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
         stopReason: 'not-needed', strikeScope: 'feature', nodeStrikes: [
           { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
             remaining: 2, exhaustionReason: null },
           { nodeId: 'catalog', initialBudget: 2, granted: 0, budget: 2, used: 0,
             remaining: 2, exhaustionReason: null },
-        ] } }).level, 2);
+        ] } });
+    assert(next);
+    assert.equal(next.level, 2);
     writeArtifact(join(firstOutput, 'run.json'), {
       ...runArtifact,
       payload: { ...runArtifact.payload, progressionStatus: first.status() },
@@ -387,10 +485,13 @@ test('an interrupted execution restores the saved source and resumes the next gr
     assert.equal(restored.resumed, true);
     assert.equal(restored.action.type, 'build');
     assert.equal(restored.action.level, 2);
-    assert.deepEqual(restored.action.prompt.nodeIds, ['purchasing']);
-    assert.equal(resumed.state.attempts.length, 1);
-    assert.equal(resumed.state.nodes.accounts.status, 'passed');
-    assert.equal(resumed.state.nodes.catalog.status, 'passed');
+    const restoredAction = workAction(restored.action);
+    assert(object(restoredAction.prompt));
+    assert.deepEqual(restoredAction.prompt.nodeIds, ['purchasing']);
+    const resumedState = executionState(resumed);
+    assert.equal(resumedState.attempts.length, 1);
+    assert.equal(nodeState(resumedState, 'accounts').status, 'passed');
+    assert.equal(nodeState(resumedState, 'catalog').status, 'passed');
     assert.equal(readFileSync(join(secondApp, 'index.js'), 'utf8'),
       'export const level = 1;\n');
     assert(existsSync(join(secondOutput, 'progression-state.json')));
@@ -445,7 +546,7 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
       backend: owner.attempt.stack, identities, recipeBindings: new Map([[1, binding]]),
       getRunArtifact: () => runArtifact });
     first.initialize();
-    const selected = first.bind(1);
+    const selected = workSelection(first.bind(1));
     const source = hashAppSource(firstApp);
     const key = selected.grader.checkKeys[0];
     const recipe = selected.grader.request.recipe;
@@ -465,12 +566,14 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
         sha256: recipe.contentSha256 }, stackAdapter: { id: owner.attempt.stack } }),
       payload: grade,
     });
-    assert.equal(first.record({ selected, bundle: grade, level: 1,
+    const next = first.record({ selected, bundle: grade, level: 1,
       repair: { status: 'incomplete', budgetRounds: 1, roundsUsed: 0,
         stopReason: null, strikeScope: 'feature', nodeStrikes: [
           { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 1,
             remaining: 1, exhaustionReason: null },
-        ] } }).type, 'repair');
+        ] } });
+    assert(next);
+    assert.equal(next.type, 'repair');
     writeArtifact(join(firstOutput, 'run.json'), { ...runArtifact,
       payload: { ...runArtifact.payload, progressionStatus: first.status(),
         totals: { costUsd: 1.25, costComplete: true }, levels: [] } });
@@ -484,12 +587,15 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
     const restored = resumed.initialize();
     assert.equal(restored.action.type, 'repair');
     assert.equal(restored.action.level, 1);
-    assert.equal(resumed.state.attempts.length, 1);
+    assert.equal(executionState(resumed).attempts.length, 1);
     assert.equal(readFileSync(join(secondApp, 'index.js'), 'utf8'),
       'export const broken = true;\n');
     assert(existsSync(join(secondApp, 'stack-bench', 'bundle.json')));
     assert(existsSync(join(secondOutput, 'progression', 'attempt-001', 'bundle.json')));
-    assert.equal(restored.priorRun.payload.totals.costUsd, 1.25);
+    assert(restored.priorRun);
+    const totals = restored.priorRun.payload.totals;
+    assert(object(totals));
+    assert.equal(totals.costUsd, 1.25);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -13,6 +13,8 @@ export interface Artifact<TPayload = Record<string, unknown>> {
   [key: string]: unknown;
 }
 
+export type ArtifactIdentities = Artifact['identities'];
+
 export function emptyArtifactIdentities(overrides?: Record<string, unknown>): unknown;
 export function createArtifact<TPayload = Record<string, unknown>>(input: {
   kind: string;
@@ -32,6 +34,18 @@ export function currentEngineIdentity(): {
 };
 export function readArtifact<TPayload = Record<string, unknown>>(path: string,
   options?: { expectedId?: string | null; expectedKind?: string | null }): Artifact<TPayload>;
+export function artifactPayload<TPayload extends Record<string, unknown>>(
+  artifact: Artifact<TPayload>,
+): TPayload & {
+  artifactSchemaVersion: unknown;
+  kind: string;
+  id: string;
+  artifactEnvelope: {
+    attempt: Artifact['attempt'];
+    timestamps: unknown;
+    identities: ArtifactIdentities;
+  };
+};
 export function readArtifactPayload<TPayload = Record<string, unknown>>(path: string,
   options?: { expectedId?: string | null; expectedKind?: string | null }): TPayload;
 export function readRunJson(path: string, expectedRunId?: string): CostRun;

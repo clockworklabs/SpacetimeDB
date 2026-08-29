@@ -2,20 +2,131 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import type { RecipeBinding } from '../composition/recipe-release.mjs';
 import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.mjs';
+import type { Artifact } from '../evidence/artifacts.mjs';
 import { classifyBundle } from '../evidence/outcomes.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.mjs';
 import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.mjs';
-import { progressionEngine } from './progression-engine.js';
 import { replayDependencyMode } from './dependency-mode.js';
+import type { DependencyScore } from './dependency-mode.js';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.js';
+import type { ProgressionGradeResult } from './grade-bundle-result.js';
+import { progressionEngine } from './progression-engine.js';
+import type { ProgressionAction } from './progression-engine.js';
+import { validateProgressionInput } from './progression-definition.js';
+import type { ProgressionInput } from './progression-definition.js';
 import { resolveProgressionRecipeAction } from './progression-recipe-selection.js';
-import { progressionStateExists, readProgressionState, validateProgressionOwner,
-  writeProgressionState } from './progression-state.js';
+import type { ProgressionRecipeAction } from './progression-recipe-selection.js';
+import {
+  progressionStateExists,
+  readProgressionState,
+  validateProgressionOwner,
+  writeProgressionState,
+} from './progression-state.js';
+import type { ProgressionOwner, ProgressionState } from './progression-state.js';
 
-function rejectSymlinks(path, label) {
+interface WorkspaceProgressionOwner extends ProgressionOwner {
+  workspace: { appDirectory: string };
+}
+
+interface ResumeBinding {
+  actionSha256: string;
+  source: { directory: string; sha256: string; files: number };
+}
+
+interface BenchmarkRunPayload extends Record<string, unknown> {
+  progressionOwner?: unknown;
+  featureCatalog?: unknown;
+  dependencyPolicy?: unknown;
+  backend?: string;
+  model?: string;
+  condition?: { sha256?: string };
+  progressionStatus?: { phase?: string; level?: number; attempts?: number };
+}
+
+interface GradeBundlePayload extends Record<string, unknown> {
+  source?: { sha256?: string };
+  selection?: { sha256?: string };
+}
+
+interface CodingFailureResult {
+  attemptId: string;
+  outcome: 'inconclusive';
+  category: 'provider_failure' | 'harness_failure' | 'interrupted' | 'inconclusive_evidence';
+  reason: string;
+}
+
+interface CodingFailure {
+  kind?: string;
+  reason?: string;
+}
+
+interface RecordOptions {
+  selected: ProgressionRecipeAction | null;
+  bundle: unknown;
+  level: number;
+  repair: unknown;
+  failure?: CodingFailure | null;
+}
+
+export interface LiveProgressionStatus {
+  stateArtifact: string;
+  phase: ProgressionState['phase'];
+  level: number;
+  attempts: number;
+  score: DependencyScore;
+}
+
+export interface LiveProgressionExecutionOptions {
+  progression: ProgressionInput;
+  featureCatalogIdentity: unknown;
+  dependencyPolicyIdentity: unknown;
+  owner: unknown;
+  statePath: string;
+  runId: string;
+  outputDir: string;
+  appDir: string;
+  track: string;
+  backend: string;
+  identities: unknown;
+  recipeBindings: Map<number, RecipeBinding>;
+  getRunArtifact: () => unknown;
+  resumeFrom?: string | null;
+  onState?: (status: LiveProgressionStatus) => void;
+}
+
+export interface LiveProgressionExecution {
+  initialize(): {
+    resumed: boolean;
+    action: ProgressionAction;
+    status: LiveProgressionStatus;
+    snapshotSha256: string | null;
+    priorRun: Artifact<BenchmarkRunPayload> | null;
+  };
+  bind(level: number): ProgressionRecipeAction;
+  record(options: RecordOptions): ProgressionAction | null;
+  readonly state: ProgressionState | null;
+  readonly resumed: boolean;
+  status(): LiveProgressionStatus;
+}
+
+type StoredProgression = ReturnType<typeof readProgressionState>;
+
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const FAILURE_CATEGORIES = [
+  'provider_failure', 'harness_failure', 'interrupted', 'inconclusive_evidence',
+] as const satisfies ReadonlyArray<CodingFailureResult['category']>;
+
+function failureCategory(value: unknown): value is CodingFailureResult['category'] {
+  return typeof value === 'string'
+    && FAILURE_CATEGORIES.some(category => category === value);
+}
+
+function rejectSymlinks(path: string, label: string): void {
   if (lstatSync(path).isSymbolicLink()) throw new Error(`${label} cannot be a symbolic link`);
   for (const entry of readdirSync(path, { withFileTypes: true })) {
     const child = join(path, entry.name);
@@ -24,11 +135,34 @@ function rejectSymlinks(path, label) {
   }
 }
 
-function actionSha256(state) {
+function workspaceOwner(input: unknown): WorkspaceProgressionOwner {
+  const owner = validateProgressionOwner(input, { requireWorkspace: true });
+  if (!owner.workspace) throw new Error('progression state owner is incomplete');
+  return { ...owner, workspace: owner.workspace };
+}
+
+function resumeBinding(input: unknown): ResumeBinding {
+  if (!object(input) || typeof input.actionSha256 !== 'string' || !object(input.source)
+    || typeof input.source.directory !== 'string' || typeof input.source.sha256 !== 'string'
+    || !Number.isSafeInteger(input.source.files) || Number(input.source.files) < 0) {
+    throw new Error('saved dependency progression action does not match its state');
+  }
+  return {
+    actionSha256: input.actionSha256,
+    source: {
+      directory: input.source.directory,
+      sha256: input.source.sha256,
+      files: Number(input.source.files),
+    },
+  };
+}
+
+function actionSha256(state: ProgressionState): string {
   return sha256(canonicalDefinitionJson(progressionEngine.nextAction(state)));
 }
 
-export function liveProgressionStatus(state, stateArtifact = 'progression-state.json') {
+export function liveProgressionStatus(state: ProgressionState,
+  stateArtifact = 'progression-state.json'): LiveProgressionStatus {
   return {
     stateArtifact,
     phase: state.phase,
@@ -38,11 +172,16 @@ export function liveProgressionStatus(state, stateArtifact = 'progression-state.
   };
 }
 
-export function createLiveProgressionExecution({ progression, featureCatalogIdentity,
-  dependencyPolicyIdentity, owner, statePath, runId,
-  outputDir, appDir, track, backend, identities, recipeBindings, getRunArtifact,
-  resumeFrom = null, onState } = {}) {
-  owner = validateProgressionOwner(owner, { requireWorkspace: true });
+export function createLiveProgressionExecution(
+  options: LiveProgressionExecutionOptions,
+): LiveProgressionExecution {
+  const progression = validateProgressionInput(options.progression);
+  const featureCatalogIdentity = options.featureCatalogIdentity;
+  const dependencyPolicyIdentity = options.dependencyPolicyIdentity;
+  const owner = workspaceOwner(options.owner);
+  const { statePath, runId, outputDir, appDir, track, backend, identities,
+    recipeBindings, getRunArtifact, onState } = options;
+  const resumeFrom = options.resumeFrom ?? null;
   const stateRoot = dirname(resolve(statePath));
   if (resolve(outputDir) !== stateRoot) {
     throw new Error('live dependency progression state must be stored in its output directory');
@@ -52,14 +191,18 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
   if (sourceRelative === '..' || sourceRelative.startsWith(`..${sep}`) || sourceRelative === '') {
     throw new Error('live dependency progression source escapes its output directory');
   }
-  let state = null;
+  let state: ProgressionState | null = null;
   let initialized = false;
   let resumed = false;
-  let priorRun = null;
-  let resumedSnapshotSha256 = null;
+  let priorRun: Artifact<BenchmarkRunPayload> | null = null;
+  let resumedSnapshotSha256: string | null = null;
 
-  const status = () => liveProgressionStatus(state);
-  const sourceBinding = ({ capture = false } = {}) => {
+  const currentState = (): ProgressionState => {
+    if (!state) throw new Error('live dependency progression is not initialized');
+    return state;
+  };
+  const status = (): LiveProgressionStatus => liveProgressionStatus(currentState());
+  const sourceBinding = ({ capture = false }: { capture?: boolean } = {}): ResumeBinding => {
     if (capture) {
       mkdirSync(appDir, { recursive: true });
       snapshotAppSource(appDir, sourceDirectory);
@@ -75,40 +218,45 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
         throw new Error('saved dependency progression source differs from the live application');
       }
     }
-    return { actionSha256: actionSha256(state), source: {
+    return { actionSha256: actionSha256(currentState()), source: {
       directory: owner.workspace.appDirectory,
       sha256: source.sha256,
       files: source.files.length,
     } };
   };
-  const validateSavedSource = (stored, root) => {
-    if (!stored.resume
-      || stored.resume.actionSha256 !== actionSha256(stored.state)
-      || stored.resume.source.directory !== owner.workspace.appDirectory) {
+  const validateSavedSource = (stored: StoredProgression, root: string): {
+    path: string;
+    resume: ResumeBinding;
+  } => {
+    const resume = resumeBinding(stored.resume);
+    if (resume.actionSha256 !== actionSha256(stored.state)
+      || resume.source.directory !== owner.workspace.appDirectory) {
       throw new Error('saved dependency progression action does not match its state');
     }
-    const source = resolve(root, stored.resume.source.directory);
+    const source = resolve(root, resume.source.directory);
     const rel = relative(root, source);
     if (rel === '..' || rel.startsWith(`..${sep}`) || rel === '' || !existsSync(source)) {
       throw new Error('saved dependency progression source is outside its state directory');
     }
     rejectSymlinks(source, 'saved dependency progression source');
     const actual = hashDirectory(source);
-    if (actual.sha256 !== stored.resume.source.sha256
-      || actual.files.length !== stored.resume.source.files) {
+    if (actual.sha256 !== resume.source.sha256 || actual.files.length !== resume.source.files) {
       throw new Error('saved dependency progression source does not match its state');
     }
-    return source;
+    return { path: source, resume };
   };
-  const validatePriorRun = (root, stored) => {
-    const artifact = readArtifact(join(root, 'run.json'), { expectedKind: 'benchmark_run' });
+  const validatePriorRun = (root: string, stored: StoredProgression):
+  Artifact<BenchmarkRunPayload> => {
+    const artifact = readArtifact<BenchmarkRunPayload>(join(root, 'run.json'),
+      { expectedKind: 'benchmark_run' });
     const runOwner = artifact.payload.progressionOwner;
-    const lastEvent = stored.state.events?.at(-1);
+    const lastEvent = stored.state.events.at(-1);
     const runState = lastEvent?.type === 'strikes-granted'
       ? replayDependencyMode(stored.state.definition, stored.state.events.slice(0, -1))
       : stored.state;
+    const engine = object(artifact.identities.engine) ? artifact.identities.engine : {};
     if (artifact.attempt.parentId !== owner.attempt.id
-      || artifact.identities.engine.sha256 !== currentEngineIdentity().sha256
+      || engine.sha256 !== currentEngineIdentity().sha256
       || canonicalDefinitionJson(runOwner)
         !== canonicalDefinitionJson({ schemaVersion: 1, campaign: owner.campaign,
           attempt: owner.attempt })
@@ -126,20 +274,25 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
     }
     return artifact;
   };
-  const restoreRepairEvidence = (root, targetRoot = root) => {
-    const action = progressionEngine.nextAction(state);
+  const restoreRepairEvidence = (root: string, targetRoot = root): void => {
+    const activeState = currentState();
+    const action = progressionEngine.nextAction(activeState);
     if (action.type !== 'repair') return;
-    const index = state.attempts.findLastIndex(attempt => attempt.outcome === 'conclusive');
-    const attempt = state.attempts[index];
+    const index = activeState.attempts.findLastIndex(attempt => attempt.outcome === 'conclusive');
+    const attempt = activeState.attempts[index];
+    const evidence = object(attempt?.evidence) ? attempt.evidence : null;
     if (index < 0 || !attempt?.sourceSha256 || !attempt.selectionSha256
-      || attempt.evidence?.kind !== 'grade_bundle') {
+      || evidence?.kind !== 'grade_bundle' || typeof evidence.id !== 'string'
+      || typeof evidence.sha256 !== 'string') {
       throw new Error('saved repair action has no conclusive grading evidence');
     }
     const from = join(root, 'progression', `attempt-${String(index + 1).padStart(3, '0')}`);
-    const bundle = readArtifact(join(from, 'bundle.json'), { expectedKind: 'grade_bundle' });
-    if (bundle.id !== attempt.evidence.id
-      || sha256(canonicalDefinitionJson(bundle)) !== attempt.evidence.sha256
-      || bundle.identities.engine.sha256 !== currentEngineIdentity().sha256
+    const bundle = readArtifact<GradeBundlePayload>(join(from, 'bundle.json'),
+      { expectedKind: 'grade_bundle' });
+    const engine = object(bundle.identities.engine) ? bundle.identities.engine : {};
+    if (bundle.id !== evidence.id
+      || sha256(canonicalDefinitionJson(bundle)) !== evidence.sha256
+      || engine.sha256 !== currentEngineIdentity().sha256
       || bundle.payload.source?.sha256 !== attempt.sourceSha256
       || bundle.payload.selection?.sha256 !== attempt.selectionSha256) {
       throw new Error('saved repair evidence does not match its progression attempt');
@@ -154,38 +307,38 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
     cpSync(target, gradingDirectory, { recursive: true,
       filter: source => !/[\\/]media([\\/]|$)/.test(source) });
   };
-  const persist = ({ captureSource = false, notify = true } = {}) => {
+  const persist = ({ captureSource = false, notify = true }:
+  { captureSource?: boolean; notify?: boolean } = {}): StoredProgression => {
     const resume = sourceBinding({ capture: captureSource });
     const written = writeProgressionState(statePath, {
       progression,
       featureCatalogIdentity,
       dependencyPolicyIdentity,
       owner,
-      state,
+      state: currentState(),
       resume,
       id: `${runId}-progression-state`,
     });
     if (notify && onState) onState(status());
     return written;
   };
-  const initialize = () => {
+  const initialize = (): ReturnType<LiveProgressionExecution['initialize']> => {
     if (initialized) throw new Error('live dependency progression is already initialized');
     if (progressionStateExists(statePath)) {
       if (resumeFrom !== null) {
         throw new Error('live dependency progression cannot import over existing state');
       }
       const stored = readProgressionState(statePath, { progression, featureCatalogIdentity,
-        dependencyPolicyIdentity, owner,
-        requireCurrentEngine: true });
+        dependencyPolicyIdentity, owner, requireCurrentEngine: true });
       state = stored.state;
       resumedSnapshotSha256 = stored.snapshotSha256;
-      validateSavedSource(stored, stateRoot);
+      const saved = validateSavedSource(stored, stateRoot);
       priorRun = validatePriorRun(stateRoot, stored);
       mkdirSync(appDir, { recursive: true });
       restoreAppSource(sourceDirectory, appDir);
       const restored = hashAppSource(appDir);
-      if (restored.sha256 !== stored.resume.source.sha256
-        || restored.files.length !== stored.resume.source.files) {
+      if (restored.sha256 !== saved.resume.source.sha256
+        || restored.files.length !== saved.resume.source.files) {
         throw new Error('dependency progression source restoration changed its contents');
       }
       restoreRepairEvidence(stateRoot);
@@ -199,15 +352,15 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
         progression, featureCatalogIdentity, dependencyPolicyIdentity, owner,
         requireCurrentEngine: true,
       });
-      const previousSource = validateSavedSource(stored, previousRoot);
+      const saved = validateSavedSource(stored, previousRoot);
       state = stored.state;
       resumedSnapshotSha256 = stored.snapshotSha256;
       priorRun = validatePriorRun(previousRoot, stored);
-      snapshotAppSource(previousSource, sourceDirectory);
+      snapshotAppSource(saved.path, sourceDirectory);
       restoreAppSource(sourceDirectory, appDir);
       const restored = hashAppSource(appDir);
-      if (restored.sha256 !== stored.resume.source.sha256
-        || restored.files.length !== stored.resume.source.files) {
+      if (restored.sha256 !== saved.resume.source.sha256
+        || restored.files.length !== saved.resume.source.files) {
         throw new Error('imported dependency progression source changed during restoration');
       }
       restoreRepairEvidence(previousRoot, stateRoot);
@@ -218,22 +371,27 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
       persist({ captureSource: true });
     }
     initialized = true;
-    return { resumed, action: structuredClone(progressionEngine.nextAction(state)),
+    return { resumed, action: structuredClone(progressionEngine.nextAction(currentState())),
       status: status(), snapshotSha256: resumedSnapshotSha256,
       priorRun: priorRun === null ? null : structuredClone(priorRun) };
   };
-  const bind = level => {
-    const binding = recipeBindings.get(state.level);
-    if (!binding) throw new Error(`dependency progression has no recipe binding for L${state.level}`);
-    const selected = resolveProgressionRecipeAction(binding, state);
+  const bind = (level: number): ProgressionRecipeAction => {
+    const activeState = currentState();
+    const binding = recipeBindings.get(activeState.level);
+    if (!binding) {
+      throw new Error(`dependency progression has no recipe binding for L${activeState.level}`);
+    }
+    const selected = resolveProgressionRecipeAction(binding, activeState);
     if (selected.action.type !== 'terminal' && selected.action.level !== level) {
       throw new Error(`dependency progression requested L${selected.action.level}, not L${level}`);
     }
     return selected;
   };
-  const record = ({ selected, bundle, level, repair, failure = null }) => {
-    if (!selected || selected.action.type === 'terminal') return null;
-    const sequence = state.attempts.length + 1;
+  const record = ({ selected, bundle, level, repair, failure = null }:
+  RecordOptions): ProgressionAction | null => {
+    if (!selected || !('grader' in selected)) return null;
+    const activeState = currentState();
+    const sequence = activeState.attempts.length + 1;
     const evidenceDirectory = join(outputDir, 'progression',
       `attempt-${String(sequence).padStart(3, '0')}`);
     const gradingDirectory = join(appDir, 'stack-bench');
@@ -244,17 +402,17 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
       });
     }
 
-    let result;
+    let result: ProgressionGradeResult | CodingFailureResult;
     if (failure) {
-      const category = ['provider_failure', 'harness_failure', 'interrupted', 'inconclusive_evidence']
-        .includes(failure.kind) ? failure.kind : 'harness_failure';
+      const category = failureCategory(failure.kind) ? failure.kind : 'harness_failure';
       result = {
         attemptId: `${runId}-progression-${sequence}`,
         outcome: 'inconclusive',
         category,
         reason: failure.reason ?? `${category.replaceAll('_', ' ')} during coding`,
       };
-    } else if (!bundle?.selection || !existsSync(join(evidenceDirectory, 'bundle.json'))) {
+    } else if (!object(bundle) || !object(bundle.selection)
+      || !existsSync(join(evidenceDirectory, 'bundle.json'))) {
       result = {
         attemptId: `${runId}-progression-${sequence}`,
         outcome: 'inconclusive',
@@ -297,9 +455,9 @@ export function createLiveProgressionExecution({ progression, featureCatalogIden
         });
       }
     }
-    state = progressionEngine.recordResult(state, result);
+    state = progressionEngine.recordResult(activeState, result);
     persist({ captureSource: result.outcome === 'conclusive' });
-    return progressionEngine.nextAction(state);
+    return progressionEngine.nextAction(currentState());
   };
 
   return {
