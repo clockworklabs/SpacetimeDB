@@ -1,5 +1,6 @@
 import { pricingRatesEqual, validatePricingAuthority }
   from '../evidence/pricing-authority.js';
+import type { PricingRates } from '../evidence/pricing-authority.js';
 
 export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
 export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
@@ -17,11 +18,129 @@ const VERSION = /^\d+\.\d+\.\d+$/;
 const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
 const SANDBOX_PROBES = new Set(['direct-cli', 'none']);
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+type UnknownRecord = Record<string, unknown>;
+export type AgentMode = 'build' | 'upgrade' | 'resume' | 'fix';
+export type AgentCostLimit = 'native' | 'non-billable' | 'unsupported';
+export type AgentSandboxProbe = 'direct-cli' | 'none';
+
+export interface AgentAdapter {
+  readonly schemaVersion: 4;
+  readonly id: string;
+  readonly version: string;
+  readonly entrypoint: string;
+  readonly modes: readonly AgentMode[];
+  readonly deadlineMs: number;
+  readonly defaultModel: string;
+  readonly apiKeyEnvironmentVariable: string | null;
+  readonly credentialEnvironmentVariables: readonly string[];
+  readonly credentialFiles: readonly string[];
+  readonly outboundDestinations: readonly string[];
+  readonly requiredExecutables: readonly string[];
+  readonly credentialStatusCommand: readonly string[] | null;
+  readonly usesStackSkills: boolean;
+  readonly costLimit: AgentCostLimit;
+  readonly sandboxProbe: AgentSandboxProbe;
+}
+
+interface ReceiptUsage {
+  input: number;
+  output: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+  cacheRead: number;
+}
+
+export interface AgentCostReceipt {
+  schemaVersion: 2;
+  source: 'credential-broker';
+  model: string;
+  maxBudgetUsd: number;
+  costUsd: number;
+  cliCostUsd: number | null;
+  calculatedCostUsd: number | null;
+  usage: ReceiptUsage | null;
+  pricingRates: PricingRates | null;
+  complete: boolean;
+  reconciled: boolean;
+  error: string | null;
+}
+
+export interface AgentCostReceiptEntry {
+  invocation: number;
+  receipt: AgentCostReceipt;
+}
+
+export interface AgentRequest {
+  app: string;
+  mode: AgentMode;
+  level: number;
+  backend: string;
+  track: string;
+  runIndex: number;
+  model: string;
+  guidance: string;
+  adapterCostLimit?: AgentCostLimit;
+  maxBudgetUsd?: number | null;
+  pricing?: unknown;
+  recipe?: string | null;
+  guidanceDocument?: unknown;
+  credentialAliases?: Record<string, unknown> | null;
+  skills?: unknown[] | null;
+  recipeTask?: unknown;
+}
+
+export interface AgentAdapterRegistry {
+  readonly ids: readonly string[];
+  get(id: string): AgentAdapter;
+}
+
+export interface AgentSessionFailure {
+  kind: 'provider_failure' | 'harness_failure';
+  phase: 'coding-session';
+  reason: string;
+  provider: unknown;
+  appFailures: [];
+  inconclusive: [];
+  harnessFailures: [];
+}
+
+export interface AgentUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+}
+
+export interface AgentTranscriptIdentity {
+  kind: string;
+  id: string;
+}
+
+export interface ValidatedAgentResult extends UnknownRecord {
+  backend: string;
+  track: string;
+  model: string;
+  guidance: unknown;
+  costUsd: number;
+  tokens: number;
+  outputTokens: number;
+  turns: number;
+  promptBytes: number;
+  durationMs: number;
+  usage: AgentUsage;
+  costReceipts: AgentCostReceiptEntry[];
+  costComplete: boolean;
+  transcript: AgentTranscriptIdentity | null;
+}
+
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 const RECEIPT_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
 
-function validateCostReceipts(value, model) {
+function validateCostReceipts(value: unknown, model: string): AgentCostReceiptEntry[] {
   if (!Array.isArray(value)) throw new Error('agent result costReceipts must be an array');
+  const nonNegative = (item: unknown): boolean => typeof item === 'number'
+    && Number.isFinite(item) && item >= 0;
   value.forEach((entry, index) => {
     if (!object(entry) || !Number.isSafeInteger(entry.invocation) || entry.invocation !== index + 1
       || !object(entry.receipt)) {
@@ -33,10 +152,10 @@ function validateCostReceipts(value, model) {
       'error']);
     if (Object.keys(receipt).some(key => !fields.has(key)) || receipt.schemaVersion !== 2
       || receipt.source !== 'credential-broker' || receipt.model !== model
-      || !Number.isFinite(receipt.maxBudgetUsd) || receipt.maxBudgetUsd <= 0
-      || !Number.isFinite(receipt.costUsd) || receipt.costUsd < 0
+      || !nonNegative(receipt.maxBudgetUsd) || receipt.maxBudgetUsd === 0
+      || !nonNegative(receipt.costUsd)
       || ![receipt.cliCostUsd, receipt.calculatedCostUsd]
-        .every(cost => cost === null || (Number.isFinite(cost) && cost >= 0))
+        .every(cost => cost === null || nonNegative(cost))
       || typeof receipt.complete !== 'boolean' || typeof receipt.reconciled !== 'boolean'
       || (receipt.error !== null && (typeof receipt.error !== 'string' || !receipt.error))
       || receipt.reconciled !== (receipt.error === null)) {
@@ -46,7 +165,7 @@ function validateCostReceipts(value, model) {
       const values = receipt[field];
       if (values === null) continue;
       if (!object(values) || Object.keys(values).some(key => !RECEIPT_USAGE_FIELDS.includes(key))
-        || RECEIPT_USAGE_FIELDS.some(key => !Number.isFinite(values[key]) || values[key] < 0)) {
+        || RECEIPT_USAGE_FIELDS.some(key => !nonNegative(values[key]))) {
         throw new Error(`agent result costReceipts[${index}].receipt.${field} is invalid`);
       }
     }
@@ -56,10 +175,10 @@ function validateCostReceipts(value, model) {
       throw new Error(`agent result costReceipts[${index}].receipt is incomplete`);
     }
   });
-  return value;
+  return value as AgentCostReceiptEntry[];
 }
 
-export function defineAgentAdapter(value) {
+export function defineAgentAdapter(value: unknown): AgentAdapter {
   if (!object(value)) throw new Error('agent adapter must be an object');
   for (const key of Object.keys(value)) if (!FIELDS.has(key)) throw new Error(`agent adapter.${key} is unknown`);
   if (value.schemaVersion !== AGENT_ADAPTER_SCHEMA_VERSION) throw new Error('agent adapter schema is unsupported');
@@ -74,19 +193,20 @@ export function defineAgentAdapter(value) {
     || value.modes.some(mode => !MODES.has(mode)) || new Set(value.modes).size !== value.modes.length) {
     throw new Error(`agent adapter ${value.id}.modes is invalid`);
   }
-  if (!Number.isInteger(value.deadlineMs) || value.deadlineMs < 1_000) {
+  if (typeof value.deadlineMs !== 'number'
+    || !Number.isInteger(value.deadlineMs) || value.deadlineMs < 1_000) {
     throw new Error(`agent adapter ${value.id}.deadlineMs is invalid`);
   }
   if (typeof value.defaultModel !== 'string' || !value.defaultModel) {
     throw new Error(`agent adapter ${value.id}.defaultModel is required`);
   }
-  if (!COST_LIMITS.has(value.costLimit)) {
+  if (typeof value.costLimit !== 'string' || !COST_LIMITS.has(value.costLimit)) {
     throw new Error(`agent adapter ${value.id}.costLimit is invalid`);
   }
   if (typeof value.usesStackSkills !== 'boolean') {
     throw new Error(`agent adapter ${value.id}.usesStackSkills is invalid`);
   }
-  if (!SANDBOX_PROBES.has(value.sandboxProbe)) {
+  if (typeof value.sandboxProbe !== 'string' || !SANDBOX_PROBES.has(value.sandboxProbe)) {
     throw new Error(`agent adapter ${value.id}.sandboxProbe is invalid`);
   }
   if (value.credentialStatusCommand !== null
@@ -100,55 +220,62 @@ export function defineAgentAdapter(value) {
       || !/^[A-Z][A-Z0-9_]*$/.test(value.apiKeyEnvironmentVariable))) {
     throw new Error(`agent adapter ${value.id}.apiKeyEnvironmentVariable is invalid`);
   }
-  const relativeCredential = item => typeof item === 'string' && item
+  const relativeCredential = (item: unknown): boolean => typeof item === 'string' && Boolean(item)
     && !item.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(item)
     && !item.split(/[\\/]/).includes('..');
-  const secureDestination = item => {
+  const secureDestination = (item: unknown): boolean => {
+    if (typeof item !== 'string') return false;
     try { return new URL(item).protocol === 'https:'; } catch { return false; }
   };
-  for (const [field, validate] of [
-    ['credentialEnvironmentVariables', item => typeof item === 'string'
+  const arrayFields: Array<[string, (item: unknown) => boolean]> = [
+    ['credentialEnvironmentVariables', (item: unknown) => typeof item === 'string'
       && /^[A-Z][A-Z0-9_]*$/.test(item)],
     ['credentialFiles', relativeCredential],
     ['outboundDestinations', secureDestination],
-    ['requiredExecutables', item => typeof item === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(item)],
-  ]) {
-    if (!Array.isArray(value[field]) || value[field].some(item => !validate(item))
-      || new Set(value[field]).size !== value[field].length) {
+    ['requiredExecutables', (item: unknown) => typeof item === 'string'
+      && /^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(item)],
+  ];
+  for (const [field, validate] of arrayFields) {
+    const items = value[field];
+    if (!Array.isArray(items) || items.some(item => !validate(item))
+      || new Set(items).size !== items.length) {
       throw new Error(`agent adapter ${value.id}.${field} is invalid`);
     }
   }
-  return Object.freeze({ ...value, modes: Object.freeze([...value.modes].sort()),
-    credentialEnvironmentVariables: Object.freeze([...value.credentialEnvironmentVariables].sort()),
-    credentialFiles: Object.freeze([...value.credentialFiles].sort()),
-    outboundDestinations: Object.freeze([...value.outboundDestinations].sort()),
-    requiredExecutables: Object.freeze([...value.requiredExecutables].sort()),
+  return Object.freeze({ ...value, modes: Object.freeze([...(value.modes as string[])].sort()),
+    credentialEnvironmentVariables: Object.freeze(
+      [...value.credentialEnvironmentVariables as string[]].sort()),
+    credentialFiles: Object.freeze([...value.credentialFiles as string[]].sort()),
+    outboundDestinations: Object.freeze([...value.outboundDestinations as string[]].sort()),
+    requiredExecutables: Object.freeze([...value.requiredExecutables as string[]].sort()),
     credentialStatusCommand: value.credentialStatusCommand === null ? null
-      : Object.freeze([...value.credentialStatusCommand]) });
+      : Object.freeze([...value.credentialStatusCommand as string[]]) }) as unknown as AgentAdapter;
 }
 
-export function createAgentAdapterRegistry(adapters) {
+export function createAgentAdapterRegistry(adapters: unknown): AgentAdapterRegistry {
   if (!Array.isArray(adapters)) throw new Error('agent adapter registry requires an array');
-  const entries = new Map();
+  const entries = new Map<string, AgentAdapter>();
   for (const source of adapters) {
     const adapter = defineAgentAdapter(source);
     if (entries.has(adapter.id)) throw new Error(`duplicate agent adapter ${adapter.id}`);
     entries.set(adapter.id, adapter);
   }
   const ids = Object.freeze([...entries.keys()].sort());
-  return Object.freeze({ ids, get(id) {
+  return Object.freeze({ ids, get(id: string) {
     const adapter = entries.get(id);
     if (!adapter) throw new Error(`unknown agent adapter ${JSON.stringify(id)}`);
     return adapter;
   } });
 }
 
-const finite = (value, at) => {
-  if (!Number.isFinite(value) || value < 0) throw new Error(`agent result ${at} must be a non-negative number`);
-  return value;
+const finite = (value: unknown, at: string): number => {
+  if (!Number.isFinite(value) || (value as number) < 0) {
+    throw new Error(`agent result ${at} must be a non-negative number`);
+  }
+  return value as number;
 };
 
-export function validateAgentResult(value, request) {
+export function validateAgentResult(value: unknown, request: AgentRequest): ValidatedAgentResult {
   if (!object(value)) throw new Error('agent result must be an object');
   for (const key of Object.keys(value)) {
     if (!RESULT_FIELDS.has(key)) throw new Error(`agent result ${key} is unknown`);
@@ -170,7 +297,8 @@ export function validateAgentResult(value, request) {
     throw new Error('agent result sessionId must be a non-empty string or null');
   }
   if (!object(value.usage)) throw new Error('agent result usage must be an object');
-  for (const key of Object.keys(value.usage)) {
+  const resultUsage = value.usage;
+  for (const key of Object.keys(resultUsage)) {
     if (!['input', 'output', 'cacheWrite', 'cacheRead'].includes(key)) {
       throw new Error(`agent result usage.${key} is unknown`);
     }
@@ -191,8 +319,12 @@ export function validateAgentResult(value, request) {
       throw new Error('agent result transcript requires non-empty kind and id');
     }
   }
-  const usage = Object.fromEntries(['input', 'output', 'cacheWrite', 'cacheRead']
-    .map(key => [key, finite(value.usage[key], `usage.${key}`)]));
+  const usage: AgentUsage = {
+    input: finite(resultUsage.input, 'usage.input'),
+    output: finite(resultUsage.output, 'usage.output'),
+    cacheWrite: finite(resultUsage.cacheWrite, 'usage.cacheWrite'),
+    cacheRead: finite(resultUsage.cacheRead, 'usage.cacheRead'),
+  };
   const costUsd = finite(value.costUsd, 'costUsd');
   const costReceipts = validateCostReceipts(
     value.costReceipts === undefined ? [] : value.costReceipts, request.model);
@@ -214,6 +346,9 @@ export function validateAgentResult(value, request) {
   if (request.maxBudgetUsd != null && request.adapterCostLimit === 'unsupported') {
     throw new Error('agent result came from an adapter that cannot enforce a cost limit');
   }
+  const transcript = value.transcript === null || value.transcript === undefined
+    ? (value.sessionId ? { kind: 'provider-session', id: value.sessionId as string } : null)
+    : value.transcript as unknown as AgentTranscriptIdentity;
   return {
     ...value,
     backend: request.backend,
@@ -229,28 +364,31 @@ export function validateAgentResult(value, request) {
     usage,
     costReceipts,
     costComplete,
-    transcript: value.transcript ?? (value.sessionId
-      ? { kind: 'provider-session', id: value.sessionId }
-      : null),
+    transcript,
   };
 }
 
-export function agentSessionFailure(result) {
+export function agentSessionFailure(result: UnknownRecord): AgentSessionFailure | null {
   if (result.ok === true && result.sessionId) return null;
-  const failureCode = result.providerMetadata?.failureCode;
+  const providerMetadata = object(result.providerMetadata) ? result.providerMetadata : null;
+  const failureCode = providerMetadata?.failureCode;
   const kind = typeof failureCode === 'string' && failureCode.startsWith('provider-')
     ? 'provider_failure' : 'harness_failure';
   return { kind, phase: 'coding-session',
     reason: typeof failureCode === 'string' && failureCode ? failureCode
       : result.sessionId ? 'coding session reported failure' : 'coding session did not run',
-    provider: result.providerMetadata?.failure ?? null,
+    provider: providerMetadata?.failure ?? null,
     appFailures: [], inconclusive: [], harnessFailures: [] };
 }
 
-export function agentRecipeIdentity(explicitRecipe, recipeTask) {
-  const bound = recipeTask?.recipe;
+export function agentRecipeIdentity(
+  explicitRecipe: string | null | undefined,
+  recipeTask: unknown,
+): string | null {
+  const task = object(recipeTask) ? recipeTask : null;
+  const bound = task?.recipe;
   if (!bound) return explicitRecipe ?? null;
-  if (typeof bound.id !== 'string' || !bound.id
+  if (!object(bound) || typeof bound.id !== 'string' || !bound.id
     || typeof bound.version !== 'string' || !bound.version) {
     throw new Error('recipe-bound agent task has an invalid recipe identity');
   }
@@ -261,7 +399,7 @@ export function agentRecipeIdentity(explicitRecipe, recipeTask) {
   return identity;
 }
 
-export function agentRequestArgv(adapter, request) {
+export function agentRequestArgv(adapter: AgentAdapter, request: AgentRequest): string[] {
   if (!adapter.modes.includes(request.mode)) {
     throw new Error(`agent adapter ${adapter.id} does not support mode ${request.mode}`);
   }

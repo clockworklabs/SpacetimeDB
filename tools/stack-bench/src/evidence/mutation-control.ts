@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { agentRecipeIdentity } from '../agents/agent-adapter-contract.mjs';
+import { agentRecipeIdentity } from '../agents/agent-adapter-contract.js';
 import { portsFor } from '../composition/tracks.mjs';
 import type { Track } from '../composition/tracks.mjs';
 import { STACK_BENCH_ROOT } from '../package-root.js';

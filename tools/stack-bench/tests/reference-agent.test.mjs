@@ -22,7 +22,7 @@ test('the model-free reference builder accepts any explicit positive level', () 
 });
 
 test('the shared adapter request forwards the exact recipe into reference selection', async () => {
-  const { agentRequestArgv } = await import('../src/agents/agent-adapter-contract.mjs');
+  const { agentRequestArgv } = await import('../dist/src/agents/agent-adapter-contract.js');
   const { AGENT_ADAPTER_REGISTRY } = await import('../src/agents/agent-adapters.mjs');
   const command = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'), {
     mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',

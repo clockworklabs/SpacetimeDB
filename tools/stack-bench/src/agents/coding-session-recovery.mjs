@@ -1,4 +1,4 @@
-import { AGENT_COST_RECEIPT_TOLERANCE_USD } from './agent-adapter-contract.mjs';
+import { AGENT_COST_RECEIPT_TOLERANCE_USD } from './agent-adapter-contract.js';
 
 function text(value) {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');

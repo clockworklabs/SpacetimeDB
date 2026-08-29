@@ -42,7 +42,7 @@ import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidenc
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
-  validateAgentResult } from '../src/agents/agent-adapter-contract.mjs';
+  validateAgentResult } from '../src/agents/agent-adapter-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.mjs';
 import { runPreflight } from '../src/runtime/preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';

@@ -8,8 +8,8 @@ import test from 'node:test';
 
 import { aggregateCodingSessionResults, codingSessionInterruption,
   parseCodingSessionResult, providerSessionFailure,
-  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
-import { agentSessionFailure } from '../src/agents/agent-adapter-contract.mjs';
+  runCodingSessionWithRecovery } from '../dist/src/agents/coding-session-recovery.mjs';
+import { agentSessionFailure } from '../dist/src/agents/agent-adapter-contract.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
   startCredentialBroker, stopCredentialBroker } from '../dist/container/credential-broker.mjs';
