@@ -18,12 +18,12 @@ import { killTree, pidsOnPort } from '../src/runtime/platform.js';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 const CLI = process.env.SPACETIME_BIN ?? join(REPO, 'target', 'release',
   process.platform === 'win32' ? 'spacetimedb-cli.exe' : 'spacetimedb-cli');
-const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
+const RUN_BUILD = stagedEntrypoint('container', 'run-build.mjs');
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 
 async function freePort() {
@@ -129,7 +129,7 @@ async function main() {
     const foreignUri = `http://127.0.0.1:${foreignServer.address().port}`;
 
     bench = spawn(process.execPath,
-      [join(ROOT, 'commands', 'bench.mjs'), '--backend', 'spacetime', '--track', 'loop',
+      [stagedEntrypoint('commands', 'bench.mjs'), '--backend', 'spacetime', '--track', 'loop',
         '--levels', '1', '--agent-adapter', 'fault-injection', '--app', app, '--out', out,
         '--url', `file:///${app.replace(/\\/g, '/')}/index.html`, '--skip-probe'],
       { env: { ...process.env, STACK_BENCH_STDB_URI: uri, STACK_BENCH_IMAGE: IMAGE },

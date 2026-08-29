@@ -302,6 +302,13 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+const requestedTaskMode = (request: UnknownRecord): string | undefined => {
+  const task = request.task;
+  if (task === null || typeof task !== 'object') return undefined;
+  const mode = Reflect.get(task, 'mode');
+  return typeof mode === 'string' ? mode : undefined;
+};
+
 function fail(at: string, message: string): never {
   throw new Error(`invalid campaign at ${at}: ${message}`);
 }
@@ -867,8 +874,10 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
           })),
         },
         task: {
-          ...(modular.taskMode === undefined || modular.taskMode === null
-            ? {} : { mode: modular.taskMode }),
+          // The mode the request actually carries: only an action recipe
+          // records one, and this level reports what was requested.
+          ...(requestedTaskMode(modular.request) === undefined
+            ? {} : { mode: requestedTaskMode(modular.request) }),
           sha256: modular.task.sha256,
           requirementSha256: modular.task.requirementSha256,
           contractSha256: modular.task.contractSha256,

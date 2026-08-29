@@ -72,7 +72,7 @@ import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 export function addCostUsd(...values) {
@@ -648,7 +648,7 @@ export function gradeArgv(args, appDir, url, label, level, track, parentAttemptI
   { observation = 'scored', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
   const expressPort = restartSpec.port ?? null;
-  return [join(ROOT, 'commands', 'run-suite.mjs'), '--app', appDir, '--url', url,
+  return [stagedEntrypoint('commands', 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
     ...(expressPort === null ? []
@@ -985,7 +985,7 @@ async function main() {
   } else if (probeMode === 'direct-cli') {
     console.log('  sandbox    ... probing the deny rules');
     try {
-      sh('node', [join(ROOT, 'commands', 'probe-sandbox.mjs'), '--mode', 'acceptEdits', '--model', args.model],
+      sh('node', [stagedEntrypoint('commands', 'probe-sandbox.mjs'), '--mode', 'acceptEdits', '--model', args.model],
         { stdio: 'inherit' });
     } catch {
       console.error('\nSANDBOX PROBE FAILED — refusing to start a run whose scores could not be trusted.');

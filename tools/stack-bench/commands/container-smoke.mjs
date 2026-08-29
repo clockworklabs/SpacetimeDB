@@ -19,12 +19,12 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
 import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 const CLI = process.env.SPACETIME_BIN ?? join(REPO, 'target', 'release',
   process.platform === 'win32' ? 'spacetimedb-cli.exe' : 'spacetimedb-cli');
-const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
+const RUN_BUILD = stagedEntrypoint('container', 'run-build.mjs');
 const FIXTURE = join(ROOT, 'tests', 'fixtures', 'spacetime-module');
 
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));

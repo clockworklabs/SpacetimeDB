@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 import { readArtifact, readRunJson } from '../src/evidence/artifacts.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
 const WORK = join(ROOT, '.loop-test');
 const APP = join(WORK, 'app');
 // A cold Playwright start plus two grades can exceed three minutes on Windows
@@ -35,7 +35,7 @@ const check = (name, ok, detail = '') => {
 };
 
 function runBench(extra = []) {
-  const argv = [join(ROOT, 'commands', 'bench.mjs'), '--backend', 'stub', '--levels', '1',
+  const argv = [stagedEntrypoint('commands', 'bench.mjs'), '--backend', 'stub', '--levels', '1',
     '--agent-adapter', 'deterministic',
     '--app', APP, '--out', WORK,
     '--track', 'loop',
@@ -52,7 +52,7 @@ function runBench(extra = []) {
   }
 }
 
-const invalidRounds = spawnSync('node', [join(ROOT, 'commands', 'bench.mjs'), '--backend', 'stub',
+const invalidRounds = spawnSync('node', [stagedEntrypoint('commands', 'bench.mjs'), '--backend', 'stub',
   '--fix-rounds', '1.5'],
   { encoding: 'utf8' });
 check('fractional correction budgets are rejected before a run starts',

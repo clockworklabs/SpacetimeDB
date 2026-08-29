@@ -30,3 +30,10 @@ export function findStackBenchRoot(moduleUrl: string | URL = import.meta.url): s
 
 export const STACK_BENCH_ROOT = findStackBenchRoot();
 export const REPOSITORY_ROOT = resolve(STACK_BENCH_ROOT, '..', '..');
+
+// An entrypoint that is not TypeScript yet is copied into dist beside the
+// compiled modules it imports, so the staged copy is the one that can run.
+export function stagedEntrypoint(...segments: readonly string[]): string {
+  const staged = resolve(STACK_BENCH_ROOT, 'dist', ...segments);
+  return existsSync(staged) ? staged : resolve(STACK_BENCH_ROOT, ...segments);
+}

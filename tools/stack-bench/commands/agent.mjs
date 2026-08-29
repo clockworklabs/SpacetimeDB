@@ -39,7 +39,7 @@ import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
@@ -684,7 +684,7 @@ async function main() {
       throttleJitterMs,
       invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
         execFileSync(process.execPath, [
-          join(ROOT, 'container', 'run-build.mjs'),
+          stagedEntrypoint('container', 'run-build.mjs'),
           '--app', args.app,
           '--backend', args.backend,
           '--image', imageIdentity.id,

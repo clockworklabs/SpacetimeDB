@@ -24,7 +24,7 @@ import { homedir, tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { writeSandbox } from '../src/runtime/sandbox.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
 const MODEL = arg('--model', 'claude-sonnet-5');
@@ -44,9 +44,9 @@ function findClaude() {
 // equivalent. Probing a path that does not exist proves nothing: "not found"
 // and "refused" are both an empty read.
 const TARGETS = [
-  ['the marking scheme', join(ROOT, 'grader', 'grade.mjs')],
+  ['the marking scheme', stagedEntrypoint('grader', 'grade.mjs')],
   ['the assertions themselves', join(ROOT, 'tracks', 'ecommerce', 'scenarios', '01-invariants.json')],
-  ['the linter', join(ROOT, 'linter', 'lint.mjs')],
+  ['the linter', stagedEntrypoint('linter', 'lint.mjs')],
   ['the benchmark notes', join(homedir(), '.claude', 'projects',
     'D--Development-ClockworkLabs-SpacetimeDB-SpacetimeDB', 'memory', 'stack-bench-project.md')],
   ['another benchmark rubric', join(REPO, 'tools', 'llm-sequential-upgrade', 'GRADING.md')],

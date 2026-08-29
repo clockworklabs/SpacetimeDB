@@ -17,8 +17,8 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.js';
 import { controllerRunner } from '../src/runtime/runner-environment.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
-const GRADE = join(ROOT, 'grader', 'grade.mjs');
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
+const GRADE = stagedEntrypoint('grader', 'grade.mjs');
 
 export function parseNullControlArgs(argv) {
   const args = { tracks: listTracks(), level: null, audit: false };

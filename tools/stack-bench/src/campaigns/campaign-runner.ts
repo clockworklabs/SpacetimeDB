@@ -34,8 +34,8 @@ import { aggregateRunOutcome } from '../evidence/outcomes.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';
 import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
-const BENCH = join(ROOT, 'commands', 'bench.mjs');
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../package-root.js';
+const BENCH = stagedEntrypoint('commands', 'bench.mjs');
 
 type UnknownRecord = Record<string, unknown>;
 type PlannedLevel = CompiledCampaignPlan['conditions'][number]['requested']['levels'][number];

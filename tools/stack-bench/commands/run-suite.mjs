@@ -39,8 +39,8 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
 import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
-const RESET = join(ROOT, 'commands', 'reset-backend.mjs');
+import { STACK_BENCH_ROOT as ROOT, stagedEntrypoint } from '../src/package-root.js';
+const RESET = stagedEntrypoint('commands', 'reset-backend.mjs');
 
 export function suitesForRecipe(track, binding) {
   if (!binding?.execution?.length) throw new Error('recipe has no typed execution plan');
@@ -498,7 +498,7 @@ function resetDatabase(args) {
 export function contractLintArgv(args, selectedTask = null) {
   const controls = selectedTask ? contractControlIds(selectedTask.task.contractText) : [];
   const out = join(args.out, 'contract-lint.json');
-  return [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
+  return [stagedEntrypoint('linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
       '--track', args.track, '--label', args.label, '--out', out,
       '--parent-attempt-id', args.bundleArtifactId,
       ...(args.credentialAliases
@@ -528,7 +528,7 @@ function checkActions(args) {
   const out = join(args.out, 'actions.json');
   rmSync(out, { force: true });
   try {
-    run('node', [join(ROOT, 'commands', 'check-actions.mjs'), '--backend', args.backend,
+    run('node', [stagedEntrypoint('commands', 'check-actions.mjs'), '--backend', args.backend,
       '--url', args.url, '--app', args.app ?? '.', '--track', args.track, '--out', out, '--quiet',
       '--parent-attempt-id', args.bundleArtifactId]);
   } catch { /* non-zero exit means something is missing; the report still lands */ }
@@ -547,7 +547,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   mkdirSync(outputDirectory, { recursive: true });
   const out = join(outputDirectory, `grading-${suite.id}.json`);
   rmSync(out, { force: true });
-  const argv = [join(ROOT, 'grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
+  const argv = [stagedEntrypoint('grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
     '--label', `${args.label}-${suite.id}`, '--out', out];
   if (suite.spec) argv.push('--spec', suite.spec);
   argv.push('--backend', args.backend, '--track', args.track);
