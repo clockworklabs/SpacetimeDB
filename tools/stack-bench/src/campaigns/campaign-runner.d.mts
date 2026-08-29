@@ -4,7 +4,7 @@ import type { CampaignState } from './campaign-scheduler.js';
 export interface InspectedCampaign {
   plan: CompiledCampaignPlan;
   state: CampaignState;
-  paths: Record<string, string>;
+  paths: { state: string; [key: string]: string };
 }
 
 export interface CampaignAdmissionPreflightRequest {

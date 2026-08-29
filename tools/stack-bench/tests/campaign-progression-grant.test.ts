@@ -5,11 +5,22 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { grantCampaignDependencyStrikes, prepareGrantWorkspace }
-  from '../src/campaigns/campaign-progression-grant.mjs';
+  from '../src/campaigns/campaign-progression-grant.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
   from '../dist/src/progression/progression-definition.js';
 
-function campaignFixture({ marker = null, campaignStatus = 'completed' } = {}) {
+interface TestContinuation {
+  grantId: string;
+  level: number;
+  nodeIds: string[];
+  strikes: number;
+  snapshotSha256: string;
+  resumeFrom: string;
+  scheduledAt: string;
+}
+
+function campaignFixture({ marker = null, campaignStatus = 'completed' }:
+  { marker?: TestContinuation | null; campaignStatus?: string } = {}) {
   const featureCatalog = compileFeatureCatalogInput({
     schemaVersion: 1,
     kind: 'feature-catalog',
@@ -73,7 +84,11 @@ test('a grant workspace copies completed evidence without changing its source', 
 
 test('campaign strike grant derives exact state, owner, checkpoint, and continuation marker', () => {
   const campaign = campaignFixture();
-  const calls = { inspect: 0, released: false, written: null };
+  const calls: {
+    inspect: number;
+    released: boolean;
+    written: { path: string; plan: unknown; state: unknown } | null;
+  } = { inspect: 0, released: false, written: null };
   const result = grantCampaignDependencyStrikes('campaign-output', input, {
     inspect: () => { calls.inspect += 1; return structuredClone(campaign); },
     acquire: (_root, plan) => { assert.equal(plan.contentSha256, 'a'.repeat(64)); return 'lock'; },
@@ -112,6 +127,7 @@ test('campaign strike grant derives exact state, owner, checkpoint, and continua
   });
   assert.equal(calls.inspect, 2);
   assert.equal(calls.released, true);
+  assert.ok(calls.written);
   assert.equal(calls.written.path, 'campaign-state.json');
   assert.equal(result.snapshotSha256, 'd'.repeat(64));
   assert.equal(result.scheduled, true);
@@ -130,7 +146,7 @@ test('campaign strike grant is idempotent only for the exact recorded marker', (
     readState: () => ({ snapshotSha256: marker.snapshotSha256,
       state: { grants: [{ grantId: input.grantId, level: 1,
         nodeIds: ['accounts'], strikes: 2 }] } }),
-    grantState: () => { touched = true; },
+    grantState: () => { touched = true; return { snapshotSha256: 'e'.repeat(64) }; },
     schedule: () => { touched = true; }, writeState: () => { touched = true; },
   });
   assert.equal(result.snapshotSha256, marker.snapshotSha256);

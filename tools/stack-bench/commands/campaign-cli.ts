@@ -10,7 +10,7 @@ import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js';
 import { generateCampaignReport } from '../src/campaigns/campaign-report.mjs';
 import { grantCampaignDependencyStrikes }
-  from '../src/campaigns/campaign-progression-grant.mjs';
+  from '../src/campaigns/campaign-progression-grant.js';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.mjs';
 import type { ReferenceCampaignAudit }
