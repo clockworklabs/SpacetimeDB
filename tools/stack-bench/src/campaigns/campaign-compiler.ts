@@ -9,10 +9,10 @@ import { sha256 } from '../evidence/provenance.js';
 import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
   from '../evidence/pricing-authority.js';
 import type { PricingRates } from '../evidence/pricing-authority.js';
-import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
+import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
 import type { RecipeTaskRequestResult } from '../composition/recipe-selection.mjs';
-import type { RecipeBinding } from '../composition/recipe-release.mjs';
+import type { RecipeBinding } from '../composition/recipe-release.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,
   selectFeatureCatalogLevels, validateDependencyPolicyInput, validateFeatureCatalogInput }
   from '../progression/progression-definition.js';

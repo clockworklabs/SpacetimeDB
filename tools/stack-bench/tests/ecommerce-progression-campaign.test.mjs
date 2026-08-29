@@ -12,7 +12,7 @@ import { parseArgs } from '../dist/commands/bench.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../dist/src/composition/product-config.js';
 import { writeArtifact } from '../dist/src/evidence/artifacts.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
-import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadTrack } from '../dist/src/composition/tracks.mjs';
 import { parseReferenceAgentArgs } from '../dist/src/references/reference-agent.mjs';
 import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistry }

@@ -11,10 +11,10 @@ import type { Artifact, ArtifactIdentity }
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import type { CalibrationPlan } from './calibration-compiler.mjs';
 import { canonicalDefinitionJson } from './definition-plan.js';
-import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';
+import { PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';
-import { resolveRecipeRelease } from './recipe-release.mjs';
-import type { RecipeBinding } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.js';
+import type { RecipeBinding } from './recipe-release.js';
 import { missingRunnerObservation } from '../runtime/runner-environment.js';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 

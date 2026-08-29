@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

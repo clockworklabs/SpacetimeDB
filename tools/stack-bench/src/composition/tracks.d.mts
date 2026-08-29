@@ -36,9 +36,17 @@ export interface TrackSuite {
   spec: string;
   [key: string]: unknown;
 }
+
+// A compiled manifest resolves suites without the paths loadTrack adds.
+export interface TrackSuiteSource {
+  name: string;
+  dir: string;
+  suites: Record<string, unknown[]>;
+}
+
 export function loadTrack(name?: string): Track;
 export function isDeclaredLevel(track: TrackDefinition, level: number): boolean;
-export function suitesFor(track: TrackDefinition, level: number): TrackSuite[];
+export function suitesFor(track: TrackSuiteSource, level: number): TrackSuite[];
 export function portsFor(track: TrackDefinition, backend: string, runIndex: number): {
   express?: number;
   [key: string]: number | undefined;

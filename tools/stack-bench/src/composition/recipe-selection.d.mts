@@ -1,5 +1,5 @@
 import type { CompiledRecipePlan } from './composition-compiler.mjs';
-import type { RecipeCheck, RecipeRelease } from './recipe-release.mjs';
+import type { RecipeCheck, RecipeRelease } from './recipe-release.js';
 
 export interface RecipeSelection {
   schemaVersion: number;
@@ -55,9 +55,9 @@ export interface RecipeTaskRequestResult {
   task: ComposedRecipeTask;
 }
 
-export function createRecipeTaskRequest(binding: import('./recipe-release.mjs').RecipeBinding,
+export function createRecipeTaskRequest(binding: import('./recipe-release.js').RecipeBinding,
   options?: RecipeSelectionOptions): RecipeTaskRequestResult;
-export function createBoundRecipeTaskRequest(binding: import('./recipe-release.mjs').RecipeBinding,
+export function createBoundRecipeTaskRequest(binding: import('./recipe-release.js').RecipeBinding,
   options?: RecipeSelectionOptions & {
     featureIds?: string[];
     requestedSpecifications?: string[];

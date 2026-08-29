@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { loadTrack } from '../dist/src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { rebaseMutationManifest } from '../dist/src/evidence/mutation-rebase.js';
 import { compileFeatureCatalogInput,
   compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';

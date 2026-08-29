@@ -11,7 +11,7 @@ import { agentVisibleContractText, contractControlIds }
 import { resolveGuidanceProfile } from '../dist/src/campaigns/condition-compiler.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
   createRecipeTaskRequest } from '../dist/src/composition/recipe-selection.mjs';
-import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadTrack } from '../dist/src/composition/tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');

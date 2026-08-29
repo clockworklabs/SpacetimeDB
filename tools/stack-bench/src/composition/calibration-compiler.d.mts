@@ -1,4 +1,4 @@
-import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-release.mjs';
+import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-release.js';
 import type { Track } from './tracks.mjs';
 
 export interface CalibrationReference {

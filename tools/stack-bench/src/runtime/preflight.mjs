@@ -12,7 +12,7 @@ import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-n
 import { dockerMountArguments } from './container-mount.js';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   preflightResourceFloors } from '../composition/product-config.js';
-import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.mjs';
 import { validateFeatureCatalogInput } from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }

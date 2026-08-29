@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';

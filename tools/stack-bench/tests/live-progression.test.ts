@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact }
   from '../src/evidence/artifacts.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';

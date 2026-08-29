@@ -12,8 +12,8 @@ import {
   resolveGradeRecipeArtifactBinding,
   resolveGradeRecipeRelease,
   resolveRecipeRelease,
-} from '../src/composition/recipe-release.mjs';
-import { loadTrack } from '../src/composition/tracks.mjs';
+} from '../dist/src/composition/recipe-release.js';
+import { loadTrack } from '../dist/src/composition/tracks.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.1.0.json');

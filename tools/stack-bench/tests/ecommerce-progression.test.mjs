@@ -7,7 +7,7 @@ import test from 'node:test';
 import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js';
 import { compilePackDefinition, compileRecipeFile } from '../src/composition/composition-compiler.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 
 const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
   'recipes', 'l1-modular-2.2.0.json');

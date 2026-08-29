@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
   resolveBoundRecipeTaskRequest, resolveModularRecipeSelection, selectScenarioChecks }
   from '../src/composition/recipe-selection.mjs';

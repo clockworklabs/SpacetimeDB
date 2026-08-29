@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { readArtifactPayload } from '../dist/src/evidence/artifacts.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { resolveRecipeSelection } from '../src/composition/recipe-selection.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 

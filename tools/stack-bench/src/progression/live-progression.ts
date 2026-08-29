@@ -2,7 +2,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import type { RecipeBinding } from '../composition/recipe-release.mjs';
+import type { RecipeBinding } from '../composition/recipe-release.js';
 import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
 import { classifyBundle } from '../evidence/outcomes.js';

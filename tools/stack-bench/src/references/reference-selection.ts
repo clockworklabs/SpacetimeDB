@@ -1,7 +1,7 @@
 import { selectReferenceFixture } from './reference-fixtures.mjs';
 import type { ReferenceFixture, ReferenceRegistry } from './reference-fixtures.mjs';
-import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
-import type { RecipeBinding } from '../composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../composition/recipe-release.js';
+import type { RecipeBinding } from '../composition/recipe-release.js';
 import { loadTrack } from '../composition/tracks.mjs';
 
 export interface ReferenceSelectionArgs {

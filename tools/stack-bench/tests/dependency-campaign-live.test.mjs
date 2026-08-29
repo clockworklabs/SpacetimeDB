@@ -10,7 +10,7 @@ import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js'
 import { campaignUsesNoExternalResources, runCampaignAdmission }
   from '../dist/src/campaigns/campaign-runner.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { readCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
 import { readArtifact } from '../dist/src/evidence/artifacts.js';
 import { validateProgressionCampaignLevelScope } from '../dist/commands/bench.mjs';

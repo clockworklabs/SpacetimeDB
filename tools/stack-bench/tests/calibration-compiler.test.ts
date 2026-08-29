@@ -13,8 +13,8 @@ import type { CalibrationContext, CalibrationDefinition, CalibrationEvidence,
   CalibrationPlan } from '../src/composition/calibration-compiler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.js';
 import { checkCalibrations } from '../commands/check-calibration.js';
-import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import type { RecipeExecution } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import type { RecipeExecution } from '../src/composition/recipe-release.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';

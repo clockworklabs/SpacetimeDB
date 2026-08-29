@@ -6,13 +6,13 @@ import test from 'node:test';
 
 import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
-import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.mjs';
+import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, parsePackBudgetArgs,
   recommendPackBudgets } from '../src/composition/pack-budget.js';
 import type { PackBudgetEvidence, PackRuntime, ReferenceQualificationPayload,
   RunnerObservation } from '../src/composition/pack-budget.js';
 import type { Artifact, ArtifactIdentity } from '../src/evidence/artifacts.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const track = loadTrack('ecommerce');

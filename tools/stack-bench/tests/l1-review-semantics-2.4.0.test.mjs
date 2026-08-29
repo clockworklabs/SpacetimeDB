@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';
 

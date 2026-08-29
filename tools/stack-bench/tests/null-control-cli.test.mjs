@@ -6,7 +6,7 @@ import test from 'node:test';
 import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.mjs';
 import { nullControlSuites, parseNullControlArgs,
   selectNullQualificationBinding } from '../dist/commands/null-control.mjs';
-import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../dist/src/composition/recipe-selection.mjs';
 import { loadTrack } from '../dist/src/composition/tracks.mjs';
 

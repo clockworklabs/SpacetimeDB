@@ -7,7 +7,7 @@ import ts from 'typescript';
 
 import { mutationFileEdits, mutationTargetKeys,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 

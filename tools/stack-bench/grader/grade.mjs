@@ -27,14 +27,14 @@ import { materializeScenarioCredentials } from '../src/composition/credential-al
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
-import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.mjs';
+import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
-import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
+import { measureGradePackRuntime } from '../src/composition/pack-runtime.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';

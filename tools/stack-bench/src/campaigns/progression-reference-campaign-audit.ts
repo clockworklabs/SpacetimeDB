@@ -2,8 +2,8 @@ import { join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { recipeReleaseIdentity, resolveRecipeRelease }
-  from '../composition/recipe-release.mjs';
-import type { RecipeBinding, RecipeRelease } from '../composition/recipe-release.mjs';
+  from '../composition/recipe-release.js';
+import type { RecipeBinding, RecipeRelease } from '../composition/recipe-release.js';
 import { loadTrack } from '../composition/tracks.mjs';
 import type { Track } from '../composition/tracks.mjs';
 import { auditProgressionReferenceRun }

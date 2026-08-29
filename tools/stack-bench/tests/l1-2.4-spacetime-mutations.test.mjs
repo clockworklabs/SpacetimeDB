@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { mutationEdits, mutationTargetKeys, resolveMutationFile,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { prepareReferenceSource } from '../dist/src/references/reference-agent.mjs';

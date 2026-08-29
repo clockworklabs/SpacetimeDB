@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { readArtifact } from '../evidence/artifacts.js';
-import type { RecipeBinding, RecipeCheck } from '../composition/recipe-release.mjs';
+import type { RecipeBinding, RecipeCheck } from '../composition/recipe-release.js';
 import { progressionEngine } from './progression-engine.js';
 import type { ProgressionWorkAction } from './progression-engine.js';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.js';

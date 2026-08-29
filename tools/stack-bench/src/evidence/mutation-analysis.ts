@@ -1,7 +1,7 @@
 import { resolve, sep } from 'node:path';
 import { criterionEvidence, evidenceDisposition } from './check-evidence.js';
 import type { CheckEvidenceStatus, CheckOutcomeKind } from './check-evidence.js';
-import type { RecipeRelease } from '../composition/recipe-release.mjs';
+import type { RecipeRelease } from '../composition/recipe-release.js';
 
 type UnknownRecord = Record<string, unknown>;
 

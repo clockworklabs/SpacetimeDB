@@ -7,11 +7,11 @@ import { pathToFileURL } from 'node:url';
 import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.mjs';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';
 import type { CompiledPackDefinition, CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
-import type { RecipeCheck, RecipeRelease } from '../src/composition/recipe-release.mjs';
+import type { RecipeCheck, RecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeSelectionOptions, SelectedRecipeRelease } from '../src/composition/recipe-selection.mjs';
 
 export { selectRecipeRelease } from '../src/composition/recipe-selection.mjs';

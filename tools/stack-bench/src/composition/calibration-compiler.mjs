@@ -7,7 +7,7 @@ import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mut
 import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.mjs';
 import { readArtifact } from '../evidence/artifacts.js';
-import { executionPlanForRelease } from './recipe-release.mjs';
+import { executionPlanForRelease } from './recipe-release.js';
 import { missingRunnerObservation } from '../runtime/runner-environment.js';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';

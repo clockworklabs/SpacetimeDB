@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import type { RecipeBinding } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import type { RecipeBinding } from '../src/composition/recipe-release.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, progressionLevels,
   validateProgressionInput } from '../src/progression/progression-definition.js';

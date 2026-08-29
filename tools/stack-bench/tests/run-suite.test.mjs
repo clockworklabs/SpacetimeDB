@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   applicationDatabaseMarker, checkRuntimeDatabaseProvenance, databaseProvenanceFailure,

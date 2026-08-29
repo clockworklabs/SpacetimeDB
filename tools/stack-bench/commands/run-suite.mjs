@@ -21,7 +21,7 @@ import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/
 import { answers as hostAnswers } from '../src/runtime/platform.js';
 import { controlBackend } from '../src/runtime/backend-control.js';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { contractControlIds } from '../src/composition/agent-visible-contract.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
@@ -29,7 +29,7 @@ import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidenc
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
+import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 import { readBackendLease } from '../src/runtime/backend-lease.js';

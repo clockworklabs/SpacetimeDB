@@ -13,7 +13,7 @@ import { calibrationQualificationIdentity, calibrationQualificationRelease,
   resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.mjs';
 import { controllerRunner } from '../src/runtime/runner-environment.js';
 

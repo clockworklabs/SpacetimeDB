@@ -8,7 +8,7 @@ import {
   validateMutationDefinitions,
 } from './mutation-analysis.js';
 import type { MutationDefinition } from './mutation-analysis.js';
-import type { RecipeCheck, RecipeRelease } from '../composition/recipe-release.mjs';
+import type { RecipeCheck, RecipeRelease } from '../composition/recipe-release.js';
 
 type BlockReason = 'unsafe-file' | 'missing-file' | 'anchor-mismatch';
 

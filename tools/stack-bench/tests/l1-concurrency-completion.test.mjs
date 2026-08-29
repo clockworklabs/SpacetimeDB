@@ -9,7 +9,7 @@ import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 
 const ROOT = join(import.meta.dirname, '..');

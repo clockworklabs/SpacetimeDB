@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compiler.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { sha256 } from '../src/evidence/provenance.js';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';

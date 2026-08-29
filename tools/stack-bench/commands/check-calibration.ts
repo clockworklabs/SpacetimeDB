@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { compileCalibrationDefinition, compileCalibrationFile } from '../src/composition/calibration-compiler.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { listTracks, TRACKS_DIR } from '../src/composition/tracks.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';

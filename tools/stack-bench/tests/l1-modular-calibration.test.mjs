@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { compileCalibrationFile } from '../dist/src/composition/calibration-compiler.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
-import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease } from '../dist/src/composition/recipe-release.js';
 
 const BENCH = join(import.meta.dirname, '..');
 const TRACK = join(BENCH, 'tracks', 'ecommerce');

@@ -8,7 +8,7 @@ import type {
   RecipeBinding,
   RecipeCheck,
   RecipePackComponent,
-} from '../composition/recipe-release.mjs';
+} from '../composition/recipe-release.js';
 import { progressionEngine } from './progression-engine.js';
 import type { ProgressionAction, ProgressionWorkAction } from './progression-engine.js';
 import { validateFeatureCatalogInput, validateProgressionInput }

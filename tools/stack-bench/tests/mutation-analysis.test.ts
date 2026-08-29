@@ -6,7 +6,7 @@ import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
   releaseScenarioCheckKeys, resolveMutationFile, reusableMutationBaseline,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
-import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 type CriterionValue = boolean | 'inconclusive';
