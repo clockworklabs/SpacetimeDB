@@ -1,9 +1,16 @@
 export interface CompiledStep {
   do: string;
+  actor?: string;
+  from?: string;
+  fromActor?: string;
   testid?: string;
   contains?: string;
   absent?: boolean;
-  in?: { testid?: string; contains?: string };
+  in?: {
+    testid?: string;
+    contains?: string;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -12,12 +19,15 @@ export interface CompiledCriterion {
   desc: string;
   points: number;
   steps: CompiledStep[];
+  statedBy?: string;
   [key: string]: unknown;
 }
 
 export interface CompiledFeature {
   id: number;
   name: string;
+  actors?: string[];
+  max?: number;
   setup: CompiledStep[];
   criteria: CompiledCriterion[];
   [key: string]: unknown;

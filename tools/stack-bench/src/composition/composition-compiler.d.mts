@@ -18,6 +18,10 @@ export interface CompiledTaskFragment
   text: string;
 }
 
+export interface CompiledOwnedTaskFragment extends CompiledTaskFragment {
+  owners: string[];
+}
+
 export interface PackCheck {
   id: string;
   stableId?: string;
@@ -115,8 +119,8 @@ export interface CompiledRecipePlan {
     task: {
       mode: string;
       baseRecipe: { id: string; version: string; path: string } | null;
-      requirements: Array<CompiledTaskFragment & { owners: string[] }>;
-      contracts: Array<CompiledTaskFragment & { owners: string[] }>;
+      requirements: CompiledOwnedTaskFragment[];
+      contracts: CompiledOwnedTaskFragment[];
       requirementText: string;
       contractText: string;
     };
@@ -193,3 +197,5 @@ export function compilePromotionFile(
   path: string,
   options?: { trackRoot?: string },
 ): CompiledPromotionCatalog;
+
+export type CompiledRecipeRelease = CompiledRecipePlan;
