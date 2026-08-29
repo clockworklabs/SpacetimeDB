@@ -4,11 +4,28 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { emptyArtifactIdentities, writeRunJson } from '../dist/src/evidence/artifacts.js';
-import { compareRepairBaseline, createRepairGrant, inspectRepairParent } from '../dist/src/runtime/repair-grant.mjs';
-import { preserveLevelCheckpoint } from '../dist/src/runtime/source-checkpoint.js';
+import { emptyArtifactIdentities, writeRunJson } from '../src/evidence/artifacts.js';
+import { compareRepairBaseline, createRepairGrant, inspectRepairParent }
+  from '../src/runtime/repair-grant.js';
+import type { RepairBudget, RepairOutcome, RepairSelection }
+  from '../src/runtime/repair-grant.js';
+import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 
-function parentFixture(root, overrides = {}) {
+interface FixtureSelection extends RepairSelection {
+  sha256: string;
+  scoredPoints: number;
+  recipe: { id: string; version: string };
+}
+
+interface FixtureOverrides {
+  repair?: RepairBudget;
+  outcome?: RepairOutcome;
+  selection?: FixtureSelection;
+  identities?: unknown;
+  mode?: { id: string; version: string };
+}
+
+function parentFixture(root: string, overrides: FixtureOverrides = {}) {
   const app = join(root, 'app');
   mkdirSync(app, { recursive: true });
   writeFileSync(join(app, 'app.js'), 'export const broken = true;\n');

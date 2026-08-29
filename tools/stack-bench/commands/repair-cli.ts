@@ -12,7 +12,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
 import type { BoundedProcessResult, RunBoundedOptions }
   from '../src/references/reference-live.mjs';
-import { createRepairGrant, inspectRepairParent } from '../src/runtime/repair-grant.mjs';
+import { createRepairGrant, inspectRepairParent } from '../src/runtime/repair-grant.js';
 
 const BENCH = join(STACK_BENCH_ROOT, 'dist', 'commands', 'bench.mjs');
 
