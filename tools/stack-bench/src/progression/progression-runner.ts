@@ -1,12 +1,12 @@
 import { progressionEngine } from './progression-engine.mjs';
-import { validateProgressionInput } from './progression-definition.mjs';
+import { validateProgressionInput } from './progression-definition.js';
 import {
   acquireProgressionStateLock,
   progressionStateExists,
   readProgressionState,
   releaseProgressionStateLock,
   writeProgressionState,
-} from './progression-state.mjs';
+} from './progression-state.js';
 
 export type ProgressionState = Record<string, unknown>;
 
@@ -55,7 +55,6 @@ export interface RunProgressionModeOptions {
 
 interface PersistedProgressionInput {
   definition: unknown;
-  [key: string]: unknown;
 }
 
 export interface RunPersistedProgressionModeOptions {

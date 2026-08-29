@@ -7,7 +7,7 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { rebaseMutationManifest } from '../src/evidence/mutation-rebase.mjs';
 import { compileFeatureCatalogInput,
-  compileProgressionDefinitionFile } from '../src/progression/progression-definition.mjs';
+  compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.mjs';
 import { loadReferenceRegistry } from '../src/references/reference-fixtures.mjs';

@@ -5,7 +5,7 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { compileProgressionInput, progressionLevels,
-  validateProgressionInput } from '../src/progression/progression-definition.mjs';
+  validateProgressionInput } from '../dist/src/progression/progression-definition.js';
 import { resolveProgressionRecipeAction,
   validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.mjs';
 

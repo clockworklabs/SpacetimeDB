@@ -7,7 +7,7 @@ import { buildRecipeRelease, resolveRecipeRelease }
   from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { compileFeatureCatalogInput, compileProgressionDefinitionFile,
-  selectFeatureCatalogLevels } from '../src/progression/progression-definition.mjs';
+  selectFeatureCatalogLevels } from '../dist/src/progression/progression-definition.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

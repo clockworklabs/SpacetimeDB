@@ -15,7 +15,7 @@ import { readCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { validateProgressionCampaignLevelScope } from '../commands/bench.mjs';
 import { replayDependencyMode } from '../src/progression/dependency-mode.mjs';
-import { dependencyRuntimeDefinition } from '../src/progression/progression-definition.mjs';
+import { dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CAMPAIGN = join(ROOT, 'tests', 'fixtures', 'dependency-model-free-campaign.json');

@@ -4,14 +4,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { progressionEngine } from '../dist/src/progression/progression-engine.mjs';
-import { compileProgressionInput } from '../dist/src/progression/progression-definition.mjs';
-import { runPersistedProgressionMode } from '../dist/src/progression/progression-runner.js';
+import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { compileProgressionInput } from '../src/progression/progression-definition.js';
+import { runPersistedProgressionMode } from '../src/progression/progression-runner.js';
 import { grantProgressionState, readProgressionState, writeProgressionState }
-  from '../dist/src/progression/progression-state.mjs';
-import { hashAppSource } from '../dist/src/runtime/source-snapshot.mjs';
-import { preserveLevelCheckpoint } from '../dist/src/runtime/source-checkpoint.mjs';
-import { emptyArtifactIdentities } from '../dist/src/evidence/artifacts.mjs';
+  from '../src/progression/progression-state.js';
+import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
+import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
+import { emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
+
+interface TestState extends Record<string, unknown> {
+  phase: string;
+  events: Array<{ type: string; result: { attemptId: string } }>;
+  nodes: Record<string, { strikes: { granted: number } }>;
+}
+
+interface TestProgressionEngine {
+  initialize(definition: unknown): TestState;
+  recordResult(state: TestState, result: unknown): TestState;
+}
+
+const engine = progressionEngine as unknown as TestProgressionEngine;
 
 const progression = () => compileProgressionInput({
   schemaVersion: 3,
@@ -39,7 +52,8 @@ const owner = () => ({ schemaVersion: 1,
     agentAdapter: 'claude-code', model: 'test-model', conditionSha256: 'b'.repeat(64) },
   workspace: { appDirectory: 'app' } });
 
-const grade = (attemptId, outcome, sourceSha256) => ({ attemptId, outcome: 'conclusive',
+const grade = (attemptId: string, outcome: string, sourceSha256?: string) =>
+  ({ attemptId, outcome: 'conclusive',
   ...(sourceSha256 ? { sourceSha256 } : {}),
   nodes: [{ id: 'account', checks: [{ id: 'check.account', outcome }] }] });
 
@@ -48,9 +62,9 @@ test('progression state stores one ordered event log and a replay-verified compa
   const path = join(root, 'state.json');
   try {
     const input = progression();
-    let state = progressionEngine.initialize(input.definition);
-    state = progressionEngine.recordResult(state, grade('first', 'fail'));
-    const scope = owner(root);
+    let state = engine.initialize(input.definition);
+    state = engine.recordResult(state, grade('first', 'fail'));
+    const scope = owner();
     const written = writeProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope, state });
     assert.equal(written.artifact.payload.events.length, 1);
@@ -58,7 +72,7 @@ test('progression state stores one ordered event log and a replay-verified compa
     assert.equal(written.artifact.payload.snapshot.events, undefined);
     assert.deepEqual(readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope }).state, state);
-    const wrongOwner = owner(root);
+    const wrongOwner = owner();
     wrongOwner.attempt.id = 'campaign-r2';
     assert.throws(() => readProgressionState(path, { progression: input, ...stateIdentities,
       owner: wrongOwner }),
@@ -80,7 +94,7 @@ test('persisted runner resumes the exact paused state and atomically appends the
   const path = join(root, 'state.json');
   try {
     const input = progression();
-    const scope = owner(root);
+    const scope = owner();
     const first = await runPersistedProgressionMode({ progression: input, ...stateIdentities,
       owner: scope, statePath: path,
       execute: async () => ({ attemptId: 'provider', outcome: 'inconclusive',
@@ -93,10 +107,11 @@ test('persisted runner resumes the exact paused state and atomically appends the
       owner: scope, statePath: path,
       execute: async () => grade('second', 'pass') });
     assert.equal(resumed.status, 'terminal');
-    assert.equal(resumed.outcome.kind, 'passed');
+    assert.equal((resumed.outcome as { kind: string }).kind, 'passed');
     const stored = readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope });
-    assert.deepEqual(stored.state.events.map(event => event.result.attemptId),
+    assert.deepEqual(stored.state.events.map(event =>
+      (event as { result: { attemptId: string } }).result.attemptId),
       ['provider', 'second']);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -108,7 +123,7 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
   const path = join(root, 'state.json');
   try {
     const input = progression();
-    const scope = owner(root);
+    const scope = owner();
     const app = join(root, 'app');
     const output = join(root, 'result');
     mkdirSync(app);
@@ -124,8 +139,8 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
         stallLimitRounds: 3, stopReason: 'budget-exhausted' },
       outcome: { kind: 'app_failure' }, selectionSha256 });
     writeFileSync(join(app, 'app.js'), 'export const version = 3;\n');
-    let state = progressionEngine.initialize(input.definition);
-    state = progressionEngine.recordResult(state, { ...grade('failed', 'fail', sourceSha256),
+    let state = engine.initialize(input.definition);
+    state = engine.recordResult(state, { ...grade('failed', 'fail', sourceSha256),
       runId: 'run-1', selectionSha256 });
     const terminal = writeProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope, state });
@@ -146,8 +161,11 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
         checkpoint: { artifact: 'checkpoint-link.json' },
         grant: { grantId: 'linked-source', level: 1, nodeIds: ['account'], strikes: 2 } }),
       /symbolic link/);
-    } catch (error) {
-      if (!['EPERM', 'EACCES'].includes(error.code)) throw error;
+    } catch (error: unknown) {
+      if (!(error instanceof Error && 'code' in error
+        && typeof error.code === 'string' && ['EPERM', 'EACCES'].includes(error.code))) {
+        throw error;
+      }
       t.diagnostic('symbolic-link assertion skipped because this host cannot create a file link');
     }
     const granted = grantProgressionState(path, { progression: input, ...stateIdentities,
@@ -156,12 +174,17 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
       checkpoint: { artifact: join('result', checkpoint.artifact) },
       grant: { grantId: 'grant-1', level: 1, nodeIds: ['account'], strikes: 2 } });
     assert.equal(granted.state.phase, 'active');
-    assert.equal(granted.state.nodes.account.strikes.granted, 2);
-    assert.deepEqual(granted.state.events.map(event => event.type),
+    const grantedState = granted.state as unknown as TestState;
+    const resume = granted.resume as {
+      source: { directory: string; sha256: string };
+      actionSha256: string;
+    };
+    assert.equal(grantedState.nodes.account!.strikes.granted, 2);
+    assert.deepEqual(grantedState.events.map(event => event.type),
       ['attempt-recorded', 'strikes-granted']);
-    assert.equal(granted.resume.source.directory, 'app');
-    assert.equal(granted.resume.source.sha256, sourceSha256);
-    assert.match(granted.resume.actionSha256, /^[a-f0-9]{64}$/);
+    assert.equal(resume.source.directory, 'app');
+    assert.equal(resume.source.sha256, sourceSha256);
+    assert.match(resume.actionSha256, /^[a-f0-9]{64}$/);
     assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const version = 1;\n');
     assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,

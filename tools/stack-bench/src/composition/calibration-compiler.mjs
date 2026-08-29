@@ -12,7 +12,7 @@ import { missingRunnerObservation } from '../runtime/runner-environment.mjs';
 import { qualificationScopeIdentity, validateQualificationScopeIdentity } from './qualification-scope.mjs';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
 import { progressionLevels, selectFeatureCatalogLevels }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
 

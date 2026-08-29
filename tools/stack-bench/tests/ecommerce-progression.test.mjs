@@ -11,7 +11,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,
-  dependencyRuntimeDefinition } from '../src/progression/progression-definition.mjs';
+  dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { resolveProgressionRecipeAction,
   validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.mjs';

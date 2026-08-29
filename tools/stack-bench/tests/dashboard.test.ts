@@ -23,8 +23,8 @@ import type { DashboardOperation, LaunchInput } from '../dashboard/dashboard-ser
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../src/progression/progression-definition.mjs';
-import { writeProgressionState } from '../src/progression/progression-state.mjs';
+  from '../src/progression/progression-definition.js';
+import { writeProgressionState } from '../src/progression/progression-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const EXAMPLE_CAMPAIGN = join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json');

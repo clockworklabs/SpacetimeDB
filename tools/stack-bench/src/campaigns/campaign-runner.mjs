@@ -15,10 +15,10 @@ import { runPreflight } from '../runtime/preflight.mjs';
 import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
-import { readProgressionState } from '../progression/progression-state.mjs';
+import { readProgressionState } from '../progression/progression-state.js';
 import { liveProgressionStatus } from '../progression/live-progression.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';

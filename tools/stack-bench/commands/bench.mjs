@@ -58,7 +58,7 @@ import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/m
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels,
   validateFeatureCatalogInput, validateProgressionInput }
-  from '../src/progression/progression-definition.mjs';
+  from '../src/progression/progression-definition.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.mjs';
 import { createLiveProgressionExecution }

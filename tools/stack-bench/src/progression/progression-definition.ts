@@ -1,8 +1,14 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import { compilePackDefinition } from '../composition/composition-compiler.mjs';
-import { compileScenarioDefinition } from '../composition/definition-compiler.mjs';
+import {
+  compilePackDefinition,
+  type CompiledPackDefinition,
+} from '../composition/composition-compiler.mjs';
+import {
+  compileScenarioDefinition,
+  type CompiledScenarioDefinition,
+} from '../composition/definition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
@@ -11,47 +17,141 @@ import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
   FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.mjs';
 import { progressionEngine } from './progression-engine.mjs';
 
+export interface CompiledProgressionCheck {
+  id: string;
+  points: number;
+}
+
+export interface CompiledProgressionNode {
+  id: string;
+  title: string;
+  level: number;
+  questline: string;
+  featureRefs: string[];
+  promptModules: string[];
+  gradingChecks: CompiledProgressionCheck[];
+  dependencies: string[];
+  dependencyReasons: Record<string, string>;
+}
+
+export interface CompiledProgressionQuestline {
+  id: string;
+  title: string;
+  nodes: string[];
+}
+
+export interface CompiledProgressionDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  nodes: CompiledProgressionNode[];
+  questlines: CompiledProgressionQuestline[];
+  policy?: string;
+  strikes?: { levels: Record<string, number> };
+  unchangedFailureLimit?: number;
+}
+
+export interface DefinitionIdentity {
+  id: string;
+  version: string;
+  sha256: string;
+  policy?: string;
+}
+
+export interface ProgressionInput<TDefinition = CompiledProgressionDefinition> {
+  definition: TDefinition;
+  identity: DefinitionIdentity;
+}
+
+export interface CompiledDependencyPolicyDefinition extends Record<string, unknown> {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  levels: number[];
+  strikes: { levels: Record<string, number> };
+  unchangedFailureLimit: number;
+}
+
+interface AuthoredDependency {
+  id: string;
+  reason: string;
+}
+
+interface AuthoredProgressionNode {
+  id: string;
+  title: string;
+  questline: string;
+  featureRefs: string[];
+  promptModules?: string[];
+  gradingGroups: string[];
+  dependencies: AuthoredDependency[];
+}
+
+interface AuthoredProgressionDefinition {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  nodes: AuthoredProgressionNode[];
+  questlines: unknown[];
+}
+
 export const PROGRESSION_DEFINITION_SCHEMA_VERSION = 2;
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const EXACT_REF = /^[a-z0-9]+(?:[._-][a-z0-9]+)*@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = (at, message) => { throw new Error(`invalid progression definition at ${at}: ${message}`); };
-const readJson = path => JSON.parse(readFileSync(path, 'utf8'));
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const fail = (at: string, message: string): never => {
+  throw new Error(`invalid progression definition at ${at}: ${message}`);
+};
+const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8')) as unknown;
 
-function strictObject(value, at, fields) {
-  if (!object(value)) fail(at, 'must be an object');
+function strictObject(value: unknown, at: string, fields: ReadonlySet<string>): asserts value is Record<string, unknown> {
+  if (!object(value)) return fail(at, 'must be an object');
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'unknown field');
 }
 
-function nonEmpty(value, at) {
-  if (typeof value !== 'string' || value.trim().length === 0) fail(at, 'must be a non-empty string');
-  return value;
-}
-
-function identifier(value, at) {
-  nonEmpty(value, at);
-  if (!ID.test(value)) fail(at, 'must be a lowercase identifier');
-  return value;
-}
-
-function uniqueStrings(value, at, pattern = null, { nonEmpty: required = true } = {}) {
-  if (!Array.isArray(value) || (required && value.length === 0)) {
-    fail(at, `must be ${required ? 'a non-empty' : 'an'} array`);
+function nonEmpty(value: unknown, at: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return fail(at, 'must be a non-empty string');
   }
-  const seen = new Set();
+  return value;
+}
+
+function identifier(value: unknown, at: string): string {
+  const result = nonEmpty(value, at);
+  if (!ID.test(result)) return fail(at, 'must be a lowercase identifier');
+  return result;
+}
+
+function uniqueStrings(value: unknown, at: string, pattern: RegExp | null = null,
+  { nonEmpty: required = true }: { nonEmpty?: boolean } = {}): string[] {
+  if (!Array.isArray(value)) {
+    return fail(at, `must be ${required ? 'a non-empty' : 'an'} array`);
+  }
+  if (required && value.length === 0) {
+    return fail(at, 'must be a non-empty array');
+  }
+  const seen = new Set<string>();
   return value.map((item, index) => {
-    nonEmpty(item, `${at}[${index}]`);
-    if (pattern && !pattern.test(item)) fail(`${at}[${index}]`, 'has an invalid reference');
-    if (seen.has(item)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(item)}`);
-    seen.add(item);
-    return item;
+    const result = nonEmpty(item, `${at}[${index}]`);
+    if (pattern && !pattern.test(result)) fail(`${at}[${index}]`, 'has an invalid reference');
+    if (seen.has(result)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(result)}`);
+    seen.add(result);
+    return result;
   });
 }
 
-function packCatalog(trackRoot) {
+function packCatalog(trackRoot: string): Map<string, CompiledPackDefinition> {
   const packRoot = join(trackRoot, 'composition', 'packs');
-  const packs = new Map();
+  const packs = new Map<string, CompiledPackDefinition>();
   for (const name of readdirSync(packRoot).filter(item => item.endsWith('.json'))) {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
     const reference = `${pack.id}@${pack.version}`;
@@ -61,7 +161,8 @@ function packCatalog(trackRoot) {
   return packs;
 }
 
-function groupChecks(pack, groupId, trackRoot, sourceCache) {
+function groupChecks(pack: CompiledPackDefinition, groupId: string, trackRoot: string,
+  sourceCache: Map<string, CompiledScenarioDefinition>): CompiledProgressionCheck[] | null {
   const group = pack.checks.find(check => check.id === groupId);
   if (!group) return null;
   let scenario = sourceCache.get(group.source);
@@ -72,12 +173,12 @@ function groupChecks(pack, groupId, trackRoot, sourceCache) {
     sourceCache.set(group.source, scenario);
   }
   const feature = scenario.features.find(item => item.id === group.feature);
-  if (!feature) fail(`${pack.id}.${groupId}`, `missing scenario feature ${group.feature}`);
+  if (!feature) return fail(`${pack.id}.${groupId}`, `missing scenario feature ${group.feature}`);
   const criteria = group.criteria === undefined
     ? feature.criteria
     : group.criteria.map(id => {
       const criterion = feature.criteria.find(item => item.id === id);
-      if (!criterion) fail(`${pack.id}.${groupId}`, `missing criterion ${id}`);
+      if (!criterion) return fail(`${pack.id}.${groupId}`, `missing criterion ${id}`);
       return criterion;
     });
   return criteria.filter(criterion => criterion.points > 0).map(criterion => ({
@@ -86,7 +187,8 @@ function groupChecks(pack, groupId, trackRoot, sourceCache) {
   }));
 }
 
-export function compileProgressionDefinition(input, { trackRoot, source = '<progression>' } = {}) {
+export function compileProgressionDefinition(input: unknown,
+  { trackRoot, source = '<progression>' }: { trackRoot?: string; source?: string } = {}): CompiledProgressionDefinition {
   if (!trackRoot) throw new Error('progression compilation requires trackRoot');
   const definition = structuredClone(input);
   strictObject(definition, source, new Set([
@@ -101,10 +203,11 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
   if (!Array.isArray(definition.nodes) || definition.nodes.length === 0) {
     fail(`${source}.nodes`, 'must be a non-empty array');
   }
+  const authored = definition as unknown as AuthoredProgressionDefinition;
   const packs = packCatalog(resolve(trackRoot));
-  const sourceCache = new Map();
-  const groupOwners = new Map();
-  const nodes = definition.nodes.map((node, index) => {
+  const sourceCache = new Map<string, CompiledScenarioDefinition>();
+  const groupOwners = new Map<string, string>();
+  const nodes = authored.nodes.map((node, index) => {
     const at = `${source}.nodes[${index}]`;
     strictObject(node, at, new Set([
       'id', 'title', 'questline', 'featureRefs', 'promptModules', 'gradingGroups', 'dependencies',
@@ -115,7 +218,7 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
     const featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`, EXACT_REF).sort();
     for (const reference of featureRefs) {
       const pack = packs.get(reference);
-      if (!pack) fail(`${at}.featureRefs`, `missing pack ${reference}`);
+      if (!pack) return fail(`${at}.featureRefs`, `missing pack ${reference}`);
       if (pack.moduleType !== 'feature') fail(`${at}.featureRefs`, `${reference} is not a feature pack`);
     }
     const promptModules = uniqueStrings([
@@ -124,8 +227,8 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
     ], `${at}.promptModules`, EXACT_REF).sort();
     for (const reference of promptModules) {
       const pack = packs.get(reference);
-      if (!pack) fail(`${at}.promptModules`, `missing pack ${reference}`);
-      if (!['feature', 'specification'].includes(pack.moduleType)) {
+      if (!pack) return fail(`${at}.promptModules`, `missing pack ${reference}`);
+      if (!['feature', 'specification'].includes(pack.moduleType ?? '')) {
         fail(`${at}.promptModules`, `${reference} cannot be used in a prompt`);
       }
       if (pack.moduleType === 'feature' && !featureRefs.includes(reference)) {
@@ -141,12 +244,12 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
       if (!EXACT_REF.test(packRef)) fail(`${at}.gradingGroups[${groupIndex}]`, 'has an invalid pack reference');
       identifier(groupId, `${at}.gradingGroups[${groupIndex}] group`);
       const pack = packs.get(packRef);
-      if (!pack) fail(`${at}.gradingGroups[${groupIndex}]`, `missing pack ${packRef}`);
+      if (!pack) return fail(`${at}.gradingGroups[${groupIndex}]`, `missing pack ${packRef}`);
       if (groupOwners.has(reference)) {
         fail(`${at}.gradingGroups[${groupIndex}]`, `is already owned by ${groupOwners.get(reference)}`);
       }
       const checks = groupChecks(pack, groupId, resolve(trackRoot), sourceCache);
-      if (!checks) fail(`${at}.gradingGroups[${groupIndex}]`, `missing group ${groupId}`);
+      if (!checks) return fail(`${at}.gradingGroups[${groupIndex}]`, `missing group ${groupId}`);
       if (checks.length === 0) fail(`${at}.gradingGroups[${groupIndex}]`, 'has no scored criteria');
       groupOwners.set(reference, node.id);
       return checks;
@@ -154,9 +257,10 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
     const selectedGroups = new Set(gradingGroups);
     for (const featureRef of featureRefs) {
       const pack = packs.get(featureRef);
+      if (!pack) return fail(`${at}.featureRefs`, `missing pack ${featureRef}`);
       for (const group of pack.checks.filter(check => check.role === 'feature')) {
         const checks = groupChecks(pack, group.id, resolve(trackRoot), sourceCache);
-        if (checks.length > 0 && !selectedGroups.has(`${featureRef}#${group.id}`)) {
+        if (checks !== null && checks.length > 0 && !selectedGroups.has(`${featureRef}#${group.id}`)) {
           fail(`${at}.gradingGroups`, `must own feature group ${featureRef}#${group.id}`);
         }
       }
@@ -175,18 +279,20 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
   const compiled = compileFeatureCatalog({
     schemaVersion: FEATURE_CATALOG_SCHEMA_VERSION,
     kind: 'feature-catalog',
-    id: definition.id,
-    version: definition.version,
-    state: definition.state,
-    title: definition.title,
+    id: authored.id,
+    version: authored.version,
+    state: authored.state,
+    title: authored.title,
     nodes,
-    questlines: structuredClone(definition.questlines),
+    questlines: structuredClone(authored.questlines),
   }, { source });
   const byId = new Map(compiled.nodes.map(node => [node.id, node]));
-  const ancestorIds = nodeId => {
-    const found = new Set();
-    const visit = id => {
-      for (const dependency of byId.get(id).dependencies) {
+  const ancestorIds = (nodeId: string): Set<string> => {
+    const found = new Set<string>();
+    const visit = (id: string): void => {
+      const current = byId.get(id);
+      if (!current) return fail(`${source}.nodes.${id}`, 'is missing from the compiled catalog');
+      for (const dependency of current.dependencies) {
         if (found.has(dependency)) continue;
         found.add(dependency);
         visit(dependency);
@@ -197,23 +303,29 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
   };
   for (const node of compiled.nodes) {
     const mode = node.level === 1 ? 'fresh' : 'upgrade';
-    const promptPacks = node.promptModules.map(reference => packs.get(reference));
+    const promptPacks = node.promptModules.map(reference => {
+      const pack = packs.get(reference);
+      if (!pack) return fail(`${source}.nodes.${node.id}.promptModules`, `missing pack ${reference}`);
+      return pack;
+    });
     if (!promptPacks.some(pack => pack.task.requirements.some(fragment =>
-      fragment.modes.includes(mode)))) {
+      (fragment.modes ?? []).includes(mode)))) {
       fail(`${source}.nodes.${node.id}.promptModules`,
         `compose no ${mode} requirements at calculated level ${node.level}`);
     }
     if (!promptPacks.some(pack => pack.task.contracts.some(fragment =>
-      fragment.modes.includes(mode)))) {
+      (fragment.modes ?? []).includes(mode)))) {
       fail(`${source}.nodes.${node.id}.promptModules`,
         `compose no ${mode} testing interface at calculated level ${node.level}`);
     }
     const allowedFeatures = new Set([node.id, ...ancestorIds(node.id)]
-      .flatMap(id => byId.get(id).featureRefs));
+      .flatMap(id => byId.get(id)?.featureRefs ?? []));
     for (const featureRef of node.featureRefs) {
-      for (const requiredRef of packs.get(featureRef).requiresPacks) {
+      const featurePack = packs.get(featureRef);
+      if (!featurePack) return fail(`${source}.nodes.${node.id}.featureRefs`, `missing pack ${featureRef}`);
+      for (const requiredRef of featurePack.requiresPacks) {
         const required = packs.get(requiredRef);
-        if (!required) fail(`${source}.nodes.${node.id}.featureRefs`,
+        if (!required) return fail(`${source}.nodes.${node.id}.featureRefs`,
           `${featureRef} requires missing pack ${requiredRef}`);
         if (required.moduleType === 'feature' && !allowedFeatures.has(requiredRef)) {
           fail(`${source}.nodes.${node.id}.dependencies`,
@@ -222,10 +334,11 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
       }
     }
   }
-  return compiled;
+  return compiled as CompiledProgressionDefinition;
 }
 
-export function compileProgressionDefinitionFile(path, { trackRoot } = {}) {
+export function compileProgressionDefinitionFile(path: string,
+  { trackRoot }: { trackRoot?: string } = {}): CompiledProgressionDefinition {
   const absolute = resolve(path);
   return compileProgressionDefinition(readJson(absolute), {
     trackRoot: resolve(trackRoot ?? join(dirname(absolute), '..')),
@@ -233,21 +346,21 @@ export function compileProgressionDefinitionFile(path, { trackRoot } = {}) {
   });
 }
 
-function identity(definition) {
+function identity(definition: CompiledProgressionDefinition): DefinitionIdentity {
   return canonicalizeDefinition({
     id: definition.id,
     version: definition.version,
     ...(definition.policy ? { policy: definition.policy } : {}),
     sha256: sha256(canonicalDefinitionJson(definition)),
-  });
+  }) as unknown as DefinitionIdentity;
 }
 
-export function compileFeatureCatalogInput(input) {
+export function compileFeatureCatalogInput(input: unknown): ProgressionInput {
   const definition = compileFeatureCatalog(input);
-  return canonicalizeDefinition({ definition, identity: identity(definition) });
+  return canonicalizeDefinition({ definition, identity: identity(definition) }) as unknown as ProgressionInput;
 }
 
-export function validateFeatureCatalogInput(input) {
+export function validateFeatureCatalogInput(input: unknown): ProgressionInput {
   if (!object(input)) throw new Error('feature catalog input must be an object');
   const fields = new Set(['definition', 'identity']);
   for (const key of Object.keys(input)) {
@@ -260,7 +373,11 @@ export function validateFeatureCatalogInput(input) {
   return compiled;
 }
 
-function selectedCatalogDefinition(featureCatalog, selectedLevels) {
+function selectedCatalogDefinition(featureCatalog: unknown, selectedLevels: unknown): {
+  catalog: ProgressionInput;
+  levels: number[];
+  definition: CompiledProgressionDefinition;
+} {
   const catalog = validateFeatureCatalogInput(featureCatalog);
   const availableLevels = progressionLevels(catalog);
   if (!Array.isArray(selectedLevels) || selectedLevels.length === 0
@@ -283,15 +400,16 @@ function selectedCatalogDefinition(featureCatalog, selectedLevels) {
   return { catalog, levels, definition: { ...catalog.definition, nodes, questlines } };
 }
 
-export function selectFeatureCatalogLevels(featureCatalog, selectedLevels) {
+export function selectFeatureCatalogLevels(featureCatalog: unknown,
+  selectedLevels: unknown): ProgressionInput {
   return compileFeatureCatalogInput(
     selectedCatalogDefinition(featureCatalog, selectedLevels).definition,
   );
 }
 
-export function compileDependencyPolicyInput(strikes, featureCatalog,
-  selectedLevels = progressionLevels(featureCatalog),
-  unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT) {
+export function compileDependencyPolicyInput(strikes: unknown, featureCatalog: unknown,
+  selectedLevels: number[] = progressionLevels(featureCatalog),
+  unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT): ProgressionInput<CompiledDependencyPolicyDefinition> {
   const catalog = validateFeatureCatalogInput(featureCatalog);
   const selected = selectedCatalogDefinition(catalog, selectedLevels);
   const runtimeDefinition = compileDependencyMode({
@@ -310,31 +428,41 @@ export function compileDependencyPolicyInput(strikes, featureCatalog,
     levels: selected.levels,
     strikes: runtimeDefinition.strikes,
     unchangedFailureLimit: runtimeDefinition.unchangedFailureLimit,
-  });
+  }) as CompiledDependencyPolicyDefinition;
   return canonicalizeDefinition({
     definition,
     identity: { id: definition.id, version: definition.version,
       sha256: sha256(canonicalDefinitionJson(definition)) },
-  });
+  }) as unknown as ProgressionInput<CompiledDependencyPolicyDefinition>;
 }
 
-export function validateDependencyPolicyInput(input, featureCatalog) {
+export function validateDependencyPolicyInput(input: unknown,
+  featureCatalog: unknown): ProgressionInput<CompiledDependencyPolicyDefinition> {
   if (!object(input)) throw new Error('dependency policy input must be an object');
   const fields = new Set(['definition', 'identity']);
   for (const key of Object.keys(input)) {
     if (!fields.has(key)) throw new Error(`dependency policy input.${key} is unknown`);
   }
+  if (!object(input.definition) || !object(input.definition.strikes)) {
+    throw new Error('dependency policy input definition is incomplete');
+  }
+  if (!Array.isArray(input.definition.levels)
+    || input.definition.levels.some(level => !Number.isSafeInteger(level))) {
+    throw new Error('dependency policy input levels are invalid');
+  }
+  const levels = input.definition.levels as number[];
   const compiled = compileDependencyPolicyInput({
-    levels: input.definition?.strikes?.levels ?? {},
-  }, featureCatalog, input.definition?.levels,
-  input.definition?.unchangedFailureLimit);
+    levels: input.definition.strikes.levels ?? {},
+  }, featureCatalog, levels,
+  input.definition.unchangedFailureLimit as number | undefined);
   if (canonicalDefinitionJson(input) !== canonicalDefinitionJson(compiled)) {
     throw new Error('dependency policy identity does not match its compiled definition');
   }
   return compiled;
 }
 
-export function dependencyRuntimeDefinition(featureCatalog, dependencyPolicy) {
+export function dependencyRuntimeDefinition(featureCatalog: unknown,
+  dependencyPolicy: unknown): CompiledProgressionDefinition {
   const catalog = validateFeatureCatalogInput(featureCatalog);
   const policy = validateDependencyPolicyInput(dependencyPolicy, catalog);
   const selected = selectedCatalogDefinition(catalog, policy.definition.levels);
@@ -348,12 +476,15 @@ export function dependencyRuntimeDefinition(featureCatalog, dependencyPolicy) {
   });
 }
 
-export function compileProgressionInput(input) {
-  const definition = progressionEngine.compile(input);
-  return canonicalizeDefinition({ definition, identity: identity(definition) });
+export function compileProgressionInput(input: unknown): ProgressionInput {
+  const engine = progressionEngine as unknown as {
+    compile(value: unknown): CompiledProgressionDefinition;
+  };
+  const definition = engine.compile(input);
+  return canonicalizeDefinition({ definition, identity: identity(definition) }) as unknown as ProgressionInput;
 }
 
-export function validateProgressionInput(input) {
+export function validateProgressionInput(input: unknown): ProgressionInput {
   if (!object(input)) throw new Error('progression input must be an object');
   const fields = new Set(['definition', 'identity']);
   for (const key of Object.keys(input)) {
@@ -366,8 +497,10 @@ export function validateProgressionInput(input) {
   return compiled;
 }
 
-export function progressionLevels(input) {
-  const validator = input?.definition?.kind === 'feature-catalog'
+export function progressionLevels(input: unknown): number[] {
+  const catalog = object(input) && object(input.definition)
+    && input.definition.kind === 'feature-catalog';
+  const validator = catalog
     ? validateFeatureCatalogInput : validateProgressionInput;
   const { definition } = validator(input);
   return [...new Set(definition.nodes.map(node => node.level))].sort((left, right) => left - right);

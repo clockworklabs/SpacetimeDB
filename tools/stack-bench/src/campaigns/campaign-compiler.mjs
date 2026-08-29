@@ -13,7 +13,7 @@ import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/reci
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLevels,
   selectFeatureCatalogLevels, validateDependencyPolicyInput, validateFeatureCatalogInput }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.mjs';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';

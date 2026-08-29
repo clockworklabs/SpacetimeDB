@@ -13,10 +13,10 @@ import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../src/progression/progression-definition.mjs';
+  from '../dist/src/progression/progression-definition.js';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { liveProgressionStatus } from '../src/progression/live-progression.mjs';
-import { writeProgressionState } from '../src/progression/progression-state.mjs';
+import { writeProgressionState } from '../dist/src/progression/progression-state.js';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 

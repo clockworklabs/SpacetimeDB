@@ -4,9 +4,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 import { grantProgressionState, readProgressionState }
-  from '../progression/progression-state.mjs';
+  from '../progression/progression-state.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
 import { inspectCampaign } from './campaign-runner.mjs';
 import { scheduleDependencyContinuation, writeCampaignState }

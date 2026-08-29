@@ -5,9 +5,9 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { readArtifact } from '../evidence/artifacts.mjs';
 import { progressionEngine } from './progression-engine.mjs';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.mjs';
-import { validateProgressionInput } from './progression-definition.mjs';
+import { validateProgressionInput } from './progression-definition.js';
 import { resolveProgressionRecipeAction } from './progression-recipe-selection.mjs';
-import { readProgressionState, validateProgressionOwner } from './progression-state.mjs';
+import { readProgressionState, validateProgressionOwner } from './progression-state.js';
 
 const same = (left, right) => canonicalDefinitionJson(left) === canonicalDefinitionJson(right);
 const HASH = /^[a-f0-9]{64}$/;

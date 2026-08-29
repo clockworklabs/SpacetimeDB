@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { compileFeatureCatalogInput, compileProgressionDefinitionFile }
-  from './progression-definition.mjs';
+  from './progression-definition.js';
 
 const EXACT_REF = /^([a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'));

@@ -8,7 +8,7 @@ import {
 import {
   compileProgressionDefinitionFile,
   type CompiledProgressionDefinition,
-} from './progression-definition.mjs';
+} from './progression-definition.js';
 
 export const GRAPH_START = '/* STACK_BENCH_GRAPH_START */';
 export const GRAPH_END = '/* STACK_BENCH_GRAPH_END */';

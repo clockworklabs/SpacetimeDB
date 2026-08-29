@@ -6,14 +6,158 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../evidence/artifacts.mjs';
 import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.mjs';
+import type { CampaignLock } from '../campaigns/campaign-lock.mjs';
 import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.mjs';
 import { progressionEngine } from './progression-engine.mjs';
-import { validateProgressionInput } from './progression-definition.mjs';
+import {
+  validateProgressionInput,
+} from './progression-definition.js';
 
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+interface BoundIdentity extends Record<string, unknown> {
+  id: string;
+  version?: string | null;
+  sha256: string;
+  state?: string;
+}
+
+export interface ProgressionOwner {
+  schemaVersion: 1;
+  campaign: { id: string; version: string; sha256: string };
+  attempt: {
+    id: string;
+    track: string;
+    stack: string;
+    agentAdapter: string;
+    model: string;
+    conditionSha256: string;
+  };
+  workspace?: { appDirectory: string };
+}
+
+interface WorkspaceProgressionOwner extends ProgressionOwner {
+  workspace: { appDirectory: string };
+}
+
+export interface PersistedProgressionAttempt extends Record<string, unknown> {
+  level: number;
+  outcome: string;
+  runId?: string;
+  sourceSha256?: string;
+  selectionSha256?: string;
+}
+
+export interface ProgressionState extends Record<string, unknown> {
+  definition: unknown;
+  events: unknown[];
+  attempts: PersistedProgressionAttempt[];
+}
+
+interface ProgressionStateEngine {
+  resume(state: unknown): ProgressionState;
+  nextAction(state: ProgressionState): unknown;
+  grantStrikes(state: ProgressionState, grant: unknown): ProgressionState;
+}
+
+interface ResumeBinding extends Record<string, unknown> {
+  actionSha256: string;
+  source: { directory: string; sha256: string; files: number };
+}
+
+interface ProgressionStatePayload extends Record<string, unknown> {
+  schemaVersion: 2;
+  owner: WorkspaceProgressionOwner;
+  featureCatalog: BoundIdentity;
+  dependencyPolicy: BoundIdentity;
+  events: unknown[];
+  snapshot: Record<string, unknown>;
+  resume?: unknown;
+  snapshotSha256: string;
+}
+
+interface StateArtifact extends Record<string, unknown> {
+  id: string;
+  attempt: { id: string; parentId?: string | null };
+  identities: {
+    experiment?: { sha256?: string };
+    engine: { sha256: string };
+    agentAdapter?: { id?: string };
+    stackAdapter?: { id?: string };
+  };
+  payload: ProgressionStatePayload;
+}
+
+interface RestoredProgressionState {
+  state: ProgressionState;
+  snapshotSha256: string;
+  resume: unknown | null;
+}
+
+interface StateResult extends RestoredProgressionState {
+  artifact: StateArtifact;
+}
+
+interface WriteProgressionStateOptions {
+  progression: unknown;
+  featureCatalogIdentity: unknown;
+  dependencyPolicyIdentity: unknown;
+  state: unknown;
+  owner: unknown;
+  resume?: unknown | null;
+  id?: string;
+}
+
+interface ReadProgressionStateOptions {
+  progression: unknown;
+  featureCatalogIdentity: unknown;
+  dependencyPolicyIdentity: unknown;
+  owner: unknown;
+  requireCurrentEngine?: boolean;
+}
+
+interface ProgressionGrant {
+  level: number;
+  [key: string]: unknown;
+}
+
+interface GrantProgressionStateOptions {
+  progression: unknown;
+  featureCatalogIdentity: unknown;
+  dependencyPolicyIdentity: unknown;
+  owner: unknown;
+  grant: ProgressionGrant;
+  checkpoint: unknown;
+  expectedSnapshotSha256: unknown;
+}
+
+interface SourceCheckpointPayload extends Record<string, unknown> {
+  track: string;
+  backend: string;
+  level: number;
+  selectionSha256: string;
+  source: { directory: string; sha256: string; files: number };
+}
+
+interface SourceCheckpointArtifact extends Record<string, unknown> {
+  attempt: { parentId?: string | null };
+  identities: {
+    engine?: { sha256?: string };
+    agentAdapter?: { id?: string };
+    stackAdapter?: { id?: string };
+  };
+  payload: SourceCheckpointPayload;
+}
+
+interface DirectoryHash {
+  sha256: string;
+  files: unknown[];
+}
+
+const stateEngine = progressionEngine as unknown as ProgressionStateEngine;
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 const HASH = /^[a-f0-9]{64}$/;
 
-function validateBoundIdentity(input, label) {
+function validateBoundIdentity(input: unknown, label: string): BoundIdentity {
   if (!object(input)) throw new Error(`${label} identity must be an object`);
   const fields = new Set(['id', 'version', 'sha256', 'state']);
   for (const key of Object.keys(input)) {
@@ -22,20 +166,24 @@ function validateBoundIdentity(input, label) {
   if (typeof input.id !== 'string' || !input.id
     || (input.version !== undefined && input.version !== null
       && (typeof input.version !== 'string' || !input.version))
-    || !HASH.test(input.sha256 ?? '')) {
+    || !HASH.test(typeof input.sha256 === 'string' ? input.sha256 : '')) {
     throw new Error(`${label} identity is invalid`);
   }
-  return structuredClone(input);
+  return structuredClone(input) as BoundIdentity;
 }
 
-function boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity) {
+function boundIdentities(featureCatalogIdentity: unknown, dependencyPolicyIdentity: unknown): {
+  featureCatalog: BoundIdentity;
+  dependencyPolicy: BoundIdentity;
+} {
   return {
     featureCatalog: validateBoundIdentity(featureCatalogIdentity, 'feature catalog'),
     dependencyPolicy: validateBoundIdentity(dependencyPolicyIdentity, 'dependency policy'),
   };
 }
 
-export function validateProgressionOwner(input, { requireWorkspace = false } = {}) {
+export function validateProgressionOwner(input: unknown,
+  { requireWorkspace = false }: { requireWorkspace?: boolean } = {}): ProgressionOwner {
   if (!object(input)) throw new Error('progression state owner must be an object');
   const owner = structuredClone(input);
   const fields = new Set(['schemaVersion', 'campaign', 'attempt', 'workspace']);
@@ -46,77 +194,95 @@ export function validateProgressionOwner(input, { requireWorkspace = false } = {
     || (requireWorkspace && !object(owner.workspace))) {
     throw new Error('progression state owner is incomplete');
   }
+  const typedOwner = owner as unknown as ProgressionOwner;
   const campaignFields = new Set(['id', 'version', 'sha256']);
   const attemptFields = new Set([
     'id', 'track', 'stack', 'agentAdapter', 'model', 'conditionSha256',
   ]);
   const workspaceFields = new Set(['appDirectory']);
-  for (const key of Object.keys(owner.campaign)) {
+  for (const key of Object.keys(typedOwner.campaign)) {
     if (!campaignFields.has(key)) throw new Error(`progression state owner.campaign.${key} is unknown`);
   }
-  for (const key of Object.keys(owner.attempt)) {
+  for (const key of Object.keys(typedOwner.attempt)) {
     if (!attemptFields.has(key)) throw new Error(`progression state owner.attempt.${key} is unknown`);
   }
-  for (const key of Object.keys(owner.workspace ?? {})) {
+  for (const key of Object.keys(typedOwner.workspace ?? {})) {
     if (!workspaceFields.has(key)) {
       throw new Error(`progression state owner.workspace.${key} is unknown`);
     }
   }
   for (const [at, value] of [
-    ['campaign.id', owner.campaign.id], ['campaign.version', owner.campaign.version],
-    ['attempt.id', owner.attempt.id], ['attempt.track', owner.attempt.track],
-    ['attempt.stack', owner.attempt.stack],
-    ['attempt.agentAdapter', owner.attempt.agentAdapter], ['attempt.model', owner.attempt.model],
-  ]) {
+    ['campaign.id', typedOwner.campaign.id], ['campaign.version', typedOwner.campaign.version],
+    ['attempt.id', typedOwner.attempt.id], ['attempt.track', typedOwner.attempt.track],
+    ['attempt.stack', typedOwner.attempt.stack],
+    ['attempt.agentAdapter', typedOwner.attempt.agentAdapter],
+    ['attempt.model', typedOwner.attempt.model],
+  ] satisfies Array<[string, unknown]>) {
     if (typeof value !== 'string' || !value) throw new Error(`progression state owner.${at} is invalid`);
   }
   for (const [at, value] of [
-    ['campaign.sha256', owner.campaign.sha256],
-    ['attempt.conditionSha256', owner.attempt.conditionSha256],
-  ]) {
-    if (!HASH.test(value ?? '')) throw new Error(`progression state owner.${at} is invalid`);
+    ['campaign.sha256', typedOwner.campaign.sha256],
+    ['attempt.conditionSha256', typedOwner.attempt.conditionSha256],
+  ] satisfies Array<[string, unknown]>) {
+    if (typeof value !== 'string' || !HASH.test(value)) {
+      throw new Error(`progression state owner.${at} is invalid`);
+    }
   }
-  if (owner.workspace) {
-    if (typeof owner.workspace.appDirectory !== 'string' || !owner.workspace.appDirectory
-      || isAbsolute(owner.workspace.appDirectory) || owner.workspace.appDirectory.includes('\\')
-      || owner.workspace.appDirectory.split('/').some(part => !part || part === '.' || part === '..')) {
+  if (typedOwner.workspace) {
+    if (typeof typedOwner.workspace.appDirectory !== 'string' || !typedOwner.workspace.appDirectory
+      || isAbsolute(typedOwner.workspace.appDirectory)
+      || typedOwner.workspace.appDirectory.includes('\\')
+      || typedOwner.workspace.appDirectory.split('/').some(part =>
+        !part || part === '.' || part === '..')) {
       throw new Error('progression state owner.workspace.appDirectory must be a normalized relative path');
     }
     const validationRoot = resolve('__stack_bench_workspace__');
-    const appPath = resolve(validationRoot, owner.workspace.appDirectory);
+    const appPath = resolve(validationRoot, typedOwner.workspace.appDirectory);
     const appRelative = relative(validationRoot, appPath);
     if (appRelative === '..' || appRelative.startsWith(`..${sep}`) || appRelative === '') {
       throw new Error('progression state owner workspace application escapes its root');
     }
   }
-  return owner;
+  return typedOwner;
 }
 
-function storedPayload(progression, featureCatalogIdentity, dependencyPolicyIdentity,
-  owner, state, resume = null) {
-  progression = validateProgressionInput(progression);
+function validateWorkspaceOwner(input: unknown): WorkspaceProgressionOwner {
+  const owner = validateProgressionOwner(input, { requireWorkspace: true });
+  if (!owner.workspace) throw new Error('progression state owner is incomplete');
+  return owner as WorkspaceProgressionOwner;
+}
+
+function directoryHash(path: string): DirectoryHash {
+  return hashDirectory(path) as unknown as DirectoryHash;
+}
+
+function storedPayload(progressionInput: unknown, featureCatalogIdentity: unknown,
+  dependencyPolicyIdentity: unknown, ownerInput: unknown, stateInput: unknown,
+  resume: unknown | null = null): ProgressionStatePayload {
+  const progression = validateProgressionInput(progressionInput);
   const identities = boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity);
-  owner = validateProgressionOwner(owner, { requireWorkspace: true });
-  state = progressionEngine.resume(state);
+  const owner = validateWorkspaceOwner(ownerInput);
+  const state = stateEngine.resume(stateInput);
   if (canonicalDefinitionJson(state.definition)
     !== canonicalDefinitionJson(progression.definition)) {
     throw new Error('progression state definition does not match its progression identity');
   }
-  const snapshot = structuredClone(state);
+  const snapshot = structuredClone(state) as Record<string, unknown>;
   const events = snapshot.events;
   delete snapshot.definition;
   delete snapshot.events;
   const content = { owner, ...identities, events, snapshot,
     ...(resume === null ? {} : { resume: structuredClone(resume) }) };
   return { schemaVersion: 2, ...content,
-    snapshotSha256: sha256(canonicalDefinitionJson(content)) };
+    snapshotSha256: sha256(canonicalDefinitionJson(content)) } as ProgressionStatePayload;
 }
 
-function restorePayload(payload, progression, featureCatalogIdentity, dependencyPolicyIdentity,
-  owner) {
-  progression = validateProgressionInput(progression);
+function restorePayload(payload: unknown, progressionInput: unknown,
+  featureCatalogIdentity: unknown, dependencyPolicyIdentity: unknown,
+  ownerInput: unknown): RestoredProgressionState {
+  const progression = validateProgressionInput(progressionInput);
   const identities = boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity);
-  owner = validateProgressionOwner(owner, { requireWorkspace: true });
+  const owner = validateWorkspaceOwner(ownerInput);
   if (!object(payload) || payload.schemaVersion !== 2 || !object(payload.featureCatalog)
     || !object(payload.dependencyPolicy)
     || !object(payload.owner) || !Array.isArray(payload.events) || !object(payload.snapshot)
@@ -144,14 +310,15 @@ function restorePayload(payload, progression, featureCatalogIdentity, dependency
   }
   const state = { ...structuredClone(payload.snapshot), definition: progression.definition,
     events: structuredClone(payload.events) };
-  return { state: progressionEngine.resume(state), snapshotSha256: payload.snapshotSha256,
+  return { state: stateEngine.resume(state), snapshotSha256: payload.snapshotSha256,
     resume: payload.resume === undefined ? null : structuredClone(payload.resume) };
 }
 
-export function writeProgressionState(path, { progression, featureCatalogIdentity,
+export function writeProgressionState(path: string, { progression, featureCatalogIdentity,
   dependencyPolicyIdentity, state,
-  owner, resume = null, id = 'progression-state' } = {}) {
-  owner = validateProgressionOwner(owner, { requireWorkspace: true });
+  owner: ownerInput, resume = null, id = 'progression-state' }:
+  Partial<WriteProgressionStateOptions> = {}): StateResult {
+  const owner = validateWorkspaceOwner(ownerInput);
   const payload = storedPayload(progression, featureCatalogIdentity,
     dependencyPolicyIdentity, owner, state, resume);
   const artifact = writeArtifact(resolve(path), { kind: 'progression_state', id,
@@ -159,20 +326,20 @@ export function writeProgressionState(path, { progression, featureCatalogIdentit
     identities: emptyArtifactIdentities({ experiment: {
       id: owner.campaign.id, version: owner.campaign.version,
       sha256: owner.campaign.sha256,
-    }, stackAdapter: { id: owner.attempt.stack } }), payload });
+    }, stackAdapter: { id: owner.attempt.stack } }), payload }) as unknown as StateArtifact;
   return { artifact, ...restorePayload(artifact.payload, progression,
     featureCatalogIdentity, dependencyPolicyIdentity, owner) };
 }
 
-export function readProgressionState(path, { progression, featureCatalogIdentity,
+export function readProgressionState(path: string, { progression, featureCatalogIdentity,
   dependencyPolicyIdentity, owner,
-  requireCurrentEngine = false } = {}) {
-  owner = validateProgressionOwner(owner, { requireWorkspace: true });
-  const artifact = readArtifact(resolve(path), { expectedKind: 'progression_state' });
-  if (artifact.attempt.id !== owner.attempt.id
-    || artifact.attempt.parentId !== owner.campaign.id
-    || artifact.identities.experiment?.sha256 !== owner.campaign.sha256
-    || artifact.identities.stackAdapter?.id !== owner.attempt.stack) {
+  requireCurrentEngine = false }: Partial<ReadProgressionStateOptions> = {}): StateResult {
+  const validatedOwner = validateWorkspaceOwner(owner);
+  const artifact = readArtifact(resolve(path), { expectedKind: 'progression_state' }) as unknown as StateArtifact;
+  if (artifact.attempt.id !== validatedOwner.attempt.id
+    || artifact.attempt.parentId !== validatedOwner.campaign.id
+    || artifact.identities.experiment?.sha256 !== validatedOwner.campaign.sha256
+    || artifact.identities.stackAdapter?.id !== validatedOwner.attempt.stack) {
     throw new Error('progression state artifact envelope has the wrong campaign attempt owner');
   }
   if (requireCurrentEngine
@@ -180,17 +347,18 @@ export function readProgressionState(path, { progression, featureCatalogIdentity
     throw new Error('progression state artifact uses a different harness executable');
   }
   return { artifact, ...restorePayload(artifact.payload, progression,
-    featureCatalogIdentity, dependencyPolicyIdentity, owner) };
+    featureCatalogIdentity, dependencyPolicyIdentity, validatedOwner) };
 }
 
-export function progressionStateExists(path) {
+export function progressionStateExists(path: string): boolean {
   return existsSync(resolve(path));
 }
 
-function stateLock(path, progression, featureCatalogIdentity, dependencyPolicyIdentity, owner) {
+function stateLock(path: string, progression: unknown, featureCatalogIdentity: unknown,
+  dependencyPolicyIdentity: unknown, ownerInput: unknown): CampaignLock {
   validateProgressionInput(progression);
   const identities = boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity);
-  owner = validateProgressionOwner(owner, { requireWorkspace: true });
+  const owner = validateWorkspaceOwner(ownerInput);
   const lockSha256 = sha256(canonicalDefinitionJson({ ...identities, owner }));
   return acquireCampaignLock(`${resolve(path)}.control`, {
     id: `progression-${lockSha256.slice(0, 16)}`,
@@ -198,7 +366,7 @@ function stateLock(path, progression, featureCatalogIdentity, dependencyPolicyId
   });
 }
 
-function ownedPath(root, input, label) {
+function ownedPath(root: string, input: unknown, label: string): string {
   if (typeof input !== 'string' || !input || isAbsolute(input)) {
     throw new Error(`${label} must be a relative path in the progression workspace`);
   }
@@ -227,14 +395,16 @@ function ownedPath(root, input, label) {
   return real;
 }
 
-function rejectTreeSymlinks(path, label) {
+function rejectTreeSymlinks(path: string, label: string): void {
   for (const entry of readdirSync(path, { withFileTypes: true })) {
     if (entry.isSymbolicLink()) throw new Error(`${label} contains a symbolic link`);
     if (entry.isDirectory()) rejectTreeSymlinks(join(path, entry.name), label);
   }
 }
 
-function restoreGrantSource(state, owner, grant, checkpoint, workspaceRoot, engineSha256) {
+function restoreGrantSource(state: ProgressionState, owner: WorkspaceProgressionOwner,
+  grant: ProgressionGrant, checkpoint: unknown, workspaceRoot: string,
+  engineSha256: string): void {
   if (!object(checkpoint) || typeof checkpoint.artifact !== 'string'
     || !checkpoint.artifact) {
     throw new Error('continuation grant requires an exact source checkpoint artifact');
@@ -247,7 +417,7 @@ function restoreGrantSource(state, owner, grant, checkpoint, workspaceRoot, engi
   const checkpointPath = ownedPath(workspaceRoot, checkpoint.artifact,
     'continuation checkpoint artifact');
   const artifact = readArtifact(checkpointPath, { expectedKind: 'source_checkpoint',
-    expectedId: `${attempt.runId}-l${grant.level}-checkpoint` });
+    expectedId: `${attempt.runId}-l${grant.level}-checkpoint` }) as unknown as SourceCheckpointArtifact;
   if (artifact.attempt.parentId !== attempt.runId
     || artifact.payload.track !== owner.attempt.track
     || artifact.payload.backend !== owner.attempt.stack
@@ -267,7 +437,7 @@ function restoreGrantSource(state, owner, grant, checkpoint, workspaceRoot, engi
     'progression application');
   if (sourcePath === appDir) throw new Error('continuation checkpoint cannot be the live application');
   rejectTreeSymlinks(sourcePath, 'continuation checkpoint source');
-  const saved = hashDirectory(sourcePath);
+  const saved = directoryHash(sourcePath);
   if (saved.sha256 !== artifact.payload.source.sha256
     || saved.files.length !== artifact.payload.source.files) {
     throw new Error('continuation checkpoint bytes do not match the graded level source');
@@ -278,12 +448,13 @@ function restoreGrantSource(state, owner, grant, checkpoint, workspaceRoot, engi
   }
 }
 
-function grantResumeBinding(state, owner, workspaceRoot) {
+function grantResumeBinding(state: ProgressionState, owner: WorkspaceProgressionOwner,
+  workspaceRoot: string): ResumeBinding {
   const sourcePath = ownedPath(workspaceRoot, owner.workspace.appDirectory,
     'progression application');
-  const source = hashDirectory(sourcePath);
+  const source = directoryHash(sourcePath);
   return {
-    actionSha256: sha256(canonicalDefinitionJson(progressionEngine.nextAction(state))),
+    actionSha256: sha256(canonicalDefinitionJson(stateEngine.nextAction(state))),
     source: {
       directory: owner.workspace.appDirectory,
       sha256: source.sha256,
@@ -292,9 +463,9 @@ function grantResumeBinding(state, owner, workspaceRoot) {
   };
 }
 
-export function grantProgressionState(path, { progression, featureCatalogIdentity,
+export function grantProgressionState(path: string, { progression, featureCatalogIdentity,
   dependencyPolicyIdentity, owner, grant,
-  checkpoint, expectedSnapshotSha256 } = {}) {
+  checkpoint, expectedSnapshotSha256 }: Partial<GrantProgressionStateOptions> = {}): StateResult {
   if (typeof expectedSnapshotSha256 !== 'string' || !expectedSnapshotSha256) {
     throw new Error('continuation grant requires the expected progression snapshot identity');
   }
@@ -306,23 +477,26 @@ export function grantProgressionState(path, { progression, featureCatalogIdentit
     if (current.snapshotSha256 !== expectedSnapshotSha256) {
       throw new Error('progression state changed before the continuation grant');
     }
-    const state = progressionEngine.grantStrikes(current.state, grant);
-    restoreGrantSource(current.state, owner, grant, checkpoint, dirname(resolve(path)),
+    const validatedOwner = validateWorkspaceOwner(owner);
+    const state = stateEngine.grantStrikes(current.state, grant);
+    restoreGrantSource(current.state, validatedOwner, grant as ProgressionGrant,
+      checkpoint, dirname(resolve(path)),
       current.artifact.identities.engine.sha256);
     return writeProgressionState(path, { progression, featureCatalogIdentity,
-      dependencyPolicyIdentity, owner, state,
-      resume: grantResumeBinding(state, owner, dirname(resolve(path))),
+      dependencyPolicyIdentity, owner: validatedOwner, state,
+      resume: grantResumeBinding(state, validatedOwner, dirname(resolve(path))),
       id: current.artifact.id });
   } finally {
     releaseCampaignLock(lock);
   }
 }
 
-export function acquireProgressionStateLock(path, progression, featureCatalogIdentity,
-  dependencyPolicyIdentity, owner) {
+export function acquireProgressionStateLock(path: string, progression: unknown,
+  featureCatalogIdentity: unknown, dependencyPolicyIdentity: unknown,
+  owner: unknown): CampaignLock {
   return stateLock(path, progression, featureCatalogIdentity, dependencyPolicyIdentity, owner);
 }
 
-export function releaseProgressionStateLock(lock) {
+export function releaseProgressionStateLock(lock: CampaignLock): boolean {
   return releaseCampaignLock(lock);
 }

@@ -7,7 +7,7 @@ import test from 'node:test';
 import { grantCampaignDependencyStrikes, prepareGrantWorkspace }
   from '../src/campaigns/campaign-progression-grant.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
-  from '../src/progression/progression-definition.mjs';
+  from '../dist/src/progression/progression-definition.js';
 
 function campaignFixture({ marker = null, campaignStatus = 'completed' } = {}) {
   const featureCatalog = compileFeatureCatalogInput({

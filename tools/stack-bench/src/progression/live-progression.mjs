@@ -13,7 +13,7 @@ import { replayDependencyMode } from './dependency-mode.mjs';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.mjs';
 import { resolveProgressionRecipeAction } from './progression-recipe-selection.mjs';
 import { progressionStateExists, readProgressionState, validateProgressionOwner,
-  writeProgressionState } from './progression-state.mjs';
+  writeProgressionState } from './progression-state.js';
 
 function rejectSymlinks(path, label) {
   if (lstatSync(path).isSymbolicLink()) throw new Error(`${label} cannot be a symbolic link`);

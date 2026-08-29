@@ -36,7 +36,7 @@ import { mergeMutationShards, mutationShard, mutationWorkerSlots }
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.mjs';
 import { progressionLevels, selectFeatureCatalogLevels }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.mjs';
 import { mutationTargetKeys } from '../evidence/mutation-analysis.mjs';

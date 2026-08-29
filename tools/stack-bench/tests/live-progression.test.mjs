@@ -12,7 +12,7 @@ import { artifactPayload, createArtifact, emptyArtifactIdentities, writeArtifact
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput, compileProgressionInput }
-  from '../src/progression/progression-definition.mjs';
+  from '../dist/src/progression/progression-definition.js';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
 import { validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';

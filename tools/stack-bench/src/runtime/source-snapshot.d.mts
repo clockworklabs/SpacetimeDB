@@ -5,3 +5,4 @@ export interface SourceSnapshot {
 }
 
 export function hashAppSource(appDir: string): SourceSnapshot;
+export function restoreAppSource(from: string, appDir: string): void;

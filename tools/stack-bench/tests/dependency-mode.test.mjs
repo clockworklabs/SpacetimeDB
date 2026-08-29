@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { compileDependencyMode } from '../src/progression/dependency-mode.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
-  from '../src/progression/progression-definition.mjs';
+  from '../dist/src/progression/progression-definition.js';
 import { createProgressionEngine, progressionEngine } from '../src/progression/progression-engine.mjs';
 
 const node = (id, dependencies, questline, points = [1]) => ({

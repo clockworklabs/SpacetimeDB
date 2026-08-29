@@ -12,12 +12,12 @@ import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { gradeBundleToProgressionResult } from '../src/progression/grade-bundle-result.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput,
   compileProgressionDefinitionFile, compileProgressionInput, dependencyRuntimeDefinition }
-  from '../src/progression/progression-definition.mjs';
+  from '../dist/src/progression/progression-definition.js';
 import { auditProgressionReferenceRun }
   from '../src/progression/progression-reference-audit.mjs';
 import { resolveProgressionRecipeAction }
   from '../src/progression/progression-recipe-selection.mjs';
-import { writeProgressionState } from '../src/progression/progression-state.mjs';
+import { writeProgressionState } from '../dist/src/progression/progression-state.js';
 import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
 const owner = {

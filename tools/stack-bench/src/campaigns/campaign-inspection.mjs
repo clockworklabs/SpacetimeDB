@@ -3,9 +3,9 @@ import { join } from 'node:path';
 
 import { readCampaignState } from './campaign-scheduler.mjs';
 import { progressionEngine } from '../progression/progression-engine.mjs';
-import { readProgressionState } from '../progression/progression-state.mjs';
+import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 
 function progressionOwner(plan, attempt) {
   return {

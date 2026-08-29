@@ -8,7 +8,7 @@ import { auditProgressionReferenceRun }
   from '../progression/progression-reference-audit.mjs';
 import { readCampaignState } from './campaign-scheduler.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../progression/progression-definition.mjs';
+  from '../progression/progression-definition.js';
 
 function childPath(root, path) {
   const absoluteRoot = resolve(root);

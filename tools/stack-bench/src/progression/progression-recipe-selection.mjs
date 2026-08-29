@@ -2,7 +2,7 @@ import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../composition/recipe-selection.mjs';
 import { progressionEngine } from './progression-engine.mjs';
 import { validateFeatureCatalogInput, validateProgressionInput }
-  from './progression-definition.mjs';
+  from './progression-definition.js';
 
 const validateCatalog = input => input?.definition?.kind === 'feature-catalog'
   ? validateFeatureCatalogInput(input) : validateProgressionInput(input);
