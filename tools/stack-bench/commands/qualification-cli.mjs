@@ -8,7 +8,7 @@ import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/tracks.mjs';
 import { PACK_BUDGET_POLICY } from '../src/composition/pack-budget.mjs';
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 export function parseQualificationArgs(argv) {
   const args = { command: argv[2], track: null, level: null };

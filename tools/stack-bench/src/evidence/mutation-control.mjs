@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { agentRecipeIdentity } from '../agents/agent-adapter-contract.mjs';
 import { portsFor } from '../composition/tracks.mjs';
-import { STACK_BENCH_ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../package-root.js';
 
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 export const MUTATION_GRADE_MAX_TIMEOUT_MS = 15 * 60_000;

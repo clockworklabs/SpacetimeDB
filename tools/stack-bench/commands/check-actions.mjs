@@ -29,7 +29,7 @@ import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifact
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const TRACKS = join(STACK_BENCH_ROOT, 'tracks');
 

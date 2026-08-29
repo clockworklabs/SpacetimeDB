@@ -72,7 +72,7 @@ import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 export function addCostUsd(...values) {

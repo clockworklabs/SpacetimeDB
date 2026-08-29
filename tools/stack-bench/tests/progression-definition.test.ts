@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileProgressionDefinition } from '../src/progression/progression-definition.js';
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const source = join(trackRoot, 'progression', 'ecommerce-1.0.0.json');

@@ -18,7 +18,7 @@ import { auditProgressionReferenceRun }
 import { resolveProgressionRecipeAction }
   from '../src/progression/progression-recipe-selection.js';
 import { writeProgressionState } from '../src/progression/progression-state.js';
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const owner = {
   schemaVersion: 1,

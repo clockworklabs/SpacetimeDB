@@ -24,7 +24,7 @@ import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../comp
 import { pidsOnPort } from './platform.mjs';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const COMPOSE = process.env.STACK_BENCH_COMPOSE_FILE ?? join(ROOT, 'docker-compose.yaml');
 const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI

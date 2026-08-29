@@ -15,7 +15,7 @@ import { compileTrackManifest } from './definition-compiler.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 export const TRACKS_DIR = join(ROOT, 'tracks');
 export const DEFAULT_TRACK = 'chat';
 

@@ -19,7 +19,7 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
 import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 const CLI = process.env.SPACETIME_BIN ?? join(REPO, 'target', 'release',

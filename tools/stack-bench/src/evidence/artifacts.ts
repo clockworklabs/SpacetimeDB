@@ -147,7 +147,7 @@ const PAYLOAD_FIELDS = Object.freeze({
 });
 const HASH = /^[a-f0-9]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 let cachedEngineIdentity: EngineArtifactIdentity | null = null;
 
 const isObject = (value: unknown): value is UnknownRecord =>

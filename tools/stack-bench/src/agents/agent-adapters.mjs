@@ -7,7 +7,7 @@ import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.js';
 import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.mjs';
 import { sha256 } from '../evidence/provenance.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const CLAUDE_SUBSCRIPTION_STATUS_COMMAND = ['node', '-e',
   "const {spawnSync}=require('node:child_process');"
   + "const r=spawnSync('claude',['auth','status','--json'],{encoding:'utf8'});"

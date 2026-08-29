@@ -1,4 +1,6 @@
 import { dependencyModePolicy } from './dependency-mode.js';
+import type { CompiledDependencyDefinition, DependencyGradingSelection, DependencyScore }
+  from './dependency-mode.js';
 import type {
   ProgressionState,
   ProgressionTerminalOutcome,
@@ -35,13 +37,14 @@ export interface ProgressionPolicy<
   TState = unknown,
   TAction = unknown,
   TScore = unknown,
+  TGradingSelection = unknown,
 > {
   id: string;
   compile(definition: unknown): TDefinition;
   initialize(definition: unknown): TState;
   activeNodes(state: TState): unknown;
   promptSelection(state: TState): unknown;
-  gradingSelection(state: TState): unknown;
+  gradingSelection(state: TState): TGradingSelection;
   recordResult(state: TState, result: unknown): TState;
   grantStrikes(state: TState, grant: unknown): TState;
   resume(state: unknown): TState;
@@ -54,7 +57,9 @@ export interface ProgressionEngine<
   TState = unknown,
   TAction = unknown,
   TScore = unknown,
-> extends Omit<ProgressionPolicy<TDefinition, TState, TAction, TScore>, 'id'> {}
+  TGradingSelection = unknown,
+> extends Omit<ProgressionPolicy<TDefinition, TState, TAction, TScore,
+  TGradingSelection>, 'id'> {}
 
 const POLICY_METHODS = Object.freeze([
   'compile', 'initialize', 'activeNodes', 'promptSelection', 'gradingSelection',
@@ -69,9 +74,10 @@ function policyId(value: unknown): unknown {
   return hasProperties(value) ? value.policy : undefined;
 }
 
-export function createProgressionEngine<TDefinition, TState, TAction, TScore>(
-  policies: readonly ProgressionPolicy<TDefinition, TState, TAction, TScore>[],
-): Readonly<ProgressionEngine<TDefinition, TState, TAction, TScore>>;
+export function createProgressionEngine<TDefinition, TState, TAction, TScore, TGradingSelection>(
+  policies: readonly ProgressionPolicy<TDefinition, TState, TAction, TScore,
+    TGradingSelection>[],
+): Readonly<ProgressionEngine<TDefinition, TState, TAction, TScore, TGradingSelection>>;
 export function createProgressionEngine(policies: unknown): Readonly<ProgressionEngine>;
 export function createProgressionEngine(policies: unknown): Readonly<ProgressionEngine> {
   if (!Array.isArray(policies) || policies.length === 0) {
@@ -119,4 +125,6 @@ export function createProgressionEngine(policies: unknown): Readonly<Progression
   });
 }
 
-export const progressionEngine = createProgressionEngine([dependencyModePolicy]);
+export const progressionEngine: Readonly<ProgressionEngine<CompiledDependencyDefinition,
+  ProgressionState, ProgressionAction, DependencyScore, DependencyGradingSelection>> =
+  createProgressionEngine([dependencyModePolicy]);

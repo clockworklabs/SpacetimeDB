@@ -263,7 +263,7 @@ interface ValidationOptions {
 }
 
 export const CAMPAIGN_SCHEMA_VERSION = 5;
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;

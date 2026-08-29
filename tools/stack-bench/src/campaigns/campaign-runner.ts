@@ -32,7 +32,7 @@ import { aggregateRunOutcome } from '../evidence/outcomes.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';
 import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
 
 type UnknownRecord = Record<string, unknown>;

@@ -39,7 +39,7 @@ import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;

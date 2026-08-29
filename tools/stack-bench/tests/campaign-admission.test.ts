@@ -11,7 +11,7 @@ import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-runner.js';
 import type { CampaignAdmissionPreflightRequest }
   from '../src/campaigns/campaign-runner.js';
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const createdAt = '2026-08-27T12:00:00.000Z';
 const admission: CampaignAdmissionSmokeInput = {

@@ -26,7 +26,7 @@ import { inspectImportedReference, loadReferenceRegistry,
   prepareReferenceFixtureSource, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { referenceInstallSteps } from './reference-install.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 

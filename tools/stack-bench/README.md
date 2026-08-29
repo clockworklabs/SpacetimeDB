@@ -74,7 +74,7 @@ presentations belong in `docs/`.
 | `src/stacks/` | backend adapter contracts and stack-specific operations |
 
 Use the `npm run` commands documented below instead of depending on internal
-module locations. `src/project-paths.mjs` is the single source of truth for the
+module locations. `src/package-root.ts` is the single source of truth for the
 repository and Stack Bench roots.
 
 The optional model-based SpacetimeDB behavioral review is separate from the

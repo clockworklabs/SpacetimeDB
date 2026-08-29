@@ -1227,7 +1227,8 @@ export const dependencyModePolicy: Readonly<ProgressionPolicy<
   CompiledDependencyDefinition,
   ProgressionState,
   ProgressionAction,
-  DependencyScore
+  DependencyScore,
+  DependencyGradingSelection
 >> = Object.freeze({
   id: DEPENDENCY_MODE_POLICY,
   compile: compileDependencyMode,

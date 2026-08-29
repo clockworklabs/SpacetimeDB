@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 import { readArtifact, readRunJson } from '../src/evidence/artifacts.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const WORK = join(ROOT, '.loop-test');
 const APP = join(WORK, 'app');
 // A cold Playwright start plus two grades can exceed three minutes on Windows

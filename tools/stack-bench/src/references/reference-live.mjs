@@ -43,7 +43,7 @@ import { mutationTargetKeys } from '../evidence/mutation-analysis.js';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
 const DEFAULT_SPACETIME_PORT = 3310;
 

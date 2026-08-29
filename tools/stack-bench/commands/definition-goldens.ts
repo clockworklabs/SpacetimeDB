@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { canonicalDefinitionJson, compileTrackPlan } from '../src/composition/definition-plan.mjs';
 import { listTracks } from '../src/composition/tracks.mjs';
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const GOLDEN_DIR = join(STACK_BENCH_ROOT, 'tests', 'goldens', 'definitions');
 const ALL_ACTIONS = join(STACK_BENCH_ROOT, 'tests', 'fixtures', 'definitions', 'all-actions.json');

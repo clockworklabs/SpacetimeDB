@@ -16,13 +16,13 @@ test('compiled modules resolve the Stack Bench package and repository roots', ()
 });
 
 test('staged JavaScript modules resolve the source package root from dist', async () => {
-  const legacyModuleUrl = new URL('../src/project-paths.mjs', import.meta.url);
-  const legacy = await import(legacyModuleUrl.href) as {
+  const compiledModuleUrl = new URL('../src/package-root.js', import.meta.url);
+  const compiled = await import(compiledModuleUrl.href) as {
     REPOSITORY_ROOT: string;
     STACK_BENCH_ROOT: string;
     findStackBenchRoot(moduleUrl?: string | URL): string;
   };
-  assert.equal(legacy.STACK_BENCH_ROOT, STACK_BENCH_ROOT);
-  assert.equal(legacy.REPOSITORY_ROOT, REPOSITORY_ROOT);
-  assert.equal(legacy.findStackBenchRoot(import.meta.url), STACK_BENCH_ROOT);
+  assert.equal(compiled.STACK_BENCH_ROOT, STACK_BENCH_ROOT);
+  assert.equal(compiled.REPOSITORY_ROOT, REPOSITORY_ROOT);
+  assert.equal(compiled.findStackBenchRoot(import.meta.url), STACK_BENCH_ROOT);
 });

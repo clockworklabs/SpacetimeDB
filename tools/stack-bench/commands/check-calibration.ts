@@ -8,7 +8,7 @@ import { compileCalibrationDefinition, compileCalibrationFile } from '../src/com
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { listTracks, TRACKS_DIR } from '../src/composition/tracks.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 
 export interface CalibrationCheckResult {
   track: string;

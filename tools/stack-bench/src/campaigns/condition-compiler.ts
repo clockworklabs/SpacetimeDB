@@ -7,7 +7,7 @@ import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-ma
 import { sha256 } from '../evidence/provenance.js';
 import { validateCredentialAliases } from '../composition/credential-aliases.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;

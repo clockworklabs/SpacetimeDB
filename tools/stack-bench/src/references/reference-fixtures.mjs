@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { hashDirectory } from '../evidence/provenance.js';
 import { hashAppSource, seedAppSource } from '../runtime/source-snapshot.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
 const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb']);
 const STATUSES = new Set(['blocked', 'candidate', 'active']);

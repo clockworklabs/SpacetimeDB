@@ -24,7 +24,7 @@ import { homedir, tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { writeSandbox } from '../src/runtime/sandbox.mjs';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
 const MODEL = arg('--model', 'claude-sonnet-5');

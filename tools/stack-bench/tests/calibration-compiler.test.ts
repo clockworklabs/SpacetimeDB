@@ -15,7 +15,7 @@ import { readArtifact } from '../src/evidence/artifacts.js';
 import { checkCalibrations } from '../commands/check-calibration.js';
 import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import type { RecipeExecution } from '../src/composition/recipe-release.mjs';
-import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
 

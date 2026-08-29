@@ -25,7 +25,7 @@ import { join, dirname, resolve } from 'node:path';
 
 import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
 
-import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
+import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);
 
 // Concurrent runs append here: n=5 isolated trials all write one friction
