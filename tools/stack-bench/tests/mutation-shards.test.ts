@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
-  from '../src/evidence/mutation-shards.mjs';
+  from '../src/evidence/mutation-shards.js';
 
 const mutations = [
   { id: 'a', scenario: 'one' },
@@ -39,13 +39,13 @@ test('mutation shard merging restores manifest order and rejects incomplete unio
     const plan = mutationShard(mutations, { index, count: 3 });
     return { ...plan, results: plan.mutationIds.map(id => ({ id, status: 'CAUGHT' })) };
   });
-  assert.deepEqual(mergeMutationShards(mutations, [shards[2], shards[0], shards[1]])
+  assert.deepEqual(mergeMutationShards(mutations, [shards[2]!, shards[0]!, shards[1]!])
     .map(result => result.id), ['a', 'b', 'c', 'd', 'e']);
   assert.throws(() => mergeMutationShards(mutations, shards.slice(1)), /declared shard count/);
-  assert.throws(() => mergeMutationShards(mutations, [shards[0], shards[0], shards[2]]),
+  assert.throws(() => mergeMutationShards(mutations, [shards[0]!, shards[0]!, shards[2]!]),
     /duplicated/);
   assert.throws(() => mergeMutationShards(mutations, [
-    { ...shards[0], mutationIds: ['a'] }, shards[1], shards[2],
+    { ...shards[0]!, mutationIds: ['a'] }, shards[1]!, shards[2]!,
   ]), /exact assigned/);
 });
 

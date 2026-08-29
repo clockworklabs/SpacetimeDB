@@ -32,7 +32,7 @@ import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mj
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { controllerRunner } from '../runtime/runner-environment.mjs';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
-  from '../evidence/mutation-shards.mjs';
+  from '../evidence/mutation-shards.js';
 import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }

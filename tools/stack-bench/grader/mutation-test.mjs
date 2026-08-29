@@ -53,7 +53,7 @@ import { resetBackend } from "../src/stacks/backend-reset.mjs";
 import { fetchStatus } from "../src/runtime/readiness.js";
 import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
-import { mutationShard } from "../src/evidence/mutation-shards.mjs";
+import { mutationShard } from "../src/evidence/mutation-shards.js";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
   from "../src/evidence/mutation-control.mjs";
