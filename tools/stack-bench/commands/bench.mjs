@@ -55,7 +55,7 @@ import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels,
   validateFeatureCatalogInput, validateProgressionInput }
   from '../src/progression/progression-definition.js';

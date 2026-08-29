@@ -2,6 +2,11 @@ import type {
   CompiledProgressionDefinition,
   CompiledProgressionNode,
 } from './progression-definition.js';
+import type {
+  ProgressionAction,
+  ProgressionPolicy,
+} from './progression-engine.js';
+import type { ProgressionState } from './progression-state.js';
 
 export const DEPENDENCY_MODE_SCHEMA_VERSION: number;
 export const DEPENDENCY_MODE_POLICY: string;
@@ -17,12 +22,7 @@ export function compileDependencyMode(
   options?: { source?: string },
 ): CompiledProgressionDefinition;
 
-export interface DependencyState extends Record<string, unknown> {
-  definition: CompiledProgressionDefinition;
-  nodes: Record<string, { status: string; [key: string]: unknown }>;
-  events: unknown[];
-  attempts: Array<Record<string, unknown>>;
-}
+export type DependencyState = ProgressionState;
 
 export function initializeDependencyMode(input: unknown): DependencyState;
 export function replayDependencyMode(input: unknown, events?: unknown[]): DependencyState;
@@ -32,4 +32,9 @@ export function grantDependencyStrikes(state: unknown, grant: unknown): Dependen
 export function nextDependencyAction(state: unknown): Record<string, unknown>;
 export function activeDependencyNodes(state: unknown): CompiledProgressionNode[];
 export function scoreDependencyMode(state: unknown): unknown;
-export const dependencyModePolicy: Record<string, unknown>;
+export const dependencyModePolicy: ProgressionPolicy<
+  CompiledProgressionDefinition,
+  ProgressionState,
+  ProgressionAction,
+  unknown
+>;

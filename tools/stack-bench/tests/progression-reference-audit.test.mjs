@@ -8,7 +8,7 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { gradeBundleToProgressionResult } from '../src/progression/grade-bundle-result.mjs';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput,
   compileProgressionDefinitionFile, compileProgressionInput, dependencyRuntimeDefinition }

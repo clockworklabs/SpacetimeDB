@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { compileProgressionInput, progressionLevels,
   validateProgressionInput } from '../dist/src/progression/progression-definition.js';
 import { resolveProgressionRecipeAction,

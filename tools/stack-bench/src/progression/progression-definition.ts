@@ -15,7 +15,7 @@ import { sha256 } from '../evidence/provenance.mjs';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
   DEFAULT_UNCHANGED_FAILURE_LIMIT, DEPENDENCY_MODE_SCHEMA_VERSION,
   FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.mjs';
-import { progressionEngine } from './progression-engine.mjs';
+import { progressionEngine } from './progression-engine.js';
 
 export interface CompiledProgressionCheck {
   id: string;
@@ -477,10 +477,7 @@ export function dependencyRuntimeDefinition(featureCatalog: unknown,
 }
 
 export function compileProgressionInput(input: unknown): ProgressionInput {
-  const engine = progressionEngine as unknown as {
-    compile(value: unknown): CompiledProgressionDefinition;
-  };
-  const definition = engine.compile(input);
+  const definition = progressionEngine.compile(input);
   return canonicalizeDefinition({ definition, identity: identity(definition) }) as unknown as ProgressionInput;
 }
 

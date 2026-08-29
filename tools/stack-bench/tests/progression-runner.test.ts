@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../src/progression/progression-engine.js';
 import {
   runProgressionMode,
   type ProgressionAttemptResult,

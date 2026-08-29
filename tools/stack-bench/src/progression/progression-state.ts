@@ -8,9 +8,12 @@ import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.mjs';
 import type { CampaignLock } from '../campaigns/campaign-lock.mjs';
 import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.mjs';
-import { progressionEngine } from './progression-engine.mjs';
+import {
+  progressionEngine,
+} from './progression-engine.js';
 import {
   validateProgressionInput,
+  type CompiledProgressionDefinition,
 } from './progression-definition.js';
 
 interface BoundIdentity extends Record<string, unknown> {
@@ -34,50 +37,64 @@ export interface ProgressionOwner {
   workspace?: { appDirectory: string };
 }
 
-interface WorkspaceProgressionOwner extends ProgressionOwner {
-  workspace: { appDirectory: string };
+export type ProgressionNodeStatus =
+  | 'locked'
+  | 'active'
+  | 'passed'
+  | 'exhausted'
+  | 'regressed'
+  | 'blocked';
+
+export interface ProgressionNodeState {
+  status: ProgressionNodeStatus;
+  exhaustedAtLevel: number | null;
+  exhaustionReason: 'strikes-exhausted' | 'repeated-findings' | null;
+  unchangedFailure: { fingerprint: string | null; count: number };
+  strikes: { initialBudget: number; granted: number; budget: number; used: number };
+  checks: Record<string, 'pass' | 'fail' | null>;
 }
 
-export interface PersistedProgressionAttempt extends Record<string, unknown> {
+export interface ProgressionAttempt {
+  attemptId: string;
   level: number;
-  outcome: string;
+  outcome: 'conclusive' | 'inconclusive';
+  category?: string;
+  reason?: string;
   runId?: string;
   sourceSha256?: string;
   selectionSha256?: string;
+  evidence?: unknown;
+  applicationFailure?: { phase: string; reason: string };
 }
 
-export interface PersistedProgressionNodeDefinition extends Record<string, unknown> {
-  id: string;
-  title: string;
+export interface ProgressionTerminalOutcome {
+  kind: 'passed' | 'partial' | 'failed';
+  reason: 'graph-complete' | 'no-unlocked-nodes';
   level: number;
-  questline: string;
-  dependencies: string[];
+  blockedLevel?: number;
 }
 
-export interface PersistedProgressionNodeState extends Record<string, unknown> {
-  status: string;
-  strikes: { budget: number; used: number };
-  exhaustionReason: unknown;
-  checks: Record<string, string>;
+export interface ProgressionEvent extends Record<string, unknown> {
+  type: string;
+  result?: { attemptId: string; [key: string]: unknown };
+  grant?: Record<string, unknown>;
 }
 
 export interface ProgressionState extends Record<string, unknown> {
+  schemaVersion: number;
   policy: string;
-  phase: string;
+  definition: CompiledProgressionDefinition;
+  phase: 'active' | 'terminal';
+  terminalOutcome: ProgressionTerminalOutcome | null;
   level: number;
-  definition: {
-    nodes: PersistedProgressionNodeDefinition[];
-    questlines: Array<{ id: string; title: string; nodes: string[] }>;
-  };
-  nodes: Record<string, PersistedProgressionNodeState>;
-  events: unknown[];
-  attempts: PersistedProgressionAttempt[];
+  nodes: Record<string, ProgressionNodeState>;
+  attempts: ProgressionAttempt[];
+  grants: Array<Record<string, unknown>>;
+  events: ProgressionEvent[];
 }
 
-interface ProgressionStateEngine {
-  resume(state: unknown): ProgressionState;
-  nextAction(state: ProgressionState): unknown;
-  grantStrikes(state: ProgressionState, grant: unknown): ProgressionState;
+interface WorkspaceProgressionOwner extends ProgressionOwner {
+  workspace: { appDirectory: string };
 }
 
 interface ResumeBinding extends Record<string, unknown> {
@@ -174,7 +191,6 @@ interface DirectoryHash {
   files: unknown[];
 }
 
-const stateEngine = progressionEngine as unknown as ProgressionStateEngine;
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const HASH = /^[a-f0-9]{64}$/;
@@ -284,12 +300,13 @@ function storedPayload(progressionInput: unknown, featureCatalogIdentity: unknow
   const progression = validateProgressionInput(progressionInput);
   const identities = boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity);
   const owner = validateWorkspaceOwner(ownerInput);
-  const state = stateEngine.resume(stateInput);
+  const state = progressionEngine.resume(stateInput);
   if (canonicalDefinitionJson(state.definition)
     !== canonicalDefinitionJson(progression.definition)) {
     throw new Error('progression state definition does not match its progression identity');
   }
-  const snapshot = structuredClone(state) as Record<string, unknown>;
+  const snapshot = structuredClone(state) as Partial<ProgressionState>
+    & Record<string, unknown>;
   const events = snapshot.events;
   delete snapshot.definition;
   delete snapshot.events;
@@ -332,7 +349,7 @@ function restorePayload(payload: unknown, progressionInput: unknown,
   }
   const state = { ...structuredClone(payload.snapshot), definition: progression.definition,
     events: structuredClone(payload.events) };
-  return { state: stateEngine.resume(state), snapshotSha256: payload.snapshotSha256,
+  return { state: progressionEngine.resume(state), snapshotSha256: payload.snapshotSha256,
     resume: payload.resume === undefined ? null : structuredClone(payload.resume) };
 }
 
@@ -431,7 +448,7 @@ function restoreGrantSource(state: ProgressionState, owner: WorkspaceProgression
     || !checkpoint.artifact) {
     throw new Error('continuation grant requires an exact source checkpoint artifact');
   }
-  const attempt = [...state.attempts].reverse().find(item =>
+  const attempt: ProgressionAttempt | undefined = [...state.attempts].reverse().find(item =>
     item.level === grant?.level && item.outcome === 'conclusive');
   if (!attempt?.runId || !attempt.sourceSha256 || !attempt.selectionSha256) {
     throw new Error('progression level has no source-bound graded attempt to continue');
@@ -476,7 +493,7 @@ function grantResumeBinding(state: ProgressionState, owner: WorkspaceProgression
     'progression application');
   const source = directoryHash(sourcePath);
   return {
-    actionSha256: sha256(canonicalDefinitionJson(stateEngine.nextAction(state))),
+    actionSha256: sha256(canonicalDefinitionJson(progressionEngine.nextAction(state))),
     source: {
       directory: owner.workspace.appDirectory,
       sha256: source.sha256,
@@ -500,7 +517,7 @@ export function grantProgressionState(path: string, { progression, featureCatalo
       throw new Error('progression state changed before the continuation grant');
     }
     const validatedOwner = validateWorkspaceOwner(owner);
-    const state = stateEngine.grantStrikes(current.state, grant);
+    const state = progressionEngine.grantStrikes(current.state, grant);
     restoreGrantSource(current.state, validatedOwner, grant as ProgressionGrant,
       checkpoint, dirname(resolve(path)),
       current.artifact.identities.engine.sha256);

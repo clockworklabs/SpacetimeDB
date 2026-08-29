@@ -2,16 +2,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readCampaignState } from './campaign-scheduler.js';
-import { progressionEngine } from '../progression/progression-engine.mjs';
+import { progressionEngine } from '../progression/progression-engine.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
-
-interface ProgressionAction {
-  type: string;
-  strikes?: { maxRemaining: number; nodes: Array<Record<string, unknown>> };
-}
 
 export interface DependencyProgressNode {
   id: string;
@@ -99,7 +94,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
         },
       };
     });
-    const action = progressionEngine.nextAction(state) as ProgressionAction;
+    const action = progressionEngine.nextAction(state);
     const strikes = action.type === 'terminal' ? null : action.strikes;
     return {
       phase: state.phase,

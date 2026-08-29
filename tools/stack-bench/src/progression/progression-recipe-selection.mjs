@@ -1,6 +1,6 @@
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../composition/recipe-selection.mjs';
-import { progressionEngine } from './progression-engine.mjs';
+import { progressionEngine } from './progression-engine.js';
 import { validateFeatureCatalogInput, validateProgressionInput }
   from './progression-definition.js';
 

@@ -12,7 +12,7 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,
   dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { resolveProgressionRecipeAction,
   validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.mjs';
 

@@ -1,4 +1,4 @@
-import { progressionEngine } from './progression-engine.mjs';
+import { progressionEngine } from './progression-engine.js';
 import { validateProgressionInput } from './progression-definition.js';
 import {
   acquireProgressionStateLock,
@@ -73,7 +73,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function defaultEngine(): ProgressionEngine {
-  return progressionEngine as ProgressionEngine;
+  return progressionEngine;
 }
 
 export async function runProgressionMode({
@@ -144,7 +144,7 @@ export async function runPersistedProgressionMode({
         dependencyPolicyIdentity,
         owner,
         requireCurrentEngine: true,
-      }).state as ProgressionState;
+      }).state;
     } else {
       state = engine.initialize(progression.definition);
       writeProgressionState(statePath, {

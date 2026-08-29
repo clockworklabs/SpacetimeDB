@@ -11,7 +11,7 @@ import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-run
 import { parseArgs } from '../commands/bench.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { parseReferenceAgentArgs } from '../src/references/reference-agent.mjs';

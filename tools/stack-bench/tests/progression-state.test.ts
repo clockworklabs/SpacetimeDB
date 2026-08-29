@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
+import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput } from '../src/progression/progression-definition.js';
 import { runPersistedProgressionMode } from '../src/progression/progression-runner.js';
 import { grantProgressionState, readProgressionState, writeProgressionState }
@@ -110,8 +110,10 @@ test('persisted runner resumes the exact paused state and atomically appends the
     assert.equal((resumed.outcome as { kind: string }).kind, 'passed');
     const stored = readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope });
-    assert.deepEqual(stored.state.events.map(event =>
-      (event as { result: { attemptId: string } }).result.attemptId),
+    assert.deepEqual(stored.state.events.map(event => {
+      assert.ok(event.result);
+      return event.result.attemptId;
+    }),
       ['provider', 'second']);
   } finally {
     rmSync(root, { recursive: true, force: true });

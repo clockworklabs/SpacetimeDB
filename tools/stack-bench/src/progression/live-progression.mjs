@@ -8,7 +8,7 @@ import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.mjs';
 import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.mjs';
-import { progressionEngine } from './progression-engine.mjs';
+import { progressionEngine } from './progression-engine.js';
 import { replayDependencyMode } from './dependency-mode.mjs';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.mjs';
 import { resolveProgressionRecipeAction } from './progression-recipe-selection.mjs';
