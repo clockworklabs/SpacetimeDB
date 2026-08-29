@@ -3,10 +3,12 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
-  from '../src/campaigns/progression-reference-campaign-audit.mjs';
+  from '../src/campaigns/progression-reference-campaign-audit.js';
+import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
-const campaignPath = join(import.meta.dirname, '..', 'appliance',
+const campaignPath = join(STACK_BENCH_ROOT, 'appliance',
   'campaign.ecommerce-progression-reference.json');
 const plan = compileCampaignFile(campaignPath);
 
@@ -78,13 +80,16 @@ test('completed reference campaigns audit exact owners and recipe bindings', () 
     },
   });
 
+  assert(report);
   assert.equal(calls.length, 3);
   assert.equal(report.ok, true);
   assert.deepEqual(report.attempts.map(attempt => attempt.stack).sort(),
     ['mongodb', 'postgres', 'spacetime']);
-  assert.deepEqual(report.attempts[0].progressionGraph.checks, { covered: 146, total: 146 });
-  assert.equal(report.attempts[0].fullRecipeCatalog.status, 'not-run');
-  assert.equal(report.attempts[0].fullRecipeCatalog.outsideGraph.length, 5);
+  const first = report.attempts[0];
+  assert(first);
+  assert.deepEqual(first.progressionGraph.checks, { covered: 146, total: 146 });
+  assert.equal(first.fullRecipeCatalog.status, 'not-run');
+  assert.equal(first.fullRecipeCatalog.outsideGraph.length, 5);
   assert.match(formatProgressionReferenceCampaignAudit(report),
     /graph 39\/39 nodes, 146\/146 checks, 281 points; full recipe catalog not-run, 151 checks, 286 points, 5 outside the graph/);
 });
@@ -94,13 +99,12 @@ test('reference campaign audit rejects a recipe that changed after planning', ()
   assert.throws(() => auditProgressionReferenceCampaign(campaign.paths.root, {
     readState: () => campaign,
     auditRun: () => { throw new Error('audit must not run'); },
-    resolveRelease: (_track, level) => ({
-      release: {
-        ...plan.bindings.find(binding => binding.level === level).recipe,
-        contentSha256: level === 3 ? 'a'.repeat(64)
-          : plan.bindings.find(binding => binding.level === level).recipe.contentSha256,
-        checkCatalog: [],
-      },
-    }),
+    resolveRelease: (selectedTrack, level, reference) => {
+      const binding = resolveRecipeRelease(selectedTrack, level, reference);
+      const planned = plan.bindings.find(item => item.level === level);
+      assert(planned);
+      return { ...binding, release: { ...binding.release,
+        contentSha256: level === 3 ? 'a'.repeat(64) : planned.recipe.contentSha256 } };
+    },
   }), /recipe binding for L3 changed after planning/);
 });

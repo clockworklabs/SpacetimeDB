@@ -59,7 +59,18 @@ export interface CompiledCampaignPlan {
   featureCatalog: { identity: unknown; [key: string]: unknown };
   dependencyPolicy: { identity: unknown; [key: string]: unknown };
   identities: { engine: { sha256: string; [key: string]: unknown }; [key: string]: unknown };
-  bindings: unknown;
+  bindings: Array<{
+    level: number;
+    recipe: {
+      id: string;
+      version: string;
+      contentSha256: string;
+      meaningSha256?: string;
+      executionSha256?: string;
+      state?: string;
+    };
+    [key: string]: unknown;
+  }>;
   conditions: unknown;
   campaignSchemaVersion: number;
 }

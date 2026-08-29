@@ -12,9 +12,9 @@ import { generateCampaignReport } from '../src/campaigns/campaign-report.js';
 import { grantCampaignDependencyStrikes }
   from '../src/campaigns/campaign-progression-grant.js';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
-  from '../src/campaigns/progression-reference-campaign-audit.mjs';
+  from '../src/campaigns/progression-reference-campaign-audit.js';
 import type { ReferenceCampaignAudit }
-  from '../src/campaigns/progression-reference-campaign-audit.mjs';
+  from '../src/campaigns/progression-reference-campaign-audit.js';
 
 interface CampaignSummaryPlan {
   id: string;

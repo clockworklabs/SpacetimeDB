@@ -96,3 +96,5 @@ export function resolveRecipeRelease(
   level: number,
   requested?: string | { id: string; version: string; contentSha256?: string } | null,
 ): RecipeBinding;
+
+export function recipeReleaseIdentity(release: RecipeRelease): unknown;

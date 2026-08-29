@@ -3,14 +3,103 @@ import { join, relative, resolve, sep } from 'node:path';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease }
   from '../composition/recipe-release.mjs';
+import type { RecipeBinding, RecipeRelease } from '../composition/recipe-release.mjs';
 import { loadTrack } from '../composition/tracks.mjs';
+import type { Track } from '../composition/tracks.mjs';
 import { auditProgressionReferenceRun }
   from '../progression/progression-reference-audit.js';
+import type { ProgressionReferenceAuditReport }
+  from '../progression/progression-reference-audit.js';
 import { readCampaignState } from './campaign-scheduler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
+import type { ProgressionInput } from '../progression/progression-definition.js';
+import type { ProgressionOwner } from '../progression/progression-state.js';
 
-function childPath(root, path) {
+interface CampaignExecutionView {
+  id: string;
+  output: string;
+}
+
+interface CampaignAttemptView {
+  plan: CampaignAttemptPlan;
+  status: string;
+  executions: CampaignExecutionView[];
+}
+
+interface CampaignAuditStore {
+  paths: { root: string };
+  plan: CompiledCampaignPlan;
+  state: { status: string; attempts: CampaignAttemptView[] };
+}
+
+interface CampaignRunAuditInput {
+  outputDir: string;
+  progression: ProgressionInput;
+  featureCatalogIdentity: unknown;
+  dependencyPolicyIdentity: unknown;
+  owner: ProgressionOwner;
+  recipeBindings: Map<number, RecipeBinding>;
+  release: RecipeRelease;
+}
+
+interface RunAuditSummary {
+  ok: boolean;
+  graphOwned: ProgressionReferenceAuditReport['graphOwned'];
+  finalCatalogAudit: {
+    status: string;
+    checks: number;
+    points: number;
+    zeroPointChecks: number;
+    additionalChecks: Array<{ stableKey: string; points: number }>;
+  };
+}
+type AuditRun = (input: CampaignRunAuditInput) => RunAuditSummary;
+type ReadState = (directory: string,
+  options?: { requireCurrentInputs?: boolean }) => CampaignAuditStore;
+type ResolveRelease = (track: Track, level: number, requested: string) => RecipeBinding;
+
+interface CampaignAuditOptions {
+  auditRun?: AuditRun;
+  readState?: ReadState;
+  resolveRelease?: ResolveRelease;
+}
+
+interface ReferenceCampaignAttemptAudit {
+  id: string;
+  stack: string;
+  execution: string;
+  ok: boolean;
+  progressionGraph: {
+    complete: boolean;
+    nodes: { covered: number; total: number };
+    checks: { covered: number; total: number };
+    points: number;
+    missingNodes: string[];
+    missingChecks: string[];
+  };
+  fullRecipeCatalog: {
+    status: string;
+    checks: number;
+    points: number;
+    zeroPointChecks: number;
+    outsideGraph: Array<{ stableKey: string; points: number }>;
+  };
+}
+
+export interface ReferenceCampaignAudit {
+  ok: boolean;
+  [key: string]: unknown;
+}
+
+export interface DetailedReferenceCampaignAudit extends ReferenceCampaignAudit {
+  schemaVersion: 1;
+  campaign: { id: string; version: string; sha256: string };
+  attempts: ReferenceCampaignAttemptAudit[];
+}
+
+function childPath(root: string, path: string): string {
   const absoluteRoot = resolve(root);
   const absolute = resolve(absoluteRoot, path);
   const relation = relative(absoluteRoot, absolute);
@@ -20,7 +109,8 @@ function childPath(root, path) {
   return absolute;
 }
 
-function progressionOwner(plan, attempt) {
+function progressionOwner(plan: CompiledCampaignPlan,
+  attempt: CampaignAttemptPlan): ProgressionOwner {
   return {
     schemaVersion: 1,
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
@@ -36,10 +126,11 @@ function progressionOwner(plan, attempt) {
   };
 }
 
-function exactRecipeBindings(plan, resolveRelease) {
+function exactRecipeBindings(plan: CompiledCampaignPlan,
+  resolveRelease: ResolveRelease): { bindings: Map<number, RecipeBinding>; release: RecipeRelease } {
   const track = loadTrack(plan.definition.track);
-  const bindings = new Map();
-  let release = null;
+  const bindings = new Map<number, RecipeBinding>();
+  let release: RecipeRelease | null = null;
   for (const planned of plan.bindings) {
     const reference = `${planned.recipe.id}@${planned.recipe.version}`;
     const binding = resolveRelease(track, planned.level, reference);
@@ -59,7 +150,8 @@ function exactRecipeBindings(plan, resolveRelease) {
   return { bindings, release };
 }
 
-function summarizeAttempt(attempt, execution, audit) {
+function summarizeAttempt(attempt: CampaignAttemptPlan, execution: CampaignExecutionView,
+  audit: RunAuditSummary): ReferenceCampaignAttemptAudit {
   return {
     id: attempt.id,
     stack: attempt.stack,
@@ -83,11 +175,11 @@ function summarizeAttempt(attempt, execution, audit) {
   };
 }
 
-export function auditProgressionReferenceCampaign(directory, {
+export function auditProgressionReferenceCampaign(directory: string, {
   auditRun = auditProgressionReferenceRun,
   readState = readCampaignState,
   resolveRelease = resolveRecipeRelease,
-} = {}) {
+}: CampaignAuditOptions = {}): DetailedReferenceCampaignAudit | null {
   const { plan, state, paths } = readState(directory, { requireCurrentInputs: false });
   if (state.status !== 'completed') {
     throw new Error('reference campaign audit requires a completed campaign');
@@ -107,6 +199,9 @@ export function auditProgressionReferenceCampaign(directory, {
       throw new Error(`reference campaign attempt ${attempt.plan.id} is not completed`);
     }
     const execution = attempt.executions.at(-1);
+    if (!execution) {
+      throw new Error(`reference campaign attempt ${attempt.plan.id} has no execution`);
+    }
     const audit = auditRun({
       outputDir: childPath(paths.root, execution.output),
       progression,
@@ -126,10 +221,19 @@ export function auditProgressionReferenceCampaign(directory, {
   };
 }
 
-export function formatProgressionReferenceCampaignAudit(report) {
+export function formatProgressionReferenceCampaignAudit(
+  report: DetailedReferenceCampaignAudit): string;
+export function formatProgressionReferenceCampaignAudit(
+  report: ReferenceCampaignAudit | null): string | null;
+export function formatProgressionReferenceCampaignAudit(
+  report: ReferenceCampaignAudit | null): string | null {
   if (report === null) return null;
+  if (!Array.isArray(report.attempts)) {
+    throw new Error('reference campaign audit report has no attempts');
+  }
+  const attempts = report.attempts as ReferenceCampaignAttemptAudit[];
   const lines = [`Reference progression audit: ${report.ok ? 'PASS' : 'FAIL'}`];
-  for (const attempt of report.attempts) {
+  for (const attempt of attempts) {
     const graph = attempt.progressionGraph;
     const catalog = attempt.fullRecipeCatalog;
     lines.push(`${attempt.stack}: graph ${graph.nodes.covered}/${graph.nodes.total} nodes, `
