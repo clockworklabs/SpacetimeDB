@@ -53,7 +53,7 @@ import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } fro
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
+import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
 import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels,

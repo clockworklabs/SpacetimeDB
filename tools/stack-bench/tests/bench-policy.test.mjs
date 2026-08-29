@@ -10,7 +10,7 @@ import { auditFailureSummary, finalizeRunTotals, formatLevelSummary, gradeArgv,
   pristineMutationBaselinePath, repairHistoryEntry, repairProgressState,
   sourceBoundFirstBuildOutcome }
   from '../commands/bench.mjs';
-import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
+import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
