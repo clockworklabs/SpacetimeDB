@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.mjs';
+import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.js';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',

@@ -2,10 +2,10 @@ import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/
 import { captureHostedDiagnostics, activateHosted } from '../stack-lifecycle-operations.js';
 import { postgresConnectionUrl, postgresSetupMetadata,
   standardBuildContainerPlan } from '../stack-agent-operations.js';
-import { deployPostgresReference } from '../stack-reference-operations.mjs';
+import { deployPostgresReference } from '../stack-reference-operations.js';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopHostedHost } from '../stack-teardown-operations.js';
-import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
+import { stackLeaseCapability } from '../stack-lease-capabilities.js';
 import { preparePostgresDatabase, provePostgresUse, resetPostgres,
   setPostgresStock } from './postgres-operations.js';
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';

@@ -6,10 +6,61 @@ import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.js';
 import { referenceInstallSteps } from '../references/reference-install.js';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
 
-function validateHostedDatabase({ args, lease, track, helpers }) {
+import type { BackendLease } from '../runtime/backend-lease.js';
+import type { StackRunPorts } from './stack-adapter-contract.js';
+import type { Track, TrackDefinition } from '../composition/tracks.js';
+import type { ReferenceInstallMetadata } from '../references/reference-install.js';
+
+// What deploying a reference application needs from its caller. The reference
+// runner owns the container and the waiting; these operations own the shape of
+// each backend's deployment.
+export interface ReferenceHelpers {
+  phase: (message: string) => void;
+  docker: (container: string, cwd: string, command: string,
+    args: readonly string[], env?: Record<string, string>) => unknown;
+  startDetached: (container: string, cwd: string, name: string,
+    env: Record<string, string>,
+    options?: { script?: string; networkVisible?: boolean; port?: number }) => unknown;
+  waitFor: (url: string, timeoutMs: number, description: string,
+    logs: () => unknown) => Promise<unknown>;
+  containerLogs: (container: string, name: string) => unknown;
+  runSync: (purpose: string, file: string, args: readonly string[],
+    options?: Record<string, unknown>) => string;
+  dbName: (track: TrackDefinition, runIndex: number) => string;
+  moduleName: (track: TrackDefinition, runIndex: number) => string;
+  loadTrack: (name: string) => Track;
+}
+
+export interface ReferenceMetadata extends ReferenceInstallMetadata {
+  server: { directory: string };
+  client: { directory: string };
+  moduleDirectory: string;
+  bindingsDirectory: string;
+}
+
+export interface ReferenceDeployment {
+  args: { app: string; backend: string; track: string; runIndex: number };
+  metadata: ReferenceMetadata;
+  lease: BackendLease;
+  track: Track;
+  container: string;
+  ports: StackRunPorts;
+  buildNetworkMode: string | undefined;
+  helpers: ReferenceHelpers;
+}
+
+type HostedDatabase = { expected: string; service: { id: string; name: string } };
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object';
+
+
+function validateHostedDatabase({ args, lease, track, helpers }:
+  ReferenceDeployment): HostedDatabase {
   const expected = helpers.dbName(track, args.runIndex);
   if (lease.resources.database !== expected) throw new Error(`lease database is not ${expected}`);
   const service = lease.resources.container;
+  if (!service) throw new Error('lease has no database container');
   const actual = helpers.runSync('inspecting leased database container', 'docker',
     ['inspect', '--format', '{{.Id}}', service.name],
     { encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -17,7 +68,14 @@ function validateHostedDatabase({ args, lease, track, helpers }) {
   return { expected, service };
 }
 
-async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepare, pushSchema }) {
+async function deployHostedReference(input: ReferenceDeployment, { databaseUrl, extraEnv = {},
+  prepare, pushSchema }: {
+  databaseUrl: (target: Pick<ReferenceDeployment, 'ports' | 'lease' | 'buildNetworkMode'>) => string;
+  extraEnv?: Record<string, string>;
+  prepare: (database: HostedDatabase, helpers: ReferenceHelpers) => void;
+  pushSchema?: (stage: { container: string; metadata: ReferenceMetadata;
+    serverEnv: Record<string, string>; helpers: ReferenceHelpers }) => void;
+}): Promise<void> {
   const { args, metadata, lease, track, container, ports, buildNetworkMode, helpers } = input;
   helpers.phase('preparing database');
   const database = validateHostedDatabase(input);
@@ -33,9 +91,10 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
   }
   if (pushSchema) pushSchema({ container, metadata, serverEnv, helpers });
   helpers.phase('starting reference server and client');
-  const serverPackage = JSON.parse(readFileSync(join(args.app, metadata.server.directory,
-    'package.json'), 'utf8'));
-  const serverScript = serverPackage.scripts?.start ? 'start' : 'dev';
+  const serverPackage: unknown = JSON.parse(readFileSync(join(args.app,
+    metadata.server.directory, 'package.json'), 'utf8'));
+  const scripts = record(serverPackage) ? serverPackage.scripts : null;
+  const serverScript = record(scripts) && scripts.start ? 'start' : 'dev';
   helpers.startDetached(container, `/app/${metadata.server.directory}`, 'reference-server', serverEnv,
     { script: serverScript });
   helpers.startDetached(container, `/app/${metadata.client.directory}`, 'reference-client', {
@@ -49,7 +108,7 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
   helpers.phase('reference client ready');
 }
 
-export function deployPostgresReference(input) {
+export function deployPostgresReference(input: ReferenceDeployment): Promise<void> {
   const { user, password } = POSTGRES_APPLICATION_IDENTITY;
   return deployHostedReference(input, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) =>
@@ -73,7 +132,7 @@ export function deployPostgresReference(input) {
   });
 }
 
-export function deployMongoDbReference(input) {
+export function deployMongoDbReference(input: ReferenceDeployment): Promise<void> {
   return deployHostedReference(input, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) =>
       `mongodb://${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
@@ -87,20 +146,23 @@ export function deployMongoDbReference(input) {
 }
 
 export async function deploySpacetimeReference({ args, metadata, lease, container, ports,
-  buildNetworkMode, helpers }) {
+  buildNetworkMode, helpers }: ReferenceDeployment): Promise<void> {
   for (const step of referenceInstallSteps(metadata)) {
     helpers.docker(container, `/app/${step.directory}`, step.command, step.args);
   }
   const module = helpers.moduleName(helpers.loadTrack(args.track), args.runIndex);
   if (lease.resources.module !== module) throw new Error(`lease module is not ${module}`);
-  const hostUri = containerReachableSpacetimeUri(lease, buildNetworkMode);
+  const serverUri = lease.resources.serverUri;
+  if (!serverUri) throw new Error('SpacetimeDB lease records no server URI');
+  const hostUri = containerReachableSpacetimeUri({ ...lease,
+    resources: { ...lease.resources, serverUri } }, buildNetworkMode ?? null);
   helpers.docker(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
     ['publish', module, '--module-path', `/app/${metadata.moduleDirectory}`, '-s', hostUri, '-y']);
   helpers.docker(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
     ['generate', '--lang', 'typescript', '--module-path', `/app/${metadata.moduleDirectory}`,
       '--out-dir', `/app/${metadata.bindingsDirectory}`, '--yes', '--no-config']);
   helpers.startDetached(container, `/app/${metadata.client.directory}`, 'reference-client', {
-    VITE_MODULE_NAME: module, VITE_SPACETIMEDB_URI: lease.resources.serverUri,
+    VITE_MODULE_NAME: module, VITE_SPACETIMEDB_URI: serverUri,
     VITE_PORT: String(ports.vite),
   }, { networkVisible: true, port: ports.vite });
   await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, 'Spacetime client',

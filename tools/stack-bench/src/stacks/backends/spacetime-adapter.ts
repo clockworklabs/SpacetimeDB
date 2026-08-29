@@ -3,10 +3,10 @@ import { createSpacetimeGradingContext,
 import { activateSpacetime, controlSpacetime } from '../stack-lifecycle-operations.js';
 import { noConnectionUrl, spacetimeBuildContainerPlan,
   spacetimeSetupMetadata } from '../stack-agent-operations.js';
-import { deploySpacetimeReference } from '../stack-reference-operations.mjs';
+import { deploySpacetimeReference } from '../stack-reference-operations.js';
 import { spacetimeOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopSpacetimeHost } from '../stack-teardown-operations.js';
-import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
+import { stackLeaseCapability } from '../stack-lease-capabilities.js';
 import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './spacetime-operations.js';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';

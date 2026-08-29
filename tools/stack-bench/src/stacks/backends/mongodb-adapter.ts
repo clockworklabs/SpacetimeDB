@@ -2,10 +2,10 @@ import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/
 import { captureHostedDiagnostics, activateHosted } from '../stack-lifecycle-operations.js';
 import { mongoDbConnectionUrl, mongoDbSetupMetadata,
   standardBuildContainerPlan } from '../stack-agent-operations.js';
-import { deployMongoDbReference } from '../stack-reference-operations.mjs';
+import { deployMongoDbReference } from '../stack-reference-operations.js';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopHostedHost } from '../stack-teardown-operations.js';
-import { stackLeaseCapability } from '../stack-lease-capabilities.mjs';
+import { stackLeaseCapability } from '../stack-lease-capabilities.js';
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
   setMongoDbStock } from './mongodb-operations.js';
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';

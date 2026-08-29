@@ -65,6 +65,10 @@ export interface StackAdapter {
   capabilities: Readonly<Record<string, Readonly<StackCapability>>>;
 }
 
+// Dispatching a capability needs only the adapter's name and its capability
+// map, so a caller may hold a lease provider without a whole adapter.
+export type CapabilityHolder = Pick<StackAdapter, 'id' | 'capabilities'>;
+
 export interface StackAdapterRegistry {
   readonly ids: readonly string[];
   get(id: string): Readonly<StackAdapter>;
@@ -149,31 +153,31 @@ export function defineStackAdapter(value: unknown): Readonly<StackAdapter> {
 }
 
 export function executeStackCapability(
-  adapter: StackAdapter,
+  adapter: CapabilityHolder,
   capabilityName: 'teardown',
   operation: 'host',
   input?: unknown,
 ): boolean;
 export function executeStackCapability(
-  adapter: StackAdapter,
+  adapter: CapabilityHolder,
   capabilityName: 'ports',
   operation: 'allocations',
   input?: unknown,
 ): StackPortBases;
 export function executeStackCapability(
-  adapter: StackAdapter,
+  adapter: CapabilityHolder,
   capabilityName: 'ports',
   operation: 'for-run',
   input: unknown,
 ): StackRunPorts;
 export function executeStackCapability(
-  adapter: StackAdapter,
+  adapter: CapabilityHolder,
   capabilityName: string,
   operation: string,
   input?: unknown,
 ): unknown;
 export function executeStackCapability(
-  adapter: StackAdapter,
+  adapter: CapabilityHolder,
   capabilityName: string,
   operation: string,
   input: unknown = {},
