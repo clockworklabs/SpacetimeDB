@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { CLAUDE_SONNET_RATES, claudeRatesForModel, priceClaudeUsage }
-  from '../src/evidence/claude-usage-cost.mjs';
+  from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 

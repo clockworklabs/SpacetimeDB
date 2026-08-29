@@ -68,7 +68,7 @@ import { campaignAdmissionSmokeReuse, readCampaignAdmission }
   from '../src/campaigns/campaign-admission.js';
 import { gradingRunTimeoutMs, selectedGradingSourceCount }
   from '../src/runtime/grading-timeout.js';
-import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.mjs';
+import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 

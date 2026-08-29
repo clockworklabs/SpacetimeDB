@@ -4,7 +4,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync,
 import { basename, join, sep } from 'node:path';
 
 import { claudeRatesForModel, normalizeClaudeUsage,
-  priceClaudeUsage } from '../evidence/claude-usage-cost.mjs';
+  priceClaudeUsage } from '../evidence/claude-usage-cost.js';
 import { validatePricingRates } from '../evidence/pricing-authority.js';
 
 const UUID_FILE = /^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.jsonl$/i;
