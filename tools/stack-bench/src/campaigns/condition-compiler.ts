@@ -195,7 +195,7 @@ function loadProfile<T extends IdentityProfile>(catalog: Catalog,
   return { profile: typed, path };
 }
 
-function resolveGuidance(catalog: Catalog, reference: string, stacks: string[],
+function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly string[],
   stackBenchRoot: string): ResolvedGuidanceProfile {
   const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'mode', 'material',
     'documents', 'skills', 'credentialAliases']);
@@ -246,7 +246,7 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: string[],
 // Public review surface for tooling that must inspect the exact guidance
 // selected by a profile without manufacturing an otherwise unrelated study
 // condition. Campaign compilation uses the same resolver below.
-export function resolveGuidanceProfile(reference: string, stacks: string[],
+export function resolveGuidanceProfile(reference: string, stacks: readonly string[],
   { stackBenchRoot = ROOT, catalogPath = CATALOG }:
   { stackBenchRoot?: string; catalogPath?: string } = {}): ResolvedGuidanceProfile {
   if (!Array.isArray(stacks) || stacks.length === 0
