@@ -1,4 +1,4 @@
-import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.mjs';
+import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.js';
 import { activateHosted } from '../stack-lifecycle-operations.mjs';
 import { emptySetupMetadata, noConnectionUrl,
   standardBuildContainerPlan } from '../stack-agent-operations.mjs';

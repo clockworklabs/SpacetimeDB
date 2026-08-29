@@ -41,7 +41,7 @@ import { stableElementSelector } from '../src/actions/element-selector.js';
 import {
   BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,
-} from '../src/actions/browser-action-executors.mjs';
+} from '../src/actions/browser-action-executors.js';
 import {
   ACTOR_TRANSPORT_ACTION_IDS,
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,

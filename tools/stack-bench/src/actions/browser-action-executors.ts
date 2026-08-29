@@ -1,6 +1,128 @@
 import { ActionApplicationFailure } from './action-contract.js';
+import type {
+  ActionImplementation,
+  ActionImplementationArguments,
+} from './action-contract.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.mjs';
 import { harnessBrowserFailure } from '../evidence/harness-errors.mjs';
+
+interface Locator {
+  click(options?: unknown): Promise<void>;
+  count(): Promise<number>;
+  evaluate<Result>(callback: (element: { readonly tagName: string }) => Result): Promise<Result>;
+  fill(value: string): Promise<void>;
+  filter(options: unknown): Locator;
+  first(): Locator;
+  getAttribute(name: string): Promise<string | null>;
+  innerText(): Promise<string>;
+  inputValue(): Promise<string>;
+  isDisabled(): Promise<boolean>;
+  isVisible(): Promise<boolean>;
+  locator(selector: string, options?: unknown): Locator;
+  allInnerTexts(): Promise<string[]>;
+  press(key: string): Promise<void>;
+  selectOption(value: string | { readonly label: string }): Promise<unknown>;
+  type(text: string, options?: unknown): Promise<void>;
+  waitFor(options?: unknown): Promise<void>;
+}
+
+interface Page {
+  readonly keyboard: { press(key: string): Promise<void> };
+  locator(selector: string, options?: unknown): Locator;
+  reload(options?: unknown): Promise<unknown>;
+}
+
+interface LocatorScope {
+  readonly testid: string;
+  readonly contains?: string;
+  readonly containsAll?: readonly string[];
+}
+
+interface BrowserActor {
+  readonly page: Page;
+  loc(testid: string, options?: {
+    readonly contains?: string;
+    readonly scope?: { readonly testid: string; readonly contains?: string | RegExp };
+  }): Locator;
+}
+
+interface BrowserCapability {
+  readonly defaultWithin: number;
+  readonly recorded: {
+    get(key: string): number | undefined;
+    set(key: string, value: number): void;
+  };
+  expand(value: string | undefined): string | undefined;
+  sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
+  testId(id: string): string;
+}
+
+interface BrowserCapabilities {
+  readonly actors: { get(name: string): BrowserActor | undefined };
+  readonly 'browser-interaction': BrowserCapability;
+  readonly 'browser-observation': BrowserCapability;
+  readonly clock: { sleep(milliseconds: number, signal: AbortSignal): Promise<void> };
+}
+
+interface CommonInput {
+  readonly actor: string;
+  readonly testid: string;
+  readonly contains?: string;
+  readonly in?: LocatorScope;
+  readonly within?: number;
+}
+
+interface BrowserArguments<Input> {
+  readonly input: Input;
+  readonly capabilities: BrowserCapabilities;
+  readonly signal: AbortSignal;
+}
+
+type InteractionInput = CommonInput & {
+  readonly text: string;
+  readonly enter?: boolean;
+  readonly settleMs?: number;
+  readonly key?: string;
+};
+type ExpectInput = CommonInput & {
+  readonly absent?: boolean;
+  readonly count?: number;
+  readonly maxCount?: number;
+  readonly value?: string;
+  readonly notContains?: string;
+  readonly nonEmpty?: boolean;
+};
+type ElementCountInput = CommonInput & { readonly equals: number };
+type SequenceInput = CommonInput & { readonly equals: readonly string[] };
+type UnavailableInput = CommonInput;
+interface AllPresentInput {
+  readonly actor: string;
+  readonly count: number;
+  readonly prefix: string;
+  readonly within?: number;
+}
+type StableInput = CommonInput & { readonly samples?: number; readonly intervalMs?: number };
+type RecordNumberInput = CommonInput & { readonly as: string };
+type ExpectNumberInput = CommonInput & {
+  readonly equals?: number;
+  readonly relativeTo?: string;
+  readonly plus?: number;
+  readonly atLeast?: number;
+  readonly atMost?: number;
+};
+interface OrderMatchesInput {
+  readonly actors: readonly string[];
+  readonly prefix: string;
+}
+type AgreementInput = Omit<CommonInput, 'actor'> & {
+  readonly actors: readonly string[];
+  readonly numeric?: boolean;
+};
+type ActorsWithInput = Omit<CommonInput, 'actor'> & {
+  readonly actors: readonly string[];
+  readonly equals?: number;
+  readonly maxEach?: number;
+};
 
 export const BROWSER_ACTION_IDS = Object.freeze([
   'clearInput',
@@ -23,38 +145,39 @@ export const BROWSER_ACTION_IDS = Object.freeze([
   'wait',
 ].sort());
 
-const fail = message => { throw new ActionApplicationFailure(message); };
-const escapePattern = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const fail = (message: string): never => { throw new ActionApplicationFailure(message); };
+const escapePattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-function actorFor(capabilities, name) {
+function actorFor(capabilities: BrowserCapabilities, name: string): BrowserActor {
   const actor = capabilities.actors.get(name);
-  if (!actor) fail(`unknown actor "${name}"`);
+  if (!actor) throw new ActionApplicationFailure(`unknown actor "${name}"`);
   return actor;
 }
 
-function interaction(capabilities) {
+function interaction(capabilities: BrowserCapabilities): BrowserCapability {
   return capabilities['browser-interaction'];
 }
 
-function observation(capabilities) {
+function observation(capabilities: BrowserCapabilities): BrowserCapability {
   return capabilities['browser-observation'];
 }
 
-function inputScope(browser, value) {
+function inputScope(browser: BrowserCapability, value: LocatorScope | undefined):
+    { testid: string; contains?: string | RegExp } | undefined {
   if (!value) return undefined;
   if (value.containsAll !== undefined) {
     if (!Array.isArray(value.containsAll) || value.containsAll.length === 0
       || !value.containsAll.every(item => typeof item === 'string' && item.length > 0)) {
       throw new TypeError('locator containsAll must be a non-empty string array');
     }
-    const terms = value.containsAll.map(item => escapePattern(browser.expand(item)));
+    const terms = value.containsAll.map(item => escapePattern(browser.expand(item) ?? ''));
     return { testid: value.testid,
       contains: new RegExp(`^${terms.map(term => `(?=[\\s\\S]*${term})`).join('')}[\\s\\S]*$`, 'i') };
   }
   return { testid: value.testid, contains: browser.expand(value.contains) };
 }
 
-async function readValue(loc) {
+async function readValue(loc: Locator): Promise<string> {
   const tag = await loc.evaluate(element => element.tagName).catch(() => '');
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
     return (await loc.inputValue().catch(() => '')) || '';
@@ -62,19 +185,21 @@ async function readValue(loc) {
   return (await loc.innerText().catch(() => '')) || '';
 }
 
-export function parseRenderedNumber(text) {
+export function parseRenderedNumber(text: string | null | undefined): number | null {
   const match = (text ?? '').replace(/[,\u00a0]/g, '').match(/-?\d+(\.\d+)?/);
   return match ? Number(match[0]) : null;
 }
 
-const pad = (index, count) => String(index).padStart(String(count).length, '0');
+const pad = (index: number, count: number): string =>
+  String(index).padStart(String(count).length, '0');
 
-async function clearInput({ input, capabilities }) {
+async function clearInput({ input, capabilities }: BrowserArguments<{ actor: string }>) {
   await actorFor(capabilities, input.actor).loc('message-input').fill('');
   return { cleared: true };
 }
 
-async function click({ input, capabilities, signal }) {
+async function click({ input, capabilities, signal }:
+    BrowserArguments<CommonInput & { settleMs?: number }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   const scope = inputScope(browser, input.in);
@@ -84,7 +209,7 @@ async function click({ input, capabilities, signal }) {
   return { clicked: input.testid };
 }
 
-async function fill({ input, capabilities, signal }) {
+async function fill({ input, capabilities, signal }: BrowserArguments<InteractionInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   const scope = inputScope(browser, input.in);
@@ -106,7 +231,8 @@ async function fill({ input, capabilities, signal }) {
   return { filled: input.testid };
 }
 
-async function pressKey({ input, capabilities, signal }) {
+async function pressKey({ input, capabilities, signal }:
+    BrowserArguments<{ actor: string; key?: string; settleMs?: number }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   await actor.page.keyboard.press(input.key ?? 'Escape');
@@ -114,7 +240,8 @@ async function pressKey({ input, capabilities, signal }) {
   return { key: input.key ?? 'Escape' };
 }
 
-async function reload({ input, capabilities, signal }) {
+async function reload({ input, capabilities, signal }:
+    BrowserArguments<{ actor: string; settleMs?: number }>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = interaction(capabilities);
   await actor.page.reload({ waitUntil: 'domcontentloaded' });
@@ -122,7 +249,8 @@ async function reload({ input, capabilities, signal }) {
   return { reloaded: true };
 }
 
-async function typeInto({ input, capabilities }) {
+async function typeInto({ input, capabilities }:
+    BrowserArguments<{ actor: string; text: string }>) {
   const actor = actorFor(capabilities, input.actor);
   const field = actor.loc('message-input');
   await field.click();
@@ -130,13 +258,14 @@ async function typeInto({ input, capabilities }) {
   return { typed: true };
 }
 
-async function wait({ input, capabilities, signal }) {
+async function wait({ input, capabilities, signal }:
+    BrowserArguments<{ actor: string; ms: number }>) {
   actorFor(capabilities, input.actor);
   await capabilities.clock.sleep(input.ms, signal);
   return { waitedMs: input.ms };
 }
 
-async function expect({ input, capabilities, signal }) {
+async function expect({ input, capabilities, signal }: BrowserArguments<ExpectInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? browser.defaultWithin;
@@ -209,7 +338,8 @@ async function expect({ input, capabilities, signal }) {
   return { visible: true, ...(input.value === undefined ? {} : { value: input.value }) };
 }
 
-async function expectElementCount({ input, capabilities, signal }) {
+async function expectElementCount({ input, capabilities, signal }:
+    BrowserArguments<ElementCountInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? 10000;
@@ -230,7 +360,7 @@ async function expectElementCount({ input, capabilities, signal }) {
   }
 }
 
-async function expectSequence({ input, capabilities, signal }) {
+async function expectSequence({ input, capabilities, signal }: BrowserArguments<SequenceInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? browser.defaultWithin;
@@ -239,7 +369,7 @@ async function expectSequence({ input, capabilities, signal }) {
     ? actor.page.locator(browser.testId(input.in.testid),
       input.in.contains ? { hasText: browser.expand(input.in.contains) } : {}).filter({ visible: true }).first()
     : actor.page;
-  let seen = [];
+  let seen: string[] = [];
   for (;;) {
     seen = (await root.locator(browser.testId(input.testid)).filter({ visible: true }).allInnerTexts())
       .map(value => value.replace(/\s+/g, ' ').trim());
@@ -255,7 +385,8 @@ async function expectSequence({ input, capabilities, signal }) {
   }
 }
 
-async function expectUnavailable({ input, capabilities, signal }) {
+async function expectUnavailable({ input, capabilities, signal }:
+    BrowserArguments<UnavailableInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? browser.defaultWithin;
@@ -278,13 +409,14 @@ async function expectUnavailable({ input, capabilities, signal }) {
   }
 }
 
-async function expectAllPresent({ input, capabilities, signal }) {
+async function expectAllPresent({ input, capabilities, signal }:
+    BrowserArguments<AllPresentInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? 10000;
   const deadline = Date.now() + within;
   for (;;) {
-    const counts = [];
+    const counts: number[] = [];
     for (let index = 1; index <= input.count; index++) {
       counts.push(await actor.page.locator(browser.testId('message-item'),
         { hasText: `${input.prefix}-${pad(index, input.count)}` }).count());
@@ -300,12 +432,12 @@ async function expectAllPresent({ input, capabilities, signal }) {
   }
 }
 
-async function expectStable({ input, capabilities, signal }) {
+async function expectStable({ input, capabilities, signal }: BrowserArguments<StableInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const loc = actor.loc(input.testid, { contains: browser.expand(input.contains) });
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
-  const seen = [];
+  const seen: string[] = [];
   for (let index = 0; index < (input.samples ?? 4); index++) {
     seen.push(((await loc.innerText().catch(() => '')) || '').trim());
     await browser.sleep(input.intervalMs ?? 700, signal);
@@ -318,7 +450,7 @@ async function expectStable({ input, capabilities, signal }) {
   return { samples: seen };
 }
 
-async function recordNumber({ input, capabilities }) {
+async function recordNumber({ input, capabilities }: BrowserArguments<RecordNumberInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const scope = input.in
@@ -327,12 +459,17 @@ async function recordNumber({ input, capabilities }) {
   const loc = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   const value = parseRenderedNumber(await readValue(loc));
-  if (value === null) fail(`${browser.testId(input.testid)} has no number to record`);
+  if (value === null) {
+    throw new ActionApplicationFailure(
+      `${browser.testId(input.testid)} has no number to record`,
+    );
+  }
   browser.recorded.set(input.as, value);
   return { key: input.as, value };
 }
 
-async function expectNumber({ input, capabilities, signal }) {
+async function expectNumber({ input, capabilities, signal }:
+    BrowserArguments<ExpectNumberInput>) {
   const actor = actorFor(capabilities, input.actor);
   const browser = observation(capabilities);
   const within = input.within ?? browser.defaultWithin;
@@ -349,10 +486,12 @@ async function expectNumber({ input, capabilities, signal }) {
   let equals = input.equals;
   if (input.relativeTo !== undefined) {
     const base = browser.recorded.get(input.relativeTo);
-    if (base === undefined) fail(`no number recorded as "${input.relativeTo}"`);
+    if (base === undefined) {
+      throw new ActionApplicationFailure(`no number recorded as "${input.relativeTo}"`);
+    }
     equals = base + (input.plus ?? 0);
   }
-  const matches = number => (equals === undefined || number === equals)
+  const matches = (number: number): boolean => (equals === undefined || number === equals)
     && (input.atLeast === undefined || number >= input.atLeast)
     && (input.atMost === undefined || number <= input.atMost);
 
@@ -376,42 +515,50 @@ async function expectNumber({ input, capabilities, signal }) {
     + `expected ${wanted}`);
 }
 
-async function expectOrderMatches({ input, capabilities }) {
+async function expectOrderMatches({ input, capabilities }:
+    BrowserArguments<OrderMatchesInput>) {
   const browser = observation(capabilities);
-  const sequences = {};
+  const sequences: Record<string, string[]> = {};
   for (const name of input.actors) {
-    const actor = capabilities.actors.get(name);
-    if (!actor) fail(`expectOrderMatches: no actor "${name}"`);
+    const actor = actorFor(capabilities, name);
     const texts = await actor.page.locator(browser.testId('message-item')).allInnerTexts();
-    sequences[name] = texts
-      .map(text => (text.match(new RegExp(`${input.prefix}-\\d+`)) || [])[0])
-      .filter(Boolean);
+    sequences[name] = texts.flatMap((text) => {
+      const matched = text.match(new RegExp(`${input.prefix}-\\d+`))?.[0];
+      return matched ? [matched] : [];
+    });
   }
   const [first, ...rest] = input.actors;
+  if (!first) throw new TypeError('expectOrderMatches requires at least one actor');
+  const firstSequence = sequences[first];
+  if (!firstSequence) throw new TypeError(`no sequence recorded for actor "${first}"`);
   for (const other of rest) {
-    if (sequences[first].join('|') !== sequences[other].join('|')) {
-      const differentAt = sequences[first].findIndex((value, index) => value !== sequences[other][index]);
+    const otherSequence = sequences[other];
+    if (!otherSequence) throw new TypeError(`no sequence recorded for actor "${other}"`);
+    if (firstSequence.join('|') !== otherSequence.join('|')) {
+      const differentAt = firstSequence.findIndex(
+        (value, index) => value !== otherSequence[index],
+      );
       fail(`message order differs between ${first} and ${other} at position ${differentAt}: `
-        + `${first} saw ${sequences[first].slice(Math.max(0, differentAt - 1), differentAt + 2).join(',')} / `
-        + `${other} saw ${sequences[other].slice(Math.max(0, differentAt - 1), differentAt + 2).join(',')}`);
+        + `${first} saw ${firstSequence.slice(Math.max(0, differentAt - 1), differentAt + 2).join(',')} / `
+        + `${other} saw ${otherSequence.slice(Math.max(0, differentAt - 1), differentAt + 2).join(',')}`);
     }
   }
   return { sequences };
 }
 
-async function expectAgreement({ input, capabilities, signal }) {
+async function expectAgreement({ input, capabilities, signal }:
+    BrowserArguments<AgreementInput>) {
   const browser = observation(capabilities);
   const contains = browser.expand(input.contains);
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
     : undefined;
   const deadline = Date.now() + (input.within ?? 10000);
-  let seen = {};
+  let seen: Record<string, string> = {};
   for (;;) {
     seen = {};
     for (const name of input.actors) {
-      const actor = capabilities.actors.get(name);
-      if (!actor) fail(`expectAgreement: no actor "${name}"`);
+      const actor = actorFor(capabilities, name);
       const loc = actor.loc(input.testid, { contains, scope });
       const text = (input.numeric
         ? await readValue(loc)
@@ -428,15 +575,15 @@ async function expectAgreement({ input, capabilities, signal }) {
   }
 }
 
-async function expectActorsWith({ input, capabilities }) {
+async function expectActorsWith({ input, capabilities }:
+    BrowserArguments<ActorsWithInput>) {
   const browser = observation(capabilities);
   const contains = browser.expand(input.contains);
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
     : undefined;
-  const counts = await Promise.all(input.actors.map(async name => {
-    const actor = capabilities.actors.get(name);
-    if (!actor) fail(`expectActorsWith: no actor "${name}"`);
+  const counts = await Promise.all(input.actors.map(async (name): Promise<[string, number]> => {
+    const actor = actorFor(capabilities, name);
     const loc = actor.loc(input.testid, { contains, scope });
     const all = scope
       ? actor.page.locator(browser.testId(scope.testid), { hasText: scope.contains }).first()
@@ -455,7 +602,8 @@ async function expectActorsWith({ input, capabilities }) {
       + `${contains ? ` containing "${contains}"` : ''}, found ${held.length} (${detail})`);
   }
   if (input.maxEach !== undefined) {
-    const greedy = counts.filter(([, count]) => count > input.maxEach);
+    const maxEach = input.maxEach;
+    const greedy = counts.filter(([, count]) => count > maxEach);
     if (greedy.length) {
       fail(`${greedy.map(([name, count]) => `${name} has ${count}`).join(', ')} `
         + `— no actor may hold more than ${input.maxEach} (${detail})`);
@@ -464,48 +612,67 @@ async function expectActorsWith({ input, capabilities }) {
   return { counts: Object.fromEntries(counts) };
 }
 
-function isExpectedBrowserFailure(error) {
+function errorField(error: unknown, field: string): unknown {
+  return typeof error === 'object' && error !== null
+    ? (error as Record<string, unknown>)[field]
+    : undefined;
+}
+
+function isExpectedBrowserFailure(error: unknown): boolean {
   if (error instanceof ActionApplicationFailure) return true;
-  if (error?.name === 'TimeoutError') return true;
-  const stack = String(error?.stack ?? '');
-  const message = String(error?.message ?? error ?? '');
+  if (errorField(error, 'name') === 'TimeoutError') return true;
+  const stack = String(errorField(error, 'stack') ?? '');
+  const message = String(errorField(error, 'message') ?? error ?? '');
   return /node_modules[\\/]playwright/.test(stack)
     || /^(?:locator|page|keyboard|browserContext)\./i.test(message);
 }
 
-export function browserApplicationBoundary(implementation) {
-  return async args => {
+export function browserApplicationBoundary<Arguments, Result>(
+  implementation: (arguments_: Arguments) => Result | Promise<Result>,
+): (arguments_: Arguments) => Promise<Result> {
+  return async (args: Arguments): Promise<Result> => {
     try {
       return await implementation(args);
     } catch (error) {
-      if (error?.classification || harnessBrowserFailure(error)) throw error;
+      if (errorField(error, 'classification') || harnessBrowserFailure(error)) throw error;
       if (isExpectedBrowserFailure(error)) {
-        throw new ActionApplicationFailure(String(error?.message ?? error));
+        throw new ActionApplicationFailure(String(errorField(error, 'message') ?? error));
       }
       throw error;
     }
   };
 }
 
+function contractBrowserAction<Input, Result>(
+  implementation: (arguments_: BrowserArguments<Input>) => Result | Promise<Result>,
+): ActionImplementation {
+  const bounded = browserApplicationBoundary(implementation);
+  return (arguments_: ActionImplementationArguments) => bounded({
+    input: arguments_.input as Input,
+    capabilities: arguments_.capabilities as unknown as BrowserCapabilities,
+    signal: arguments_.signal,
+  });
+}
+
 export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
-  clearInput: browserApplicationBoundary(clearInput),
-  click: browserApplicationBoundary(click),
-  expect: browserApplicationBoundary(expect),
-  expectActorsWith: browserApplicationBoundary(expectActorsWith),
-  expectAgreement: browserApplicationBoundary(expectAgreement),
-  expectAllPresent: browserApplicationBoundary(expectAllPresent),
-  expectElementCount: browserApplicationBoundary(expectElementCount),
-  expectNumber: browserApplicationBoundary(expectNumber),
-  expectOrderMatches: browserApplicationBoundary(expectOrderMatches),
-  expectSequence: browserApplicationBoundary(expectSequence),
-  expectStable: browserApplicationBoundary(expectStable),
-  expectUnavailable: browserApplicationBoundary(expectUnavailable),
-  fill: browserApplicationBoundary(fill),
-  pressKey: browserApplicationBoundary(pressKey),
-  recordNumber: browserApplicationBoundary(recordNumber),
-  reload: browserApplicationBoundary(reload),
-  typeInto: browserApplicationBoundary(typeInto),
-  wait: browserApplicationBoundary(wait),
+  clearInput: contractBrowserAction(clearInput),
+  click: contractBrowserAction(click),
+  expect: contractBrowserAction(expect),
+  expectActorsWith: contractBrowserAction(expectActorsWith),
+  expectAgreement: contractBrowserAction(expectAgreement),
+  expectAllPresent: contractBrowserAction(expectAllPresent),
+  expectElementCount: contractBrowserAction(expectElementCount),
+  expectNumber: contractBrowserAction(expectNumber),
+  expectOrderMatches: contractBrowserAction(expectOrderMatches),
+  expectSequence: contractBrowserAction(expectSequence),
+  expectStable: contractBrowserAction(expectStable),
+  expectUnavailable: contractBrowserAction(expectUnavailable),
+  fill: contractBrowserAction(fill),
+  pressKey: contractBrowserAction(pressKey),
+  recordNumber: contractBrowserAction(recordNumber),
+  reload: contractBrowserAction(reload),
+  typeInto: contractBrowserAction(typeInto),
+  wait: contractBrowserAction(wait),
 });
 
 if (Object.keys(BROWSER_ACTION_IMPLEMENTATIONS).sort().join('\0') !== BROWSER_ACTION_IDS.join('\0')) {

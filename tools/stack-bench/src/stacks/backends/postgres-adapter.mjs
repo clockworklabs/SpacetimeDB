@@ -1,4 +1,4 @@
-import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.mjs';
+import { createHttpGradingContext, httpNamedActionRequest } from '../../actions/stack-action-operations.js';
 import { captureHostedDiagnostics, activateHosted } from '../stack-lifecycle-operations.mjs';
 import { postgresConnectionUrl, postgresSetupMetadata,
   standardBuildContainerPlan } from '../stack-agent-operations.mjs';

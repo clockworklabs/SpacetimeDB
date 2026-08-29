@@ -11,7 +11,7 @@ import {
   compileTrackManifest,
 } from '../src/composition/definition-compiler.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
-import { BROWSER_ACTION_IDS } from '../src/actions/browser-action-executors.mjs';
+import { BROWSER_ACTION_IDS } from '../src/actions/browser-action-executors.js';
 import { ACTOR_TRANSPORT_ACTION_IDS } from '../src/actions/actor-transport-action-executors.mjs';
 import { LIFECYCLE_CONCURRENCY_ACTION_IDS } from '../src/actions/lifecycle-concurrency-action-executors.mjs';
 import { TRACKS_DIR } from '../src/composition/tracks.mjs';

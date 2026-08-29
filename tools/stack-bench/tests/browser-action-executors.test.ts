@@ -2,26 +2,39 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
 import {
   BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,
   parseRenderedNumber,
-} from '../src/actions/browser-action-executors.mjs';
+} from '../src/actions/browser-action-executors.js';
 
-function services(actor, overrides = {}) {
-  const recorded = new Map();
+type UnknownRecord = Record<string, unknown>;
+interface ServiceOverrides {
+  readonly browser?: UnknownRecord;
+  readonly clockSleep?: (milliseconds: number) => Promise<void>;
+}
+interface ProvidedServices {
+  readonly capabilities: Record<string, unknown>;
+  readonly recorded: Map<string, number>;
+}
+
+function services(actor: unknown, overrides: ServiceOverrides = {}): ProvidedServices {
+  const recorded = new Map<string, number>();
   const browser = {
     defaultWithin: 5000,
-    expand: value => value === '{room:test}' ? 'test-scoped' : value,
-    recorded: { get: key => recorded.get(key), set: (key, value) => recorded.set(key, value) },
+    expand: (value: string | undefined) => value === '{room:test}' ? 'test-scoped' : value,
+    recorded: {
+      get: (key: string) => recorded.get(key),
+      set: (key: string, value: number) => recorded.set(key, value),
+    },
     sleep: async () => {},
-    testId: id => `[data-testid="${id}"]`,
+    testId: (id: string) => `[data-testid="${id}"]`,
     ...overrides.browser,
   };
   return {
     capabilities: {
-      actors: { get: name => name === 'a' ? actor : undefined },
+      actors: { get: (name: string) => name === 'a' ? actor : undefined },
       'browser-interaction': browser,
       'browser-observation': browser,
       clock: { sleep: overrides.clockSleep ?? (async () => {}) },
@@ -30,7 +43,10 @@ function services(actor, overrides = {}) {
   };
 }
 
-async function run(input, provided) {
+async function run(
+  input: UnknownRecord & { readonly do: string },
+  provided: ProvidedServices,
+) {
   return executeAction(ACTION_REGISTRY, input.do, input, createActionRunContext({
     capabilities: provided.capabilities,
     implementations: BROWSER_ACTION_IMPLEMENTATIONS,
@@ -49,8 +65,8 @@ test('the extracted executor registry is exact and every migrated action has bou
 });
 
 test('timing executes through the contract and still rejects an unknown actor', async () => {
-  const slept = [];
-  const provided = services({}, { clockSleep: async ms => slept.push(ms) });
+  const slept: number[] = [];
+  const provided = services({}, { clockSleep: async (ms) => { slept.push(ms); } });
   const passed = await run({ do: 'wait', actor: 'a', ms: 17 }, provided);
   assert.equal(passed.status, 'passed');
   assert.deepEqual(passed.observation, { waitedMs: 17 });
@@ -63,12 +79,12 @@ test('timing executes through the contract and still rejects an unknown actor', 
 });
 
 test('interaction actions receive scoped values and preserve the legacy click options', async () => {
-  const calls = [];
+  const calls: unknown[][] = [];
   const locator = {
-    click: async options => calls.push(['click', options]),
+    click: async (options: unknown) => { calls.push(['click', options]); },
   };
   const actor = {
-    loc: (testid, options) => {
+    loc: (testid: string, options: unknown) => {
       calls.push(['loc', testid, options]);
       return locator;
     },
@@ -85,14 +101,17 @@ test('interaction actions receive scoped values and preserve the legacy click op
 });
 
 test('interaction scopes can match separate text fragments without assuming punctuation', async () => {
-  let scope;
-  const actor = { loc: (_testid, options) => {
+  let scope: { testid: string; contains: RegExp } | undefined;
+  const actor = { loc: (_testid: string, options: {
+    scope: { testid: string; contains: RegExp };
+  }) => {
     scope = options.scope;
     return { click: async () => {} };
   } };
   const result = await run({ do: 'click', actor: 'a', testid: 'save',
     in: { testid: 'row', containsAll: ['Mirrorless Camera', 'East'] } }, services(actor));
   assert.equal(result.status, 'passed');
+  assert(scope);
   assert.equal(scope.testid, 'row');
   assert(scope.contains.test('Mirrorless Camera @ East'));
   assert(scope.contains.test('East: Mirrorless Camera'));
@@ -100,14 +119,14 @@ test('interaction scopes can match separate text fragments without assuming punc
 });
 
 test('fill adapts values to date input types', async () => {
-  const values = [];
-  const locator = type => ({
+  const values: Array<[string, string]> = [];
+  const locator = (type: string) => ({
     waitFor: async () => {},
     evaluate: async () => 'INPUT',
-    getAttribute: async name => name === 'type' ? type : null,
-    fill: async value => values.push([type, value]),
+    getAttribute: async (name: string) => name === 'type' ? type : null,
+    fill: async (value: string) => { values.push([type, value]); },
   });
-  const actor = { loc: testid => locator(testid) };
+  const actor = { loc: (testid: string) => locator(testid) };
 
   for (const testid of ['datetime-local', 'date', 'text']) {
     const result = await run({ do: 'fill', actor: 'a', testid, text: '2020-01-01' }, services(actor));
@@ -159,7 +178,7 @@ test('an observation mismatch is application evidence, not a harness crash', asy
     notContains: 'private value' }, services(actor));
   assert.equal(result.status, 'failed');
   assert.equal(result.code, 'application_failure');
-  assert.match(result.summary, /unexpectedly contains/);
+  assert.match(result.summary ?? '', /unexpectedly contains/);
 });
 
 test('a visible but blank field does not satisfy a non-empty assertion', async () => {
@@ -174,7 +193,7 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
     services(actor));
   assert.equal(blank.status, 'failed');
   assert.equal(blank.code, 'application_failure');
-  assert.match(blank.summary, /visible but empty/);
+  assert.match(blank.summary ?? '', /visible but empty/);
 
   rendered = 'East';
   const populated = await run({ do: 'expect', actor: 'a', testid: 'warehouse', nonEmpty: true },
@@ -214,14 +233,17 @@ test('ordered text and unavailable controls are explicit implementation-neutral 
   };
   const actor = {
     page: {
-      locator: selector => selector.includes('item-list') ? scope : disabled,
+      locator: (selector: string) => selector.includes('item-list') ? scope : disabled,
     },
   };
   const provided = services(actor);
   const ordered = await run({ do: 'expectSequence', actor: 'a', testid: 'item-name',
     in: { testid: 'item-list' }, equals: ['Coffee Grinder', 'Air Purifier'] }, provided);
   assert.equal(ordered.status, 'passed');
-  assert.deepEqual(ordered.observation.values, ['Coffee Grinder', 'Air Purifier']);
+  assert.deepEqual(
+    (ordered.observation as { values: string[] }).values,
+    ['Coffee Grinder', 'Air Purifier'],
+  );
 
   const unavailable = await run({ do: 'expectUnavailable', actor: 'a', testid: 'buy-now' }, provided);
   assert.equal(unavailable.status, 'passed');

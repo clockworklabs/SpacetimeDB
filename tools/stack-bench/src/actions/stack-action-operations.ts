@@ -1,6 +1,34 @@
 import { leasedSpacetimeTarget } from '../runtime/spacetime-target.mjs';
 
-export function createSpacetimeGradingContext({ requireBuildContainer = true } = {}) {
+interface NamedActionParameter {
+  readonly name: string;
+  readonly wireType?: string;
+  readonly in?: string;
+  readonly placeholder?: string;
+}
+
+interface NamedAction {
+  readonly reducer?: string;
+  readonly path: string;
+  readonly method?: string;
+  readonly args?: readonly unknown[];
+  readonly params?: readonly NamedActionParameter[];
+}
+
+interface NamedActionInput {
+  readonly args?: readonly unknown[];
+  readonly body?: unknown;
+  readonly values?: Readonly<Record<string, unknown>>;
+}
+
+interface SpacetimeTarget {
+  readonly uri: string;
+  readonly mod: string;
+}
+
+export function createSpacetimeGradingContext(
+  { requireBuildContainer = true }: { requireBuildContainer?: boolean } = {},
+) {
   return leasedSpacetimeTarget({ requireBuildContainer });
 }
 
@@ -10,7 +38,7 @@ export function createHttpGradingContext() {
 
 const U64_MAX = 18_446_744_073_709_551_615n;
 
-function spacetimeReducerBody(action, args) {
+function spacetimeReducerBody(action: NamedAction, args: readonly unknown[]): string {
   const params = action.params ?? [];
   const encoded = args.map((value, index) => {
     if (params[index]?.wireType === 'u64') {
@@ -18,7 +46,10 @@ function spacetimeReducerBody(action, args) {
         : (typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : null);
       if (decimal === null || !/^(?:0|[1-9]\d*)$/.test(decimal)
           || BigInt(decimal) > U64_MAX) {
-        const error = new Error(`invalid u64 value for reducer parameter ${JSON.stringify(params[index].name)}`);
+        const parameterName = params[index]?.name;
+        const error = new Error(
+          `invalid u64 value for reducer parameter ${JSON.stringify(parameterName)}`,
+        ) as Error & { code: string };
         error.code = 'invalid_named_action_input';
         throw error;
       }
@@ -29,10 +60,18 @@ function spacetimeReducerBody(action, args) {
   return `[${encoded.join(',')}]`;
 }
 
-export function spacetimeNamedActionRequest({ action, input = {}, spacetime }) {
+export function spacetimeNamedActionRequest({
+  action,
+  input = {},
+  spacetime,
+}: {
+  action: NamedAction;
+  input?: NamedActionInput;
+  spacetime?: SpacetimeTarget | null;
+}) {
   const args = input.values === undefined
     ? (input.args ?? action.args ?? [])
-    : (action.params ?? []).map(param => input.values[param.name]);
+    : (action.params ?? []).map(param => input.values?.[param.name]);
   return {
     url: spacetime && `${spacetime.uri}/v1/database/${spacetime.mod}/call/${action.reducer}`,
     method: 'POST',
@@ -45,7 +84,15 @@ export function spacetimeNamedActionRequest({ action, input = {}, spacetime }) {
   };
 }
 
-export function httpNamedActionRequest({ action, input = {}, url }) {
+export function httpNamedActionRequest({
+  action,
+  input = {},
+  url,
+}: {
+  action: NamedAction;
+  input?: NamedActionInput;
+  url?: string | null;
+}) {
   const base = String(url ?? '').replace(/\/$/, '');
   let path = action.path;
   let body = input.body ?? {};
@@ -53,9 +100,15 @@ export function httpNamedActionRequest({ action, input = {}, url }) {
     body = {};
     for (const param of action.params ?? []) {
       if (param.in === 'path') {
-        path = path.replaceAll(param.placeholder, encodeURIComponent(String(input.values[param.name])));
+        if (!param.placeholder) {
+          throw new TypeError(`path parameter ${JSON.stringify(param.name)} has no placeholder`);
+        }
+        path = path.replaceAll(
+          param.placeholder,
+          encodeURIComponent(String(input.values[param.name])),
+        );
       } else {
-        body[param.name] = input.values[param.name];
+        (body as Record<string, unknown>)[param.name] = input.values[param.name];
       }
     }
   }
