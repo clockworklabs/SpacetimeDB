@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { databaseContainerName } from '../src/stacks/database-containers.mjs';
+import { databaseContainerName } from '../src/stacks/database-containers.js';
 
 test('database container defaults isolate development from appliance services', () => {
   assert.equal(databaseContainerName('postgres', {}), 'stack-bench-dev-postgres');

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { assertLeasedContainer } from '../backend-reset-guard.mjs';
-import { databaseContainerName } from '../database-containers.mjs';
+import { databaseContainerName } from '../database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../hosted-database-identity.js';
 
 const RESET_TIMEOUT_MS = 120_000;

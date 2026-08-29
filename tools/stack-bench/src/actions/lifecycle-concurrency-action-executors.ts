@@ -13,7 +13,7 @@ import { controlBackend } from '../runtime/backend-control.mjs';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
-import { databaseContainerName } from '../stacks/database-containers.mjs';
+import { databaseContainerName } from '../stacks/database-containers.js';
 
 type UnknownRecord = Record<string, unknown>;
 type Sleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
