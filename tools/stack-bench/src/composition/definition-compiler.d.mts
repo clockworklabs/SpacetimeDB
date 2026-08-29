@@ -1,5 +1,9 @@
 export interface CompiledStep {
   do: string;
+  testid?: string;
+  contains?: string;
+  absent?: boolean;
+  in?: { testid?: string; contains?: string };
   [key: string]: unknown;
 }
 

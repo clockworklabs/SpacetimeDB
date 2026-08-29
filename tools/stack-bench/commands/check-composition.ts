@@ -10,12 +10,26 @@ import {
 } from '../src/composition/composition-compiler.mjs';
 import { TRACKS_DIR, listTracks } from '../src/composition/tracks.mjs';
 
-function json(path) {
+function json(path: string): unknown {
   try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) { throw new Error(`cannot read composition source ${path}: ${error.message}`, { cause: error }); }
+  catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`cannot read composition source ${path}: ${message}`, { cause: error });
+  }
 }
 
-export function checkCompositions({ trackName = null } = {}) {
+export interface CompositionSummary {
+  track: string;
+  packs: number;
+  fixtures: number;
+  recipes: number;
+  checks: number;
+  aliases: number;
+}
+
+export function checkCompositions(
+  { trackName = null }: { trackName?: string | null } = {},
+): CompositionSummary[] {
   const names = trackName ? [trackName] : listTracks({ includeInternal: true });
   const summary = [];
   for (const name of names) {
@@ -53,12 +67,15 @@ export function checkCompositions({ trackName = null } = {}) {
   return summary;
 }
 
-function main() {
+function main(): void {
   const args = process.argv.slice(2);
-  let trackName = null;
+  let trackName: string | null = null;
   for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--track' && args[index + 1]) trackName = args[++index];
-    else throw new Error(`unknown or incomplete argument ${args[index]}`);
+    const value = args[index + 1];
+    if (args[index] === '--track' && value) {
+      trackName = value;
+      index += 1;
+    } else throw new Error(`unknown or incomplete argument ${args[index]}`);
   }
   const summary = checkCompositions({ trackName });
   if (!summary.length) throw new Error('no composition sources found');

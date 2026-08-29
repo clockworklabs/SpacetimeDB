@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 
-import { checkCompositions } from '../commands/check-composition.mjs';
+import { checkCompositions } from '../commands/check-composition.js';
 import {
   compileFixtureDefinition,
   compilePackDefinition,
@@ -14,19 +14,21 @@ import {
   compileRecipeFile,
   resolveTaskFragment,
 } from '../src/composition/composition-compiler.mjs';
+import type { CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { loadTrack, suitesFor } from '../src/composition/tracks.mjs';
+import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
-const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
-const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
+const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
+const recipePath = (name: string): string => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-      track: 'ecommerce', packs: 103, fixtures: 2, recipes: 17, checks: 1038, aliases: 10,
+      track: 'ecommerce', packs: 117, fixtures: 2, recipes: 19, checks: 1275, aliases: 10,
   }]);
 });
 
-function legacyProjection(level) {
+function legacyProjection(level: number) {
   const track = loadTrack('ecommerce');
   return suitesFor(track, level).map(suite => {
     const source = relative(track.dir, suite.spec).replaceAll('\\', '/');
@@ -45,11 +47,21 @@ function legacyProjection(level) {
   });
 }
 
-function recipeProjection(plan) {
+interface ProjectedCriterion {
+  id: string;
+  points: number;
+}
+
+interface ProjectedFeature {
+  id: number;
+  criteria: ProjectedCriterion[];
+}
+
+function recipeProjection(plan: CompiledRecipePlan) {
   return plan.execution.map(suite => ({
     id: suite.id,
     source: suite.source,
-    features: suite.checkGroups.reduce((features, group) => {
+    features: suite.checkGroups.reduce<ProjectedFeature[]>((features, group) => {
       let feature = features.at(-1);
       if (!feature || feature.id !== group.feature.id) {
         feature = { id: group.feature.id, criteria: [] };
@@ -78,20 +90,21 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
     ['L1', 'retired', 'ecommerce.l1-standard'],
     ['L1', 'retired', 'ecommerce.l1-modular'],
     ['L1', 'retired', 'ecommerce.l1-modular'],
-    ['L1', 'promoted', 'ecommerce.l1-modular'],
+    ['L1', 'candidate', 'ecommerce.l1-modular'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
-    ['L2', 'promoted', 'ecommerce.l2-standard'],
+    ['L2', 'candidate', 'ecommerce.l2-standard'],
   ]);
 });
 
 test('framework-neutral releases change task meaning without changing execution or scoring', () => {
-  for (const [oldName, candidateName, level] of [
+  const releases: Array<readonly [string, string, number]> = [
     ['l1-standard-1.0.0.json', 'l1-standard-1.1.0.json', 1],
     ['l2-standard-1.1.0.json', 'l2-standard-1.2.0.json', 2],
-  ]) {
+  ];
+  for (const [oldName, candidateName, level] of releases) {
     const oldPlan = compileRecipeFile(recipePath(oldName), { trackRoot: ECOMMERCE });
     const candidate = compileRecipeFile(recipePath(candidateName), { trackRoot: ECOMMERCE });
     assert.deepEqual(recipeProjection(candidate), legacyProjection(level));
@@ -105,7 +118,7 @@ test('framework-neutral releases change task meaning without changing execution 
   assert.match(l1.recipe.task.requirementText, /POST \/api\/checkout/);
 });
 
-test('the L2 hardening candidate re-proves exact modular L1 checks and adds every L2 check', () => {
+test('the L2 hardening candidate carries modular L1 and its current L2 checks', () => {
   const l1 = compileRecipeFile(recipePath('l1-modular-2.2.0.json'), { trackRoot: ECOMMERCE });
   const oldPlan = compileRecipeFile(recipePath('l2-standard-1.2.0.json'), { trackRoot: ECOMMERCE });
   const candidate = compileRecipeFile(recipePath('l2-standard-1.3.0.json'), { trackRoot: ECOMMERCE });
@@ -119,6 +132,17 @@ test('the L2 hardening candidate re-proves exact modular L1 checks and adds ever
     'ecommerce.inventory-operations.stock-conservation.202d',
     'ecommerce.operations-access.order-owner.204a',
   ]);
+  const retired = new Set([
+    'ecommerce.operations-access.fulfilment-queue.1e',
+    'ecommerce.operations-access.operator-authorization.201a',
+    'ecommerce.operations-access.operator-authorization.201b',
+  ]);
+  const relocated = new Map<string, string>([
+    ['ecommerce.operations-access.fulfilment-queue.1a', 'scenarios/02-fulfilment-live-1.0.0.json'],
+    ['ecommerce.operations-access.fulfilment-queue.1b', 'scenarios/02-queue-warehouse-1.4.0.json'],
+    ['ecommerce.operations-access.fulfilment-queue.1c', 'scenarios/02-fulfilment-ship-1.0.0.json'],
+    ['ecommerce.operations-access.fulfilment-queue.1d', 'scenarios/02-fulfilment-access-1.0.0.json'],
+  ]);
   assert.equal(candidate.recipe.state, 'draft');
   assert.deepEqual(candidate.recipe.task.baseRecipe, {
     id: 'ecommerce.l1-modular', version: '2.2.0', path: 'recipes/l1-modular-2.2.0.json',
@@ -130,28 +154,31 @@ test('the L2 hardening candidate re-proves exact modular L1 checks and adds ever
   const l2Checks = candidate.checks.filter(check => l2Packs.has(check.packId));
   const previousL2Checks = oldPlan.checks.filter(check => l2Packs.has(check.packId));
   assert.equal(carried.length, 48);
-  assert.equal(l2Checks.length, 28);
+  assert.equal(l2Checks.length, 25);
   assert.deepEqual(l2Checks.map(check => check.stableKey).sort(),
-    previousL2Checks.map(check => check.stableKey).sort());
+    previousL2Checks.filter(check => !retired.has(check.stableKey))
+      .map(check => check.stableKey).sort());
   for (const check of l2Checks) {
     const previous = oldPlan.checks.find(item => item.stableKey === check.stableKey);
+    assert(previous, `missing previous check ${check.stableKey}`);
     if (promoted.has(check.stableKey)) {
       assert.equal(previous.points, 0);
       assert.equal(check.points, 2);
       assert.equal(check.source, 'scenarios/02-server-actions-1.0.0.json');
     } else {
       assert.deepEqual({ points: check.points, source: check.source },
-        { points: previous.points, source: previous.source });
+        { points: previous.points, source: relocated.get(check.stableKey) ?? previous.source });
     }
   }
   assert.deepEqual({ checks: candidate.checks.length, points: candidate.scoring.points,
-    packs: candidate.packs.length }, { checks: 76, points: 111, packs: 15 });
+    packs: candidate.packs.length }, { checks: 73, points: 105, packs: 15 });
   assert.equal(candidate.scoring.points, l1.scoring.points
     + l2Checks.reduce((sum, check) => sum + check.points, 0));
   assert.match(candidate.recipe.task.contractText, /data-ship-input/);
   assert.match(candidate.recipe.task.contractText, /data-cancel-input/);
   assert.match(candidate.recipe.task.contractText, /data-transfer-input/);
   const focused = candidate.execution.find(execution => execution.id === 'server-actions');
+  assert(focused, 'server-actions execution is required');
   assert.deepEqual(focused.checkGroups.map(group => group.feature.id), [201, 202, 204]);
   assert(focused.checkGroups.flatMap(group => group.feature.criteria)
     .every(criterion => criterion.steps.some(step => step.do === 'callAction'
@@ -159,10 +186,11 @@ test('the L2 hardening candidate re-proves exact modular L1 checks and adds ever
 });
 
 test('full ecommerce recipes compose the exact legacy builder task from pack-owned fragments', () => {
-  for (const [recipe, prompt, contract] of [
+  const recipes: Array<readonly [string, string, string]> = [
     ['l1-standard-1.0.0.json', 'prompts/01-storefront.md', 'contracts/appendix-01.md'],
     ['l2-standard-1.1.0.json', 'prompts/02-operations.md', 'contracts/appendix-02.md'],
-  ]) {
+  ];
+  for (const [recipe, prompt, contract] of recipes) {
     const plan = compileRecipeFile(recipePath(recipe), { trackRoot: ECOMMERCE });
     assert.equal(plan.recipe.task.requirementText, readFileSync(join(ECOMMERCE, prompt), 'utf8'));
     assert.equal(plan.recipe.task.contractText, readFileSync(join(ECOMMERCE, contract), 'utf8'));
@@ -175,7 +203,8 @@ test('removing session durability removes its requirement and checks without cha
   try {
     cpSync(ECOMMERCE, root, { recursive: true });
     const path = join(root, 'composition', 'recipes', 'l1-standard-1.0.0.json');
-    const recipe = JSON.parse(readFileSync(path, 'utf8'));
+    const recipe: { packs: Array<{ id: string }>; [key: string]: unknown } =
+      JSON.parse(readFileSync(path, 'utf8'));
     recipe.packs = recipe.packs.filter(pack => pack.id !== 'ecommerce.session-durability');
     writeFileSync(path, `${JSON.stringify(recipe, null, 2)}\n`);
     const plan = compileRecipeFile(path, { trackRoot: root });
@@ -192,11 +221,15 @@ test('the smoke recipe reuses two behavior packs without duplicating their defin
   assert.deepEqual(plan.packs.map(pack => pack.id), [
     'ecommerce.identity-access', 'ecommerce.reviews',
   ]);
-  assert.deepEqual(plan.execution[0].checkGroups.map(group => group.feature.id), [1, 6]);
+  const execution = plan.execution[0];
+  const identityPack = plan.packs[0];
+  assert(execution);
+  assert(identityPack);
+  assert.deepEqual(execution.checkGroups.map(group => group.feature.id), [1, 6]);
   assert.equal(plan.checks.length, 7);
   assert.equal(plan.scoring.points, 8);
-  assert.equal(plan.packs[0].budget.status, 'bounded');
-  assert(plan.packs[0].actions.includes('signUp'));
+  assert.equal(identityPack.budget.status, 'bounded');
+  assert(identityPack.actions.includes('signUp'));
   assert.match(plan.recipe.task.requirementText, /### Accounts/);
   assert.match(plan.recipe.task.requirementText, /### Reviews/);
   assert.doesNotMatch(plan.recipe.task.requirementText, /### Cart|### Admin|### Buying/);
@@ -208,14 +241,20 @@ test('fixture versions make the L2 staff addition explicit', () => {
   assert.equal(l1.fixture.items.length, 12);
   assert.deepEqual(l1.fixture.accounts.map(account => account.username), ['admin']);
   assert.deepEqual(l2.fixture.accounts.map(account => account.username), ['admin', 'staff']);
-  assert.equal(l1.fixture.items.find(item => item.name === 'Mirrorless Camera').stock.East, 2);
+  const camera = l1.fixture.items.find(item => item.name === 'Mirrorless Camera');
+  assert(camera);
+  assert.equal(camera.stock.East, 2);
   const prompt = readFileSync(join(ECOMMERCE, 'prompts', '01-storefront.md'), 'utf8');
   const startingData = prompt.slice(prompt.indexOf('### Starting data'));
   const promptItems = startingData.split(/\r?\n/).map(line =>
     line.match(/^\| ([^|]+) \| (\d+\.\d{2}) \| (\d+) \| (\d+) \|$/))
-    .filter(Boolean)
-    .map(match => ({ name: match[1].trim(), price: match[2],
-      stock: { East: Number(match[3]), West: Number(match[4]) } }));
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map(match => {
+      const [, name, price, east, west] = match;
+      assert(name && price && east && west, 'matched item row must contain every column');
+      return { name: name.trim(), price,
+        stock: { East: Number(east), West: Number(west) } };
+    });
   assert.deepEqual(l1.fixture.items.map(item => ({ name: item.name, price: item.price, stock: item.stock })),
     promptItems);
   assert.match(prompt, /username `admin`, password `stackbench-admin-2026`/);
@@ -229,7 +268,9 @@ test('the recommendation criterion owns its purchase prerequisite', () => {
     .flatMap(execution => execution.checkGroups)
     .find(group => group.packId === 'ecommerce.inventory-operations'
       && group.checkGroupId === 'operational-views');
+  assert(operationalViews, 'operational-views check group is required');
   const recommendation = operationalViews.feature.criteria.find(criterion => criterion.id === '5c');
+  assert(recommendation, 'recommendation criterion 5c is required');
   const purchase = recommendation.steps.findIndex(step => step.do === 'click'
     && step.testid === 'buy-now'
     && step.in?.testid === 'item-card'
@@ -276,10 +317,14 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
       { ...pack.task.requirements[0], requiresFeatures: ['example.feature'] },
     ] }, checks: [{ ...pack.checks[0], role: 'guarantee',
       observations: ['requested', 'unmentioned'], requiresFeatures: ['example.feature'] }] });
+  const specificationCheck = specification.checks[0];
+  const specificationRequirement = specification.task.requirements[0];
+  assert(specificationCheck);
+  assert(specificationRequirement);
   assert.equal(specification.moduleType, 'specification');
-  assert.deepEqual(specification.checks[0].observations, ['requested', 'unmentioned']);
-  assert.deepEqual(specification.checks[0].requiresFeatures, ['example.feature']);
-  assert.deepEqual(specification.task.requirements[0].requiresFeatures, ['example.feature']);
+  assert.deepEqual(specificationCheck.observations, ['requested', 'unmentioned']);
+  assert.deepEqual(specificationCheck.requiresFeatures, ['example.feature']);
+  assert.deepEqual(specificationRequirement.requiresFeatures, ['example.feature']);
 
   const renamed = compilePackDefinition({ ...pack, id: 'example.feature-v2',
     stableId: 'example.feature' });
@@ -336,7 +381,75 @@ test('task fragment markers are contained, unique, ordered, and non-empty', () =
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
-function sandbox() {
+interface TestFragment {
+  id: string;
+  path: string;
+  order: number;
+  requiresFeatures?: string[];
+}
+
+interface TestPack {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  stableId?: string;
+  moduleType?: string;
+  requiresPacks: string[];
+  conflictsWith: string[];
+  capabilities: string[];
+  evidence: string[];
+  budget: { status: string; maxRuntimeMs?: number };
+  task: { requirements: TestFragment[]; contracts: TestFragment[] };
+  checks: Array<{
+    id: string;
+    stableId?: string;
+    source: string;
+    feature: number;
+    criteria?: string[];
+    role: string;
+    observations?: string[];
+    requiresFeatures?: string[];
+  }>;
+}
+
+interface TestScoring {
+  mode: string;
+  weights?: Record<string, number>;
+}
+
+interface TestRecipe {
+  schemaVersion: number;
+  kind: string;
+  id: string;
+  version: string;
+  state: string;
+  title: string;
+  track: string;
+  compatibility: { legacyLevel: number };
+  fixture: { path: string; id: string; version: string };
+  task: {
+    mode: string;
+    framing: { requirements: TestFragment[]; contracts: TestFragment[] };
+    baseRecipe?: { path: string; id: string; version: string };
+  };
+  packs: Array<{ path: string; id: string; version: string; includeRoles: string[] }>;
+  execution: Array<{ id: string; source: string }>;
+  scoring: TestScoring;
+}
+
+interface CompositionSandbox {
+  temp: string;
+  root: string;
+  makePack(name: string, extra?: Partial<TestPack>): TestPack;
+  writePack(name: string, extra?: Partial<TestPack>): void;
+  makeRecipe(packs: string[], scoring?: TestScoring): TestRecipe;
+  writeRecipe(value: TestRecipe): string;
+}
+
+function sandbox(): CompositionSandbox {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-composition-'));
   const root = join(temp, 'example');
   for (const directory of [
@@ -357,7 +470,7 @@ function sandbox() {
     ], accounts: [], empty: [],
   };
   writeFileSync(join(root, 'composition', 'fixtures', 'fixture.json'), JSON.stringify(fixture));
-  const makePack = (name, extra = {}) => ({
+  const makePack = (name: string, extra: Partial<TestPack> = {}): TestPack => ({
     schemaVersion: 1, kind: 'test-pack', id: `example.${name}`, version: '1.0.0', state: 'draft',
     title: name, requiresPacks: [], conflictsWith: [], capabilities: ['browser'],
     evidence: ['browser-observation'], budget: { status: 'unmeasured' },
@@ -365,9 +478,12 @@ function sandbox() {
     checks: [{ id: 'group', source: 'scenarios/01.json', feature: 1, role: 'feature' }],
     ...extra,
   });
-  const writePack = (name, extra) => writeFileSync(join(root, 'composition', 'packs', `${name}.json`),
-    JSON.stringify(makePack(name, extra)));
-  const makeRecipe = (packs, scoring = { mode: 'legacy-source-points' }) => ({
+  const writePack = (name: string, extra: Partial<TestPack> = {}): void => {
+    writeFileSync(join(root, 'composition', 'packs', `${name}.json`),
+      JSON.stringify(makePack(name, extra)));
+  };
+  const makeRecipe = (packs: string[],
+    scoring: TestScoring = { mode: 'legacy-source-points' }): TestRecipe => ({
     schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe', version: '1.0.0', state: 'draft',
     title: 'Recipe', track: 'example',
     compatibility: { legacyLevel: 1 },
@@ -380,7 +496,7 @@ function sandbox() {
     execution: [{ id: 'features', source: 'scenarios/01.json' }],
     scoring,
   });
-  const writeRecipe = value => {
+  const writeRecipe = (value: TestRecipe): string => {
     const path = join(root, 'composition', 'recipes', 'recipe.json');
     writeFileSync(path, JSON.stringify(value));
     return path;
@@ -424,7 +540,9 @@ test('composition rejects missing dependencies, dependency cycles, conflicts, du
       observations: ['requested', 'unmentioned'], requiresFeatures: ['example.missing'],
     }] });
     const modular = box.makeRecipe(['a', 'b']);
-    modular.packs[1].includeRoles = ['guarantee'];
+    const specificationSelection = modular.packs[1];
+    assert(specificationSelection);
+    specificationSelection.includeRoles = ['guarantee'];
     path = box.writeRecipe(modular);
     assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
       /references missing feature module example.missing/);
@@ -441,9 +559,11 @@ test('explicit scoring must name every selected stable check exactly once', () =
       mode: 'explicit', weights: { 'example.a.group.1a': 7 },
     }));
     const plan = compileRecipeFile(path, { trackRoot: box.root });
+    const selectedCheck = plan.checks[0];
+    assert(selectedCheck);
     assert.equal(plan.scoring.points, 7);
-    assert.equal(plan.checks[0].sourcePoints, 2);
-    assert.equal(plan.checks[0].points, 7);
+    assert.equal(selectedCheck.sourcePoints, 2);
+    assert.equal(selectedCheck.points, 7);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
@@ -504,7 +624,9 @@ test('separate modules can share a published scoring namespace without hiding th
       'example.published.group.1a': 2,
       'example.published.group.1b': 3,
     } });
-    recipe.packs[1].includeRoles = ['guarantee'];
+    const specificationSelection = recipe.packs[1];
+    assert(specificationSelection);
+    specificationSelection.includeRoles = ['guarantee'];
     const plan = compileRecipeFile(box.writeRecipe(recipe), { trackRoot: box.root });
     assert.deepEqual(plan.checks.map(check => ({
       stableKey: check.stableKey,
@@ -549,7 +671,9 @@ test('composition references cannot escape the track or composition roots', () =
   try {
     box.writePack('a');
     const recipe = box.makeRecipe(['a']);
-    recipe.packs[0].path = '../../../outside.json';
+    const pack = recipe.packs[0];
+    assert(pack);
+    pack.path = '../../../outside.json';
     const path = box.writeRecipe(recipe);
     assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /escapes/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
