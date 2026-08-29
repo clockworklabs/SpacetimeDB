@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { assertLeasedContainer } from '../backend-reset-guard.mjs';
+import { assertLeasedContainer } from '../backend-reset-guard.js';
 import { databaseContainerName } from '../database-containers.js';
 
 const RESET_TIMEOUT_MS = 120_000;
