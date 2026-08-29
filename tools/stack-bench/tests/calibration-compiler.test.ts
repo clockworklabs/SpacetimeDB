@@ -9,17 +9,63 @@ import { calibrationCoversAlias, calibrationQualificationIdentity,
   compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, hasExactSelectedPackRuntime, resolveCalibrationForRelease,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
+import type { CalibrationContext, CalibrationDefinition, CalibrationEvidence,
+  CalibrationPlan } from '../src/composition/calibration-compiler.mjs';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
-import { checkCalibrations } from '../commands/check-calibration.mjs';
+import { checkCalibrations } from '../commands/check-calibration.js';
 import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import type { RecipeExecution } from '../src/composition/recipe-release.mjs';
+import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.mjs';
 
-const ROOT = join(import.meta.dirname, '..');
+const ROOT = STACK_BENCH_ROOT;
 const TRACK = loadTrack('ecommerce');
 const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-modular-2.5.0.json');
 const PROGRESSION_CALIBRATION = join(TRACK.dir, 'composition', 'calibrations',
   'progression-l1-l3-1.1.0.json');
+
+interface PromotionCatalog {
+  entries: Array<{
+    alias: string;
+    status: string;
+    recipe: { id: string; version: string; path: string };
+  }>;
+}
+
+interface QualificationArtifactPayload {
+  qualificationScope?: unknown;
+  runs: Array<{ ok: boolean }>;
+  runner: { mode: string; platform: string; [key: string]: unknown };
+  summary: { vacuousPasses: { criteria: number } };
+  [key: string]: unknown;
+}
+
+interface QualificationArtifact {
+  id: string;
+  kind: string;
+  attempt: { parentId?: string | null; [key: string]: unknown };
+  identities: {
+    agentAdapter: unknown;
+    stackAdapter: { id: string };
+    [key: string]: unknown;
+  };
+  payload: QualificationArtifactPayload;
+  [key: string]: unknown;
+}
+
+function required<T>(value: T | undefined, message: string): T {
+  assert.ok(value !== undefined, message);
+  return value;
+}
+
+function parseCalibration(path: string): CalibrationDefinition {
+  return JSON.parse(readFileSync(path, 'utf8')) as CalibrationDefinition;
+}
+
+function readQualificationArtifact(path: string): QualificationArtifact {
+  return readArtifact<QualificationArtifactPayload>(path) as QualificationArtifact;
+}
 
 test('qualification runtime must cover the exact selected pack set', () => {
   const release = { checkCatalog: [{ packId: 'accounts' }, { packId: 'accounts' },
@@ -51,7 +97,11 @@ function qualifiedProgression() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
-function withCurrentScope(artifact, entry, context) {
+function withCurrentScope(
+  artifact: QualificationArtifact,
+  entry: CalibrationEvidence,
+  context: CalibrationContext,
+): QualificationArtifact {
   const scoped = structuredClone(artifact);
   const reference = entry.kind === 'null' ? null
     : context.references.find(candidate => candidate.backend === entry.stack);
@@ -68,6 +118,7 @@ test('runtime calibration resolution exposes the pending L1 candidate', () => {
   const l1 = resolveRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1,
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, alias: 'L1' });
+  assert.ok(resolved);
   assert.equal(resolved.id, 'ecommerce.l1-modular-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(resolved.state, 'draft');
@@ -98,6 +149,7 @@ test('one cumulative calibration covers each promoted lower alias of the same re
     assert.equal(release.id, 'ecommerce.progression-l1-l3');
     const calibration = resolveCalibrationForRelease(release,
       { ...options, alias: `L${level}` });
+    assert.ok(calibration);
     assert.equal(calibration.id, 'ecommerce.progression-l1-l3-calibration');
     assert.equal(calibration.promotion.alias, 'L3');
   }
@@ -108,32 +160,37 @@ test('cumulative aliases must name the exact calibrated recipe source', () => {
     'ecommerce.progression-l1-l3@1.1.0').release;
   const calibration = resolveCalibrationForRelease(release,
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  assert.ok(calibration);
   const catalogPath = join(TRACK.dir, 'composition', 'candidates.json');
-  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
-  catalog.entries.find(entry => entry.alias === 'L1'
-    && entry.recipe.id === release.id && entry.recipe.version === release.version).recipe.path =
+  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as PromotionCatalog;
+  const l1Entry = catalog.entries.find(entry => entry.alias === 'L1'
+    && entry.recipe.id === release.id && entry.recipe.version === release.version);
+  assert.ok(l1Entry);
+  l1Entry.recipe.path =
     'recipes/progression-l1-l3-1.0.0.json';
   assert.equal(calibrationCoversAlias(calibration, release, 'L1',
     { catalog, catalogPath, trackRoot: TRACK.dir }), false);
-  catalog.entries.find(entry => entry.alias === 'L3'
-    && entry.recipe.id === release.id && entry.recipe.version === release.version).recipe.path =
+  const l3Entry = catalog.entries.find(entry => entry.alias === 'L3'
+    && entry.recipe.id === release.id && entry.recipe.version === release.version);
+  assert.ok(l3Entry);
+  l3Entry.recipe.path =
     'recipes/progression-l1-l3-1.0.0.json';
   assert.equal(calibrationCoversAlias(calibration, release, 'L3',
     { catalog, catalogPath, trackRoot: TRACK.dir }), false);
 });
 
-function temporaryCalibration(change) {
+function temporaryCalibration(change: (value: CalibrationDefinition) => void) {
   const directory = mkdtempSync(join(tmpdir(), 'stack-bench-calibration-'));
   const trackRoot = join(directory, 'ecommerce');
   cpSync(TRACK.dir, trackRoot, { recursive: true });
   const path = join(trackRoot, 'composition', 'calibrations', 'l1-modular-2.5.0.json');
-  const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
+  const value = parseCalibration(CALIBRATION);
   change(value);
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
   return { directory, path, trackRoot };
 }
 
-function compileChanged(change) {
+function compileChanged(change: (value: CalibrationDefinition) => void): CalibrationPlan {
   const temporary = temporaryCalibration(change);
   try {
     const release = resolveRecipeRelease({ ...TRACK, dir: temporary.trackRoot }, 1).release;
@@ -143,7 +200,7 @@ function compileChanged(change) {
 }
 
 test('calibration definitions bind an optional stable-check subset', () => {
-  const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
+  const value = parseCalibration(CALIBRATION);
   value.qualification.checks = ['check.b', 'check.a'];
   const compiled = compileCalibrationDefinition(value);
   assert.deepEqual(compiled.qualification.checks, ['check.b', 'check.a']);
@@ -163,7 +220,7 @@ test('calibration check subsets produce an exact qualification release', () => {
       { stableKey: 'check.a', executionId: 'suite', points: 1 },
       { stableKey: 'check.b', executionId: 'unused', points: 2 },
     ] };
-  const execution = [{ id: 'suite', ownership: { kind: 'current' } },
+  const execution: RecipeExecution[] = [{ id: 'suite', ownership: { kind: 'current' } },
     { id: 'unused', ownership: { kind: 'current' } }];
   const scoped = calibrationQualificationRelease({ qualification: { checks: ['check.a'] } },
     sourceRelease, execution);
@@ -218,7 +275,8 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   };
   const referenceEntry = plan.qualification.evidence.find(entry =>
     entry.kind === 'reference' && entry.stack === 'mongodb' && entry.repetition === 1);
-  const reference = readArtifact(join(ROOT, referenceEntry.path));
+  assert.ok(referenceEntry);
+  const reference = readQualificationArtifact(join(ROOT, referenceEntry.path));
   assert.doesNotThrow(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context));
   const legacyReference = structuredClone(reference);
   delete legacyReference.payload.qualificationScope;
@@ -232,7 +290,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     /wrong stack adapter/);
 
   const hiddenFailure = structuredClone(scopedReference);
-  hiddenFailure.payload.runs[0].ok = false;
+  required(hiddenFailure.payload.runs[0], 'qualification run').ok = false;
   assert.throws(() => validateQualificationEvidenceArtifact(hiddenFailure, referenceEntry, context),
     /failed or incomplete repetition/);
 
@@ -258,7 +316,8 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     runnerContext), /wrong controller runner environment/);
 
   const nullEntry = plan.qualification.evidence.find(entry => entry.kind === 'null');
-  const nullArtifact = readArtifact(join(ROOT, nullEntry.path));
+  assert.ok(nullEntry);
+  const nullArtifact = readQualificationArtifact(join(ROOT, nullEntry.path));
   const vacuous = withCurrentScope(nullArtifact, nullEntry, context);
   vacuous.payload.summary.vacuousPasses.criteria = 1;
   assert.throws(() => validateQualificationEvidenceArtifact(vacuous, nullEntry, context),
@@ -284,7 +343,7 @@ test('qualification uses typed ownership when inherited execution ids are rename
     { stableKey: 'base', executionId: 'renamed-base', points: 5 },
     { stableKey: 'current', executionId: 'current', points: 3 },
   ] };
-  const execution = [
+  const execution: RecipeExecution[] = [
     { id: 'renamed-base', ownership: { kind: 'inherited' } },
     { id: 'current', ownership: { kind: 'current' } },
   ];
@@ -327,25 +386,27 @@ test('set-like calibration source ordering does not change its identity', () => 
 });
 
 test('stale recipe, fixture, reference, mutation, and promotion hashes fail compilation', () => {
-  for (const change of [
+  const changes: Array<(value: CalibrationDefinition) => void> = [
     value => { value.recipe.contentSha256 = '0'.repeat(64); },
     value => { value.fixture.sourceSha256 = '0'.repeat(64); },
-    value => { value.references.entries[0].sourceSha256 = '0'.repeat(64); },
-    value => { value.mutations[0].sha256 = '0'.repeat(64); },
+    value => { required(value.references.entries[0], 'reference').sourceSha256 = '0'.repeat(64); },
+    value => { required(value.mutations[0], 'mutation').sha256 = '0'.repeat(64); },
     value => { value.promotion.catalogSha256 = '0'.repeat(64); },
-  ]) assert.throws(() => compileChanged(change), /does not match|stale/);
+  ];
+  for (const change of changes) assert.throws(() => compileChanged(change), /does not match|stale/);
 });
 
 test('every zero-point check requires one typed policy with valid mutation targets', () => {
   assert.throws(() => compileChanged(value => { value.controls.pop(); }), /missing zero-point checks/);
   assert.throws(() => compileChanged(value => {
-    value.controls[0].mutationTargets = ['postgres:not-a-mutant'];
+    required(value.controls[0], 'control').mutationTargets = ['postgres:not-a-mutant'];
   }), /allowed only for promotion-gate|must not declare mutationTargets|unknown mutation/);
   assert.throws(() => compileChanged(value => {
-    value.controls[0].promotionPolicy = 'record-only-until-calibrated';
+    required(value.controls[0], 'control').promotionPolicy = 'record-only-until-calibrated';
   }), /must be must-pass-reference/);
   assert.throws(() => compileChanged(value => {
-    value.controls[0].stableKey = value.controls[1].stableKey;
+    required(value.controls[0], 'first control').stableKey =
+      required(value.controls[1], 'second control').stableKey;
   }), /duplicates|not an unassigned/);
 });
 
@@ -357,7 +418,7 @@ test('pending calibration cannot claim qualification or promotion', () => {
 });
 
 test('equivalence decisions require two distinct executions and hash-bound evidence', () => {
-  const definition = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
+  const definition = parseCalibration(CALIBRATION);
   definition.equivalenceDecisions = [{
     fromExecutionSha256: definition.recipe.executionSha256,
     toExecutionSha256: definition.recipe.executionSha256,
@@ -403,7 +464,7 @@ test('qualification reuse accepts only the declared source and unchanged grading
   const input = { actual, expected, artifact, calibration,
     entry: { kind: 'mutation', stack: 'mongodb' } };
   assert.equal(canReuseQualificationScope(input), true);
-  for (const change of [
+  const changes: Array<(value: typeof input) => void> = [
     value => { value.actual.checksSha256 = 'b'.repeat(64); },
     value => { value.actual.mutationSha256 = 'b'.repeat(64); },
     value => { value.actual.stack.reference.sourceSha256 = 'b'.repeat(64); },
@@ -411,7 +472,8 @@ test('qualification reuse accepts only the declared source and unchanged grading
     value => { value.actual.kind = 'reference'; },
     value => { value.expected.executableSha256 = 'b'.repeat(64); },
     value => { value.artifact.identities.calibration.sha256 = 'b'.repeat(64); },
-  ]) {
+  ];
+  for (const change of changes) {
     const changed = structuredClone(input);
     change(changed);
     assert.equal(canReuseQualificationScope(changed), false);
@@ -419,7 +481,7 @@ test('qualification reuse accepts only the declared source and unchanged grading
 });
 
 test('qualification reuse definitions are exact and hash-bound', () => {
-  const definition = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
+  const definition = parseCalibration(CALIBRATION);
   definition.qualificationReuse = {
     sourceRecipe: { id: definition.recipe.id, version: '1.0.0',
       contentSha256: '1'.repeat(64), executionSha256: definition.recipe.executionSha256 },
@@ -430,6 +492,7 @@ test('qualification reuse definitions are exact and hash-bound', () => {
       toExecutableSha256: '4'.repeat(64) }],
   };
   assert.doesNotThrow(() => compileCalibrationDefinition(definition));
-  definition.qualificationReuse.scopes[0].stack = 'mongodb';
+  assert.ok(definition.qualificationReuse);
+  required(definition.qualificationReuse.scopes[0], 'reuse scope').stack = 'mongodb';
   assert.throws(() => compileCalibrationDefinition(definition), /not allowed for null reuse/);
 });

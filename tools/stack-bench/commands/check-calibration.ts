@@ -10,9 +10,22 @@ import { listTracks, TRACKS_DIR } from '../src/composition/tracks.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 
-export function checkCalibrations({ trackName = null } = {}) {
+export interface CalibrationCheckResult {
+  track: string;
+  id: string;
+  version: string;
+  state: string;
+  recipe: string;
+  controls: number;
+  stacks: number;
+  contentSha256: string;
+}
+
+export function checkCalibrations(
+  { trackName = null }: { trackName?: string | null } = {},
+): CalibrationCheckResult[] {
   const tracks = trackName ? [trackName] : listTracks({ includeInternal: true });
-  const results = [];
+  const results: CalibrationCheckResult[] = [];
   for (const name of tracks) {
     const trackRoot = join(TRACKS_DIR, name);
     const directory = join(trackRoot, 'composition', 'calibrations');
@@ -35,11 +48,11 @@ export function checkCalibrations({ trackName = null } = {}) {
 
 async function main() {
   const trackIndex = process.argv.indexOf('--track');
-  const trackName = trackIndex >= 0 ? process.argv[trackIndex + 1] : null;
+  const trackName = trackIndex >= 0 ? process.argv[trackIndex + 1] ?? null : null;
   const unknown = process.argv.slice(2).filter((value, index, args) =>
     value !== '--track' && args[index - 1] !== '--track');
   if (unknown.length || (trackIndex >= 0 && !trackName)) {
-    throw new Error('usage: node commands/check-calibration.mjs [--track <name>]');
+    throw new Error('usage: node dist/commands/check-calibration.js [--track <name>]');
   }
   const results = checkCalibrations({ trackName });
   for (const result of results) {
@@ -49,5 +62,8 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { console.error(error.stack ?? error.message); process.exitCode = 1; });
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+    process.exitCode = 1;
+  });
 }
