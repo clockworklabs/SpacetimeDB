@@ -27,7 +27,7 @@ new work as a linked continuation. Campaign `retry` still means a fresh
 execution.
 
 ```text
-node commands/campaign-cli.mjs grant-strikes <campaign-output> \
+node dist/commands/campaign-cli.js grant-strikes <campaign-output> \
   --attempt <attempt-id> --grant-id <unique-id> --level <number> \
   --feature <feature-id> --strikes <number>
 ```

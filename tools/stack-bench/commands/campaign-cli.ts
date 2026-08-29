@@ -13,8 +13,75 @@ import { grantCampaignDependencyStrikes }
   from '../src/campaigns/campaign-progression-grant.mjs';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.mjs';
+import type { ReferenceCampaignAudit }
+  from '../src/campaigns/progression-reference-campaign-audit.mjs';
 
-export function campaignStateSummary(plan, state) {
+interface CampaignSummaryPlan {
+  id: string;
+  version: string;
+  contentSha256: string;
+}
+
+interface CampaignSummaryState {
+  status: string;
+  summary: unknown;
+  attempts: Array<{
+    plan: { id: string };
+    status: string;
+    executions: Array<{
+      id: string;
+      outcome: unknown;
+      reason: string | null;
+    }>;
+  }>;
+}
+
+interface ReferenceCampaignPlan {
+  attempts: Array<{
+    mode?: { id?: string };
+    agentAdapter?: string;
+  }>;
+}
+
+interface ReferenceCampaignState {
+  status: string;
+}
+
+interface ResumeCampaign {
+  plan: {
+    contentSha256: string;
+    definition: { mode?: { id?: string } };
+  };
+  state: {
+    status: string;
+    attempts: Array<{ executions: readonly unknown[] }>;
+  };
+}
+
+type ReferenceCampaignAuditFunction = (directory: string) => ReferenceCampaignAudit | null;
+
+export type CampaignArgs =
+  | { command: 'modes' }
+  | { command: 'validate'; path: string }
+  | { command: 'show'; path: string }
+  | { command: 'status'; directory: string; full: boolean }
+  | { command: 'inspect'; directory: string }
+  | { command: 'report'; directory: string }
+  | { command: 'audit'; directory: string }
+  | { command: 'grant-strikes'; directory: string; attemptId: string; grantId: string;
+    level: number; nodeIds: string[]; strikes: number }
+  | { command: 'prepare'; path: string; directory: string }
+  | { command: 'trial'; path: string; directory: string }
+  | { command: 'run'; path: string; directory: string }
+  | { command: 'resume'; path: string; directory: string }
+  | { command: 'reconcile'; path: string; directory: string };
+
+function isOneOf<const T extends string>(value: string | undefined,
+  values: readonly T[]): value is T {
+  return value !== undefined && values.some(candidate => candidate === value);
+}
+
+export function campaignStateSummary(plan: CampaignSummaryPlan, state: CampaignSummaryState) {
   const failures = state.attempts.flatMap(attempt => {
     const execution = attempt.executions.at(-1);
     if (!execution || execution.outcome === null || execution.outcome === 'passed') return [];
@@ -34,15 +101,17 @@ export function campaignStateSummary(plan, state) {
   };
 }
 
-export function auditCompletedReferenceCampaign(directory, plan, state, {
+export function auditCompletedReferenceCampaign(directory: string, plan: ReferenceCampaignPlan,
+  state: ReferenceCampaignState, {
   audit = auditProgressionReferenceCampaign,
-} = {}) {
+}: { audit?: ReferenceCampaignAuditFunction } = {}): ReferenceCampaignAudit | null {
   const hasReferenceProgression = plan.attempts.some(attempt =>
     attempt.mode?.id === 'dependency' && attempt.agentAdapter === 'reference-fixture');
   return state.status === 'completed' && hasReferenceProgression ? audit(directory) : null;
 }
 
-export function validateResumeCampaignState(requested, existing) {
+export function validateResumeCampaignState<T extends ResumeCampaign>(
+  requested: { contentSha256: string }, existing: T): T {
   if (requested.contentSha256 !== existing.plan.contentSha256) {
     throw new Error('resume requires the exact campaign plan already stored in the output directory');
   }
@@ -57,31 +126,33 @@ export function validateResumeCampaignState(requested, existing) {
   return existing;
 }
 
-export function validateResumeCampaign(path, directory) {
+export function validateResumeCampaign(path: string, directory: string): ResumeCampaign {
   return validateResumeCampaignState(compileCampaignFile(path), inspectCampaign(directory));
 }
 
-export function parseCampaignArgs(argv) {
+export function parseCampaignArgs(argv: string[]): CampaignArgs {
   const [command, path, ...rest] = argv.slice(2);
   if (command === 'modes' && path === undefined) return { command };
-  if (['validate', 'show'].includes(command) && path && rest.length === 0) {
+  if (isOneOf(command, ['validate', 'show']) && path && rest.length === 0) {
     return { command, path: resolve(path) };
   }
   if (command === 'status' && path
     && (rest.length === 0 || (rest.length === 1 && rest[0] === '--full'))) {
     return { command, directory: resolve(path), full: rest.length === 1 };
   }
-  if (['inspect', 'report', 'audit'].includes(command) && path && rest.length === 0) {
+  if (isOneOf(command, ['inspect', 'report', 'audit']) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
   if (command === 'grant-strikes' && path) {
-    const values = { command, directory: resolve(path), nodeIds: [] };
-    const seen = new Set();
+    const values: { attemptId?: string; grantId?: string; level?: number; strikes?: number;
+      nodeIds: string[] } = { nodeIds: [] };
+    const seen = new Set<string>();
     for (let index = 0; index < rest.length; index += 2) {
       const flag = rest[index];
       const value = rest[index + 1];
-      if (!['--attempt', '--grant-id', '--level', '--feature', '--strikes'].includes(flag)
-        || value === undefined || (flag !== '--feature' && seen.has(flag))) {
+      if (flag === undefined || value === undefined
+        || !['--attempt', '--grant-id', '--level', '--feature', '--strikes'].includes(flag)
+        || (flag !== '--feature' && seen.has(flag))) {
         throw new Error(`invalid or duplicate grant-strikes option ${String(flag)}`);
       }
       seen.add(flag);
@@ -91,18 +162,21 @@ export function parseCampaignArgs(argv) {
       else if (flag === '--strikes') values.strikes = Number(value);
       else values.nodeIds.push(value);
     }
-    if (!values.attemptId || !values.grantId || !Number.isSafeInteger(values.level)
+    if (!values.attemptId || !values.grantId || typeof values.level !== 'number'
+      || !Number.isSafeInteger(values.level) || typeof values.strikes !== 'number'
       || !Number.isSafeInteger(values.strikes) || values.nodeIds.length === 0) {
       throw new Error('grant-strikes requires --attempt, --grant-id, --level, '
         + 'one or more --feature values, and --strikes');
     }
-    return values;
+    return { command, directory: resolve(path), attemptId: values.attemptId,
+      grantId: values.grantId, level: values.level, nodeIds: values.nodeIds,
+      strikes: values.strikes };
   }
-  if (['prepare', 'trial', 'run', 'resume', 'reconcile'].includes(command)
+  if (isOneOf(command, ['prepare', 'trial', 'run', 'resume', 'reconcile'])
     && path && rest.length === 2 && rest[0] === '--out') {
-    return { command, path: resolve(path), directory: resolve(rest[1]) };
+    return { command, path: resolve(path), directory: resolve(rest[1]!) };
   }
-  throw new Error('usage: campaign-cli.mjs modes | validate|show <campaign.json> '
+  throw new Error('usage: campaign-cli.js modes | validate|show <campaign.json> '
     + '| prepare|trial|run|resume|reconcile <campaign.json> --out <directory> '
     + '| status <directory> [--full] | inspect|report|audit <directory> '
     + '| grant-strikes <directory> --attempt <id> --grant-id <id> --level <N> '
@@ -162,7 +236,7 @@ async function main() {
     console.log(JSON.stringify(campaignStateSummary(plan, state), null, 2));
     return;
   }
-  if (['trial', 'run', 'resume'].includes(args.command)) {
+  if (args.command === 'trial' || args.command === 'run' || args.command === 'resume') {
     if (args.command === 'resume') validateResumeCampaign(args.path, args.directory);
     const cancellation = new AbortController();
     const cancel = () => cancellation.abort();
@@ -192,5 +266,8 @@ async function main() {
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  main().catch(error => { console.error(error.message); process.exitCode = 2; });
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 2;
+  });
 }

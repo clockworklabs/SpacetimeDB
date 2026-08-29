@@ -6,6 +6,7 @@ export interface CampaignAttemptPlan {
   repetition: number;
   levels: number[];
   agentAdapter: string;
+  mode?: { id?: string; version?: string; [key: string]: unknown };
   condition: {
     sha256: string;
     requested?: {

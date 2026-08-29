@@ -14,3 +14,4 @@ export interface DependencyProgress {
 
 export function dependencyProgress(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
   executionDirectory: string | null): DependencyProgress | null;
+export function inspectCampaignSummary(directory: string): unknown;

@@ -17,7 +17,7 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const RUNTIME_ROOT = dirname(DASHBOARD_ROOT);
 const PUBLIC_ROOT = join(DASHBOARD_ROOT, 'public');
-const CAMPAIGN_CLI = join(RUNTIME_ROOT, 'commands', 'campaign-cli.mjs');
+const CAMPAIGN_CLI = join(RUNTIME_ROOT, 'commands', 'campaign-cli.js');
 const SAFE_NAME = /^[a-z0-9][a-z0-9.-]{2,119}$/;
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const STATIC = new Map<string, readonly [file: string, contentType: string]>([

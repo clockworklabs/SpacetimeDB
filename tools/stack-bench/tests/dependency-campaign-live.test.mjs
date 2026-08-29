@@ -19,7 +19,7 @@ import { dependencyRuntimeDefinition } from '../src/progression/progression-defi
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CAMPAIGN = join(ROOT, 'tests', 'fixtures', 'dependency-model-free-campaign.json');
-const CLI = join(ROOT, 'commands', 'campaign-cli.mjs');
+const CLI = join(ROOT, 'dist', 'commands', 'campaign-cli.js');
 
 test('dependency campaign scope must match the graph-derived scope', () => {
   const plan = compileCampaignFile(CAMPAIGN);

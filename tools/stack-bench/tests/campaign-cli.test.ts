@@ -3,9 +3,9 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 import { auditCompletedReferenceCampaign, campaignStateSummary, parseCampaignArgs,
-  validateResumeCampaignState } from '../commands/campaign-cli.mjs';
+  validateResumeCampaignState } from '../commands/campaign-cli.js';
 
-const argv = (...args) => ['node', 'campaign-cli.mjs', ...args];
+const argv = (...args: string[]): string[] => ['node', 'campaign-cli.js', ...args];
 
 test('campaign CLI separates read-only, preparation, execution, and status commands', () => {
   assert.equal(parseCampaignArgs(argv('modes')).command, 'modes');
@@ -75,7 +75,7 @@ test('campaign commands print a compact result and retain failed attempt details
 test('automatic reference audit runs only after campaign completion', () => {
   let calls = 0;
   const plan = { attempts: [{ mode: { id: 'dependency' }, agentAdapter: 'reference-fixture' }] };
-  const audit = directory => {
+  const audit = (directory: string) => {
     calls += 1;
     assert.equal(directory, 'results');
     return { ok: true };

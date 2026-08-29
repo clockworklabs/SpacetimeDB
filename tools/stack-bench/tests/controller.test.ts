@@ -44,7 +44,7 @@ test('controller exposes a small explicit operator command surface', () => {
   assert.deepEqual(leaseRecovery.args.slice(1), [
     'recover-lease', '/private/backend-lease.json', '--out', '/results/recovered-run']);
   const campaign = command(['campaign', 'show', '/plans/campaign.json']);
-  assert.match(campaign.args[0] ?? '', /campaign-cli\.mjs$/);
+  assert.match(campaign.args[0] ?? '', /campaign-cli\.js$/);
   assert.deepEqual(campaign.args.slice(1), ['show', '/plans/campaign.json']);
   const campaignRun = command(['campaign', 'run', '/plans/campaign.json',
     '--out', '/results/campaign-001']);
