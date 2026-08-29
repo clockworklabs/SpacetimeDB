@@ -91,14 +91,6 @@ function workAction(action: ProgressionRecipeAction['action']): ProgressionWorkA
   return action as ProgressionWorkAction;
 }
 
-function identityVersion(value: unknown): unknown {
-  return object(value) ? value.version : undefined;
-}
-
-function identity(identities: unknown, key: string): unknown {
-  return object(identities) ? identities[key] : undefined;
-}
-
 const definition = (): FixtureDefinition => ({
   schemaVersion: 3,
   kind: 'progression-mode',
@@ -276,6 +268,12 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       condition: { sha256: owner.attempt.conditionSha256 },
       skills: [],
     };
+    const agentIdentity = identities.agentAdapter;
+    const stackIdentity = identities.stackAdapter;
+    const engineIdentity = identities.engine;
+    assert(agentIdentity);
+    assert(stackIdentity);
+    assert(engineIdentity);
     const plan = {
       id: owner.campaign.id,
       version: owner.campaign.version,
@@ -284,13 +282,14 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       featureCatalog: split.featureCatalog,
       dependencyPolicy: split.dependencyPolicy,
       definition: { track: owner.attempt.track, selection: { levels: [] },
-        runtime: { buildImage: null }, budgets: { maxCostUsdPerAttempt: null } },
+        runtime: { buildImage: null }, budgets: { fixRounds: 1,
+          maxCostUsdPerAttempt: null } },
       agents: [{ adapter: owner.attempt.agentAdapter, model: owner.attempt.model,
-        identity: identity(identities, 'agentAdapter') }],
+        costLimit: 'non-billable', identity: agentIdentity }],
       stacks: [{ id: owner.attempt.stack,
-        version: identityVersion(identity(identities, 'stackAdapter')) }],
+        version: stackIdentity.version }],
       conditions: [attempt.condition],
-      identities: { engine: identity(identities, 'engine') },
+      identities: { engine: engineIdentity },
     };
     const completedRun = artifactPayload(createArtifact({
       ...runArtifact,

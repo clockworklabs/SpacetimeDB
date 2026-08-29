@@ -212,8 +212,8 @@ export interface CampaignAttemptPlan extends UnknownRecord {
   pricing: { unit: string; rates: PricingRates };
   mode: CampaignMode;
   condition: ResolvedStudyCondition;
-  featureCatalog?: Identity;
-  dependencyPolicy?: Identity;
+  featureCatalog?: FeatureCatalogInput['identity'];
+  dependencyPolicy?: DependencyPolicyInput['identity'];
   parentAttemptId: string;
 }
 
@@ -610,7 +610,8 @@ function campaignIdentityDocument(definition: CampaignDefinition, engine: Identi
 }
 
 function expandAttempts(definition: CampaignDefinition, requestedLevels: number[],
-  featureCatalogIdentity: Identity | null, dependencyPolicyIdentity: Identity | null,
+  featureCatalogIdentity: FeatureCatalogInput['identity'] | null,
+  dependencyPolicyIdentity: DependencyPolicyInput['identity'] | null,
   stacks: ResolvedStackIdentity[], agents: CompiledCampaignPlan['agents'],
   studyConditions: ResolvedStudyCondition[]): CampaignAttemptPlan[] {
   const repetitionsByStack = new Map(definition.stacks.map(stack =>

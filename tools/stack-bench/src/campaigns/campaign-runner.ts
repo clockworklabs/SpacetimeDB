@@ -154,20 +154,6 @@ interface RecoveryArtifact extends UnknownRecord {
   };
 }
 
-interface ProgressionAttemptRecord {
-  level: number;
-  outcome: string;
-  category?: string;
-  reason?: string;
-  selectionSha256?: string;
-}
-
-interface StoredProgressionState {
-  phase: string;
-  attempts: ProgressionAttemptRecord[];
-  terminalOutcome?: { kind?: string };
-}
-
 interface RunnerProcessResult {
   ok?: boolean;
   code: number | null;
@@ -220,7 +206,7 @@ interface CampaignAdmissionAuthority {
 
 interface CampaignRuntimePlan {
   state: string;
-  identities: { engine?: { sha256?: string } };
+  identities: { engine?: { sha256?: string | null } };
   definition: { runtime: {
     releaseManifestSha256: string | null;
     controllerImage: string | null;
@@ -247,9 +233,53 @@ interface AttemptResult extends CampaignExecutionResult {
   reason?: string;
 }
 
-export function expectedDependencyRunOutcomeKind(levels: Array<{ outcome?: { kind?: string } }>,
+interface ValidationCondition {
+  sha256: string;
+  requested?: CompiledCampaignPlan['conditions'][number]['requested'];
+}
+
+interface CampaignValidationAttempt {
+  id: string;
+  stack: string;
+  model: string;
+  guidance: string;
+  levels: number[];
+  agentAdapter: string;
+  skills: unknown;
+  pricing?: unknown;
+  mode: { id?: string; [key: string]: unknown };
+  condition: ValidationCondition;
+  featureCatalog?: CompiledCampaignPlan['attempts'][number]['featureCatalog'];
+  dependencyPolicy?: CompiledCampaignPlan['attempts'][number]['dependencyPolicy'];
+}
+
+interface CampaignValidationPlan {
+  id: string;
+  version: string;
+  state: string;
+  contentSha256: string;
+  definition: {
+    track: string;
+    selection: unknown;
+    runtime: { buildImage: string | null };
+    budgets: { fixRounds: number; maxCostUsdPerAttempt: number | null };
+  };
+  identities: { engine: { sha256: string | null } };
+  agents: Array<{ adapter: string; model: string; costLimit: string;
+    identity: { sha256: string | null } }>;
+  stacks: Array<{ id: string; version: string | null }>;
+  conditions: ValidationCondition[];
+  featureCatalog: CompiledCampaignPlan['featureCatalog'];
+  dependencyPolicy: CompiledCampaignPlan['dependencyPolicy'];
+}
+
+export function expectedDependencyRunOutcomeKind(
+  levels: Array<{ level?: number; outcome?: { kind?: string } }>,
   terminalOutcome: { kind?: string } | null | undefined): string | null {
-  const expected = aggregateRunOutcome(levels ?? []).kind;
+  const expected = aggregateRunOutcome(levels.map((level, index) => ({
+    level: level.level ?? index + 1,
+    ...(typeof level.outcome?.kind === 'string' ? { outcome: { kind: level.outcome.kind } } : {}),
+  }))).kind;
   if (terminalOutcome?.kind !== 'passed' && expected === 'passed') return null;
   return expected;
 }
@@ -364,7 +394,7 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
   return args;
 }
 
-export function validateCampaignRun(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+export function validateCampaignRun(plan: CampaignValidationPlan, attempt: CampaignValidationAttempt,
   input: unknown, {
   buildImage = null, resultDir = null,
 }: { buildImage?: string | null; resultDir?: string | null } = {}): BenchmarkRun {
@@ -680,7 +710,7 @@ export function validateCampaignRun(plan: CompiledCampaignPlan, attempt: Campaig
           featureCatalogIdentity: featureCatalog.identity,
           dependencyPolicyIdentity: dependencyPolicy.identity,
           owner,
-        }) as { state: StoredProgressionState; snapshotSha256: string };
+        });
         const storedStatus = liveProgressionStatus(stored.state);
         mismatch(canonicalDefinitionJson(run.progressionStatus)
           !== canonicalDefinitionJson(storedStatus), 'progressionStatus');

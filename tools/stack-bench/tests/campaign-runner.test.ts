@@ -977,7 +977,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
         const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter)!;
         const stack = planned.stacks.find(item => item.id === attempt.stack)!;
         const completedAt = new Date().toISOString();
-        const { writeRunJson } = await import('../dist/src/evidence/artifacts.js');
+        const { writeRunJson } = await import('../src/evidence/artifacts.js');
         const levels = attempt.levels.map(level => {
           const selection = plannedSelection(attempt, level);
           const max = selection.scoredPoints;
