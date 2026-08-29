@@ -3,7 +3,7 @@ import { join, relative, resolve, sep } from 'node:path';
 
 import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
-import { hashDirectory } from '../evidence/provenance.mjs';
+import { hashDirectory } from '../evidence/provenance.js';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 

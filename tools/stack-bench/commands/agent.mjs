@@ -25,7 +25,7 @@ import { agentVisibleContractText } from '../src/composition/agent-visible-contr
 import { writeSandbox } from '../src/runtime/sandbox.mjs';
 import { leaseFromEnv } from '../src/runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
-import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.mjs';
+import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';

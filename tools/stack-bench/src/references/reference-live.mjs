@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from '../evidence/artifacts.mjs';
-import { hashDirectory } from '../evidence/provenance.mjs';
+import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';
 import { resolveReferenceSelection } from './reference-selection.mjs';

@@ -6,7 +6,7 @@ import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-ad
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
 import { currentEngineIdentity } from '../evidence/artifacts.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
   from '../evidence/pricing-authority.js';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';

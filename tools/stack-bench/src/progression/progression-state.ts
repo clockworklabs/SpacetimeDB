@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../evidence/artifacts.mjs';
-import { hashDirectory, sha256 } from '../evidence/provenance.mjs';
+import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
 import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.mjs';

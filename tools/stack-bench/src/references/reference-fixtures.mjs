@@ -5,7 +5,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
   writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashDirectory } from '../evidence/provenance.mjs';
+import { hashDirectory } from '../evidence/provenance.js';
 import { hashAppSource, seedAppSource } from '../runtime/source-snapshot.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';

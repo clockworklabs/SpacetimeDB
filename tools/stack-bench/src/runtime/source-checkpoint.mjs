@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { writeArtifact } from '../evidence/artifacts.mjs';
-import { hashDirectory } from '../evidence/provenance.mjs';
+import { hashDirectory } from '../evidence/provenance.js';
 import { hashAppSource, snapshotAppSource } from './source-snapshot.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;

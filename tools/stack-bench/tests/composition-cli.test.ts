@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { diffRecipeFiles, selectRecipeRelease, validatePackFile,
   validateRecipeFile, showRecipeFile } from '../commands/composition-cli.js';
-import { hashDirectory } from '../src/evidence/provenance.mjs';
+import { hashDirectory } from '../src/evidence/provenance.js';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const SOURCE = loadTrack('ecommerce').dir;

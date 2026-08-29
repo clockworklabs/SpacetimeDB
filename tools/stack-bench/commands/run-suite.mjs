@@ -36,7 +36,7 @@ import { readBackendLease } from '../src/runtime/backend-lease.mjs';
 import { databaseContainerName } from '../src/stacks/database-containers.mjs';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { sha256 } from '../src/evidence/provenance.js';
 import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';

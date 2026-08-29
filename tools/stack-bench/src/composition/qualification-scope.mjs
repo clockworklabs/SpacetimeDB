@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
-import { hashFiles, sha256 } from '../evidence/provenance.mjs';
+import { hashFiles, sha256 } from '../evidence/provenance.js';
 import { stackAdapterVersion } from '../stacks/stack-identities.mjs';
 
 export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 2;

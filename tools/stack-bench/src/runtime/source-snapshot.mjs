@@ -1,7 +1,7 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import { hashDirectory } from '../evidence/provenance.mjs';
+import { hashDirectory } from '../evidence/provenance.js';
 
 // Runtime state, dependencies, evidence, and harness-owned control files are
 // deliberately not part of the model-authored source snapshot.

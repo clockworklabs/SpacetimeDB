@@ -20,7 +20,7 @@ import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
 } from '../dashboard/dashboard-model.js';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.js';
 import type { DashboardOperation, LaunchInput } from '../dashboard/dashboard-server.js';
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { sha256 } from '../src/evidence/provenance.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.js';

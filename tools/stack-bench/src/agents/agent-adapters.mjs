@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { AGENT_ADAPTER_SCHEMA_VERSION, createAgentAdapterRegistry } from './agent-adapter-contract.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.mjs';
 import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const CLAUDE_SUBSCRIPTION_STATUS_COMMAND = ['node', '-e',

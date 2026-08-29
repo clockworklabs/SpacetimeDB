@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { hashDirectory, hashFiles, hashRubric, sessionProvenance, sha256 } from '../src/evidence/provenance.mjs';
+import { hashDirectory, hashFiles, hashRubric, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
 
 test('file-set hashes bind both relative names and exact bytes', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-provenance-'));
@@ -25,7 +25,7 @@ test('rubric hash changes with points but not scenario mechanics', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-provenance-'));
   const spec = join(root, 'spec.json');
   try {
-    const write = (points, within) => writeFileSync(spec, JSON.stringify({ features: [{ id: 1,
+    const write = (points: number, within: number) => writeFileSync(spec, JSON.stringify({ features: [{ id: 1,
       criteria: [{ id: '1a', points, steps: [{ do: 'expect', within }] }] }] }));
     write(2, 100);
     const initial = hashRubric([spec], { base: root });

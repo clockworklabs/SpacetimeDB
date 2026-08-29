@@ -30,7 +30,7 @@ import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifa
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode } from '../src/evidence/outcomes.js';
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
-import { hashDirectory, sha256 } from '../src/evidence/provenance.mjs';
+import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';

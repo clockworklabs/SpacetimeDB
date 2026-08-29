@@ -6,7 +6,7 @@ import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 2;
 export type ReleaseState = 'candidate' | 'qualified';

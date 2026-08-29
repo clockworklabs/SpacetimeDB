@@ -11,7 +11,7 @@ import {
 } from '../composition/definition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
   DEFAULT_UNCHANGED_FAILURE_LIMIT, DEPENDENCY_MODE_SCHEMA_VERSION,
   FEATURE_CATALOG_SCHEMA_VERSION } from './dependency-mode.js';

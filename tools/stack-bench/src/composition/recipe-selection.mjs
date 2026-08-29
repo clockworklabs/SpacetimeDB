@@ -1,5 +1,5 @@
 import { canonicalDefinitionJson } from './definition-plan.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 
 function unique(values, label) {
   const normalized = values.map(value => String(value).trim()).filter(Boolean);

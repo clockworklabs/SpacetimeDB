@@ -10,7 +10,7 @@ import { attemptArgv, runCampaignAdmission } from '../src/campaigns/campaign-run
 import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { writeArtifact } from '../src/evidence/artifacts.mjs';
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { sha256 } from '../dist/src/evidence/provenance.js';
 
 function definition(overrides = {}) {
   return {

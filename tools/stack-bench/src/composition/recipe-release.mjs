@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { compilePromotionFile, compileRecipeFile } from './composition-compiler.mjs';
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 import { suitesFor } from './tracks.mjs';
 
 export const RECIPE_RELEASE_SCHEMA_VERSION = 1;

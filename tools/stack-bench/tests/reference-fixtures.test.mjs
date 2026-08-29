@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { hashDirectory } from '../src/evidence/provenance.mjs';
+import { hashDirectory } from '../dist/src/evidence/provenance.js';
 import { inspectReferenceCandidate, loadReferenceRegistry,
   inspectImportedReference, selectReferenceFixture,
   validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';

@@ -11,7 +11,7 @@ import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
   expectedDependencyRunOutcomeKind, processFailureDetail, remainingAttemptCostBudget,
   validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
-import { hashDirectory, sha256 } from '../src/evidence/provenance.mjs';
+import { hashDirectory, sha256 } from '../dist/src/evidence/provenance.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../dist/src/progression/progression-definition.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';

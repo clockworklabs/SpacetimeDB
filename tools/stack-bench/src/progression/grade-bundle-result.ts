@@ -2,7 +2,7 @@ import { validateCheckEvidence } from '../evidence/check-evidence.mjs';
 import type { CheckEvidence } from '../evidence/check-evidence.mjs';
 import { validateArtifact } from '../evidence/artifacts.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
-import { sha256 } from '../evidence/provenance.mjs';
+import { sha256 } from '../evidence/provenance.js';
 import { validateProgressionOwner } from './progression-state.js';
 
 interface GradeCheck {

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 
-import { hashDirectory } from './provenance.mjs';
+import { hashDirectory } from './provenance.js';
 import { validateCheckEvidence } from './check-evidence.mjs';
 import { RUNNER_OBSERVATION_FIELDS } from '../runtime/runner-environment.mjs';
 

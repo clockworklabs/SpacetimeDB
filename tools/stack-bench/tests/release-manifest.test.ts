@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { sha256 } from '../src/evidence/provenance.js';
 import { RELEASE_MANIFEST_SCHEMA_VERSION, validateReleaseManifest,
   verifyReleaseBundle } from '../src/releases/release-manifest.js';
 import type { ReleaseFileRole, ReleaseManifest } from '../src/releases/release-manifest.js';

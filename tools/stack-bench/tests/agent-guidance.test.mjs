@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { readBackendGuidanceDocument } from '../commands/agent.mjs';
 import { normalizePromptText } from '../src/agents/agent-materials.mjs';
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { sha256 } from '../dist/src/evidence/provenance.js';
 
 const documentPath = 'backends/postgres.md';
 const absolute = join(import.meta.dirname, '..', documentPath);

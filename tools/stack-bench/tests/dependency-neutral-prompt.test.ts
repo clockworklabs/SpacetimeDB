@@ -6,7 +6,7 @@ import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { sha256 } from '../src/evidence/provenance.mjs';
+import { sha256 } from '../src/evidence/provenance.js';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
