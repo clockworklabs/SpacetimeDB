@@ -5,7 +5,7 @@ import { recipeReleaseIdentity, resolveRecipeRelease }
   from '../composition/recipe-release.mjs';
 import { loadTrack } from '../composition/tracks.mjs';
 import { auditProgressionReferenceRun }
-  from '../progression/progression-reference-audit.mjs';
+  from '../progression/progression-reference-audit.js';
 import { readCampaignState } from './campaign-scheduler.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';

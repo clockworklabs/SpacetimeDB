@@ -8,16 +8,16 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
-import { progressionEngine } from '../dist/src/progression/progression-engine.js';
-import { gradeBundleToProgressionResult } from '../dist/src/progression/grade-bundle-result.js';
+import { progressionEngine } from '../src/progression/progression-engine.js';
+import { gradeBundleToProgressionResult } from '../src/progression/grade-bundle-result.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput,
   compileProgressionDefinitionFile, compileProgressionInput, dependencyRuntimeDefinition }
-  from '../dist/src/progression/progression-definition.js';
+  from '../src/progression/progression-definition.js';
 import { auditProgressionReferenceRun }
-  from '../src/progression/progression-reference-audit.mjs';
+  from '../src/progression/progression-reference-audit.js';
 import { resolveProgressionRecipeAction }
-  from '../dist/src/progression/progression-recipe-selection.js';
-import { writeProgressionState } from '../dist/src/progression/progression-state.js';
+  from '../src/progression/progression-recipe-selection.js';
+import { writeProgressionState } from '../src/progression/progression-state.js';
 import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 
 const owner = {
@@ -44,9 +44,15 @@ const progression = compileProgressionInput(dependencyRuntimeDefinition(
   featureCatalog, dependencyPolicy));
 const recipeBindings = new Map([1, 2, 3, 4, 5].map(level => [level,
   resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@1.0.0')]));
-const release = recipeBindings.get(5).release;
+const release = recipeBindings.get(5)!.release;
 
-function writeReferenceRun(root, { attempts = Infinity, tamperRecordedResult = false } = {}) {
+interface ReferenceRunOptions {
+  attempts?: number;
+  tamperRecordedResult?: boolean;
+}
+
+function writeReferenceRun(root: string,
+  { attempts = Infinity, tamperRecordedResult = false }: ReferenceRunOptions = {}) {
   const runArtifact = writeArtifact(join(root, 'run.json'), {
     kind: 'benchmark_run',
     id: 'reference-run',
@@ -72,7 +78,10 @@ function writeReferenceRun(root, { attempts = Infinity, tamperRecordedResult = f
     const action = progressionEngine.nextAction(state);
     if (action.type === 'terminal') break;
     sequence += 1;
-    const selected = resolveProgressionRecipeAction(recipeBindings.get(action.level), state);
+    const binding = recipeBindings.get(action.level);
+    if (!binding) throw new Error(`missing recipe binding for L${action.level}`);
+    const selected = resolveProgressionRecipeAction(binding, state);
+    if (!('grader' in selected)) throw new Error('expected active progression recipe work');
     const checks = selected.grader.selection.scoredChecks;
     const keys = checks.map(check => check.stableKey);
     const max = checks.reduce((total, check) => total + check.points, 0);
@@ -126,7 +135,7 @@ function writeReferenceRun(root, { attempts = Infinity, tamperRecordedResult = f
     dependencyPolicyIdentity: dependencyPolicy.identity, recipeBindings, release };
 }
 
-function audit(root, input) {
+function audit(root: string, input: ReturnType<typeof writeReferenceRun>) {
   return auditProgressionReferenceRun({ outputDir: root, owner, ...input });
 }
 
