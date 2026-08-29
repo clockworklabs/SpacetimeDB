@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Where did SpacetimeDB cost the model something the other backends did not?
 //
-// stdb-report.mjs counts things that announced themselves as errors. Three
+// The friction report counts things that announced themselves as errors. Three
 // kinds of friction never do:
 //
 //   1. Sequence. "edit schema -> publish fails -> edit -> fails -> edit -> works"
@@ -28,7 +28,7 @@
 // never happened.
 //
 // Usage:
-//   node commands/stdb-review.mjs --label spacetime-ecom-run0
+//   node dist/commands/stdb-review.js --label spacetime-ecom-run0
 //                        [--compare postgres-ecom-run0,mongodb-ecom-run0]
 //                        [--source <dir>] [--model claude-sonnet-5] [--print]
 
@@ -45,15 +45,15 @@ const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);
 // record, and interleaved appends can split an entry down the middle. An
 // exclusive-create lock serialises them; a stale lock older than a minute is
 // broken rather than deadlocking a benchmark run over a log file.
-function appendLocked(file, text) {
+function appendLocked(file: string, text: string): void {
   const lock = file + '.lock';
   for (let i = 0; i < 120; i++) {
     try {
       const fd = fsOpenSync(lock, 'wx');
       try { appendFileSync(file, text); } finally { closeSync(fd); rmSync(lock, { force: true }); }
       return;
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
+    } catch (error: unknown) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
       try {
         if (Date.now() - statSync(lock).mtimeMs > 60000) rmSync(lock, { force: true });
       } catch { /* someone else cleared it */ }
@@ -63,19 +63,26 @@ function appendLocked(file, text) {
   appendFileSync(file, text);   // lock never freed: a garbled entry beats a lost one
 }
 
-const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
+function argument(name: string): string | undefined;
+function argument(name: string, defaultValue: string): string;
+function argument(name: string, defaultValue?: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? defaultValue : process.argv[index + 1] ?? defaultValue;
+}
 
-const label = arg('--label');
+const label = argument('--label');
 if (!label) { console.error('need --label <transcripts folder>'); process.exit(2); }
-const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'local-notes/STDB-FRICTION.md'));
+const OUT = resolve(OPERATIONAL_ROOT, argument('--out', 'local-notes/STDB-FRICTION.md'));
 mkdirSync(dirname(OUT), { recursive: true });
 
-function findClaude() {
+function findClaude(): string {
   const appData = process.env.APPDATA ?? join(process.env.HOME ?? '', 'AppData', 'Roaming');
   const desktop = join(appData, 'Claude', 'claude-code');
   if (existsSync(desktop)) {
     const versions = readdirSync(desktop).sort();
-    const exe = join(desktop, versions[versions.length - 1], 'claude.exe');
+    const latest = versions.at(-1);
+    if (latest === undefined) return 'claude';
+    const exe = join(desktop, latest, 'claude.exe');
     if (existsSync(exe)) return exe;
   }
   return 'claude';
@@ -87,34 +94,43 @@ function findClaude() {
 // wrote. What carries signal is the ORDER of actions and what came back from
 // the ones that did not work, so results are kept short and successful reads
 // are dropped entirely.
-function actionLog(dir, sinceMs) {
+interface ActionLog { log: string; turns: number }
+interface PendingTool { name: string; target: string; turn: number }
+
+function actionLog(dir: string, sinceMs: number): ActionLog {
   if (!existsSync(dir)) return { log: '', turns: 0 };
   const files = readdirSync(dir).filter(f => f.endsWith('.jsonl'))
     .map(f => ({ f, m: statSync(join(dir, f)).mtimeMs }))
     .sort((a, b) => a.m - b.m)
     .filter(f => f.m >= sinceMs);
 
-  const out = [];
+  const out: string[] = [];
   let turn = 0;
   for (const { f } of files) {
     out.push(`--- session ${f.slice(0, 8)} ---`);
-    const pending = new Map();
+    const pending = new Map<string, PendingTool>();
     for (const line of readFileSync(join(dir, f), 'utf8').split('\n')) {
       if (!line.trim()) continue;
-      let e; try { e = JSON.parse(line); } catch { continue; }
-      const content = e.message?.content;
+      let event: Record<string, unknown>;
+      try { event = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+      const message = event.message as Record<string, unknown> | undefined;
+      const content = message?.content;
       if (!Array.isArray(content)) continue;
-      for (const p of content) {
-        if (p.type === 'text' && e.type === 'assistant' && p.text?.trim()) {
+      for (const p of content as Array<Record<string, unknown>>) {
+        if (p.type === 'text' && event.type === 'assistant' && typeof p.text === 'string' && p.text.trim()) {
           out.push(`[${++turn}] SAYS: ${p.text.replace(/\s+/g, ' ').trim().slice(0, 400)}`);
         } else if (p.type === 'tool_use') {
-          const target = String(p.input?.command ?? p.input?.file_path ?? p.input?.pattern ?? '')
+          const input = p.input as Record<string, unknown> | undefined;
+          const target = String(input?.command ?? input?.file_path ?? input?.pattern ?? '')
             .replace(/\s+/g, ' ').trim().slice(0, 160);
-          pending.set(p.id, { name: p.name, target, turn: ++turn });
-          out.push(`[${turn}] ${p.name}: ${target}`);
-        } else if (p.type === 'tool_result' && pending.has(p.tool_use_id)) {
-          const meta = pending.get(p.tool_use_id);
-          pending.delete(p.tool_use_id);
+          const name = String(p.name ?? 'tool');
+          pending.set(String(p.id ?? ''), { name, target, turn: ++turn });
+          out.push(`[${turn}] ${name}: ${target}`);
+        } else if (p.type === 'tool_result') {
+          const toolUseId = String(p.tool_use_id ?? '');
+          const meta = pending.get(toolUseId);
+          if (meta === undefined) continue;
+          pending.delete(toolUseId);
           const body = typeof p.content === 'string' ? p.content : JSON.stringify(p.content ?? '');
           const bad = p.is_error === true
             || /error TS\d+|Pre-publish check failed|Aborting because|npm ERR!|not assignable|Cannot find/i.test(body);
@@ -134,7 +150,7 @@ const dir = join(OPERATIONAL_ROOT, 'transcripts', label);
 if (!existsSync(dir)) { console.error(`no archived transcripts at ${dir}`); process.exit(2); }
 const files = readdirSync(dir).filter(f => f.endsWith('.jsonl'))
   .map(f => statSync(join(dir, f)).mtimeMs).sort((a, b) => a - b);
-const sinceMs = Number(arg('--since-ms', 0)) || (files.length ? files[files.length - 1] - 6 * 3600_000 : 0);
+const sinceMs = Number(argument('--since-ms', '0')) || ((files.at(-1) ?? 0) - 6 * 3600_000);
 
 const mine = actionLog(dir, sinceMs);
 if (!mine.turns) { console.error('nothing to review'); process.exit(2); }
@@ -142,8 +158,8 @@ if (!mine.turns) { console.error('nothing to review'); process.exit(2); }
 // The question is comparative — "falling behind" needs something to be behind.
 // The other backends' logs are included in outline so the reviewer can say what
 // SpacetimeDB needed that they did not.
-const compare = [];
-for (const other of String(arg('--compare', '')).split(',').filter(Boolean)) {
+const compare: string[] = [];
+for (const other of argument('--compare', '').split(',').filter(Boolean)) {
   const transcriptRoot = join(OPERATIONAL_ROOT, 'transcripts');
   const exact = join(transcriptRoot, other);
   const latest = existsSync(transcriptRoot)
@@ -159,12 +175,13 @@ for (const other of String(arg('--compare', '')).split(',').filter(Boolean)) {
 
 // The shipped source answers the question errors cannot: was the API used well?
 let source = '';
-const srcDir = arg('--source');
+const srcDir = argument('--source');
 if (srcDir && existsSync(srcDir)) {
-  const stack = [srcDir];
-  const picked = [];
+  const stack: string[] = [srcDir];
+  const picked: string[] = [];
   while (stack.length && picked.length < 12) {
     const d = stack.pop();
+    if (d === undefined) break;
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       if (e.isDirectory()) { if (!/node_modules|dist|module_bindings/.test(e.name)) stack.push(p); continue; }
@@ -208,17 +225,33 @@ const prompt = [
 let raw = '';
 try {
   raw = execFileSync(findClaude(), ['--print', '--output-format', 'text',
-    '--permission-mode', 'acceptEdits', '--model', arg('--model', 'claude-sonnet-5')],
+    '--permission-mode', 'acceptEdits', '--model', argument('--model', 'claude-sonnet-5')],
     { input: prompt, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-} catch (e) {
-  console.error(`review session failed: ${String(e.message).split('\n')[0]}`);
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`review session failed: ${message.split('\n')[0]}`);
   process.exit(1);
 }
 
-let findings = [];
+interface Finding {
+  title: string;
+  surface: string;
+  cost: string;
+  evidence: string;
+  fix?: string;
+}
+
+let findings: Finding[] = [];
 try {
   const m = raw.match(/\{[\s\S]*\}/);
-  findings = JSON.parse(m ? m[0] : raw).findings ?? [];
+  const parsed = JSON.parse(m ? m[0] : raw) as { findings?: unknown };
+  if (!Array.isArray(parsed.findings)) throw new Error('findings must be an array');
+  findings = parsed.findings.filter((value): value is Finding => {
+    if (value === null || typeof value !== 'object') return false;
+    const finding = value as Record<string, unknown>;
+    return ['title', 'surface', 'cost', 'evidence'].every(key => typeof finding[key] === 'string')
+      && (finding.fix === undefined || typeof finding.fix === 'string');
+  });
 } catch {
   // Say what came back instead. "Did not return usable JSON" with no sample is
   // a dead end for whoever has to fix it.
@@ -230,10 +263,11 @@ try {
 // ── Verification: a quote that is not in the log did not happen ────────────
 
 const haystack = (mine.log + '\n' + compare.join('\n') + '\n' + source).replace(/\s+/g, ' ');
-const norm = s => String(s ?? '').replace(/\s+/g, ' ').trim();
-const verified = [], rejected = [];
+const normalize = (value: unknown): string => String(value ?? '').replace(/\s+/g, ' ').trim();
+const verified: Finding[] = [];
+const rejected: Array<Finding & { why: string }> = [];
 for (const f of findings) {
-  const q = norm(f.evidence);
+  const q = normalize(f.evidence);
   // Short quotes match by accident; a fabricated finding should not slip
   // through on a fragment like "error".
   if (q.length >= 24 && haystack.includes(q)) verified.push(f);
@@ -247,7 +281,7 @@ lines.push('');
 for (const f of verified) {
   lines.push(`- **${f.title}** *(${f.surface})*`);
   lines.push(`  - cost: ${f.cost}`);
-  lines.push(`  - evidence: \`${norm(f.evidence).slice(0, 220).replace(/`/g, "'")}\``);
+  lines.push(`  - evidence: \`${normalize(f.evidence).slice(0, 220).replace(/`/g, "'")}\``);
   if (f.fix) lines.push(`  - possible fix: ${f.fix}`);
 }
 if (!verified.length) lines.push('- nothing survived verification this run.');

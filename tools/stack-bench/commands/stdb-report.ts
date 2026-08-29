@@ -16,7 +16,7 @@
 // file is meant to accumulate across runs.
 //
 // Usage:
-//   node commands/stdb-report.mjs --label spacetime-ecom-run0 [--track ecommerce]
+//   node dist/commands/stdb-report.js --label spacetime-ecom-run0 [--track ecommerce]
 //                        [--level 1] [--score 47/49] [--cost 7.04]
 //                        [--out local-notes/STDB-FRICTION.md] [--print]
 
@@ -32,15 +32,15 @@ const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);
 // record, and interleaved appends can split an entry down the middle. An
 // exclusive-create lock serialises them; a stale lock older than a minute is
 // broken rather than deadlocking a benchmark run over a log file.
-function appendLocked(file, text) {
+function appendLocked(file: string, text: string): void {
   const lock = file + '.lock';
   for (let i = 0; i < 120; i++) {
     try {
       const fd = fsOpenSync(lock, 'wx');
       try { appendFileSync(file, text); } finally { closeSync(fd); rmSync(lock, { force: true }); }
       return;
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
+    } catch (error: unknown) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
       try {
         if (Date.now() - statSync(lock).mtimeMs > 60000) rmSync(lock, { force: true });
       } catch { /* someone else cleared it */ }
@@ -50,11 +50,16 @@ function appendLocked(file, text) {
   appendFileSync(file, text);   // lock never freed: a garbled entry beats a lost one
 }
 
-const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
+function argument(name: string): string | undefined;
+function argument(name: string, defaultValue: string): string;
+function argument(name: string, defaultValue?: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? defaultValue : process.argv[index + 1] ?? defaultValue;
+}
 
-const label = arg('--label');
+const label = argument('--label');
 if (!label) { console.error('need --label <transcripts folder>'); process.exit(2); }
-const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'local-notes/STDB-FRICTION.md'));
+const OUT = resolve(OPERATIONAL_ROOT, argument('--out', 'local-notes/STDB-FRICTION.md'));
 mkdirSync(dirname(OUT), { recursive: true });
 const dir = join(OPERATIONAL_ROOT, 'transcripts', label);
 if (!existsSync(dir)) { console.error(`no archived transcripts at ${dir}`); process.exit(2); }
@@ -68,22 +73,25 @@ const files = readdirSync(dir).filter(f => f.endsWith('.jsonl'))
 // Only this run's sessions. The archive folder is keyed by run label, so
 // earlier runs of the same backend pile up in it; taking everything would
 // blend a fixed problem back into today's numbers.
-const sinceMs = Number(arg('--since-ms', 0)) || (files.length ? files[files.length - 1].m - 6 * 3600_000 : 0);
+const sinceMs = Number(argument('--since-ms', '0')) || ((files.at(-1)?.m ?? 0) - 6 * 3600_000);
 const mine = files.filter(f => f.m >= sinceMs);
 
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, turns: 0 };
-const reads = new Map();          // path -> count
-const failures = [];              // { tool, cmd, body }
+const reads = new Map<string, number>();
+interface Failure { tool: string; cmd: string; body: string }
+const failures: Failure[] = [];
 let toolCalls = 0, blocked = 0;
 
 for (const { f } of mine) {
-  const pending = new Map();
+  const pending = new Map<string, Omit<Failure, 'body'>>();
   for (const line of readFileSync(join(dir, f), 'utf8').split('\n')) {
     if (!line.trim()) continue;
-    let e; try { e = JSON.parse(line); } catch { continue; }
+    let event: Record<string, unknown>;
+    try { event = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
 
-    const u = e.message?.usage;
-    if (u) {
+    const message = event.message as Record<string, unknown> | undefined;
+    const u = message?.usage as Record<string, number> | undefined;
+    if (u !== undefined) {
       usage.turns++;
       usage.input += u.input_tokens ?? 0;
       usage.output += u.output_tokens ?? 0;
@@ -91,20 +99,26 @@ for (const { f } of mine) {
       usage.cacheWrite += u.cache_creation_input_tokens ?? 0;
     }
 
-    const content = e.message?.content;
+    const content = message?.content;
     if (!Array.isArray(content)) continue;
-    for (const p of content) {
+    for (const part of content as Array<Record<string, unknown>>) {
+      const p = part;
       if (p.type === 'tool_use') {
         toolCalls++;
-        pending.set(p.id, { tool: p.name, cmd: String(p.input?.command ?? p.input?.file_path ?? '') });
-        const path = p.input?.file_path;
-        if (path && /^(Read|NotebookRead)$/.test(p.name ?? '')) {
+        const input = p.input as Record<string, unknown> | undefined;
+        const id = String(p.id ?? '');
+        const tool = String(p.name ?? '');
+        pending.set(id, { tool, cmd: String(input?.command ?? input?.file_path ?? '') });
+        const path = input?.file_path;
+        if (path && /^(Read|NotebookRead)$/.test(tool)) {
           const k = String(path).replace(/\\/g, '/');
           reads.set(k, (reads.get(k) ?? 0) + 1);
         }
-      } else if (p.type === 'tool_result' && pending.has(p.tool_use_id)) {
-        const meta = pending.get(p.tool_use_id);
-        pending.delete(p.tool_use_id);
+      } else if (p.type === 'tool_result') {
+        const toolUseId = String(p.tool_use_id ?? '');
+        const meta = pending.get(toolUseId);
+        if (meta === undefined) continue;
+        pending.delete(toolUseId);
         const body = typeof p.content === 'string' ? p.content : JSON.stringify(p.content ?? '');
         // A sandbox refusal is the harness working, not the model struggling.
         // Counting it as build friction would blame SpacetimeDB for our own
@@ -135,10 +149,10 @@ for (const { f } of mine) {
 
 // Collapse an error to its shape so the same problem hit five times counts as
 // one problem with a frequency, which is the form a fix gets prioritised in.
-function signature(body) {
+function signature(body: string): string {
   const ts = body.match(/error TS(\d+):\s*([^\n]{0,120})/);
   if (ts) {
-    return `TS${ts[1]}: ${ts[2]
+    return `TS${ts[1]}: ${ts[2]!
       .replace(/'[^']*'/g, "'…'")            // the specific symbol varies
       .replace(/\s+/g, ' ').trim()}`;
   }
@@ -149,15 +163,16 @@ function signature(body) {
   // a comment.
   const cli = body.match(/(Pre-publish check failed[^\n]{0,140}|Aborting because[^\n]{0,140}|^\s*error:\s*[^\n]{0,120})/m);
   if (cli) {
-    return `spacetimedb: ${cli[1].replace(/[0-9a-f]{8,}/g, '…').replace(/\s+/g, ' ').trim()}`;
+    return `spacetimedb: ${cli[1]!.replace(/[0-9a-f]{8,}/g, '…').replace(/\s+/g, ' ').trim()}`;
   }
   const npm = body.match(/npm (?:ERR!|error)[^\n]{0,100}/);
   if (npm) return npm[0].replace(/\s+/g, ' ').trim();
-  const first = body.split('\n').find(l => /error|failed|cannot/i.test(l));
+  const first = body.split('\n').find(line => /error|failed|cannot/i.test(line));
   return (first ?? body.slice(0, 100)).replace(/[0-9a-f]{8,}/g, '…').replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
-const clusters = new Map();
+interface ErrorCluster { sig: string; count: number; tool: string }
+const clusters = new Map<string, ErrorCluster>();
 for (const f of failures) {
   const sig = signature(f.body);
   const c = clusters.get(sig) ?? { sig, count: 0, tool: f.tool };
@@ -168,15 +183,15 @@ const topErrors = [...clusters.values()].sort((a, b) => b.count - a.count).slice
 
 // Which SpacetimeDB surface was involved. A count against a surface is what
 // tells the team whether the pain is the schema API, the client SDK, or the CLI.
-const SURFACES = [
+const SURFACES: ReadonlyArray<readonly [RegExp, string]> = [
   [/module_bindings|generate/i, 'generated bindings'],
   [/reducer|ctx\.db|schema|table|index/i, 'server API (schema / reducers)'],
   [/subscribe|subscription|onInsert|onUpdate|connection|identity/i, 'client SDK (subscriptions)'],
   [/publish|spacetime(db)?[- ]cli|--delete-data/i, 'CLI / publish'],
   [/view|filter|query/i, 'views / queries'],
 ];
-const surfaceOf = t => (SURFACES.find(([re]) => re.test(t)) ?? [null, 'other'])[1];
-const bySurface = new Map();
+const surfaceOf = (text: string): string => SURFACES.find(([pattern]) => pattern.test(text))?.[1] ?? 'other';
+const bySurface = new Map<string, number>();
 for (const f of failures) {
   const s = surfaceOf(`${f.cmd}\n${f.body}`);
   bySurface.set(s, (bySurface.get(s) ?? 0) + 1);
@@ -189,13 +204,16 @@ const bindingsReads = [...reads.entries()]
 
 // ── The running file ───────────────────────────────────────────────────────
 
-const n = x => x.toLocaleString();
-const pct = (a, b) => b ? `${Math.round((a / b) * 100)}%` : '—';
+const formattedNumber = (value: number): string => value.toLocaleString();
+const percent = (value: number, total: number): string => total
+  ? `${Math.round((value / total) * 100)}%` : '—';
 const totalIn = usage.input + usage.cacheRead + usage.cacheWrite;
 
-const stamp = arg('--date') ?? new Date().toISOString().slice(0, 16).replace('T', ' ');
-const lines = [];
-lines.push(`## ${stamp} — ${label}${arg('--track') ? ` (${arg('--track')})` : ''}${arg('--level') ? ` L${arg('--level')}` : ''}`);
+const stamp = argument('--date') ?? new Date().toISOString().slice(0, 16).replace('T', ' ');
+const track = argument('--track');
+const level = argument('--level');
+const lines: string[] = [];
+lines.push(`## ${stamp} — ${label}${track ? ` (${track})` : ''}${level ? ` L${level}` : ''}`);
 lines.push('');
 if (process.argv.includes('--contaminated')) {
   lines.push('> ⚠️ **This run was contaminated** — the build read the harness that grades it.');
@@ -203,19 +221,22 @@ if (process.argv.includes('--contaminated')) {
   lines.push('> a build with the answers fights the SDK less than one without them.');
   lines.push('');
 }
-if (arg('--score') || arg('--cost')) {
-  lines.push(`**Result:** ${arg('--score', '—')}${arg('--cost') ? `, $${arg('--cost')}` : ''}`
-    + `${arg('--fix-rounds') ? `, ${arg('--fix-rounds')} fix round(s)` : ''}`);
+const score = argument('--score');
+const cost = argument('--cost');
+const fixRounds = argument('--fix-rounds');
+if (score || cost) {
+  lines.push(`**Result:** ${score ?? '—'}${cost ? `, $${cost}` : ''}`
+    + `${fixRounds ? `, ${fixRounds} fix round(s)` : ''}`);
   lines.push('');
 }
 lines.push(`**Tokens** (from the CLI's own usage, ${mine.length} session(s), ${usage.turns} turns)`);
 lines.push('');
 lines.push('| | tokens | share of input |');
 lines.push('|---|---:|---:|');
-lines.push(`| cache read | ${n(usage.cacheRead)} | ${pct(usage.cacheRead, totalIn)} |`);
-lines.push(`| cache write | ${n(usage.cacheWrite)} | ${pct(usage.cacheWrite, totalIn)} |`);
-lines.push(`| fresh input | ${n(usage.input)} | ${pct(usage.input, totalIn)} |`);
-lines.push(`| output | ${n(usage.output)} | — |`);
+lines.push(`| cache read | ${formattedNumber(usage.cacheRead)} | ${percent(usage.cacheRead, totalIn)} |`);
+lines.push(`| cache write | ${formattedNumber(usage.cacheWrite)} | ${percent(usage.cacheWrite, totalIn)} |`);
+lines.push(`| fresh input | ${formattedNumber(usage.input)} | ${percent(usage.input, totalIn)} |`);
+lines.push(`| output | ${formattedNumber(usage.output)} | — |`);
 lines.push('');
 
 if (topErrors.length) {
@@ -251,7 +272,7 @@ if (!existsSync(OUT)) {
   writeFileSync(OUT, [
     '# SpacetimeDB build friction',
     '',
-    'Appended after every SpacetimeDB run by `stdb-report.mjs`. The point is not the',
+    'Appended after every SpacetimeDB run by the report command. The point is not the',
     'score — it is what the model fought with, since that is what SpacetimeDB can',
     'actually fix. Token counts are the CLI\'s own usage numbers, not estimates.',
     '',

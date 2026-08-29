@@ -2037,7 +2037,7 @@ async function main() {
   if (executeStackCapability(stackAdapter, 'run-policy', 'product-review-enabled')
     && run.setup?.session !== 'model-free-reference') {
     try {
-      sh('node', [join(ROOT, 'commands', 'stdb-report.mjs'), '--label', artifactLabel, '--track', args.track,
+      sh('node', [join(ROOT, 'dist', 'commands', 'stdb-report.js'), '--label', artifactLabel, '--track', args.track,
         '--level', String(args.levelList[args.levelList.length - 1]),
         '--score', `${run.totals.score}/${run.totals.max}`,
         '--cost', String(run.totals.costUsd),
@@ -2054,7 +2054,7 @@ async function main() {
     if (args.behavioralReview
       && !['provider_failure', 'harness_failure', 'ungraded'].includes(run.outcome?.kind)) {
       try {
-        sh('node', [join(ROOT, 'commands', 'stdb-review.mjs'), '--label', artifactLabel,
+        sh('node', [join(ROOT, 'dist', 'commands', 'stdb-review.js'), '--label', artifactLabel,
           '--source', join(args.out, 'source'),
           '--compare', executeStackCapability(stackAdapter, 'run-policy', 'product-review-comparisons')
             .map(b => resultsName(track, b, args.runIndex)).join(',')], { stdio: 'inherit' });
