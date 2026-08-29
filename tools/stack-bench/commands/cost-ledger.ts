@@ -4,9 +4,9 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { readRunJson } from '../src/evidence/artifacts.mjs';
-import { durableCostLedger } from '../src/evidence/cost-proof.mjs';
+import { durableCostLedger } from '../src/evidence/cost-proof.js';
 
-export { durableCostLedger } from '../src/evidence/cost-proof.mjs';
+export { durableCostLedger } from '../src/evidence/cost-proof.js';
 
 function parseArgs(argv: string[]): string {
   const value = (name: string): string | null => {

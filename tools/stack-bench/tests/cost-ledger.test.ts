@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { durableCostLedger } from '../commands/cost-ledger.js';
-import type { CostRun } from '../src/evidence/cost-proof.mjs';
+import type { CostRun } from '../src/evidence/cost-proof.js';
 
 const receipt = (costUsd: number) => ({ invocation: 1, receipt: {
   complete: true, reconciled: true, error: null, costUsd,

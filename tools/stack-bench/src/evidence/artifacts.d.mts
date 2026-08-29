@@ -1,4 +1,4 @@
-import type { CostRun } from './cost-proof.mjs';
+import type { CostRun } from './cost-proof.js';
 
 export interface Artifact<TPayload = Record<string, unknown>> {
   id: string;

@@ -24,7 +24,7 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { aggregateRunOutcome } from '../evidence/outcomes.js';
-import { durableCostLedger } from '../evidence/cost-proof.mjs';
+import { durableCostLedger } from '../evidence/cost-proof.js';
 import { readCampaignAdmission, validateCampaignAdmission } from './campaign-admission.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
