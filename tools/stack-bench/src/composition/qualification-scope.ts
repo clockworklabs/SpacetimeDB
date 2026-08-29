@@ -88,16 +88,16 @@ const CHILD_ENTRYPOINTS: Readonly<Record<string, readonly string[]>> = Object.fr
   'grader/mutation-test.mjs': ['grader/grade.mjs'],
 });
 const STACK_OWNED_MODULES = new Map<string, string>([
-  ['src/stacks/backends/mongodb-adapter.mjs', 'mongodb'],
+  ['src/stacks/backends/mongodb-adapter.ts', 'mongodb'],
   ['src/stacks/backends/mongodb-identity.ts', 'mongodb'],
   ['src/stacks/backends/mongodb-operations.mjs', 'mongodb'],
-  ['src/stacks/backends/postgres-adapter.mjs', 'postgres'],
+  ['src/stacks/backends/postgres-adapter.ts', 'postgres'],
   ['src/stacks/backends/postgres-identity.ts', 'postgres'],
   ['src/stacks/backends/postgres-operations.mjs', 'postgres'],
-  ['src/stacks/backends/spacetime-adapter.mjs', 'spacetime'],
+  ['src/stacks/backends/spacetime-adapter.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-identity.ts', 'spacetime'],
   ['src/stacks/backends/spacetime-operations.mjs', 'spacetime'],
-  ['src/stacks/backends/stub-adapter.mjs', 'stub'],
+  ['src/stacks/backends/stub-adapter.ts', 'stub'],
   ['src/stacks/backends/stub-identity.ts', 'stub'],
 ]);
 const STACK_OWNED_ROOT = 'src/stacks/backends/';

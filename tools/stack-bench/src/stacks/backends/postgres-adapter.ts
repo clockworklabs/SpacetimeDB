@@ -11,8 +11,9 @@ import { preparePostgresDatabase, provePostgresUse, resetPostgres,
 import { POSTGRES_ADAPTER_VERSION } from './postgres-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.js';
+import type { StackAdapter } from '../stack-adapter-contract.mjs';
 
-let postgresAdapter;
+let postgresAdapter: StackAdapter;
 postgresAdapter = defineStackAdapter('postgres', stackLeaseCapability('postgres'), {
   reset: operationProvider('postgres', 'reset',
     { run: resetPostgres, 'requires-reseed': () => true }),
@@ -35,7 +36,8 @@ postgresAdapter = defineStackAdapter('postgres', stackLeaseCapability('postgres'
     'linux-cli-required': () => false,
     'setup-metadata': postgresSetupMetadata,
     'server-directory': () => 'server',
-    'find-database-urls': ({ text }) => text.match(/(?:postgresql|postgres):\/\/[^\s'"`]+/g) ?? [],
+    'find-database-urls': ({ text }: { text: string }) =>
+      text.match(/(?:postgresql|postgres):\/\/[^\s'"`]+/g) ?? [],
   }),
   'build-container': operationProvider('postgres', 'build-container', { plan: standardBuildContainerPlan }),
   reference: operationProvider('postgres', 'reference', { deploy: deployPostgresReference }),

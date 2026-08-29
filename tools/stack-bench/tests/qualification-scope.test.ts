@@ -51,19 +51,21 @@ function fixture(): string {
   write(root, 'commands/bench.mjs', "import '../src/stacks/stack-adapters.js';\n");
   write(root, 'grader/grade.mjs', "import '../src/stacks/stack-adapters.js';\n");
   write(root, 'src/stacks/stack-adapters.ts', [
-    "import './backends/mongodb-adapter.mjs';",
+    "import './backends/mongodb-adapter.js';",
     "import './backends/mongodb-identity.js';",
     "import './backends/mongodb-operations.mjs';",
-    "import './backends/postgres-adapter.mjs';",
+    "import './backends/postgres-adapter.js';",
     "import './backends/postgres-identity.js';",
     "import './backends/postgres-operations.mjs';",
-    "import './backends/spacetime-adapter.mjs';",
+    "import './backends/spacetime-adapter.js';",
     "import './backends/spacetime-identity.js';",
     "import './backends/spacetime-operations.mjs';",
     '',
   ].join('\n'));
+  write(root, 'src/stacks/stack-adapter-common.ts', 'shared adapter helpers\n');
   for (const stack of ['mongodb', 'postgres', 'spacetime']) {
-    write(root, `src/stacks/backends/${stack}-adapter.mjs`, `${stack} adapter\n`);
+    write(root, `src/stacks/backends/${stack}-adapter.ts`,
+      `import '../stack-adapter-common.js';\n${stack} adapter\n`);
     write(root, `src/stacks/backends/${stack}-identity.ts`, `${stack} identity\n`);
     write(root, `src/stacks/backends/${stack}-operations.mjs`, `${stack} operations\n`);
   }
@@ -137,7 +139,7 @@ test('stack-owned reset and version changes invalidate only their stack', () => 
     const afterVersionMongo = scoped(root, 'reference', 'mongodb');
     const afterVersionPostgres = scoped(root, 'reference', 'postgres');
     const afterVersionNull = scoped(root, 'null');
-    write(root, 'src/stacks/backends/postgres-adapter.mjs', 'changed postgres adapter\n');
+    write(root, 'src/stacks/backends/postgres-adapter.ts', 'changed postgres adapter\n');
     assert.deepEqual(scoped(root, 'reference', 'mongodb'), afterVersionMongo);
     assert.notEqual(scoped(root, 'reference', 'postgres').sha256, afterVersionPostgres.sha256);
     assert.deepEqual(scoped(root, 'null'), afterVersionNull);
@@ -178,6 +180,15 @@ test('shared grading changes invalidate every affected scope while mutation-only
     assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, afterGradeReference.sha256);
     assert.notEqual(scoped(root, 'mutation', 'mongodb').sha256, afterGradeMutation.sha256);
     assert.deepEqual(scoped(root, 'null'), afterGradeNull);
+
+    const beforeAdapterMongo = scoped(root, 'reference', 'mongodb');
+    const beforeAdapterPostgres = scoped(root, 'reference', 'postgres');
+    const beforeAdapterNull = scoped(root, 'null');
+    write(root, 'src/stacks/stack-adapter-common.ts', 'changed shared adapter helpers\n');
+    assert.notEqual(scoped(root, 'reference', 'mongodb').sha256, beforeAdapterMongo.sha256);
+    assert.notEqual(scoped(root, 'reference', 'postgres').sha256,
+      beforeAdapterPostgres.sha256);
+    assert.deepEqual(scoped(root, 'null'), beforeAdapterNull);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -24,7 +24,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', stackLeaseCapabi
   'run-policy': runPolicyProvider('spacetime',
     { 'reset-enabled': true, 'sandbox-probe-required': true, 'product-review-enabled': true,
       'product-review-comparisons': ['postgres', 'mongodb'], 'retain-host-supported': true,
-      'supervisor-env': ({ spacetimePort }) =>
+      'supervisor-env': ({ spacetimePort }: { spacetimePort: number }) =>
         ({ STACK_BENCH_STDB_URI: `http://127.0.0.1:${spacetimePort}` }) }),
   agent: operationProvider('spacetime', 'agent', {
     'connection-url': noConnectionUrl,

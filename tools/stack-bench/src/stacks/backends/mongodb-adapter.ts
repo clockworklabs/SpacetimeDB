@@ -11,8 +11,9 @@ import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb,
 import { MONGODB_ADAPTER_VERSION } from './mongodb-identity.js';
 import { controlHostedFor, defineStackAdapter, operationProvider,
   runPolicyProvider } from '../stack-adapter-common.js';
+import type { StackAdapter } from '../stack-adapter-contract.mjs';
 
-let mongodbAdapter;
+let mongodbAdapter: StackAdapter;
 mongodbAdapter = defineStackAdapter('mongodb', stackLeaseCapability('mongodb'), {
   reset: operationProvider('mongodb', 'reset',
     { run: resetMongoDb, 'requires-reseed': () => true }),
@@ -35,7 +36,8 @@ mongodbAdapter = defineStackAdapter('mongodb', stackLeaseCapability('mongodb'), 
     'linux-cli-required': () => false,
     'setup-metadata': mongoDbSetupMetadata,
     'server-directory': () => 'server',
-    'find-database-urls': ({ text }) => text.match(/mongodb(?:\+srv)?:\/\/[^\s'"`]+/g) ?? [],
+    'find-database-urls': ({ text }: { text: string }) =>
+      text.match(/mongodb(?:\+srv)?:\/\/[^\s'"`]+/g) ?? [],
   }),
   'build-container': operationProvider('mongodb', 'build-container', { plan: standardBuildContainerPlan }),
   reference: operationProvider('mongodb', 'reference', { deploy: deployMongoDbReference }),
