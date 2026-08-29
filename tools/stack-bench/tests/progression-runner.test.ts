@@ -2,9 +2,23 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
-import { runProgressionMode } from '../src/progression/progression-runner.mjs';
+import {
+  runProgressionMode,
+  type ProgressionAttemptResult,
+  type ProgressionEngine,
+  type ProgressionState,
+  type ProgressionWorkAction,
+} from '../src/progression/progression-runner.js';
 
-const definition = () => ({
+interface TestAction extends ProgressionWorkAction {
+  prompt: { nodeIds: string[] };
+  grading: {
+    nodeIds: string[];
+    checks: Array<{ id: string; nodeId: string }>;
+  };
+}
+
+const definition = (): Record<string, unknown> => ({
   schemaVersion: 3,
   kind: 'progression-mode',
   id: 'runner-fixture',
@@ -25,48 +39,60 @@ const definition = () => ({
   questlines: [{ id: 'identity', title: 'Identity' }],
 });
 
-const passSelected = (action, attemptId) => ({
-  attemptId,
-  outcome: 'conclusive',
-  nodes: action.grading.nodeIds.map(nodeId => ({
-    id: nodeId,
-    checks: action.grading.checks.filter(check => check.nodeId === nodeId)
-      .map(check => ({ id: check.id, outcome: 'pass' })),
-  })),
-});
+function passSelected(action: TestAction, attemptId: string): ProgressionAttemptResult {
+  return {
+    attemptId,
+    outcome: 'conclusive',
+    nodes: action.grading.nodeIds.map(nodeId => ({
+      id: nodeId,
+      checks: action.grading.checks.filter(check => check.nodeId === nodeId)
+        .map(check => ({ id: check.id, outcome: 'pass' })),
+    })),
+  };
+}
 
 test('the production runner executes exact prompt and grading selections through the mode engine', async () => {
-  const actions = [];
-  const snapshots = [];
+  const actions: TestAction[] = [];
+  const snapshots: ProgressionState[] = [];
   const result = await runProgressionMode({
     definition: definition(),
     execute: async action => {
-      actions.push(action);
-      return passSelected(action, `attempt-${actions.length}`);
+      const selected = action as TestAction;
+      actions.push(selected);
+      return passSelected(selected, `attempt-${actions.length}`);
     },
-    onState: async state => snapshots.push(state),
+    onState: state => { snapshots.push(state); },
   });
   assert.deepEqual(actions.map(action => action.prompt.nodeIds), [['account'], ['recovery']]);
   assert.deepEqual(actions.map(action => action.grading.nodeIds), [['account'], ['account', 'recovery']]);
   assert.equal(result.status, 'terminal');
   assert.deepEqual(result.outcome, { kind: 'passed', reason: 'graph-complete', level: 2 });
-  assert.equal(result.score.averagePercentage, 100);
+  const score = result.score as { averagePercentage: number };
+  assert.equal(score.averagePercentage, 100);
   assert.equal(snapshots.length, 2);
-  assert.deepEqual(progressionEngine.resume(result.state), result.state);
+  const engine = progressionEngine as unknown as ProgressionEngine;
+  assert.deepEqual(engine.resume(result.state), result.state);
 });
 
 test('the runner pauses an inconclusive attempt without publishing a zero score', async () => {
   const result = await runProgressionMode({
     definition: definition(),
     execute: async () => ({ attemptId: 'provider-failure', outcome: 'inconclusive',
-      category: 'provider_failure',
-      reason: 'provider response ended early' }),
+      category: 'provider_failure', reason: 'provider response ended early' }),
   });
   assert.equal(result.status, 'paused');
-  assert.equal(result.outcome.kind, 'provider_failure');
-  assert.equal(result.score.averagePercentage, null);
-  assert.equal(result.score.questlines[0].percentage, null);
-  assert.equal(result.state.nodes.account.strikes.used, 0);
+  const outcome = result.outcome as { kind: string };
+  assert.equal(outcome.kind, 'provider_failure');
+  const score = result.score as {
+    averagePercentage: number | null;
+    questlines: Array<{ percentage: number | null }>;
+  };
+  assert.equal(score.averagePercentage, null);
+  assert.equal(score.questlines[0]?.percentage, null);
+  const state = result.state as {
+    nodes: { account: { strikes: { used: number } } };
+  };
+  assert.equal(state.nodes.account.strikes.used, 0);
 });
 
 test('the runner rejects incomplete grading results instead of advancing', async () => {
@@ -77,7 +103,10 @@ test('the runner rejects incomplete grading results instead of advancing', async
 });
 
 test('the runner validates resumed state before executing more work', async () => {
-  const state = progressionEngine.initialize(definition());
+  const engine = progressionEngine as unknown as ProgressionEngine;
+  const state = engine.initialize(definition()) as {
+    nodes: { account: { status: string } };
+  } & ProgressionState;
   state.nodes.account.status = 'passed';
   await assert.rejects(() => runProgressionMode({
     state,

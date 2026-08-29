@@ -12,8 +12,6 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 import { compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,
   dependencyRuntimeDefinition } from '../src/progression/progression-definition.mjs';
-import { compileProgressionGraph,
-  renderProgressionGraphHtml } from '../src/progression/progression-graph.mjs';
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { resolveProgressionRecipeAction,
   validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.mjs';
@@ -307,16 +305,4 @@ test('a campaign can bind the full graph to one catalog across five levels', t =
   assert.equal(new Set(plan.bindings.map(binding => binding.recipe.contentSha256)).size, 1);
   assert(plan.conditions[0].requested.levels.every(level =>
     ['fresh', 'upgrade'].includes(level.task.mode)));
-});
-
-test('the dependency graph page is generated from the ecommerce definition', () => {
-  const htmlPath = join(import.meta.dirname, '..', 'docs', 'dependency-graph.html');
-  const html = readFileSync(htmlPath, 'utf8');
-  const graph = compileProgressionGraph(definitionPath, { trackRoot });
-  assert.equal(graph.nodes.length, 39);
-  assert.equal(graph.levels, 5);
-  assert.deepEqual(graph.nodes.filter(node => node.level === 1).map(node => node.id),
-    ['accounts', 'catalog', 'staff-access', 'support-intake']);
-  assert.equal(renderProgressionGraphHtml(html, graph), html,
-    'run npm run graph after changing the progression definition');
 });

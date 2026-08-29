@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { writeProgressionGraph } from '../src/progression/progression-graph.mjs';
+import { writeProgressionGraph } from '../src/progression/progression-graph.js';
 
 interface ProgressionGraph {
   nodes: unknown[];

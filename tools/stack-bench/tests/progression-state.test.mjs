@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { progressionEngine } from '../src/progression/progression-engine.mjs';
-import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
-import { runPersistedProgressionMode } from '../src/progression/progression-runner.mjs';
+import { progressionEngine } from '../dist/src/progression/progression-engine.mjs';
+import { compileProgressionInput } from '../dist/src/progression/progression-definition.mjs';
+import { runPersistedProgressionMode } from '../dist/src/progression/progression-runner.js';
 import { grantProgressionState, readProgressionState, writeProgressionState }
-  from '../src/progression/progression-state.mjs';
-import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
-import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
-import { emptyArtifactIdentities } from '../src/evidence/artifacts.mjs';
+  from '../dist/src/progression/progression-state.mjs';
+import { hashAppSource } from '../dist/src/runtime/source-snapshot.mjs';
+import { preserveLevelCheckpoint } from '../dist/src/runtime/source-checkpoint.mjs';
+import { emptyArtifactIdentities } from '../dist/src/evidence/artifacts.mjs';
 
 const progression = () => compileProgressionInput({
   schemaVersion: 3,
