@@ -55,6 +55,12 @@ export interface RunnerObservation extends UnknownRecord {
   mode?: string;
   platform?: string;
   architecture?: string;
+  dockerEngineVersion?: string;
+  dockerOs?: string;
+  dockerArchitecture?: string;
+  kernelVersion?: string;
+  cpuCount?: number;
+  memoryBytes?: number;
 }
 
 export interface ReferenceQualificationPayload {
