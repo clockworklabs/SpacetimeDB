@@ -13,7 +13,7 @@ import { createServer } from 'node:http';
 import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';

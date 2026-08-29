@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { readArtifactPayload } from '../dist/src/evidence/artifacts.js';
 import { acquireResourceLock, createBackendLease, readBackendLease,
-  writeBackendLease } from '../src/runtime/backend-lease.mjs';
+  writeBackendLease } from '../dist/src/runtime/backend-lease.js';
 import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
   validateSupervisorState } from '../dist/src/runtime/recovery.js';
 

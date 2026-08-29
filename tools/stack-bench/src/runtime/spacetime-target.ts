@@ -3,8 +3,8 @@
 // host, or container for grader operations.
 
 import { execFileSync } from 'node:child_process';
-import { leaseFromEnv } from './backend-lease.mjs';
-import type { BackendLeaseContainer } from './backend-lease.mjs';
+import { leaseFromEnv } from './backend-lease.js';
+import type { BackendLeaseContainer } from './backend-lease.js';
 
 interface SpacetimeTargetLease {
   resources: {

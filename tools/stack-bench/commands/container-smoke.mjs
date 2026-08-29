@@ -13,7 +13,7 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
-import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { fetchStatus } from '../src/runtime/readiness.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';

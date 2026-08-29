@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { leaseFromEnv } from '../runtime/backend-lease.mjs';
+import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.mjs';
 import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,

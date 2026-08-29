@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { writeRunJson } from '../evidence/artifacts.js';
 import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
   publicBackendLease, readBackendLease, releaseResourceLocks, resourceLockScope,
-  updateBackendLease, writeBackendLease } from '../runtime/backend-lease.mjs';
+  updateBackendLease, writeBackendLease } from '../runtime/backend-lease.js';
 import { resolveContainerImage } from '../runtime/container-image.js';
 import { codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';

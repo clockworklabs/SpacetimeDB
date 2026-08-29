@@ -33,7 +33,7 @@ import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
-  updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+  updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { captureBackendDiagnostics } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';

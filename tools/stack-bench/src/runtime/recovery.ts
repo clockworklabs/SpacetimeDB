@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } f
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
-import { publicBackendLease, readBackendLease } from './backend-lease.mjs';
+import { publicBackendLease, readBackendLease } from './backend-lease.js';
 import { releaseBackendLease } from './backend-teardown.js';
-import type { BackendLease, PublicBackendLease } from './backend-lease.mjs';
+import type { BackendLease, PublicBackendLease } from './backend-lease.js';
 
 export const SUPERVISOR_STATE_VERSION = 2;
 

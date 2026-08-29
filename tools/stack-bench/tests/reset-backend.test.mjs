@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { createBackendLease, writeBackendLease } from '../dist/src/runtime/backend-lease.mjs';
+import { createBackendLease, writeBackendLease } from '../dist/src/runtime/backend-lease.js';
 import { resetBackend } from '../dist/src/stacks/backend-reset.mjs';
 import { proveMongoDbUse, provePostgresUse,
   resetPostgres } from '../dist/src/stacks/stack-backend-operations.mjs';

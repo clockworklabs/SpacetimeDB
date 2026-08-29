@@ -1,6 +1,6 @@
 // Lease-authenticated database reset used by the grading orchestrator.
 
-import { leaseFromEnv } from '../runtime/backend-lease.mjs';
+import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.js';
 

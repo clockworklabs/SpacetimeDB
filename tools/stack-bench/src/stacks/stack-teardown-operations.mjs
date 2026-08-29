@@ -1,4 +1,4 @@
-import { readBackendLease, updateBackendLease } from '../runtime/backend-lease.mjs';
+import { readBackendLease, updateBackendLease } from '../runtime/backend-lease.js';
 import { killDetachedTree, killTree, pidsOnPort, sleepSync } from '../runtime/platform.js';
 
 export function stopHostedHost({ leasePath, leaseToken, lease, retainHost = false }) {

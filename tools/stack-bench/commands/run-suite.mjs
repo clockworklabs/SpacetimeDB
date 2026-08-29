@@ -32,7 +32,7 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
-import { readBackendLease } from '../src/runtime/backend-lease.mjs';
+import { readBackendLease } from '../src/runtime/backend-lease.js';
 import { databaseContainerName } from '../src/stacks/database-containers.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';

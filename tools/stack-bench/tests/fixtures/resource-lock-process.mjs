@@ -1,5 +1,5 @@
 import { createBackendLease, acquireResourceLock,
-  resourceLockScope } from '../../src/runtime/backend-lease.mjs';
+  resourceLockScope } from '../../dist/src/runtime/backend-lease.js';
 
 const [root, runId, mode = 'acquire'] = process.argv.slice(2);
 if (!root || !runId) process.exit(2);

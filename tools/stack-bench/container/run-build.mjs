@@ -23,7 +23,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.mjs';
+import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';

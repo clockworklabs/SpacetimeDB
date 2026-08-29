@@ -2,7 +2,7 @@
 // its outer qualification supervisor.
 
 import { execFileSync } from 'node:child_process';
-import { readBackendLease, releaseResourceLocks, updateBackendLease } from './backend-lease.mjs';
+import { readBackendLease, releaseResourceLocks, updateBackendLease } from './backend-lease.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 

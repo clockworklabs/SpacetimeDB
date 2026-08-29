@@ -33,7 +33,7 @@ import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { controllerRunner } from '../runtime/runner-environment.js';
 import { mergeMutationShards, mutationShard, mutationWorkerSlots }
   from '../evidence/mutation-shards.js';
-import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
+import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';

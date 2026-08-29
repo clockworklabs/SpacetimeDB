@@ -18,7 +18,7 @@ import {
   resourceLockScope,
   updateBackendLease,
   writeBackendLease,
-} from '../src/runtime/backend-lease.mjs';
+} from '../dist/src/runtime/backend-lease.js';
 import { releaseBackendLease } from '../dist/src/runtime/backend-teardown.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
