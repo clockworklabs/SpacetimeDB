@@ -36,7 +36,7 @@ import { readFileSync, readdirSync, existsSync, appendFileSync, statSync, openSy
 import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 
-import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
+import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);

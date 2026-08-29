@@ -11,8 +11,8 @@
     "id": "ecommerce.progression-catalog",
     "version": "1.0.0",
     "meaningSha256": "18ec656cc206f648e3fa5e102119e07c047b0d889bb5ebf0e9f393740e2a2bc7",
-    "executionSha256": "2f01e70f48238ddd46732f239de6f0d8006810686742523b33c040984269ec14",
-    "contentSha256": "7a2cf0fcf8e34dacae099ce8efbe09de1e51304e4a1947102b0be95da0a531df"
+    "executionSha256": "f2a2c86738f3c8186072f158c5ebfad284858ab835f974db52cdfe7116ec792d",
+    "contentSha256": "bdb94598aaf8b394c80a494446682057e7ae7ee947ee05b8a59bc466ac70d76a"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -213,7 +213,7 @@
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/candidates.json",
-    "catalogSha256": "23503616f17656d2139234ab3fa6e756d2286a14fbd5a0a96811f0e31a3004f2",
+    "catalogSha256": "6feeb557ad708b821d88898419efac1ebb32af4d83fc26fa53f8c9b1636440dd",
     "alias": "L3",
     "status": "candidate"
   }

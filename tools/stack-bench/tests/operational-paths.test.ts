@@ -8,7 +8,7 @@ import test from 'node:test';
 
 import { archiveTranscripts } from '../commands/archive-transcripts.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
+import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
 
 test('operational output stays beside the module outside appliance mode', t => {
   const moduleRoot = mkdtempSync(join(tmpdir(), 'stack-bench-module-'));

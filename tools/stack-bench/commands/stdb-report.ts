@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync, existsSync, appendFileSync, writeFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 
-import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
+import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);

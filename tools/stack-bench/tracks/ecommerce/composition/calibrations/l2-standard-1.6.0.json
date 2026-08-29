@@ -10,9 +10,9 @@
     "path": "../recipes/l2-standard-1.6.0.json",
     "id": "ecommerce.l2-standard",
     "version": "1.6.0",
-    "meaningSha256": "2e44042de98522eb6306fab9ef14c43d5f33fb2bb4c92cbe95eb70dfd0a7f047",
-    "executionSha256": "f20f9de7f8b119675b8bdf52894afac477d04fdc7113ae4ba9b3c964fe864154",
-    "contentSha256": "7b107b8c1a2fae4b9b4bb9d23635cbdf67ef7942be7d5a9c497fd8aca7d3107e"
+    "meaningSha256": "b608c738fa4aee332766a70dca563e901e04de7460b074f092693485f8f18d2a",
+    "executionSha256": "1ce268cc2140b73ec5fb2eaaa42857a6b4e32dca329c61622b9b1708e3af15b7",
+    "contentSha256": "ad64a50a8d18e4ed0ba80b77a75e406789d60764245766a827d2042d1b8227c5"
   },
   "fixture": {
     "id": "ecommerce.operations",

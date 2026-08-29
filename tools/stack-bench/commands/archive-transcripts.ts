@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
+import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
 
 interface ArchiveArgs {
   results: string;

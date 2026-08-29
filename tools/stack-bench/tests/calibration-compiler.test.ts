@@ -48,6 +48,8 @@ interface QualificationArtifact {
   identities: {
     agentAdapter: unknown;
     stackAdapter: { id: string };
+    calibration: { id: string; version: string; sha256: string };
+    recipe: { id: string; version: string; sha256: string };
     [key: string]: unknown;
   };
   payload: QualificationArtifactPayload;
@@ -264,26 +266,30 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
 
 test('qualification evidence is semantically bound and tampering fails closed', () => {
   const { binding, plan } = qualifiedProgression();
-  const qualified = calibrationQualificationRelease(plan, binding.release, binding.execution);
+  const referenceEntry: CalibrationEvidence = {
+    kind: 'reference', stack: 'mongodb', repetition: 1,
+    path: 'qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/mongodb-reference.json',
+    sha256: 'historical-fixture',
+  };
+  const reference = readQualificationArtifact(join(ROOT, referenceEntry.path));
+  const historicalRelease = buildRecipeRelease(join(TRACK.dir, 'composition', 'recipes',
+    'progression-l1-l3-1.0.0.json'), { trackRoot: TRACK.dir });
+  historicalRelease.contentSha256 = reference.identities.recipe.sha256;
+  const qualified = calibrationQualificationRelease(plan, historicalRelease, binding.execution);
   const context = {
     calibration: plan,
-    qualificationIdentity: calibrationQualificationIdentity(plan),
+    qualificationIdentity: reference.identities.calibration,
     release: qualified.release,
     references: plan.references.entries,
     execution: qualified.execution,
     stackBenchRoot: ROOT,
   };
-  const referenceEntry = plan.qualification.evidence.find(entry =>
-    entry.kind === 'reference' && entry.stack === 'mongodb' && entry.repetition === 1);
-  assert.ok(referenceEntry);
-  const reference = readQualificationArtifact(join(ROOT, referenceEntry.path));
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context));
-  const legacyReference = structuredClone(reference);
+  const scopedReference = withCurrentScope(reference, referenceEntry, context);
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(scopedReference, referenceEntry, context));
+  const legacyReference = structuredClone(scopedReference);
   delete legacyReference.payload.qualificationScope;
   assert.throws(() => validateQualificationEvidenceArtifact(legacyReference, referenceEntry, context),
     /legacy broad-hash evidence has no scoped qualification identity/);
-  const scopedReference = reference;
-
   const wrongStack = structuredClone(scopedReference);
   wrongStack.identities.stackAdapter.id = 'postgres';
   assert.throws(() => validateQualificationEvidenceArtifact(wrongStack, referenceEntry, context),
@@ -300,6 +306,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   };
   const runnerIdentity = calibrationQualificationIdentity(runnerBound);
   const runnerReference = structuredClone(scopedReference);
+  runnerReference.identities.calibration = runnerIdentity;
   runnerReference.payload.runner = { ...runnerBound.qualification.runner,
     dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
     kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 };
@@ -315,8 +322,11 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   assert.throws(() => validateQualificationEvidenceArtifact(runnerReference, referenceEntry,
     runnerContext), /wrong controller runner environment/);
 
-  const nullEntry = plan.qualification.evidence.find(entry => entry.kind === 'null');
-  assert.ok(nullEntry);
+  const nullEntry: CalibrationEvidence = {
+    kind: 'null', repetition: 1,
+    path: 'qualification-evidence/ecommerce-progression-l1-l3-v1.0.0/null.json',
+    sha256: 'historical-fixture',
+  };
   const nullArtifact = readQualificationArtifact(join(ROOT, nullEntry.path));
   const vacuous = withCurrentScope(nullArtifact, nullEntry, context);
   vacuous.payload.summary.vacuousPasses.criteria = 1;

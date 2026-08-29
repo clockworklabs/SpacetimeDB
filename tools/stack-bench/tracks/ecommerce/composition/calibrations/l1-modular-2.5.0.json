@@ -10,9 +10,9 @@
     "path": "../recipes/l1-modular-2.5.0.json",
     "id": "ecommerce.l1-modular",
     "version": "2.5.0",
-    "meaningSha256": "6f3e87c434187e316c2bf9b3cd6ce74868eea7b06e9577ad932b3aa387fda581",
-    "executionSha256": "8f0854044e5c3926370b84c6fb74e22e7d7f5a81d27c8796d4e8d28dbd7d87d1",
-    "contentSha256": "3d8acf2c16054028f6a40eb5c604aa792cf1c46768ded2e5c074eb52f60242aa"
+    "meaningSha256": "e734db7dd24a78c02360ff5a8ac5b2cb3eda50b0f67dc31e1b9275325b1622b1",
+    "executionSha256": "3fd876fb07fc0704ea85fdc9a15d06af3a5980233fd815fa3ad31114721ecdec",
+    "contentSha256": "1fe1be4f089e0275e1797a7834a0fe7f694f62679e3a11c0083bdaed82bc25a1"
   },
   "fixture": {
     "id": "ecommerce.storefront",
