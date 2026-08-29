@@ -5,7 +5,7 @@ import {
   DEFINITION_SCHEMA_VERSION,
   compileScenarioDefinition,
   compileTrackManifest,
-} from './definition-compiler.mjs';
+} from './definition-compiler.js';
 import { TRACKS_DIR } from './tracks.js';
 
 export type CanonicalDefinition = null | boolean | number | string

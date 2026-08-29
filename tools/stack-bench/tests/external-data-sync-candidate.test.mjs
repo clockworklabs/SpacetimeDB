@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { compilePackDefinition } from '../src/composition/composition-compiler.mjs';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,

@@ -4,24 +4,107 @@
 // the public JSON shape while rejecting unknown or malformed input before a run
 // can acquire backend resources.
 
+type UnknownRecord = Record<string, unknown>;
+
+export interface CompiledStep {
+  do: string;
+  actor?: string;
+  from?: string;
+  fromActor?: string;
+  testid?: string;
+  contains?: string;
+  absent?: boolean;
+  in?: {
+    testid?: string;
+    contains?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface CompiledCriterion {
+  id: string;
+  desc: string;
+  points: number;
+  steps: CompiledStep[];
+  statedBy?: string;
+  [key: string]: unknown;
+}
+
+export interface CompiledFeature {
+  id: number;
+  name: string;
+  actors?: string[];
+  max?: number;
+  setup: CompiledStep[];
+  criteria: CompiledCriterion[];
+  [key: string]: unknown;
+}
+
+export interface CompiledScenarioDefinition {
+  schemaVersion: number;
+  level: number;
+  features: CompiledFeature[];
+  [key: string]: unknown;
+}
+
+export interface CompiledTrackSuite {
+  id: string;
+  inherit: 'none' | 'all-higher-levels';
+  spec: string;
+}
+
+export interface CompiledTrackManifest extends Record<string, unknown> {
+  schemaVersion: number;
+  suites: Record<string, CompiledTrackSuite[]>;
+  title?: string;
+  slug?: string;
+  internal?: boolean;
+  validatedThrough?: number;
+  plannedThrough?: number;
+  portOffset?: number;
+  restartProbe?: string;
+  reseedOnReset?: boolean;
+  reseedProbeExpectation?: unknown;
+  databaseProvenance?: { scenario: string; [key: string]: unknown };
+  actions?: unknown[];
+}
+
 export const DEFINITION_SCHEMA_VERSION = 1;
 
-const string = value => typeof value === 'string';
-const nonEmptyString = value => string(value) && value.trim().length > 0;
-const number = value => typeof value === 'number' && Number.isFinite(value);
-const integer = value => Number.isInteger(value);
-const boolean = value => typeof value === 'boolean';
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const array = value => Array.isArray(value);
-const stringArray = value => array(value) && value.every(nonEmptyString);
-const anyArray = value => array(value);
-const scalar = value => value === null || ['string', 'number', 'boolean'].includes(typeof value);
-const relativePath = value => nonEmptyString(value)
+const string = (value: unknown): value is string => typeof value === 'string';
+const nonEmptyString = (value: unknown): value is string =>
+  string(value) && value.trim().length > 0;
+const number = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+const integer = (value: unknown): value is number => Number.isInteger(value);
+const boolean = (value: unknown): value is boolean => typeof value === 'boolean';
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const array = (value: unknown): value is unknown[] => Array.isArray(value);
+const stringArray = (value: unknown): value is string[] =>
+  array(value) && value.every(nonEmptyString);
+const anyArray = (value: unknown): value is unknown[] => array(value);
+const scalar = (value: unknown): boolean =>
+  value === null || ['string', 'number', 'boolean'].includes(typeof value);
+const relativePath = (value: unknown): boolean => nonEmptyString(value)
   && !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(value)
   && !value.split(/[\\/]/).includes('..');
-const processTimeout = value => number(value) && value > 0 && value <= 85_000;
+const processTimeout = (value: unknown): boolean =>
+  number(value) && value > 0 && value <= 85_000;
 
-function fields(required, optional = {}) {
+type FieldPredicate = (value: unknown) => boolean;
+
+interface ActionDefinition {
+  required: Record<string, FieldPredicate>;
+  fields: Record<string, FieldPredicate>;
+}
+
+const oneOf = (value: unknown, allowed: readonly string[]): boolean =>
+  string(value) && allowed.includes(value);
+
+function fields(required: Record<string, FieldPredicate>,
+  optional: Record<string, FieldPredicate> = {}) {
   return { required, fields: Object.fromEntries([
     ['do', nonEmptyString],
     ...Object.entries(required),
@@ -35,7 +118,7 @@ const settle = { settleMs: number };
 const within = { within: number };
 const locator = { in: object };
 
-export const ACTION_DEFINITIONS = Object.freeze({
+export const ACTION_DEFINITIONS: Readonly<Record<string, ActionDefinition>> = Object.freeze({
   callAction: fields({ ...actor, action: nonEmptyString, input: object },
     { from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
   callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: number },
@@ -113,16 +196,18 @@ export const ACTION_DEFINITIONS = Object.freeze({
 
 export const ACTION_IDS = Object.freeze(Object.keys(ACTION_DEFINITIONS).sort());
 
-const fail = (at, message) => { throw new Error(`invalid benchmark definition at ${at}: ${message}`); };
+function fail(at: string, message: string): never {
+  throw new Error(`invalid benchmark definition at ${at}: ${message}`);
+}
 
-function strictObject(value, at, allowed) {
+function strictObject(value: unknown, at: string, allowed: Set<string>): asserts value is UnknownRecord {
   if (!object(value)) fail(at, 'must be an object');
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) fail(`${at}.${key}`, 'unknown field');
   }
 }
 
-function validateLocator(value, at) {
+function validateLocator(value: unknown, at: string): void {
   strictObject(value, at, new Set(['testid', 'contains', 'containsAll']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
@@ -135,39 +220,40 @@ function validateLocator(value, at) {
   }
 }
 
-function validateSwap(value, at) {
+function validateSwap(value: unknown, at: string): void {
   strictObject(value, at, new Set(['find', 'with']));
   if (!string(value.find)) fail(`${at}.find`, 'must be a string');
   if (!string(value.with)) fail(`${at}.with`, 'must be a string');
 }
 
-function validateNamedTarget(value, at) {
+function validateNamedTarget(value: unknown, at: string): void {
   strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'valueType']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
   if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
-  if (value.valueType !== undefined && !['number', 'string'].includes(value.valueType)) {
+  if (value.valueType !== undefined && !oneOf(value.valueType, ['number', 'string'])) {
     fail(`${at}.valueType`, 'must be "number" or "string"');
   }
 }
 
-function validateActionInput(value, at) {
+function validateActionInput(value: unknown, at: string): void {
   strictObject(value, at, new Set(['testid', 'contains', 'attribute']));
   if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
   if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
   if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
 }
 
-function validateNamedActionParams(value, at) {
+function validateNamedActionParams(value: unknown, at: string): void {
   if (!array(value)) fail(at, 'must be an array');
-  const names = new Set();
+  const names = new Set<string>();
   value.forEach((param, index) => {
     const where = `${at}[${index}]`;
     strictObject(param, where, new Set(['name', 'in', 'placeholder', 'wireType']));
-    if (!nonEmptyString(param.name)) fail(`${where}.name`, 'must be a non-empty string');
-    if (names.has(param.name)) fail(`${where}.name`, `duplicates ${JSON.stringify(param.name)}`);
-    names.add(param.name);
-    if (!['path', 'body'].includes(param.in)) fail(`${where}.in`, 'must be "path" or "body"');
+    const name = param.name;
+    if (!nonEmptyString(name)) fail(`${where}.name`, 'must be a non-empty string');
+    if (names.has(name)) fail(`${where}.name`, `duplicates ${JSON.stringify(name)}`);
+    names.add(name);
+    if (!oneOf(param.in, ['path', 'body'])) fail(`${where}.in`, 'must be "path" or "body"');
     if (param.in === 'path') {
       if (!nonEmptyString(param.placeholder)) fail(`${where}.placeholder`, 'is required for a path parameter');
     } else if (param.placeholder !== undefined) {
@@ -179,28 +265,32 @@ function validateNamedActionParams(value, at) {
   });
 }
 
-function validateInlineNamedAction(value, at) {
+function validateInlineNamedAction(value: unknown, at: string): void {
   strictObject(value, at, new Set(['id', 'path', 'method', 'reducer', 'args', 'params']));
-  for (const key of ['id', 'path', 'reducer']) {
-    if (!nonEmptyString(value[key])) fail(`${at}.${key}`, 'must be a non-empty string');
+  const path = value.path;
+  for (const [key, field] of [['id', value.id], ['path', path], ['reducer', value.reducer]] as const) {
+    if (!nonEmptyString(field)) fail(`${at}.${key}`, 'must be a non-empty string');
   }
-  if (!value.path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
+  if (!nonEmptyString(path) || !path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
   if (value.method !== undefined
-      && !['DELETE', 'PATCH', 'POST', 'PUT'].includes(value.method)) {
+      && !oneOf(value.method, ['DELETE', 'PATCH', 'POST', 'PUT'])) {
     fail(`${at}.method`, 'must be "DELETE", "PATCH", "POST", or "PUT"');
   }
   if (!anyArray(value.args)) fail(`${at}.args`, 'must be an array');
   if (value.params !== undefined) {
     validateNamedActionParams(value.params, `${at}.params`);
-    value.params.filter(param => param.in === 'path').forEach((param, index) => {
-      if (!value.path.includes(param.placeholder)) {
-        fail(`${at}.params[${index}].placeholder`, `does not appear in path ${JSON.stringify(value.path)}`);
+    const params = value.params;
+    if (!array(params)) fail(`${at}.params`, 'must be an array');
+    params.filter((param): param is UnknownRecord => object(param) && param.in === 'path')
+      .forEach((param, index) => {
+      if (!path.includes(String(param.placeholder))) {
+        fail(`${at}.params[${index}].placeholder`, `does not appear in path ${JSON.stringify(path)}`);
       }
     });
   }
 }
 
-function validateSenders(value, at) {
+function validateSenders(value: unknown, at: string): void {
   if (!array(value) || value.length === 0) fail(at, 'must be a non-empty array');
   value.forEach((sender, index) => {
     const where = `${at}[${index}]`;
@@ -214,18 +304,19 @@ function validateSenders(value, at) {
   });
 }
 
-function validateTargets(value, actors, at) {
+function validateTargets(value: unknown, actors: readonly string[], at: string): void {
   if (!array(value) || value.length === 0) fail(at, 'must be a non-empty array');
   value.forEach((target, index) => {
     const where = `${at}[${index}]`;
     strictObject(target, where, new Set(['actor', 'in']));
-    if (!nonEmptyString(target.actor)) fail(`${where}.actor`, 'must be a non-empty string');
-    if (!actors.includes(target.actor)) fail(`${where}.actor`, 'must name an actor in the action population');
+    const targetActor = target.actor;
+    if (!nonEmptyString(targetActor)) fail(`${where}.actor`, 'must be a non-empty string');
+    if (!actors.includes(targetActor)) fail(`${where}.actor`, 'must name an actor in the action population');
     if (target.in !== undefined) validateLocator(target.in, `${where}.in`);
   });
 }
 
-function validateStep(step, at) {
+function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (!object(step)) fail(at, 'must be an object');
   if (!nonEmptyString(step.do)) fail(`${at}.do`, 'must be a non-empty string');
   const definition = ACTION_DEFINITIONS[step.do];
@@ -237,7 +328,7 @@ function validateStep(step, at) {
   }
   for (const [name, value] of Object.entries(step)) {
     const validator = definition.fields[name];
-    if (!validator(value)) fail(`${at}.${name}`, 'has the wrong type or value');
+    if (validator && !validator(value)) fail(`${at}.${name}`, 'has the wrong type or value');
   }
   if (step.in) validateLocator(step.in, `${at}.in`);
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
@@ -245,21 +336,22 @@ function validateStep(step, at) {
   if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);
   if (step.do === 'callAction') {
     validateActionInput(step.input, `${at}.input`);
-    if (step.namedAction) {
-      validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
-      if (step.namedAction.id !== step.action) {
+    const namedAction = step.namedAction;
+    if (namedAction) {
+      validateInlineNamedAction(namedAction, `${at}.namedAction`);
+      if (!object(namedAction) || namedAction.id !== step.action) {
         fail(`${at}.namedAction.id`, 'must match action');
       }
-      if (!step.namedAction.params?.length) {
+      if (!array(namedAction.params) || namedAction.params.length === 0) {
         fail(`${at}.namedAction.params`, 'must be a non-empty array');
       }
     }
-    if (step.authentication !== undefined && !['actor', 'none'].includes(step.authentication)) {
+    if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none'])) {
       fail(`${at}.authentication`, 'must be "actor" or "none"');
     }
   }
   if (step.do === 'expectActionOutcome'
-      && !['accepted', 'refused'].includes(step.outcome)) {
+      && !oneOf(step.outcome, ['accepted', 'refused'])) {
     fail(`${at}.outcome`, 'must be "accepted" or "refused"');
   }
   if (step.do === 'replayAs' && Boolean(step.namedAction) !== Boolean(step.namedTarget)) {
@@ -267,11 +359,15 @@ function validateStep(step, at) {
   }
   if (step.do === 'sendConcurrently') validateSenders(step.senders, `${at}.senders`);
   if (step.do === 'clickConcurrently' && step.targets) {
-    validateTargets(step.targets, step.actors, `${at}.targets`);
+    const population = step.actors;
+    validateTargets(step.targets, stringArray(population) ? population : [], `${at}.targets`);
   }
   if (step.do === 'race') {
-    if (step.branches.length < 2) fail(`${at}.branches`, 'must contain at least two branches');
-    step.branches.forEach((branch, branchIndex) => {
+    const branches = step.branches;
+    if (!array(branches) || branches.length < 2) {
+      fail(`${at}.branches`, 'must contain at least two branches');
+    }
+    branches.forEach((branch, branchIndex) => {
       if (!array(branch) || branch.length === 0) {
         fail(`${at}.branches[${branchIndex}]`, 'must be a non-empty step array');
       }
@@ -286,7 +382,9 @@ function validateStep(step, at) {
   if (step.do === 'setOffline' && step.offline === undefined) step.offline = true;
 }
 
-export function compileActionInput(input, { source = '<action>', expectedAction = null } = {}) {
+export function compileActionInput(input: unknown,
+  { source = '<action>', expectedAction = null }:
+    { source?: string; expectedAction?: string | null } = {}): CompiledStep {
   const action = structuredClone(input);
   validateStep(action, source);
   if (expectedAction !== null && action.do !== expectedAction) {
@@ -304,7 +402,9 @@ const CRITERION_FIELDS = new Set([
   'desc', 'id', 'note', 'points', 'provenBy', 'statedBy', 'steps', 'withheld',
 ]);
 
-export function compileScenarioDefinition(input, { source = '<scenario>', expectedLevel = null } = {}) {
+export function compileScenarioDefinition(input: unknown,
+  { source = '<scenario>', expectedLevel = null }:
+    { source?: string; expectedLevel?: number | null } = {}): CompiledScenarioDefinition {
   const scenario = structuredClone(input);
   strictObject(scenario, source, SCENARIO_FIELDS);
   if (scenario.schemaVersion !== undefined && scenario.schemaVersion !== DEFINITION_SCHEMA_VERSION) {
@@ -371,7 +471,7 @@ export function compileScenarioDefinition(input, { source = '<scenario>', expect
     }
   });
   scenario.schemaVersion = DEFINITION_SCHEMA_VERSION;
-  return scenario;
+  return scenario as CompiledScenarioDefinition;
 }
 
 const TRACK_FIELDS = new Set([
@@ -387,8 +487,10 @@ const RESEED_PROBE_EXPECTATION_FIELDS = new Set(['jsonPath', 'minCount']);
 // persists so a new suite name cannot silently change level semantics.
 const LEGACY_CUMULATIVE_SUITE_IDS = new Set(['contention', 'invariants', 'systems']);
 
-export function compileTrackManifest(input, { source = '<track>' } = {}) {
+export function compileTrackManifest(input: unknown,
+  { source = '<track>' }: { source?: string } = {}): CompiledTrackManifest {
   const manifest = structuredClone(input);
+  if (!object(manifest)) fail(source, 'must be an object');
   const isLegacy = manifest.schemaVersion === undefined;
   strictObject(manifest, source, TRACK_FIELDS);
   if (manifest.schemaVersion !== undefined && manifest.schemaVersion !== DEFINITION_SCHEMA_VERSION) {
@@ -448,37 +550,45 @@ export function compileTrackManifest(input, { source = '<track>' } = {}) {
       if (!nonEmptyString(suite.spec)) fail(`${at}.spec`, 'must be a non-empty string');
       if (suite.inherit === undefined) {
         if (!isLegacy) fail(`${at}.inherit`, 'is required in schema v1');
-        suite.inherit = LEGACY_CUMULATIVE_SUITE_IDS.has(suite.id)
+        suite.inherit = LEGACY_CUMULATIVE_SUITE_IDS.has(String(suite.id))
           ? 'all-higher-levels' : 'none';
-      } else if (!['none', 'all-higher-levels'].includes(suite.inherit)) {
+      } else if (!oneOf(suite.inherit, ['none', 'all-higher-levels'])) {
         fail(`${at}.inherit`, 'must be none or all-higher-levels');
       }
     });
   }
   if (manifest.actions !== undefined) {
     if (!array(manifest.actions)) fail(`${source}.actions`, 'must be an array');
-    const ids = new Set();
+    const ids = new Set<string>();
     manifest.actions.forEach((action, index) => {
       const at = `${source}.actions[${index}]`;
       strictObject(action, at, NAMED_ACTION_FIELDS);
-      for (const key of ['id', 'path', 'reducer']) {
-        if (!nonEmptyString(action[key])) fail(`${at}.${key}`, 'must be a non-empty string');
+      const actionPath = action.path;
+      for (const [key, field] of
+        [['id', action.id], ['path', actionPath], ['reducer', action.reducer]] as const) {
+        if (!nonEmptyString(field)) fail(`${at}.${key}`, 'must be a non-empty string');
       }
-      if (!action.path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
+      if (!nonEmptyString(actionPath) || !actionPath.startsWith('/')) {
+        fail(`${at}.path`, 'must be an absolute HTTP path');
+      }
       if (!array(action.args)) fail(`${at}.args`, 'must be an array');
-      if (action.params !== undefined) {
-        validateNamedActionParams(action.params, `${at}.params`);
-        action.params.filter(param => param.in === 'path').forEach((param, paramIndex) => {
-          if (!action.path.includes(param.placeholder)) {
+      const actionParams = action.params;
+      if (actionParams !== undefined) {
+        validateNamedActionParams(actionParams, `${at}.params`);
+        if (!array(actionParams)) fail(`${at}.params`, 'must be an array');
+        actionParams.filter((param): param is UnknownRecord => object(param) && param.in === 'path')
+          .forEach((param, paramIndex) => {
+          if (!actionPath.includes(String(param.placeholder))) {
             fail(`${at}.params[${paramIndex}].placeholder`,
-              `does not appear in path ${JSON.stringify(action.path)}`);
+              `does not appear in path ${JSON.stringify(actionPath)}`);
           }
         });
       }
-      if (ids.has(action.id)) fail(`${at}.id`, `duplicate named action ${action.id}`);
-      ids.add(action.id);
+      const actionId = String(action.id);
+      if (ids.has(actionId)) fail(`${at}.id`, `duplicate named action ${actionId}`);
+      ids.add(actionId);
     });
   }
   manifest.schemaVersion = DEFINITION_SCHEMA_VERSION;
-  return manifest;
+  return manifest as CompiledTrackManifest;
 }

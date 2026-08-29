@@ -5,7 +5,7 @@ import {
   createActionRegistry,
 } from './action-contract.js';
 import type { ActionExecutionArguments, ActionPlugin } from './action-contract.js';
-import { ACTION_IDS, compileActionInput } from '../composition/definition-compiler.mjs';
+import { ACTION_IDS, compileActionInput } from '../composition/definition-compiler.js';
 
 type ActionCategory =
   | 'application-process'

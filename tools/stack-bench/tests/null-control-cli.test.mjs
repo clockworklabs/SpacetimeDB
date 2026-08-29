@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../dist/src/composition/definition-compiler.js';
 import { nullControlSuites, parseNullControlArgs,
   selectNullQualificationBinding } from '../dist/commands/null-control.mjs';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';

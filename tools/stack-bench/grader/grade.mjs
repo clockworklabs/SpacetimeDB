@@ -22,7 +22,7 @@ import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { harnessBrowserFailure, harnessProcessFailure,
   runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { materializeScenarioCredentials } from '../src/composition/credential-aliases.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';

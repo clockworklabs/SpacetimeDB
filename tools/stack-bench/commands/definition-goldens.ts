@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { canonicalDefinitionJson, compileTrackPlan } from '../src/composition/definition-plan.js';
 import { listTracks } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';

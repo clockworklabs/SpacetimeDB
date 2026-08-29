@@ -2,7 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { compilePromotionFile, compileRecipeFile } from './composition-compiler.mjs';
-import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.mjs';
+import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { suitesFor } from './tracks.js';
@@ -11,7 +11,7 @@ import type {
   CompiledPromotionCatalog,
   CompiledRecipePlan,
 } from './composition-compiler.mjs';
-import type { CompiledStep } from './definition-compiler.mjs';
+import type { CompiledStep } from './definition-compiler.js';
 import type { Track, TrackSuiteSource } from './tracks.js';
 
 export const RECIPE_RELEASE_SCHEMA_VERSION = 1;

@@ -8,7 +8,7 @@ import {
 import {
   compileScenarioDefinition,
   type CompiledScenarioDefinition,
-} from '../composition/definition-compiler.mjs';
+} from '../composition/definition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';

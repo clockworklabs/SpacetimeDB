@@ -19,7 +19,7 @@ import type {
   ActionImplementation,
   ActionPlugin,
 } from '../src/actions/action-contract.js';
-import { ACTION_IDS } from '../src/composition/definition-compiler.mjs';
+import { ACTION_IDS } from '../src/composition/definition-compiler.js';
 
 interface FixtureStep {
   do: string;

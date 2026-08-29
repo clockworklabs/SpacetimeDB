@@ -11,7 +11,7 @@ import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { compileTrackManifest } from './definition-compiler.mjs';
+import { compileTrackManifest } from './definition-compiler.js';
 import type { StackPortAllocation } from '../stacks/stack-adapter-contract.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.js';

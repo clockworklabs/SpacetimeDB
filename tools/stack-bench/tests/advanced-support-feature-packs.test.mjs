@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compilePackDefinition } from '../src/composition/composition-compiler.mjs';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');

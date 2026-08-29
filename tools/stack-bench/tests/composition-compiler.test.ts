@@ -15,7 +15,7 @@ import {
   resolveTaskFragment,
 } from '../src/composition/composition-compiler.mjs';
 import type { CompiledRecipePlan } from '../src/composition/composition-compiler.mjs';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { loadTrack, suitesFor } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 

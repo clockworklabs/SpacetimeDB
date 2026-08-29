@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const readJson = (...parts) => JSON.parse(readFileSync(join(ROOT, ...parts), 'utf8'));

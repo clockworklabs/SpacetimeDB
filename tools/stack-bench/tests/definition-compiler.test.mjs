@@ -9,7 +9,7 @@ import {
   DEFINITION_SCHEMA_VERSION,
   compileScenarioDefinition,
   compileTrackManifest,
-} from '../src/composition/definition-compiler.mjs';
+} from '../src/composition/definition-compiler.js';
 import { ACTION_REGISTRY } from '../dist/src/actions/action-catalog.js';
 import { BROWSER_ACTION_IDS } from '../dist/src/actions/browser-action-executors.js';
 import { ACTOR_TRANSPORT_ACTION_IDS } from '../dist/src/actions/actor-transport-action-executors.js';

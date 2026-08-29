@@ -1,4 +1,4 @@
-import type { CompiledFeature } from './definition-compiler.mjs';
+import type { CompiledFeature } from './definition-compiler.js';
 
 export interface TaskFragmentDefinition {
   id: string;

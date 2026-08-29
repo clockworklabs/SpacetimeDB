@@ -8,7 +8,7 @@ import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.js'
 import { compilePackDefinition, compileRecipeFile } from '../src/composition/composition-compiler.mjs';
 import { loadTrack } from '../src/composition/tracks.js';
 import { resolveRecipeRelease } from '../dist/src/composition/recipe-release.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,
   dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';

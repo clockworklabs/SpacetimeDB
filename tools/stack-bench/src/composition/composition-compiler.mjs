@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
-import { compileScenarioDefinition } from './definition-compiler.mjs';
+import { compileScenarioDefinition } from './definition-compiler.js';
 
 export const COMPOSITION_SCHEMA_VERSION = 1;
 
