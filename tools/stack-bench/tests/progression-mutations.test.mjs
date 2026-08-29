@@ -11,7 +11,7 @@ import { rebaseMutationManifest } from '../src/evidence/mutation-rebase.mjs';
 import { compileFeatureCatalogInput,
   compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
-  from '../src/progression/progression-recipe-selection.mjs';
+  from '../dist/src/progression/progression-recipe-selection.js';
 import { loadReferenceRegistry } from '../src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');

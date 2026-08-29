@@ -16,7 +16,7 @@ import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composition/recipe-selection.mjs';
 import { validateFeatureCatalogInput } from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
-  from '../progression/progression-recipe-selection.mjs';
+  from '../progression/progression-recipe-selection.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.mjs';

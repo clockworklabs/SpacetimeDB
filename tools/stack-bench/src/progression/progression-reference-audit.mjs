@@ -6,7 +6,7 @@ import { readArtifact } from '../evidence/artifacts.mjs';
 import { progressionEngine } from './progression-engine.js';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.mjs';
 import { validateProgressionInput } from './progression-definition.js';
-import { resolveProgressionRecipeAction } from './progression-recipe-selection.mjs';
+import { resolveProgressionRecipeAction } from './progression-recipe-selection.js';
 import { readProgressionState, validateProgressionOwner } from './progression-state.js';
 
 const same = (left, right) => canonicalDefinitionJson(left) === canonicalDefinitionJson(right);

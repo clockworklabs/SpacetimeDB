@@ -9,7 +9,7 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
-  from '../src/progression/progression-recipe-selection.mjs';
+  from '../dist/src/progression/progression-recipe-selection.js';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.mjs';
 
 const AGENT = new URL('../commands/agent.mjs', import.meta.url).pathname

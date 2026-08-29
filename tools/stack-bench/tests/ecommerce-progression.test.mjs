@@ -14,7 +14,7 @@ import { compileProgressionDefinitionFile,
   dependencyRuntimeDefinition } from '../dist/src/progression/progression-definition.js';
 import { progressionEngine } from '../dist/src/progression/progression-engine.js';
 import { resolveProgressionRecipeAction,
-  validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.mjs';
+  validateProgressionRecipeBindings } from '../dist/src/progression/progression-recipe-selection.js';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');

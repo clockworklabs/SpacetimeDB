@@ -26,7 +26,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveFeatureCatalog } from '../dist/src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
-  from '../src/progression/progression-recipe-selection.mjs';
+  from '../dist/src/progression/progression-recipe-selection.js';
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };

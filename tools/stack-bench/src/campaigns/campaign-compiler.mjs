@@ -15,7 +15,7 @@ import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLe
   selectFeatureCatalogLevels, validateDependencyPolicyInput, validateFeatureCatalogInput }
   from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
-  from '../progression/progression-recipe-selection.mjs';
+  from '../progression/progression-recipe-selection.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';

@@ -60,7 +60,7 @@ import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels
   validateFeatureCatalogInput, validateProgressionInput }
   from '../src/progression/progression-definition.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection }
-  from '../src/progression/progression-recipe-selection.mjs';
+  from '../src/progression/progression-recipe-selection.js';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';

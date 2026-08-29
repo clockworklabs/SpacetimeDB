@@ -1,4 +1,5 @@
 import type { Track } from './tracks.mjs';
+import type { CompiledRecipePlan } from './composition-compiler.mjs';
 
 export interface RecipeCheck {
   stableKey: string;
@@ -80,6 +81,7 @@ export interface RecipeExecution {
 export interface RecipeBinding {
   alias: string;
   status: string;
+  plan: CompiledRecipePlan;
   release: RecipeRelease;
   execution: RecipeExecution[];
 }

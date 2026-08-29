@@ -16,7 +16,7 @@ import { compileDependencyPolicyInput, compileFeatureCatalogInput,
 import { auditProgressionReferenceRun }
   from '../src/progression/progression-reference-audit.mjs';
 import { resolveProgressionRecipeAction }
-  from '../src/progression/progression-recipe-selection.mjs';
+  from '../dist/src/progression/progression-recipe-selection.js';
 import { writeProgressionState } from '../dist/src/progression/progression-state.js';
 import { STACK_BENCH_ROOT } from '../src/project-paths.mjs';
 

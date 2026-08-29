@@ -1,24 +1,153 @@
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../composition/recipe-selection.mjs';
+import type {
+  ComposedRecipeTask,
+} from '../composition/recipe-selection.mjs';
+import type {
+  RecipeBinding,
+  RecipeCheck,
+  RecipePackComponent,
+} from '../composition/recipe-release.mjs';
 import { progressionEngine } from './progression-engine.js';
+import type { ProgressionAction, ProgressionWorkAction } from './progression-engine.js';
 import { validateFeatureCatalogInput, validateProgressionInput }
   from './progression-definition.js';
+import type {
+  CompiledProgressionDefinition,
+  CompiledProgressionNode,
+  ProgressionInput,
+} from './progression-definition.js';
+import type { ProgressionState } from './progression-state.js';
 
-const validateCatalog = input => input?.definition?.kind === 'feature-catalog'
-  ? validateFeatureCatalogInput(input) : validateProgressionInput(input);
+interface ExactReference {
+  id: string;
+  version: string;
+  ref: string;
+}
 
-function exactRef(value) {
+interface GradingCheckSelection {
+  id: string;
+  points: number;
+  nodeId?: string;
+}
+
+interface RequestedSpecifications {
+  expected: string[];
+  observed: string[];
+  requested: string[];
+}
+
+interface ModularRequestSelection extends Record<string, unknown> {
+  requested: {
+    features: string[];
+    specifications: RequestedSpecifications;
+    checks: string[];
+    dependencyExpansion?: string;
+  };
+  promptPacks: string[];
+}
+
+interface ModularTaskRequest extends Record<string, unknown> {
+  selection: ModularRequestSelection;
+}
+
+interface ModularBoundSelection extends Record<string, unknown> {
+  sha256: string;
+  requested: ModularRequestSelection['requested'];
+  promptPacks: string[];
+  scoredChecks: RecipeCheck[];
+}
+
+interface ModularBoundTask {
+  request: ModularTaskRequest;
+  selection: ModularBoundSelection;
+  task: ComposedRecipeTask;
+}
+
+export interface ProgressionRecipeSelections {
+  agent: {
+    request: ModularTaskRequest;
+    selection: ModularBoundSelection;
+    task: ComposedRecipeTask;
+    selectionSha256: string;
+    taskSha256: string;
+  };
+  grader: {
+    request: ModularTaskRequest;
+    selection: ModularBoundSelection;
+    task: ComposedRecipeTask;
+    selectionSha256: string;
+    checkKeys: string[];
+  };
+}
+
+export type ProgressionRecipeAction =
+  | { action: Extract<ProgressionAction, { type: 'terminal' }> }
+  | ({ action: ProgressionWorkAction } & ProgressionRecipeSelections);
+
+interface RecipeWorkAction extends ProgressionWorkAction {
+  prompt: { nodeIds: string[] };
+  grading: { nodeIds: string[]; checks: GradingCheckSelection[] };
+}
+
+interface RecipeBindingAtLevel {
+  level: number;
+  binding: RecipeBinding;
+}
+
+interface LeveledRecipeBinding extends RecipeBinding {
+  level: number;
+}
+
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function asModularBoundTask(value: unknown): ModularBoundTask {
+  if (!object(value) || !object(value.request) || !object(value.selection)
+    || !object(value.task) || typeof value.selection.sha256 !== 'string'
+    || !Array.isArray(value.selection.scoredChecks)
+    || !Array.isArray(value.selection.promptPacks) || !object(value.selection.requested)) {
+    throw new Error('progression recipe selection requires a modular recipe task');
+  }
+  return value as unknown as ModularBoundTask;
+}
+
+function asModularTaskRequest(value: unknown): ModularTaskRequest {
+  if (!object(value) || !object(value.selection) || !object(value.selection.requested)
+    || !Array.isArray(value.selection.promptPacks)) {
+    throw new Error('progression agent request requires a modular recipe task');
+  }
+  return value as unknown as ModularTaskRequest;
+}
+
+function asRecipeWorkAction(action: ProgressionWorkAction): RecipeWorkAction {
+  if (!object(action.prompt) || !Array.isArray(action.prompt.nodeIds)
+    || !object(action.grading) || !Array.isArray(action.grading.nodeIds)
+    || !Array.isArray(action.grading.checks)) {
+    throw new Error('progression action has invalid prompt or grading selections');
+  }
+  return action as RecipeWorkAction;
+}
+
+const validateCatalog = (input: unknown): ProgressionInput =>
+  object(input) && object(input.definition) && input.definition.kind === 'feature-catalog'
+    ? validateFeatureCatalogInput(input) : validateProgressionInput(input);
+
+function exactRef(value: string): ExactReference {
   const split = value.lastIndexOf('@');
   return { id: value.slice(0, split), version: value.slice(split + 1), ref: value };
 }
 
-function unique(values) {
+function unique(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-function dependencyClosure(modules, roots, expectedType, { allowed = null, label = 'progression' } = {}) {
-  const found = new Set();
-  const visit = (ref, chain = []) => {
+function dependencyClosure(modules: Map<string, RecipePackComponent>, roots: string[],
+  expectedType: string,
+  { allowed = null, label = 'progression' }:
+  { allowed?: Set<string> | null; label?: string } = {}): Set<string> {
+  const found = new Set<string>();
+  const visit = (ref: string, chain: string[] = []): void => {
     const module = modules.get(ref);
     if (!module) throw new Error(`${label} references module ${ref} outside the selected recipe`);
     if (module.moduleType !== expectedType) {
@@ -37,20 +166,27 @@ function dependencyClosure(modules, roots, expectedType, { allowed = null, label
   return found;
 }
 
-function validateNodeModuleDependencies(binding, definition, node) {
+function getNode(nodes: Map<string, CompiledProgressionNode>, nodeId: string): CompiledProgressionNode {
+  const node = nodes.get(nodeId);
+  if (!node) throw new Error(`progression references unknown node ${nodeId}`);
+  return node;
+}
+
+function validateNodeModuleDependencies(binding: RecipeBinding,
+  definition: CompiledProgressionDefinition, node: CompiledProgressionNode): void {
   const nodes = new Map(definition.nodes.map(item => [item.id, item]));
   const modules = new Map(binding.release.components.packs
     .map(module => [`${module.id}@${module.version}`, module]));
-  const ancestorIds = new Set();
-  const visitNode = nodeId => {
-    for (const parentId of nodes.get(nodeId).dependencies) {
+  const ancestorIds = new Set<string>();
+  const visitNode = (nodeId: string): void => {
+    for (const parentId of getNode(nodes, nodeId).dependencies) {
       if (ancestorIds.has(parentId)) continue;
       ancestorIds.add(parentId);
       visitNode(parentId);
     }
   };
   visitNode(node.id);
-  const scope = [node, ...[...ancestorIds].map(nodeId => nodes.get(nodeId))];
+  const scope = [node, ...[...ancestorIds].map(nodeId => getNode(nodes, nodeId))];
   const allowedFeatures = new Set(scope.flatMap(item => item.featureRefs));
   const allowedFeatureIds = new Set([...allowedFeatures].map(ref => exactRef(ref).id));
   const promptModules = scope.flatMap(item => item.promptModules).map(ref => {
@@ -92,26 +228,29 @@ function validateNodeModuleDependencies(binding, definition, node) {
   }
 }
 
-function resolveSelections(binding, definition, promptNodeIds, gradingNodeIds, gradingChecks,
-  taskMode) {
+function resolveSelections(binding: RecipeBinding, definition: CompiledProgressionDefinition,
+  promptNodeIds: string[], gradingNodeIds: string[], gradingChecks: GradingCheckSelection[],
+  taskMode: 'fresh' | 'upgrade'): ProgressionRecipeSelections {
   if (!binding?.release || !binding?.plan) {
     throw new Error('progression recipe selection requires a resolved recipe binding');
   }
   const nodes = new Map(definition.nodes.map(node => [node.id, node]));
   const selectedTaskMode = binding.plan.recipe.task.mode === 'action' ? taskMode : undefined;
   for (const nodeId of promptNodeIds) {
-    validateNodeModuleDependencies(binding, definition, nodes.get(nodeId));
+    validateNodeModuleDependencies(binding, definition, getNode(nodes, nodeId));
   }
   const modules = new Map(binding.release.components.packs
     .map(module => [`${module.id}@${module.version}`, module]));
   const checkCatalog = new Map(binding.release.checkCatalog
     .map(check => [check.stableKey, check]));
-  const refsFor = (nodeIds, field) => unique(nodeIds.flatMap(nodeId => nodes.get(nodeId)[field]));
-  const checkedRefs = refs => refs.map(ref => {
+  const refsFor = (nodeIds: string[], field: 'featureRefs' | 'promptModules'): string[] =>
+    unique(nodeIds.flatMap(nodeId => getNode(nodes, nodeId)[field]));
+  const checkedRefs = (refs: string[]): Array<ExactReference & { module: RecipePackComponent }> =>
+    refs.map(ref => {
     const module = modules.get(ref);
     if (!module) throw new Error(`progression references module ${ref} outside the selected recipe`);
     return { ...exactRef(ref), module };
-  });
+    });
   const promptFeatures = checkedRefs(refsFor(promptNodeIds, 'featureRefs'));
   const selectedPromptModules = checkedRefs(refsFor(promptNodeIds, 'promptModules'));
   const promptSpecifications = selectedPromptModules
@@ -164,23 +303,23 @@ function resolveSelections(binding, definition, promptNodeIds, gradingNodeIds, g
     }
   }
 
-  const agent = createBoundRecipeTaskRequest(binding, {
+  const agent = asModularBoundTask(createBoundRecipeTaskRequest(binding, {
     featureIds: promptFeatures.map(item => item.id),
     requestedSpecifications: promptSpecifications.map(item => item.ref),
     checkKeys: [],
     dependencyExpansion: 'exact',
     taskMode: selectedTaskMode,
-  });
-  const grader = createBoundRecipeTaskRequest(binding, {
+  }));
+  const grader = asModularBoundTask(createBoundRecipeTaskRequest(binding, {
     featureIds: [...requiredGradingFeatureIds].sort(),
     requestedSpecifications: gradingRequested.map(item => item.ref),
     expectedSpecifications: [...expectedSpecifications].sort(),
     checkKeys,
     dependencyExpansion: 'exact',
     taskMode: selectedTaskMode,
-  });
+  }));
   return {
-    agent: { request: createAgentVisibleTaskRequest(binding, agent),
+    agent: { request: asModularTaskRequest(createAgentVisibleTaskRequest(binding, agent)),
       selection: agent.selection, task: agent.task,
       selectionSha256: agent.selection.sha256, taskSha256: agent.task.sha256 },
     grader: { request: grader.request, selection: grader.selection, task: grader.task,
@@ -189,17 +328,19 @@ function resolveSelections(binding, definition, promptNodeIds, gradingNodeIds, g
   };
 }
 
-export function resolveProgressionRecipeAction(binding, state) {
+export function resolveProgressionRecipeAction(binding: RecipeBinding,
+  state: ProgressionState): ProgressionRecipeAction {
   const action = progressionEngine.nextAction(state);
   if (action.type === 'terminal') return { action };
+  const workAction = asRecipeWorkAction(action);
   const taskMode = action.type === 'build' && action.level === 1 && state.attempts.length === 0
     ? 'fresh' : 'upgrade';
-  return { action, ...resolveSelections(binding, state.definition, action.prompt.nodeIds,
-    action.grading.nodeIds, action.grading.checks, taskMode) };
+  return { action, ...resolveSelections(binding, state.definition, workAction.prompt.nodeIds,
+    workAction.grading.nodeIds, workAction.grading.checks, taskMode) };
 }
 
-export function resolveProgressionRecipeLevelSelection(binding, input, level,
-  { cumulative = true } = {}) {
+export function resolveProgressionRecipeLevelSelection(binding: RecipeBinding, input: unknown,
+  level: number, { cumulative = true }: { cumulative?: boolean } = {}): ProgressionRecipeSelections {
   const { definition } = validateCatalog(input);
   const promptNodeIds = definition.nodes.filter(node => node.level === level)
     .map(node => node.id);
@@ -214,9 +355,12 @@ export function resolveProgressionRecipeLevelSelection(binding, input, level,
     level === 1 ? 'fresh' : 'upgrade');
 }
 
-export function validateProgressionRecipeBindings(input, bindings, { levels = null } = {}) {
+export function validateProgressionRecipeBindings<T>(input: T,
+  bindings: Array<RecipeBindingAtLevel | LeveledRecipeBinding>,
+  { levels = null }: { levels?: number[] | null } = {}): T {
   const { definition } = validateCatalog(input);
-  const byLevel = new Map(bindings.map(binding => [binding.level, binding.binding ?? binding]));
+  const byLevel = new Map(bindings.map(item =>
+    [item.level, 'binding' in item ? item.binding : item]));
   const selectedLevels = levels ?? [...new Set(definition.nodes.map(node => node.level))];
   for (const level of selectedLevels) {
     const binding = byLevel.get(level);
@@ -231,8 +375,14 @@ export function validateProgressionRecipeBindings(input, bindings, { levels = nu
           node.gradingChecks.map(check => ({ ...check, nodeId: node.id })), 'upgrade');
         for (const reference of node.featureRefs) {
           const featureId = exactRef(reference).id;
-          for (const [kind, ids] of [['requirements', repair.agent.task.requirementIds],
-            ['contracts', repair.agent.task.contractIds]]) {
+          const fragments: Array<{
+            kind: 'requirements' | 'contracts';
+            ids: string[];
+          }> = [
+            { kind: 'requirements', ids: repair.agent.task.requirementIds },
+            { kind: 'contracts', ids: repair.agent.task.contractIds },
+          ];
+          for (const { kind, ids } of fragments) {
             if (!binding.plan.recipe.task[kind].some(fragment => ids.includes(fragment.id)
               && fragment.owners.includes(featureId))) {
               throw new Error(`progression root ${node.id} feature ${featureId} has no upgrade ${kind}`);

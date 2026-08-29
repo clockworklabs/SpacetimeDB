@@ -53,3 +53,6 @@ export function composeSelectedRecipeTask(
   selection: RecipeSelection,
   options?: { taskMode?: string | null },
 ): ComposedRecipeTask;
+
+export function createBoundRecipeTaskRequest(binding: unknown, options?: unknown): unknown;
+export function createAgentVisibleTaskRequest(binding: unknown, selected: unknown): unknown;

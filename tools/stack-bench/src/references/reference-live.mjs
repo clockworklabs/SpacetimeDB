@@ -38,7 +38,7 @@ import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
-  from '../progression/progression-recipe-selection.mjs';
+  from '../progression/progression-recipe-selection.js';
 import { mutationTargetKeys } from '../evidence/mutation-analysis.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
