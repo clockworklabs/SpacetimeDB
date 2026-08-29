@@ -1,5 +1,6 @@
 export const TRACKS_DIR: string;
 export const DEFAULT_TRACK: string;
+export const RUN_INDEX_CAP: number;
 
 export interface LoadedTrack {
   name: string;

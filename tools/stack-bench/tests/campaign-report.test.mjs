@@ -13,7 +13,7 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs'
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
-  initializeCampaignDirectory, writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+  initializeCampaignDirectory, writeCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const created = '2026-08-12T00:00:00.000Z';

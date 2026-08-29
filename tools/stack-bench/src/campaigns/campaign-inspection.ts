@@ -1,13 +1,85 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { readCampaignState } from './campaign-scheduler.mjs';
+import { readCampaignState } from './campaign-scheduler.js';
 import { progressionEngine } from '../progression/progression-engine.mjs';
 import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.mjs';
 
-function progressionOwner(plan, attempt) {
+interface ProgressionNodeDefinition {
+  id: string;
+  title: string;
+  level: number;
+  questline: string;
+  dependencies: string[];
+}
+
+interface ProgressionNodeState {
+  status: string;
+  strikes: { budget: number; used: number };
+  exhaustionReason: unknown;
+  checks: Record<string, string>;
+}
+
+interface ProgressionAttempt {
+  level: number;
+  outcome: unknown;
+  runId?: string;
+  sourceSha256?: string;
+  selectionSha256?: string;
+}
+
+interface ProgressionStateView {
+  phase: string;
+  level: number;
+  definition: {
+    nodes: ProgressionNodeDefinition[];
+    questlines: Array<{ id: string; title: string; nodes: string[] }>;
+  };
+  nodes: Record<string, ProgressionNodeState>;
+  attempts: ProgressionAttempt[];
+}
+
+interface ProgressionAction {
+  type: string;
+  strikes?: { maxRemaining: number; nodes: Array<Record<string, unknown>> };
+}
+
+export interface DependencyProgressNode {
+  id: string;
+  title: string;
+  level: number;
+  questline: string;
+  dependencies: string[];
+  status: string;
+  strikes: { budget: number; used: number; remaining: number };
+  exhaustionReason: unknown;
+  checks: { passed: number; failed: number; total: number };
+}
+
+export interface DependencyProgress {
+  phase: string;
+  level: number;
+  attempts: {
+    total: number;
+    level: number;
+    maxRemaining: number;
+    features: Array<Record<string, unknown>>;
+  };
+  work: {
+    current: DependencyProgressNode[];
+    passed: DependencyProgressNode[];
+    failed: DependencyProgressNode[];
+    locked: DependencyProgressNode[];
+  };
+  nodes: DependencyProgressNode[];
+  unreadable?: string;
+  [key: string]: unknown;
+}
+
+function progressionOwner(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan) {
   return {
     schemaVersion: 1,
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
@@ -23,7 +95,8 @@ function progressionOwner(plan, attempt) {
   };
 }
 
-export function dependencyProgress(plan, attempt, executionDirectory) {
+export function dependencyProgress(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
+  executionDirectory: string | null): DependencyProgress | null {
   if (attempt.mode?.id !== 'dependency' || !plan.featureCatalog
     || !plan.dependencyPolicy || !executionDirectory) return null;
   const statePath = join(executionDirectory, 'progression-state.json');
@@ -35,11 +108,12 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
       featureCatalogIdentity: plan.featureCatalog.identity,
       dependencyPolicyIdentity: plan.dependencyPolicy.identity,
       owner: progressionOwner(plan, attempt),
-    });
+    }) as { state: ProgressionStateView; snapshotSha256: string };
     const state = stored.state;
     const definitions = new Map(state.definition.nodes.map(node => [node.id, node]));
     const nodes = Object.entries(state.nodes).map(([id, node]) => {
       const definition = definitions.get(id);
+      if (!definition) throw new Error(`progression state has unknown node ${id}`);
       const checks = Object.values(node.checks);
       return {
         id,
@@ -59,7 +133,7 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
         },
       };
     });
-    const action = progressionEngine.nextAction(state);
+    const action = progressionEngine.nextAction(state) as ProgressionAction;
     const strikes = action.type === 'terminal' ? null : action.strikes;
     return {
       phase: state.phase,
@@ -94,11 +168,12 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
       snapshotSha256: stored.snapshotSha256,
     };
   } catch (error) {
-    return { unreadable: error.message };
+    return { unreadable: error instanceof Error ? error.message : String(error) } as
+      DependencyProgress;
   }
 }
 
-export function inspectCampaignSummary(directory) {
+export function inspectCampaignSummary(directory: string) {
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   return {
     id: plan.id,

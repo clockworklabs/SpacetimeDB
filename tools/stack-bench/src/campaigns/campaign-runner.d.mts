@@ -1,5 +1,5 @@
 import type { CompiledCampaignPlan } from './campaign-compiler.mjs';
-import type { CampaignState } from './campaign-scheduler.mjs';
+import type { CampaignState } from './campaign-scheduler.js';
 
 export interface InspectedCampaign {
   plan: CompiledCampaignPlan;

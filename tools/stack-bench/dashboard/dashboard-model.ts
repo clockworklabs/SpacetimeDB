@@ -5,13 +5,13 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 
 import type { CampaignAttemptPlan, CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.mjs';
-import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.mjs';
+import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { validateCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
-import { dependencyProgress } from '../src/campaigns/campaign-inspection.mjs';
+import { validateCampaignState } from '../src/campaigns/campaign-scheduler.js';
+import { dependencyProgress } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 
 const MAX_LOG_BYTES = 96 * 1024;

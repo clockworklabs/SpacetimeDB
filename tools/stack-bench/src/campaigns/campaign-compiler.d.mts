@@ -53,3 +53,8 @@ export function compileCampaignFile(path: string,
   options?: Record<string, unknown>): CompiledCampaignPlan;
 export function validateCompiledCampaignPlan(input: unknown,
   options?: { requireCurrentInputs?: boolean }): CompiledCampaignPlan;
+export function campaignIdentity(plan: CompiledCampaignPlan): {
+  id: string;
+  version: string;
+  sha256: string;
+};

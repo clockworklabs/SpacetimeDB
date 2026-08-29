@@ -8,7 +8,7 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
 import { compileCampaignFile } from './campaign-compiler.mjs';
 import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
-  markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.mjs';
+  markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.js';
 import { rescueSupervisedLease, runBounded } from '../references/reference-live.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
 import { runPreflight } from '../runtime/preflight.mjs';

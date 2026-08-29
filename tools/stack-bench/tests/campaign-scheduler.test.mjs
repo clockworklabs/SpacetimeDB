@@ -4,17 +4,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { compileCampaignFile } from '../dist/src/campaigns/campaign-compiler.mjs';
 import { claimNextAttempt, classifyCampaignExecution, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, markInterruptedExecution, readCampaignState,
   scheduleDependencyContinuation, validateCampaignState, writeCampaignState }
-  from '../src/campaigns/campaign-scheduler.mjs';
+  from '../dist/src/campaigns/campaign-scheduler.js';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const plan = () => compileCampaignFile(example);
 const prepared = () => createCampaignState(plan(), { now: '2026-08-12T00:00:00.000Z' });
-const claimed = () => claimNextAttempt(prepared(), { now: '2026-08-12T00:01:00.000Z',
-  admissionId: 'admission-1' });
+
+function requireClaim(result) {
+  assert.ok(result.claim);
+  return { ...result, claim: result.claim };
+}
+
+const claimed = () => requireClaim(claimNextAttempt(prepared(), {
+  now: '2026-08-12T00:01:00.000Z', admissionId: 'admission-1',
+}));
 
 test('provider failures remain distinct from harness failures in campaign state', () => {
   assert.deepEqual(classifyCampaignExecution({ exitCode: 1, run: { outcome: {
@@ -37,9 +44,9 @@ test('a targeted dependency grant schedules one exact completed attempt for resu
   for (let index = 0; index < state.attempts.length; index += 1) {
     const minute = String(index * 2 + 1).padStart(2, '0');
     const completedMinute = String(index * 2 + 2).padStart(2, '0');
-    const claimedAttempt = claimNextAttempt(state, {
+    const claimedAttempt = requireClaim(claimNextAttempt(state, {
       now: `2026-08-12T00:${minute}:00.000Z`, admissionId: 'admission-1',
-    });
+    }));
     state = finishCampaignExecution(claimedAttempt.state, claimedAttempt.claim.executionId,
       { exitCode: 0, run: { outcome: { kind: 'passed' } } },
       { now: `2026-08-12T00:${completedMinute}:00.000Z` });
@@ -56,9 +63,9 @@ test('a targeted dependency grant schedules one exact completed attempt for resu
   assert.deepEqual(state.attempts[0].executions[0].continuation.nodeIds,
     ['accounts', 'catalog']);
 
-  const resumed = claimNextAttempt(state, {
+  const resumed = requireClaim(claimNextAttempt(state, {
     now: '2026-08-12T00:21:00.000Z', admissionId: 'admission-2',
-  });
+  }));
   assert.equal(resumed.claim.resumeFrom,
     `continuations/${attempt.plan.id}/operator-grant-1`);
   assert.deepEqual(resumed.claim.priorOutputs, [priorOutput]);
@@ -96,8 +103,9 @@ test('serial campaign state materializes every attempt and enforces its one-slot
   const initial = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
   assert.deepEqual(initial.summary, { completed: 0, executions: 0, invalid: 0, pending: 9,
     running: 0, total: 9 });
-  const claimed = claimNextAttempt(initial, { now: '2026-08-12T00:01:00.000Z',
-    admissionId: 'admission-1' });
+  const claimed = requireClaim(claimNextAttempt(initial, {
+    now: '2026-08-12T00:01:00.000Z', admissionId: 'admission-1',
+  }));
   assert.equal(claimed.claim.attempt.id, campaign.attempts[0].id);
   assert.equal(claimed.claim.executionId, `${campaign.attempts[0].id}-execution1`);
   assert.equal(claimed.state.summary.running, 1);
@@ -111,8 +119,9 @@ test('parallel campaign claims unique slots and reuses a slot only after complet
   let state = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
   const claims = [];
   for (let index = 0; index < 3; index += 1) {
-    const next = claimNextAttempt(state, { now: `2026-08-12T00:0${index + 1}:00.000Z`,
-      admissionId: 'admission-1' });
+    const next = requireClaim(claimNextAttempt(state, {
+      now: `2026-08-12T00:0${index + 1}:00.000Z`, admissionId: 'admission-1',
+    }));
     state = next.state;
     claims.push(next.claim);
   }
@@ -122,8 +131,9 @@ test('parallel campaign claims unique slots and reuses a slot only after complet
   state = finishCampaignExecution(state, claims[1].executionId,
     { exitCode: 0, run: { outcome: { kind: 'passed' } } },
     { now: '2026-08-12T00:05:00.000Z' });
-  const reused = claimNextAttempt(state, { now: '2026-08-12T00:06:00.000Z',
-    admissionId: 'admission-1' });
+  const reused = requireClaim(claimNextAttempt(state, {
+    now: '2026-08-12T00:06:00.000Z', admissionId: 'admission-1',
+  }));
   assert.equal(reused.claim.runIndex, 1);
   assert.equal(reused.capacityFull, false);
 });
@@ -144,8 +154,9 @@ test('invalid executions remain visible and retries append rather than overwrite
     requested: true, transient: true, recoveryClean: true, budgetKnown: true, scheduled: true,
     cause: 'provider-http-503', reason: 'transient failure has clean recovery proof',
   });
-  const second = claimNextAttempt(retryable, { now: '2026-08-12T00:03:00.000Z',
-    admissionId: 'admission-1' });
+  const second = requireClaim(claimNextAttempt(retryable, {
+    now: '2026-08-12T00:03:00.000Z', admissionId: 'admission-1',
+  }));
   assert.equal(second.claim.executionId, `${campaign.attempts[0].id}-execution2`);
   assert.equal(second.claim.resumeFrom, retryable.attempts[0].executions[0].output);
   assert.deepEqual(second.claim.priorOutputs, [retryable.attempts[0].executions[0].output]);

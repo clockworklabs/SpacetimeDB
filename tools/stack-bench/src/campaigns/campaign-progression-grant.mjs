@@ -10,7 +10,7 @@ import { grantProgressionState, readProgressionState }
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
 import { inspectCampaign } from './campaign-runner.mjs';
 import { scheduleDependencyContinuation, writeCampaignState }
-  from './campaign-scheduler.mjs';
+  from './campaign-scheduler.js';
 
 function childPath(root, input, label) {
   const absoluteRoot = resolve(root);

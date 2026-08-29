@@ -18,7 +18,7 @@ import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { liveProgressionStatus } from '../src/progression/live-progression.mjs';
 import { writeProgressionState } from '../dist/src/progression/progression-state.js';
 import { claimNextAttempt, initializeCampaignDirectory,
-  writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+  writeCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const productBrief = join(import.meta.dirname, '..', 'appliance',
@@ -698,7 +698,7 @@ test('failed campaign admission leaves every attempt pending and unclaimed', asy
       admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
       execute: async () => { throw new Error('must not launch'); },
     }), /admission failed/);
-    const { readCampaignState } = await import('../src/campaigns/campaign-scheduler.mjs');
+    const { readCampaignState } = await import('../dist/src/campaigns/campaign-scheduler.js');
     const state = readCampaignState(root).state;
     assert.equal(state.status, 'prepared');
     assert.equal(state.summary.executions, 0);

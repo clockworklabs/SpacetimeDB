@@ -11,7 +11,7 @@ import { campaignUsesNoExternalResources, runCampaignAdmission }
   from '../src/campaigns/campaign-runner.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { readCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+import { readCampaignState } from '../dist/src/campaigns/campaign-scheduler.js';
 import { readArtifact } from '../src/evidence/artifacts.mjs';
 import { validateProgressionCampaignLevelScope } from '../commands/bench.mjs';
 import { replayDependencyMode } from '../src/progression/dependency-mode.mjs';

@@ -12,8 +12,8 @@ import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifact
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
-  from '../src/campaigns/campaign-scheduler.mjs';
-import type { CampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+  from '../src/campaigns/campaign-scheduler.js';
+import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
   readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact, summarizeCampaign,
@@ -135,12 +135,14 @@ test('dashboard reports dependency work from the validated persisted state', t =
   const now = '2026-08-25T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
+  const claim = claimed.claim;
   const state = claimed.state;
   const attemptState = state.attempts.find(attempt =>
-    attempt.executions.at(-1)?.id === claimed.claim.executionId);
+    attempt.executions.at(-1)?.id === claim.executionId);
   assert.ok(attemptState);
   const attemptPlan = attemptState.plan;
-  const outputRelative = claimed.claim.output;
+  const outputRelative = claim.output;
   const output = join(root, outputRelative);
   mkdirSync(join(output, 'source'), { recursive: true });
   writeCampaign(root, plan, state);
@@ -205,6 +207,7 @@ test('dashboard marks a current-schema campaign as interrupted when its controll
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
   writeCampaign(root, plan, claimed.state);
   const output = join(root, claimed.claim.output);
   mkdirSync(output, { recursive: true });
@@ -266,6 +269,7 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
   const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
     { exitCode: 0, run: { outcome: { kind: 'passed' } } },
     { now: '2026-08-18T12:00:01.000Z' });
@@ -347,6 +351,7 @@ test('dashboard serves real state and protects campaign launch with a separate o
   const now = '2026-08-25T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(storedPlan, { now }),
     { now, admissionId: 'old' });
+  assert.ok(claimed.claim);
   const storedState = finishCampaignExecution(claimed.state, claimed.claim.executionId, {
     exitCode: 1,
     run: { outcome: { kind: 'harness_failure', reason: 'controller stopped' } },
