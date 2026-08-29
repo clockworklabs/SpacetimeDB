@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { mutationFileEdits, mutationScenario, mutationTargetKeys,
-  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+  validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');

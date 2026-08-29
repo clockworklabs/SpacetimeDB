@@ -6,7 +6,7 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { mutationFileEdits, mutationTargetKeys,
-  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+  validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.mjs';

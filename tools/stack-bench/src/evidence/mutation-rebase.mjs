@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
 import { mutationFileEdits, mutationTargetKeys, resolveMutationFile,
-  validateMutationDefinitions } from './mutation-analysis.mjs';
+  validateMutationDefinitions } from './mutation-analysis.js';
 
 function scenarioPath(track, source) {
   return `tracks/${track}/${source}`;

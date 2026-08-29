@@ -1,58 +1,198 @@
 import { resolve, sep } from 'node:path';
 import { criterionEvidence, evidenceDisposition } from './check-evidence.js';
+import type { CheckEvidenceStatus, CheckOutcomeKind } from './check-evidence.js';
+import type { RecipeRelease } from '../composition/recipe-release.mjs';
 
-function featureKey(id) {
+type UnknownRecord = Record<string, unknown>;
+
+export interface MutationEditDefinition {
+  file?: unknown;
+  find?: unknown;
+  replace?: unknown;
+}
+
+export interface MutationDefinition {
+  id?: unknown;
+  file?: unknown;
+  find?: unknown;
+  replace?: unknown;
+  edits?: unknown;
+  targets?: unknown;
+  scenario?: unknown;
+  breaks?: unknown;
+  kills?: unknown;
+  [key: string]: unknown;
+}
+
+export interface MutationFileEdit {
+  file: string;
+  find: string;
+  replace: string;
+}
+
+export interface MutationValidationIssue {
+  kind: string;
+  mutation?: unknown;
+}
+
+export interface MutationManifest {
+  scenario?: unknown;
+  mutations?: MutationDefinition[];
+}
+
+interface CriterionReport {
+  id?: string;
+  stableKey?: unknown;
+  evidence?: unknown;
+}
+
+interface FeatureReport {
+  id?: unknown;
+  criteria?: CriterionReport[];
+}
+
+interface SelectionCheck {
+  stableKey?: unknown;
+}
+
+interface MutationReport {
+  total?: unknown;
+  max?: unknown;
+  features?: FeatureReport[];
+  selection?: { checks?: SelectionCheck[] };
+}
+
+interface IndexedCriterion {
+  feature: unknown;
+  criterion: string | number | undefined;
+  passed: boolean;
+  measured: boolean;
+  applicationFailure: boolean;
+  outcomeKind: CheckOutcomeKind;
+  status: CheckEvidenceStatus;
+  phase: 'setup' | 'assertion';
+  detail: string | null;
+}
+
+interface SetupFailure {
+  feature: unknown;
+  detail: string | null;
+  status: CheckEvidenceStatus;
+  outcomeKind: CheckOutcomeKind;
+  code: string;
+}
+
+interface IndexedMutationReport {
+  criteria: Map<string, IndexedCriterion>;
+  setupFailures: SetupFailure[];
+}
+
+interface ArtifactIdentityLike {
+  id?: unknown;
+  version?: unknown;
+  sha256?: unknown;
+  state?: unknown;
+}
+
+interface MutationSuite extends MutationReport {
+  [key: string]: unknown;
+}
+
+interface MutationBundle {
+  backend?: unknown;
+  track?: unknown;
+  level?: unknown;
+  source?: { sha256?: unknown };
+  recipeRelease?: { id?: unknown; version?: unknown; contentSha256?: unknown };
+  artifactEnvelope?: { identities?: Record<string, ArtifactIdentityLike | undefined> };
+  suites?: Record<string, MutationSuite>;
+}
+
+interface ExpectedBaseline {
+  backend: unknown;
+  track: unknown;
+  level: unknown;
+  fixtureSha256: unknown;
+  recipe: { id: unknown; version: unknown; sha256: unknown };
+  identities?: Record<string, ArtifactIdentityLike | undefined>;
+  selectedCheckKeys: Iterable<string>;
+}
+
+export interface MutationAnalysisIssue extends UnknownRecord {
+  kind: string;
+}
+
+export type MutationClassificationStatus =
+  | 'CAUGHT'
+  | 'INVALID_REPORT'
+  | 'INVALID_SETUP'
+  | 'INVALID_HARNESS_FAILURE'
+  | 'INVALID_INCONCLUSIVE'
+  | 'WRONG_CRITERION'
+  | 'SURVIVED'
+  | 'CAUGHT_COLLATERAL';
+
+function featureKey(id: unknown): string {
   return String(id);
 }
 
-function criterionKey(feature, criterion) {
+function criterionKey(feature: unknown, criterion: unknown): string {
   return `${featureKey(feature)}:${String(criterion)}`;
 }
 
-export function mutationEdits(mutation) {
-  return mutation.edits ?? (mutation.find != null || mutation.replace != null
+export function mutationEdits(mutation: MutationDefinition): MutationEditDefinition[] {
+  const edits = mutation.edits ?? (mutation.find != null || mutation.replace != null
     ? [{ find: mutation.find, replace: mutation.replace }] : []);
+  return edits as MutationEditDefinition[];
 }
 
-export function mutationFileEdits(mutation) {
+export function mutationFileEdits(mutation: MutationDefinition): MutationFileEdit[] {
   return mutationEdits(mutation).map(edit => ({
     file: edit.file ?? mutation.file,
     find: edit.find,
     replace: edit.replace,
-  }));
+  })) as MutationFileEdit[];
 }
 
-export function mutationTargetKeys(mutation) {
-  return Array.isArray(mutation.targets) ? mutation.targets : [];
+export function mutationTargetKeys(mutation: MutationDefinition): string[] {
+  return Array.isArray(mutation.targets) ? mutation.targets as string[] : [];
 }
 
-export function mutationScenario(manifest, mutation) {
+export function mutationScenario(
+  manifest: Pick<MutationManifest, 'scenario'> | null | undefined,
+  mutation: MutationDefinition | null | undefined,
+): string | null {
   const scenario = mutation?.scenario ?? manifest?.scenario;
   return typeof scenario === 'string' && scenario.trim() ? scenario : null;
 }
 
-export function groupMutationsByScenario(manifest) {
-  const groups = new Map();
+export function groupMutationsByScenario(manifest: MutationManifest): Map<string, MutationDefinition[]> {
+  const groups = new Map<string, MutationDefinition[]>();
   for (const mutation of manifest?.mutations ?? []) {
     const scenario = mutationScenario(manifest, mutation);
     if (!scenario) throw new Error(`mutation ${mutation?.id ?? '<unnamed>'} has no scenario`);
-    if (!groups.has(scenario)) groups.set(scenario, []);
-    groups.get(scenario).push(mutation);
+    const group = groups.get(scenario) ?? [];
+    group.push(mutation);
+    groups.set(scenario, group);
   }
   return groups;
 }
 
-export function releaseScenarioCheckKeys(release, trackDir, scenarioPath,
-  selectedCheckKeys = null) {
+export function releaseScenarioCheckKeys(
+  release: RecipeRelease | null | undefined,
+  trackDir: string,
+  scenarioPath: string,
+  selectedCheckKeys: Iterable<string> | null = null,
+): string[] {
   if (!release || !Array.isArray(release.checkCatalog)) {
     throw new Error('recipe-bound mutation grading requires a compiled release check catalog');
   }
   const selectedScenario = resolve(scenarioPath);
-  const selected = selectedCheckKeys === null ? null : new Set(selectedCheckKeys);
+  const selected = selectedCheckKeys === null ? null : new Set<string>(selectedCheckKeys);
   const keys = release.checkCatalog
     .filter(check => Number(check.points) > 0
       && (selected === null || selected.has(check.stableKey))
-      && resolve(trackDir, check.source) === selectedScenario)
+      && resolve(trackDir, check.source as string) === selectedScenario)
     .map(check => check.stableKey);
   if (keys.length === 0) {
     throw new Error(`mutation scenario ${scenarioPath} has no checks in the exact recipe release`);
@@ -60,7 +200,7 @@ export function releaseScenarioCheckKeys(release, trackDir, scenarioPath,
   return keys;
 }
 
-export function resolveMutationFile(app, file) {
+export function resolveMutationFile(app: string, file: string): string {
   const root = resolve(app);
   const target = resolve(root, file);
   if (target === root || !target.startsWith(`${root}${sep}`)) {
@@ -69,10 +209,13 @@ export function resolveMutationFile(app, file) {
   return target;
 }
 
-export function validateMutationDefinitions(mutations,
-  { defaultScenario = null, requireScenario = false } = {}) {
-  const issues = [];
-  const ids = new Set();
+export function validateMutationDefinitions(
+  mutations: MutationDefinition[] | undefined,
+  { defaultScenario = null, requireScenario = false }:
+    { defaultScenario?: string | null; requireScenario?: boolean } = {},
+): { ok: boolean; issues: MutationValidationIssue[] } {
+  const issues: MutationValidationIssue[] = [];
+  const ids = new Set<string>();
   for (const mutation of mutations ?? []) {
     if (typeof mutation.id !== 'string' || !mutation.id) issues.push({ kind: 'bad_id', mutation: mutation.id });
     else if (ids.has(mutation.id)) issues.push({ kind: 'duplicate_id', mutation: mutation.id });
@@ -112,9 +255,9 @@ export function validateMutationDefinitions(mutations,
   return { ok: issues.length === 0, issues };
 }
 
-export function indexMutationReport(report) {
-  const criteria = new Map();
-  const setupFailures = new Map();
+export function indexMutationReport(report: MutationReport | null | undefined): IndexedMutationReport {
+  const criteria = new Map<string, IndexedCriterion>();
+  const setupFailures = new Map<string, SetupFailure>();
   for (const feature of report?.features ?? []) {
     for (const criterion of feature.criteria ?? []) {
       const evidence = criterionEvidence(criterion);
@@ -141,11 +284,11 @@ export function indexMutationReport(report) {
   return { criteria, setupFailures: [...setupFailures.values()] };
 }
 
-function stableKeys(report) {
+function stableKeys(report: MutationReport | null | undefined): unknown[] {
   return (report?.selection?.checks ?? []).map(check => check.stableKey).sort();
 }
 
-function identityFields(identity) {
+function identityFields(identity: ArtifactIdentityLike | null | undefined): UnknownRecord {
   return {
     id: identity?.id ?? null,
     version: identity?.version ?? null,
@@ -154,10 +297,13 @@ function identityFields(identity) {
   };
 }
 
-export function reusableMutationBaseline(bundle, expected) {
+export function reusableMutationBaseline(
+  bundle: MutationBundle | null | undefined,
+  expected: ExpectedBaseline,
+): { ok: false; reason: string } | { ok: true; report: MutationSuite } {
   const release = bundle?.recipeRelease;
   const identities = bundle?.artifactEnvelope?.identities ?? {};
-  const mismatches = [];
+  const mismatches: string[] = [];
   if (bundle?.backend !== expected.backend) mismatches.push('backend');
   if (bundle?.track !== expected.track) mismatches.push('track');
   if (Number(bundle?.level) !== Number(expected.level)) mismatches.push('level');
@@ -178,12 +324,15 @@ export function reusableMutationBaseline(bundle, expected) {
   if (candidates.length !== 1) {
     return { ok: false, reason: `clean baseline has ${candidates.length} exact scenario matches` };
   }
-  return { ok: true, report: candidates[0] };
+  return { ok: true, report: candidates[0]! };
 }
 
-export function validateMutationBaseline(report, mutations) {
+export function validateMutationBaseline(
+  report: MutationReport | null | undefined,
+  mutations: MutationDefinition[],
+): { ok: boolean; issues: MutationAnalysisIssue[] } {
   const indexed = indexMutationReport(report);
-  const issues = [];
+  const issues: MutationAnalysisIssue[] = [];
   if (indexed.criteria.size === 0) issues.push({ kind: 'empty_report' });
   if (Number(report?.total) !== Number(report?.max)) {
     issues.push({ kind: 'score_not_full', total: report?.total, max: report?.max });
@@ -205,7 +354,9 @@ export function validateMutationBaseline(report, mutations) {
   return { ok: issues.length === 0, issues };
 }
 
-export function isRetryableMutationBaseline(issues) {
+export function isRetryableMutationBaseline(
+  issues: ReadonlyArray<{ kind: string }> | null | undefined,
+): boolean {
   const kinds = new Set((issues ?? []).map(issue => issue.kind));
   if (!kinds.size) return false;
   if (kinds.has('empty_report') || kinds.has('missing_target') || kinds.has('criterion_failure')) {
@@ -214,14 +365,31 @@ export function isRetryableMutationBaseline(issues) {
   return kinds.has('setup_failure') || kinds.has('harness_failure') || kinds.has('inconclusive');
 }
 
-export function classifyMutationResult(baselineReport, mutantReport, mutation) {
+export function classifyMutationResult(
+  baselineReport: MutationReport,
+  mutantReport: MutationReport,
+  mutation: MutationDefinition,
+): {
+  status: MutationClassificationStatus;
+  targetKeys: string[];
+  targetMissing: string[];
+  targetHarnessFailures: string[];
+  targetInconclusive: string[];
+  targetSurvived: string[];
+  collateral: Array<IndexedCriterion & { key: string; expected: boolean }>;
+  collateralHarnessFailures: string[];
+  collateralInconclusive: string[];
+  setupFailures: SetupFailure[];
+  missing: string[];
+  regressions: Array<IndexedCriterion & { key: string; expected: boolean }>;
+} {
   const baseline = indexMutationReport(baselineReport);
   const mutant = indexMutationReport(mutantReport);
   const targetKeys = new Set(mutationTargetKeys(mutation));
   const missing = [...baseline.criteria.keys()].filter(key => !mutant.criteria.has(key));
   const setupFailures = mutant.setupFailures.filter(item =>
     !baseline.setupFailures.some(base => featureKey(base.feature) === featureKey(item.feature)));
-  const regressions = [];
+  const regressions: Array<IndexedCriterion & { key: string; expected: boolean }> = [];
   for (const [key, before] of baseline.criteria) {
     const after = mutant.criteria.get(key);
     if (!before.passed || !after?.applicationFailure) continue;
@@ -242,7 +410,7 @@ export function classifyMutationResult(baselineReport, mutantReport, mutation) {
     before.passed && !targetKeys.has(key)
       && mutant.criteria.get(key)?.outcomeKind === 'inconclusive').map(([key]) => key);
 
-  let status = 'CAUGHT';
+  let status: MutationClassificationStatus = 'CAUGHT';
   if (targetKeys.size === 0 || missing.length || targetMissing.length) status = 'INVALID_REPORT';
   else if (setupFailures.length) status = 'INVALID_SETUP';
   else if (targetHarnessFailures.length || collateralHarnessFailures.length) {

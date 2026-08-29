@@ -4,12 +4,14 @@ import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
   mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
   releaseScenarioCheckKeys, resolveMutationFile, reusableMutationBaseline,
-  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
-import { createCheckEvidence } from '../dist/src/evidence/check-evidence.js';
-import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+  validateMutationDefinitions } from '../src/evidence/mutation-analysis.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import { buildRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
-const report = (criteria, setupError = null) => ({
+type CriterionValue = boolean | 'inconclusive';
+
+const report = (criteria: Record<string, CriterionValue>, setupError: string | null = null) => ({
   total: Object.values(criteria).filter(value => value === true).length,
   max: Object.keys(criteria).length,
   features: [{
@@ -47,18 +49,29 @@ test('a clean scenario report is reused only for the exact run identity and chec
     selectedCheckKeys: ['check.b', 'check.a'] };
 
   assert.deepEqual(reusableMutationBaseline(bundle, expected), { ok: true, report: scenario });
-  assert.match(reusableMutationBaseline(bundle, { ...expected, fixtureSha256: 'other' }).reason,
-    /fixture/);
-  assert.match(reusableMutationBaseline(bundle, { ...expected,
-    selectedCheckKeys: ['check.a'] }).reason, /0 exact scenario matches/);
-  assert.match(reusableMutationBaseline(bundle, { ...expected, identities: {
+  const fixtureMismatch = reusableMutationBaseline(bundle, { ...expected, fixtureSha256: 'other' });
+  assert.equal(fixtureMismatch.ok, false);
+  if (fixtureMismatch.ok) assert.fail('fixture mismatch was accepted');
+  assert.match(fixtureMismatch.reason, /fixture/);
+  const selectionMismatch = reusableMutationBaseline(bundle, { ...expected,
+    selectedCheckKeys: ['check.a'] });
+  assert.equal(selectionMismatch.ok, false);
+  if (selectionMismatch.ok) assert.fail('selection mismatch was accepted');
+  assert.match(selectionMismatch.reason, /0 exact scenario matches/);
+  const engineMismatch = reusableMutationBaseline(bundle, { ...expected, identities: {
     ...expected.identities,
     engine: { ...expected.identities.engine, sha256: 'new-engine' },
-  } }).reason, /engine/);
-  assert.match(reusableMutationBaseline(bundle, { ...expected, identities: {
+  } });
+  assert.equal(engineMismatch.ok, false);
+  if (engineMismatch.ok) assert.fail('engine mismatch was accepted');
+  assert.match(engineMismatch.reason, /engine/);
+  const calibrationMismatch = reusableMutationBaseline(bundle, { ...expected, identities: {
     ...expected.identities,
     calibration: { ...expected.identities.calibration, sha256: 'new-calibration' },
-  } }).reason, /calibration/);
+  } });
+  assert.equal(calibrationMismatch.ok, false);
+  if (calibrationMismatch.ok) assert.fail('calibration mismatch was accepted');
+  assert.match(calibrationMismatch.reason, /calibration/);
 });
 
 test('mutation definitions name exact criteria and contain real edits', () => {
@@ -115,19 +128,20 @@ test('mutation scenarios may override a manifest default and are required for ex
 
 test('recipe-bound mutation grading selects only checks owned by the scenario', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
-  const keys = releaseScenarioCheckKeys(binding.release, track.dir,
+  const release = buildRecipeRelease(join(track.dir, 'composition', 'recipes',
+    'l2-standard-1.6.0.json'), { trackRoot: track.dir });
+  const keys = releaseScenarioCheckKeys(release, track.dir,
     join(track.dir, 'scenarios', '02-features.json'));
   assert(keys.includes('ecommerce.operations-access.fulfilment-queue.1a'));
   assert(!keys.includes('ecommerce.operations-access.fulfilment-queue.1b'),
     '1b moved to a self-contained scenario and must not be graded from the legacy source');
   assert(!keys.includes('ecommerce.inventory-operations.operational-views.5a'),
     '5a moved to an isolated scenario and must not share state with the remaining views');
-  assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
+  assert.deepEqual(releaseScenarioCheckKeys(release, track.dir,
     join(track.dir, 'scenarios', '02-low-stock-1.4.0.json')), [
     'ecommerce.inventory-operations.operational-views.5a',
   ]);
-  assert.throws(() => releaseScenarioCheckKeys(binding.release, track.dir,
+  assert.throws(() => releaseScenarioCheckKeys(release, track.dir,
     join(track.dir, 'scenarios', '03-features.json')),
   /has no checks/);
 });
@@ -160,12 +174,12 @@ test('a mutation can declare exact targets across multiple features', () => {
   assert.equal(validateMutationDefinitions([crossFeature]).ok, true);
   assert.equal(validateMutationDefinitions([{ ...crossFeature, breaks: 7, kills: ['b'] }]).ok, false);
   const baseline = { total: 2, max: 2, features: [
-    { id: 7, criteria: [report({ b: true }).features[0].criteria[0]] },
-    { id: 8, criteria: [report({ c: true }).features[0].criteria[0]] },
+    { id: 7, criteria: [report({ b: true }).features[0]!.criteria[0]!] },
+    { id: 8, criteria: [report({ c: true }).features[0]!.criteria[0]!] },
   ] };
   const mutant = { total: 0, max: 2, features: [
-    { id: 7, criteria: [report({ b: false }).features[0].criteria[0]] },
-    { id: 8, criteria: [report({ c: false }).features[0].criteria[0]] },
+    { id: 7, criteria: [report({ b: false }).features[0]!.criteria[0]!] },
+    { id: 8, criteria: [report({ c: false }).features[0]!.criteria[0]!] },
   ] };
   assert.equal(validateMutationBaseline(baseline, [crossFeature]).ok, true);
   assert.equal(classifyMutationResult(baseline, mutant, crossFeature).status, 'CAUGHT');
@@ -220,7 +234,7 @@ test('a typed harness failure is not mistaken for an inconclusive or caught muta
     phase: 'assertion', summary: 'not an application observation', startedAtMs: 1, completedAtMs: 2 });
   const mutant = report({ a: true, b: true });
   mutant.total = 1;
-  mutant.features[0].criteria[1] = { id: 'b', stableKey: 'check.b', evidence };
+  mutant.features[0]!.criteria[1] = { id: 'b', stableKey: 'check.b', evidence };
   const result = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
   assert.equal(result.status, 'INVALID_HARNESS_FAILURE');
   assert.deepEqual(result.targetHarnessFailures, ['check.b']);
@@ -235,7 +249,7 @@ test('lost evidence outside the declared target invalidates a mutation kill', ()
   const harnessEvidence = createCheckEvidence({ status: 'harness_failure', code: 'browser_failure',
     phase: 'assertion', summary: 'browser disappeared', startedAtMs: 1, completedAtMs: 2 });
   const mutant = report({ a: true, b: false });
-  mutant.features[0].criteria[0] = { id: 'a', stableKey: 'check.a', evidence: harnessEvidence };
+  mutant.features[0]!.criteria[0] = { id: 'a', stableKey: 'check.a', evidence: harnessEvidence };
   const harness = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
   assert.equal(harness.status, 'INVALID_HARNESS_FAILURE');
   assert.deepEqual(harness.collateralHarnessFailures, ['check.a']);

@@ -4,8 +4,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import { mutationFileEdits, resolveMutationFile, validateMutationDefinitions }
-  from '../src/evidence/mutation-analysis.mjs';
-import type { MutationDefinition } from '../src/evidence/mutation-analysis.mjs';
+  from '../src/evidence/mutation-analysis.js';
+import type { MutationDefinition } from '../src/evidence/mutation-analysis.js';
 
 interface CliArgs {
   app: string;

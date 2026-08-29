@@ -7,7 +7,7 @@ import ts from 'typescript';
 
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
-  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+  validateMutationDefinitions } from '../dist/src/evidence/mutation-analysis.js';
 import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 

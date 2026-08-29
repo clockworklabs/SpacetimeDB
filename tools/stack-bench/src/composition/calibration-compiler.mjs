@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { compilePromotionFile } from './composition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
-import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.mjs';
+import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
 import { sha256 } from '../evidence/provenance.js';
 import { loadReferenceRegistry, validateReferenceRegistry } from '../references/reference-fixtures.mjs';
 import { readArtifact } from '../evidence/artifacts.js';

@@ -6,7 +6,7 @@ import ts from 'typescript';
 
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { mutationFileEdits } from '../src/evidence/mutation-analysis.mjs';
+import { mutationFileEdits } from '../dist/src/evidence/mutation-analysis.js';
 import { rebaseMutationManifest } from '../src/evidence/mutation-rebase.mjs';
 import { compileFeatureCatalogInput,
   compileProgressionDefinitionFile } from '../dist/src/progression/progression-definition.js';
