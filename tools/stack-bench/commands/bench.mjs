@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
-import { formatRepairProgress } from '../src/evidence/scoring.mjs';
+import { formatRepairProgress } from '../src/evidence/scoring.js';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode } from '../src/evidence/outcomes.js';

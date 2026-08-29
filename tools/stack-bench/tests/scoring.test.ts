@@ -1,19 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compareCriterionEvidence, formatRepairProgress } from '../src/evidence/scoring.mjs';
-import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { compareCriterionEvidence, formatRepairProgress } from '../src/evidence/scoring.js';
+import {
+  createCheckEvidence,
+  type CheckEvidenceStatus,
+} from '../src/evidence/check-evidence.mjs';
 
-const criterion = (id, passed, options = {}) => ({
-  ...typedCriterion(id, options.inconclusive ? 'inconclusive' : passed ? 'passed' : 'failed', null),
-  points: options.points ?? 1,
-});
-const typedCriterion = (id, status, summary) => {
+const typedCriterion = (id: string, status: CheckEvidenceStatus, summary: string | null) => {
   const evidence = createCheckEvidence({ status, code: 'test_result', phase: 'assertion', summary,
     startedAtMs: 1, completedAtMs: 2 });
   return { id, points: 1, evidence };
 };
-const bundle = (criteria, suite = 'features', featureId = 1) => ({
+const criterion = (
+  id: string,
+  passed: boolean,
+  options: { inconclusive?: boolean; points?: number } = {},
+) => ({
+  ...typedCriterion(id, options.inconclusive ? 'inconclusive' : passed ? 'passed' : 'failed', null),
+  points: options.points ?? 1,
+});
+const bundle = (
+  criteria: ReturnType<typeof typedCriterion>[],
+  suite = 'features',
+  featureId: string | number = 1,
+) => ({
   suites: { [suite]: { features: [{ id: featureId, name: 'Display name', criteria }] } },
 });
 

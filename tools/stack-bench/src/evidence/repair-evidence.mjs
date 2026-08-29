@@ -1,4 +1,4 @@
-import { compareCriterionEvidence } from './scoring.mjs';
+import { compareCriterionEvidence } from './scoring.js';
 
 const APPLICATION_SETUP_PHASES = new Set([
   'database-provenance', 'application-layout', 'application-restart', 'application-seed',

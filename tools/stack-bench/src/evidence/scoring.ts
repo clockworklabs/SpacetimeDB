@@ -5,10 +5,59 @@
 // otherwise a fix can make a passing or failing criterion untestable and have
 // that criterion disappear from the comparison.
 
-import { criterionEvidence, evidenceDisposition } from './check-evidence.mjs';
+import {
+  criterionEvidence,
+  evidenceDisposition,
+  type CheckEvidenceStatus,
+} from './check-evidence.mjs';
 
-function criterionIndex(bundle) {
-  const index = new Map();
+interface ScoredCriterion {
+  id?: string;
+  points?: number | null;
+  evidence?: unknown;
+}
+
+interface ScoredFeature {
+  id?: string | number | null;
+  name?: string | null;
+  criteria?: readonly ScoredCriterion[] | null;
+}
+
+interface ScoredSuite {
+  features?: readonly ScoredFeature[] | null;
+}
+
+export interface EvidenceBundle {
+  suites?: Readonly<Record<string, ScoredSuite | null | undefined>> | null;
+}
+
+interface IndexedCriterion {
+  key: string;
+  passed: boolean;
+  measured: boolean;
+  status: CheckEvidenceStatus;
+  points: number;
+}
+
+export interface CriterionEvidenceComparison {
+  before: number;
+  after: number;
+  count: number;
+  points: number;
+  lostEvidence: string[];
+  definitionChanges: Array<{ key: string; before: number; after: number }>;
+  newlyConclusive: string[];
+}
+
+export interface RepairScores {
+  before: number;
+  beforeMax: number;
+  after: number;
+  afterMax: number;
+}
+
+function criterionIndex(bundle: EvidenceBundle | null | undefined): Map<string, IndexedCriterion> {
+  const index = new Map<string, IndexedCriterion>();
   for (const [suiteId, suite] of Object.entries(bundle?.suites ?? {})) {
     for (const feature of suite?.features ?? []) {
       const featureId = feature.id ?? feature.name;
@@ -30,16 +79,19 @@ function criterionIndex(bundle) {
   return index;
 }
 
-export function compareCriterionEvidence(before, after) {
+export function compareCriterionEvidence(
+  before: EvidenceBundle | null | undefined,
+  after: EvidenceBundle | null | undefined,
+): CriterionEvidenceComparison {
   const previous = criterionIndex(before);
   const current = criterionIndex(after);
   let scoreBefore = 0;
   let scoreAfter = 0;
   let count = 0;
   let points = 0;
-  const lostEvidence = [];
-  const definitionChanges = [];
-  const newlyConclusive = [];
+  const lostEvidence: string[] = [];
+  const definitionChanges: CriterionEvidenceComparison['definitionChanges'] = [];
+  const newlyConclusive: string[] = [];
 
   for (const [key, was] of previous) {
     const now = current.get(key);
@@ -72,7 +124,10 @@ export function compareCriterionEvidence(before, after) {
   };
 }
 
-export function formatRepairProgress(comparison, { before, beforeMax, after, afterMax }) {
+export function formatRepairProgress(
+  comparison: CriterionEvidenceComparison,
+  { before, beforeMax, after, afterMax }: RepairScores,
+): string {
   const shared = `${comparison.count} ${comparison.count === 1 ? 'criterion' : 'criteria'} measured in both rounds `
     + `(${comparison.before}/${comparison.points} points)`;
   const overall = `overall ${before}/${beforeMax} -> ${after}/${afterMax}`;
