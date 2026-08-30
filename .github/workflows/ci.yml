@@ -21,6 +21,9 @@ permissions:
   contents: read
   pull-requests: read
 
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
@@ -101,16 +104,19 @@ jobs:
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
     steps: &upload-build-artifact-steps
-      - &set-cargo-target-dir
-        name: Set Cargo target directory
+      - &configure-sccache
+        name: Configure sccache
+        if: runner.os == 'Linux'
         shell: bash
         run: |
-          if [[ "${RUNNER_OS}" == "Linux" ]]; then
-            cargo_target_dir="${HOME}/actions-runner/_work/target"
-          else
-            cargo_target_dir="${GITHUB_WORKSPACE}/target"
+          if command -v sccache >/dev/null 2>&1; then
+            # sccache cannot cache incremental compilation artifacts, so
+            # disable Cargo's incremental mode whenever the wrapper is active.
+            echo "CARGO_INCREMENTAL=0" >>"${GITHUB_ENV}"
+            echo "RUSTC_WRAPPER=/usr/local/bin/sccache" >>"${GITHUB_ENV}"
+            echo "SCCACHE_DIR=${HOME}/.cache/sccache" >>"${GITHUB_ENV}"
+            echo "SCCACHE_CACHE_SIZE=20G" >>"${GITHUB_ENV}"
           fi
-          echo "CARGO_TARGET_DIR=${cargo_target_dir}" >>"${GITHUB_ENV}"
 
       - &find-git-ref
         name: Find Git ref
@@ -131,48 +137,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-          # Full history lets git restore-mtime recover each file's actual
-          # last-change timestamp and makes the warmed commit available for
-          # content-based cache invalidation below.
-          fetch-depth: 0
-
-      # cargo has a behavior that's a bit unfortunate for us here. It does not know the mtime of the files that
-      # were used to build its artifacts; it just knows the mtime of the artifact.
-      # So, if you have a sequence of events like:
-      # 1. cache source commit X happens at time X
-      # 2. PR commit Y happens at time Y > X
-      # 3. cache is warmed from commit X at time Z > Y
-      #
-      # cargo then sees "artifact built at time Z is more recent than time Y, so it must be up to date".
-      #
-      # So here we restore committed mtimes to reuse warm artifacts, then touch files that
-      # differ from the warmed commit so they will look more recent than the artifact,
-      # and cargo will properly rebuild anything depending on those files.
-      - &restore-source-mtimes
-        name: Restore source mtimes and invalidate changed files
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          cached_commit_file="${CARGO_TARGET_DIR}/.warm-cache-commit-SpacetimeDB"
-          if [[ -f "${cached_commit_file}" ]]; then
-            cached_commit="$(<"${cached_commit_file}")"
-          else
-            cached_commit=""
-          fi
-
-          if [[ -n "${cached_commit}" ]] && git cat-file -e "${cached_commit}^{commit}" 2>/dev/null; then
-            git restore-mtime --quiet
-            echo "Invalidating files changed since cached commit ${cached_commit}"
-            while IFS= read -r -d '' path; do
-              if [[ -L "${path}" ]]; then
-                touch -h -- "${path}"
-              elif [[ -e "${path}" ]]; then
-                touch -- "${path}"
-              fi
-            done < <(git diff --name-only -z "${cached_commit}" HEAD --)
-          else
-            echo "::warning::Warm-cache commit is unavailable; leaving checkout mtimes unchanged"
-          fi
 
       - uses: dsherret/rust-toolchain-file@v1
       - &set-default-rust-toolchain
@@ -196,10 +160,9 @@ jobs:
       #   its default background-thread support.
       # - Zstd is an optimized static build with legacy support and dictionary
       #   APIs. It is reused across Cargo profiles.
-      - &set-native-cache-keys-windows
+      - &set-native-cache-keys
         name: Set native cache keys
         id: native-cache-keys
-        if: runner.os == 'Windows'
         shell: bash
         run: |
           target="$(rustc -vV | sed -n 's/^host: //p')"
@@ -217,29 +180,59 @@ jobs:
             echo "zstd-key=zstd-v1-2.0.16+zstd.1.5.7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
           fi
 
-      - name: Cache rusty_v8
-        if: runner.os == 'Windows'
+      - &cache-rusty-v8
+        name: Cache rusty_v8
         uses: actions/cache@v4
-        with:
+        with: &v8-release-cache
           path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
           key: ${{ steps.native-cache-keys.outputs.v8-release-key }}
 
-      - name: Cache OpenSSL
+      - &cache-openssl
+        name: Cache OpenSSL
         id: cache-openssl
-        if: runner.os == 'Windows'
         uses: actions/cache@v4
-        with: &openssl-cache-windows
+        with: &openssl-cache
           path: ${{ github.workspace }}/.ci-cache/openssl
           key: ${{ steps.native-cache-keys.outputs.openssl-key }}
 
-      - &configure-cached-openssl-windows
+      - &configure-cached-openssl
         name: Configure cached OpenSSL
-        if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit == 'true'
+        if: steps.cache-openssl.outputs.cache-hit == 'true'
         shell: bash
         run: |
           # Reuse the cached vendored output as a prebuilt OpenSSL installation.
           echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
           echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
+
+      - name: Cache jemalloc
+        id: cache-jemalloc
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with: &jemalloc-cache
+          path: ${{ github.workspace }}/.ci-cache/jemalloc
+          key: ${{ steps.native-cache-keys.outputs.jemalloc-key }}
+
+      - &configure-cached-jemalloc
+        name: Configure cached jemalloc
+        if: runner.os == 'Linux' && steps.cache-jemalloc.outputs.cache-hit == 'true'
+        shell: bash
+        run: echo "JEMALLOC_OVERRIDE=${{ github.workspace }}/.ci-cache/jemalloc/libjemalloc_pic.a" >>"$GITHUB_ENV"
+
+      - name: Cache Zstd
+        id: cache-zstd
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with: &zstd-cache
+          path: ${{ github.workspace }}/.ci-cache/zstd
+          key: ${{ steps.native-cache-keys.outputs.zstd-key }}
+
+      - &configure-cached-zstd
+        name: Configure cached Zstd
+        if: runner.os == 'Linux' && steps.cache-zstd.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          echo "ZSTD_SYS_USE_PKG_CONFIG=1" >>"$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${{ github.workspace }}/.ci-cache/zstd/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >>"$GITHUB_ENV"
 
       - name: Build CLI and standalone
         shell: bash
@@ -249,8 +242,9 @@ jobs:
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
 
-      - name: Prepare OpenSSL cache
-        if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit != 'true'
+      - &prepare-openssl-cache
+        name: Prepare OpenSSL cache
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
         shell: bash
         run: |
           shopt -s nullglob
@@ -262,12 +256,64 @@ jobs:
           mkdir -p .ci-cache/openssl
           cp -R "${openssl_installs[0]}/." .ci-cache/openssl/
 
+      - name: Prepare jemalloc cache
+        if: runner.os == 'Linux' && steps.cache-jemalloc.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          jemalloc_archives=("${CARGO_TARGET_DIR}"/release/build/tikv-jemalloc-sys-*/out/lib/libjemalloc_pic.a)
+          if (( ${#jemalloc_archives[@]} != 1 )); then
+            echo "Expected one jemalloc archive, found ${#jemalloc_archives[@]}."
+            exit 1
+          fi
+          mkdir -p .ci-cache/jemalloc
+          cp "${jemalloc_archives[0]}" .ci-cache/jemalloc/
+          echo "JEMALLOC_OVERRIDE=${{ github.workspace }}/.ci-cache/jemalloc/libjemalloc_pic.a" >>"$GITHUB_ENV"
+
+      - name: Prepare Zstd cache
+        if: runner.os == 'Linux' && steps.cache-zstd.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          zstd_outputs=("${CARGO_TARGET_DIR}"/release/build/zstd-sys-*/out)
+          if (( ${#zstd_outputs[@]} != 1 )); then
+            echo "Expected one vendored Zstd build, found ${#zstd_outputs[@]}."
+            exit 1
+          fi
+          mkdir -p .ci-cache/zstd/lib/pkgconfig .ci-cache/zstd/include
+          cp "${zstd_outputs[0]}/libzstd.a" .ci-cache/zstd/lib/
+          cp "${zstd_outputs[0]}"/include/*.h .ci-cache/zstd/include/
+          printf '%s\n' \
+            'prefix=${pcfiledir}/../..' \
+            'libdir=${prefix}/lib' \
+            'includedir=${prefix}/include' \
+            '' \
+            'Name: libzstd' \
+            'Description: Zstandard compression library' \
+            'Version: 1.5.7' \
+            'Libs: -L${libdir} -lzstd' \
+            'Cflags: -I${includedir}' \
+            > .ci-cache/zstd/lib/pkgconfig/libzstd.pc
+          echo "ZSTD_SYS_USE_PKG_CONFIG=1" >>"$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${{ github.workspace }}/.ci-cache/zstd/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >>"$GITHUB_ENV"
+
       - name: Package build artifacts
         shell: bash
         run: |
           tar -C "${CARGO_TARGET_DIR}" -czf build-support.tar.gz \
             "release/spacetimedb-cli${EXE_SUFFIX}" \
             "release/spacetimedb-standalone${EXE_SUFFIX}"
+
+      - &show-sccache-stats
+        name: Show sccache statistics
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --show-stats
+          else
+            echo "::notice::sccache is not installed on this Linux runner"
+          fi
 
       - name: Upload Cargo timing reports
         if: always()
@@ -312,24 +358,22 @@ jobs:
       EXE_SUFFIX: ""
       SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - *find-git-ref
       - *checkout-sources
 
-      - *restore-source-mtimes
-
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
-      - *set-native-cache-keys-windows
+      - *set-native-cache-keys
       - *verify-openssl-assembler
-      - name: Restore OpenSSL
+      - &restore-openssl
+        name: Restore OpenSSL
         id: cache-openssl
-        if: runner.os == 'Windows'
         uses: actions/cache/restore@v4
-        with: *openssl-cache-windows
-      - *configure-cached-openssl-windows
+        with: *openssl-cache
+      - *configure-cached-openssl
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -349,6 +393,8 @@ jobs:
           tar -czf smoketest-support.tar.gz \
             "${CARGO_TARGET_DIR}/debug/ci-smoketests${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
+
+      - *show-sccache-stats
 
       - name: Upload Cargo timing reports
         if: always()
@@ -399,12 +445,10 @@ jobs:
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 1
     steps: &smoketest-partition-steps
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - *find-git-ref
       - *checkout-sources
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
@@ -584,7 +628,7 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - &set-spacetime-bin
         name: Set SpacetimeDB binary path
@@ -612,15 +656,42 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys
+      - &restore-jemalloc
+        name: Restore jemalloc
+        id: cache-jemalloc
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v4
+        with: *jemalloc-cache
+      - *configure-cached-jemalloc
+      - &restore-zstd
+        name: Restore Zstd
+        id: cache-zstd
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v4
+        with: *zstd-cache
+      - *configure-cached-zstd
+      - &restore-rusty-v8-debug
+        name: Restore rusty_v8 (debug)
+        uses: actions/cache/restore@v4
+        with: &v8-debug-cache
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
+      - &restore-rusty-v8
+        name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with: *v8-release-cache
+      - *restore-openssl
+      - *configure-cached-openssl
+
       - *download-build-artifacts
       - *extract-build-artifacts
+
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
@@ -674,6 +745,8 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           cargo ci test
 
+      - *show-sccache-stats
+
       - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -692,9 +765,10 @@ jobs:
       queue: max
     timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
+      - *configure-sccache
+
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -716,8 +790,19 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
+
       - name: Run index scan benchmark regression check
         run: cargo run --release -p spacetimedb-index-scan-gate
+
+      - *show-sccache-stats
 
   lints:
     needs: [merge_queue_noop]
@@ -727,19 +812,26 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - name: Checkout sources
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - name: Cache rusty_v8 (debug)
+        uses: actions/cache@v4
+        with: *v8-debug-cache
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -756,6 +848,8 @@ jobs:
 
       - name: Run ci lint
         run: cargo ci lint
+
+      - *show-sccache-stats
 
       - name: Upload timing reports
         if: always()
@@ -776,13 +870,11 @@ jobs:
       RUST_BACKTRACE: full
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -811,12 +903,11 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
       - *set-spacetime-bin
 
       - *find-git-ref
       - *checkout-sources
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
@@ -837,13 +928,9 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -874,18 +961,19 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - *find-git-ref
       - *checkout-sources
-      - *restore-source-mtimes
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys-windows
+      - *set-native-cache-keys
+      - *restore-zstd
+      - *configure-cached-zstd
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
@@ -894,6 +982,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
+
+      - *show-sccache-stats
 
       - name: Upload timing reports
         if: always()
@@ -947,7 +1037,7 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
       # commits though.
@@ -1026,7 +1116,7 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - name: Find Git ref
         env:
@@ -1045,9 +1135,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -1062,9 +1149,19 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-openssl
+      - *configure-cached-openssl
+
       - name: Check for docs change
         run: |
           cargo ci cli-docs
+
+      - *show-sccache-stats
 
       - name: Upload timing reports
         if: always()
@@ -1085,11 +1182,12 @@ jobs:
     runs-on: spacetimedb-unity-runner
     timeout-minutes: 30
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       UNITY_VERSION: 2022.3.32f1
     steps:
+      - *configure-sccache
+
       - *find-git-ref
       - *checkout-sources
 
@@ -1139,6 +1237,15 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -1220,11 +1327,10 @@ jobs:
       ARTIFACT_SUFFIX: linux
       UseLocalBsatnRuntime: true
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - *find-git-ref
       - *checkout-sources
-      - *restore-source-mtimes
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1260,6 +1366,15 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -1321,12 +1436,11 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
       - *set-spacetime-bin
 
       - *find-git-ref
       - *checkout-sources
-      - *restore-source-mtimes
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1373,6 +1487,16 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-rusty-v8-debug
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -1436,7 +1560,7 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - name: Find Git ref
         env:
@@ -1453,9 +1577,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1482,7 +1603,7 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - name: Find Git ref
         env:
@@ -1500,9 +1621,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1519,14 +1637,10 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
 
       - name: Checkout repository
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - *restore-source-mtimes
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -1561,12 +1675,11 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
-      - *set-cargo-target-dir
+      - *configure-sccache
       - *set-spacetime-bin
 
       - *find-git-ref
       - *checkout-sources
-      - *restore-source-mtimes
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -1582,11 +1695,22 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-rusty-v8-debug
+      - *restore-openssl
+      - *configure-cached-openssl
+
       - *download-build-artifacts
       - *extract-build-artifacts
 
       - name: Run TypeScript tests
         run: cargo ci typescript-test
+
+      - *show-sccache-stats
 
       - name: Upload timing reports
         if: always()
