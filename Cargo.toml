@@ -183,6 +183,9 @@ spacetimedb-table = { path = "crates/table", version = "=2.8.3" }
 # Modules use `getrandom02` and we need to prevent an incompatible version
 # from appearing in module dependency graphs.
 ahash = { version = "0.8", default-features = false, features = ["std"] }
+# Antithesis assertion SDK — used by APAI suspend/unsuspend deadlock-hunt instrumentation
+# in host-only crates (core, fs-utils). Re-exports serde_json for assertion details.
+antithesis_sdk = "0.3.0"
 anyhow = "1.0.68"
 anymap = "0.12"
 arrayvec = "0.7.2"

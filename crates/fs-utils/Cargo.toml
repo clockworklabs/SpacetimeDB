@@ -7,6 +7,7 @@ license-file = "LICENSE"
 description = "Assorted utilities for filesystem operations used in SpacetimeDB"
 
 [dependencies]
+antithesis_sdk.workspace = true
 anyhow.workspace = true
 log.workspace = true
 chrono = { workspace = true, features = ["alloc", "std"] }

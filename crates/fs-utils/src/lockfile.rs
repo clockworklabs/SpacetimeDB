@@ -202,11 +202,29 @@ pub mod advisory {
                 })?;
             // TODO: Use `File::lock` (available since rust 1.89) instead?
             if let Err(source) = lock.try_lock_exclusive() {
+                // TODO (APAI): Reachable that we try to acquire the db lock while someone else is holding it
                 let existing_contents = if source.kind() == io::ErrorKind::WouldBlock {
                     Self::read_existing_contents(&mut lock).ok().flatten()
                 } else {
                     None
                 };
+                // APAI: contention on this lock (typically a replica's `db.lock`) means a
+                // predecessor holder has not released it yet. During a respawn after (un)suspend
+                // this stops the replica from starting -- the suspected root cause of the hang.
+                // `existing_contents` carries the previous holder's pid + timestamp.
+                log::warn!(
+                    "apai: failed to acquire exclusive lock on {} (held by another owner): {:?}",
+                    path.display(),
+                    existing_contents
+                );
+                antithesis_sdk::assert_reachable!(
+                    "apai: failed to acquire an exclusive file lock (e.g. db.lock contended)",
+                    &antithesis_sdk::serde_json::json!({
+                        "path": path.display().to_string(),
+                        "would_block": source.kind() == io::ErrorKind::WouldBlock,
+                        "existing_contents": existing_contents.clone(),
+                    })
+                );
                 return Err(LockError {
                     path: path.to_path_buf(),
                     source,

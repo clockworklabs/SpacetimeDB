@@ -631,10 +631,22 @@ impl HostController {
         let warn_blocked = tokio::spawn(async move {
             loop {
                 t.tick().await;
+                // TODO (APAI): Reachable that we cannot acquire the exclusive lock
                 warn!(
                     "blocked waiting to exit module for replica {} since {}s",
                     replica_id,
                     start.elapsed().as_secs_f32()
+                );
+                // APAI: we are blocked taking the module's write lock in order to tear it down.
+                // A stuck writer here holds references (durability -> commitlog repo -> db.lock),
+                // so this is a prime spot where a suspend teardown can wedge and never release
+                // db.lock. This fires every 5s while blocked.
+                antithesis_sdk::assert_reachable!(
+                    "apai: blocked acquiring the exclusive module lock during exit_module_host",
+                    &antithesis_sdk::serde_json::json!({
+                        "replica_id": replica_id,
+                        "blocked_secs": start.elapsed().as_secs_f32(),
+                    })
                 );
             }
         });
@@ -663,9 +675,20 @@ impl HostController {
         .await;
 
         if shutdown.is_err() {
+            // TODO (APAI): Reachable that exiting the module timed out
             warn!(
                 "replica={replica_id} shutdown timed out after {}s",
                 start.elapsed().as_secs_f32()
+            );
+            // APAI: the module host did not finish shutting down within the timeout, so the
+            // caller (e.g. suspend teardown) moves on while the host -- and the db.lock it holds
+            // -- may still be alive. Direct precursor to a stuck respawn on the next unsuspend.
+            antithesis_sdk::assert_reachable!(
+                "apai: exit_module_host timed out shutting down the module host",
+                &antithesis_sdk::serde_json::json!({
+                    "replica_id": replica_id,
+                    "elapsed_secs": start.elapsed().as_secs_f32(),
+                })
             );
         }
 

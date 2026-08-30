@@ -15,6 +15,7 @@ path = "src/lib.rs"  # The source file of the target.
 bench = false
 
 [dependencies]
+antithesis_sdk.workspace = true
 spacetimedb-auth.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
