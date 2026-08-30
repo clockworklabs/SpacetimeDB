@@ -179,6 +179,58 @@ jobs:
         name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - &verify-openssl-assembler-windows
+        name: Verify OpenSSL assembler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: nasm -v
+
+      - &set-native-cache-keys-windows
+        name: Set native cache keys
+        id: native-cache-keys
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          openssl_suffix=""
+          if [[ "${OPENSSL_RUST_USE_NASM:-}" == "1" ]]; then
+            openssl_suffix="-nasm"
+          fi
+          echo "v8-release-key=rusty-v8-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
+          echo "v8-debug-key=rusty-v8-debug-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
+          echo "openssl-key=openssl-v1-300.5.3+3.5.4-${target}${openssl_suffix}" >>"$GITHUB_OUTPUT"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            cc="${CC:-cc}"
+            cc_hash="$("$cc" --version | sha256sum | cut -c1-16)"
+            echo "jemalloc-key=jemalloc-v1-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
+            echo "zstd-key=zstd-v1-2.0.16+zstd.1.5.7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache rusty_v8
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
+          key: ${{ steps.native-cache-keys.outputs.v8-release-key }}
+
+      - &cache-openssl-windows
+        name: Cache OpenSSL
+        id: cache-openssl
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with: &openssl-cache-windows
+          path: ${{ github.workspace }}/.ci-cache/openssl
+          key: ${{ steps.native-cache-keys.outputs.openssl-key }}
+
+      - &configure-cached-openssl-windows
+        name: Configure cached OpenSSL
+        if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          # Reuse the cached vendored output as a prebuilt OpenSSL installation.
+          echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
+          echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
+
       - name: Build CLI and standalone
         shell: bash
         run: |
@@ -186,6 +238,19 @@ jobs:
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
+
+      - name: Prepare OpenSSL cache
+        if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          openssl_installs=("${CARGO_TARGET_DIR}"/release/build/openssl-sys-*/out/openssl-build/install)
+          if (( ${#openssl_installs[@]} != 1 )); then
+            echo "Expected one vendored OpenSSL installation, found ${#openssl_installs[@]}."
+            exit 1
+          fi
+          mkdir -p .ci-cache/openssl
+          cp -R "${openssl_installs[0]}/." .ci-cache/openssl/
 
       - name: Package build artifacts
         shell: bash
@@ -248,13 +313,41 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
+      - *set-native-cache-keys-windows
+      - *verify-openssl-assembler-windows
+      - &restore-openssl-windows
+        name: Restore OpenSSL
+        id: cache-openssl
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@v4
+        with: *openssl-cache-windows
+      - *configure-cached-openssl-windows
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
       - name: Build smoketest dependencies and archive test binaries
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+
+          shopt -s nullglob
+          precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+          if (( ${#precompiled_modules[@]} == 0 )); then
+            echo "No precompiled smoketest modules were produced."
+            exit 1
+          fi
+
+          tar -czf smoketest-support.tar.gz \
+            "${CARGO_TARGET_DIR}/debug/ci-smoketests${EXE_SUFFIX}" \
+            "${precompiled_modules[@]}"
+
+      - name: Build smoketest dependencies and archive test binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -443,7 +536,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          cargo ci smoketests run-archive `
+          .\target\debug\ci-smoketests.exe run-archive `
             --archive-file smoketest-nextest.tar.zst `
             -- `
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
@@ -803,6 +896,8 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys-windows
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
