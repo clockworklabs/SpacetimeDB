@@ -334,19 +334,11 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Build smoketest dependencies (Linux)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
-
-      - name: Build smoketest dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
-
-      - name: Archive smoketest support files
+      - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
+          cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+
           shopt -s nullglob
           precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
           if (( ${#precompiled_modules[@]} == 0 )); then
