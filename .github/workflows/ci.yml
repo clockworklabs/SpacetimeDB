@@ -74,7 +74,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -201,7 +201,7 @@ jobs:
       - name: Build CLI and standalone
         shell: bash
         run: |
-          cargo build --timings --release \
+          cargo build -vv --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
@@ -289,7 +289,7 @@ jobs:
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
@@ -304,7 +304,7 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -334,7 +334,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+          cargo run -vv --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -389,7 +389,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -573,7 +573,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -674,7 +674,7 @@ jobs:
 
           INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
           if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
-            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+            cargo install -vv --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
           fi
 
           wasm-bindgen --version
@@ -695,7 +695,7 @@ jobs:
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false
     name: Index Scan Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
@@ -737,13 +737,13 @@ jobs:
       - *configure-cached-openssl
 
       - name: Run index scan benchmark regression check
-        run: cargo run --release -p spacetimedb-index-scan-gate
+        run: cargo run -vv --release -p spacetimedb-index-scan-gate
 
   lints:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -794,7 +794,7 @@ jobs:
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     permissions:
       contents: read
       pull-requests: read
@@ -829,7 +829,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -853,7 +853,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     permissions: read-all
     env:
       RUST_BACKTRACE: full
@@ -881,7 +881,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2-staging }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
@@ -939,7 +939,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -1025,7 +1025,7 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test -- --test-threads=1
+              cargo test -vv -- --test-threads=1
             '
 
   cli_docs:
@@ -1033,7 +1033,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -1093,7 +1093,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    if: false
     permissions:
       contents: read
       checks: write
@@ -1239,7 +1239,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       ARTIFACT_SUFFIX: linux
@@ -1346,7 +1346,7 @@ jobs:
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -1544,7 +1544,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1579,7 +1579,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full

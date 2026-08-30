@@ -3,7 +3,7 @@ rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
 llm = "run --package xtask-llm-benchmark --bin llm_benchmark --"
-ci = "run -p ci --"
+ci = "run -vv -p ci --"
 spacetime = "ci other-workflows run-spacetime"
 regen = "run -p regen --"
 smoketest = "ci smoketests --"
