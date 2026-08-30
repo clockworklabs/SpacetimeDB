@@ -390,14 +390,19 @@ jobs:
           cargo run -vv --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
-          precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
-          if (( ${#precompiled_modules[@]} == 0 )); then
+          precompiled_module_paths=("${CARGO_TARGET_DIR}"/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+          if (( ${#precompiled_module_paths[@]} == 0 )); then
             echo "No precompiled smoketest modules were produced."
             exit 1
           fi
 
-          tar -czf smoketest-support.tar.gz \
-            "${CARGO_TARGET_DIR}/debug/ci-smoketests${EXE_SUFFIX}" \
+          precompiled_modules=()
+          for module in "${precompiled_module_paths[@]}"; do
+            precompiled_modules+=("${module#"${CARGO_TARGET_DIR}/"}")
+          done
+
+          tar -C "${CARGO_TARGET_DIR}" -czf "${PWD}/smoketest-support.tar.gz" \
+            "debug/ci-smoketests${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
 
       - *show-sccache-stats
@@ -554,7 +559,9 @@ jobs:
 
       - name: Extract smoketest support files
         shell: bash
-        run: tar -xzf smoketest-support.tar.gz
+        run: |
+          mkdir -p "${CARGO_TARGET_DIR}"
+          tar -C "${CARGO_TARGET_DIR}" -xzf smoketest-support.tar.gz
 
       # Serial execution avoids contention between the C# tests over generated bindings.
       - name: Run smoketest partition (Linux)
