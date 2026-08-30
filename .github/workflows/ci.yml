@@ -953,9 +953,10 @@ jobs:
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+
       # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
       # commits though.
       #      - name: Find Git ref
