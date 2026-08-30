@@ -188,6 +188,17 @@ jobs:
         shell: pwsh
         run: nasm -v
 
+      # These keys intentionally spell out stable native-build inputs instead of
+      # hashing the workspace. Keep the versions in sync with Cargo.lock and bump
+      # v1 if a fixed feature set or build configuration changes. This manual
+      # versioning is temporary until a better caching mechanism replaces it.
+      # - V8 uses its default features and has profile-specific native output.
+      # - OpenSSL is the vendored static build with legacy enabled. Windows uses
+      #   NASM, which is represented by a separate cache-key suffix.
+      # - jemalloc is an optimized static PIC build with profiling, stats, and
+      #   its default background-thread support.
+      # - Zstd is an optimized static build with legacy support and dictionary
+      #   APIs. It is reused across Cargo profiles.
       - &set-native-cache-keys-windows
         name: Set native cache keys
         id: native-cache-keys
