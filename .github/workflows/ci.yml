@@ -21,13 +21,12 @@ permissions:
   contents: read
   pull-requests: read
 
-env:
-  CARGO_TARGET_DIR: ${{ github.workspace }}/target
-
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     permissions:
       actions: write
       contents: read
@@ -100,6 +99,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 15
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
@@ -301,6 +301,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 15
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
@@ -408,6 +409,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
       ARTIFACT_SUFFIX: linux
@@ -596,6 +598,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
 
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
@@ -740,6 +743,7 @@ jobs:
     name: Lints
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -788,6 +792,7 @@ jobs:
       contents: read
       pull-requests: read
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -823,6 +828,7 @@ jobs:
     name: Build and test wasm bindings
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
@@ -850,6 +856,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     permissions: read-all
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -887,6 +894,7 @@ jobs:
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -960,6 +968,7 @@ jobs:
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
@@ -1037,6 +1046,7 @@ jobs:
     permissions: read-all
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -1230,6 +1240,7 @@ jobs:
       contents: read
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       ARTIFACT_SUFFIX: linux
       UseLocalBsatnRuntime: true
     steps:
@@ -1331,6 +1342,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
@@ -1447,6 +1459,7 @@ jobs:
     permissions:
       contents: read
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -1493,6 +1506,7 @@ jobs:
     permissions:
       contents: read
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -1530,6 +1544,7 @@ jobs:
     name: Docs build
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -1571,6 +1586,7 @@ jobs:
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
     steps:
