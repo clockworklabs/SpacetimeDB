@@ -182,7 +182,7 @@ jobs:
         name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - &verify-openssl-assembler-windows
+      - &verify-openssl-assembler
         name: Verify OpenSSL assembler
         if: runner.os == 'Windows'
         shell: pwsh
@@ -317,7 +317,7 @@ jobs:
       - *set-default-rust-toolchain
 
       - *set-native-cache-keys-windows
-      - *verify-openssl-assembler-windows
+      - *verify-openssl-assembler
       - &restore-openssl-windows
         name: Restore OpenSSL
         id: cache-openssl
