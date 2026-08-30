@@ -1,6 +1,6 @@
 use crate::reducer::{assert_only_lifetime_generics, extract_typed_args, generate_explicit_names_impl};
 use crate::sym;
-use crate::util::{check_duplicate, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, extract_arg_names, ident_to_litstr, match_meta};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::Parser as _;
@@ -50,15 +50,7 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
     // };
 
     // Extract all function parameter names.
-    let opt_arg_names = typed_args.iter().map(|arg| {
-        if let syn::Pat::Ident(i) = &*arg.pat {
-            let name = i.ident.to_string();
-            quote!(Some(#name))
-        } else {
-            quote!(None)
-        }
-    });
-
+    let opt_arg_names = extract_arg_names(&typed_args)?;
     let arg_tys = typed_args.iter().map(|arg| arg.ty.as_ref()).collect::<Vec<_>>();
     let first_arg_ty = arg_tys.first().into_iter();
     let rest_arg_tys = arg_tys.iter().skip(1);
