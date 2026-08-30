@@ -21,6 +21,9 @@ permissions:
   contents: read
   pull-requests: read
 
+env:
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
+
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
@@ -536,7 +539,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          .\target\debug\ci-smoketests.exe run-archive `
+          & "$env:CARGO_TARGET_DIR\debug\ci-smoketests.exe" run-archive `
             --archive-file smoketest-nextest.tar.zst `
             -- `
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
