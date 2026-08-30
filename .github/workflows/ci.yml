@@ -227,8 +227,7 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
           key: ${{ steps.native-cache-keys.outputs.v8-release-key }}
 
-      - &cache-openssl-windows
-        name: Cache OpenSSL
+      - name: Cache OpenSSL
         id: cache-openssl
         if: runner.os == 'Windows'
         uses: actions/cache@v4
@@ -330,8 +329,7 @@ jobs:
 
       - *set-native-cache-keys-windows
       - *verify-openssl-assembler
-      - &restore-openssl-windows
-        name: Restore OpenSSL
+      - name: Restore OpenSSL
         id: cache-openssl
         if: runner.os == 'Windows'
         uses: actions/cache/restore@v4
