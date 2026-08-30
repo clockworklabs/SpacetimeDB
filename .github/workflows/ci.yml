@@ -339,29 +339,19 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Build smoketest dependencies and archive test binaries
+      - name: Build smoketest dependencies (Linux)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+        run: cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
-          shopt -s nullglob
-          precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
-          if (( ${#precompiled_modules[@]} == 0 )); then
-            echo "No precompiled smoketest modules were produced."
-            exit 1
-          fi
-
-          tar -czf smoketest-support.tar.gz \
-            "${CARGO_TARGET_DIR}/debug/ci-smoketests${EXE_SUFFIX}" \
-            "${precompiled_modules[@]}"
-
-      - name: Build smoketest dependencies and archive test binaries (Windows)
+      - name: Build smoketest dependencies (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: |
-          cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+        run: cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
+      - name: Archive smoketest support files
+        shell: bash
+        run: |
           shopt -s nullglob
           precompiled_modules=(${CARGO_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
           if (( ${#precompiled_modules[@]} == 0 )); then
