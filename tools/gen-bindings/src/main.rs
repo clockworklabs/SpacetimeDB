@@ -55,7 +55,6 @@ fn main() -> Result<()> {
     run_inherit(
         "cargo",
         &[
-            "-vv",
             "spacetime",
             "generate",
             "-y",

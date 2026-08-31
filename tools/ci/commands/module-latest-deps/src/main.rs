@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     let cli_path = if env::var_os("SPACETIME_BIN").is_some() {
         ci_common::require_spacetime_bin()?
     } else {
-        cmd!("cargo", "build", "-vv", "-p", "spacetimedb-cli").run()?;
+        cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
         target_dir()
             .join("debug/spacetimedb-cli")
             .with_extension(env::consts::EXE_EXTENSION)
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
 
     // A fresh module gets the latest versions permitted by its dependency constraints rather
     // than the exact versions pinned in this repository's committed lockfile.
-    cmd!("cargo", "update", "-vv").run()?;
+    cmd!("cargo", "update").run()?;
     cmd!(cli_path, "build", "--module-path", "modules/module-test").run()?;
 
     Ok(())
