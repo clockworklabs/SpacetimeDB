@@ -169,9 +169,9 @@ public sealed class PerformanceTests
     private static int Iterations(int rowCount) =>
         rowCount switch
         {
-            <= 1 => 10_000,
-            <= 100 => 1_000,
-            _ => 10,
+            <= 1 => 50_000,
+            <= 100 => 10_000,
+            _ => 1_000,
         };
 
     private static BsatnRowList MakeRowList(int rowCount)
