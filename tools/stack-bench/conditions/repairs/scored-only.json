@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "kind": "repair-policy",
+  "id": "scored-only",
+  "version": "1.0.0",
+  "state": "qualified",
+  "scoredEvidence": true,
+  "observedEvidence": false
+}

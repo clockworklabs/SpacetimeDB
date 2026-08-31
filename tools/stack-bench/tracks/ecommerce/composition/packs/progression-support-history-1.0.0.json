@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.support-history", "version": "1.0.0", "state": "qualified", "moduleType": "feature",
+  "title": "Customer support history", "description": "Durable account-owned support history.",
+  "requiresPacks": ["ecommerce.feature.accounts@1.2.0", "ecommerce.progression.support-intake@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 50000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.support-history", "path": "prompts/modular/support-history-1.0.0.md", "order": 2110, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.support-history-hooks", "path": "contracts/support-history-1.0.md", "order": 2900, "modes": ["upgrade"] }]
+  },
+  "checks": [
+    { "id": "persistence", "stableId": "support-history-persistence", "source": "scenarios/progression-support-history-1.0.0.json", "feature": 612, "criteria": ["612a"], "role": "feature" },
+    { "id": "privacy", "stableId": "support-history-privacy", "source": "scenarios/progression-support-history-1.0.0.json", "feature": 612, "criteria": ["612b"], "role": "feature" }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 paid price history",
+  "note": "The receipt check reloads the customer before reading history, proving persisted order data rather than a stale in-memory response.",
+  "features": [
+    {
+      "id": 4,
+      "name": "Prices change, history does not",
+      "actors": ["admin", "customer", "visitor"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "history-persisted" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "4a",
+          "desc": "a price change updates the live catalog but leaves the customer's exact paid price unchanged",
+          "points": 3,
+          "statedBy": "past orders keep the price that was paid",
+          "steps": [
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+            { "do": "recordNumber", "actor": "customer", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "air-purifier-paid" },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" }, "settleMs": 2000 },
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+            { "do": "fill", "actor": "admin", "testid": "price-input", "text": "1.00", "in": { "testid": "admin-item-row", "contains": "Air Purifier" } },
+            { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Air Purifier" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 1, "within": 10000 },
+            { "do": "reload", "actor": "customer", "settleMs": 2000 },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+            { "do": "expectNumber", "actor": "customer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Air Purifier" }, "relativeTo": "air-purifier-paid", "plus": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

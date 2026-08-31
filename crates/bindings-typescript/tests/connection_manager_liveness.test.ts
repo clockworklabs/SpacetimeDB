@@ -12,7 +12,7 @@ type ErrorContextInterface = { isActive: boolean };
 class MockConnection {
   isActive = false;
   identity = undefined;
-  token = undefined;
+  token: string | undefined;
   connectionId = ConnectionId.random();
   isDisconnectRequested = false;
   disconnected = false;
@@ -27,6 +27,10 @@ class MockConnection {
   #onConnectError = new Set<
     (ctx: ErrorContextInterface, error: Error) => void
   >();
+
+  constructor(private readonly issuedToken?: string) {
+    this.token = undefined;
+  }
 
   get isSocketClosed(): boolean {
     return this.socketClosed;
@@ -63,6 +67,7 @@ class MockConnection {
 
   simulateConnect(): void {
     this.isActive = true;
+    this.token = this.issuedToken;
     for (const cb of this.#onConnect) cb(this);
   }
   simulateDisconnect(error?: Error): void {
@@ -74,7 +79,9 @@ class MockConnection {
 
 class MockBuilder {
   buildCount = 0;
+  presentedTokens: Array<string | undefined> = [];
   connections: MockConnection[] = [];
+  #token: string | undefined;
 
   #onConnect = new Set<(conn: MockConnection) => void>();
   #onDisconnect = new Set<
@@ -84,9 +91,17 @@ class MockBuilder {
     (ctx: ErrorContextInterface, error: Error) => void
   >();
 
+  constructor(private readonly issuedToken?: string) {}
+
+  withToken(token?: string): MockBuilder {
+    this.#token = token;
+    return this;
+  }
+
   build(): MockConnection {
-    const connection = new MockConnection();
+    const connection = new MockConnection(this.issuedToken);
     this.buildCount += 1;
+    this.presentedTokens.push(this.#token);
     this.connections.push(connection);
     for (const cb of this.#onConnect) connection.register('connect', cb);
     for (const cb of this.#onDisconnect) connection.register('disconnect', cb);
@@ -198,6 +213,32 @@ describe('ConnectionManager liveness recovery', () => {
 
     expect(builder.buildCount).toBe(2);
     expect(ConnectionManager.getConnection(key)).toBe(builder.connections[1]);
+    ConnectionManager.release(key);
+  });
+
+  test('reuses the issued token when reviving a dead socket', () => {
+    const key = nextKey();
+    const builder = new MockBuilder('issued-token');
+    const first = retain(key, builder);
+    expect(builder.presentedTokens).toEqual([undefined]);
+
+    first.simulateConnect();
+    first.socketClosed = true;
+    fire('win:online');
+
+    expect(builder.presentedTokens).toEqual([undefined, 'issued-token']);
+    ConnectionManager.release(key);
+  });
+
+  test('an explicit rebuild uses the caller token', () => {
+    const key = nextKey();
+    const firstBuilder = new MockBuilder('issued-token');
+    retain(key, firstBuilder).simulateConnect();
+
+    const replacement = new MockBuilder().withToken('caller-token');
+    ConnectionManager.rebuild(key, replacement as any);
+
+    expect(replacement.presentedTokens).toEqual(['caller-token']);
     ConnectionManager.release(key);
   });
 

@@ -1,0 +1,1257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack Bench | Dependency Graph</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #050706;
+    --panel: #0b1110;
+    --panel-raised: #101716;
+    --line: #22322f;
+    --line-strong: #3b504b;
+    --text: #eef3f1;
+    --muted: #91a09d;
+    --dim: #5e6b68;
+    --green: #21f38a;
+    --green-bg: #0d2b1c;
+    --blue: #62c7ff;
+    --blue-bg: #102938;
+    --yellow: #f3c959;
+    --yellow-bg: #352b13;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { min-height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: .12;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  button { font: inherit; }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    width: min(1440px, 100%);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 18px;
+  }
+
+  h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.1; letter-spacing: -.025em; }
+  .subtitle { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-height: 52px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgba(11, 17, 16, .94);
+  }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; }
+  .legend span { color: var(--muted); font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .07em; }
+  .legend i { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; }
+  .legend .qualified { background: var(--green); }
+  .legend .draft { background: var(--yellow); }
+
+  .graph-panel {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(11, 17, 16, .96);
+  }
+
+  .graph-panel { min-width: 0; overflow: auto; }
+
+  .graph-canvas {
+    position: relative;
+    min-width: 1320px;
+    min-height: 680px;
+    padding: 18px;
+  }
+
+  #edges {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .edge {
+    fill: none;
+    stroke-width: 1.75;
+    opacity: .1;
+    transition: opacity 120ms ease, stroke-width 120ms ease;
+  }
+
+  .edge.qualified { stroke: var(--green); }
+  .edge.draft { stroke: var(--yellow); }
+  .edge.muted { opacity: .025; }
+  .edge.active { opacity: 1; stroke-width: 2.75; }
+
+  .graph-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 170px repeat(var(--depth-count, 4), minmax(160px, 1fr));
+    gap: 0 30px;
+  }
+
+  .depth-head {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 10px 10px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font: 10px/1 var(--mono);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+
+  .depth-head:first-child { padding-left: 0; }
+
+  .questline-label,
+  .questline-cell {
+    min-height: 76px;
+    padding: 10px;
+    border-bottom: 1px solid rgba(34, 50, 47, .72);
+  }
+
+  .questline-label {
+    display: flex;
+    align-items: flex-start;
+    padding-left: 0;
+    color: var(--muted);
+    font: 600 12px/1.25 var(--sans);
+  }
+
+  .questline-cell {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+  }
+
+  .node {
+    width: 100%;
+    min-height: 52px;
+    margin: 0;
+    padding: 9px 11px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5px 12px;
+    align-items: center;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel-raised);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    transition: opacity 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  }
+
+  .node .name { min-width: 0; font: 600 11.5px/1.25 var(--mono); }
+  .node .state { grid-column: 2; font: 700 11px/1 var(--mono); }
+
+  .node.qualified { border-color: #287b55; background: var(--green-bg); }
+  .node.qualified .state { color: var(--green); }
+  .node.draft { border-color: #766329; background: var(--yellow-bg); }
+  .node.draft .state { color: var(--yellow); }
+  .node.muted { opacity: .2; }
+  .node.active { box-shadow: 0 0 0 1px currentColor; }
+
+  .footnote { margin: 14px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+  @media (max-width: 900px) {
+    header { display: block; }
+  }
+
+  @media (max-width: 560px) {
+    .shell { padding: 16px; }
+    .toolbar { display: block; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <div>
+      <h1>Ecommerce dependency graph</h1>
+      <p class="subtitle">Each row is a questline. Select a feature to see what it needs and what it unlocks.</p>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="legend" aria-label="Feature release states">
+      <span><i class="qualified"></i>Qualified feature pack</span>
+      <span><i class="draft"></i>Draft feature pack</span>
+    </div>
+  </div>
+
+  <section class="graph-panel" aria-label="Feature graph">
+    <div class="graph-canvas" id="graph-canvas">
+      <svg id="edges" aria-hidden="true">
+        <defs>
+          <marker id="arrow-qualified" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#21f38a"></path>
+          </marker>
+          <marker id="arrow-draft" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#f3c959"></path>
+          </marker>
+        </defs>
+      </svg>
+      <div class="graph-grid" id="graph-grid"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+  /* STACK_BENCH_GRAPH_START */
+  const graph = {
+  "schemaVersion": 1,
+  "definition": {
+    "id": "ecommerce.questlines",
+    "version": "2.0.1",
+    "state": "draft"
+  },
+  "levels": 6,
+  "questlines": [
+    {
+      "id": "business-operations",
+      "title": "Business operations"
+    },
+    {
+      "id": "catalog-discovery",
+      "title": "Catalog and discovery"
+    },
+    {
+      "id": "customer-support",
+      "title": "Customer support"
+    },
+    {
+      "id": "identity-profiles",
+      "title": "Identity and profiles"
+    },
+    {
+      "id": "inventory",
+      "title": "Inventory"
+    },
+    {
+      "id": "notifications",
+      "title": "Notifications"
+    },
+    {
+      "id": "orders-fulfillment",
+      "title": "Orders and fulfilment"
+    },
+    {
+      "id": "promotions",
+      "title": "Promotions"
+    },
+    {
+      "id": "recommendations",
+      "title": "Recommendations"
+    },
+    {
+      "id": "reviews",
+      "title": "Reviews"
+    },
+    {
+      "id": "shopping-checkout",
+      "title": "Shopping and checkout"
+    },
+    {
+      "id": "staff-access",
+      "title": "Staff access"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "accounts",
+      "name": "Accounts",
+      "level": 1,
+      "state": "qualified",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "identity-profiles",
+      "featureRefs": [
+        "ecommerce.feature.accounts@1.2.0"
+      ],
+      "checks": 5,
+      "points": 5
+    },
+    {
+      "id": "catalog",
+      "name": "Catalog items",
+      "level": 1,
+      "state": "draft",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "catalog-discovery",
+      "featureRefs": [
+        "ecommerce.feature.catalog-items@1.0.0"
+      ],
+      "checks": 1,
+      "points": 1
+    },
+    {
+      "id": "staff-access",
+      "name": "Staff access",
+      "level": 1,
+      "state": "qualified",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "staff-access",
+      "featureRefs": [
+        "ecommerce.progression.staff-access@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "support-intake",
+      "name": "Support intake",
+      "level": 1,
+      "state": "qualified",
+      "parents": [],
+      "dependencyReasons": {},
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.progression.support-intake@1.0.0"
+      ],
+      "checks": 1,
+      "points": 2
+    },
+    {
+      "id": "customer-profile",
+      "name": "Customer profile",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "accounts"
+      ],
+      "dependencyReasons": {
+        "accounts": "A profile belongs to a customer account."
+      },
+      "questline": "identity-profiles",
+      "featureRefs": [
+        "ecommerce.progression.customer-profile@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "notification-preferences",
+      "name": "Notification preferences",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "accounts"
+      ],
+      "dependencyReasons": {
+        "accounts": "Preferences belong to an account."
+      },
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.notification-preferences@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "purchasing",
+      "name": "Purchasing and orders",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "accounts",
+        "catalog"
+      ],
+      "dependencyReasons": {
+        "accounts": "A purchase needs a buyer.",
+        "catalog": "A purchase needs an item."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.feature.purchasing@1.2.1"
+      ],
+      "checks": 8,
+      "points": 12
+    },
+    {
+      "id": "cart",
+      "name": "Cart",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "accounts",
+        "catalog"
+      ],
+      "dependencyReasons": {
+        "accounts": "An account cart belongs to a buyer.",
+        "catalog": "A cart contains catalog items."
+      },
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.feature.cart@2.0.0"
+      ],
+      "checks": 5,
+      "points": 7
+    },
+    {
+      "id": "catalog-discovery",
+      "name": "Catalog discovery",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "catalog"
+      ],
+      "dependencyReasons": {
+        "catalog": "Discovery ranks and searches catalog items."
+      },
+      "questline": "catalog-discovery",
+      "featureRefs": [
+        "ecommerce.feature.catalog-discovery@1.0.0"
+      ],
+      "checks": 2,
+      "points": 2
+    },
+    {
+      "id": "support-history",
+      "name": "Customer support history",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "accounts",
+        "support-intake"
+      ],
+      "dependencyReasons": {
+        "accounts": "Owned ticket history requires an account.",
+        "support-intake": "History contains submitted tickets."
+      },
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.progression.support-history@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "warehouse-admin",
+      "name": "Warehouse administration",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "catalog",
+        "staff-access"
+      ],
+      "dependencyReasons": {
+        "catalog": "Warehouse stock belongs to catalog items.",
+        "staff-access": "Warehouse changes require staff access."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.feature.warehouse-admin@1.2.1"
+      ],
+      "checks": 7,
+      "points": 9
+    },
+    {
+      "id": "promotion-rules",
+      "name": "Promotion rules",
+      "level": 2,
+      "state": "draft",
+      "parents": [
+        "catalog",
+        "staff-access"
+      ],
+      "dependencyReasons": {
+        "catalog": "Promotions apply to catalog sales.",
+        "staff-access": "Promotion rules require staff access."
+      },
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-rules@1.0.1"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "staff-roles",
+      "name": "Staff roles",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "staff-access"
+      ],
+      "dependencyReasons": {
+        "staff-access": "Roles apply to staff identities."
+      },
+      "questline": "staff-access",
+      "featureRefs": [
+        "ecommerce.progression.staff-roles@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "support-triage",
+      "name": "Support triage",
+      "level": 2,
+      "state": "qualified",
+      "parents": [
+        "staff-access",
+        "support-intake"
+      ],
+      "dependencyReasons": {
+        "staff-access": "Triage requires a staff member.",
+        "support-intake": "Triage operates on submitted tickets."
+      },
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.progression.support-triage@1.0.0"
+      ],
+      "checks": 3,
+      "points": 3
+    },
+    {
+      "id": "sales-dashboard",
+      "name": "Sales dashboard",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "purchasing": "The dashboard summarizes sales."
+      },
+      "questline": "business-operations",
+      "featureRefs": [
+        "ecommerce.l2.sales-dashboard@2.0.0"
+      ],
+      "checks": 4,
+      "points": 6
+    },
+    {
+      "id": "reviews",
+      "name": "Reviews",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "purchasing": "A verified review needs a purchase."
+      },
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.feature.reviews@1.2.1"
+      ],
+      "checks": 6,
+      "points": 8
+    },
+    {
+      "id": "recommendations",
+      "name": "Recommendations",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "cart",
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "cart": "Recommendations exclude items already in the cart.",
+        "purchasing": "Recommendations use customer purchase activity."
+      },
+      "questline": "recommendations",
+      "featureRefs": [
+        "ecommerce.l2.recommendations@2.0.0"
+      ],
+      "checks": 1,
+      "points": 2
+    },
+    {
+      "id": "checkout",
+      "name": "Checkout",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "cart"
+      ],
+      "dependencyReasons": {
+        "cart": "Checkout turns a cart into an order."
+      },
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.feature.checkout@2.0.0"
+      ],
+      "checks": 5,
+      "points": 6
+    },
+    {
+      "id": "stock-alerts",
+      "name": "Stock alerts",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "notification-preferences",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "notification-preferences": "The customer chooses whether to receive alerts.",
+        "warehouse-admin": "Alerts respond to warehouse stock changes."
+      },
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.stock-alerts@1.0.1"
+      ],
+      "checks": 2,
+      "points": 3
+    },
+    {
+      "id": "faceted-search",
+      "name": "Faceted search",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "catalog-discovery"
+      ],
+      "dependencyReasons": {
+        "catalog-discovery": "Facets refine catalog discovery."
+      },
+      "questline": "catalog-discovery",
+      "featureRefs": [
+        "ecommerce.progression.faceted-search@1.0.1"
+      ],
+      "checks": 2,
+      "points": 6
+    },
+    {
+      "id": "fulfilment-queue",
+      "name": "Fulfilment queue",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Fulfilment needs orders.",
+        "warehouse-admin": "Fulfilment needs warehouse stock."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.progression.fulfilment-queue@1.0.1"
+      ],
+      "checks": 9,
+      "points": 12
+    },
+    {
+      "id": "order-cancellation",
+      "name": "Order cancellation",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Cancellation needs an order.",
+        "warehouse-admin": "Cancelled stock returns to its original warehouse."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.l2.order-cancellation-features@1.0.1"
+      ],
+      "checks": 6,
+      "points": 11
+    },
+    {
+      "id": "catalog-management",
+      "name": "Catalog management",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "catalog-discovery",
+        "staff-roles"
+      ],
+      "dependencyReasons": {
+        "catalog-discovery": "Staff use catalog discovery to find managed products.",
+        "staff-roles": "Catalog changes require an authorized staff role."
+      },
+      "questline": "business-operations",
+      "featureRefs": [
+        "ecommerce.progression.catalog-management@1.0.2"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "inventory-dashboard",
+      "name": "Inventory dashboard",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "warehouse-admin": "The dashboard shows warehouse stock."
+      },
+      "questline": "business-operations",
+      "featureRefs": [
+        "ecommerce.l2.inventory-dashboard@2.0.0"
+      ],
+      "checks": 1,
+      "points": 3
+    },
+    {
+      "id": "scheduled-restocks",
+      "name": "Scheduled restocks",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "warehouse-admin": "Scheduled restocking changes warehouse stock."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l3.scheduled-restocks-features@1.1.1"
+      ],
+      "checks": 7,
+      "points": 20
+    },
+    {
+      "id": "stock-transfers",
+      "name": "Stock transfers",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "warehouse-admin": "Transfers operate on warehouse stock."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l2.stock-transfers-features@1.0.1"
+      ],
+      "checks": 6,
+      "points": 13
+    },
+    {
+      "id": "managed-support",
+      "name": "Managed support cases",
+      "level": 3,
+      "state": "qualified",
+      "parents": [
+        "support-history",
+        "support-triage"
+      ],
+      "dependencyReasons": {
+        "support-history": "Customers need an owned case history.",
+        "support-triage": "Staff need an assigned ticket queue."
+      },
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.progression.managed-support@1.0.0"
+      ],
+      "checks": 2,
+      "points": 3
+    },
+    {
+      "id": "payment-records",
+      "name": "Payment records",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "checkout",
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "checkout": "Checkout creates a payment record.",
+        "purchasing": "The payment belongs to an order."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.progression.payment-records@2.0.0"
+      ],
+      "checks": 3,
+      "points": 7
+    },
+    {
+      "id": "reservations",
+      "name": "Reservations",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "checkout",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "checkout": "Reservations confirm checkout availability.",
+        "warehouse-admin": "Reservations hold warehouse stock."
+      },
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.l3.reservations-features@2.0.0"
+      ],
+      "checks": 9,
+      "points": 23
+    },
+    {
+      "id": "promotion-checkout",
+      "name": "Promotion checkout",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "checkout",
+        "promotion-rules"
+      ],
+      "dependencyReasons": {
+        "checkout": "A promotion is applied at checkout.",
+        "promotion-rules": "Checkout needs an active promotion rule."
+      },
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-checkout@2.0.0"
+      ],
+      "checks": 3,
+      "points": 7
+    },
+    {
+      "id": "order-support",
+      "name": "Order-linked support",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "managed-support",
+        "purchasing"
+      ],
+      "dependencyReasons": {
+        "managed-support": "The order is attached to an existing managed case.",
+        "purchasing": "The linked order must exist."
+      },
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.progression.order-support@1.0.1"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "personalized-recommendations",
+      "name": "Personalized recommendations",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "recommendations"
+      ],
+      "dependencyReasons": {
+        "recommendations": "Personalization extends customer recommendations."
+      },
+      "questline": "recommendations",
+      "featureRefs": [
+        "ecommerce.progression.personalized-recommendations@2.0.0"
+      ],
+      "checks": 2,
+      "points": 6
+    },
+    {
+      "id": "automatic-reorder",
+      "name": "Automatic reorder rules",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "scheduled-restocks",
+        "staff-roles"
+      ],
+      "dependencyReasons": {
+        "scheduled-restocks": "Rules create scheduled restocks.",
+        "staff-roles": "Only warehouse staff can manage reorder rules."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.progression.automatic-reorder@2.0.0"
+      ],
+      "checks": 3,
+      "points": 7
+    },
+    {
+      "id": "order-delivery",
+      "name": "Order delivery",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "fulfilment-queue",
+        "order-cancellation"
+      ],
+      "dependencyReasons": {
+        "fulfilment-queue": "Delivery follows fulfilment.",
+        "order-cancellation": "Delivery must respect final cancellation state."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.l3.order-delivery-features@1.1.1"
+      ],
+      "checks": 5,
+      "points": 13
+    },
+    {
+      "id": "staff-activity",
+      "name": "Staff activity history",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "catalog-management"
+      ],
+      "dependencyReasons": {
+        "catalog-management": "Catalog changes provide attributable staff activity."
+      },
+      "questline": "business-operations",
+      "featureRefs": [
+        "ecommerce.progression.staff-activity@1.0.2"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "price-history",
+      "name": "Price history",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "catalog-management"
+      ],
+      "dependencyReasons": {
+        "catalog-management": "Price changes are a catalog management operation."
+      },
+      "questline": "catalog-discovery",
+      "featureRefs": [
+        "ecommerce.l2.price-history-features@2.0.1"
+      ],
+      "checks": 5,
+      "points": 12
+    },
+    {
+      "id": "delivery-notifications",
+      "name": "Delivery notifications",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "notification-preferences",
+        "order-delivery"
+      ],
+      "dependencyReasons": {
+        "notification-preferences": "The customer chooses whether to receive delivery notices.",
+        "order-delivery": "A notice follows a delivered order."
+      },
+      "questline": "notifications",
+      "featureRefs": [
+        "ecommerce.progression.delivery-notifications@1.0.1"
+      ],
+      "checks": 2,
+      "points": 5
+    },
+    {
+      "id": "support-refunds",
+      "name": "Support refunds",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "order-cancellation",
+        "order-support"
+      ],
+      "dependencyReasons": {
+        "order-cancellation": "A support refund uses the established order refund path.",
+        "order-support": "The refund resolves an order-linked case."
+      },
+      "questline": "customer-support",
+      "featureRefs": [
+        "ecommerce.progression.support-refunds@1.0.1"
+      ],
+      "checks": 3,
+      "points": 4
+    },
+    {
+      "id": "cart-expiration",
+      "name": "Cart expiration",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "reservations"
+      ],
+      "dependencyReasons": {
+        "reservations": "Expiration releases existing reservations."
+      },
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.l3.cart-expiration-features@2.0.0"
+      ],
+      "checks": 2,
+      "points": 8
+    },
+    {
+      "id": "promotion-reporting",
+      "name": "Promotion reporting",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "promotion-checkout"
+      ],
+      "dependencyReasons": {
+        "promotion-checkout": "Reports count promotion redemptions."
+      },
+      "questline": "promotions",
+      "featureRefs": [
+        "ecommerce.progression.promotion-reporting@2.0.0"
+      ],
+      "checks": 2,
+      "points": 3
+    },
+    {
+      "id": "recommendation-feedback",
+      "name": "Recommendation feedback",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "personalized-recommendations"
+      ],
+      "dependencyReasons": {
+        "personalized-recommendations": "Feedback applies to personal recommendations."
+      },
+      "questline": "recommendations",
+      "featureRefs": [
+        "ecommerce.progression.recommendation-feedback@2.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "order-returns",
+      "name": "Returns",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "order-delivery"
+      ],
+      "dependencyReasons": {
+        "order-delivery": "Only a shipped or delivered item can be returned."
+      },
+      "questline": "orders-fulfillment",
+      "featureRefs": [
+        "ecommerce.l3.order-returns-features@1.1.1"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "cart-recovery",
+      "name": "Cart recovery",
+      "level": 6,
+      "state": "draft",
+      "parents": [
+        "cart-expiration"
+      ],
+      "dependencyReasons": {
+        "cart-expiration": "Recovery restores an expired cart."
+      },
+      "questline": "shopping-checkout",
+      "featureRefs": [
+        "ecommerce.progression.cart-recovery@2.0.0"
+      ],
+      "checks": 2,
+      "points": 6
+    }
+  ]
+};
+  /* STACK_BENCH_GRAPH_END */
+  const features = graph.nodes;
+
+  const byId = new Map(features.map(feature => [feature.id, feature]));
+  const grid = document.getElementById('graph-grid');
+  const canvas = document.getElementById('graph-canvas');
+  const edges = document.getElementById('edges');
+
+  grid.style.setProperty('--depth-count', graph.levels);
+  const corner = document.createElement('div');
+  corner.className = 'depth-head';
+  corner.textContent = 'Questline';
+  grid.appendChild(corner);
+  for (let depth = 1; depth <= graph.levels; depth += 1) {
+    const head = document.createElement('div');
+    head.className = 'depth-head';
+    head.textContent = `Depth ${depth}`;
+    grid.appendChild(head);
+  }
+
+  for (const questline of graph.questlines) {
+    const label = document.createElement('div');
+    label.className = 'questline-label';
+    label.textContent = questline.title;
+    grid.appendChild(label);
+    for (let depth = 1; depth <= graph.levels; depth += 1) {
+      const cell = document.createElement('div');
+      cell.className = 'questline-cell';
+      const items = features.filter(feature => feature.questline === questline.id
+        && feature.level === depth);
+      for (const feature of items) {
+      const node = document.createElement('button');
+      node.type = 'button';
+      node.className = `node ${feature.state}`;
+      node.dataset.id = feature.id;
+      node.setAttribute('aria-label', `Trace connections for ${feature.name}`);
+      node.setAttribute('aria-pressed', 'false');
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="state" title="${feature.state}">●</span>`;
+        cell.appendChild(node);
+      }
+      grid.appendChild(cell);
+    }
+  }
+
+  function drawEdges() {
+    edges.querySelectorAll('.edge').forEach(edge => edge.remove());
+    const canvasBox = canvas.getBoundingClientRect();
+
+    for (const child of features) {
+      const childNode = document.querySelector(`[data-id="${child.id}"]`);
+      const childBox = childNode.getBoundingClientRect();
+
+      for (const parentId of child.parents) {
+        const parentNode = document.querySelector(`[data-id="${parentId}"]`);
+        const parentBox = parentNode.getBoundingClientRect();
+        const outgoing = features
+          .filter(feature => feature.parents.includes(parentId))
+          .sort((a, b) => document.querySelector(`[data-id="${a.id}"]`).getBoundingClientRect().top - document.querySelector(`[data-id="${b.id}"]`).getBoundingClientRect().top);
+        const incoming = [...child.parents]
+          .sort((a, b) => document.querySelector(`[data-id="${a}"]`).getBoundingClientRect().top - document.querySelector(`[data-id="${b}"]`).getBoundingClientRect().top);
+        const outgoingIndex = outgoing.findIndex(feature => feature.id === child.id);
+        const incomingIndex = incoming.indexOf(parentId);
+        const x1 = parentBox.right - canvasBox.left;
+        const y1 = parentBox.top + parentBox.height * (outgoingIndex + 1) / (outgoing.length + 1) - canvasBox.top;
+        const x2 = childBox.left - canvasBox.left;
+        const y2 = childBox.top + childBox.height * (incomingIndex + 1) / (incoming.length + 1) - canvasBox.top;
+        const middle = x1 + (x2 - x1) / 2;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.classList.add('edge', child.state);
+        path.dataset.parent = parentId;
+        path.dataset.child = child.id;
+        path.setAttribute('d', `M ${x1} ${y1} C ${middle} ${y1}, ${middle} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('marker-end', `url(#arrow-${child.state})`);
+        edges.appendChild(path);
+      }
+    }
+  }
+
+  let selectedId = null;
+
+  function dependencyChain(featureId) {
+    const connected = new Set([featureId]);
+    const connectedEdges = new Set();
+    const visitParents = id => {
+      const feature = byId.get(id);
+      for (const parentId of feature.parents) {
+        connectedEdges.add(`${parentId}:${id}`);
+        if (!connected.has(parentId)) {
+          connected.add(parentId);
+          visitParents(parentId);
+        }
+      }
+    };
+    const visitChildren = id => {
+      for (const child of features.filter(candidate => candidate.parents.includes(id))) {
+        connectedEdges.add(`${id}:${child.id}`);
+        if (!connected.has(child.id)) {
+          connected.add(child.id);
+          visitChildren(child.id);
+        }
+      }
+    };
+    visitParents(featureId);
+    visitChildren(featureId);
+    return { connected, connectedEdges };
+  }
+
+  function trace(featureId) {
+    const { connected, connectedEdges } = dependencyChain(featureId);
+    document.querySelectorAll('.edge').forEach(edge => {
+      const matches = connectedEdges.has(`${edge.dataset.parent}:${edge.dataset.child}`);
+      edge.classList.toggle('active', matches);
+      edge.classList.toggle('muted', !matches);
+    });
+    document.querySelectorAll('.node').forEach(node => {
+      node.classList.toggle('active', node.dataset.id === featureId);
+      node.classList.toggle('muted', !connected.has(node.dataset.id));
+    });
+  }
+
+  function clearTrace() {
+    document.querySelectorAll('.edge, .node').forEach(element => element.classList.remove('active', 'muted'));
+  }
+
+  function showSelection() {
+    document.querySelectorAll('.node').forEach(node => node.setAttribute('aria-pressed', String(node.dataset.id === selectedId)));
+    selectedId ? trace(selectedId) : clearTrace();
+  }
+
+  document.querySelectorAll('.node').forEach(node => {
+    node.addEventListener('mouseenter', () => trace(node.dataset.id));
+    node.addEventListener('mouseleave', () => selectedId ? trace(selectedId) : clearTrace());
+    node.addEventListener('focus', () => trace(node.dataset.id));
+    node.addEventListener('blur', () => selectedId ? trace(selectedId) : clearTrace());
+    node.addEventListener('click', () => {
+      selectedId = selectedId === node.dataset.id ? null : node.dataset.id;
+      showSelection();
+    });
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      selectedId = null;
+      showSelection();
+    }
+  });
+
+  drawEdges();
+  new ResizeObserver(drawEdges).observe(canvas);
+
+</script>
+</body>
+</html>

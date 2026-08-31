@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.recommendation-feedback",
+  "version": "2.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Recommendation feedback",
+  "description": "Durable customer-specific recommendation dismissal.",
+  "requiresPacks": [
+    "ecommerce.progression.personalized-recommendations@2.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 70000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.recommendation-feedback",
+        "path": "prompts/modular/recommendation-feedback-1.0.0.md",
+        "order": 5030,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.recommendation-feedback-hooks",
+        "path": "contracts/recommendation-feedback-1.0.md",
+        "order": 5930,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "dismissal",
+      "stableId": "recommendation-feedback",
+      "source": "scenarios/progression-recommendation-feedback-1.0.0.json",
+      "feature": 504,
+      "role": "feature"
+    }
+  ]
+}

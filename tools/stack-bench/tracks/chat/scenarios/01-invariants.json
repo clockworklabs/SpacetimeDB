@@ -1,0 +1,974 @@
+{
+  "schemaVersion": 1,
+  "level": 1,
+  "track": "stack-bench",
+  "note": "Cross-cutting properties, scored on a separate axis from features. A feature-only score cannot see these: an app can implement every listed feature and still let one user take over another's account. Each invariant is its own feature with fresh contexts, so one root defect cannot cascade into several apparent problems.",
+  "features": [
+    {
+      "id": 101,
+      "name": "Account Integrity",
+      "max": 2,
+      "actors": [
+        "victim",
+        "impostor"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "victim",
+          "name": "Victim"
+        },
+        {
+          "do": "createRoom",
+          "actor": "victim",
+          "room": "private-notes"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "victim",
+          "room": "private-notes"
+        },
+        {
+          "do": "send",
+          "actor": "victim",
+          "text": "victim private message"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "username-is-not-a-credential",
+          "points": 1,
+          "desc": "Knowing a username must not grant access to that account. Signing up with a taken username, or signing in with the wrong password, must be rejected \u2014 not silently resolved to the existing account.",
+          "steps": [
+            {
+              "do": "signUp",
+              "actor": "impostor",
+              "name": "Victim",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "current-user",
+              "contains": "Victim",
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "wrong-password-rejected",
+          "points": 1,
+          "desc": "Signing in with a wrong password is rejected and grants nothing",
+          "steps": [
+            {
+              "do": "signIn",
+              "actor": "impostor",
+              "name": "Victim",
+              "password": "not-the-password",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "message-item",
+              "contains": "victim private message",
+              "absent": true,
+              "within": 4000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "name": "Session Durability",
+      "max": 3,
+      "actors": [
+        "alice"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "mine"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "mine"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "alice message"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "session-survives-reload",
+          "points": 1,
+          "desc": "Reloading keeps the user signed in as the same account",
+          "steps": [
+            {
+              "do": "reload",
+              "actor": "alice",
+              "settleMs": 3000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "current-user",
+              "contains": "Alice",
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "session-survives-reconnect",
+          "points": 1,
+          "desc": "A user who loses and regains their connection while sitting on the page is still signed in as the same account. The connection drops and re-establishes on its own; re-identifying the client here would orphan everything it owns.",
+          "steps": [
+            {
+              "do": "setOffline",
+              "actor": "alice",
+              "offline": true,
+              "settleMs": 3000
+            },
+            {
+              "do": "setOffline",
+              "actor": "alice",
+              "offline": false,
+              "settleMs": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "current-user",
+              "contains": "Alice",
+              "within": 20000
+            }
+          ]
+        },
+        {
+          "id": "own-content-still-owned-after-reconnect",
+          "points": 1,
+          "desc": "After reconnecting the user still owns what they created \u2014 their room and their message are still theirs",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "alice",
+              "room": "mine"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "alice message",
+              "within": 15000
+            }
+          ]
+        }
+      ],
+      "note": "Session durability is tested by dropping the client's connection, not by restarting the backend. Both force the same reconnect, but only one needs a server the harness owns \u2014 and restarting a shared host takes unrelated databases down with it. Backend restarts belong where they test storage rather than session handling (level 4)."
+    },
+    {
+      "id": 103,
+      "name": "Data Isolation",
+      "max": 2,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "room-a"
+        },
+        {
+          "do": "createRoom",
+          "actor": "bob",
+          "room": "room-b"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "room-a"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "room-b"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "message for room a"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "messages-scoped-to-room",
+          "points": 1,
+          "desc": "A message sent in one room never appears in another",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "message for room a",
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "no-duplicate-rooms",
+          "points": 1,
+          "desc": "A room renders exactly once in the list \u2014 an optimistic insert plus a broadcast echo duplicates it",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "room-item",
+              "contains": "{room:room-a}",
+              "count": 1,
+              "within": 5000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "name": "Per-User State Integrity",
+      "max": 3,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "Unread counts and read receipts are per-user state derived from other people's actions. The historical grading data has more defects here than anywhere else in level 1.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "main"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "side"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "main"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "main"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "own-messages-not-unread",
+          "points": 1,
+          "desc": "Your own message must never count as unread for you. (historical: a sender's own badge went to 1 on SpacetimeDB, twice)",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "alice speaking"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1400
+            },
+            {
+              "do": "enterRoom",
+              "actor": "alice",
+              "room": "side"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "unread-badge",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:main}"
+              },
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "unread-does-not-resurrect",
+          "points": 1,
+          "desc": "Once a room is open its badge stays clear while new messages arrive in it \u2014 you are looking at them. (historical: badges that never cleared)",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "alice",
+              "room": "main"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1400
+            },
+            {
+              "do": "send",
+              "actor": "bob",
+              "text": "bob speaking"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "bob speaking",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "unread-badge",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:main}"
+              },
+              "absent": true,
+              "within": 4000
+            }
+          ]
+        },
+        {
+          "id": "receipts-keep-updating",
+          "points": 1,
+          "desc": "Receipts stay live for later messages, not just the first one. (historical: 'Seen by' that only appeared after leaving and re-entering the room)",
+          "steps": [
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1400
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "second message from alice"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "second message from alice",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "contains": "Bob",
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "name": "Presence and Display Stability",
+      "max": 2,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "Presence was wrong in six of the historically graded runs, and 'Seen by' lists were seen flickering between orderings. Neither is visible to a single assertion.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "lobby"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "who is here"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "receipt-text-does-not-flicker",
+          "points": 1,
+          "desc": "The 'Seen by' list must not change while nothing is happening. (historical: names flipping order continuously from an unstable sort)",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "within": 10000
+            },
+            {
+              "do": "expectStable",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "samples": 4,
+              "intervalMs": 700
+            }
+          ]
+        },
+        {
+          "id": "presence-drops-signed-out-user",
+          "points": 1,
+          "desc": "A user who signs out disappears from the online list. (historical: presence lists stale or stuck, six runs)",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "online-users",
+              "contains": "Bob",
+              "within": 8000
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "signout"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "online-users",
+              "contains": "Bob",
+              "absent": true,
+              "within": 12000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "name": "Server-Side Truth",
+      "max": 2,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "Whatever the acting client shows must actually exist on the server. Optimistic inserts that were never confirmed, and counts incremented only in one browser, are invisible to any assertion made from that same browser.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "truth"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "truth"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "truth"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "rejected-message-does-not-linger",
+          "points": 1,
+          "desc": "A message the server refused for exceeding the rate limit must not stay visible to its sender. An optimistic insert without rollback leaves the sender believing they said something nobody received.",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "first of a burst"
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "REJECTED BY RATE LIMIT"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "REJECTED BY RATE LIMIT",
+              "absent": true,
+              "within": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "REJECTED BY RATE LIMIT",
+              "absent": true,
+              "within": 4000
+            }
+          ]
+        },
+        {
+          "id": "a-fresh-client-sees-the-same-thing",
+          "points": 1,
+          "desc": "A brand-new browser sees what the acting client claims. Anything visible only to the client that performed the action never reached the server.",
+          "steps": [
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1500
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "durable statement"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "durable statement",
+              "within": 6000
+            },
+            {
+              "do": "freshClient",
+              "actor": "bob"
+            },
+            {
+              "do": "signUp",
+              "actor": "bob-fresh",
+              "name": "Observer"
+            },
+            {
+              "do": "enterRoom",
+              "actor": "bob-fresh",
+              "room": "truth"
+            },
+            {
+              "do": "expect",
+              "actor": "bob-fresh",
+              "testid": "message-item",
+              "contains": "durable statement",
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "name": "Direct Message Privacy",
+      "max": 3,
+      "actors": [
+        "alice",
+        "bob",
+        "snoop"
+      ],
+      "note": "A direct conversation is the first data in level 1 that must not reach someone. The wire check is the one that matters: an app that broadcasts widely and filters in the browser looks perfect on screen while the data is already in every client.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "signUp",
+          "actor": "snoop",
+          "name": "Snoop"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "snoop",
+          "room": "lobby"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "a public message in the lobby"
+        },
+        {
+          "do": "wait",
+          "actor": "alice",
+          "ms": 2500
+        },
+        {
+          "do": "click",
+          "actor": "alice",
+          "testid": "dm-start",
+          "in": {
+            "testid": "online-user",
+            "contains": "Bob"
+          }
+        },
+        {
+          "do": "wait",
+          "actor": "alice",
+          "ms": 2000
+        },
+        {
+          "do": "click",
+          "actor": "alice",
+          "testid": "dm-item",
+          "in": {
+            "testid": "dm-list",
+            "contains": "Bob"
+          }
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "SECRET between alice and bob"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "outsider-cannot-see-the-conversation",
+          "points": 1,
+          "desc": "A third party does not see the conversation in their list",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "snoop",
+              "testid": "dm-item",
+              "contains": "Alice",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "outsider-cannot-read-the-messages",
+          "points": 1,
+          "desc": "A third party never sees the messages",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "snoop",
+              "testid": "message-item",
+              "contains": "SECRET between alice and bob",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "outsider-never-receives-it-over-the-wire",
+          "points": 1,
+          "desc": "A third party's client is never SENT the private message. Hiding it in the interface is not privacy \u2014 anyone with developer tools can read what their own browser received.",
+          "steps": [
+            {
+              "do": "expectReceived",
+              "actor": "snoop",
+              "contains": "a public message in the lobby",
+              "within": 8000
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "dm-item",
+              "in": {
+                "testid": "dm-list",
+                "contains": "Alice"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "bob",
+              "ms": 2000
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "SECOND SECRET for bob only"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 4000
+            },
+            {
+              "do": "expectReceived",
+              "actor": "bob",
+              "contains": "SECOND SECRET for bob only",
+              "within": 8000
+            },
+            {
+              "do": "expectNotReceived",
+              "actor": "snoop",
+              "contains": "SECOND SECRET for bob only"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "name": "Authorization",
+      "max": 4,
+      "actors": [
+        "owner",
+        "member",
+        "target",
+        "outsider"
+      ],
+      "note": "Each of these is an action the wrong person must not be able to take. Where the app writes over HTTP the request is re-issued with the wrong user's credentials, because a hidden control is not a check. Where identity comes from the live connection there is nothing to re-issue: that replay records as unverified and never scores or penalises, so the point rests on what the interface actually does.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "Owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "member",
+          "name": "Member"
+        },
+        {
+          "do": "signUp",
+          "actor": "target",
+          "name": "Target"
+        },
+        {
+          "do": "signUp",
+          "actor": "outsider",
+          "name": "Outsider"
+        },
+        {
+          "do": "createRoom",
+          "actor": "owner",
+          "room": "guarded"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "owner",
+          "room": "guarded"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "member",
+          "room": "guarded"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "target",
+          "room": "guarded"
+        },
+        {
+          "do": "send",
+          "actor": "owner",
+          "text": "owner message"
+        },
+        {
+          "do": "wait",
+          "actor": "owner",
+          "ms": 2500
+        }
+      ],
+      "criteria": [
+        {
+          "id": "outsider-cannot-read-the-room",
+          "points": 1,
+          "desc": "Someone who never joined the room cannot read its history",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "outsider",
+              "testid": "message-item",
+              "contains": "owner message",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "outsider-cannot-post-to-the-room",
+          "points": 1,
+          "desc": "Someone who never joined cannot post to the room, even by re-issuing a member's own send request",
+          "steps": [
+            {
+              "do": "replayAs",
+              "actor": "outsider",
+              "from": "owner",
+              "match": "owner message",
+              "swap": {
+                "find": "owner message",
+                "with": "posted by an outsider"
+              }
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "outsider"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "message-item",
+              "contains": "posted by an outsider",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "removed-member-stops-receiving",
+          "points": 1,
+          "desc": "A removed user stops receiving the room's messages immediately, without reloading. Revoking access has to stop the stream, not just stop the interface drawing it.",
+          "steps": [
+            {
+              "do": "expectReceived",
+              "actor": "target",
+              "contains": "owner message",
+              "within": 8000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "member-remove",
+              "in": {
+                "testid": "member-item",
+                "contains": "Target"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "owner",
+              "ms": 3000
+            },
+            {
+              "do": "send",
+              "actor": "owner",
+              "text": "after the removal"
+            },
+            {
+              "do": "wait",
+              "actor": "owner",
+              "ms": 4000
+            },
+            {
+              "do": "expectNotReceived",
+              "actor": "target",
+              "contains": "after the removal"
+            }
+          ]
+        },
+        {
+          "id": "only-an-owner-can-remove-a-member",
+          "points": 1,
+          "desc": "A member who is not an owner cannot remove anyone \u2014 not through the interface, and not by re-issuing the owner's own removal request against a different person",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "member",
+              "testid": "member-remove",
+              "absent": true,
+              "within": 5000
+            },
+            {
+              "do": "replayAs",
+              "actor": "member",
+              "from": "owner",
+              "match": "member",
+              "swap": {
+                "find": "{user:Target}",
+                "with": "{user:Owner}"
+              }
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "member"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "member-item",
+              "contains": "Owner",
+              "within": 6000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

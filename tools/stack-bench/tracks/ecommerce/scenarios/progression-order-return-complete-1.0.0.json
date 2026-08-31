@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Completed order return",
+  "features": [
+    {
+      "id": 330,
+      "name": "Completed order return",
+      "actors": ["customer", "staff", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "return-complete" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "3c",
+          "desc": "returning a shipped item restores stock and revenue and marks the item returned",
+          "points": 3,
+          "statedBy": "An accepted return marks the item as returned, restores stock, and reduces revenue by the price paid.",
+          "steps": [
+            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "return-stock-before" },
+            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "return-revenue-before" },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
+            { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 },
+            { "do": "click", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Keyboard" } },
+            { "do": "expect", "actor": "customer", "testid": "order-item", "contains": "eturned", "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "return-revenue-before", "plus": 0, "within": 10000 },
+            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "return-stock-before", "plus": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

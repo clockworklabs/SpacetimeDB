@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Warehouse restock reaches the storefront",
+  "note": "The live-restock check has its own browser state so opening a toggle cannot depend on, or undo, another check's interaction.",
+  "features": [
+    {
+      "id": 7,
+      "name": "Warehouse stock stays live",
+      "actors": ["admin", "visitor"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
+        { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 100 }
+      ],
+      "criteria": [
+        {
+          "id": "7c",
+          "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25", "in": { "testid": "admin-location-row", "contains": "Gaming Mouse" } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Gaming Mouse" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 125, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 125 }
+          ],
+          "statedBy": "an item's stock on the storefront is the sum of that item's units across all warehouses"
+        }
+      ]
+    }
+  ]
+}

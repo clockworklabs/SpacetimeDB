@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Stock alerts",
+  "features": [
+    {
+      "id": 631,
+      "name": "Private one-time stock alerts",
+      "actors": ["subscriber", "other", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "subscriber", "name": "stock-subscriber" },
+        { "do": "signUp", "actor": "other", "name": "stock-other" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "dbSetStock", "item": "Air Purifier", "warehouse": "East", "quantity": 0, "settleMs": 1000 },
+        { "do": "dbSetStock", "item": "Air Purifier", "warehouse": "West", "quantity": 0, "settleMs": 1000 },
+        { "do": "reload", "actor": "subscriber", "settleMs": 1000 },
+        { "do": "click", "actor": "subscriber", "testid": "stock-alert", "in": { "testid": "item-card", "contains": "Air Purifier" } },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "containsAll": ["Air Purifier", "East"] } },
+        { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "containsAll": ["Air Purifier", "East"] } }
+      ],
+      "criteria": [
+        {
+          "id": "631a",
+          "desc": "restored stock sends one alert and later restocks do not duplicate it",
+          "points": 2,
+          "statedBy": "A stock request creates one alert when stock returns.",
+          "steps": [
+            { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" },
+            { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Air Purifier", "equals": 1, "within": 10000 },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5", "in": { "testid": "admin-location-row", "containsAll": ["Air Purifier", "East"] } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "containsAll": ["Air Purifier", "East"] }, "settleMs": 1500 },
+            { "do": "expectElementCount", "actor": "subscriber", "testid": "notification-item", "contains": "Air Purifier", "equals": 1, "within": 10000 }
+          ]
+        },
+        {
+          "id": "631b",
+          "desc": "a customer who did not request the alert cannot see it",
+          "points": 1,
+          "statedBy": "Stock alerts are private to the requesting customer.",
+          "steps": [
+            { "do": "click", "actor": "other", "testid": "notifications-toggle" },
+            { "do": "expect", "actor": "other", "testid": "notification-item", "contains": "Air Purifier", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

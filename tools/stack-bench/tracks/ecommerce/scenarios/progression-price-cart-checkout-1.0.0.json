@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Open cart price changes",
+  "features": [
+    {
+      "id": 420,
+      "name": "Open cart price changes",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "price-cart" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "4c",
+          "desc": "a price change updates an open cart and checkout charges the new price",
+          "points": 3,
+          "statedBy": "The public catalog and every open cart show the new price without a reload. Checkout uses the current price.",
+          "steps": [
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Desk Lamp", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "click", "actor": "customer", "testid": "cart-toggle" },
+            { "do": "expectNumber", "actor": "customer", "testid": "cart-total", "equals": 42 },
+            { "do": "fill", "actor": "admin", "testid": "price-input", "text": "52.00", "in": { "testid": "admin-item-row", "contains": "Desk Lamp" } },
+            { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Desk Lamp" } },
+            { "do": "expectNumber", "actor": "customer", "testid": "cart-total", "equals": 52, "within": 10000 },
+            { "do": "click", "actor": "customer", "testid": "checkout-submit" },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
+            { "do": "expectNumber", "actor": "customer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 52 }
+          ]
+        }
+      ]
+    }
+  ]
+}

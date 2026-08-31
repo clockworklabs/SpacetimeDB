@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+// What a generated build is not allowed to read.
+//
+// Keep this list separate so the sandbox probe tests the same rules used by the
+// agent. These rules apply to file tools only. Container isolation is the main
+// boundary, and the transcript audit detects attempts to read protected inputs.
+//
+// Pattern notes: glob form (`**/x/**`) matches where an absolute form
+// (`//C:/...`) silently does not on Windows, `**` does NOT traverse a
+// leading-dot directory, and deny beats allow.
+
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+// NOTE the app itself lives under stack-bench/results/<run>/app, so a blanket
+// deny on stack-bench would block the build from reading its own source. Name
+// the harness directories instead, and never deny BUG_REPORT.md — fix mode is
+// told to read it.
+export const DENY = [
+  // The test and the marking scheme.
+  'Read(**/stack-bench/tracks/**)',
+  'Read(**/stack-bench/grader/**)',
+  'Read(**/stack-bench/linter/**)',
+  'Read(**/stack-bench/levels/**)',
+  // The staged tree: dist carries copies of all of the above beside the
+  // compiled harness, and it is what production actually runs.
+  'Read(**/stack-bench/dist/**)',
+  // Harness source and its own documentation.
+  'Read(**/stack-bench/*.ts)',
+  'Read(**/stack-bench/*.md)',
+  'Read(**/stack-bench/*.sh)',
+  'Read(**/stack-bench/backends/**)',
+  // Archived transcripts of earlier builds: each one quotes the harness files
+  // that build read, so leaving them open would hand a later run the marking
+  // scheme second-hand.
+  'Read(**/stack-bench/transcripts/**)',
+  // The other benchmarks, and their prompts and rubrics.
+  'Read(**/llm-sequential-upgrade/**)',
+  'Read(**/llm-oneshot/**)',
+  // Any agent's notes, plans or transcripts — including this one's.
+  // `**/.claude/**` alone does NOT match: a leading-dot directory is not
+  // traversed by `**`, so a run read this project's notes straight through it.
+  // The `projects/**` rule is the one that actually bites; the rest are belt
+  // and braces. The sandbox probe verifies the set.
+  'Read(**/projects/**)',
+  'Read(**/.claude/**)',
+  'Read(.claude/**)',
+  'Read(**/memory/**)',
+  'Read(**/*.local.md)',
+];
+
+// Under `--permission-mode acceptEdits` the file tools are auto-approved but
+// Bash is not, and in --print mode an unapproved command is simply refused: a
+// build that cannot run `npm install` or `spacetime publish` does not build.
+// So Bash is allowed wholesale. That is the same hole named above — `cat` still
+// reaches a denied path, which is why the contamination audit decides
+// whether a run counts.
+export const ALLOW = ['Bash'];
+
+// The controller and coding image are separate trust zones in appliance mode.
+// A direct CLI probe is used only when Stack Bench runs outside the appliance.
+// The appliance controller has no model CLI, while the coding container has no
+// harness, scenarios, result history, or Docker socket to probe against.
+export function sandboxProbeMode({ appliance = false, explicitlySkipped = false,
+  stackRequired = false }: {
+  appliance?: boolean;
+  explicitlySkipped?: boolean;
+  stackRequired?: boolean;
+} = {}): 'not-required' | 'explicitly-skipped' | 'container-isolation' | 'direct-cli' {
+  if (!stackRequired) return 'not-required';
+  if (explicitlySkipped) return 'explicitly-skipped';
+  return appliance ? 'container-isolation' : 'direct-cli';
+}
+
+export function writeSandbox(appDir: string): string {
+  const p = join(appDir, '.sandbox-settings.json');
+  writeFileSync(p, JSON.stringify({ permissions: { allow: ALLOW, deny: DENY } }, null, 2));
+  return p;
+}

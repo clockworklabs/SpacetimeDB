@@ -1,0 +1,114 @@
+name: stack-bench-appliance
+
+services:
+  deps-init:
+    image: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
+    platform: linux/amd64
+    command: ["init-deps"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - type: volume
+        source: release-deps
+        target: /opt/stack-bench-release-deps
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
+  controller:
+    image: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
+    platform: linux/amd64
+    init: true
+    network_mode: host
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      deps-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      STACK_BENCH_CONTROLLER_IMAGE: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
+      STACK_BENCH_IMAGE: ${STACK_BENCH_BUILD_IMAGE:?set STACK_BENCH_BUILD_IMAGE to the manifest digest reference}
+      STACK_BENCH_RELEASE_MANIFEST: ${STACK_BENCH_RELEASE_MANIFEST:-}
+      STACK_BENCH_APPLIANCE: "1"
+      STACK_BENCH_COMPOSE_FILE: /opt/stack-bench/appliance/docker-compose.yaml
+      STACK_BENCH_WORK_DIR: /var/lib/stack-bench/work
+      STACK_BENCH_RESULTS_DIR: /var/lib/stack-bench/results
+      STACK_BENCH_SUPERVISOR_DIR: /var/lib/stack-bench/controller-home/supervisor
+      STACK_BENCH_RUNTIME_DIR: /var/lib/stack-bench/controller-home/runtime
+      STACK_BENCH_RESOURCE_LOCK_DIR: /var/lib/stack-bench/controller-home/resource-locks
+      STACK_BENCH_RELEASE_DEPS_VOLUME: stack-bench-release-deps
+      STACK_BENCH_LINUX_CLI: /opt/stack-bench-release-deps/spacetimedb-cli
+      STDB_PACKAGE: /opt/stack-bench-release-deps/bindings-typescript
+      SPACETIME_BIN: /opt/stack-bench-release-deps/spacetimedb-cli
+      STACK_BENCH_AGENT_AUTH: ${STACK_BENCH_AGENT_AUTH:-subscription-token}
+      STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE: ${STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE:-/var/lib/stack-bench/secrets/claude_subscription_token}
+      STACK_BENCH_ANTHROPIC_API_KEY_FILE: ${STACK_BENCH_ANTHROPIC_API_KEY_FILE:-}
+      HOME: /var/lib/stack-bench/controller-home
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: /var/lib/stack-bench
+        target: /var/lib/stack-bench
+      - type: volume
+        source: release-deps
+        target: /opt/stack-bench-release-deps
+        read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    command: ["--help"]
+
+  dashboard:
+    extends:
+      service: controller
+    profiles: ["dashboard"]
+    network_mode: bridge
+    environment:
+      STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE: ${STACK_BENCH_DASHBOARD_CONTROL_SECRET_FILE:-/var/lib/stack-bench/secrets/dashboard_control_secret}
+    ports:
+      - "127.0.0.1:7331:7331"
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "7331", "--allow-container-bind"]
+
+  postgres:
+    image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
+    platform: linux/amd64
+    container_name: stack-bench-postgres
+    ports: ["127.0.0.1:6532:5432"]
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: local-app-password
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  mongodb:
+    image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
+    platform: linux/amd64
+    container_name: stack-bench-mongodb
+    ports: ["127.0.0.1:6537:27017"]
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  release-deps:
+    name: stack-bench-release-deps
+  pgdata:
+    name: stack-bench-appliance-pgdata
+  mongodata:
+    name: stack-bench-appliance-mongodata

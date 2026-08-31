@@ -145,9 +145,7 @@ class ConnectionManagerImpl {
         clearTimeout(managed.reconnectTimer);
         managed.reconnectTimer = null;
         managed.reconnectAttempt = 0;
-        if (managed.builder) {
-          this.#buildManagedConnection(managed, managed.builder);
-        }
+        this.#reconnectManagedConnection(managed);
         continue;
       }
 
@@ -179,9 +177,7 @@ class ConnectionManagerImpl {
     connection.disconnect();
     this.#updateState(managed, { isActive: false });
     managed.reconnectAttempt = 0;
-    if (managed.builder) {
-      this.#buildManagedConnection(managed, managed.builder);
-    }
+    this.#reconnectManagedConnection(managed);
   }
 
   /** Generates a unique key for a connection based on URI and module name. */
@@ -294,6 +290,14 @@ class ConnectionManagerImpl {
     }
   }
 
+  /** Reconnect with the issued token. Explicit rebuilds use the caller's token. */
+  #reconnectManagedConnection(managed: ManagedConnection): void {
+    if (!managed.builder) return;
+    const token = managed.state.token;
+    if (token) managed.builder.withToken(token);
+    this.#buildManagedConnection(managed, managed.builder);
+  }
+
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
     builder: DbConnectionBuilder<T>
@@ -349,7 +353,7 @@ class ConnectionManagerImpl {
         return;
       }
 
-      this.#buildManagedConnection(managed, managed.builder);
+      this.#reconnectManagedConnection(managed);
     }, delay);
   }
 

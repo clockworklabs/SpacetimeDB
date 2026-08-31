@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Account creation",
+  "note": "Account creation is exercised inside its own scored check so a broken signup cannot invalidate unrelated account checks during setup.",
+  "features": [
+    {
+      "id": 1,
+      "name": "Accounts",
+      "actors": ["shopper"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "1a",
+          "desc": "a visitor can create an account and is signed in as it",
+          "points": 1,
+          "steps": [
+            {"do":"signUp","actor":"shopper","name":"ann"},
+            {"do":"expect","actor":"shopper","testid":"current-user","contains":"ann","within":6000}
+          ],
+          "statedBy": "a visitor can create an account with a username and password"
+        }
+      ]
+    }
+  ]
+}

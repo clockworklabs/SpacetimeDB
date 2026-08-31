@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "platform": "linux/amd64",
+  "builderImage": "rust:1.93-slim-bookworm@sha256:8f8609d448e821fbc0e44241bc5ca4ce49663cc6306ff1a17f655a0e2a7cd084",
+  "source": {
+    "identityScheme": "git-object-content-v1",
+    "revision": "64afb5fd35aa391ccbff423d0bec272cefbd6092",
+    "sha256": "c76824c57bbfee62d707b36c1c6a4bdf1fffb295770931cf0b67f7adb9f88ed3",
+    "files": 2586
+  },
+  "binaries": {
+    "spacetimedb-cli": {
+      "sha256": "376fbb1978533b75bc144a7b27cc202ceec5da4d39ad840dc4a88fff59049157",
+      "size": 46986456
+    },
+    "spacetimedb-standalone": {
+      "sha256": "d53a8cbc4325bb87024748b725d13d5984f85bb0600ace3cea646a7ff6c5dce2",
+      "size": 134334152
+    }
+  }
+}

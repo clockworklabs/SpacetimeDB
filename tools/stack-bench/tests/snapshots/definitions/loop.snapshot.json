@@ -1,0 +1,71 @@
+{
+  "definitionSchemaVersion": 1,
+  "levels": [
+    {
+      "level": 1,
+      "suites": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "scenario": "scenarios/01-loop.json"
+        }
+      ]
+    }
+  ],
+  "manifest": {
+    "internal": true,
+    "plannedThrough": 1,
+    "portOffset": 600,
+    "restartProbe": "/",
+    "schemaVersion": 1,
+    "slug": "loop",
+    "suites": {
+      "1": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "spec": "scenarios/01-loop.json"
+        }
+      ]
+    },
+    "title": "Loop Fixture",
+    "validatedThrough": 1
+  },
+  "scenarios": [
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "viewer"
+            ],
+            "criteria": [
+              {
+                "desc": "The application title is visible",
+                "id": "title-visible",
+                "points": 1,
+                "statedBy": "Fixture Chat",
+                "steps": [
+                  {
+                    "actor": "viewer",
+                    "contains": "Fixture Chat",
+                    "do": "expect",
+                    "testid": "app-title",
+                    "within": 1000
+                  }
+                ]
+              }
+            ],
+            "id": 1,
+            "name": "Application title",
+            "setup": []
+          }
+        ],
+        "level": 1,
+        "schemaVersion": 1
+      },
+      "path": "scenarios/01-loop.json"
+    }
+  ],
+  "track": "loop"
+}

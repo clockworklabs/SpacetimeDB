@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.cart-expiration-features",
+  "stableId": "ecommerce.l3.cart-expiration",
+  "version": "2.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Cart expiration",
+  "description": "Inactive carts expire, release stock, and return empty.",
+  "requiresPacks": [
+    "ecommerce.l3.reservations-features@2.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 360000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.l3.cart-expiration",
+        "path": "prompts/modular/cart-expiration-1.0.0.md",
+        "order": 3030,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.l3.cart-expiration-hooks",
+        "path": "contracts/cart-expiration-1.0.md",
+        "order": 3930,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "inactive-cart",
+      "stableId": "cart-expiration",
+      "source": "scenarios/03-cart-expiration-1.0.0.json",
+      "feature": 304,
+      "role": "feature"
+    }
+  ]
+}

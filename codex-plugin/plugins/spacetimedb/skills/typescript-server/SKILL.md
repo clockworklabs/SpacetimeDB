@@ -98,6 +98,10 @@ Every column is a `t` builder value:
 
 Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
 
+`.primaryKey()` and `.unique()` apply to one column. For uniqueness across
+multiple columns, use a surrogate key, the multi-column index below, and a
+reducer that rejects an existing index match before inserting.
+
 Use `.default(value)` only for a newly appended migration-safe field. Do not put defaults on primary-key, unique, or auto-increment columns.
 
 Optional columns: `nickname: t.option(t.string())`
@@ -130,7 +134,9 @@ export { default } from './schema';   // re-export the schema for the module ent
 
 ## Reducers
 
-Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
+Reducers are created with `spacetimedb.reducer(...)`. An exported `signUp`
+becomes `signUp` in generated clients and `sign_up` in `spacetime call` and
+`describe`:
 
 ```typescript
 export const createEntity = spacetimedb.reducer(
@@ -278,8 +284,21 @@ const Shape = t.enum('Shape', {
 A client subscribing to a view receives only the rows it returns. Use a per-user view
 (keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
 (e.g. a membership row) automatically drops the rows it was exposing from that client.
+Use index accessors in views. Do not scan a whole table with `.iter()` when an
+indexed lookup can select the required rows.
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
+
+A view context is `ViewCtx<S>` (and `AnonymousViewCtx<S>`), both exported from
+`spacetimedb/server`. It carries `sender`, a read-only `db`, and `from`; it is
+not a `ReducerCtx`, so a helper shared between a reducer and a view must accept
+either:
+
+```typescript
+import type { ReducerCtx, ViewCtx, InferSchema } from 'spacetimedb/server';
+type S = InferSchema<typeof spacetimedb>;
+function stockOf(ctx: ReducerCtx<S> | ViewCtx<S>, itemId: bigint) { ... }
+```
 
 Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
 
@@ -288,7 +307,7 @@ Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arg
 export const activeUsers = spacetimedb.anonymousView(
   { name: 'active_users', public: true },
   t.array(entity.rowType),
-  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+  (ctx) => [...ctx.db.entity.active.filter(true)]        // active: t.bool().index('btree')
 );
 
 // Per-user view (varies by ctx.sender):

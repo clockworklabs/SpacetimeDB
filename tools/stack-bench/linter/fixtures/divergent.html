@@ -1,0 +1,12 @@
+<!DOCTYPE html><html><head><title>divergence fixture</title></head><body>
+<!-- Two browser contexts render DIFFERENT counts from their own storage, which is
+     exactly what a client-local optimistic counter looks like. expectAgreement
+     must catch it; a single-actor assertion cannot. -->
+<div data-testid="signup-username-x"></div>
+<span data-testid="reaction-count"></span>
+<script>
+  const k = 'n';
+  if (!localStorage.getItem(k)) localStorage.setItem(k, String(1 + Math.floor(Math.random() * 1000)));
+  document.querySelector('[data-testid="reaction-count"]').textContent = localStorage.getItem(k);
+</script>
+</body></html>

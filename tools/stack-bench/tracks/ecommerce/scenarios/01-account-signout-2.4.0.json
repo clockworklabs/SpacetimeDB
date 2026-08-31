@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Sign out and return",
+  "features": [
+    {
+      "id": 1,
+      "name": "Accounts",
+      "actors": ["shopper"],
+      "setup": [{"do":"signUp","actor":"shopper","name":"ann"}],
+      "criteria": [
+        {
+          "id": "1d",
+          "desc": "signing out and back in returns the same account",
+          "points": 1,
+          "steps": [
+            {"do":"click","actor":"shopper","testid":"signout"},
+            {"do":"expect","actor":"shopper","testid":"signup-username","within":6000},
+            {"do":"signIn","actor":"shopper","name":"ann"},
+            {"do":"expect","actor":"shopper","testid":"current-user","contains":"ann","within":6000}
+          ],
+          "statedBy": "a signed-in user can sign out, returning to the signed-out state"
+        }
+      ]
+    }
+  ]
+}

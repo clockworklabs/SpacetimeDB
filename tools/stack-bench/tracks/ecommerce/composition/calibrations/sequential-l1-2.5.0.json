@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.sequential-l1-calibration",
+  "version": "2.5.0",
+  "state": "draft",
+  "title": "Ecommerce sequential L1 calibration",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/sequential-l1-2.5.0.json",
+    "id": "ecommerce.sequential-l1",
+    "version": "2.5.0",
+    "meaningSha256": "89cd530134dfdf7993120a90b902422472d2f9f6d326b6568a0cd3290edf20ce",
+    "executionSha256": "d057cc419ec6a35afd9017d478af346163674aa0ad1fb2e8e25bd7e3d25ae3cd",
+    "contentSha256": "8fe426fdd6781054ceae2b293a753c177ac9e3f505eeb656e62297f83fa5794a"
+  },
+  "fixture": {
+    "id": "ecommerce.storefront",
+    "version": "1.0.0",
+    "sourceSha256": "6f7a19d7aa0dd689b6ba8bfb457c872baca4886f9af374a7908d4270f11ae471"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      {
+        "backend": "mongodb",
+        "id": "ecommerce-reference-mongodb",
+        "sourceSha256": "24d445f18cdcb25b9ab06dd4f4582003b348edaf0be0b97c27ec9fbb06751b1e"
+      },
+      {
+        "backend": "postgres",
+        "id": "ecommerce-reference-postgres",
+        "sourceSha256": "f8f6152cebd68acc2af46a3e4cbf208664db17a7db58e0276d8e10ea6750aaf5"
+      },
+      {
+        "backend": "spacetime",
+        "id": "ecommerce-reference-spacetime",
+        "sourceSha256": "8806e01bcd4d44fa7c7c491f722c2412d568605a9d666545dafcc0bdf2a2b4f5"
+      }
+    ]
+  },
+  "mutations": [
+    {
+      "backend": "mongodb",
+      "path": "grader/mutations/mongodb-ecommerce-2.0.1.json",
+      "sha256": "b021f6148ec4db99ddc47de14edbe386e2c9f14a317add0a9b456aeafe520aab",
+      "referenceId": "ecommerce-reference-mongodb"
+    },
+    {
+      "backend": "postgres",
+      "path": "grader/mutations/postgres-ecommerce-2.0.1.json",
+      "sha256": "4426b50b2d920b69835c2c5950e1a83ece419b7ba0900298574e90d945b82354",
+      "referenceId": "ecommerce-reference-postgres"
+    },
+    {
+      "backend": "spacetime",
+      "path": "grader/mutations/spacetime-ecommerce-2.0.1.json",
+      "sha256": "d723be24c623bf38343189eaaa8b7748aebcf4950ba3bc39683b546e05d6b302",
+      "referenceId": "ecommerce-reference-spacetime"
+    }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [
+    {
+      "stableKey": "ecommerce.spec.concurrency-safety.restock-race.202-control",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": [],
+      "reason": "This proves that ordinary restock works before the contended restock check; it does not duplicate the existing scored restock behavior."
+    },
+    {
+      "stableKey": "ecommerce.spec.external-data-sync.external-stock.901b",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": [],
+      "reason": "This reload assertion confirms that the scored live update came from persisted data rather than a page-only patch."
+    }
+  ],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 1,
+    "mutationRepetitions": 1,
+    "checks":
+    [
+      "ecommerce.feature.accounts.accounts.1a",
+      "ecommerce.feature.accounts.accounts.1b",
+      "ecommerce.feature.accounts.accounts.1c",
+      "ecommerce.feature.accounts.accounts.1d",
+      "ecommerce.spec.state-durability.session-reload.1e",
+      "ecommerce.feature.catalog.catalog.2a",
+      "ecommerce.feature.catalog.catalog.2b",
+      "ecommerce.spec.live-state.ranking.2c",
+      "ecommerce.feature.catalog.catalog.2d",
+      "ecommerce.spec.access-control.signed-out-purchase.3a",
+      "ecommerce.spec.live-state.purchase-stock.3b",
+      "ecommerce.feature.purchasing.purchase-order.3c",
+      "ecommerce.spec.concurrency-safety.stock-limit.3d",
+      "ecommerce.feature.cart-checkout.cart.4a",
+      "ecommerce.spec.state-durability.cart-reload.4b",
+      "ecommerce.spec.live-state.shared-cart.4c",
+      "ecommerce.feature.cart-checkout.cart.4d",
+      "ecommerce.feature.reviews.reviews.6a",
+      "ecommerce.spec.transactional-integrity.unique-review.6b",
+      "ecommerce.spec.live-state.rating.6c",
+      "ecommerce.spec.access-control.admin-ui.7a",
+      "ecommerce.feature.warehouse-admin.warehouse-view.7b",
+      "ecommerce.spec.live-state.warehouse-stock.7c",
+      "ecommerce.spec.access-control.purchase-session.101a",
+      "ecommerce.spec.access-control.purchase-attribution.102a",
+      "ecommerce.spec.access-control.admin-write.103a",
+      "ecommerce.spec.transactional-integrity.server-price.104a",
+      "ecommerce.spec.state-durability.account-state-recovery.105a",
+      "ecommerce.spec.state-durability.account-state-recovery.105b",
+      "ecommerce.spec.access-control.order-ownership.106a",
+      "ecommerce.spec.transactional-integrity.books-balance.107a",
+      "ecommerce.spec.transactional-integrity.books-balance.107b",
+      "ecommerce.spec.access-control.review-eligibility.108a",
+      "ecommerce.spec.access-control.review-eligibility.108b",
+      "ecommerce.spec.access-control.cart-boundary.109a",
+      "ecommerce.spec.access-control.cart-boundary.109b",
+      "ecommerce.spec.concurrency-safety.last-unit.201a",
+      "ecommerce.spec.concurrency-safety.last-unit.201b",
+      "ecommerce.spec.concurrency-safety.last-unit.201c",
+      "ecommerce.spec.concurrency-safety.restock-race.202-control",
+      "ecommerce.spec.concurrency-safety.restock-race.202a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203a",
+      "ecommerce.spec.concurrency-safety.duplicate-checkout.203b",
+      "ecommerce.spec.external-data-sync.external-stock.901a",
+      "ecommerce.spec.external-data-sync.external-stock.901b",
+      "ecommerce.spec.external-data-sync.external-stock.901c",
+      "ecommerce.spec.external-data-sync.external-stock.901d",
+      "ecommerce.spec.live-state.open-list.902a"
+    ],
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "stacks": [
+      {
+        "id": "mongodb",
+        "status": "candidate"
+      },
+      {
+        "id": "postgres",
+        "status": "candidate"
+      },
+      {
+        "id": "spacetime",
+        "status": "candidate"
+      }
+    ],
+    "evidence": []
+  },
+  "equivalenceDecisions": [],
+  "promotion": {
+    "catalogPath": "composition/promotions.json",
+    "catalogSha256": "61e691af29f611ac04ada88ba050e2e63ca93099004c6b14b42babac2aa94cac",
+    "alias": "L1",
+    "status": "candidate"
+  }
+}

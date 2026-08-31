@@ -1,0 +1,121 @@
+import {
+  DEFAULT_DEPENDENCY_REPAIR_SELECTION,
+  DEPENDENCY_MODE_VERSION,
+  isDependencyRepairSelection,
+} from '../progression/dependency-definition.js';
+
+export const CAMPAIGN_MODE_SCHEMA_VERSION = 1;
+
+const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const VERSION = /^\d+\.\d+\.\d+$/;
+type UnknownRecord = Record<string, unknown>;
+
+export interface CampaignModeInput extends UnknownRecord {
+  id: string;
+  version: string;
+}
+
+export interface CampaignModeDefinition extends CampaignModeInput {
+  validate(value: CampaignModeInput, options: { at: string }): CampaignModeInput;
+}
+
+export interface CampaignModeRegistry {
+  ids: readonly string[];
+  validate(input: unknown, options?: { at?: string }): CampaignModeInput;
+}
+
+const object = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const positiveInteger = (value: unknown, at: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    fail(`${at} must be a positive integer`);
+  }
+  return value;
+};
+
+function fail(message: string): never {
+  throw new Error(`invalid campaign mode: ${message}`);
+}
+
+function validateIdentity(value: unknown, at: string): asserts value is CampaignModeInput {
+  if (!object(value)) fail(`${at} must be an object`);
+  if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id is invalid`);
+  if (typeof value.version !== 'string' || !VERSION.test(value.version)) {
+    fail(`${at}.version must be an exact semantic version`);
+  }
+}
+
+export function createCampaignModeRegistry(modes: CampaignModeDefinition[]): CampaignModeRegistry {
+  if (!Array.isArray(modes) || modes.length === 0) fail('registry requires at least one mode');
+  const entries = new Map<string, CampaignModeDefinition>();
+  for (const mode of modes) {
+    validateIdentity(mode, 'registry entry');
+    if (typeof mode.validate !== 'function') fail(`${mode.id}@${mode.version} requires validate()`);
+    const key = `${mode.id}@${mode.version}`;
+    if (entries.has(key)) fail(`registry repeats ${key}`);
+    entries.set(key, Object.freeze({ ...mode }));
+  }
+  return Object.freeze({
+    ids: Object.freeze([...entries.keys()].sort()),
+    validate(input: unknown, { at = 'mode' }: { at?: string } = {}) {
+      validateIdentity(input, at);
+      const key = `${input.id}@${input.version}`;
+      const mode = entries.get(key);
+      if (!mode) fail(`${at} selects unknown ${key}; available: ${[...entries.keys()].sort().join(', ')}`);
+      return mode.validate(structuredClone(input), { at });
+    },
+  });
+}
+
+const sequentialMode = {
+  id: 'sequential',
+  version: '1.0.0',
+  validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
+    const fields = new Set(['id', 'version']);
+    for (const key of Object.keys(value)) {
+      if (!fields.has(key)) fail(`${at}.${key} is unknown for sequential mode`);
+    }
+    return { id: value.id, version: value.version };
+  },
+};
+
+const dependencyMode = {
+  id: 'dependency',
+  version: DEPENDENCY_MODE_VERSION,
+  validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
+    const fields = new Set(['id', 'version', 'strikes', 'repairSelection']);
+    for (const key of Object.keys(value)) {
+      if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
+    }
+    if (!object(value.strikes)) fail(`${at}.strikes must be an object`);
+    const strikeFields = new Set(['default', 'levels']);
+    for (const key of Object.keys(value.strikes)) {
+      if (!strikeFields.has(key)) fail(`${at}.strikes.${key} is unknown`);
+    }
+    const levels = value.strikes.levels ?? {};
+    if (!object(levels)) fail(`${at}.strikes.levels must be an object`);
+    const normalizedLevels: Record<string, number> = {};
+    for (const [level, budget] of Object.entries(levels)) {
+      if (!/^[1-9]\d*$/.test(level)) fail(`${at}.strikes.levels.${level} has an invalid level`);
+      normalizedLevels[level] = positiveInteger(budget, `${at}.strikes.levels.${level}`);
+    }
+    const repairSelection = value.repairSelection ?? DEFAULT_DEPENDENCY_REPAIR_SELECTION;
+    if (!isDependencyRepairSelection(repairSelection)) {
+      fail(`${at}.repairSelection must be "feature" or "batch"`);
+    }
+    return { id: value.id, version: value.version, repairSelection, strikes: {
+      ...(value.strikes.default === undefined ? {}
+        : { default: positiveInteger(value.strikes.default, `${at}.strikes.default`) }),
+      levels: normalizedLevels,
+    } };
+  },
+};
+
+export const CAMPAIGN_MODE_REGISTRY = createCampaignModeRegistry([
+  dependencyMode,
+  sequentialMode,
+]);
+
+export function validateCampaignMode(value: unknown, options?: { at?: string }): CampaignModeInput {
+  return CAMPAIGN_MODE_REGISTRY.validate(value, options);
+}

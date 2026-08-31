@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.catalog-items",
+  "stableId": "ecommerce.feature.catalog",
+  "version": "1.0.0",
+  "state": "qualified",
+  "title": "Catalog items",
+  "moduleType": "feature",
+  "description": "Public catalog item values used by shopping features.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 30000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.catalog-items.requirement",
+        "path": "prompts/modular/catalog-items-1.0.0.md",
+        "order": 200,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.catalog-items.hooks",
+        "path": "contracts/catalog-items-1.0.md",
+        "order": 2000,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "values",
+      "stableId": "catalog-values",
+      "source": "scenarios/01-catalog-values-1.0.0.json",
+      "feature": 2,
+      "criteria": [
+        "2a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

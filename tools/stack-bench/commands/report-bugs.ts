@@ -1,0 +1,333 @@
+#!/usr/bin/env node
+// Turns grading results into a behavioral BUG_REPORT.md for the fix agent.
+// Selectors, test mechanics, local topology and raw paths are deliberately
+// removed so a fix cannot overfit the harness instead of repairing the app.
+
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { redactCredentials, sanitiseConsoleError,
+  sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
+import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.js';
+import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
+import { renderRepairDiagnostic } from '../src/evidence/evidence-presentation.js';
+import type { ActionEvidence } from '../src/actions/action-contract.js';
+
+interface RepairHistoryEntry {
+  round?: number;
+  beforeScore?: number;
+  beforeMax?: number;
+  afterScore?: number;
+  afterMax?: number;
+  result?: string;
+  remainingFailures?: string[];
+}
+
+interface ReportBugsArgs {
+  app: string;
+  out: string;
+  archive?: string;
+  history: RepairHistoryEntry[];
+  checks: string[] | null;
+  controls: string[] | null;
+}
+
+interface ParsedArgs {
+  app?: string;
+  out?: string;
+  archive?: string;
+  history?: unknown;
+  checks?: unknown;
+  controls?: unknown;
+}
+
+interface Criterion {
+  id?: string;
+  stableKey?: string;
+  desc?: string;
+  points?: number;
+  evidence?: unknown;
+}
+
+interface GradeFeature {
+  name?: string;
+  consoleErrors?: string[];
+  criteria?: Criterion[];
+}
+
+interface GradePayload {
+  url?: string;
+  features?: GradeFeature[];
+}
+
+interface ContractResult {
+  id: string;
+  status: string;
+  detail?: string;
+}
+
+interface ContractLintPayload {
+  url?: string;
+  results?: ContractResult[];
+}
+
+interface GradeBundlePayload {
+  backend?: string;
+  url?: string;
+  outcome?: { kind?: string; phase?: string; reason?: string };
+}
+
+interface RepairBug {
+  area: string;
+  actor: string | null;
+  expected: string;
+  observed: string;
+  url: string | null;
+  consoleErrors: string[];
+  contract: boolean;
+  vague: boolean;
+}
+
+function repairValue(value: unknown, fallback: string): string {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length === 1 && 'value' in value) value = value.value;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return sanitiseDiagnostic(text, 500) || fallback;
+}
+
+export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
+  const args: ParsedArgs = {};
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === '--app') args.app = argv[++i];
+    else if (argv[i] === '--out') args.out = argv[++i];
+    else if (argv[i] === '--archive') args.archive = argv[++i];
+    else if (argv[i] === '--history-json') {
+      const value = argv[++i];
+      if (value === undefined) throw new Error('--history-json requires a value');
+      args.history = JSON.parse(value);
+    }
+    else if (argv[i] === '--checks-json') {
+      const value = argv[++i];
+      if (value === undefined) throw new Error('--checks-json requires a value');
+      args.checks = JSON.parse(value);
+    }
+    else if (argv[i] === '--controls-json') {
+      const value = argv[++i];
+      if (value === undefined) throw new Error('--controls-json requires a value');
+      args.controls = JSON.parse(value);
+    }
+    else throw new Error(`Unknown argument: ${argv[i]}`);
+  }
+  if (!args.app) {
+    throw new Error('Usage: report-bugs --app <dir> [--out <file>]');
+  }
+  args.out ??= join(args.app, 'BUG_REPORT.md');
+  args.history ??= [];
+  if (!Array.isArray(args.history)) throw new Error('--history-json must contain an array');
+  args.checks ??= null;
+  if (args.checks !== null && (!Array.isArray(args.checks)
+    || args.checks.some(check => typeof check !== 'string' || !check)
+    || new Set(args.checks).size !== args.checks.length)) {
+    throw new Error('--checks-json must contain distinct non-empty strings');
+  }
+  args.controls ??= null;
+  if (args.controls !== null && (!Array.isArray(args.controls)
+    || args.controls.some(control => typeof control !== 'string' || !control)
+    || new Set(args.controls).size !== args.controls.length)) {
+    throw new Error('--controls-json must contain distinct non-empty strings');
+  }
+  return { app: args.app, out: args.out, archive: args.archive,
+    history: args.history as RepairHistoryEntry[], checks: args.checks as string[] | null,
+    controls: args.controls as string[] | null };
+}
+
+const VAGUE = new Set([
+  'it did not behave as described',
+  'the feature could not be reached at all',
+  'the app did not respond in time',
+]);
+export function createBugReport(args: ReportBugsArgs): number {
+  const resultsDir = join(args.app, 'stack-bench');
+  if (!existsSync(resultsDir)) throw new Error(`No grading results in ${resultsDir}`);
+
+  let vagueBugs = 0;
+  const bugs: RepairBug[] = [];
+  const selectedChecks = args.checks === null ? null : new Set(args.checks);
+  const selectedControls = args.controls === null ? null : new Set(args.controls);
+
+  for (const file of readdirSync(resultsDir).filter(name => /^grading-.*\.json$/.test(name))) {
+    const report = readArtifactPayload<GradePayload>(join(resultsDir, file), { expectedKind: 'grade' });
+    for (const feature of report.features ?? []) {
+      // Only typed application failures are sent to a fix round. Inconclusive or
+      // harness-failure evidence describes the benchmark, not the generated app.
+      // Zero-point criteria are test-development evidence and never control an
+      // ordinary repair loop, even when their behavioral observation failed.
+      for (const criterion of feature.criteria ?? []) {
+        if (selectedChecks && (!criterion.stableKey
+          || !selectedChecks.has(criterion.stableKey))) continue;
+        if (!(Number(criterion.points) > 0)) continue;
+        const evidence = criterionEvidence(criterion);
+        if (!evidenceIsRepairable(evidence)) continue;
+        const observed = renderRepairDiagnostic(evidence);
+        const actionEntry = evidence.actions.at(-1);
+        const actionEvidence = actionEntry?.evidence as ActionEvidence | undefined;
+        const safeDetails = evidence.sensitivity.length === 0
+          && (actionEvidence?.sensitivity.length ?? 0) === 0;
+        const fallbackExpected = sanitiseDiagnostic(
+          criterion.desc ?? 'the requested behavior', 300);
+        const expected = safeDetails
+          ? repairValue(actionEvidence?.expected ?? evidence.expected, fallbackExpected)
+          : fallbackExpected;
+        const actual = safeDetails
+          ? repairValue(actionEvidence?.observation ?? evidence.observation, observed)
+          : observed;
+        const vague = VAGUE.has(actual);
+        if (vague) vagueBugs += 1;
+        bugs.push({
+          area: sanitiseDiagnostic(feature.name, 120),
+          actor: sanitiseDiagnostic(actionEntry?.actor ?? evidence.actor, 120) || null,
+          expected,
+          observed: actual,
+          url: typeof report.url === 'string' ? redactCredentials(report.url).slice(0, 500) : null,
+          consoleErrors: (feature.consoleErrors ?? []).slice(0, 3)
+            .map(sanitiseConsoleError).filter(Boolean),
+          contract: false, vague,
+        });
+      }
+    }
+  }
+
+  // Contract failures are separate because the element id is itself the public
+  // requirement here. Behavioral failures above must never expose one.
+  const lintPath = join(resultsDir, 'contract-lint.json');
+  if (existsSync(lintPath)) {
+    const lint = readArtifactPayload<ContractLintPayload>(lintPath, { expectedKind: 'contract_lint' });
+    for (const result of (lint.results ?? []).filter(item => item.status === 'FAIL'
+      && (!selectedControls || selectedControls.has(item.id)))) {
+      bugs.push({
+        area: 'Application controls',
+        actor: null,
+        expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use id="${result.id}"`,
+        observed: sanitiseDiagnostic(result.detail
+          ?? `no visible element with id="${result.id}" was found after a clean reset`, 500),
+        url: typeof lint.url === 'string' ? redactCredentials(lint.url).slice(0, 500) : null,
+        consoleErrors: [], contract: true, vague: false,
+      });
+    }
+  }
+
+  const bundlePath = join(resultsDir, 'bundle.json');
+  if (existsSync(bundlePath)) {
+    const bundle = readArtifactPayload<GradeBundlePayload>(bundlePath, { expectedKind: 'grade_bundle' });
+    if (bundle.outcome?.kind === 'app_failure' && bundle.outcome.reason) {
+      const expectedByPhase: Record<string, string> = {
+        'database-provenance': `The app must use the ${bundle.backend} database and connection supplied for this run.`,
+        'application-layout': 'The app must use a project layout that can be built, started, and reset repeatedly.',
+        'application-restart': 'The app must provide /app/start.sh. From clean source, it must install dependencies, build, and start the complete application without changing source files.',
+      };
+      const expected = expectedByPhase[bundle.outcome.phase ?? '']
+        ?? 'The app must start successfully in the supplied environment.';
+      bugs.unshift({
+        area: 'Application setup',
+        actor: null,
+        expected,
+        observed: sanitiseDiagnostic(bundle.outcome.reason, 500),
+        url: typeof bundle.url === 'string' ? redactCredentials(bundle.url).slice(0, 500) : null,
+        consoleErrors: [],
+        contract: false, vague: false,
+      });
+    }
+  }
+
+  if (bugs.length === 0) {
+    console.log('No failures — no bug report written.');
+    return 3;
+  }
+
+  const repairBugs = bugs.filter(bug => !bug.vague);
+  const behavioral = repairBugs.filter(bug => !bug.contract);
+  const contractFailures = repairBugs.filter(bug => bug.contract);
+  const lines = [
+    '# Bug Report',
+    '',
+    'The application has these problems after a clean database reset and a fresh',
+    'restart. Fix the behavior, then redeploy.',
+    'Do not change behavior that is already correct. A result from existing local',
+    'state does not replace the clean result below.',
+    '',
+  ];
+
+  if (args.history.length) {
+    lines.push('## Earlier work', '');
+    lines.push('Earlier changes did not fix the current problems. Use the current source as',
+      'the starting point. Do not repeat an earlier approach only because it appeared',
+      'to work with existing local state.', '');
+  }
+
+  if (behavioral.length) {
+    lines.push('## Behavior', '');
+    behavioral.forEach((bug, index) => {
+      lines.push(`### Bug ${index + 1}: ${bug.area}`, '');
+      if (bug.actor) lines.push(`**Actor/session:** ${bug.actor}`, '');
+      lines.push(`**Expected:** ${bug.expected}`, '');
+      lines.push(`**Actual:** ${bug.observed}`, '');
+      if (bug.url) lines.push(`**Application URL:** \`${bug.url.replaceAll('`', "'")}\``, '');
+      if (bug.consoleErrors.length) {
+        lines.push('**Console or network errors:**', '');
+        bug.consoleErrors.forEach(error => lines.push(`- \`${error}\``));
+        lines.push('');
+      }
+    });
+  }
+
+  if (contractFailures.length) {
+    lines.push('## Application controls', '');
+    lines.push('These required elements were not available in the clean application state:', '');
+    contractFailures.forEach(bug => {
+      lines.push(`- **Expected:** ${bug.expected}`);
+      lines.push(`  **Actual:** ${bug.observed}`);
+      if (bug.url) lines.push(`  **Application URL:** \`${bug.url.replaceAll('`', "'")}\``);
+    });
+    lines.push('');
+  }
+
+  const vaguePct = Math.round((vagueBugs / bugs.length) * 100);
+  try {
+    const bundle = existsSync(bundlePath) ? readArtifact(bundlePath, { expectedKind: 'grade_bundle' }) : null;
+    const parentId = bundle?.attempt.id ?? null;
+    writeArtifact(join(resultsDir, 'bug-report-quality.json'), {
+      kind: 'bug_report_quality', id: `${parentId ?? 'bugs'}-bug-report-quality`,
+      attempt: { id: `${parentId ?? 'bugs'}-bug-report-quality`, parentId },
+      identities: bundle?.identities ?? emptyArtifactIdentities(),
+      payload: { bugs: bugs.length, vague: vagueBugs, vaguePct },
+    });
+  } catch { /* Quality metadata must not block the repair decision. */ }
+
+  console.log(`  diagnostic quality: ${repairBugs.length}/${bugs.length} actionable, ${vagueBugs} vague (${vaguePct}%)`);
+  if (repairBugs.length === 0) {
+    rmSync(args.out, { force: true });
+    console.log('No actionable failures. A paid repair was not started.');
+    return 4;
+  }
+
+  const reportText = lines.join('\n');
+  writeFileSync(args.out, reportText);
+  if (args.archive) {
+    mkdirSync(dirname(args.archive), { recursive: true });
+    writeFileSync(args.archive, reportText);
+  }
+  console.log(`Wrote ${repairBugs.length} bug(s) to ${args.out}`);
+  return 0;
+}
+
+function main(): void {
+  try {
+    process.exitCode = createBugReport(parseReportBugsArgs(process.argv));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 2;
+  }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) main();

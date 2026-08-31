@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Cart recovery",
+  "features": [
+    {
+      "id": 503,
+      "name": "Expired carts restore only available items",
+      "actors": ["available-shopper", "partial-shopper"],
+      "setup": [
+        { "do": "signUp", "actor": "available-shopper", "name": "cart-recovery-available" },
+        { "do": "click", "actor": "available-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "signUp", "actor": "partial-shopper", "name": "cart-recovery-partial" },
+        { "do": "click", "actor": "partial-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
+        { "do": "click", "actor": "partial-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+        { "do": "wait", "actor": "available-shopper", "ms": 310000 }
+      ],
+      "criteria": [
+        {
+          "id": "503a",
+          "desc": "restoring an expired cart reserves available items again",
+          "points": 3,
+          "statedBy": "A customer can restore the available items from an expired cart.",
+          "steps": [
+            { "do": "click", "actor": "available-shopper", "testid": "restore-cart", "in": { "testid": "expired-cart" } },
+            { "do": "click", "actor": "available-shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "available-shopper", "testid": "cart-item", "contains": "Keyboard" },
+            { "do": "expect", "actor": "available-shopper", "testid": "cart-restore-warning", "absent": true }
+          ]
+        },
+        {
+          "id": "503b",
+          "desc": "a partial restore keeps available items and names each unavailable item",
+          "points": 3,
+          "statedBy": "Restore the available items and list each item that could not be restored.",
+          "steps": [
+            { "do": "dbSetStock", "item": "Desk Lamp", "warehouse": "East", "quantity": 0, "settleMs": 2000 },
+            { "do": "dbSetStock", "item": "Desk Lamp", "warehouse": "West", "quantity": 0, "settleMs": 2000 },
+            { "do": "click", "actor": "partial-shopper", "testid": "restore-cart", "in": { "testid": "expired-cart" } },
+            { "do": "click", "actor": "partial-shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "partial-shopper", "testid": "cart-item", "contains": "Gaming Mouse" },
+            { "do": "expect", "actor": "partial-shopper", "testid": "cart-item", "contains": "Desk Lamp", "absent": true },
+            { "do": "expect", "actor": "partial-shopper", "testid": "cart-restore-warning", "contains": "Desk Lamp" }
+          ]
+        }
+      ]
+    }
+  ]
+}

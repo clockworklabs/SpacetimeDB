@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Catalog management",
+  "features": [
+    {
+      "id": 622,
+      "name": "Catalog management",
+      "actors": ["admin", "visitor"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-name", "text": "Travel Mug" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-category", "text": "Kitchen" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-price", "text": "24.00" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Black, Silver" },
+        { "do": "click", "actor": "admin", "testid": "catalog-save" },
+        { "do": "reload", "actor": "visitor", "settleMs": 2500 },
+        { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Travel Mug", "enter": true }
+      ],
+      "criteria": [
+        {
+          "id": "622a",
+          "desc": "a new product reaches the public catalog",
+          "points": 2,
+          "statedBy": "Authorized staff can add products.",
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Travel Mug", "within": 10000 }
+          ]
+        },
+        {
+          "id": "622b",
+          "desc": "the product exposes its named variants",
+          "points": 2,
+          "statedBy": "Products can have named variants.",
+          "steps": [
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-variant", "contains": "Black", "equals": 1, "within": 10000 },
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-variant", "contains": "Silver", "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

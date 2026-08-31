@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.deferred-integrity-specifications",
+  "stableId": "ecommerce.l3.deferred-integrity",
+  "version": "1.0.0",
+  "state": "qualified",
+  "moduleType": "specification",
+  "title": "Deferred-work integrity",
+  "description": "Deferred work applies once and preserves stock.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "backend-lifecycle"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 340000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l3.exactly-once-restocks", "path": "prompts/modular/l3-specifications-1.0.0.md", "order": 3110, "from": "## Exactly-once restocks", "until": "## Exactly-once delivery", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
+      { "id": "ecommerce.l3.exactly-once-delivery", "path": "prompts/modular/l3-specifications-1.0.0.md", "order": 3111, "from": "## Exactly-once delivery", "until": "## Server-timed restocks", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.order-delivery-features"] },
+      { "id": "ecommerce.l3.stock-conservation", "path": "prompts/modular/l3-specifications-1.0.0.md", "order": 3140, "from": "## Stock conservation", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.reservations-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "restock-once", "stableId": "exactly-once", "source": "scenarios/03-deferred-integrity-1.0.0.json", "feature": 311, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
+    { "id": "delivery-once", "stableId": "exactly-once", "source": "scenarios/03-deferred-integrity-1.0.0.json", "feature": 312, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.order-delivery-features"] },
+    { "id": "reservation-stock", "stableId": "stock-conservation", "source": "scenarios/03-deferred-integrity-1.0.0.json", "feature": 313, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.reservations-features"] },
+    { "id": "reserved-checkout", "stableId": "stock-conservation", "source": "scenarios/03-deferred-integrity-1.0.0.json", "feature": 314, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.reservations-features"] }
+  ]
+}

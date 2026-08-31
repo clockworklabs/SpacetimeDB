@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Warehouse administration through staff access",
+  "features": [
+    {
+      "id": 7,
+      "name": "Admin and warehouses",
+      "actors": ["admin", "staff"],
+      "setup": [
+        { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+        { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+        { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+        { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+        { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
+        { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
+        { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
+        { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 }
+      ],
+      "criteria": [
+        {
+          "id": "7a",
+          "desc": "the admin area is for administrators only",
+          "points": 1,
+          "statedBy": "admin accounts see an admin area; customers do not",
+          "steps": [
+            { "do": "expect", "actor": "admin", "testid": "admin-link" },
+            { "do": "expectUnavailable", "actor": "staff", "testid": "admin-link" },
+            { "do": "expect", "actor": "staff", "testid": "admin-panel", "absent": true }
+          ]
+        },
+        {
+          "id": "7b",
+          "desc": "admin lists every item, every warehouse, and what each warehouse holds",
+          "points": 1,
+          "statedBy": "admin lists every item with its stock, every warehouse, and the stock of each item in each warehouse",
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 12 },
+            { "do": "expect", "actor": "admin", "testid": "admin-location-row", "count": 24 },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 100 }
+          ]
+        }
+      ]
+    }
+  ]
+}

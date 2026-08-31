@@ -18,7 +18,7 @@ Generated bindings convert snake_case names to camelCase, including row fields: 
 ## React: main.tsx
 
 ```typescript
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';
@@ -30,6 +30,7 @@ function Root() {
     DbConnection.builder()
       .withUri(SPACETIMEDB_URI)
       .withDatabaseName(MODULE_NAME)
+      // Reuse the token issued on the previous connection.
       .withToken(localStorage.getItem('auth_token') || undefined),
     []
   );
@@ -46,6 +47,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(<Root />);
 ## React: App.tsx
 
 ```typescript
+import { useEffect } from 'react';
 import { useTable, useSpacetimeDB } from 'spacetimedb/react';
 import { DbConnection, tables } from './module_bindings';
 
@@ -53,7 +55,7 @@ function App() {
   const { isActive, identity: myIdentity, token, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConnection | null;
 
-  // Save auth token
+  // Persist the issued token for the next page load.
   useEffect(() => { if (token) localStorage.setItem('auth_token', token); }, [token]);
 
   // Subscribe when connected. Prefer typed query builders over raw SQL

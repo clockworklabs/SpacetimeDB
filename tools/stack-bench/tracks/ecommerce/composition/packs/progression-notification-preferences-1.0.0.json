@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.notification-preferences", "version": "1.0.0", "state": "qualified", "moduleType": "feature",
+  "title": "Notification preferences", "description": "Durable account-owned notification choices.",
+  "requiresPacks": ["ecommerce.feature.accounts@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 40000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.notification-preferences", "path": "prompts/modular/notification-preferences-1.0.0.md", "order": 2300, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.notification-preferences-hooks", "path": "contracts/notification-preferences-1.0.md", "order": 2990, "modes": ["upgrade"] }]
+  },
+  "checks": [
+    { "id": "persistence", "stableId": "notification-preferences-persistence", "source": "scenarios/progression-notification-preferences-1.0.0.json", "feature": 630, "criteria": ["630a"], "role": "feature" },
+    { "id": "privacy", "stableId": "notification-preferences-privacy", "source": "scenarios/progression-notification-preferences-1.0.0.json", "feature": 630, "criteria": ["630b"], "role": "feature" }
+  ]
+}

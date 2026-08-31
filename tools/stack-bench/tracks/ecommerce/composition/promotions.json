@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "promotion-catalog",
+  "id": "ecommerce.recipes",
+  "version": "2.0.0",
+  "state": "draft",
+  "title": "Ecommerce recipe releases",
+  "entries": [
+    {
+      "alias": "L1",
+      "status": "candidate",
+      "recipe": { "path": "recipes/sequential-l1-2.5.0.json", "id": "ecommerce.sequential-l1", "version": "2.5.0" }
+    },
+    {
+      "alias": "L2",
+      "status": "candidate",
+      "recipe": { "path": "recipes/sequential-l2-1.6.0.json", "id": "ecommerce.sequential-l2", "version": "1.6.0" }
+    },
+    {
+      "alias": "L3",
+      "status": "candidate",
+      "recipe": { "path": "recipes/sequential-l3-1.0.0.json", "id": "ecommerce.sequential-l3", "version": "1.0.0" }
+    }
+  ]
+}

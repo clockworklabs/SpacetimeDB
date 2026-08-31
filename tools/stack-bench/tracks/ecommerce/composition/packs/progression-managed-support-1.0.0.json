@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.managed-support",
+  "version": "1.0.0",
+  "state": "qualified",
+  "moduleType": "feature",
+  "title": "Managed support cases",
+  "description": "Shared support cases with live updates and account privacy.",
+  "requiresPacks": [
+    "ecommerce.progression.support-history@1.0.0",
+    "ecommerce.progression.support-triage@1.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 55000 },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.managed-support",
+        "path": "prompts/modular/managed-support-1.0.0.md",
+        "order": 3100,
+        "modes": ["upgrade"]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.managed-support-hooks",
+        "path": "contracts/managed-support-1.0.md",
+        "order": 3900,
+        "modes": ["upgrade"]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "shared-state",
+      "stableId": "managed-support-shared",
+      "source": "scenarios/progression-managed-support-shared-1.0.0.json",
+      "feature": 613,
+      "criteria": ["613a"],
+      "role": "feature"
+    },
+    {
+      "id": "privacy",
+      "stableId": "managed-support-privacy",
+      "source": "scenarios/progression-managed-support-privacy-1.0.0.json",
+      "feature": 613,
+      "criteria": ["613b"],
+      "role": "feature"
+    }
+  ]
+}

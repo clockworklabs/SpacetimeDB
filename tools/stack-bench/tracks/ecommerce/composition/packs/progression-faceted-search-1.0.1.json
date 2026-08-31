@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.faceted-search",
+  "version": "1.0.1",
+  "state": "qualified",
+  "moduleType": "feature",
+  "title": "Faceted search",
+  "description": "Combined catalogue filters with stable pagination.",
+  "requiresPacks": [
+    "ecommerce.feature.catalog-discovery@1.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "direct-database-write"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 60000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.faceted-search",
+        "path": "prompts/modular/faceted-search-1.0.0.md",
+        "order": 4000,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.faceted-search-hooks",
+        "path": "contracts/faceted-search-1.0.md",
+        "order": 4900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "filters",
+      "stableId": "faceted-search",
+      "source": "scenarios/progression-faceted-filters-1.0.0.json",
+      "feature": 401,
+      "criteria": [
+        "401a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "pagination",
+      "stableId": "faceted-search",
+      "source": "scenarios/progression-faceted-pagination-1.0.0.json",
+      "feature": 402,
+      "criteria": [
+        "402a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

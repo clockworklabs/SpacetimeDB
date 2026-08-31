@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.promotion-checkout",
+  "version": "2.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Promotion checkout",
+  "description": "Server-calculated discounts recorded on orders.",
+  "requiresPacks": [
+    "ecommerce.progression.promotion-rules@1.0.1",
+    "ecommerce.feature.checkout@2.0.0"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 55000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.promotion-checkout",
+        "path": "prompts/modular/promotion-checkout-1.0.0.md",
+        "order": 3200,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.promotion-checkout-hooks",
+        "path": "contracts/promotion-checkout-1.0.md",
+        "order": 3950,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "active",
+      "stableId": "promotion-checkout-active",
+      "source": "scenarios/progression-promotion-checkout-1.0.0.json",
+      "feature": 621,
+      "criteria": [
+        "621a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "expired",
+      "stableId": "promotion-checkout-expired",
+      "source": "scenarios/progression-promotion-checkout-1.0.0.json",
+      "feature": 621,
+      "criteria": [
+        "621b"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "exhausted",
+      "stableId": "promotion-checkout-exhausted",
+      "source": "scenarios/progression-promotion-checkout-1.0.0.json",
+      "feature": 621,
+      "criteria": [
+        "621c"
+      ],
+      "role": "feature"
+    }
+  ]
+}

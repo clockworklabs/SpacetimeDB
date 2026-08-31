@@ -1,0 +1,979 @@
+#!/usr/bin/env node
+// Drives one headless coding session: build a level, upgrade to the next, or fix
+// reported bugs. Self-contained — no dependency on the sequential-upgrade tool.
+//
+// Cost and token usage come from the CLI's own JSON result, so there is no
+// telemetry collector to run.
+//
+// Usage:
+//   node dist/commands/agent.js --mode build   --backend spacetime --level 1 --app <dir>
+//   node dist/commands/agent.js --mode upgrade --backend spacetime --level 2 --app <dir>
+//   node dist/commands/agent.js --mode fix     --backend spacetime --app <dir>
+//
+// Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
+
+import { execFileSync } from 'node:child_process';
+import type { ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync,
+         openSync, readSync, closeSync, readdirSync } from 'node:fs';
+import { join, dirname, resolve, relative, isAbsolute, sep } from 'node:path';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
+import type { Track, TrackDefinition } from '../src/composition/tracks.js';
+import type { BackendLease } from '../src/runtime/backend-lease.js';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import { resolveDefaultGuidanceForStack, type ResolvedSkills }
+  from '../src/campaigns/condition-compiler.js';
+import type { ExactRecipeRequest, RecipeBinding } from '../src/composition/recipe-release.js';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
+import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
+import { leaseFromEnv } from '../src/runtime/backend-lease.js';
+import { resolveContainerImage } from '../src/runtime/container-image.js';
+import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
+import type { StackRunPorts } from '../src/stacks/stack-adapter-contract.js';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
+import { dockerMountArguments } from '../src/runtime/container-mount.js';
+import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
+import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
+  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.js';
+import type { CodingSessionRecoveryResult } from '../src/agents/coding-session-recovery.js';
+import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
+import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
+import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
+import { PRICING_UNIT, validatePricingAuthority }
+  from '../src/evidence/pricing-authority.js';
+import type { PricingAuthority } from '../src/evidence/pricing-authority.js';
+
+import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
+const REPO = resolve(ROOT, '..', '..');
+const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
+const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
+
+type UnknownRecord = Record<string, unknown>;
+interface GuidanceDocument {
+  path: string;
+  sha256: string;
+  bytes: number;
+  applicationInterface: 'http' | 'reducer';
+}
+
+interface PromptMaterials {
+  skillsText?: string;
+  requirementText?: string;
+  contractText?: string;
+  startingCatalog?: string;
+}
+
+type RecipeTaskRequest = Parameters<typeof resolveBoundRecipeTaskRequest>[1] & {
+  recipe?: Exclude<ExactRecipeRequest, string>;
+};
+
+interface AgentArgs {
+  mode: string;
+  backend: string;
+  app: string;
+  level: number;
+  runIndex: number;
+  model: string;
+  guidance: string;
+  track: string;
+  pricing: Readonly<PricingAuthority> | null;
+  guidanceDocument?: GuidanceDocument;
+  credentialAliases?: Readonly<Record<string, string>>;
+  recipe?: string;
+  recipeTask?: RecipeTaskRequest;
+  thinking?: string;
+  maxBudgetUsd?: number;
+  skills?: string[];
+  skillIdentity?: ResolvedSkills;
+  apiKey?: string;
+  printPrompt?: boolean;
+}
+
+interface ThinkingVolume {
+  blocks: number;
+  signatureBytes: number;
+  bytesPerBlock: number;
+}
+
+interface SessionUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const stringValue = (value: unknown): string | null => typeof value === 'string' ? value : null;
+
+function sessionUsage(value: unknown): SessionUsage {
+  return isRecord(value) ? {
+    input_tokens: typeof value.input_tokens === 'number' ? value.input_tokens : undefined,
+    output_tokens: typeof value.output_tokens === 'number' ? value.output_tokens : undefined,
+    cache_creation_input_tokens: typeof value.cache_creation_input_tokens === 'number'
+      ? value.cache_creation_input_tokens : undefined,
+    cache_read_input_tokens: typeof value.cache_read_input_tokens === 'number'
+      ? value.cache_read_input_tokens : undefined,
+  } : {};
+}
+
+// The benchmark runs its own SpacetimeDB host so that measurements describe the
+// module under test rather than whatever else is published on a shared machine,
+// and so restarting it for durability tests cannot take somebody else down.
+const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
+
+// Build the app against the SpacetimeDB in THIS repository, not a published
+// release: otherwise a change to the host, the CLI or the module SDK is not
+// under test, and a result describes software nobody is working on.
+const LOCAL_CLI = join(REPO, 'target', 'release', 'spacetimedb-cli.exe');
+const STDB_BIN = process.env.SPACETIME_BIN ?? (existsSync(LOCAL_CLI) ? LOCAL_CLI : 'spacetime');
+const LOCAL_PKG = process.env.STDB_PACKAGE ?? join(REPO, 'crates', 'bindings-typescript');
+
+// Both shells and npm read a Windows backslash as an escape, so paths handed to
+// the model are written the one way every tool agrees on.
+const fwd = (path: string): string => path.split('\\').join('/');
+
+// Keep the provider's default thinking budget unless an experiment selects one
+// explicitly. The run records observed reasoning volume so default changes are
+// visible in the evidence.
+const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
+
+// Pin and record effort instead of inheriting an ambient CLI setting.
+const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
+
+// Coding sessions always run in Docker; there is no host execution path. The
+// build container cannot see benchmark definitions, and the model-free
+// container test verifies its lifecycle and SpacetimeDB publish/log path.
+const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
+
+// Set once in main(), because the addresses a build is TOLD to use depend on
+// where the build runs.
+//
+// Host services — the databases and the SpacetimeDB host — stay on
+// the machine, and `localhost` inside a container is the container. Those
+// addresses are rewritten to Docker's host alias. Dev-server ports are NOT
+// rewritten: those servers start inside the container and are published back
+// out, so the grader on the host still reaches them at localhost.
+export function hostServiceAddress(env: NodeJS.ProcessEnv = process.env): string {
+  return env.STACK_BENCH_HOST_ALIAS
+    ?? (env.STACK_BENCH_APPLIANCE === '1' ? '127.0.0.1' : 'host.docker.internal');
+}
+
+const HOST_ADDR = hostServiceAddress();
+const hostUrl = (url: string): string => url.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
+
+// Where the two artifacts under test are mounted. Container paths also keep the
+// repository root out of the prompt.
+const C_PKG = '/deps/spacetimedb.tgz';
+const C_BIN = '/deps/spacetimedb-cli';
+
+// The Linux build of the repository's CLI, which is what a container mounts at
+// C_BIN. Built by container/build-linux-cli.sh; target/release holds the
+// Windows binary and the two must not be confused for each other.
+const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
+  ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
+
+// Measure observed reasoning from the session transcript. The text of a
+// thinking block is redacted at the wire level -- `thinking` is
+// an empty string and the content survives only as an opaque signature -- so
+// this counts blocks and signature bytes. Neither is a token count, but both
+// move with reasoning volume, and they are what the transcript actually has.
+function thinkingVolume(appDir: string, sessionId: string | null | undefined): ThinkingVolume | null {
+  if (!sessionId) return null;
+  try {
+    const store = join(homedir(), '.claude', 'projects');
+    if (!existsSync(store)) return null;
+    const want = resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase();
+    const dir = readdirSync(store).find(d => {
+      const n = d.toLowerCase();
+      return n === want || n === want.replace(/^-+/, '');
+    });
+    const file = dir && join(store, dir, `${sessionId}.jsonl`);
+    if (!file || !existsSync(file)) return null;
+
+    let blocks = 0, bytes = 0;
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (!line.includes('"thinking"')) continue;   // cheap filter before parsing
+      let record: unknown;
+      try { record = JSON.parse(line); } catch { continue; }
+      if (!isRecord(record) || !isRecord(record.message)
+        || !Array.isArray(record.message.content)) continue;
+      for (const content of record.message.content) {
+        if (!isRecord(content) || content.type !== 'thinking') continue;
+        blocks++;
+        bytes += stringValue(content.signature)?.length ?? 0;
+      }
+    }
+    return { blocks, signatureBytes: bytes,
+             bytesPerBlock: blocks ? Math.round(bytes / blocks) : 0 };
+  } catch { return null; }
+}
+
+function combinedThinkingVolume(appDir: string, sessionIds: readonly (string | null | undefined)[]): ThinkingVolume | null {
+  const volumes: ThinkingVolume[] = [...new Set(sessionIds.filter((id): id is string => Boolean(id)))]
+    .map(id => thinkingVolume(appDir, id)).filter((item): item is ThinkingVolume => item !== null);
+  if (!volumes.length) return null;
+  const blocks = volumes.reduce((sum, item) => sum + item.blocks, 0);
+  const signatureBytes = volumes.reduce((sum, item) => sum + item.signatureBytes, 0);
+  return { blocks, signatureBytes,
+    bytesPerBlock: blocks ? Math.round(signatureBytes / blocks) : 0 };
+}
+
+
+// Record the Linux CLI executed by the container. The host and container
+// binaries can change independently and must not share an identity.
+function linuxSpacetimeVersion(image: string): { commit: string | null; binarySha256: string | null; raw: string } {
+  try {
+    const releaseVolume = process.env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
+    const mountArgs = releaseVolume
+      ? dockerMountArguments({ kind: 'volume', source: releaseVolume,
+        target: '/release-deps', readOnly: true })
+      : ['-v', `${LINUX_CLI}:/deps/spacetimedb-cli:ro`];
+    const entrypoint = releaseVolume ? '/release-deps/spacetimedb-cli' : '/deps/spacetimedb-cli';
+    const out = execFileSync('docker',
+      ['run', '--rm', ...mountArgs, '--entrypoint', entrypoint, image, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+        timeout: CONTROL_COMMAND_TIMEOUT_MS });
+    const commit = out.match(/Commit:\s*([0-9a-f]+)/i)?.[1] ?? null;
+    return { commit, binarySha256: sha256(readFileSync(LINUX_CLI)),
+      raw: out.trim().split(/\r?\n/).slice(0, 2).join(' ') };
+  } catch { return { commit: null, binarySha256: null, raw: 'unknown' }; }
+}
+
+function bindingsIdentity(pkgDir: string): { package: string; sourceSha256: string | null; sourceFiles: number } {
+  try {
+    const p = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+    const source = hashDirectory(pkgDir, { exclude: name =>
+      /(^|\/)(node_modules|dist|target)(\/|$)/.test(name) });
+    return { package: `${p.name}@${p.version}`, sourceSha256: source.sha256,
+      sourceFiles: source.files.length };
+  } catch { return { package: 'unknown', sourceSha256: null, sourceFiles: 0 }; }
+}
+
+// The CLI version inside the build image. Read by running it, not by trusting
+// the tag: the image is pinned by ARG and a tag can be moved.
+function imageCliVersion(image: string): string {
+  try {
+    return execFileSync('docker', ['run', '--rm', '--entrypoint', 'claude', image, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+        timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
+  } catch { return 'unknown'; }
+}
+
+function imageNodeVersion(image: string): string {
+  try {
+    return execFileSync('docker', ['run', '--rm', '--entrypoint', 'node', image, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+        timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
+  } catch { return 'unknown'; }
+}
+
+function containerImage(name: string): { reference: string; imageId: string | null | undefined } {
+  try {
+    const out = execFileSync('docker', ['inspect', '-f', '{{.Config.Image}} {{.Image}}', name],
+      { encoding: 'utf8', stdio: 'pipe', timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
+    const [reference, imageId] = out.split(/\s+/, 2);
+    return { reference: reference ?? '', imageId };
+  } catch { return { reference: 'unknown', imageId: null }; }
+}
+
+// Record ambient provider configuration that can change model behaviour while
+// replacing credential values with presence markers.
+function ambientEnv(): Record<string, string | undefined> {
+  const seen: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!/^(CLAUDE|ANTHROPIC|MAX_THINKING|DISABLE_AUTOUPDATER|FORCE_PROMPT)/.test(k)) continue;
+    // Never record a credential, only that one was present.
+    seen[k] = /KEY|TOKEN|SECRET/i.test(k) ? '<redacted, present>' : v;
+  }
+  return seen;
+}
+
+function normalizeGuidance(value: string): 'neutral' | 'prescribed' {
+  if (value === 'neutral' || value === 'prescribed') return value;
+  throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
+}
+
+function parseArgs(argv: readonly string[]): AgentArgs {
+  const a: Partial<AgentArgs> & Pick<AgentArgs, 'level' | 'runIndex' | 'model' | 'guidance' | 'track'> = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed',
+    track: DEFAULT_TRACK };
+  for (let i = 2; i < argv.length; i++) {
+    switch (argv[i]) {
+      case '--mode': a.mode = argv[++i] ?? ''; break;
+      case '--track': a.track = argv[++i] ?? ''; break;
+      case '--backend': a.backend = argv[++i] ?? ''; break;
+      case '--level': a.level = parseInt(argv[++i] ?? '', 10); break;
+      case '--app': a.app = argv[++i] ?? ''; break;
+      case '--run-index': a.runIndex = parseInt(argv[++i] ?? '', 10); break;
+      case '--model': a.model = argv[++i] ?? ''; break;
+      case '--pricing-json': a.pricing = JSON.parse(argv[++i] ?? ''); break;
+      case '--guidance': a.guidance = normalizeGuidance(argv[++i] ?? ''); break;
+      case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i] ?? ''); break;
+      case '--credential-aliases-json': a.credentialAliases = JSON.parse(argv[++i] ?? ''); break;
+      case '--recipe': a.recipe = argv[++i] ?? ''; break;
+      case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i] ?? ''); break;
+      case '--thinking': a.thinking = argv[++i] ?? ''; break;
+      case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
+      // Comma-separated skill directories to inline, e.g.
+      //   --skills typescript-server,typescript-client,cli
+      case '--skills': a.skills = (argv[++i] ?? '').split(',').map((skill: string) => skill.trim()).filter(Boolean); break;
+      case '--skills-json': a.skills = JSON.parse(argv[++i] ?? ''); break;
+      case '--skill-identity-json': a.skillIdentity = validateSkillIdentity(
+        JSON.parse(argv[++i] ?? '')); break;
+      // Container or nothing. For sweeps whose claim is that no build could
+      // reach the grader — there, a silent fallback would be a false claim.
+      // An API key, when supplied, is used instead of the mounted plan
+      // credential — it keeps a rotating token off the build's filesystem.
+      case '--api-key': a.apiKey = argv[++i] ?? ''; break;
+      case '--print-prompt': a.printPrompt = true; break;
+      default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
+    }
+  }
+  if (!a.mode || !a.backend || !a.app) {
+    console.error('Usage: node dist/commands/agent.js --mode build|upgrade|fix --backend <b> --app <dir> [--level N]');
+    process.exit(2);
+  }
+  if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
+    throw new Error('--max-budget-usd must be a positive number');
+  }
+  if (a.pricing !== undefined) {
+    a.pricing = validatePricingAuthority(a.pricing, { at: '--pricing-json' });
+  } else if (a.maxBudgetUsd !== undefined) {
+    const rates = claudeRatesForModel(a.model);
+    if (!rates) throw new Error(`no default pricing is recorded for model ${a.model}`);
+    a.pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
+      { at: 'default pricing' });
+  } else {
+    a.pricing = null;
+  }
+  return { mode: a.mode, backend: a.backend, app: a.app, level: a.level,
+    runIndex: a.runIndex, model: a.model, guidance: a.guidance, track: a.track,
+    pricing: a.pricing ?? null, ...(a.guidanceDocument ? { guidanceDocument: a.guidanceDocument } : {}),
+    ...(a.credentialAliases ? { credentialAliases: a.credentialAliases } : {}),
+    ...(a.recipe ? { recipe: a.recipe } : {}), ...(a.recipeTask ? { recipeTask: a.recipeTask } : {}),
+    ...(a.thinking ? { thinking: a.thinking } : {}),
+    ...(a.maxBudgetUsd !== undefined ? { maxBudgetUsd: a.maxBudgetUsd } : {}),
+    ...(a.skills ? { skills: a.skills } : {}),
+    ...(a.skillIdentity ? { skillIdentity: a.skillIdentity } : {}),
+    ...(a.apiKey ? { apiKey: a.apiKey } : {}),
+    ...(a.printPrompt ? { printPrompt: true } : {}) };
+}
+
+const dbUrl = (backend: string, runIndex: number, dbPort: number | null, track: Track): string | null => {
+  const url = executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'agent', 'connection-url',
+    { dbPort, database: dbName(track, runIndex), hostUrl });
+  return typeof url === 'string' ? url : null;
+};
+
+// Create the leased database before the app connects. A build clears its schema.
+// A reset between suites preserves the schema required by the running app.
+interface DatabasePreparationLease {
+  runId: string;
+  track: string;
+  runIndex: number;
+  resources: Pick<BackendLease['resources'], 'database'>;
+}
+
+type DatabaseCommandOptions = Pick<ExecFileSyncOptionsWithStringEncoding, 'stdio' | 'timeout'>;
+
+type DatabaseCommandExecutor = (command: string, args: readonly string[],
+  options: DatabaseCommandOptions) => string;
+
+const databaseCommandExecutor: DatabaseCommandExecutor = (command, args, options) =>
+  String(execFileSync(command, args, { ...options, encoding: 'utf8' }));
+
+interface DatabasePreparationOptions {
+  exec?: DatabaseCommandExecutor;
+  stdbBin?: string;
+  lease?: DatabasePreparationLease;
+}
+
+export function ensureDatabase(backend: string, runIndex: number, dbPort: number | null,
+  track: Pick<TrackDefinition, 'name' | 'slug'>, wipe = false,
+  { exec = databaseCommandExecutor, stdbBin = STDB_BIN, lease: suppliedLease }: DatabasePreparationOptions = {}) {
+  const lease = suppliedLease ?? leaseFromEnv(process.env, { backend, active: true }).lease;
+  if (lease.runIndex !== runIndex || lease.track !== track.name) {
+    throw new Error(`backend lease ${lease.runId} belongs to ${lease.track}/run${lease.runIndex}, `
+      + `not ${track.name}/run${runIndex}`);
+  }
+  const expectedName = dbName(track, runIndex);
+  const name = lease.resources.database ?? expectedName;
+  return executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'database', 'prepare', {
+    lease, name, expectedName, wipe, exec, cli: stdbBin,
+    expectedServerUri: STDB_URI, expectedModule: moduleName(track, runIndex), dbPort,
+  });
+}
+
+// Prescribed guidance chooses an implementation stack. Neutral guidance gives
+// only stack access facts and the selected API references.
+export function readBackendGuidanceDocument(document: GuidanceDocument | undefined, fallbackRelativePath: string): string {
+  if (typeof fallbackRelativePath !== 'string' || !fallbackRelativePath) {
+    throw new Error('backend guidance fallback path is required');
+  }
+  if (document !== undefined) {
+    const fields = new Set(['path', 'sha256', 'bytes', 'applicationInterface']);
+    if (!document || typeof document !== 'object' || Array.isArray(document)
+      || Object.keys(document).some(field => !fields.has(field))
+      || typeof document.path !== 'string' || !document.path || isAbsolute(document.path)
+      || document.path.includes('\\')
+      || !/^[a-f0-9]{64}$/.test(document.sha256)
+      || !Number.isSafeInteger(document.bytes) || document.bytes < 0
+      || !['http', 'reducer'].includes(document.applicationInterface)) {
+      throw new Error('campaign guidance document identity is invalid');
+    }
+  }
+  const root = realpathSync(ROOT);
+  const candidate = resolve(root, document?.path ?? fallbackRelativePath);
+  const candidateRel = relative(root, candidate);
+  if (candidateRel === '..' || candidateRel.startsWith(`..${sep}`) || isAbsolute(candidateRel)) {
+    throw new Error('campaign guidance document escapes the Stack Bench root');
+  }
+  const selectedPath = realpathSync(candidate);
+  const resolvedRel = relative(root, selectedPath);
+  if (resolvedRel === '..' || resolvedRel.startsWith(`..${sep}`) || isAbsolute(resolvedRel)) {
+    throw new Error('campaign guidance document resolves outside the Stack Bench root');
+  }
+  const bytes = Buffer.from(normalizePromptText(readFileSync(selectedPath, 'utf8')), 'utf8');
+  if (document && (sha256(bytes) !== document.sha256 || bytes.length !== document.bytes)) {
+    throw new Error(`campaign guidance document changed after compilation: ${document.path}`);
+  }
+  return bytes.toString('utf8');
+}
+
+function validateSkillIdentity(value: unknown): ResolvedSkills {
+  const fields = new Set(['ids', 'sha256', 'bytes']);
+  if (!isRecord(value) || Object.keys(value).some(field => !fields.has(field))
+    || !Array.isArray(value.ids) || new Set(value.ids).size !== value.ids.length
+    || value.ids.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]*$/.test(id))
+    || typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)
+    || !Number.isSafeInteger(value.bytes) || Number(value.bytes) < 0) {
+    throw new Error('campaign skill identity is invalid');
+  }
+  return { ids: value.ids as string[], sha256: value.sha256, bytes: Number(value.bytes) };
+}
+
+function backendDoc(args: AgentArgs, p: StackRunPorts, track: Track): string {
+  const defaultGuidance = resolveDefaultGuidanceForStack(args.guidance, args.backend);
+  let defaultPath = defaultGuidance?.documents[args.backend]?.path;
+  if (!defaultPath && args.guidance === 'neutral') {
+    throw new Error(`neutral guidance has no document for ${args.backend}`);
+  }
+  defaultPath ??= join('backends', `${args.backend}.md`);
+  const raw = readBackendGuidanceDocument(args.guidanceDocument, defaultPath);
+  return raw
+    .replaceAll('<VITE_PORT>', String(p.vite))
+    .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))
+    .replaceAll('<APP_NOUN>', track.title)
+    .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
+    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) ?? '' : '')
+    .replaceAll('<STDB_URI>', hostUrl(STDB_URI))
+    .replaceAll('<STDB_BIN>', C_BIN)
+    .replaceAll('<STDB_PACKAGE>', `file:${C_PKG}`);
+}
+
+// SpacetimeDB is young enough that models have little of it in training data;
+// the skill documents are its API reference, equivalent to what the other stacks
+// get from having been on the internet for a decade.
+// Which documents are inlined is the variable under test in the cost work, so
+// it is a flag rather than an edit: both arms of a comparison then come from
+// one binary, and run.json records which arm produced each number.
+// Whether a containerised run can actually work, checked before anything is
+// spent rather than discovered an hour in as a build error the model gets
+// blamed for. Returns a reason instead of throwing, because the default and the
+// explicit request are answered differently — see resolveIsolation.
+//
+// SpacetimeDB needs a CLI the container can execute. `target/release/
+// spacetimedb-cli.exe` is a Windows PE binary, so container/build-linux-cli.sh
+// compiles a Linux one from this same checkout. The benchmark deliberately
+// tests the CLI in THIS repository rather than a published release, so falling
+// back to a `spacetime` from the image would measure different software and
+// report it under the same name.
+function containerBlocker(backend: string): string | null {
+  try {
+    execFileSync('docker', ['image', 'inspect', IMAGE],
+      { stdio: 'pipe', timeout: CONTROL_COMMAND_TIMEOUT_MS });
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message.split('\n')[0] : String(error).split('\n')[0];
+    return `cannot verify isolation image ${IMAGE}: ${detail} — `
+      + `build it with docker build -t ${IMAGE} ${fwd(join(ROOT, 'container'))}`;
+  }
+  if (!executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend),
+    'agent', 'linux-cli-required')) return null;
+  if (!existsSync(LINUX_CLI)) {
+    return `no Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)} — `
+      + 'bash tools/stack-bench/container/build-linux-cli.sh';
+  }
+  // ELF magic, checked rather than assumed: the path existing says nothing
+  // about which platform the file was built for, and a Windows binary copied
+  // there would fail deep inside a build as an unexplained publish error.
+  const magic = Buffer.alloc(4);
+  try {
+    const fd = openSync(LINUX_CLI, 'r');
+    try { readSync(fd, magic, 0, 4, 0); } finally { closeSync(fd); }
+  } catch {
+    return `cannot read the Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)}`;
+  }
+  if (magic.toString('binary') !== '\x7fELF') {
+    return `${fwd(LINUX_CLI)} is not a Linux binary; rebuild it with `
+      + 'container/build-linux-cli.sh';
+  }
+  return null;
+}
+
+// There is one coding-session topology to secure and clean up: Docker or fail.
+function decideIsolation(args: AgentArgs): { container: true; reason: null } {
+  const blocker = containerBlocker(args.backend);
+  if (!blocker) return { container: true, reason: null };
+  console.error(`agent.js: isolated build unavailable: ${blocker}`);
+  console.error('  benchmark coding sessions require the isolation container');
+  process.exit(2);
+}
+
+// Every round must retain the container pin written by the first round. A
+// missing or non-container marker is ambiguous prior state, never authority to
+// choose a second execution topology.
+//
+// So the decision is made once, at `build`, and recorded beside the app rather
+// than inside it (the app directory is what gets copied into source/ and
+// audited). Later modes read it back and refuse ambiguous prior state.
+//
+// The marker lives outside the app because `build` wipes the app directory.
+// An app with benchmark state and no marker predates this invariant; refuse it
+// rather than guessing where its earlier rounds executed.
+function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
+  const marker = resolve(args.app, '..', '.stack-bench-isolation');
+  const backendMarker = resolve(args.app, '..', '.stack-bench-backend');
+
+  if (args.mode === 'build') {
+    const decided = decideIsolation(args);
+    if (!args.printPrompt) {
+      mkdirSync(dirname(marker), { recursive: true });
+      writeFileSync(marker, 'container');
+    }
+    return decided;
+  }
+
+  if (existsSync(marker)) {
+    const pinned = readFileSync(marker, 'utf8').trim();
+    if (pinned !== 'container') {
+      console.error(`agent.js: unsupported isolation marker ${JSON.stringify(pinned)}; expected "container"`);
+      process.exit(2);
+    }
+    const blocker = containerBlocker(args.backend);
+    if (blocker) {
+      console.error(`agent.js: this run's build ran in a container, but ${blocker}`);
+      console.error('  refusing to run this round in a different environment');
+      process.exit(2);
+    }
+    return { container: true, reason: null };
+  }
+
+  // No isolation marker. The sibling backend marker is written by every agent
+  // round, so its presence means a previous round already worked here without
+  // recording its topology. (A seeded upgrade does not
+  // have it: restoreSource copies source directories, not dotfiles, so the
+  // first round of a new run still decides fresh.)
+  if (existsSync(backendMarker)) {
+    console.error('agent.js: app has prior benchmark state but no isolation marker');
+    console.error('  refusing to guess where earlier rounds ran; start a clean run');
+    process.exit(2);
+  }
+  const decided = decideIsolation(args);
+  if (!args.printPrompt) {
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, 'container');
+  }
+  return decided;
+}
+
+export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
+  materials: PromptMaterials = {}): string {
+  const applicationInterface = args.guidanceDocument?.applicationInterface
+    ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
+      ?.documents[args.backend]?.applicationInterface;
+  if (applicationInterface !== 'http' && applicationInterface !== 'reducer') {
+    throw new Error(`stack ${args.backend} has no application interface`);
+  }
+  const common = [
+    'Build the app in /app.',
+    // Container runs only, and identical for every backend so no stack gets
+    // more guidance than another.
+    //
+    // Vite binds `localhost` by default. Inside a container that is the
+    // container's own loopback, which a published port does not forward to —
+    // measured: a server on 127.0.0.1 in a container is unreachable from the
+    // host through -p, the same server on 0.0.0.0 answers 200. Without this
+    // every containerised run would build a working app the grader cannot
+    // reach, and fail for a reason that has nothing to do with the database.
+    '',
+      'The web application must listen on 0.0.0.0, not localhost, so it is reachable '
+      + 'outside its process.',
+    '',
+    '## Stack',
+    '',
+    agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases,
+      applicationInterface),
+  ];
+  const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
+  if (skills) common.push('', '## Selected API reference', '', skills);
+
+  if (args.mode === 'resume') {
+    return [
+      'Restore the existing application to a runnable state.',
+      '',
+      'This is a saved application from an earlier completed run. Install its',
+      'dependencies and start its existing database module, server, and web client',
+      'as needed. Do not implement features or fix application behavior. Do not',
+      'change source files. The saved source must remain byte-for-byte identical.',
+      '',
+      'Output RESUME_COMPLETE when the existing app is running.',
+      '',
+      ...common,
+    ].join('\n');
+  }
+
+  if (args.mode === 'fix') {
+    return [
+      'Fix the reported application bugs.',
+      '',
+      'Read BUG_REPORT.md in the app directory. Each entry says what was expected',
+      'and what actually happened. Fix the app so the behaviour matches, redeploy,',
+      'and make sure the dev server is running.',
+      '',
+      'Change only what is needed. Do not alter behaviour that is already correct.',
+      '',
+      'Output FIX_COMPLETE when done.',
+      '',
+      ...common,
+    ].join('\n');
+  }
+
+  const verb = args.mode === 'upgrade'
+    ? [
+        `Add the level ${args.level} features below to the existing app.`,
+        '',
+        'Keep completed features working. Add only the current features below.',
+      ]
+    : [`Build the application described below and leave it running.`];
+  const startingCatalog = args.mode === 'build' && materials.startingCatalog
+    ? ['', '## Starting catalog', '', 'Use exactly this starting data:', '',
+        '```json', materials.startingCatalog, '```'] : [];
+
+  return [
+    ...verb,
+    '',
+    `After the web application is running, reply with ${args.mode === 'upgrade'
+      ? 'UPGRADE_COMPLETE' : 'DEPLOY_COMPLETE'}.`,
+    '',
+    ...common,
+    '',
+    agentVisibleContractText(materials.requirementText ?? levelPrompt(track, args.level),
+      args.credentialAliases, applicationInterface),
+    ...startingCatalog,
+    '',
+    '## Application interface',
+    '',
+    agentVisibleContractText(materials.contractText ?? appendix(track, args.level),
+      args.credentialAliases, applicationInterface),
+  ].join('\n');
+}
+
+export function agentScenarioPaths(track: Track, level: number,
+  recipeBinding: RecipeBinding | null = null): string[] {
+  const execution = recipeBinding?.execution;
+  if (execution) return execution.map(entry => resolve(track.dir, entry.source ?? ''));
+  return suitesFor(track, level).map(suite => suite.spec);
+}
+
+export function agentRecipeRequest(explicitRecipe: string | null = null,
+  recipeTask: RecipeTaskRequest | null = null): ExactRecipeRequest | null {
+  const bound = recipeTask?.recipe;
+  if (!bound) return explicitRecipe;
+  const identity = `${bound.id}@${bound.version}`;
+  if (explicitRecipe && explicitRecipe !== identity) {
+    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${identity}`);
+  }
+  return bound;
+}
+
+// A build must not be able to read the thing that grades it.
+// The sandbox probe imports the same deny list used here.
+
+async function main() {
+  const args = parseArgs(process.argv);
+  const track = loadTrack(args.track);
+  const p = portsFor(track, args.backend, args.runIndex);
+  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  const profileSkills = resolveDefaultGuidanceForStack(args.guidance, args.backend)
+    ?.skills[args.backend]?.ids;
+  const adapterSkills = executeStackCapability(adapter, 'agent', 'default-skills');
+  if (!profileSkills && (!Array.isArray(adapterSkills)
+    || adapterSkills.some(skill => typeof skill !== 'string'))) {
+    throw new Error(`stack adapter ${args.backend} returned invalid default skills`);
+  }
+  const defaultSkills = profileSkills ?? adapterSkills as string[];
+  const selectedSkills = selectAgentSkills(defaultSkills,
+    args.skillIdentity?.ids ?? args.skills ?? null);
+  const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
+  if (args.skillIdentity && (sha256(skillsText) !== args.skillIdentity.sha256
+    || Buffer.byteLength(skillsText) !== args.skillIdentity.bytes)) {
+    throw new Error('campaign skill material changed after compilation');
+  }
+  const recipeBinding = resolveRecipeRelease(track, args.level,
+    agentRecipeRequest(args.recipe ?? null, args.recipeTask ?? null));
+  if (args.recipeTask && !recipeBinding) {
+    throw new Error(`L${args.level} has no recipe release for the requested task`);
+  }
+  const selectedTask = recipeBinding
+    ? (args.recipeTask
+        ? resolveBoundRecipeTaskRequest(recipeBinding, args.recipeTask)
+        : createBoundRecipeTaskRequest(recipeBinding))
+    : null;
+  const requirementText = selectedTask?.task.requirementText ?? levelPrompt(track, args.level);
+  const contractText = selectedTask?.task.contractText ?? appendix(track, args.level);
+  const taskMode = isRecord(args.recipeTask?.task) ? args.recipeTask.task.mode : null;
+  const startingCatalog = recipeBinding && taskMode === 'fresh' ? JSON.stringify({
+    warehouses: recipeBinding.plan.fixture.warehouses,
+    items: recipeBinding.plan.fixture.items,
+  }, null, 2) : undefined;
+
+  // Renders what the model would be given, without spending anything or
+  // touching the app directory. The regression gate for harness changes is a
+  // diff of this against a saved copy — captured with the same isolation flags,
+  // since host and container prompts differ by design.
+  if (args.printPrompt) {
+    process.stdout.write(buildPrompt(args, p, track,
+      { skillsText, requirementText, contractText, startingCatalog }));
+    return;
+  }
+  if (args.mode === 'build') {
+    assertNewOrEmptyDirectory(args.app, 'build application directory');
+  }
+  // Printed prompts describe the one supported coding topology but are a pure
+  // review operation: they must work on a release-review machine that does not
+  // have Docker or the build image. A paid session, by contrast, proves the
+  // image and Linux CLI boundary immediately before touching the app.
+  resolveIsolation(args);
+  const imageIdentity = resolveContainerImage(IMAGE);
+  // Only a build wipes: an upgrade or a fix must find the data the previous
+  // level left, which is the whole point of a cumulative ladder.
+  // Called for every backend, not just those with a dbPort: spacetime has no
+  // database port and would have skipped the pre-build wipe entirely, which is
+  // exactly the backend whose leftover module causes the migration abort.
+  ensureDatabase(args.backend, args.runIndex, p.dbPort, track, args.mode === 'build');
+  // A build must start from a new or empty directory. Never turn a caller-
+  // supplied path into permission to recursively erase an existing tree.
+  mkdirSync(args.app, { recursive: true });
+  writeFileSync(resolve(args.app, '..', '.stack-bench-backend'), args.backend);
+
+  const prompt = buildPrompt(args, p, track,
+    { skillsText, requirementText, contractText, startingCatalog });
+  const bugReportPath = join(args.app, 'BUG_REPORT.md');
+  const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
+    ? readFileSync(bugReportPath, 'utf8') : null;
+  const provenance = sessionProvenance({ prompt, skillsText, contractText, bugReportText,
+    scenarioPaths: agentScenarioPaths(track, args.level, recipeBinding),
+    trackDir: track.dir, trackManifestPath: join(track.dir, 'track.json') });
+  const started = Date.now();
+  const retryLimitRaw = process.env.STACK_BENCH_CODING_INTERRUPTION_RETRIES
+    ?? String(DEFAULT_CODING_INTERRUPTION_RETRIES);
+  const retryLimit = Number(retryLimitRaw);
+  if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
+    throw new Error('STACK_BENCH_CODING_INTERRUPTION_RETRIES must be an integer from 0 to 3');
+  }
+  // The benchmark runner stops this process at the adapter deadline.
+  // A wait budget past that point would promise time the
+  // supervisor never grants. DEFAULT_THROTTLE_MAX_WAIT_MS is sized to
+  // span one full subscription usage-window reset.
+  const throttleWaitRaw = process.env.STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES
+    ?? String(DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000);
+  const throttleMaxWaitMinutes = Number(throttleWaitRaw);
+  if (!Number.isInteger(throttleMaxWaitMinutes) || throttleMaxWaitMinutes < 0
+    || throttleMaxWaitMinutes > DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000) {
+    throw new Error('STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES must be an integer from 0 to '
+      + `${DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000}`);
+  }
+  // Concurrent campaign slots must not wake and retry as one burst. This
+  // stable offset keeps retries reproducible while spreading them over 45s.
+  const throttleJitterMs = parseInt(sha256(Buffer.from(
+    `${args.backend}:${args.runIndex}:${args.level}:${args.mode}`)).slice(0, 8), 16) % 45_001;
+  let coding: CodingSessionRecoveryResult;
+  try {
+    // The prompt goes in on stdin, not as an argument. Windows caps a command
+    // line at 32767 characters, and the SpacetimeDB prompt carries the skill
+    // documents on top of the level spec — it crossed that line as soon as L1
+    // grew, and the spawn fails with a bare ENOENT that reads as "CLI missing".
+    const cliEnv = { ...process.env,
+      // Absent unless deliberately overridden — see THINKING_TOKENS above.
+      ...((args.thinking ?? THINKING_TOKENS)
+        ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
+        : {}),
+      // A CLI that updates itself mid-series changes the thing under test
+      // between one backend and the next. The sequential harness has frozen
+      // it since April; this one had not.
+      DISABLE_AUTOUPDATER: '1',
+      // Cache reads are ~69% of a run's bill, so cache TTL moves cost more
+      // than anything else measured here. Unpinned, runs were getting the
+      // 1-hour tier: a second run of the same backend within the hour reads
+      // a prefix the first one paid to create and looks cheaper for reasons
+      // that have nothing to do with the database. That is fatal for n=5
+      // parallel trials, which would ALL share one warm prefix, and the
+      // effect differs per backend because the prompts differ in size. The
+      // 5-minute tier makes each trial pay its own way. The sequential
+      // harness has pinned this since April for the same reason.
+      FORCE_PROMPT_CACHING_5M: '1' };
+
+    // Same CLI arguments, run somewhere the harness does not exist. The
+    // container path is a separate script so that what a build can reach is
+    // stated in one place — see the compiled container/run-build.js entry point.
+    coding = runCodingSessionWithRecovery({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
+      throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
+      throttleJitterMs,
+      invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
+        execFileSync(process.execPath, [
+          compiledEntrypoint('container', 'run-build.js'),
+          '--app', args.app,
+          '--backend', args.backend,
+          '--image', imageIdentity.id,
+          '--effort', EFFORT,
+          '--model', args.model,
+          ...(args.pricing ? ['--pricing-json', JSON.stringify(args.pricing)] : []),
+          '--completion-marker', args.mode === 'fix' ? 'FIX_COMPLETE'
+            : args.mode === 'upgrade' ? 'UPGRADE_COMPLETE'
+              : args.mode === 'resume' ? 'RESUME_COMPLETE' : 'DEPLOY_COMPLETE',
+          ...(maxBudgetUsd != null ? ['--max-budget-usd', String(maxBudgetUsd)] : []),
+          '--ports', [p.vite, p.express].filter(Boolean).join(','),
+          ...(resumeSession ? ['--resume-session', resumeSession] : []),
+          ...(recoverStoppedContainer ? ['--recover-stopped-container'] : []),
+        ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
+          env: { ...cliEnv, ...(args.apiKey ? { STACK_BENCH_AGENT_API_KEY: args.apiKey } : {}) },
+          timeout: AGENT_PROCESS_TIMEOUT_MS }),
+    });
+  } catch (err: unknown) {
+    coding = { raw: '', spawnError: codingSessionFailure(isRecord(err) ? err : {}), sessionResults: [],
+      interruptions: [], result: { total_cost_usd: 0, num_turns: 0,
+        usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0 }, stack_bench_cost_receipts: [] },
+      throttle: { waits: 0, waitedMs: 0, maxWaitMs: throttleMaxWaitMinutes * 60_000,
+        jitterMs: throttleJitterMs } };
+  }
+
+  const { raw, spawnError, sessionResults, interruptions, result, throttle } = coding;
+  const noOutput = !result.session_id && !raw.trim();
+  const failed = Boolean(spawnError || noOutput);
+  const providerFailure = providerSessionFailure(result);
+  const usage = sessionUsage(result.usage);
+  const input = usage.input_tokens ?? 0;
+  const output = usage.output_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const turns = result.num_turns ?? 0;
+
+  // A single total cannot say WHY one backend cost more, and the answer is
+  // almost never the database. Cost here is roughly (turns × prompt size):
+  // cache reads dominate the token count and are re-paid every turn, so a
+  // backend handed a bigger guidance pack pays more for identical work. Keep
+  // the parts, so a cost difference can be attributed instead of assumed.
+  const setupMetadata = executeStackCapability(adapter, 'agent', 'setup-metadata', {
+    imageId: imageIdentity.id,
+    localPackage: LOCAL_PKG,
+    env: process.env,
+    helpers: { linuxSpacetimeVersion, bindingsIdentity, containerImage },
+  });
+  const out = {
+    appDir: args.app,
+    mode: args.mode,
+    level: args.level,
+    track: args.track,
+    backend: args.backend,
+    model: args.model,
+    guidance: args.guidance,
+    // The setup that produced this number. A score whose reasoning budget,
+    // permission mode or CLI version is unknown cannot be compared with a later
+    // one — the run would look identical in the record and not be.
+    setup: {
+      thinkingTokens: (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
+      permissionMode: 'acceptEdits',
+      effort: EFFORT,
+      // Which reference documents the model was handed. The cost work varies
+      // this deliberately, so a number is meaningless without it.
+      skills: selectedSkills,
+      // Recorded because it materially changes cost, and because a figure whose
+      // cache tier is unknown cannot be compared with one taken later.
+      cacheTier: '5m',
+      autoUpdater: 'disabled',
+      codingInterruptionRetries: { limit: retryLimit,
+        used: interruptions.filter(item => item.kind !== 'provider-throttled').length },
+      // Waiting out a provider throttle is time the model did not work; a
+      // duration compared without this figure blames the backend for the
+      // account's usage window.
+      providerThrottle: { maxWaitMinutes: throttleMaxWaitMinutes,
+        waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0,
+        jitterMs: throttle?.jitterMs ?? throttleJitterMs },
+      // In a container the host CLI is not the one that ran, so the version is
+      // read from the image. Reporting the host's would attribute a number to
+      // software that took no part in producing it.
+      cliVersion: imageCliVersion(imageIdentity.id),
+      // Both the human-facing reference and immutable content identity are
+      // recorded; the latter is what Docker actually executes.
+      isolation: { mode: 'container', image: imageIdentity.reference,
+        imageId: imageIdentity.id, hostAlias: HOST_ADDR },
+      // Whether the run billed to a key or to the plan. Cost figures from the
+      // two are not the same measurement.
+      auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key'
+        : (process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE)
+          ? 'subscription-token' : 'not-selected',
+      // What is actually being benchmarked, not just what drove it.
+      ...(isRecord(setupMetadata) ? setupMetadata : {}),
+      // Ambient variables that could have influenced the model, recorded so the
+      // question "what settings produced this" has an answer.
+      env: ambientEnv(),
+      // The orchestrator and coding session are separate runtimes. Recording
+      // only the host Node version would attribute the model's tool execution
+      // to a binary that never entered its container.
+      node: { orchestrator: process.version, codingContainer: imageNodeVersion(imageIdentity.id) },
+      platform: process.platform,
+    },
+    costUsd: Number((result.total_cost_usd ?? 0).toFixed(6)),
+    costReceipts: result.stack_bench_cost_receipts ?? [],
+    tokens: input + output + cacheWrite + cacheRead,
+    outputTokens: output,
+    usage: { input, output, cacheWrite, cacheRead },
+    provenance,
+    turns,
+    // What the model was handed before it did anything — the denominator for
+    // every per-turn cost, and the axis the benchmark is least fair on.
+    promptBytes: Buffer.byteLength(prompt),
+    tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
+    // Reasoning volume, measured rather than assumed — the budget is unpinned,
+    // so this is how a change in the CLI default becomes visible in the record.
+    thinking: combinedThinkingVolume(args.app, sessionResults.map(item => item.session_id)),
+    durationMs: Date.now() - started,
+    sessionId: result.session_id ?? null,
+    ok: !failed && result.is_error === false,
+    providerMetadata: { failureCode: failed
+      ? String(spawnError ?? '').startsWith('provider stayed throttled')
+        ? 'provider-throttle-exhausted'
+        : providerFailure?.code ?? (noOutput ? 'coding-session-no-output' : 'coding-session-failed')
+      : result.is_error === true ? 'provider-session-error' : null,
+      failure: failed ? {
+        providerStatus: result.api_error_status ?? null,
+        waitedMs: throttle?.waitedMs ?? 0,
+        waits: throttle?.waits ?? 0,
+      } : null,
+      interruptions, invocations: sessionResults.length,
+      terminalRecovery: isRecord(result) ? result.terminal_recovery ?? null : null,
+      credentialBroker: result.stack_bench_credential_broker ?? null,
+      sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))] },
+  };
+  console.log(JSON.stringify(out));
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(err => { console.error(err); process.exit(1); });
+}

@@ -1,0 +1,113 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+
+const SCRIPT_DIR = STACK_BENCH_ROOT;
+const bashUsesMnt = execFileSync('bash', ['-lc', 'pwd'], { cwd: SCRIPT_DIR, encoding: 'utf8' })
+  .trim().startsWith('/mnt/');
+const posixPath = (path: string): string => path
+  .replace(/^([A-Za-z]):/, (_match, drive: string) => bashUsesMnt ? `/mnt/${drive.toLowerCase()}` : `/${drive.toLowerCase()}`)
+  .replaceAll('\\', '/');
+const RESET_FOR_BASH = './reset-db.sh';
+const bashEnv = (overrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
+  ...process.env,
+  ...overrides,
+  WSLENV: [process.env.WSLENV, ...Object.keys(overrides)].filter(Boolean).join(':'),
+});
+
+function workspace() {
+  const runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR ?? tmpdir();
+  mkdirSync(runtimeRoot, { recursive: true });
+  const root = mkdtempSync(join(runtimeRoot, 'stack-bench-reset-'));
+  const app = join(root, 'app');
+  mkdirSync(join(app, 'client', 'src'), { recursive: true });
+  mkdirSync(join(app, 'backend', 'spacetimedb'), { recursive: true });
+  writeFileSync(join(app, 'client', 'src', 'config.ts'),
+    "export const MODULE_NAME = 'victim-module';\nexport const URI = 'https://production.example';\n");
+  const capture = join(root, 'capture.txt');
+  const fake = join(root, 'spacetime-fake.sh');
+  writeFileSync(fake, '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CAPTURE"\n');
+  chmodSync(fake, 0o755);
+  const leasePath = join(root, 'lease.json');
+  const lease = createBackendLease({
+    runId: 'ecommerce-spacetime-run7-test', backend: 'spacetime', track: 'ecommerce', runIndex: 7,
+    serverUri: 'http://127.0.0.1:43210', module: 'app-ecom-run7',
+    dataDir: join(root, 'data'),
+  });
+  lease.state = 'active';
+  lease.resources.listenerProcesses = [{ pid: 12345, startMarker: '1' }];
+  writeBackendLease(leasePath, lease);
+  return { root, app, capture, fake, leasePath, lease };
+}
+
+test('reset refuses without an authenticated backend lease', () => {
+  const ws = workspace();
+  try {
+    assert.throws(() => execFileSync('bash', [RESET_FOR_BASH, 'spacetime', posixPath(ws.app), '7', 'ecom'], {
+      env: bashEnv({
+        STACK_BENCH_LEASE: '',
+        STACK_BENCH_LEASE_TOKEN: '',
+        SPACETIME_BIN: posixPath(ws.fake),
+      }),
+      cwd: SCRIPT_DIR,
+      stdio: 'pipe',
+    }), /Command failed/);
+  } finally {
+    rmSync(ws.root, { recursive: true, force: true });
+  }
+});
+
+test('reset uses the harness module and URI instead of generated config', () => {
+  const ws = workspace();
+  try {
+    execFileSync('bash', [RESET_FOR_BASH, 'spacetime', posixPath(ws.app), '7', 'ecom'], {
+      env: bashEnv({
+        STACK_BENCH_LEASE: posixPath(ws.leasePath),
+        STACK_BENCH_LEASE_TOKEN: ws.lease.ownershipToken,
+        SPACETIME_BIN: posixPath(ws.fake),
+        CAPTURE: posixPath(ws.capture),
+      }),
+      cwd: SCRIPT_DIR,
+      stdio: 'pipe',
+    });
+    const args = readFileSync(ws.capture, 'utf8');
+    assert.match(args, /^publish\napp-ecom-run7\n/m);
+    assert.match(args, /http:\/\/127\.0\.0\.1:43210/);
+    assert.doesNotMatch(args, /victim-module|production\.example/);
+  } finally {
+    rmSync(ws.root, { recursive: true, force: true });
+  }
+});
+
+test('reset refuses a non-loopback destructive target', () => {
+  const ws = workspace();
+  try {
+    const unsafe = { ...ws.lease, resources: { ...ws.lease.resources,
+      serverUri: 'https://production.example:443' } };
+    writeFileSync(ws.leasePath, JSON.stringify(unsafe));
+    assert.throws(() => execFileSync('bash', [RESET_FOR_BASH, 'spacetime', posixPath(ws.app), '7', 'ecom'], {
+      env: bashEnv({
+        STACK_BENCH_LEASE: posixPath(ws.leasePath),
+        STACK_BENCH_LEASE_TOKEN: ws.lease.ownershipToken,
+        SPACETIME_BIN: posixPath(ws.fake),
+        CAPTURE: posixPath(ws.capture),
+      }),
+      cwd: SCRIPT_DIR,
+      stdio: 'pipe',
+    }), /Command failed/);
+  } finally {
+    rmSync(ws.root, { recursive: true, force: true });
+  }
+});

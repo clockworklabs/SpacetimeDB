@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.support-refunds",
+  "version": "1.0.1",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Support refunds",
+  "description": "Authorized, exact, and single-application support refunds.",
+  "requiresPacks": [
+    "ecommerce.progression.order-support@1.0.1",
+    "ecommerce.l2.order-cancellation-features@1.0.1"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 70000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.support-refunds",
+        "path": "prompts/modular/support-refunds-1.0.0.md",
+        "order": 5100,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.support-refund-hooks",
+        "path": "contracts/support-refunds-1.0.md",
+        "order": 5900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "resolution",
+      "stableId": "support-refunds-resolution",
+      "source": "scenarios/progression-support-refunds-resolution-1.0.0.json",
+      "feature": 615,
+      "criteria": [
+        "615a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "accounting",
+      "stableId": "support-refunds-accounting",
+      "source": "scenarios/progression-support-refunds-accounting-1.0.0.json",
+      "feature": 615,
+      "criteria": [
+        "615b"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "access",
+      "stableId": "support-refunds-access",
+      "source": "scenarios/progression-support-refunds-access-1.0.0.json",
+      "feature": 615,
+      "criteria": [
+        "615c"
+      ],
+      "role": "feature"
+    }
+  ]
+}

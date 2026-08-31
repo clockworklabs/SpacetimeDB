@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": false,
+    "noEmit": true
+  },
+  "include": [
+    "appliance/**/*.ts",
+    "commands/**/*.ts",
+    "container/**/*.ts",
+    "dashboard/**/*.ts",
+    "fixtures/**/*.ts",
+    "grader/**/*.ts",
+    "linter/**/*.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "tracks/**/*.ts"
+  ],
+  "exclude": [
+    "tests/fixtures/spacetime-module/**"
+  ]
+}

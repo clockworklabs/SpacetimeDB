@@ -1,0 +1,135 @@
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, type Dirent } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
+
+export interface HashFilesResult {
+  sha256: string;
+  files: string[];
+}
+
+export interface RubricHash {
+  sha256: string;
+  criteria: number;
+  points: number;
+}
+
+export interface SessionProvenanceInput {
+  prompt: string;
+  skillsText?: string;
+  contractText?: string;
+  bugReportText?: string | null;
+  scenarioPaths: readonly string[];
+  trackDir: string;
+  trackManifestPath: string;
+}
+
+interface RubricCriterion {
+  id?: unknown;
+  points?: unknown;
+}
+
+interface RubricFeature {
+  id?: unknown;
+  name?: unknown;
+  criteria?: readonly RubricCriterion[];
+}
+
+interface RubricSpec {
+  features?: readonly RubricFeature[];
+}
+
+interface RubricRow {
+  file: string;
+  feature: string;
+  criterion: string;
+  points: number;
+}
+
+export const sha256 = (value: string | Buffer): string =>
+  createHash('sha256').update(value).digest('hex');
+
+// Hash paths and bytes with explicit framing. Hashing concatenated contents is
+// ambiguous (`ab`+`c` equals `a`+`bc`) and loses which file supplied a rubric.
+export function hashFiles(
+  paths: readonly string[],
+  { base = process.cwd() }: { base?: string } = {},
+): HashFilesResult {
+  const entries = [...new Set(paths.map(path => resolve(path)))]
+    .map(path => ({ path, name: relative(resolve(base), path).replaceAll('\\', '/') }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const hash = createHash('sha256');
+  for (const entry of entries) {
+    const bytes = readFileSync(entry.path);
+    hash.update(`${entry.name.length}:${entry.name}:${bytes.length}:`);
+    hash.update(bytes);
+  }
+  return { sha256: hash.digest('hex'), files: entries.map(entry => entry.name) };
+}
+
+export function hashDirectory(
+  root: string,
+  { exclude = () => false }: {
+    exclude?: (name: string, entry: Dirent) => boolean;
+  } = {},
+): HashFilesResult {
+  const files: string[] = [];
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      const name = relative(root, path).replaceAll('\\', '/');
+      if (exclude(name, entry)) continue;
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile()) files.push(path);
+    }
+  };
+  walk(resolve(root));
+  return hashFiles(files, { base: root });
+}
+
+// The rubric is the point-bearing definition, distinct from scenario mechanics.
+// A timing or selector edit changes scenariosSha256; a criterion/points edit
+// also changes rubricSha256 and therefore invalidates score comparison.
+export function hashRubric(
+  paths: readonly string[],
+  { base = process.cwd() }: { base?: string } = {},
+): RubricHash {
+  const rows: RubricRow[] = [];
+  for (const path of [...new Set(paths.map(item => resolve(item)))].sort()) {
+    const spec = JSON.parse(readFileSync(path, 'utf8')) as RubricSpec;
+    for (const feature of spec.features ?? []) {
+      for (const criterion of feature.criteria ?? []) {
+        rows.push({
+          file: relative(resolve(base), path).replaceAll('\\', '/'),
+          feature: String(feature.id ?? feature.name ?? ''),
+          criterion: String(criterion.id),
+          points: Number(criterion.points ?? 0),
+        });
+      }
+    }
+  }
+  rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return { sha256: sha256(JSON.stringify(rows)), criteria: rows.length,
+    points: rows.reduce((total, row) => total + row.points, 0) };
+}
+
+export function sessionProvenance({
+  prompt,
+  skillsText = '',
+  contractText = '',
+  bugReportText = null,
+  scenarioPaths,
+  trackDir,
+  trackManifestPath,
+}: SessionProvenanceInput) {
+  const scenarios = hashFiles(scenarioPaths, { base: trackDir });
+  return {
+    promptSha256: sha256(prompt),
+    skillsSha256: sha256(skillsText),
+    contractSha256: sha256(contractText),
+    bugReportSha256: bugReportText == null ? null : sha256(bugReportText),
+    trackManifestSha256: sha256(readFileSync(trackManifestPath)),
+    scenariosSha256: scenarios.sha256,
+    scenarioFiles: scenarios.files,
+    rubric: hashRubric(scenarioPaths, { base: trackDir }),
+  };
+}
