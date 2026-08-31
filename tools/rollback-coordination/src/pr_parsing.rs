@@ -18,23 +18,29 @@ pub(crate) fn rollback_dependencies(
     // If specified, do extra strict verification against this default PR template
     verify_by_strict_template: Option<&str>,
 ) -> Result<Option<BTreeSet<PullRequestRef>>> {
-    let Some(section) = rollback_safety_section(body) else {
+    let Some(section) = rollback_safety_section(body)? else {
         if verify_by_strict_template.is_some() {
             bail!("PR description is missing the `{ROLLBACK_SAFETY_HEADING}` section");
         }
         return Ok(None);
     };
+    tracing::info!("Parsed rollback safety section:\n{section}");
     let dependencies = references(section, current_repo)?;
+    let contains_na = contains_na(section);
+
+    if !dependencies.is_empty() && contains_na {
+        bail!("the `{ROLLBACK_SAFETY_HEADING}` section cannot contain both `n/a` and prerequisite PRs");
+    }
 
     if let Some(template) = verify_by_strict_template {
-        let template_section = rollback_safety_section(template)
+        let template_section = rollback_safety_section(template)?
             .context("pull request template is missing the `{ROLLBACK_SAFETY_HEADING}` section")?;
         if normalized_section(section) == normalized_section(template_section) {
             bail!(
                 "the `{ROLLBACK_SAFETY_HEADING}` section is unchanged from the pull request template; add `n/a` or list prerequisite PRs"
             );
         }
-        if dependencies.is_empty() && !contains_na(section) {
+        if dependencies.is_empty() && !contains_na {
             bail!("the `{ROLLBACK_SAFETY_HEADING}` section must contain `n/a` or at least one prerequisite PR");
         }
     }
@@ -42,9 +48,10 @@ pub(crate) fn rollback_dependencies(
     Ok(Some(dependencies))
 }
 
-fn rollback_safety_section(body: &str) -> Option<&str> {
+fn rollback_safety_section(body: &str) -> Result<Option<&str>> {
     let mut start = None;
     let mut level = 0;
+    let mut end = None;
     let mut offset = 0;
     for line in body.split_inclusive('\n') {
         let trimmed = line.trim_end_matches(['\r', '\n']);
@@ -55,14 +62,17 @@ fn rollback_safety_section(body: &str) -> Option<&str> {
                 .trim()
                 .eq_ignore_ascii_case(ROLLBACK_SAFETY_HEADING)
         {
+            if start.is_some() {
+                bail!("PR description contains multiple `{ROLLBACK_SAFETY_HEADING}` sections");
+            }
             start = Some(offset + line.len());
             level = hashes;
-        } else if start.is_some() && heading && hashes <= level {
-            return Some(&body[start.expect("checked")..offset]);
+        } else if start.is_some() && end.is_none() && heading && hashes <= level {
+            end = Some(offset);
         }
         offset += line.len();
     }
-    start.map(|start| &body[start..])
+    Ok(start.map(|start| &body[start..end.unwrap_or(body.len())]))
 }
 
 fn normalized_section(section: &str) -> String {
@@ -167,6 +177,21 @@ mod tests {
                 number: 12,
             }]))
         );
+        assert!(
+            rollback_dependencies("# Rollback safety impact\nn/a; requires #12", REPO, None)
+                .unwrap_err()
+                .to_string()
+                .contains("cannot contain both `n/a` and prerequisite PRs")
+        );
+    }
+
+    #[test]
+    fn rejects_multiple_rollback_safety_sections() {
+        let body = "# Rollback safety impact\nn/a\n# Other\ntext\n# ROLLBACK SAFETY IMPACT\n#12";
+        assert!(rollback_dependencies(body, "clockworklabs/SpacetimeDB", None)
+            .unwrap_err()
+            .to_string()
+            .contains("multiple `Rollback safety impact` sections"));
     }
 
     #[test]
