@@ -321,19 +321,15 @@ jobs:
         run: |
           cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
+          cd "${CARGO_TARGET_DIR}"
           shopt -s nullglob
-          precompiled_module_paths=("${CARGO_TARGET_DIR}"/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
-          if (( ${#precompiled_module_paths[@]} == 0 )); then
+          precompiled_modules=(wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+          if (( ${#precompiled_modules[@]} == 0 )); then
             echo "No precompiled smoketest modules were produced."
             exit 1
           fi
 
-          precompiled_modules=()
-          for module in "${precompiled_module_paths[@]}"; do
-            precompiled_modules+=("${module#"${CARGO_TARGET_DIR}/"}")
-          done
-
-          tar -C "${CARGO_TARGET_DIR}" -czf "${PWD}/smoketest-support.tar.gz" \
+          tar -czf "${GITHUB_WORKSPACE}/smoketest-support.tar.gz" \
             "debug/ci-smoketests${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
 
