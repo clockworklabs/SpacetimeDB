@@ -945,5 +945,3 @@ export const replay_webhook_event = spacetimedb.reducer(
     updateWebhookStatus(ctx, eventId, outcome.status, outcome.error);
   }
 );
-
-// Validate a Stripe price ID by hitting GET /v1/prices/:id with the module's stored secret.

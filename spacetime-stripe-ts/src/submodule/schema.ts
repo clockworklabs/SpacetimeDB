@@ -9,7 +9,6 @@ import {
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
-import type Stripe from 'stripe';
 import { installStripe } from './install';
 
 // Internal ingest lifecycle for webhook rows. Received = stored. Processed =
@@ -436,69 +435,6 @@ export const vStripeEvent = v.variant('type', [
 
 export type ParsedStripeEvent = v.InferOutput<typeof vStripeEvent>;
 
-// Compile-time SDK alignment: SDK event types must be assignable to our valibot variants.
-function _alignCustomer(
-  e: Stripe.CustomerCreatedEvent | Stripe.CustomerUpdatedEvent
-) {
-  const _: Extract<
-    ParsedStripeEvent,
-    { type: 'customer.created' | 'customer.updated' }
-  > = e;
-  return _;
-}
-function _alignSubscription(
-  e:
-    | Stripe.CustomerSubscriptionCreatedEvent
-    | Stripe.CustomerSubscriptionUpdatedEvent
-    | Stripe.CustomerSubscriptionDeletedEvent
-) {
-  const _: Extract<
-    ParsedStripeEvent,
-    {
-      type:
-        | 'customer.subscription.created'
-        | 'customer.subscription.updated'
-        | 'customer.subscription.deleted';
-    }
-  > = e;
-  return _;
-}
-function _alignCheckout(e: Stripe.CheckoutSessionCompletedEvent) {
-  const _: Extract<ParsedStripeEvent, { type: 'checkout.session.completed' }> =
-    e;
-  return _;
-}
-function _alignInvoice(
-  e:
-    | Stripe.InvoiceCreatedEvent
-    | Stripe.InvoiceFinalizedEvent
-    | Stripe.InvoicePaidEvent
-    | Stripe.InvoicePaymentSucceededEvent
-    | Stripe.InvoicePaymentFailedEvent
-) {
-  const _: Extract<
-    ParsedStripeEvent,
-    {
-      type:
-        | 'invoice.created'
-        | 'invoice.finalized'
-        | 'invoice.paid'
-        | 'invoice.payment_succeeded'
-        | 'invoice.payment_failed';
-    }
-  > = e;
-  return _;
-}
-function _alignPaymentIntent(e: Stripe.PaymentIntentSucceededEvent) {
-  const _: Extract<ParsedStripeEvent, { type: 'payment_intent.succeeded' }> = e;
-  return _;
-}
-void _alignCustomer;
-void _alignSubscription;
-void _alignCheckout;
-void _alignInvoice;
-void _alignPaymentIntent;
-
 export const vStripeIdResponse = v.object({ id: v.string() });
 
 export const vStripeCheckoutSessionResponse = v.object({
@@ -519,14 +455,3 @@ export const vStripeErrorBody = v.object({
     request_log_url: v.optional(v.union([v.string(), v.null()])),
   }),
 });
-
-function _alignCheckoutSessionResponse(r: Stripe.Checkout.Session) {
-  const _: v.InferOutput<typeof vStripeCheckoutSessionResponse> = r;
-  return _;
-}
-function _alignBillingPortalSessionResponse(r: Stripe.BillingPortal.Session) {
-  const _: v.InferOutput<typeof vStripeBillingPortalSessionResponse> = r;
-  return _;
-}
-void _alignCheckoutSessionResponse;
-void _alignBillingPortalSessionResponse;

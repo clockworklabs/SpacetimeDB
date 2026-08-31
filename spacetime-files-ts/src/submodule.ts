@@ -5,3 +5,4 @@ export * from './rows.ts';
 export * from './validation.ts';
 export * from './procedures.ts';
 export * from './handlers.ts';
+export { FILE_BYTES_MAX, FILE_PATH_MAX } from './constants.ts';

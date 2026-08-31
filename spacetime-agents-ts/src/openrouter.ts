@@ -75,8 +75,6 @@ export type ChatResult =
   | { ok: true; response: ChatResponse }
   | { ok: false; error: ChatError };
 
-export type ParsedResponse = Omit<ChatResponse, never>;
-
 export interface Provider {
   name: string;
   buildRequest(req: ChatRequest): {
@@ -84,18 +82,13 @@ export interface Provider {
     headers: Record<string, string>;
     body: string;
   };
-  parseResponse(text: string, requestedModel: string): ParsedResponse;
+  parseResponse(text: string, requestedModel: string): ChatResponse;
 }
 
 export function isRetryableError(err: ChatError): boolean {
   if (err.kind === 'transport') return true;
   if (err.kind === 'http') {
-    return (
-      err.status === 429 ||
-      err.status === 502 ||
-      err.status === 503 ||
-      err.status === 504
-    );
+    return err.status === 429 || (err.status >= 500 && err.status <= 599);
   }
   return false;
 }

@@ -13,7 +13,9 @@ import {
 } from './module_bindings/app';
 import type {
   File as FileRow,
+  AgentAuthUser as AuthUserRow,
   AgentConfigStatus,
+  MySessions,
 } from './module_bindings/app/types';
 
 interface AuthUser {
@@ -35,11 +37,6 @@ interface ServerConfig {
     github?: boolean;
   };
 }
-interface AuthUserRow extends AuthUser {
-  createdAt: unknown;
-  updatedAt: unknown;
-}
-
 declare global {
   interface Window {
     auth?: {
@@ -54,7 +51,7 @@ declare global {
       forgotPassword: (email: string) => Promise<void>;
       resetPassword: (token: string, newPassword: string) => Promise<void>;
       requestEmailVerify: () => Promise<void>;
-      listMySessions: () => Promise<{ sessions: unknown[] }>;
+      listMySessions: () => Promise<MySessions>;
       revokeMySession: (sessionId: string) => Promise<void>;
       setProfile: (args: { name?: string; image?: string }) => void;
     };
@@ -531,7 +528,7 @@ async function requestEmailVerify(): Promise<void> {
   await callJson('/auth/email/verify-request', {});
 }
 
-async function listMySessions(): Promise<{ sessions: unknown[] }> {
+async function listMySessions(): Promise<MySessions> {
   return await requireConn().procedures.listMySessions({});
 }
 async function revokeMySession(sessionId: string): Promise<void> {

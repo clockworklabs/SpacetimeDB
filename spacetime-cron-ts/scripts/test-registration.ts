@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { spacetimeCron } from '../src/cron';
-import type { CronSdk } from '../src/types';
+import type { CronSchema, CronSdk } from '../src/types';
 
 interface DynamicValue {
   (...args: unknown[]): DynamicValue;
@@ -28,7 +28,7 @@ const registrationSchema = {
   reducer: (..._args: unknown[]) => ({}),
   procedure: (..._args: unknown[]) => ({}),
   anonymousView: (..._args: unknown[]) => ({}),
-};
+} as unknown as CronSchema;
 
 function createApi() {
   return spacetimeCron({
@@ -165,7 +165,7 @@ function createApi() {
       viewBody = args[2] as (ctx: unknown) => unknown;
       return {};
     },
-  };
+  } as unknown as CronSchema;
   const api = createApi();
   const job = api.cronTable({ name: 'sanitized_view' });
   const cron = api.createCron([job]);

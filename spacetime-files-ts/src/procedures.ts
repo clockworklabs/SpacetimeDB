@@ -44,9 +44,6 @@ interface FileProcedureContext {
   withTx<T>(body: (tx: FileTransactionLike) => T): T;
 }
 
-// Re-exported for compatibility; canonical home is ./constants.ts (browser-safe).
-export { FILE_BYTES_MAX, FILE_PATH_MAX } from './constants.ts';
-
 // Lowercase hex SHA-256, for consumers that write their own insert path.
 export { fileSha256Hex } from './hash.ts';
 

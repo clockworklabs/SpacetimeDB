@@ -1,10 +1,15 @@
 // Compile-time API coverage. This file is checked by `pnpm typecheck`.
 import { t } from 'spacetimedb/server';
-import type { CronApi, CronInvocation, CronJobReference } from '../src/index';
+import type {
+  CronApi,
+  CronInvocation,
+  CronJobReference,
+  CronSchema,
+} from '../src/index';
 
 declare const cron: CronApi;
 declare const ctx: object;
-declare const spacetimedb: unknown;
+declare const spacetimedb: CronSchema;
 
 const heartbeat = cron.cronTable({ name: 'heartbeat' });
 const reportDefinition = {

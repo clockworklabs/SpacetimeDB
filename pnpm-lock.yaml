@@ -1300,9 +1300,6 @@ importers:
       '@spacetimedb/crypto':
         specifier: workspace:^
         version: link:../spacetime-crypto-ts
-      stripe:
-        specifier: ^22.1.0
-        version: 22.5.0(@types/node@22.18.0)
       valibot:
         specifier: ^1.4.2
         version: 1.4.2(typescript@5.9.3)
@@ -1319,6 +1316,9 @@ importers:
       spacetimedb:
         specifier: workspace:*
         version: link:../crates/bindings-typescript
+      stripe:
+        specifier: ^22.1.0
+        version: 22.5.0(@types/node@22.18.0)
       tsx:
         specifier: ^4.21.0
         version: 4.23.12

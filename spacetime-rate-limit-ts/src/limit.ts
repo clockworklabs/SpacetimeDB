@@ -148,28 +148,21 @@ export function installRateLimitState(
   });
 }
 
-export function resolveRateLimitSweepBatch(
-  ctx: {
-    db: {
-      rateLimitConfig: {
-        singleton: {
-          find(key: boolean): { sweepBatch: number } | null | undefined;
-        };
+export function resolveRateLimitSweepBatch(ctx: {
+  db: {
+    rateLimitConfig: {
+      singleton: {
+        find(key: boolean): { sweepBatch: number } | null | undefined;
       };
     };
-  },
-  fallback = DEFAULT_SWEEP_BATCH
-): number {
+  };
+}): number {
   const cfg = ctx.db.rateLimitConfig.singleton.find(true);
-  if (!cfg) return fallback;
+  if (!cfg) return DEFAULT_SWEEP_BATCH;
   const batch = Number(cfg.sweepBatch);
-  const safeFallback =
-    Number.isInteger(fallback) && fallback > 0 && fallback <= MAX_SWEEP_BATCH
-      ? fallback
-      : DEFAULT_SWEEP_BATCH;
   return Number.isInteger(batch) && batch > 0 && batch <= MAX_SWEEP_BATCH
     ? batch
-    : safeFallback;
+    : DEFAULT_SWEEP_BATCH;
 }
 
 export interface RateLimitSweepCtxLike extends RateLimitTxLike {

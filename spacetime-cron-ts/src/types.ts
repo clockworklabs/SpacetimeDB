@@ -1,6 +1,7 @@
 import type { Timestamp } from 'spacetimedb';
 import type {
   Infer,
+  ModuleExport,
   ScheduleAt,
   SenderError,
   t,
@@ -22,8 +23,6 @@ interface SchedulePolicyOpts {
   /** Consecutive failures before automatic disablement. `0` disables this policy. */
   maxFailures?: number;
 }
-
-type CronNoInfer<T> = [T][T extends unknown ? 0 : never];
 
 /** Schedule policy plus the durable arguments required by an argument-bearing job. */
 export type ScheduleOpts<Args = undefined> = SchedulePolicyOpts &
@@ -88,11 +87,12 @@ export type CronProcedureHandler<Ctx, Args = undefined> = [Args] extends [
   ? (ctx: Ctx, invocation: CronInvocation) => void
   : (ctx: Ctx, args: Args, invocation: CronInvocation) => void;
 
-// Schema and registration exports contain SDK-private symbols and exact
-// application schema types. They remain opaque across the adapter boundary.
-export type CronModuleExport = unknown;
 export type CronTableDefinition = ReturnType<typeof table>;
-export type CronSchema = unknown;
+export interface CronSchema {
+  readonly anonymousView: (...args: never[]) => ModuleExport;
+  readonly reducer: (...args: never[]) => ModuleExport;
+  readonly procedure: (...args: never[]) => ModuleExport;
+}
 
 export interface CronJobReference<Name extends string = string> {
   readonly jobName: Name;
@@ -103,23 +103,23 @@ export interface CronJobHandle<Name extends string = string, Args = undefined>
   cronReducer<Ctx>(
     spacetimedb: CronSchema,
     handler: CronReducerHandler<Ctx, Args>
-  ): CronModuleExport;
+  ): ModuleExport;
   cronProcedure<Ctx>(
     spacetimedb: CronSchema,
     handler: CronProcedureHandler<Ctx, Args>
-  ): CronModuleExport;
+  ): ModuleExport;
 }
 
 export interface CronCorePublicViews {
   /** Sanitized job state. Typed application arguments remain private. */
-  readonly jobs: CronModuleExport;
+  readonly jobs: ModuleExport;
 }
 
 export interface CronCore {
   /** Spread into the consumer's `schema()` call. */
   readonly tables: Record<string, CronTableDefinition>;
   /** Register and export the optional lost-trigger reconciliation sweep. */
-  reconcileReducer(spacetimedb: CronSchema): CronModuleExport;
+  reconcileReducer(spacetimedb: CronSchema): ModuleExport;
   /** Register the optional public job-state view exactly once. */
   publicViews(spacetimedb: CronSchema): CronCorePublicViews;
 }
@@ -157,7 +157,7 @@ export interface CronApi {
     spec: ScheduleSpec,
     ...options: [Args] extends [undefined]
       ? [opts?: ScheduleOpts]
-      : [opts: ScheduleOpts<CronNoInfer<Args>>]
+      : [opts: ScheduleOpts<NoInfer<Args>>]
   ): void;
   /** Disable a job and remove its pending trigger. */
   unschedule<Ctx>(ctx: Ctx, job: CronJobReference): void;

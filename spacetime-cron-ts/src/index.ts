@@ -11,6 +11,7 @@ export type {
   CronProcedureHandler,
   CronReducerHandler,
   CronSchedule,
+  CronSchema,
   CronSdk,
   CronTableOpts,
   CronTableWithArgsOpts,

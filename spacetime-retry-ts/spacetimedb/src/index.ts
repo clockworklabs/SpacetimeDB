@@ -1,12 +1,4 @@
-import {
-  schema,
-  table,
-  t,
-  SenderError,
-  type InferSchema,
-  type ReducerCtx,
-  type ViewCtx,
-} from 'spacetimedb/server';
+import { schema, table, t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 import {
   createRetrySubmodule,
@@ -84,27 +76,20 @@ const spacetimedb = schema({
 });
 export default spacetimedb;
 
-type Schema = InferSchema<typeof spacetimedb>;
-type Tx = ReducerCtx<Schema>;
-
-function isAdmin(ctx: ViewCtx<Schema>): boolean {
-  return ctx.db.retryAdminIdentity.identity.find(ctx.sender) != null;
-}
-
 export const retryTasksAdmin = spacetimedb.view(
   { name: 'retry_tasks_admin', public: true },
   t.array(retryTask.rowType),
-  ctx => (isAdmin(ctx) ? retry.views.retryTasksAdmin(ctx) : [])
+  retry.views.retryTasksAdmin
 );
 
 export const retryHistoryAdmin = spacetimedb.view(
   { name: 'retry_history_admin', public: true },
   t.array(retryHistory.rowType),
-  ctx => (isAdmin(ctx) ? retry.views.retryHistoryAdmin(ctx) : [])
+  retry.views.retryHistoryAdmin
 );
 
 export const init = spacetimedb.init(ctx => {
-  retry.installRetry(ctx as Tx);
+  retry.installRetry(ctx);
 });
 
 export const retry_fire = spacetimedb.reducer(

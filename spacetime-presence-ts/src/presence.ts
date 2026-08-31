@@ -280,22 +280,15 @@ export function sweepPresence(
 }
 
 export function resolvePresenceSweepBatch(
-  ctx: PresenceConfigReadCtxLike,
-  fallback = DEFAULT_PRESENCE_SWEEP_BATCH
+  ctx: PresenceConfigReadCtxLike
 ): number {
   const cfg = ctx.db.presenceConfig.singleton.find(true);
-  const value = Number(cfg?.sweepBatch ?? fallback);
-  const safeFallback =
-    Number.isInteger(fallback) &&
-    fallback > 0 &&
-    fallback <= MAX_PRESENCE_SWEEP_BATCH
-      ? fallback
-      : DEFAULT_PRESENCE_SWEEP_BATCH;
+  const value = Number(cfg?.sweepBatch ?? DEFAULT_PRESENCE_SWEEP_BATCH);
   return Number.isInteger(value) &&
     value > 0 &&
     value <= MAX_PRESENCE_SWEEP_BATCH
     ? value
-    : safeFallback;
+    : DEFAULT_PRESENCE_SWEEP_BATCH;
 }
 
 export function runPresenceSweep(

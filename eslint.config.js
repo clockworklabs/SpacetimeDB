@@ -130,6 +130,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['spacetime-*-ts/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
     files: ['templates/angular-ts/src/**/*.ts'],
     rules: {
       'no-restricted-syntax': [

@@ -4,7 +4,7 @@ import type {
   ContentBlock,
   ToolCall,
   Provider,
-  ParsedResponse,
+  ChatResponse,
 } from './openrouter.ts';
 
 type JsonObject = Record<string, unknown>;
@@ -62,7 +62,7 @@ function buildOpenAiBody(req: ChatRequest): unknown {
 function parseOpenAiResponse(
   text: string,
   requestedModel: string
-): ParsedResponse {
+): ChatResponse {
   const parsed: unknown = JSON.parse(text);
   const root = asObject(parsed);
   const choices = root?.choices;

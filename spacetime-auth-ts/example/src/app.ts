@@ -10,16 +10,10 @@ import {
   type EventContext,
   type ErrorContext,
 } from './module_bindings/app';
-
-interface AuthUserRow {
-  userId: string;
-  email: string;
-  emailVerified: boolean;
-  name?: string;
-  image?: string;
-  createdAt: unknown;
-  updatedAt: unknown;
-}
+import type {
+  ExampleAuthUser as AuthUserRow,
+  MySessions,
+} from './module_bindings/app/types';
 
 declare global {
   interface Window {
@@ -43,7 +37,7 @@ declare global {
         senderIdentityHex: string;
       }>;
       oauthStart: (provider: 'google' | 'github') => void;
-      listMySessions: () => Promise<{ sessions: unknown[] }>;
+      listMySessions: () => Promise<MySessions>;
       revokeMySession: (sessionId: string) => void;
       forgotPassword: (email: string) => Promise<void>;
       resetPassword: (token: string, newPassword: string) => Promise<void>;

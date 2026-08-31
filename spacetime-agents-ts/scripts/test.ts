@@ -16,6 +16,7 @@ import {
 } from '../src/providers.ts';
 import {
   callChat,
+  isRetryableError,
   type HttpLike,
   type ChatRequest,
   type ToolDefinition,
@@ -921,6 +922,15 @@ const baseReq: ChatRequest = {
     `callChat: returns parsed response from chosen provider`
   );
 }
+
+assert(
+  isRetryableError({ kind: 'http', status: 500, body: '' }),
+  'callChat: retries all 5xx responses'
+);
+assert(
+  !isRetryableError({ kind: 'http', status: 400, body: '' }),
+  'callChat: does not retry 4xx responses other than 429'
+);
 
 // 30. defineAgent: provider defaults to 'openrouter'.
 {

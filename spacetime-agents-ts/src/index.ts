@@ -26,7 +26,6 @@ export type {
   ChatResult,
   ResponseFormat,
   Provider,
-  ParsedResponse,
 } from './openrouter.ts';
 
 export {

@@ -56,7 +56,6 @@
   },
   "dependencies": {
     "@spacetimedb/crypto": "workspace:^",
-    "stripe": "^22.1.0",
     "valibot": "^1.4.2"
   },
   "peerDependencies": {
@@ -67,6 +66,7 @@
     "prettier": "^3.3.3",
     "@types/node": "^22.10.2",
     "spacetimedb": "workspace:*",
+    "stripe": "^22.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

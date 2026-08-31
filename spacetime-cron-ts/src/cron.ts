@@ -2,7 +2,7 @@
 /// <reference path="./sys-abi.d.ts" />
 import { volatile_nonatomic_schedule_immediate } from 'spacetime:sys@2.0';
 import { BinaryWriter } from 'spacetimedb';
-import type { Infer } from 'spacetimedb/server';
+import type { Infer, ModuleExport } from 'spacetimedb/server';
 import {
   boundedScheduleTime,
   CronInputError,
@@ -63,9 +63,9 @@ function asTableDefinition(value: DynamicSdkValue): CronTableDefinition {
 }
 
 interface RegistrationSchema {
-  anonymousView(...args: unknown[]): unknown;
-  reducer(...args: unknown[]): unknown;
-  procedure(...args: unknown[]): unknown;
+  anonymousView(...args: unknown[]): ModuleExport;
+  reducer(...args: unknown[]): ModuleExport;
+  procedure(...args: unknown[]): ModuleExport;
 }
 
 type InternalHandler = (...args: unknown[]) => unknown;
