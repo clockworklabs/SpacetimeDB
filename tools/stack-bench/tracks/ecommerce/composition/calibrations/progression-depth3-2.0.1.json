@@ -76,11 +76,11 @@
       "version": "2.0.1",
       "sha256": "dd91493c5066018cbfd949d6e14d64dc029deb634e93d796752caee3da97682c"
     },
-    "rationale": "Appliance admission, adapter metadata, and dependency repair accounting changed. Recipe checks, reference sources, mutation definitions, database operations, action probes, the standalone database runtime, and scoring logic did not change.",
+    "rationale": "Appliance admission, runtime input validation, source packaging, and dependency evidence accounting changed. Recipe checks, reference sources, mutation definitions, database operations, action probes, the standalone database runtime, and scoring logic did not change.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/prompt-material-reuse.json",
-        "sha256": "e3827accddc707bbb6fc81100ab1409ca281e6b9c9e84a1ba54b1f9bd5f2fc6d"
+        "sha256": "bf20fcebe6dfabd0a2cb445fe7f18f161c60d1109c977260d29c05e54c6c7bfa"
       }
     ],
     "scopes": [
@@ -88,42 +88,42 @@
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "b806484f7bb42170561e17fa8605b9fd3646d7299d2f2138fa0990e672d26759",
-        "toExecutableSha256": "b60f57771ad557d33d42733c8227f5dc5b82d5e6f557111b935bc5e36d43f69d"
+        "toExecutableSha256": "131c82428ca9d9cd836e2d4f032056c921bc96db4c103fd44ac49c978935a28a"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "68ad187165516dd353c091557caeca8b243fee27321deaf5e3a8468be0cb1bf9",
-        "toExecutableSha256": "2b9ab219e2654ec195f0bcc4de86824f8a59c95ea4e9f179168328ce4e3b267c"
+        "toExecutableSha256": "c41eaa922f06f5a403b962599eb97835822d0820c0436fd4e1d6b87b259a3864"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "10f59cd1c82887afe4a34fe58383e2d195abf5e9850711f28d0e4ef3c7b2dec9",
-        "toExecutableSha256": "0b12a439ee0fc6cce02598cc3ddda437a65d182dd0218c590f626ede872f8ed4"
+        "toExecutableSha256": "7ef14b7c69726a4a4b3b5b0d0ed0015190d0af5e98a17dea49defe497ee05c3b"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "d8d3a75d12a7b2fedcffdfd11ab76b1918005335ca8f6fb56f101b691d4002ad",
-        "toExecutableSha256": "2cb06a37cb6ed87ced0c49fe144e86e95fcec0274a257c744a5e63fb51213e38"
+        "toExecutableSha256": "cc1fb7c4916f0b41c09ced49d8d6f2623f58e3c25e9fd5d13014739621cbd6cb"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "9cdd1c8cccaf7ecd5e5d3039b0a0cf5c41a42c355ab085d9816b2d064706c2b9",
-        "toExecutableSha256": "51fa500c7b40a6d84712f75ad6ab8b185cf71673087f013daac81f90b45de507"
+        "toExecutableSha256": "a5269775fbaebb818e24a82f89e139acec67e955d07119ca970ae76592e1bdfc"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "3d512023e270c2b55c1c1eeeee70b1b6d70261814754e24b618f5c66bd086a0a",
-        "toExecutableSha256": "8658a1b4837736ab3aecaf83bc93cb8b8687481ab80e1fbf1fe602c45c79642e"
+        "toExecutableSha256": "0fff05ea413bfd69d5bd605679a782bfad7bdaa6ad2b451bbbac7569192a170b"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "58b6187b453a4229b1ff3f403e4d38765468eabc487e137d6f789ee125cbc91a",
-        "toExecutableSha256": "d212bb3f5db126dc106e4daef9cf8b4696db0927297bff657d8dab1670761a1d"
+        "toExecutableSha256": "eda29aaa92c877301ebb916f1665779bc6a859d834a31bcc51cb18d582b7e9b7"
       }
     ]
   },

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "qualification-reuse-proof",
-  "reason": "Prompt material and generated-application startup isolation changed. Recipe checks, reference sources, mutation definitions, database operations, the standalone database runtime, and scoring logic did not change.",
+  "reason": "Prompt material, runtime input validation, source packaging, and campaign evidence accounting changed. Recipe checks, reference sources, mutation definitions, database operations, action probes, the standalone database runtime, and scoring logic did not change.",
   "coveredChanges": [
     {
       "sourceCommit": "195403de4c86a288af59f10c0b8002eb9c6e657b",
@@ -109,6 +109,27 @@
         "Made restored source writable by the isolated application user and rejected symbolic-link source entries.",
         "Stopped repair loops when a paid repair session made no source change.",
         "Fixed the declared account-form toggle and verified it with a live browser smoke."
+      ]
+    },
+    {
+      "sourceCommit": "c81f3b608a6a8ce3cb4c57c66c6f9c98454d5a11",
+      "effects": [
+        "Validated the existing application control input once at the command boundary.",
+        "Replaced duplicate loose control types with one runtime control type without changing valid control behavior."
+      ]
+    },
+    {
+      "sourceCommit": "8eb656a8444736acfa74a3e27aacf3fec7a57095",
+      "effects": [
+        "Excluded dependency directories before inspecting their filesystem type so package-manager dependency links cannot invalidate accepted source.",
+        "Kept symbolic links outside excluded dependency directories rejected."
+      ]
+    },
+    {
+      "sourceCommit": "0517ca57f265abe4e30cb5abf121cbef8540490b",
+      "effects": [
+        "Kept each dependency level bound to its own latest grade after a repaired child reopened its parent.",
+        "Validated the final package against the progression level that actually stopped."
       ]
     }
   ],
