@@ -1254,6 +1254,65 @@ jobs:
           path: demo/Blackholio/client-unity/Library
           key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
+  unity-webgl-build:
+    needs: [merge_queue_noop, lints]
+    # Skip if this is an external contribution.
+    # The license secrets will be empty, so the step would fail anyway.
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    permissions:
+      contents: read
+    runs-on: spacetimedb-unity-runner
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      UNITY_VERSION: 2022.3.32f1
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      # Keep this before hydration so ignored build outputs do not affect hashFiles.
+      - name: Restore Unity WebGL Library
+        id: restore-unity-webgl-library
+        uses: actions/cache/restore@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-WebGL-v1-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-WebGL-v1-${{ runner.os }}-${{ env.UNITY_VERSION }}-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Hydrate Unity SDK DLLs
+        run: cargo regen csharp dlls
+
+      - name: Build Unity WebGL player
+        uses: game-ci/unity-builder@v4
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
+          projectPath: demo/Blackholio/client-unity
+          targetPlatform: WebGL
+          buildsPath: demo/Blackholio/client-unity/Build
+          versioning: None
+          runAsHostUser: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+
+      - name: Save Unity WebGL Library
+        if: ${{ github.ref == 'refs/heads/master' && steps.restore-unity-webgl-library.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: ${{ steps.restore-unity-webgl-library.outputs.cache-primary-key }}
+
   godot-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
