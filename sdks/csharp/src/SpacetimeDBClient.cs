@@ -313,7 +313,7 @@ namespace SpacetimeDB
         };
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-        internal IEnumerator ParseMessages()
+        internal System.Collections.IEnumerator ParseMessages()
 #else
         internal void ParseMessages()
 #endif
