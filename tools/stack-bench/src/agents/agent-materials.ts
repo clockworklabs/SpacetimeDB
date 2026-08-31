@@ -28,8 +28,7 @@ function validateSkills(skills: string[]): string[] {
 export function selectAgentSkills(defaults: string[], requested: string[] | null = null): string[] {
   validateSkills(defaults);
   validateSkills(requested ?? []);
-  const selected = defaults.length ? (requested ?? defaults) : [];
-  return [...selected];
+  return [...(requested ?? defaults)];
 }
 
 export function agentSkillPaths(repository: string, skills: string[]): string[] {

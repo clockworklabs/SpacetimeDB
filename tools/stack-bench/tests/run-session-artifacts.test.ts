@@ -7,7 +7,7 @@ import test from 'node:test';
 import { runSessionRecord } from '../src/evidence/benchmark-run.js';
 import { readRunJson, writeRunJson } from '../src/evidence/artifacts.js';
 import type { AgentCostReceiptEntry, ValidatedAgentResult }
-  from '../src/agents/agent-adapter-contract.js';
+  from '../src/agents/agent-result-contract.js';
 import type { RunSessionRecord } from '../src/evidence/benchmark-run.js';
 
 function receipt(): AgentCostReceiptEntry[] {

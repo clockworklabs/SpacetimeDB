@@ -3,7 +3,7 @@ import type { OutcomeBundle, RunOutcome } from './outcomes.js';
 import type { SessionMetricsInput, SessionMetricsSummary } from './session-metrics.js';
 import type { PublicBackendLease } from '../runtime/backend-lease.js';
 import type { LevelCheckpoint } from '../runtime/source-checkpoint.js';
-import type { ValidatedAgentResult } from '../agents/agent-adapter-contract.js';
+import type { ValidatedAgentResult } from '../agents/agent-result-contract.js';
 
 type UnknownRecord = Record<string, unknown>;
 

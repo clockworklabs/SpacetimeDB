@@ -7,7 +7,7 @@ import { agentSkillPaths, normalizePromptText, readAgentSkillDocuments,
 test('stack defaults and explicit agent skill selections resolve predictably', () => {
   assert.deepEqual(selectAgentSkills(['typescript-server'], null), ['typescript-server']);
   assert.deepEqual(selectAgentSkills(['typescript-server'], []), []);
-  assert.deepEqual(selectAgentSkills([], ['typescript-server']), []);
+  assert.deepEqual(selectAgentSkills([], ['typescript-server']), ['typescript-server']);
   assert.throws(() => selectAgentSkills(['../private'], null), /invalid/);
   assert.throws(() => agentSkillPaths('/repo', ['same', 'same']), /invalid/);
 });

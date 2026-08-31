@@ -35,15 +35,13 @@ export function agentVisibleContractText(
   return text;
 }
 
-// Contract fragments use backticks for stable element IDs. Passwords and
-// custom data attributes share the notation but are not element IDs.
+// Contract fragments declare stable element IDs in the first column of a table.
 export function contractControlIds(contractText: unknown): string[] {
   const matches = String(contractText ?? '').matchAll(
-    /`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g,
+    /^\s*\|\s*`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`\s*\|/gm,
   );
   const ids = [...matches]
     .map((match) => match[1])
-    .filter((id): id is string => id !== undefined)
-    .filter((id) => !id.startsWith('stackbench-') && !id.startsWith('data-'));
+    .filter((id): id is string => id !== undefined);
   return [...new Set(ids)].sort();
 }

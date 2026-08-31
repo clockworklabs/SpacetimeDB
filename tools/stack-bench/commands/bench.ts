@@ -29,13 +29,14 @@ import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
-  validateAgentResult } from '../src/agents/agent-adapter-contract.js';
+import { agentRecipeIdentity, agentRequestArgv } from '../src/agents/agent-adapter-contract.js';
+import { agentSessionFailure, validateAgentResult }
+  from '../src/agents/agent-result-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.js';
 import { runPreflight } from '../src/runtime/preflight.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
-import { resolveAgentCredential } from '../src/agents/agent-credentials.js';
+import { applyAgentCredential } from '../src/agents/agent-credentials.js';
 import { hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
@@ -64,8 +65,9 @@ import type { BoundRecipeTaskRequestResult } from '../src/composition/recipe-sel
 import type { RecipeBinding } from '../src/composition/recipe-release.js';
 import type { ProgressionInput } from '../src/progression/progression-definition.js';
 import type { RepairGrantResolution, RepairOutcome } from '../src/runtime/repair-grant.js';
-import type { AgentAdapter, AgentMode, AgentRequest, ValidatedAgentResult }
+import type { AgentAdapter, AgentMode, AgentRequest }
   from '../src/agents/agent-adapter-contract.js';
+import type { ValidatedAgentResult } from '../src/agents/agent-result-contract.js';
 import type { Track } from '../src/composition/tracks.js';
 import type { RunOutcome } from '../src/evidence/outcomes.js';
 import type { GradeBundlePayload, BenchmarkRunRecord, RunLevelRecord,
@@ -918,7 +920,7 @@ async function main() {
       throw new Error('repair continuation stack adapter differs from its parent run');
     }
   }
-  resolveAgentCredential(args, agentAdapter);
+  applyAgentCredential(args, agentAdapter);
   args.model ??= agentAdapter.defaultModel;
   if (!args.model) throw new Error(`agent adapter ${agentAdapter.id} has no default model`);
   if (args.pricing !== undefined) {

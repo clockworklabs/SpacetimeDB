@@ -41,7 +41,10 @@ function commandStderr(error: unknown): string {
 
 test('selected contract linting uses only declared control ids', () => {
   assert.deepEqual(contractControlIds([
-    'Use `staff-link` and `staff-signin-submit`.',
+    '| Element ID | Element |',
+    '|---|---|',
+    '| `staff-link` | staff link |',
+    '| `staff-signin-submit` | sign-in button |',
     'The password is `stackbench-staff-2026`.',
     'The attribute is `data-action-input`.',
   ].join('\n')), ['staff-link', 'staff-signin-submit']);

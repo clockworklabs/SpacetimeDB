@@ -29,11 +29,14 @@ export function validateCredentialAliases(
 }
 
 export function applyCredentialAliases(value: unknown, aliases: unknown): string {
-  let result = String(value ?? '');
   const entries = Object.entries(validateCredentialAliases(aliases))
     .sort(([left], [right]) => right.length - left.length || left.localeCompare(right));
-  for (const [source, target] of entries) result = result.replaceAll(source, target);
-  return result;
+  if (!entries.length) return String(value ?? '');
+  const targets = new Map(entries);
+  const pattern = new RegExp(entries
+    .map(([source]) => source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'), 'g');
+  return String(value ?? '').replace(pattern, source => targets.get(source) ?? source);
 }
 
 export function materializeScenarioCredentials<T>(input: T, aliases?: unknown): T {

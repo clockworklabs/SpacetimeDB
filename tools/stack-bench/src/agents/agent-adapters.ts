@@ -27,7 +27,7 @@ interface AdapterOptions {
   deadlineMs?: number;
 }
 
-export interface AgentAdapterIdentity extends Record<string, unknown> {
+export interface AgentAdapterIdentity {
   id: string;
   version: string;
   sha256: string;
@@ -61,7 +61,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, version: '1.17.1',
+      usesStackSkills: true, version: '1.17.2',
       // Claude can wait through an account throttle. Local adapters keep the
       // shorter default deadline because they have no provider wait state.
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),

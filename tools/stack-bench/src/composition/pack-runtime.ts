@@ -138,6 +138,19 @@ export function aggregatePackRuntime(
     for (const measured of report.packRuntime.packs) {
       const definition = definitions.get(measured.id);
       if (!definition) throw new Error(`suite measured unselected pack ${measured.id}`);
+      const checkCount = positiveInteger(measured.checkCount, `${measured.id} checkCount`);
+      const setupRuntimeMs = positiveInteger(measured.setupRuntimeMs, `${measured.id} setupRuntimeMs`);
+      const criterionRuntimeMs = positiveInteger(
+        measured.criterionRuntimeMs,
+        `${measured.id} criterionRuntimeMs`,
+      );
+      const measuredRuntimeMs = positiveInteger(
+        measured.measuredRuntimeMs,
+        `${measured.id} measuredRuntimeMs`,
+      );
+      if (measuredRuntimeMs !== setupRuntimeMs + criterionRuntimeMs) {
+        throw new Error(`${measured.id} measuredRuntimeMs must equal setupRuntimeMs + criterionRuntimeMs`);
+      }
       const current = totals.get(measured.id) ?? {
         id: measured.id,
         checkCount: 0,
@@ -145,16 +158,10 @@ export function aggregatePackRuntime(
         criterionRuntimeMs: 0,
         measuredRuntimeMs: 0,
       };
-      current.checkCount += positiveInteger(measured.checkCount, `${measured.id} checkCount`);
-      current.setupRuntimeMs += positiveInteger(measured.setupRuntimeMs, `${measured.id} setupRuntimeMs`);
-      current.criterionRuntimeMs += positiveInteger(
-        measured.criterionRuntimeMs,
-        `${measured.id} criterionRuntimeMs`,
-      );
-      current.measuredRuntimeMs += positiveInteger(
-        measured.measuredRuntimeMs,
-        `${measured.id} measuredRuntimeMs`,
-      );
+      current.checkCount += checkCount;
+      current.setupRuntimeMs += setupRuntimeMs;
+      current.criterionRuntimeMs += criterionRuntimeMs;
+      current.measuredRuntimeMs += measuredRuntimeMs;
       totals.set(measured.id, current);
     }
   }

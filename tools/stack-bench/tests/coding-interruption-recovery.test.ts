@@ -11,14 +11,14 @@ import { aggregateCodingSessionResults, codingSessionInterruption,
   parseCodingSessionResult, providerSessionFailure,
   runCodingSessionWithRetries, type CodingSessionInvocation }
   from '../src/agents/coding-session-retry.js';
-import { agentSessionFailure } from '../src/agents/agent-adapter-contract.js';
+import { agentSessionFailure } from '../src/agents/agent-result-contract.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
   startCredentialBroker, stopCredentialBroker } from '../container/credential-broker.js';
 import { recoverStoppedBuildContainer } from '../container/recover-build-container.js';
 
 function brokerReceipt(costUsd: number, maxBudgetUsd: number = 10) {
-  return { schemaVersion: 2, source: 'credential-broker', model: 'claude-sonnet-5',
+  return { schemaVersion: 2, source: 'credential-broker', model: 'test-model',
     maxBudgetUsd, costUsd, cliCostUsd: costUsd, calculatedCostUsd: costUsd,
     usage: { input: 1, output: 1, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
     pricingRates: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6,
@@ -130,7 +130,7 @@ test('provider connection failures resume the exact paid session', () => {
     recoverStoppedContainer: false, terminalReason: 'cost_receipt_error', providerStatus: null,
   });
   const calls: CodingSessionInvocation[] = [];
-  const coding = runCodingSessionWithRetries({ prompt: 'build', retryLimit: 1,
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 1,
     maxBudgetUsd: 10,
     invoke(request) {
       calls.push(request);
@@ -163,7 +163,7 @@ test('a refused local credential broker is a harness failure and cannot auto-ret
     recoverStoppedContainer: false, terminalReason: 'cost_receipt_error', providerStatus: null,
   });
   let calls = 0;
-  const coding = runCodingSessionWithRetries({ prompt: 'build', retryLimit: 3,
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 3,
     maxBudgetUsd: 10, invoke() { calls += 1; return JSON.stringify(result); } });
   assert.equal(calls, 1);
   assert.match(required(coding.spawnError, 'broker failure'), /broker failed without a complete reconciled cost receipt/);
@@ -200,7 +200,7 @@ test('a real broker child exit reaches the run result and stops recovery as a ha
     'reconciled credential broker');
   assert.ok(reconciledBroker.child.exitCode !== null || reconciledBroker.child.signal !== null);
   let calls = 0;
-  const coding = runCodingSessionWithRetries({ prompt: 'build', retryLimit: 3,
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 3,
     maxBudgetUsd, invoke() { calls += 1; return JSON.stringify(reconciled.result); } });
   assert.equal(calls, 1);
   assert.match(required(coding.spawnError, 'broker failure'), /local credential broker failed/);
@@ -234,7 +234,7 @@ test('throttle waits back off, resume the paid session, and do not spend interru
   const calls: CodingSessionInvocation[] = [];
   const waits: number[] = [];
   const logs: string[] = [];
-  const coding = runCodingSessionWithRetries({ prompt: 'build the app', retryLimit: 0,
+  const coding = runCodingSessionWithRetries({ prompt: 'build the app', model: 'test-model', retryLimit: 0,
     sleep: ms => waits.push(ms), log: message => logs.push(message),
     invoke(request) {
       calls.push(request);
@@ -260,7 +260,7 @@ test('throttle waits back off, resume the paid session, and do not spend interru
 test('a throttle before any session restarts from the existing files after waiting', () => {
   const calls: CodingSessionInvocation[] = [];
   const waits: number[] = [];
-  const coding = runCodingSessionWithRetries({ prompt: 'full original prompt', retryLimit: 0,
+  const coding = runCodingSessionWithRetries({ prompt: 'full original prompt', model: 'test-model', retryLimit: 0,
     sleep: ms => waits.push(ms), log: () => {},
     invoke(request) {
       calls.push(request);
@@ -280,7 +280,7 @@ test('a throttle before any session restarts from the existing files after waiti
 test('an unbroken throttle stops at the wait budget with a throttle-specific failure', () => {
   const waits: number[] = [];
   let calls = 0;
-  const coding = runCodingSessionWithRetries({ prompt: 'build the app', retryLimit: 3,
+  const coding = runCodingSessionWithRetries({ prompt: 'build the app', model: 'test-model', retryLimit: 3,
     throttleMaxWaitMs: 5 * 60_000, sleep: ms => waits.push(ms), log: () => {},
     invoke() {
       calls += 1;
@@ -299,7 +299,7 @@ test('an unbroken throttle stops at the wait budget with a throttle-specific fai
 test('a stable throttle offset spreads concurrent retries without changing retry accounting', () => {
   const waits: number[] = [];
   let calls = 0;
-  const coding = runCodingSessionWithRetries({ prompt: 'build', retryLimit: 0,
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 0,
     throttleJitterMs: 17_000, sleep: ms => waits.push(ms), log: () => {},
     invoke() {
       calls += 1;
@@ -330,7 +330,7 @@ test('a bounded coding-session timeout continues from the existing app', () => {
     terminalReason: null, providerStatus: null,
   });
   const calls: CodingSessionInvocation[] = [];
-  const coding = runCodingSessionWithRetries({ prompt: 'build the app', retryLimit: 1,
+  const coding = runCodingSessionWithRetries({ prompt: 'build the app', model: 'test-model', retryLimit: 1,
     invoke(request) {
       calls.push(request);
       if (calls.length === 1) throw timeout;
@@ -368,7 +368,7 @@ test('retry accounting includes every paid invocation', () => {
 test('the retry loop resumes in place and deducts the failed call from the cost cap', () => {
   const sessionId = '950df556-38bb-429c-aee9-1af4a00a6c7a';
   const calls: CodingSessionInvocation[] = [];
-  const coding = runCodingSessionWithRetries({ prompt: 'full original prompt', retryLimit: 2,
+  const coding = runCodingSessionWithRetries({ prompt: 'full original prompt', model: 'test-model', retryLimit: 2,
     maxBudgetUsd: 10,
     invoke(request) {
       calls.push(request);
@@ -398,7 +398,7 @@ test('the retry loop resumes in place and deducts the failed call from the cost 
 
 test('a capped session does not treat a numeric cost as a broker receipt', () => {
   let calls = 0;
-  const coding = runCodingSessionWithRetries({ prompt: 'build', retryLimit: 2,
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 2,
     maxBudgetUsd: 10,
     invoke() {
       calls += 1;
@@ -413,7 +413,7 @@ test('a capped session does not treat a numeric cost as a broker receipt', () =>
 test('a capped session does not retry with an unreconciled broker receipt', () => {
   let calls = 0;
   const receipt = { ...brokerReceipt(2), reconciled: false, error: 'cost mismatch' };
-  const coding = runCodingSessionWithRetries({ prompt: 'build', retryLimit: 2,
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 2,
     maxBudgetUsd: 10,
     invoke() {
       calls += 1;
@@ -426,9 +426,24 @@ test('a capped session does not retry with an unreconciled broker receipt', () =
   assert.equal(required(coding.interruptions[0], 'cost receipt interruption').costUsd, null);
 });
 
+test('a capped session does not retry with a receipt for another model', () => {
+  let calls = 0;
+  const coding = runCodingSessionWithRetries({ prompt: 'build', model: 'test-model', retryLimit: 2,
+    maxBudgetUsd: 10,
+    invoke() {
+      calls += 1;
+      return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+        api_error_status: 503, session_id: 'paid-session', total_cost_usd: 2,
+        stack_bench_cost_receipt: { ...brokerReceipt(2), model: 'other-model' } });
+    } });
+  assert.equal(calls, 1);
+  assert.match(required(coding.spawnError, 'cost receipt failure'),
+    /without a complete reconciled broker cost receipt/);
+});
+
 test('a non-OOM kill recovers the container without pretending to resume a missing session', () => {
   const calls: CodingSessionInvocation[] = [];
-  const coding = runCodingSessionWithRetries({ prompt: 'full prompt', retryLimit: 1,
+  const coding = runCodingSessionWithRetries({ prompt: 'full prompt', model: 'test-model', retryLimit: 1,
     invoke(request) {
       calls.push(request);
       if (calls.length === 1) {

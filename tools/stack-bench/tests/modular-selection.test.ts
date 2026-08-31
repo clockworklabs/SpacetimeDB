@@ -81,6 +81,28 @@ test('requested, expected, and observed specification treatments stay independen
   assert.match(selection.sha256, /^[a-f0-9]{64}$/);
 });
 
+test('recursive feature dependencies contribute their stable family', () => {
+  const familyRelease: ModularRecipeRelease = {
+    ...release,
+    components: { packs: [
+      { ...module('example.accounts-v1', 'feature'), stableId: 'example.accounts' },
+      { ...module('example.accounts-v2', 'feature'), stableId: 'example.accounts' },
+      module('example.cart-v2', 'feature', ['example.accounts-v2@1.0.0']),
+    ] },
+    checkCatalog: [
+      check('example.accounts-v2', 'works'),
+      check('example.cart-v2', 'works', undefined, ['example.accounts-v1']),
+    ],
+  };
+  const selection = resolveModularRecipeSelection(familyRelease, {
+    featureIds: ['example.cart-v2'],
+  });
+  assert.deepEqual(selection.features, ['example.accounts-v2', 'example.cart-v2']);
+  assert.deepEqual(selection.scoredChecks.map(item => item.stableKey), [
+    'example.accounts-v2.works', 'example.cart-v2.works',
+  ]);
+});
+
 test('modular selection rejects overlap, wrong module kinds, and unobservable checks', () => {
   assert.throws(() => resolveModularRecipeSelection(release, {
     requestedSpecifications: ['example.durability@1.0.0'],

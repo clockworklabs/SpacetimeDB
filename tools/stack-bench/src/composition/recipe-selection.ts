@@ -247,9 +247,6 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
   }
 
   const featureSet = new Set(requestedFeatures.length ? requestedFeatures : features.keys());
-  const selectedStableFamilies = new Set([...featureSet]
-    .map(id => features.get(id)?.stableId)
-    .filter((stableId): stableId is string => Boolean(stableId)));
   const treatmentSets: Record<string, Set<string>> = Object.fromEntries(
     Object.entries(inputTreatments).map(([treatment, refs]) => [treatment, new Set(refs)]));
   const moduleByRef = new Map(modules.map(module => [`${module.id}@${module.version}`, module]));
@@ -276,6 +273,9 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
       for (const ref of [...refs]) visit(specifications.get(ref), treatment);
     }
   }
+  const selectedStableFamilies = new Set([...featureSet]
+    .map(id => features.get(id)?.stableId)
+    .filter((stableId): stableId is string => Boolean(stableId)));
   const resolvedAssignments = new Map<string, string>();
   for (const [treatment, refs] of Object.entries(treatmentSets)) {
     for (const ref of refs) {

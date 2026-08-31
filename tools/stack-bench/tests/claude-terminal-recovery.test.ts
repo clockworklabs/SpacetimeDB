@@ -91,6 +91,33 @@ test('terminal recovery includes subagent usage created by the active session', 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('terminal recovery rejects billable usage without a stable request ID', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
+  try {
+    const snapshot = snapshotClaudeTranscripts(root);
+    const record = assistant() as Record<string, unknown>;
+    delete record.requestId;
+    delete (record.message as Record<string, unknown>).id;
+    writeFileSync(join(root, `${sessionId}.jsonl`), `${JSON.stringify(record)}\n`);
+    assert.throws(() => recoverClaudeTerminalResult({ directory: root, snapshot,
+      marker: 'FIX_COMPLETE', model: 'claude-sonnet-5' }), /stable request ID/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('terminal recovery rejects conflicting usage for one request ID', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
+  try {
+    const snapshot = snapshotClaudeTranscripts(root);
+    const changed = assistant();
+    (changed.message.usage as Record<string, unknown>).output_tokens = 21;
+    writeFileSync(join(root, `${sessionId}.jsonl`), [
+      JSON.stringify(assistant({ stop: 'tool_use' })), JSON.stringify(changed),
+    ].join('\n') + '\n');
+    assert.throws(() => recoverClaudeTerminalResult({ directory: root, snapshot,
+      marker: 'FIX_COMPLETE', model: 'claude-sonnet-5' }), /usage changed/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a hung process becomes a successful transcript recovery after the exit grace', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-terminal-'));
   try {

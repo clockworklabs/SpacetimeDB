@@ -2,6 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
+import type { AgentAdapterIdentity } from '../agents/agent-adapters.js';
 import { resolveCalibrationForRelease } from '../composition/calibration-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { currentEngineIdentity } from '../evidence/artifacts.js';
@@ -193,7 +194,7 @@ interface ResolvedStackIdentity extends UnknownRecord {
 
 interface ResolvedAgent extends CampaignAgentSelection, UnknownRecord {
   costLimit: string;
-  identity: UnknownRecord & { id: string; version: string; sha256: string };
+  identity: AgentAdapterIdentity;
 }
 
 interface CampaignResolvedInputs {
@@ -237,7 +238,7 @@ export interface CompiledCampaignPlan {
   stacks: ResolvedStackIdentity[];
   agents: Array<CampaignAgentSelection & {
     costLimit: string;
-    identity: UnknownRecord & { id: string; version: string; sha256: string };
+    identity: AgentAdapterIdentity;
   }>;
   conditions: NonEmpty<ResolvedStudyCondition>;
   attempts: NonEmpty<CampaignAttemptPlan>;

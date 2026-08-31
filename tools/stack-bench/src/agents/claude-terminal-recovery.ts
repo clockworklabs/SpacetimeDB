@@ -50,7 +50,7 @@ export interface ClaudeTerminalRecoveryEvidence {
   marker: string;
   transcript: string;
   costSource: 'transcript-usage';
-  pricedModels: unknown[];
+  pricedModels: string[];
 }
 
 export interface RecoveredClaudeTerminalResult {
@@ -150,10 +150,7 @@ function markerPresent(text: string, marker: string): boolean {
 }
 
 function addedRecords(path: string, initialSize: number): TranscriptRecord[] {
-  const value = readFileSync(path, 'utf8');
-  // Transcript records are ASCII JSON around UTF-8 string content. Slicing the
-  // byte buffer, not the JavaScript string, keeps the saved offset exact.
-  const tail = Buffer.from(value).subarray(initialSize).toString('utf8');
+  const tail = readFileSync(path).subarray(initialSize).toString('utf8');
   return tail.split(/\r?\n/).filter(Boolean).flatMap((line): TranscriptRecord[] => {
     try {
       const parsed: unknown = JSON.parse(line);
@@ -226,6 +223,7 @@ function hasCompletionMarker(
 export function recoverClaudeTerminalResult({ directory, snapshot, marker, model,
   pricingRates = null, resumeSession = null }:
   RecoverClaudeTerminalOptions): RecoveredClaudeTerminalResult | null {
+  if (!model) throw new Error('terminal recovery model is required');
   const requestedRates = pricingRates === null ? null
     : validatePricingRates(pricingRates, { at: 'terminal recovery pricing rates' });
   const normalizedResume = resumeSession?.toLowerCase() ?? null;
@@ -253,18 +251,32 @@ export function recoverClaudeTerminalResult({ directory, snapshot, marker, model
           .filter(isAssistantUsageRecord));
       }
     }
-    const billed = new Map<unknown, AssistantUsageRecord>();
+    const billed = new Map<string, AssistantUsageRecord>();
     for (const record of records) {
       const requestId = record.requestId ?? record.message.id ?? record.uuid;
-      if (requestId && !billed.has(requestId)) billed.set(requestId, record);
+      if (typeof requestId !== 'string' || !requestId) {
+        throw Object.assign(new Error('terminal transcript usage has no stable request ID'),
+          { code: 'CLAUDE_TERMINAL_RECOVERY_UNAVAILABLE' });
+      }
+      const prior = billed.get(requestId);
+      if (prior && JSON.stringify([prior.message.model, normalizeClaudeUsage(prior.message.usage)])
+        !== JSON.stringify([record.message.model, normalizeClaudeUsage(record.message.usage)])) {
+        throw Object.assign(new Error(`terminal transcript usage changed for request ${requestId}`),
+          { code: 'CLAUDE_TERMINAL_RECOVERY_UNAVAILABLE' });
+      }
+      if (!prior) billed.set(requestId, record);
     }
     if (!billed.size) throw new Error('terminal transcript has no billable assistant usage');
     const usage = { input_tokens: 0, output_tokens: 0,
       cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
     let totalCostUsd = 0;
-    const pricedModels = new Set<unknown>();
+    const pricedModels = new Set<string>();
     for (const record of billed.values()) {
-      const actualModel = record.message.model ?? model;
+      const actualModel = record.message.model;
+      if (typeof actualModel !== 'string' || !actualModel) {
+        throw Object.assign(new Error('terminal transcript usage has no model'),
+          { code: 'CLAUDE_TERMINAL_RECOVERY_UNAVAILABLE' });
+      }
       const rates = requestedRates ?? claudeRatesForModel(actualModel);
       if (!rates) {
         throw Object.assign(
@@ -313,7 +325,8 @@ export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs
     const stop = (reason: string): void => {
       if (stopping) return;
       stopping = true;
-      Promise.resolve(terminate?.(child, reason)).catch(() => child.kill('SIGKILL'));
+      Promise.resolve(terminate ? terminate(child, reason) : child.kill('SIGTERM'))
+        .catch(() => child.kill('SIGKILL'));
     };
     const append = (target: Buffer[], chunk: Buffer, stdoutStream: boolean): void => {
       target.push(chunk);

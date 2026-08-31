@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import test from 'node:test';
 
-import { levelPrompt, listTracks, loadTrack, suitesFor }
+import { levelPrompt, listTracks, loadTrack, portsFor, RUN_INDEX_CAP, suitesFor }
   from '../src/composition/tracks.js';
 import type { TrackSuiteSource } from '../src/composition/tracks.js';
 
@@ -26,6 +26,14 @@ test('each validated track level has a prompt and declared scenario files', () =
 test('an undeclared level never falls back to L1 grading', () => {
   const chat = loadTrack('chat');
   assert.throws(() => suitesFor(chat, 3), /No scenario suites declared/);
+});
+
+test('invalid track and run-index inputs throw instead of terminating the process', () => {
+  assert.throws(() => loadTrack('missing-track'), /Unknown track/);
+  const track = loadTrack('ecommerce');
+  for (const runIndex of [-1, 0.5, RUN_INDEX_CAP + 1]) {
+    assert.throws(() => portsFor(track, 'mongodb', runIndex), /integer from 0 through/);
+  }
 });
 
 test('declared levels remain available before validation', () => {

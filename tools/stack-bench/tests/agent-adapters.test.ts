@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AGENT_ADAPTER_SCHEMA_VERSION, agentRecipeIdentity, agentRequestArgv, createAgentAdapterRegistry,
-  agentSessionFailure, defineAgentAdapter, validateAgentResult }
+import { AGENT_ADAPTER_SCHEMA_VERSION, agentRecipeIdentity, agentRequestArgv,
+  createAgentAdapterRegistry, defineAgentAdapter }
   from '../src/agents/agent-adapter-contract.js';
+import { agentSessionFailure, validateAgentResult }
+  from '../src/agents/agent-result-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity }
   from '../src/agents/agent-adapters.js';
 import type { AgentRequest } from '../src/agents/agent-adapter-contract.js';
@@ -21,7 +23,7 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    const expectedVersion = id === 'claude-code' ? '1.17.1'
+    const expectedVersion = id === 'claude-code' ? '1.17.2'
       : id === 'reference-fixture' ? '1.4.0'
       : id === 'deterministic' ? '1.3.0' : '1.2.0';
     assert.equal(identity.version, expectedVersion);

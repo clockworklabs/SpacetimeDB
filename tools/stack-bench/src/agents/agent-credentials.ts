@@ -16,15 +16,15 @@ interface AgentCredentialOptions {
   readonly read?: (path: string, encoding: BufferEncoding) => string;
 }
 
-export function resolveAgentCredential<TArgs extends AgentCredentialArgs>(
+export function applyAgentCredential<TArgs extends AgentCredentialArgs>(
   args: TArgs,
   adapter: CredentialAgentAdapter,
   { env = process.env, read = (path, encoding) => readFileSync(path, encoding) }:
     AgentCredentialOptions = {},
-): TArgs & AgentCredentialArgs {
+): void {
   const adapterFileVariable = adapter.apiKeyEnvironmentVariable
     ? `${adapter.apiKeyEnvironmentVariable}_FILE` : null;
-  const configuredKeyFile = args.apiKeyFile
+  const configuredKeyFile = (args.apiKeyFile ? resolve(args.apiKeyFile) : null)
     ?? (env.STACK_BENCH_API_KEY_FILE ? resolve(env.STACK_BENCH_API_KEY_FILE) : null)
     ?? (adapterFileVariable && env[adapterFileVariable] ? resolve(env[adapterFileVariable]) : null);
   if ((args.apiKey || configuredKeyFile) && !adapter.apiKeyEnvironmentVariable) {
@@ -39,5 +39,4 @@ export function resolveAgentCredential<TArgs extends AgentCredentialArgs>(
     args.apiKey = value;
     args.apiKeyFile = configuredKeyFile;
   }
-  return args;
 }

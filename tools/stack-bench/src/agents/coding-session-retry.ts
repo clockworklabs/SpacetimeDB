@@ -1,4 +1,5 @@
-import { AGENT_COST_RECEIPT_TOLERANCE_USD } from './agent-adapter-contract.js';
+import { AGENT_COST_RECEIPT_TOLERANCE_USD, validateAgentCostReceipt }
+  from './agent-result-contract.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -73,6 +74,7 @@ export interface CodingSessionInvocation {
 interface CodingSessionRetryOptions {
   invoke: (invocation: CodingSessionInvocation) => unknown;
   prompt: string;
+  model: string;
   retryLimit: number;
   maxBudgetUsd?: number | null;
   throttleMaxWaitMs?: number;
@@ -119,7 +121,6 @@ const THROTTLE_STATUSES = new Set([429, 529]);
 const TRANSIENT_API_STATUSES = new Set([500, 502, 503, 504]);
 const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000];
 export const DEFAULT_THROTTLE_MAX_WAIT_MS = 15 * 60_000;
-const BROKER_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
 
 export function providerSessionFailure(
   result: CodingSessionResult | null | undefined,
@@ -205,28 +206,18 @@ function codingProcessDiagnostic(
   catch { return null; }
 }
 
-function completeBrokerReceiptCost(result: CodingSessionResult | null): number | null {
-  const receipt = result?.stack_bench_cost_receipt;
+function completeBrokerReceiptCost(result: CodingSessionResult | null, model: string): number | null {
   const resultCostUsd = result?.total_cost_usd;
-  const nonNegative = (value: unknown): value is number => typeof value === 'number'
-    && Number.isFinite(value) && value >= 0;
-  if (!object(receipt)
-    || receipt.schemaVersion !== 2 || receipt.source !== 'credential-broker'
-    || typeof receipt.model !== 'string' || !receipt.model
-    || !nonNegative(receipt.maxBudgetUsd) || receipt.maxBudgetUsd === 0
-    || !nonNegative(receipt.costUsd)
-    || !nonNegative(receipt.cliCostUsd)
-    || !nonNegative(receipt.calculatedCostUsd)
-    || receipt.complete !== true || receipt.reconciled !== true || receipt.error !== null
-    || !nonNegative(resultCostUsd)) return null;
-  for (const field of ['usage', 'pricingRates']) {
-    const values = receipt[field];
-    if (!object(values) || BROKER_USAGE_FIELDS.some(key => !nonNegative(values[key]))) {
-      return null;
-    }
+  if (typeof resultCostUsd !== 'number' || !Number.isFinite(resultCostUsd) || resultCostUsd < 0) {
+    return null;
   }
-  return Math.abs(receipt.costUsd - resultCostUsd) <= AGENT_COST_RECEIPT_TOLERANCE_USD
-    ? receipt.costUsd : null;
+  try {
+    const receipt = validateAgentCostReceipt(result?.stack_bench_cost_receipt, model,
+      'coding session cost receipt');
+    return receipt.complete && receipt.reconciled && receipt.error === null
+      && Math.abs(receipt.costUsd - resultCostUsd) <= AGENT_COST_RECEIPT_TOLERANCE_USD
+      ? receipt.costUsd : null;
+  } catch { return null; }
 }
 
 export function codingSessionInterruption(
@@ -325,10 +316,11 @@ export function codingSessionFailure(error: CodingProcessError): string {
     + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
 }
 
-export function runCodingSessionWithRetries({ invoke, prompt, retryLimit, maxBudgetUsd = null,
+export function runCodingSessionWithRetries({ invoke, prompt, model, retryLimit, maxBudgetUsd = null,
   throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, throttleJitterMs = 0,
   sleep = synchronousSleep, log = null }: CodingSessionRetryOptions): CodingSessionRetryResult {
   if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
+  if (typeof model !== 'string' || !model) throw new Error('coding session model is required');
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('coding interruption retry limit must be an integer from 0 to 3');
   }
@@ -376,7 +368,7 @@ export function runCodingSessionWithRetries({ invoke, prompt, retryLimit, maxBud
     if (result) sessionResults.push(result);
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
-    const receiptCostUsd = completeBrokerReceiptCost(result);
+    const receiptCostUsd = completeBrokerReceiptCost(result, model);
     if (interruption?.kind === 'credential-broker-unavailable') {
       interruptions.push({ ...interruption, invocation: invocation + 1,
         sessionId: result?.session_id ?? null, costUsd: receiptCostUsd });
@@ -392,8 +384,8 @@ export function runCodingSessionWithRetries({ invoke, prompt, retryLimit, maxBud
       break;
     }
     if (interruption?.kind === 'provider-throttled') {
-      const delay = (THROTTLE_DELAYS_MS[
-        Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)] ?? 900_000) + throttleJitterMs;
+      const delay = THROTTLE_DELAYS_MS[
+        Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)]! + throttleJitterMs;
       if (throttleWaitedMs + delay > throttleMaxWaitMs) {
         spawnError = `provider stayed throttled (status ${interruption.providerStatus}) after `
           + `${Math.round(throttleWaitedMs / 60_000)} minutes of waiting across `

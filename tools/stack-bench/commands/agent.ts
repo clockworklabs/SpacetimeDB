@@ -715,7 +715,8 @@ async function main() {
       // Pin cache lifetime so run order cannot change cost.
       FORCE_PROMPT_CACHING_5M: '1' };
 
-    coding = runCodingSessionWithRetries({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
+    coding = runCodingSessionWithRetries({ prompt, model: args.model, retryLimit,
+      maxBudgetUsd: args.maxBudgetUsd,
       throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
       throttleJitterMs,
       invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>

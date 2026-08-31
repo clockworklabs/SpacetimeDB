@@ -85,3 +85,14 @@ test('suite timing accumulates across suites and enforces only declared bounds',
   ]);
   assert.deepEqual(exceededPackBudgets(runtime).map(pack => pack.id), ['pack-a']);
 });
+
+test('suite timing rejects inconsistent measurements', () => {
+  const packRuntime = measureGradePackRuntime(report());
+  const first = packRuntime.packs[0];
+  assert(first);
+  first.measuredRuntimeMs += 1;
+  assert.throws(() => aggregatePackRuntime([{ packRuntime }], [
+    { id: 'pack-a', budget: { status: 'unmeasured' } },
+    { id: 'pack-b', budget: { status: 'unmeasured' } },
+  ]), /must equal setupRuntimeMs \+ criterionRuntimeMs/);
+});

@@ -122,16 +122,25 @@ export interface CalibrationDefinition {
   };
 }
 
-export interface CalibrationPlan extends CalibrationDefinition {
+export interface QualificationStaleness {
+  kind: string;
+  stack: string | null;
+  repetition: number;
+  path: string;
+  reason: string;
+}
+
+export interface CalibrationPlan extends Omit<CalibrationDefinition, 'schemaVersion' | 'kind'> {
+  calibrationSchemaVersion: number;
   contentSha256: string;
   qualificationSha256: string;
-  qualificationStaleness: unknown[];
+  qualificationStaleness: QualificationStaleness[];
 }
 
 export interface CalibrationContext {
   // Evidence is verified while the calibration is still being compiled, before
   // it carries its plan hashes.
-  calibration: CalibrationDefinition;
+  calibration: CalibrationDefinition | CalibrationPlan;
   qualificationIdentity: CalibrationIdentity;
   release: RecipeRelease;
   references: CalibrationReference[];
@@ -581,7 +590,7 @@ function evidenceIdentityMatches(actual: unknown, expected: unknown): boolean {
 }
 
 function qualificationEvidenceOrigin(artifact: UnknownRecord,
-  calibration: CalibrationDefinition, qualificationIdentity: CalibrationIdentity,
+  calibration: CalibrationDefinition | CalibrationPlan, qualificationIdentity: CalibrationIdentity,
   release: RecipeRelease, at: string): 'current' | 'reused' {
   const identities = artifact.identities;
   const currentRecipe = { id: release.id, version: release.version, sha256: release.contentSha256 };
@@ -597,14 +606,6 @@ function qualificationEvidenceOrigin(artifact: UnknownRecord,
   }
   evidenceFailure(at, 'has mismatched recipe or calibration identities');
 }
-
-type QualificationStaleness = {
-  kind: string;
-  stack: string | null;
-  repetition: number;
-  path: string;
-  reason: string;
-};
 
 type ReuseDecision = {
   sourceRecipe: { id: string; version: string; contentSha256: string; executionSha256: string };
@@ -882,10 +883,10 @@ function validateCurrentQualificationScope(artifact: UnknownRecord, entry: Calib
 
 function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchRoot: string,
   at: string, context: Omit<CalibrationContext, 'stackBenchRoot'>):
-  { entries: CalibrationEvidence[]; staleness: QualificationStaleness[]; buildImage: unknown } {
+  { entries: CalibrationEvidence[]; staleness: QualificationStaleness[]; buildImage?: string } {
   const artifacts = new Map();
   const normalized = verifyEvidence(entries, stackBenchRoot, at);
-  const images = new Set();
+  const images = new Set<string>();
   const runners = new Set();
   const staleness: QualificationStaleness[] = [];
   normalized.forEach((entry, index) => {
@@ -913,12 +914,16 @@ function verifyQualificationEvidence(entries: CalibrationEvidence[], stackBenchR
     }
     if (entry.kind !== 'null') {
       const runs = read(artifact, 'payload', 'runs');
-      if (Array.isArray(runs)) for (const run of runs) images.add(read(run, 'imageId'));
+      if (Array.isArray(runs)) for (const run of runs) {
+        const imageId = read(run, 'imageId');
+        if (typeof imageId === 'string') images.add(imageId);
+      }
     }
   });
   if (images.size > 1) fail(at, 'qualification artifacts use different build images');
   if (runners.size > 1) fail(at, 'qualification artifacts use different appliance runner environments');
-  return { entries: normalized, staleness, buildImage: [...images][0] ?? null };
+  const buildImage = [...images][0];
+  return { entries: normalized, staleness, ...(buildImage ? { buildImage } : {}) };
 }
 
 export function mutationExecutionSha256(manifest: UnknownRecord,
@@ -1134,7 +1139,7 @@ export function compileCalibrationFile(calibrationPath: string,
       targets.push({ id: mutation.id, stableKeys: scopedKeys });
     }
     mutationCoverage.set(selection.backend, covered);
-    return { ...selection, path: ref.relative, status: manifest.status,
+    return { ...selection, path: ref.relative, status: string(manifest.status, `${at}.status`),
       executionSha256: mutationExecutionSha256(manifest, selectedMutations), targets };
   });
 
@@ -1268,7 +1273,7 @@ export function compileCalibrationFile(calibrationPath: string,
     }
   }
 
-  const plan = canonicalizeDefinition({
+  const planInput = {
     calibrationSchemaVersion: CALIBRATION_SCHEMA_VERSION,
     id: calibration.id,
     version: calibration.version,
@@ -1287,7 +1292,8 @@ export function compileCalibrationFile(calibrationPath: string,
     controls: controls.map(control => ({ ...control,
       mutationTargets: [...control.mutationTargets].sort() }))
       .sort((a, b) => a.stableKey.localeCompare(b.stableKey)),
-    qualification: { ...calibration.qualification, buildImage: verifiedEvidence.buildImage,
+    qualification: { ...calibration.qualification,
+      ...(verifiedEvidence.buildImage ? { buildImage: verifiedEvidence.buildImage } : {}),
       stacks: [...calibration.qualification.stacks].sort((a, b) => a.id.localeCompare(b.id)),
       evidence: evidence.sort((a, b) => `${a.kind}:${a.stack ?? ''}:${a.repetition}`
         .localeCompare(`${b.kind}:${b.stack ?? ''}:${b.repetition}`)) },
@@ -1298,13 +1304,13 @@ export function compileCalibrationFile(calibrationPath: string,
       scopes: [...qualificationReuse.scopes].sort((a, b) => `${a.kind}:${a.stack ?? ''}`
         .localeCompare(`${b.kind}:${b.stack ?? ''}`)) } } : {}),
     promotion: { ...calibration.promotion, catalogPath: catalogRef.relative },
-  });
+  };
+  const plan = canonicalizeDefinition(planInput);
   if (!isObject(plan)) fail(source, 'could not be canonicalized');
-  const qualificationSha256 = calibrationQualificationIdentity(
-    plan as Validated<CalibrationDefinition>).sha256;
+  const qualificationSha256 = calibrationQualificationIdentity(planInput).sha256;
   return { ...plan, qualificationSha256,
     contentSha256: sha256(canonicalDefinitionJson({ ...plan, qualificationSha256 })),
-    qualificationStaleness: verifiedEvidence.staleness } as Validated<CalibrationPlan>;
+    qualificationStaleness: verifiedEvidence.staleness } as CalibrationPlan;
 }
 
 export function calibrationCoversAlias(calibration: CalibrationPlan,

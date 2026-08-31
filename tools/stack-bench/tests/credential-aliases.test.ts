@@ -7,7 +7,7 @@ import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.js';
 import type { AgentRequest } from '../src/agents/agent-adapter-contract.js';
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
-import { materializeScenarioCredentials, validateCredentialAliases }
+import { applyCredentialAliases, materializeScenarioCredentials, validateCredentialAliases }
   from '../src/composition/credential-aliases.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { seededAdminPassword } from '../tracks/ecommerce/walk.js';
@@ -91,4 +91,9 @@ test('credential aliases reject ambiguous or ineffective maps', () => {
   assert.throws(() => validateCredentialAliases({ first: 'shared', second: 'shared' }),
     /duplicated/);
   assert.throws(() => validateCredentialAliases([]), /must be an object/);
+});
+
+test('credential aliases apply once without cascading', () => {
+  assert.equal(applyCredentialAliases('first second', { first: 'second', second: 'third' }),
+    'second third');
 });
