@@ -37,7 +37,6 @@ export interface BenchArguments {
   url?: string;
   media: boolean;
   retainBackend?: boolean;
-  behavioralReview: boolean;
   guidance: string;
   guidanceDocument?: unknown;
   condition?: StudyCondition;
@@ -93,7 +92,7 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     fixRounds: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
     levelList: [], maxStalledRepairs: 3, guidance: 'prescribed', track: DEFAULT_TRACK,
     packIds: [], checkKeys: [], featureIds: [], requestedSpecifications: [],
-    expectedSpecifications: [], observedSpecifications: [], behavioralReview: false,
+    expectedSpecifications: [], observedSpecifications: [],
     mutationMaxRuntimeMinutes: 60 };
   for (let i = 2; i < argv.length; i++) {
     const option = argv[i];
@@ -129,7 +128,6 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
       case '--agent-adapter': args.agentAdapter = value(); break;
       case '--no-media': args.media = false; break;
       case '--retain-backend': args.retainBackend = true; break;
-      case '--behavioral-review': args.behavioralReview = true; break;
       case '--guidance': args.guidance = normalizeGuidance(value()); break;
       case '--guidance-document-json': args.guidanceDocument = JSON.parse(value()); break;
       case '--condition-json': args.condition = JSON.parse(value()); break;
@@ -237,7 +235,6 @@ function bindCampaign(args: BenchArguments): void {
   const unsupported = [
     [args.maxStalledRepairs !== 3, '--max-stalled-repairs'],
     [args.skipProbe === true, '--skip-probe'],
-    [args.behavioralReview === true, '--behavioral-review'],
     [args.mutations !== undefined || args.mutationShardIndex !== undefined
       || args.mutationShardCount !== undefined, '--mutations'],
     [args.seedFrom !== undefined, '--seed-from'],

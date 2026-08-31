@@ -214,16 +214,12 @@ export function campaignRetryAuthority(run: BenchmarkRun | null | undefined, {
 }: { recoveryClean?: boolean; requireCostReceipt?: boolean } = {}): RetryAuthority {
   const outcome = run?.outcome;
   const providerStatus = outcome?.provider?.providerStatus;
-  const legacyTransient = outcome?.kind === 'harness_failure'
-    && outcome.phase === 'coding-session'
-    && outcome.reason !== 'provider-throttle-exhausted'
-    && typeof providerStatus === 'number' && TRANSIENT_PROVIDER_STATUSES.has(providerStatus);
   const providerTransient = outcome?.kind === 'provider_failure'
     && outcome.phase === 'coding-session'
     && outcome.reason !== 'provider-throttle-exhausted'
     && ((typeof providerStatus === 'number' && TRANSIENT_PROVIDER_STATUSES.has(providerStatus))
       || ['provider-api-error', 'provider-connection-error'].includes(outcome.reason ?? ''));
-  const transient = legacyTransient || providerTransient;
+  const transient = providerTransient;
   const cost = run?.totals?.costUsd;
   const budgetKnown = !requireCostReceipt || (run?.totals?.costComplete === true
     && finite(cost) && cost >= 0);

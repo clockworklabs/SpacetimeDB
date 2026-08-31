@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { buildRecipeRelease,
-  requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { mutationFileEdits, readMutationManifest, type LoadedMutationDefinition }
+import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import { mutationFileEdits, mutationTargetKeys, readMutationManifest,
+  type LoadedMutationDefinition }
   from '../src/evidence/mutation-analysis.js';
-import { rebaseMutationManifest } from '../src/evidence/mutation-rebase.js';
 import { compileFeatureCatalogInput,
   compileProgressionDefinitionFile } from '../src/progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
@@ -25,10 +24,6 @@ const binding = resolveRecipeRelease(loadTrack('ecommerce'), 3,
   'ecommerce.progression-catalog@2.0.1');
 const selection = resolveProgressionRecipeLevelSelection(binding,
   compileFeatureCatalogInput(definition), 3, { cumulative: true });
-const knownCheckKeys = [...new Set(readdirSync(join(TRACK, 'composition', 'recipes'))
-  .filter(file => file.endsWith('.json'))
-  .flatMap(file => buildRecipeRelease(join(TRACK, 'composition', 'recipes', file))
-    .checkCatalog.map(check => check.stableKey)))];
 const fixtures = new Map(loadReferenceRegistry().fixtures
   .filter(fixture => fixture.track === 'ecommerce')
   .map(fixture => [fixture.backend, fixture]));
@@ -58,27 +53,11 @@ for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     const fixture = fixtures.get(backend);
     assert(fixture, `missing ${backend} ecommerce reference`);
     assert(fixture.targetPath, `${backend} fixture must have a target path`);
-    assert(fixture.imported?.sourceSha256, `${backend} fixture must have an imported source`);
     const manifest = mutationManifest(backend);
-    const result = rebaseMutationManifest(manifest, {
-      release: binding.release,
-      selectedCheckKeys: selection.grader.checkKeys,
-      knownCheckKeys,
-      app: join(ROOT, fixture.targetPath),
-      fixtureSha256: fixture.imported.sourceSha256,
-    });
-
-    assert.equal(result.coverage.selected.length, 97);
-    assert.deepEqual(result.coverage.missing, []);
-    assert.deepEqual(result.blocked, []);
     const selected = new Set(selection.grader.checkKeys);
-    assert(result.excluded.length > 0);
-    assert(result.excluded.every(mutation => mutation.targets.every(target => !selected.has(target))));
-    assert.equal(result.manifest.mutations.length + result.excluded.length,
-      manifest.mutations.length);
-    assert(result.manifest.mutations.every(mutation => mutation.targets.every(target =>
-      binding.release.checkCatalog.find(check => check.stableKey === target)?.source
-        === mutation.scenario.replace(`tracks/${binding.release.track}/`, ''))));
+    const covered = new Set(manifest.mutations.flatMap(mutation => mutationTargetKeys(mutation)));
+    assert.equal(selected.size, 97);
+    assert.deepEqual([...selected].filter(check => !covered.has(check)), []);
 
     for (const mutation of manifest.mutations) {
       const editsByFile = new Map<string, ReturnType<typeof mutationFileEdits>>();

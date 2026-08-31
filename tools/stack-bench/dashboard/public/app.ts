@@ -788,26 +788,11 @@ function levelTable(attempt: Attempt): string {
 function questlineLanes(dependency: Dependency): QuestlineLane[] {
   const nodes = dependency.nodes ?? [];
   const byId = new Map(nodes.map(node => [node.id, node]));
-  const depths = new Map<string, number>();
-  const depthOf = (id: string): number => {
-    if (depths.has(id)) return depths.get(id) ?? 0;
-    depths.set(id, 0);
-    const node = byId.get(id);
-    const parents = (node?.dependencies ?? []).filter(parent => byId.has(parent));
-    const value: number = parents.length ? 1 + Math.max(...parents.map(depthOf)) : 0;
-    depths.set(id, value);
-    return value;
-  };
-  nodes.forEach(node => depthOf(node.id));
-  // the definition declares each questline's order; sorting by depth is only a
-  // fallback for state written before the ordered lists were exposed
   return (dependency.questlines ?? []).map(questline => ({
     id: questline.id,
     title: questline.title,
-    stations: Array.isArray(questline.nodes) && questline.nodes.length
-      ? questline.nodes.map(id => byId.get(id)).filter((node): node is DependencyNode => node !== undefined)
-      : nodes.filter(node => node.questline === questline.id)
-        .sort((a, b) => depthOf(a.id) - depthOf(b.id) || a.id.localeCompare(b.id)),
+    stations: (questline.nodes ?? []).map(id => byId.get(id))
+      .filter((node): node is DependencyNode => node !== undefined),
   })).filter(lane => lane.stations.length);
 }
 

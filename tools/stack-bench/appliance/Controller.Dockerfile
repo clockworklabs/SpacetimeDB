@@ -63,6 +63,7 @@ COPY licenses/BSL.txt /opt/stack-bench-embedded-deps/BSL.txt
 
 RUN node dist/container/binary-provenance.js verify \
       --root /opt/stack-bench --source-sha256 "$BINARY_SOURCE_SHA256" \
+    && rm -rf tests dist/tests \
     && install -m 0555 container/bin/spacetimedb-cli \
       /opt/stack-bench-embedded-deps/spacetimedb-cli \
     && install -m 0555 container/bin/spacetimedb-standalone \

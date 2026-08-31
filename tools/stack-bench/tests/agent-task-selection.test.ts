@@ -244,7 +244,7 @@ test('exact modular qualification can include supporting checks without changing
   assert.deepEqual(exact.selection.promptPacks, ordinary.selection.promptPacks);
 });
 
-test('agent provenance uses the exact recipe execution instead of the legacy level suites', () => {
+test('agent provenance uses the exact recipe execution instead of level suites', () => {
   const track = loadTrack('ecommerce');
   const modular = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
   const paths = agentScenarioPaths(track, 1, modular);

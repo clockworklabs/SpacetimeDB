@@ -536,13 +536,13 @@ test('modular campaigns bind requested, expected, and observed specifications in
   assert.notEqual(expected.conditions[0].sha256, observed.conditions[0].sha256);
 });
 
-test('campaigns reject unavailable specification versions and legacy mixing', () => {
+test('campaigns reject unavailable specification versions and pack-selection mixing', () => {
   assert.throws(() => compile(modularDefinition({
     expected: ['ecommerce.spec.external-data-sync@1.0.0'],
   })), /has no expected specification/);
   assert.throws(() => compile(definition({ conditions: [{ ...definition().conditions[0]!,
     specifications: { levels: [{ level: 1, requested: [], expected: [], observed: [] }] },
-  }] })), /legacy selection cannot declare modular specifications/);
+  }] })), /pack selection cannot declare modular specifications/);
 });
 
 test('a one-repetition pilot is allowed and reports its exact sample size', () => {

@@ -726,7 +726,7 @@ test('only explicit transient provider failures receive campaign retry authority
   assert.deepEqual(campaignRetryAuthority({ outcome: { kind: 'harness_failure',
     phase: 'coding-session', reason: 'coding-session-failed',
     provider: { providerStatus: 503 } } }, clean), {
-    transient: true, recoveryClean: true, budgetKnown: true, cause: 'provider-http-503',
+    transient: false, recoveryClean: true, budgetKnown: true, cause: null,
   });
   assert.equal(campaignRetryAuthority({ outcome: { kind: 'harness_failure',
     phase: 'coding-session', reason: 'coding-session-failed',

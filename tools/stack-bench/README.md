@@ -56,6 +56,7 @@ and dashboard-started work remains fully operable from the CLI. See
 - `grader/README.md` — grader architecture and evidence model
 - `tracks/ecommerce/composition/README.md` — packs, recipes, and release composition
 - `docs/dependency-graph.html` — generated ecommerce feature dependency graph
+- `docs/technical-guide.html` — technical walkthrough of the current run path
 - `docs/stack-bench.html` - Stack Bench presentation
 
 Working notes, generated reports, and run artifacts are local operator material
@@ -114,11 +115,6 @@ npm test
 Documentation-only changes do not require the integrated gate. Run Docker
 qualification only when a changed file affects its recorded scope. Run the
 complete mutation set only for a release candidate.
-
-The optional model-based SpacetimeDB behavioral review is separate from the
-measured coding sessions. Run it deliberately with `--behavioral-review`; it is
-off by default so campaign cost and token accounting never omit an unrecorded model
-call. The model-free friction report remains automatic.
 
 ## Run it
 

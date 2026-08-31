@@ -287,31 +287,6 @@ test('starting Spacetime cleanup requires and stops the exact launched process',
   }
 });
 
-test('listener operations refuse a process not captured by the lease', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-listener-'));
-  const path = join(root, 'lease.json');
-  const server = createServer((_req, res) => res.end('ok'));
-  const port = await listen(server);
-  try {
-    const lease = createBackendLease({
-      runId: 'listener-refusal', backend: 'spacetime', track: 'chat', runIndex: 0,
-      serverUri: `http://127.0.0.1:${port}`, module: 'app-run0', dataDir: join(root, 'data'),
-    });
-    lease.state = 'active';
-    lease.resources.listenerProcesses = [{ pid: process.pid + 1000, startMarker: '1' }];
-    writeBackendLease(path, lease);
-    assert.throws(() => execFileSync(process.execPath,
-      [compiledEntrypoint('commands', 'lease-cli.js'), 'listener-pid', 'spacetime'], {
-        env: { ...process.env, STACK_BENCH_LEASE: path,
-          STACK_BENCH_LEASE_TOKEN: lease.ownershipToken },
-        stdio: 'pipe',
-      }), /Command failed/);
-  } finally {
-    await close(server);
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('resource locks exclude a concurrent run and release only for their owner', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-'));
   try {

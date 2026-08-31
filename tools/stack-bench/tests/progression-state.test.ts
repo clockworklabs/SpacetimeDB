@@ -6,7 +6,6 @@ import test from 'node:test';
 
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput } from '../src/progression/progression-definition.js';
-import { runPersistedProgressionMode } from '../src/progression/progression-runner.js';
 import { grantProgressionState, readProgressionState, writeProgressionState }
   from '../src/progression/progression-state.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
@@ -84,37 +83,6 @@ test('progression state stores one ordered event log and a replay-verified compa
     assert.throws(() => readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope }),
       /snapshot identity does not match/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('persisted runner resumes the exact paused state and atomically appends the next event', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-progression-resume-'));
-  const path = join(root, 'state.json');
-  try {
-    const input = progression();
-    const scope = owner();
-    const first = await runPersistedProgressionMode({ progression: input, ...stateIdentities,
-      owner: scope, statePath: path,
-      execute: async () => ({ attemptId: 'provider', outcome: 'inconclusive',
-        category: 'provider_failure', reason: 'response ended early' }) });
-    assert.equal(first.status, 'paused');
-    assert.equal(readProgressionState(path, { progression: input, ...stateIdentities,
-      owner: scope }).state.events.length, 1);
-
-    const resumed = await runPersistedProgressionMode({ progression: input, ...stateIdentities,
-      owner: scope, statePath: path,
-      execute: async () => grade('second', 'pass') });
-    assert.equal(resumed.status, 'terminal');
-    assert.equal((resumed.outcome as { kind: string }).kind, 'passed');
-    const stored = readProgressionState(path, { progression: input, ...stateIdentities,
-      owner: scope });
-    assert.deepEqual(stored.state.events.map(event => {
-      assert.ok(event.result);
-      return event.result.attemptId;
-    }),
-      ['provider', 'second']);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

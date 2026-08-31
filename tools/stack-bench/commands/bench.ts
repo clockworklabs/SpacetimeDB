@@ -2338,38 +2338,6 @@ async function main() {
   run.completedAt = new Date().toISOString();
   writeRunJson(join(args.out, 'run.json'), run);
 
-  // Produce a model-free friction report from the transcript when available.
-  if (executeStackCapability(stackAdapter, 'run-policy', 'product-review-enabled')
-    && run.setup?.session !== 'model-free-reference') {
-    try {
-      sh('node', [join(ROOT, 'dist', 'commands', 'stdb-report.js'), '--label', artifactLabel, '--track', args.track,
-        '--level', String(args.levelList[args.levelList.length - 1]),
-        '--score', `${requireRunTotals(run).score}/${requireRunTotals(run).max}`,
-        '--cost', String(requireRunTotals(run).costUsd),
-        '--fix-rounds', String(requireRunTotals(run).fixRounds),
-        ...(run.contaminated ? ['--contaminated'] : [])], { stdio: 'inherit' });
-    } catch (e) {
-      console.log(`  (stdb friction report failed: ${errorMessage(e).split('\n')[0]})`);
-    }
-    // The deeper behavioural review is a separate model session. It is useful
-    // product research, but running it implicitly would add unmetered provider
-    // usage to a benchmark attempt and make campaign cost accounting false.
-    // Keep the model-free friction report above automatic; make this analysis
-    // explicit and never run it for an incomplete attempt.
-    if (args.behavioralReview
-      && !['provider_failure', 'harness_failure', 'ungraded'].includes(run.outcome?.kind)) {
-      try {
-        sh('node', [join(ROOT, 'dist', 'commands', 'stdb-review.js'), '--label', artifactLabel,
-          '--source', join(outputDir, 'source'),
-          '--compare', stringArray(executeStackCapability(stackAdapter,
-            'run-policy', 'product-review-comparisons'), 'product-review-comparisons')
-            .map(backend => resultsName(track, backend, args.runIndex)).join(',')], { stdio: 'inherit' });
-      } catch (e) {
-        console.log(`  (stdb behavioural review failed: ${errorMessage(e).split('\n')[0]})`);
-      }
-    }
-  }
-
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {
     console.log(`  ${formatLevelSummary(l)}`);

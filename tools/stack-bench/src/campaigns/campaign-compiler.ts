@@ -285,7 +285,7 @@ const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 
   'track', 'mode', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
   'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'featureCatalog']);
 ROOT_FIELDS.add('runtime');
-const LEGACY_SELECTION_FIELDS = new Set(['packs', 'checks']);
+const PACK_SELECTION_FIELDS = new Set(['packs', 'checks']);
 const MODULAR_SELECTION_FIELDS = new Set(['levels']);
 const MODULAR_LEVEL_FIELDS = new Set(['level', 'recipe', 'features', 'checks']);
 const PROGRESSION_LEVEL_FIELDS = new Set(['level', 'recipe']);
@@ -432,7 +432,7 @@ export function validateCampaignDefinition(input: unknown,
     fail(`${source}.selection`, 'feature catalog campaigns require recipe bindings by level');
   }
   strict(value.selection, `${source}.selection`,
-    modularSelection ? MODULAR_SELECTION_FIELDS : LEGACY_SELECTION_FIELDS);
+    modularSelection ? MODULAR_SELECTION_FIELDS : PACK_SELECTION_FIELDS);
   if (modularSelection) {
     value.selection.levels = exactArray(value.selection.levels, `${source}.selection.levels`,
       (entry, at): CampaignLevelSelection => {
@@ -806,7 +806,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
   if (definition.state === 'frozen' && agents.some(agent => agent.costLimit === 'unsupported')) {
     fail('state', 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
   }
-  const legacyRequested = modularLevels.size ? null : { track: definition.track, levels: bindings.map(binding => ({
+  const packRequested = modularLevels.size ? null : { track: definition.track, levels: bindings.map(binding => ({
     level: binding.level,
     recipe: {
       id: binding.recipe.id, version: binding.recipe.version,
@@ -827,9 +827,9 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
   const requestedForCondition = (ref: ConditionReference): unknown => {
     if (!modularLevels.size) {
       if (ref.specifications !== undefined) {
-        fail('conditions', 'legacy selection cannot declare modular specifications');
+        fail('conditions', 'pack selection cannot declare modular specifications');
       }
-      return legacyRequested;
+      return packRequested;
     }
     if (progressionSelections && ref.specifications !== undefined) {
       fail('conditions', 'progression graph owns specification scope');

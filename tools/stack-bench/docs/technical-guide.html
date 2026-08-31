@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stack Bench technical walkthrough</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050807;
+      --panel: #0a1210;
+      --panel-2: #0d1714;
+      --line: #213630;
+      --text: #eef5f2;
+      --muted: #9aada6;
+      --faint: #6e817a;
+      --green: #42f59b;
+      --cyan: #67d4ff;
+      --amber: #ffd166;
+      --red: #ff6b8f;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        linear-gradient(rgba(66,245,155,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(66,245,155,.025) 1px, transparent 1px),
+        var(--bg);
+      background-size: 32px 32px;
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    a { color: inherit; }
+    .shell { width: min(1240px, calc(100% - 40px)); margin: 0 auto; }
+    header { padding: 56px 0 28px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 12px 0 10px; font-size: clamp(38px, 6vw, 72px); line-height: .98; letter-spacing: -.055em; }
+    .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 18px; }
+    nav { position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line); background: rgba(5,8,7,.93); backdrop-filter: blur(16px); }
+    nav .shell { display: flex; gap: 18px; overflow-x: auto; padding: 12px 0; scrollbar-width: thin; }
+    nav a { white-space: nowrap; text-decoration: none; color: var(--muted); font: 12px var(--mono); }
+    nav a:hover { color: var(--green); }
+    main { padding: 42px 0 84px; }
+    section { scroll-margin-top: 60px; margin: 0 0 64px; }
+    h2 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.025em; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 14px; }
+    .section-intro { max-width: 820px; color: var(--muted); margin-bottom: 22px; }
+    .grid { display: grid; gap: 14px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { min-width: 0; padding: 20px; background: linear-gradient(145deg, rgba(13,23,20,.98), rgba(8,14,12,.98)); border: 1px solid var(--line); border-radius: 12px; }
+    .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+    .label { color: var(--faint); font: 700 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    .value { margin-top: 5px; font: 600 22px var(--mono); color: var(--text); }
+    .value.green { color: var(--green); }
+    .flow { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 22px; align-items: stretch; margin: 24px 0; }
+    .flow .step { position: relative; padding: 16px; min-height: 104px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .flow .step:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 35px; color: var(--green); font: 20px var(--mono); }
+    .step b { display: block; margin: 5px 0; }
+    .step span { color: var(--muted); font-size: 13px; }
+    .path { display: inline-block; padding: 2px 6px; border-radius: 4px; background: #101d19; color: #b6c9c2; font: 12px var(--mono); overflow-wrap: anywhere; }
+    .file-list { margin: 12px 0 0; padding: 0; list-style: none; }
+    .file-list li { display: grid; grid-template-columns: minmax(180px, .85fr) 1.4fr; gap: 18px; padding: 9px 0; border-top: 1px solid rgba(33,54,48,.7); color: var(--muted); }
+    .file-list li:first-child { border-top: 0; }
+    ul, ol { margin: 8px 0 16px; padding-left: 20px; }
+    li { margin: 5px 0; }
+    details { margin-top: 14px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: #07100d; }
+    summary { cursor: pointer; padding: 11px 14px; color: var(--cyan); font: 600 12px var(--mono); user-select: none; }
+    pre { margin: 0; padding: 16px; overflow: auto; border-top: 1px solid var(--line); background: #030706; color: #d9e7e2; font: 12px/1.55 var(--mono); tab-size: 2; }
+    code { font-family: var(--mono); }
+    .callout { margin: 16px 0; padding: 14px 16px; border-left: 3px solid var(--cyan); background: rgba(103,212,255,.06); color: var(--muted); }
+    .callout strong { color: var(--text); }
+    .callout.risk { border-color: var(--red); background: rgba(255,107,143,.055); }
+    .audit { display: grid; gap: 8px; margin-top: 14px; }
+    .audit div { display: grid; grid-template-columns: 22px 1fr; gap: 8px; color: var(--muted); }
+    .audit span { color: var(--green); font-family: var(--mono); }
+    .audit .risk-mark { color: var(--amber); }
+    .example { counter-reset: item; }
+    .example .example-step { position: relative; margin-left: 18px; padding: 0 0 20px 28px; border-left: 1px solid var(--line); }
+    .example .example-step::before { counter-increment: item; content: counter(item); position: absolute; left: -14px; top: 0; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--green); color: var(--green); font: 12px var(--mono); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    th { color: var(--faint); font: 700 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    td { color: var(--muted); }
+    td:first-child { color: var(--text); font-family: var(--mono); }
+    @media (max-width: 980px) {
+      .grid.three, .grid.two { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: repeat(2, 1fr); }
+      .flow .step:not(:last-child)::after { display: none; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 24px, 1240px); }
+      header { padding-top: 36px; }
+      .flow { grid-template-columns: 1fr; }
+      .file-list li { grid-template-columns: 1fr; gap: 4px; }
+      .card { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <h1>Stack Bench<br>technical walkthrough</h1>
+      <p class="lede">Current implementation, data flow, code examples, and production boundaries.</p>
+    </div>
+  </header>
+
+  <nav aria-label="Document sections">
+    <div class="shell">
+      <a href="#overview">Overview</a>
+      <a href="#map">Code map</a>
+      <a href="#definitions">Definitions</a>
+      <a href="#dependency">Dependency mode</a>
+      <a href="#campaigns">Campaigns</a>
+      <a href="#agent">Agent and prompts</a>
+      <a href="#runtime">Stacks and runtime</a>
+      <a href="#grading">Grading</a>
+      <a href="#repairs">Repairs</a>
+      <a href="#mutations">Mutations</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#testing">Tests</a>
+      <a href="#examples">Examples</a>
+      <a href="#audit">Audit</a>
+    </div>
+  </nav>
+
+  <main class="shell">
+    <section id="overview">
+      <h2>What the system does</h2>
+      <p class="section-intro">Stack Bench builds, tests, repairs, and records the same product work across technology stacks.</p>
+      <div class="flow" aria-label="Run data flow">
+        <div class="step"><div class="label">1</div><b>Define</b><span>Track, feature catalog, recipe, stacks, model, budget</span></div>
+        <div class="step"><div class="label">2</div><b>Compile</b><span>Resolve exact versions and hash the plan</span></div>
+        <div class="step"><div class="label">3</div><b>Preflight</b><span>Check Docker, credentials, ports, files, and smoke paths</span></div>
+        <div class="step"><div class="label">4</div><b>Build</b><span>Give the current request to the selected coding agent</span></div>
+        <div class="step"><div class="label">5</div><b>Grade and repair</b><span>Run selected checks and return application failures</span></div>
+        <div class="step"><div class="label">6</div><b>Record</b><span>Write typed artifacts, source hashes, cost, and reports</span></div>
+      </div>
+    </section>
+
+    <section id="map">
+      <h2>Code map</h2>
+      <p class="section-intro">Main code boundaries. Source is TypeScript. The build emits ESM JavaScript into <span class="path">dist/</span>.</p>
+      <details open><summary>Control</summary>
+        <div class="card"><h3>Control plane</h3><ul class="file-list">
+          <li><span class="path">commands/bench.ts</span><span>Runs one benchmark attempt. It resolves scope, runs preflight, owns the stack lease, calls the coding agent, grades, repairs, and writes the run.</span></li>
+          <li><span class="path">src/campaigns/campaign-compiler.ts</span><span>Turns a campaign manifest into an exact, hashed plan.</span></li>
+          <li><span class="path">src/campaigns/campaign-runner.ts</span><span>Admits, schedules, runs, retries, and reconciles campaign attempts.</span></li>
+          <li><span class="path">src/campaigns/campaign-scheduler.ts</span><span>Stores the state machine for pending, running, completed, and invalid attempts.</span></li>
+        </ul></div>
+      </details>
+      <details><summary>Definitions</summary>
+        <div class="card"><h3>Definition plane</h3><ul class="file-list">
+          <li><span class="path">tracks/&lt;track&gt;/track.json</span><span>Declares levels, suites, actions, ports, restart probes, and validation status.</span></li>
+          <li><span class="path">src/composition/*</span><span>Compiles packs, recipes, task fragments, selected checks, calibration, and release identities.</span></li>
+          <li><span class="path">src/progression/progression-definition.ts</span><span>Compiles feature nodes from versioned packs. It assigns each scored group to one owner.</span></li>
+          <li><span class="path">tracks/ecommerce/progression/ecommerce-2.0.1.json</span><span>Current 43-node dependency catalog.</span></li>
+        </ul></div>
+      </details>
+      <details><summary>Execution</summary>
+        <div class="card"><h3>Execution plane</h3><ul class="file-list">
+          <li><span class="path">src/agents/*</span><span>Validates agent adapters, credentials, supported modes, result shape, cost, and token usage.</span></li>
+          <li><span class="path">src/stacks/*</span><span>Defines the stack capability contract and routes work to MongoDB, PostgreSQL, SpacetimeDB, or stub adapters.</span></li>
+          <li><span class="path">src/runtime/*</span><span>Owns leases, resource locks, Docker runtime, checkpoints, recovery, and source snapshots.</span></li>
+          <li><span class="path">src/progression/*</span><span>Runs the dependency state machine and persists its event history.</span></li>
+        </ul></div>
+      </details>
+      <details><summary>Proof</summary>
+        <div class="card"><h3>Proof plane</h3><ul class="file-list">
+          <li><span class="path">grader/grade.ts</span><span>Runs browser and API actions. It produces one structured result per selected check.</span></li>
+          <li><span class="path">src/actions/*</span><span>Defines action contracts and the actors used by scenarios.</span></li>
+          <li><span class="path">src/evidence/*</span><span>Validates evidence, writes artifacts, tracks provenance, and classifies mutations.</span></li>
+          <li><span class="path">grader/mutation-test.ts</span><span>Breaks a known-good app one defect at a time and proves that the expected check catches it.</span></li>
+          <li><span class="path">src/references/*</span><span>Imports, validates, runs, and qualifies known-good reference apps.</span></li>
+        </ul></div>
+      </details>
+      <details><summary>Interfaces</summary>
+        <div class="card"><h3>Operator interfaces</h3><ul class="file-list">
+          <li><span class="path">commands/campaign-cli.ts</span><span>CLI access to compile, inspect, run, resume, and report operations.</span></li>
+          <li><span class="path">dashboard/</span><span>Reads the same campaign state and artifacts. It does not define a second execution model.</span></li>
+          <li><span class="path">src/campaigns/campaign-report.ts</span><span>Builds JSON and HTML reports from frozen plan and state artifacts.</span></li>
+        </ul></div>
+      </details>
+    </section>
+
+    <section id="definitions">
+      <h2>Definitions and composition</h2>
+      <p class="section-intro">Versioned tracks, packs, recipes, and campaigns define each run.</p>
+      <div class="grid three">
+        <div class="card"><div class="label">Track</div><h3>Product shape</h3><p>Levels, suites, actions, ports, reset behavior, and validation status.</p></div>
+        <div class="card"><div class="label">Pack</div><h3>Reusable module</h3><p>Prompt fragments, check groups, points, dependencies, and version.</p></div>
+        <div class="card"><div class="label">Recipe</div><h3>Selected test plan</h3><p>Fixture, included modules, prompt composition, execution, and scoring.</p></div>
+      </div>
+      <details open><summary>Recipe excerpt: independent modules stay separately versioned</summary><pre><code>{
+  "id": "ecommerce.progression-catalog",
+  "version": "2.0.1",
+  "packs": [
+    { "id": "ecommerce.feature.accounts", "version": "1.2.0" },
+    { "id": "ecommerce.spec.state-durability", "version": "2.0.1" },
+    { "id": "ecommerce.progression.support-intake", "version": "1.0.0" }
+  ],
+  "execution": "all-selected-sources",
+  "scoring": { "mode": "source-points" }
+}</code></pre></details>
+      <details><summary>Real code: compose only the fragments selected for this task</summary><pre><code>const applies = fragment =&gt; fragment.ownerConditions
+  ? fragment.ownerConditions.some(entry =&gt; owners.has(entry.owner)
+    &amp;&amp; entry.modes.includes(mode)
+    &amp;&amp; entry.requiresFeatures.every(featureApplies))
+  : fragment.owners.some(owner =&gt; owners.has(owner))
+    &amp;&amp; fragment.modes.includes(mode);
+
+const requirements = plan.recipe.task.requirements.filter(applies);
+const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></details>
+      <div class="audit">
+        <div><span>✓</span><p>Unknown fields and unsupported schema versions fail during compilation.</p></div>
+        <div><span>✓</span><p>Exact content hashes detect changed definitions between compile time and execution.</p></div>
+        <div><span>✓</span><p>Exact references and the candidate catalog identify active versions. Older files cannot become launch inputs through filename discovery.</p></div>
+      </div>
+    </section>
+
+    <section id="dependency">
+      <h2>Dependency mode</h2>
+      <p class="section-intro">Dependency depth sets the level. Passed parents open child features.</p>
+      <p><a href="dependency-graph.html">Open the current dependency graph</a> to trace parents, children, and feature descriptions.</p>
+      <div class="callout"><strong>Repair selection.</strong> The first build receives all open features. The default <code>feature</code> policy sends one failed feature in each repair. The optional <code>batch</code> policy sends all currently failed features. Grading includes current work, passed features, and required parents. Only repaired failed features spend a strike. Sequential mode does not use this setting.</div>
+      <details open><summary>Real example: a node owns prompt modules, checks, and dependencies</summary><pre><code>{
+  "id": "purchasing",
+  "title": "Purchasing and orders",
+  "questline": "orders-fulfillment",
+  "featureRefs": ["ecommerce.feature.purchasing@1.2.1"],
+  "gradingGroups": [
+    "ecommerce.feature.purchasing@1.2.1#purchase-order",
+    "ecommerce.spec.access-control@2.0.0#order-ownership"
+  ],
+  "dependencies": [
+    { "id": "accounts", "reason": "A purchase needs a buyer." },
+    { "id": "catalog", "reason": "A purchase needs an item." }
+  ]
+}</code></pre></details>
+      <details><summary>Real code: prompt work and grading work are selected separately</summary><pre><code>function selectedPromptWork(state) {
+  const nodeIds = currentPromptNodeIds(state);
+  return {
+    nodeIds,
+    featureRefs: selectionFor(state, nodeIds, 'featureRefs'),
+    promptModules: selectionFor(state, nodeIds, 'promptModules'),
+  };
+}
+
+function selectedGradingWork(state) {
+  const nodeIds = gradingNodeIds(state);
+  const selected = new Set(nodeIds);
+  return {
+    nodeIds,
+    checks: state.definition.nodes.filter(node =&gt; selected.has(node.id)).flatMap(node =&gt;
+      node.gradingChecks.map(check =&gt; ({ ...check, nodeId: node.id })))
+  };
+}</code></pre></details>
+      <details><summary>Real code: state is rebuilt from its event history</summary><pre><code>export function recordDependencyResult(inputState, inputResult) {
+  assertReplayConsistent(inputState);
+  const event = {
+    sequence: inputState.events.length + 1,
+    type: 'attempt-recorded',
+    result: structuredClone(inputResult)
+  };
+  return replayDependencyMode(inputState.definition, [...inputState.events, event]);
+}</code></pre></details>
+      <div class="audit">
+        <div><span>✓</span><p>Every scored group can have only one owner. Duplicate ownership fails compilation.</p></div>
+        <div><span>✓</span><p>Feature pack dependencies must exist in the node or one of its ancestors.</p></div>
+        <div><span>✓</span><p>Snapshots are checked against replayed events. A corrupted state cannot resume silently.</p></div>
+        <div><span class="risk-mark">!</span><p>The full catalog is draft. Reference, mutation, and null-control qualification covers dependency depths 1 through 3. Deeper nodes still need qualification.</p></div>
+      </div>
+    </section>
+
+    <section id="campaigns">
+      <h2>Campaign compilation and scheduling</h2>
+      <p class="section-intro">A compiled campaign fixes the scope, versions, budget, repetitions, and parallelism.</p>
+      <div class="grid two">
+        <div class="card"><h3>Compilation</h3><ol><li>Validate the manifest schema.</li><li>Resolve exact versions.</li><li>Expand all stack, agent, condition, and repetition attempts.</li><li>Hash the definition and engine identity.</li></ol></div>
+        <div class="card"><h3>Execution</h3><ol><li>Run campaign-wide admission checks.</li><li>Claim up to the configured parallel slots.</li><li>Give each slot a distinct run index and resource scope.</li><li>Write attempt state after each completion.</li></ol></div>
+      </div>
+      <details open><summary>Reference campaign excerpt</summary><pre><code>{
+  "mode": { "id": "dependency", "version": "3.0.0",
+    "repairSelection": "feature",
+    "strikes": { "default": 1, "levels": {} } },
+  "levels": [1, 2, 3, 4, 5, 6],
+  "featureCatalog": "ecommerce.questlines@2.0.1",
+  "stacks": [
+    { "id": "mongodb", "adapterVersion": "1.2.0" },
+    { "id": "postgres", "adapterVersion": "1.3.0" },
+    { "id": "spacetime", "adapterVersion": "1.0.0" }
+  ],
+  "repetitions": 1,
+  "parallelism": 3,
+  "budgets": { "fixRounds": 0, "attemptTimeoutMinutes": 180 }
+}</code></pre></details>
+      <div class="callout"><strong>Parallelism.</strong> Each active attempt gets separate ports, database names, containers, and resource locks.</div>
+      <div class="audit">
+        <div><span>✓</span><p>Draft plans can run only with the model-free trial path. Paid campaign execution requires a frozen plan.</p></div>
+        <div><span>✓</span><p>An unresolved running attempt must be reconciled before the controller resumes.</p></div>
+        <div><span class="risk-mark">!</span><p>Single-attempt orchestration remains concentrated in <code>commands/bench.ts</code>. Focused tests must protect its boundaries with campaign, runtime, grading, and repair code.</p></div>
+      </div>
+    </section>
+
+    <section id="agent">
+      <h2>Agent adapters and prompt construction</h2>
+      <p class="section-intro">Agent adapters define model access, limits, credentials, and result format.</p>
+      <div class="grid two">
+        <div class="card"><h3>Agent receives</h3><ul><li>Product brief and current feature work</li><li>Selected stack access details</li><li>Selected SDK or skill material</li><li>Required testing interface</li><li>On repair, failed checks and expected results</li></ul></div>
+        <div class="card"><h3>Controller retains</h3><ul><li>Checks selected only for grading</li><li>Expected and observed specification sets</li><li>Reference and mutation evidence</li><li>Campaign state and prior artifacts</li><li>Docker control authority</li></ul></div>
+      </div>
+      <details open><summary>Real code: strict adapter contract</summary><pre><code>export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
+
+const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
+
+export function defineAgentAdapter(value) {
+  if (value.schemaVersion !== AGENT_ADAPTER_SCHEMA_VERSION)
+    throw new Error('agent adapter schema is unsupported');
+  if (!Array.isArray(value.modes) || value.modes.some(mode =&gt; !MODES.has(mode)))
+    throw new Error(`agent adapter ${value.id}.modes is invalid`);
+  return Object.freeze(value);
+}</code></pre></details>
+      <details><summary>Real code: remove grader-only selections from the agent request</summary><pre><code>const requested = resolved.selection.requested;
+const visible = createBoundRecipeTaskRequest(binding, {
+  featureIds: requested.features,
+  requestedSpecifications: requested.specifications?.requested ?? [],
+  expectedSpecifications: [],
+  observedSpecifications: [],
+  checkKeys: [],
+  dependencyExpansion: requested.dependencyExpansion,
+  taskMode: resolved.taskMode,
+});
+
+if (visible.task.sha256 !== resolved.task.sha256) {
+  throw new Error('undisclosed treatment removal changed the agent task');
+}</code></pre></details>
+      <div class="callout"><strong>Selection boundary.</strong> Prompt selection and grading selection are independent.</div>
+      <div class="audit">
+        <div><span>✓</span><p>The result validator checks app directory, mode, level, stack, track, model, tokens, cost, duration, session, and provider metadata.</p></div>
+        <div><span>✓</span><p>Credentials and allowed outbound destinations are adapter data, not ad hoc shell arguments.</p></div>
+        <div><span class="risk-mark">!</span><p>The code uses several terms for the same boundary: requested, expected, observed, selected, visible, and grading. Public copy needs a smaller vocabulary, even if internal schemas remain exact.</p></div>
+      </div>
+    </section>
+
+    <section id="runtime">
+      <h2>Stack adapters and runtime isolation</h2>
+      <p class="section-intro">Stack adapters provide setup, access, reset, grading, lifecycle, and cleanup operations.</p>
+      <details open><summary>Real code: one capability call instead of stack conditionals</summary><pre><code>export function executeStackCapability(adapter, capabilityName, operation, input = {}) {
+  const provider = adapter.capabilities[capabilityName];
+  if (!provider || !provider.operations.includes(operation)) {
+    throw new StackCapabilityUnsupportedError(
+      `stack adapter ${adapter.id} does not support ${capabilityName}.${operation}`);
+  }
+  return provider.execute(operation, input);
+}</code></pre></details>
+      <div class="grid three">
+        <div class="card"><div class="label">Lease</div><h3>Exact ownership</h3><p>A generated run ID, ownership token, database identity, container identity, ports, and locks bind all destructive operations.</p></div>
+        <div class="card"><div class="label">Container</div><h3>Isolation</h3><p>The coding process does not receive the controller, grader, scenarios, old results, or Docker socket in appliance mode.</p></div>
+        <div class="card"><div class="label">Recovery</div><h3>Cleanup proof</h3><p>A stopped controller must prove owned resources are released before a campaign attempt can be retried.</p></div>
+      </div>
+      <details><summary>Real code: run IDs and ownership-bound leases</summary><pre><code>export function newRunId({ track, backend, runIndex, now, nonce }) {
+  const stamp = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  return `${track}-${backend}-run${runIndex}-${stamp}-${nonce.slice(0, 8)}`;
+}
+
+return {
+  runId,
+  backend,
+  runIndex,
+  ownershipToken: randomUUID(),
+  state: 'created',
+  resources
+};</code></pre></details>
+      <div class="audit">
+        <div><span>✓</span><p>The adapter registry rejects a stack that does not implement every required engine operation.</p></div>
+        <div><span>✓</span><p>Lease files are written atomically with restricted permissions.</p></div>
+        <div><span>✓</span><p>Resource locks use exact keys. The controller does not select cleanup targets from generated code.</p></div>
+        <div><span class="risk-mark">!</span><p>Host and appliance behavior still share some runtime modules. Every production path should be proven in the Docker appliance, which is the intended delivery shape.</p></div>
+      </div>
+    </section>
+
+    <section id="grading">
+      <h2>Grading and check evidence</h2>
+      <p class="section-intro">Selected scenarios produce typed check evidence. Only application failures are repairable.</p>
+      <div class="grid two">
+        <div class="card"><h3>Measured results</h3><table><tr><th>Status</th><th>Meaning</th><th>Repair</th></tr><tr><td>passed</td><td>The app met the assertion.</td><td>No</td></tr><tr><td>failed</td><td>The app did not meet the assertion.</td><td>Yes</td></tr></table></div>
+        <div class="card"><h3>Invalid evidence</h3><table><tr><th>Status</th><th>Meaning</th><th>Score</th></tr><tr><td>inconclusive</td><td>The result cannot prove pass or fail.</td><td>Excluded</td></tr><tr><td>harness_failure</td><td>The test system failed.</td><td>Excluded</td></tr></table></div>
+      </div>
+      <details open><summary>Real code: the central status interpretation</summary><pre><code>export const CHECK_EVIDENCE_DISPOSITIONS = Object.freeze({
+  passed: { passed: true, measured: true, applicationFailure: false, repairable: false },
+  failed: { passed: false, measured: true, applicationFailure: true, repairable: true },
+  inconclusive: { passed: false, measured: false, applicationFailure: false, repairable: false },
+  harness_failure: { passed: false, measured: false, applicationFailure: false, repairable: false },
+});</code></pre></details>
+      <div class="callout"><strong>Status control.</strong> The status table alone controls scoring and repair eligibility.</div>
+      <div class="audit">
+        <div><span>✓</span><p>A clean status boundary prevents a browser crash or setup fault from looking like an application defect.</p></div>
+        <div><span>✓</span><p>Selected checks are mapped by stable recipe keys before the browser starts.</p></div>
+        <div><span class="risk-mark">!</span><p><code>grader/grade.ts</code> still coordinates browser setup, action execution, evidence, and aggregation. Focused action and evidence tests must protect those boundaries.</p></div>
+      </div>
+    </section>
+
+    <section id="repairs">
+      <h2>Repair loop and source checkpoints</h2>
+      <p class="section-intro">Repairs use failed checks and preserve the last accepted source checkpoint.</p>
+      <div class="example">
+        <div class="example-step"><h3>Hash current source</h3><p>The controller records the authored source before grading.</p></div>
+        <div class="example-step"><h3>Grade selected checks</h3><p>Passed, failed, inconclusive, and harness failure results remain distinct.</p></div>
+        <div class="example-step"><h3>Send repairable failures</h3><p>Dependency mode sends one failed feature by default. Batch and sequential runs send their selected failing set.</p></div>
+        <div class="example-step"><h3>Grade the changed source</h3><p>A repair is useful only if the new result is usable and the source is intact.</p></div>
+        <div class="example-step"><h3>Accept or restore</h3><p>The checkpoint becomes the next source, or the controller restores the last accepted source.</p></div>
+      </div>
+      <details><summary>Real code: source snapshots exclude runtime and harness files</summary><pre><code>const PRESERVED_DIRS = new Set(['node_modules']);
+const ROOT_PRESERVED_DIRS = new Set(['.git', 'stack-bench']);
+const TRANSIENT_DIRS = new Set(['dist', '.vite', 'coverage', '.cache', '.npm-cache']);
+const ROOT_RUNTIME_FILES = new Set(['BUG_REPORT.md', 'client.log', 'server.log', 'vite.log']);
+
+export function hashAppSource(appDir) {
+  return hashDirectory(appDir, {
+    exclude: (rel, entry) =&gt; entry.isDirectory()
+      ? directoryDisposition(rel) !== 'source'
+      : preservedRuntimeFile(rel) || transientRuntimeFile(rel)
+  });
+}</code></pre></details>
+      <div class="audit">
+        <div><span>✓</span><p>Source identity excludes dependencies, build output, logs, and harness-owned files.</p></div>
+        <div><span>✓</span><p>Repair continuation checks the parent agent adapter, stack adapter, selection, build image, and source.</p></div>
+        <div><span class="risk-mark">!</span><p>The repair policy must stop repeated failures that provide no new information. The run report should show repeated failure signatures and cost per changed result.</p></div>
+      </div>
+    </section>
+
+    <section id="mutations">
+      <h2>Mutation qualification</h2>
+      <p class="section-intro">Mutation tests prove that known defects fail the intended checks.</p>
+      <div class="flow" style="grid-template-columns:repeat(5,minmax(120px,1fr))">
+        <div class="step"><div class="label">1</div><b>Clean reference</b><span>Hash and fully grade the baseline</span></div>
+        <div class="step"><div class="label">2</div><b>Apply defect</b><span>Use exact source edits from the manifest</span></div>
+        <div class="step"><div class="label">3</div><b>Reset state</b><span>Restore database and app readiness</span></div>
+        <div class="step"><div class="label">4</div><b>Grade target</b><span>Run the selected scenario and checks</span></div>
+        <div class="step"><div class="label">5</div><b>Classify</b><span>Expected catch, miss, collateral, or invalid evidence</span></div>
+      </div>
+      <details open><summary>Real code: mutations are distributed across isolated workers</summary><pre><code>function shardAssignments(mutations, count, defaultScenario) {
+  const workers = Array.from({ length: count }, () =&gt; []);
+  mutations.forEach((mutation, position) =&gt; {
+    const scenario = mutation.scenario ?? defaultScenario;
+    if (typeof scenario !== 'string' || !scenario.trim()) {
+      fail(`mutation ${mutation.id} has no scenario`);
+    }
+    workers[position % count].push(position);
+  });
+  return workers;
+}</code></pre></details>
+      <div class="callout"><strong>Sharding.</strong> Individual defects are distributed evenly. Each worker has isolated ports, containers, databases, and evidence. Merge validation requires every mutation ID exactly once.</div>
+      <div class="audit">
+        <div><span>✓</span><p>The mutation manifest binds the exact pristine fixture hash.</p></div>
+        <div><span>✓</span><p>A mutation counts only when the intended criterion fails conclusively and no unrelated criterion regresses.</p></div>
+        <div><span>✓</span><p>Parallel shard merge rejects missing, duplicate, or misassigned results.</p></div>
+        <div><span class="risk-mark">!</span><p>Mutation coverage proves that known defects are detected. It does not prove that the grader detects every possible defect. Coverage must map to check ownership and risk.</p></div>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <h2>Artifacts, provenance, and reports</h2>
+      <p class="section-intro">Typed artifacts record the plan, run, evidence, identities, and source hashes.</p>
+      <div class="grid three">
+        <div class="card"><div class="label">Plan</div><h3>What was selected</h3><p>Track, versions, stacks, model, conditions, levels, pricing, budgets, repetitions, and engine identity.</p></div>
+        <div class="card"><div class="label">Run</div><h3>What happened</h3><p>Preflight, build sessions, grades, repairs, source checkpoints, time, token usage, cost, and recovery.</p></div>
+        <div class="card"><div class="label">Evidence</div><h3>Why it scored</h3><p>Check observations, expected values, actors, actions, screenshots, logs, source, and test identity.</p></div>
+      </div>
+      <table>
+        <tr><th>Artifact</th><th>Purpose</th><th>Main validator</th></tr>
+        <tr><td>plan.json</td><td>Frozen experiment and schedule</td><td>validateCompiledCampaignPlan</td></tr>
+        <tr><td>state.json</td><td>Campaign attempt state</td><td>validateCampaignState</td></tr>
+        <tr><td>run.json</td><td>One complete attempt</td><td>artifact schema and campaign run validator</td></tr>
+        <tr><td>bundle.json</td><td>One grading bundle</td><td>grade bundle artifact validator</td></tr>
+        <tr><td>progression-state.json</td><td>Dependency event history and snapshot</td><td>readProgressionState and replay check</td></tr>
+        <tr><td>recovery.json</td><td>Proof that exact-owned resources were cleaned</td><td>recovery artifact validator</td></tr>
+      </table>
+    </section>
+
+    <section id="dashboard">
+      <h2>CLI and dashboard</h2>
+      <p class="section-intro">The CLI and dashboard use the same campaign state and artifacts.</p>
+      <details open><summary>Dashboard artifact allowlist</summary><pre><code>Campaign: plan, state, HTML report, JSON report
+Attempt: run, preflight, recovery, progression state, process metadata, logs, checkpoints
+Grade: bundle, contract lint, actions, check evidence, screenshots</code></pre></details>
+      <div class="audit">
+        <div><span>✓</span><p>Dashboard paths are resolved under the configured results root.</p></div>
+        <div><span>✓</span><p>Credentials are redacted from log tails before display.</p></div>
+        <div><span>✓</span><p>Visual evidence, JSON, reports, and logs are exposed through explicit patterns.</p></div>
+        <div><span class="risk-mark">!</span><p>The dashboard should remain a controller client. Business rules must stay in shared source modules, not browser code.</p></div>
+      </div>
+    </section>
+
+    <section id="testing">
+      <h2>Test layers</h2>
+      <p class="section-intro">Use focused tests first. Use Docker and live qualification only when required.</p>
+      <div class="grid three">
+        <div class="card"><div class="label">Fast</div><h3>Module and contract tests</h3><p>Node tests cover compilers, state machines, adapters, evidence, scheduling, locks, prompts, and artifact validation.</p><p class="path">npm run build --silent &amp;&amp; node --test dist/tests/&lt;focused-file&gt;.test.js</p></div>
+        <div class="card"><div class="label">Model free</div><h3>Reference and control tests</h3><p>Known-good fixtures, null controls, scenario checks, prompt snapshots, graph compilation, and mutation definition checks need no paid agent.</p><p class="path">npm run check:scenarios</p></div>
+        <div class="card"><div class="label">Integrated</div><h3>Docker and live qualification</h3><p>Container smoke, real stack reset, browser grading, reference qualification, fault injection, and campaign admission prove the deployed topology.</p><p class="path">npm run test:container</p></div>
+      </div>
+      <div class="callout"><strong>Order.</strong> Focused test, affected model-free check, Docker smoke if needed, then scoped live qualification.</div>
+      <table>
+        <tr><th>Change</th><th>Minimum focused proof</th><th>Release proof</th></tr>
+        <tr><td>Graph dependency</td><td>Progression definition, engine, state, and graph tests</td><td>Affected reference nodes and their mutations</td></tr>
+        <tr><td>Check or scenario</td><td>Scenario compiler and exact grader tests</td><td>Known-good pass plus targeted mutation catch</td></tr>
+        <tr><td>Stack adapter</td><td>Adapter contract and stack-specific unit tests</td><td>Docker smoke, reset, recovery, and reference qualification</td></tr>
+        <tr><td>Campaign scheduler</td><td>Scheduler, locking, admission, and retry tests</td><td>Model-free parallel campaign trial</td></tr>
+        <tr><td>Prompt composition</td><td>Recipe selection and prompt snapshot tests</td><td>Scope identity and agent-visible request review</td></tr>
+      </table>
+    </section>
+
+    <section id="examples">
+      <h2>Change examples</h2>
+      <p class="section-intro">Common extension paths.</p>
+      <div class="grid two">
+        <div class="card">
+          <h3>Move a feature to a later level</h3>
+          <ol>
+            <li>Change the node dependencies in <span class="path">progression/ecommerce-2.0.1.json</span>.</li>
+            <li>Do not edit a numeric level. The compiler recalculates it from dependency depth.</li>
+            <li>Keep the same feature pack and grading group IDs if their behavior did not change.</li>
+            <li>Compile the graph. Check reachability, cycles, prompt mode, and ownership.</li>
+            <li>Run focused definition and progression tests.</li>
+            <li>Requalify only affected reference and mutation scopes.</li>
+          </ol>
+          <p><strong>Expected result:</strong> the feature moves without rewriting its prompt module, grader scenario, or stable check identity.</p>
+        </div>
+        <div class="card">
+          <h3>Add a new technology stack</h3>
+          <ol>
+            <li>Implement every required capability in <span class="path">src/stacks/backends/&lt;stack&gt;</span>.</li>
+            <li>Register the adapter with an exact semantic version.</li>
+            <li>Add connection, reset, lifecycle, grading, container, and cleanup operations.</li>
+            <li>Add focused contract tests with the stub path.</li>
+            <li>Add Docker admission and reference qualification for the real stack.</li>
+            <li>Add it to a campaign only after its reference checks pass.</li>
+          </ol>
+          <p><strong>Expected result:</strong> campaign, agent, grader, evidence, and dashboard code do not need stack-specific branches.</p>
+        </div>
+        <div class="card">
+          <h3>Add a product feature</h3>
+          <ol>
+            <li>Create one feature pack with prompt requirements and testing interface.</li>
+            <li>Create one or more scenario files with stable criteria and points.</li>
+            <li>Add the pack to the recipe catalog.</li>
+            <li>Add one graph node that owns its scored groups.</li>
+            <li>Declare only necessary parent features.</li>
+            <li>Add a known-good reference behavior and targeted mutation evidence.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>Continue a stopped repair</h3>
+          <ol>
+            <li>Select the exact parent run and level.</li>
+            <li>Create a repair grant with the new round count.</li>
+            <li>Verify source, adapter, selection, model, stack, and image identities.</li>
+            <li>Seed the accepted checkpoint.</li>
+            <li>Run only the added repairs and required regression checks.</li>
+            <li>Append the new cost and evidence to the lineage.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="audit">
+      <h2>Senior review checklist</h2>
+      <p class="section-intro">Production comparison checklist.</p>
+      <table>
+        <tr><th>Area</th><th>What to prove</th><th>Current signal</th></tr>
+        <tr><td>Definition integrity</td><td>Exact versions, no duplicate ownership, all nodes reachable, no cycles, prompt and test identities fixed.</td><td>Strong compiler checks. The full six-depth catalog is still draft.</td></tr>
+        <tr><td>Prompt boundary</td><td>Agent receives only the selected product work and intended guidance. Grader-only selections do not change prompt text.</td><td>Hash equality check exists.</td></tr>
+        <tr><td>Stack fairness</td><td>Same product work and scored checks. Only stack access and stack-specific setup differ.</td><td>Adapter boundary exists. Needs qualified reference evidence per stack.</td></tr>
+        <tr><td>Grader correctness</td><td>Known-good app passes. Known defects fail the intended criterion without collateral failures.</td><td>Mutation framework exists. Qualification coverage is the gating evidence.</td></tr>
+        <tr><td>Failure attribution</td><td>Application failure, inconclusive evidence, provider failure, and harness failure remain separate.</td><td>Central evidence disposition table exists.</td></tr>
+        <tr><td>Repair quality</td><td>Failures contain useful structured evidence. Repeated unchanged failures stop. Accepted source remains recoverable.</td><td>Checkpoint and repair lineage exist. Cost efficiency still needs run evidence.</td></tr>
+        <tr><td>Parallel isolation</td><td>Every attempt gets unique ports, database, containers, paths, and locks.</td><td>Run index, leases, and lock keys exist. Appliance reference qualification covers all three stacks through depth 3.</td></tr>
+        <tr><td>Reproducibility</td><td>Plan, engine, definitions, adapters, image, model, source, pricing, and checks are all recorded.</td><td>Identity model is broad and strict.</td></tr>
+        <tr><td>Code size</td><td>Large orchestration files have clear internal phases and focused tests.</td><td><code>commands/bench.ts</code> and <code>grader/grade.ts</code> remain the main responsibility concentrations.</td></tr>
+        <tr><td>Production data</td><td>Only qualified, complete, comparable attempts enter stack conclusions.</td><td>Dependency depths 1 through 3 have qualified model-free evidence. Paid comparison data must pass the same artifact validation.</td></tr>
+      </table>
+      <div class="callout risk"><strong>Main risk.</strong> Large execution files can duplicate selection, scoring, cleanup, or retry policy.</div>
+    </section>
+  </main>
+
+</body>
+</html>

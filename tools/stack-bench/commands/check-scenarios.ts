@@ -252,7 +252,7 @@ function main(args: readonly string[]): number {
             if (recipeScope === undefined && prompt !== null
               && !prompt.includes(normalizeText(criterion.statedBy))) {
               staleStatementWarnings += 1;
-              console.log(`  warn F${feature.id} ${criterion.id}: statedBy text is not in the legacy level ${level} prompt`);
+              console.log(`  warn F${feature.id} ${criterion.id}: statedBy text is not in the level ${level} prompt`);
             }
           } else if (recipeScope === undefined && criterion.points > 0) {
             unstatedWarnings += 1;
@@ -301,7 +301,7 @@ function main(args: readonly string[]): number {
   console.log(problems > 0
     ? `\n${problems} error(s); ${warnings} warning(s)`
     : warnings > 0
-      ? `\n0 errors; ${warnings} warning(s) (${unstatedWarnings} point-carrying criteria lack statedBy; ${staleStatementWarnings} statedBy references are outside legacy prompts)`
+      ? `\n0 errors; ${warnings} warning(s) (${unstatedWarnings} point-carrying criteria lack statedBy; ${staleStatementWarnings} statedBy references are outside level prompts)`
       : '\n0 errors; 0 warnings');
   return problems > 0 ? 1 : 0;
 }

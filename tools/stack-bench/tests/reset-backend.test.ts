@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { resetBackend } from '../src/stacks/backend-reset.js';
-import { proveMongoDbUse, provePostgresUse,
-  resetPostgres } from '../src/stacks/stack-backend-operations.js';
+import { proveMongoDbUse } from '../src/stacks/backends/mongodb-operations.js';
+import { provePostgresUse, resetPostgres } from '../src/stacks/backends/postgres-operations.js';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout }
   from '../src/runtime/spacetime-layout.js';
@@ -80,7 +80,7 @@ test('the reset entrypoint reports a generated layout separately from a harness 
       });
     assert.equal(result.status, 10);
     assert.match(result.stderr, /^GENERATED_APP_LAYOUT:/);
-    assert.doesNotMatch(result.stderr, /stack-backend-operations|at file:/);
+    assert.doesNotMatch(result.stderr, /at file:/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -169,7 +169,7 @@ export interface ModularTaskRequest extends UnknownRecord {
 }
 
 // A bound request follows the release: modular releases resolve treatments,
-// legacy releases resolve packs.
+// pack-based releases resolve packs.
 export type BoundRecipeTaskRequestResult =
   RecipeTaskRequestResult | ModularRecipeTaskRequestResult;
 
@@ -678,10 +678,10 @@ export function createBoundRecipeTaskRequest(binding: BoundRecipeTaskBinding,
   if ((options.featureIds ?? []).length || (options.requestedSpecifications ?? []).length
     || (options.expectedSpecifications ?? []).length
     || (options.observedSpecifications ?? []).length) {
-    throw new Error('legacy recipes do not support modular feature/specification selection');
+    throw new Error('pack-based recipes do not support modular feature/specification selection');
   }
   if (!isRecipeTaskBinding(binding)) {
-    throw new Error('legacy recipes require a compiled recipe release');
+    throw new Error('pack-based recipes require a compiled recipe release');
   }
   return createRecipeTaskRequest(binding, options);
 }
@@ -693,9 +693,9 @@ export function resolveBoundRecipeTaskRequest(binding: BoundRecipeTaskBinding,
     if (request?.schemaVersion !== 3) throw new Error('modular recipe requires a schema-3 task request');
     return resolveModularRecipeTaskRequest(binding, request);
   }
-  if (request?.schemaVersion !== 1) throw new Error('legacy recipe requires a schema-1 task request');
+  if (request?.schemaVersion !== 1) throw new Error('pack-based recipe requires a schema-1 task request');
   if (!isRecipeTaskBinding(binding)) {
-    throw new Error('legacy recipes require a compiled recipe release');
+    throw new Error('pack-based recipes require a compiled recipe release');
   }
   return resolveRecipeTaskRequest(binding, request);
 }
