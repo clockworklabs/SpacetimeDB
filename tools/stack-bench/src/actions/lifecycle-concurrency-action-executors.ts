@@ -13,6 +13,7 @@ import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harnes
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainerName } from '../stacks/database-containers.js';
+import type { RuntimeControlMode, RuntimeControlSpec } from '../runtime/backend-control.js';
 
 type UnknownRecord = Record<string, unknown>;
 type Sleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
@@ -381,11 +382,11 @@ async function freshClient({ input, capabilities }: ActionArguments<ActorInput>)
 interface LifecycleCapabilityOptions {
   readonly target: 'app-server' | 'backend-runtime';
   readonly control: (
-    restartSpec: unknown,
-    mode: 'restart' | 'start' | 'stop',
+    restartSpec: RuntimeControlSpec,
+    mode: RuntimeControlMode,
     options: { readonly signal: AbortSignal },
   ) => Promise<unknown>;
-  readonly restartSpec?: unknown;
+  readonly restartSpec?: RuntimeControlSpec;
   readonly sleep: Sleep;
 }
 
@@ -399,6 +400,7 @@ export function createLifecycleCapability({ restartSpec, target,
         inconclusive(application
           ? 'no backend control supplied, cannot control the app server'
           : 'no backend control supplied, backend was never restarted');
+        return;
       }
       try {
         await control(restartSpec, mode, { signal });

@@ -55,7 +55,9 @@ import {
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/lifecycle-concurrency-action-executors.js';
-import { controlAppServer, controlBackendRuntime } from '../src/runtime/backend-control.js';
+import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec }
+  from '../src/runtime/backend-control.js';
+import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -99,7 +101,7 @@ type GradeArgs = {
   label?: string;
   feature?: number;
   spec?: string;
-  restartSpec?: unknown;
+  restartSpec?: RuntimeControlSpec;
   backend?: string;
   track?: string;
   recipe?: string;
@@ -117,7 +119,7 @@ type GradeArgs = {
 type GradeRunContext = {
   runId: string;
   roomName: (base: string) => string;
-  restartSpec?: unknown;
+  restartSpec?: RuntimeControlSpec;
   url: string;
   backend?: string;
   actions: unknown[];
@@ -205,7 +207,8 @@ function parseArgs(argv: readonly string[]): GradeArgs {
       case '--label': args.label = argv[++i]; break;
       case '--feature': args.feature = parseInt(argv[++i] as string, 10); break;
       case '--spec': args.spec = argv[++i]; break;
-      case '--restart-spec': args.restartSpec = JSON.parse(argv[++i] as string); break;
+      case '--restart-spec':
+        args.restartSpec = parseRuntimeControlSpec(JSON.parse(argv[++i] as string)); break;
       // Needed to issue the spec's named actions: which stack to talk to, and
       // which track declares the action names.
       case '--backend': args.backend = argv[++i]; break;

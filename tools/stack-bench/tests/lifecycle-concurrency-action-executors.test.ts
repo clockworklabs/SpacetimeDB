@@ -24,6 +24,7 @@ interface ServiceOverrides {
 }
 
 const sleep = async (_milliseconds?: number, _signal?: AbortSignal): Promise<void> => {};
+const restartSpec = { backend: 'stub', app: '.', port: 7000, probe: '' };
 
 function services(
   actors: ReadonlyMap<string, unknown> = new Map(),
@@ -123,7 +124,7 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   assert.match(missing.summary ?? '', /no backend control/);
 
   const refusedError = Object.assign(new Error('refused'), { status: 3 });
-  const refusedCapability = createLifecycleCapability({ restartSpec: { kind: 'test' },
+  const refusedCapability = createLifecycleCapability({ restartSpec,
     target: 'backend-runtime', sleep,
     control: async () => { throw refusedError; } });
   const refused = await run({ do: 'restartBackend', settleMs: 0 },
@@ -132,25 +133,25 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   assert.match(refused.summary ?? '', /benchmark-owned instance/);
 
   const calls: Array<readonly [unknown, string]> = [];
-  const successful = createLifecycleCapability({ restartSpec: { kind: 'test' },
+  const successful = createLifecycleCapability({ restartSpec,
     target: 'backend-runtime', sleep,
     control: async (spec, mode) => { calls.push([spec, mode]); } });
   const passed = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: successful }));
   assert.equal(passed.status, 'passed');
-  assert.deepEqual(calls, [[{ kind: 'test' }, 'restart']]);
+  assert.deepEqual(calls, [[restartSpec, 'restart']]);
 });
 
 test('a generated app server timing out is an application failure, not a harness failure', async () => {
   const timedOut = Object.assign(new Error('app start timed out'), { code: 'ETIMEDOUT' });
-  const applicationLifecycle = createLifecycleCapability({ restartSpec: { kind: 'test' },
+  const applicationLifecycle = createLifecycleCapability({ restartSpec,
     target: 'app-server', sleep, control: async () => { throw timedOut; } });
   const appResult = await run({ do: 'startAppServer', settleMs: 0 },
     services(new Map(), { applicationLifecycle }));
   assert.equal(appResult.status, 'failed');
   assert.match(appResult.summary ?? '', /could not start the app server/);
 
-  const backendLifecycle = createLifecycleCapability({ restartSpec: { kind: 'test' },
+  const backendLifecycle = createLifecycleCapability({ restartSpec,
     target: 'backend-runtime', sleep,
     control: async () => { throw timedOut; } });
   const backendResult = await run({ do: 'restartBackend', settleMs: 0 },

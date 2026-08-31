@@ -35,7 +35,8 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeRunJson } from "../src/evidence/artifacts.js";
-import { controlBackendRuntime } from "../src/runtime/backend-control.js";
+import { controlBackendRuntime, parseRuntimeControlSpec } from "../src/runtime/backend-control.js";
+import type { RuntimeControlSpec } from "../src/runtime/backend-control.js";
 import {
   classifyMutationResult,
   groupMutationsByScenario,
@@ -81,7 +82,7 @@ type MutationSpec = MutationManifest & {
 type MutationArgs = {
   app?: string; url?: string; mutations?: string; level?: string; spec?: string; backend?: string;
   track?: string; recipe?: string; selectedCheckKeys?: string[]; dbName?: string; runIndex?: string;
-  slug?: string; probe?: string; restartSpec?: unknown; out?: string; parentAttemptId?: string;
+  slug?: string; probe?: string; restartSpec?: RuntimeControlSpec; out?: string; parentAttemptId?: string;
   mutationShardIndex?: number; mutationShardCount?: number; resumeFrom?: string; checkpointOut?: string;
   baselineBundle?: string; expectedCalibrationIdentity?: JsonRecord; maxRuntimeMinutes?: number;
   imageId?: string; mutationAttemptId?: string; expectedRecipeSha256?: string;
@@ -129,7 +130,9 @@ function parseArgs(argv: readonly string[]): MutationArgs {
     else if (argv[i] === "--run-index") a.runIndex = argv[++i];
     else if (argv[i] === "--track-slug") a.slug = argv[++i];
     else if (argv[i] === "--probe") a.probe = argv[++i];
-    else if (argv[i] === "--restart-spec") a.restartSpec = JSON.parse(argv[++i] as string);
+    else if (argv[i] === "--restart-spec") {
+      a.restartSpec = parseRuntimeControlSpec(JSON.parse(argv[++i] as string));
+    }
     else if (argv[i] === "--out") a.out = argv[++i];
     else if (argv[i] === "--parent-attempt-id") a.parentAttemptId = argv[++i];
     else if (argv[i] === "--mutation-shard-index") a.mutationShardIndex = Number(argv[++i]);

@@ -38,6 +38,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   writeBackendLease } from '../src/runtime/backend-lease.js';
 import { captureApplicationDiagnostics, controlAppServer } from '../src/runtime/backend-control.js';
+import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
@@ -106,7 +107,6 @@ type CommandFailure = Error & { stdout?: string | Buffer; stderr?: string | Buff
   status?: number | null; signal?: NodeJS.Signals | null };
 type GradeOptions = { observation?: 'scored' | 'observed'; out?: string | null;
   sourceSha256?: string | null; applicationFailure?: RunOutcome | null };
-type RestartSpec = { backend: string; app: string; port: number | null; probe: string };
 type MutationControlResult = UnknownRecord & { ok: boolean; artifact?: string;
   skipped?: boolean; processError?: string | null; outcome: RunOutcome | null };
 type RecipeTask = (BoundRecipeTaskRequestResult | ProgressionRecipeSelections['grader']) & { agentRequest?: UnknownRecord;
@@ -497,7 +497,7 @@ export function sourceBoundFirstBuildOutcome(
 export async function materializeAcceptedSource(
   sourcePath: string,
   appDir: string,
-  application: RestartSpec,
+  application: RuntimeControlSpec,
   lifecycle: typeof controlAppServer = controlAppServer,
 ): Promise<void> {
   const accepted = hashDirectory(sourcePath);
@@ -803,11 +803,11 @@ function grade(
 }
 
 function restartSpecFor(args: Pick<GradeArguments, 'backend' | 'runIndex'>,
-  appDir: string, track: Track): RestartSpec {
+  appDir: string, track: Track): RuntimeControlSpec {
   if (!args.backend) throw new Error('restart specification requires a backend');
   const port = portsFor(track, args.backend, args.runIndex).vite ?? null;
-  return { backend: args.backend, app: appDir, port: port == null ? null : Number(port),
-    probe: '' };
+  if (port == null) throw new Error(`stack ${args.backend} has no application port`);
+  return { backend: args.backend, app: appDir, port: Number(port), probe: '' };
 }
 
 function runMutationControl(

@@ -8,22 +8,28 @@ import type { TextCommandExecutor } from './command-executor.js';
 
 export { hostedStopScript } from '../stacks/stack-lifecycle-operations.js';
 
-interface BackendControlSpec extends Record<string, unknown> {
+export interface RuntimeControlSpec {
   backend: string;
   app: string;
-}
-
-interface DiagnosticsOptions {
-  exec?: TextCommandExecutor;
-}
-
-interface BackendControlOptions {
-  signal?: AbortSignal | null;
-}
-
-interface ApplicationControlSpec extends BackendControlSpec {
   port: number;
   probe: string;
+}
+
+export type RuntimeControlMode = 'restart' | 'stop' | 'start';
+
+interface DiagnosticsOptions { exec?: TextCommandExecutor }
+interface RuntimeControlOptions { signal?: AbortSignal | null }
+
+export function parseRuntimeControlSpec(value: unknown): RuntimeControlSpec {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || !('backend' in value) || typeof value.backend !== 'string' || !value.backend
+    || !('app' in value) || typeof value.app !== 'string' || !value.app
+    || !('port' in value) || typeof value.port !== 'number' || !Number.isInteger(value.port)
+    || value.port <= 0 || value.port > 65535
+    || !('probe' in value) || typeof value.probe !== 'string') {
+    throw new Error('runtime control spec is incomplete');
+  }
+  return { backend: value.backend, app: value.app, port: value.port, probe: value.probe };
 }
 
 export function captureApplicationDiagnostics(
@@ -44,60 +50,33 @@ export function captureApplicationDiagnostics(
 }
 
 export async function controlBackendRuntime(
-  spec: unknown,
-  mode = 'restart',
-  { signal = null }: BackendControlOptions = {},
-): Promise<unknown> {
-  if (!spec || typeof spec !== 'object' || Array.isArray(spec)
-    || !('backend' in spec) || typeof spec.backend !== 'string' || !spec.backend
-    || !('app' in spec) || typeof spec.app !== 'string' || !spec.app) {
-    throw new Error('backend control spec is incomplete');
-  }
-  const controlSpec: BackendControlSpec = { ...spec, backend: spec.backend, app: spec.app };
-  if (!['restart', 'stop', 'start'].includes(mode)) {
-    throw new Error(`unknown backend control mode ${mode}`);
-  }
-  const { lease } = leaseFromEnv(process.env, { backend: controlSpec.backend, active: true });
-  const adapter = STACK_ADAPTER_REGISTRY.get(controlSpec.backend);
-  return executeStackCapability(adapter, 'lifecycle', 'control',
-    { ...controlSpec, adapterId: adapter.id, lease, mode, signal });
+  spec: RuntimeControlSpec,
+  mode: RuntimeControlMode = 'restart',
+  { signal = null }: RuntimeControlOptions = {},
+): Promise<void> {
+  const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
+  const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
+  await executeStackCapability(adapter, 'lifecycle', 'control',
+    { ...spec, adapterId: adapter.id, lease, mode, signal });
 }
 
 // Always control the generated app server, not the stack's backend runtime.
 export async function controlAppServer(
-  spec: unknown,
-  mode = 'restart',
-  { signal = null }: BackendControlOptions = {},
+  spec: RuntimeControlSpec,
+  mode: RuntimeControlMode = 'restart',
+  { signal = null }: RuntimeControlOptions = {},
 ): Promise<void> {
-  if (!spec || typeof spec !== 'object' || Array.isArray(spec)
-    || !('backend' in spec) || typeof spec.backend !== 'string' || !spec.backend
-    || !('app' in spec) || typeof spec.app !== 'string' || !spec.app
-    || !('port' in spec) || !Number.isInteger(Number(spec.port))
-    || Number(spec.port) <= 0 || Number(spec.port) > 65535
-    || !('probe' in spec) || typeof spec.probe !== 'string') {
-    throw new Error('application control spec is incomplete');
-  }
-  if (!['restart', 'stop', 'start'].includes(mode)) {
-    throw new Error(`unknown application control mode ${mode}`);
-  }
-  const controlSpec: ApplicationControlSpec = {
-    ...spec,
-    backend: spec.backend,
-    app: spec.app,
-    port: Number(spec.port),
-    probe: spec.probe,
-  };
-  const { lease } = leaseFromEnv(process.env, { backend: controlSpec.backend, active: true });
-  const adapter = STACK_ADAPTER_REGISTRY.get(controlSpec.backend);
+  const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
+  const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
   const environment = {
     ...leasedDatabaseEnvironment(adapter, {
       database: lease.resources.database,
       networkMode: lease.resources.buildContainer?.networkMode,
     }),
-    VITE_PORT: String(controlSpec.port),
+    VITE_PORT: String(spec.port),
   };
   await controlHostedAppServer({
-    ...controlSpec,
+    ...spec,
     adapterId: adapter.id,
     lease,
     mode,

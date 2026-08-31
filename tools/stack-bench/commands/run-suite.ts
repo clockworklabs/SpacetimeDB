@@ -20,7 +20,9 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
-import { controlBackendRuntime } from '../src/runtime/backend-control.js';
+import { controlBackendRuntime, parseRuntimeControlSpec }
+  from '../src/runtime/backend-control.js';
+import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
@@ -69,7 +71,6 @@ type DeclaredSuite = TrackSuite;
 type Failure = Error & { stdout?: string; stderr?: string; status?: number | null; signal?: string | null;
   code?: string };
 type FailureDetail = { message?: unknown; stderr?: unknown } | null;
-type RestartSpec = Record<string, unknown>;
 type RecipeTaskArgument = { recipe: { id: string; version: string; contentSha256?: string } } & Record<string, unknown>;
 type RunArguments = {
   app: string;
@@ -90,7 +91,7 @@ type RunArguments = {
   credentialAliases?: unknown;
   regressionChecks: string[];
   sourceSha256?: string;
-  restartSpec?: RestartSpec;
+  restartSpec?: RuntimeControlSpec;
   applicationFailure?: ApplicationFailure;
   parentAttemptId?: string;
   databaseLease?: BackendLease | null;
@@ -296,7 +297,7 @@ function parseArgs(argv: string[]): RunArguments {
       case '--track': a.track = argv[++i] ?? ''; break;
       case '--pack': a.packIds.push(...(argv[++i] ?? '').split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...(argv[++i] ?? '').split(',').filter(Boolean)); break;
-      case '--restart-spec': a.restartSpec = JSON.parse(argv[++i] ?? ''); break;
+      case '--restart-spec': a.restartSpec = parseRuntimeControlSpec(JSON.parse(argv[++i] ?? '')); break;
       case '--application-failure-json': a.applicationFailure = JSON.parse(argv[++i] ?? ''); break;
       case '--run-index': a.runIndex = parseInt(argv[++i] ?? '', 10); break;
       case '--no-reset': a.reset = false; break;
@@ -895,11 +896,11 @@ async function main() {
     if (!args.reset) return true;
     const requiresReseed = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'reset', 'requires-reseed');
-    const controlledRestart = track.reseedOnReset && Boolean(args.restartSpec) && requiresReseed;
-    if (controlledRestart) {
+    const restartSpec = args.restartSpec;
+    if (track.reseedOnReset && restartSpec && requiresReseed) {
       process.stdout.write('  stop application ... ');
       try {
-        await controlBackendRuntime(args.restartSpec, 'stop');
+        await controlBackendRuntime(restartSpec, 'stop');
         console.log('ok');
       } catch (error) {
         const failure: Failure = error instanceof Error ? error : new Error(String(error));
@@ -926,14 +927,14 @@ async function main() {
       console.log('ok');
       return true;
     };
-    if (track.reseedOnReset && args.restartSpec && requiresReseed) {
+    if (track.reseedOnReset && restartSpec && requiresReseed) {
       process.stdout.write('  restart     ... ');
       // Judge restart success with the readiness probe. The restart command can
       // leave a long-running server process behind, so the command also needs a deadline.
       try {
         // Do not give a background server an inherited pipe that keeps the
         // synchronous restart command open.
-        await controlBackendRuntime(args.restartSpec, controlledRestart ? 'start' : 'restart');
+        await controlBackendRuntime(restartSpec, 'start');
       } catch (err) {
         const failure: Failure = err instanceof Error ? err : new Error(String(err));
         lastResetOutcome = resetFailureOutcome(failure);
@@ -941,7 +942,7 @@ async function main() {
           .toString().trim().split('\n').slice(-3).join(' | ').slice(0, 300);
         lastResetFailure = detail || null;
         console.log('FAILED (application did not restart)');
-        console.log(`    control: ${JSON.stringify(args.restartSpec)}`);
+        console.log(`    control: ${JSON.stringify(restartSpec)}`);
         console.log(`    ${detail}`);
         return false;
       }

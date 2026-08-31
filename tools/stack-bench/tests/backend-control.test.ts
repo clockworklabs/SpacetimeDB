@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { captureApplicationDiagnostics, controlBackendRuntime, hostedStopScript }
+import { captureApplicationDiagnostics, controlBackendRuntime, hostedStopScript,
+  parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { controlHostedAppServer, hostedLaunchCommand, hostedRecordedProcessStopScript }
@@ -14,6 +15,15 @@ interface RecordedCommand {
   argv: string[];
   options: TextCommandOptions;
 }
+
+test('runtime control input is typed at the serialized boundary', () => {
+  const input = { backend: 'mongodb', app: '/app', port: 6301, probe: '/api/items' };
+  assert.deepEqual(parseRuntimeControlSpec(input), input);
+  assert.throws(() => parseRuntimeControlSpec({ ...input, port: null }),
+    /runtime control spec is incomplete/);
+  assert.throws(() => parseRuntimeControlSpec({ ...input, port: '6301' }),
+    /runtime control spec is incomplete/);
+});
 
 test('backend control refuses without an authenticated lease', async () => {
   const priorPath = process.env.STACK_BENCH_LEASE;
