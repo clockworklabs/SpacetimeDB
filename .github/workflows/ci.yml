@@ -1255,6 +1255,7 @@ jobs:
           key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
   unity-webgl-build:
+    name: Unity WebGL build
     needs: [merge_queue_noop, lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
