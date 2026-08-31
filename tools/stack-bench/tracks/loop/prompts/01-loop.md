@@ -1,4 +1,4 @@
 # Loop fixture
 
-Expose a visible heading with `data-testid="app-title"` whose text is
+Expose a visible heading with `id="app-title"` whose text is
 `Fixture Chat`.

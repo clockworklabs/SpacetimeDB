@@ -23,9 +23,9 @@ type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;
 const EXPECTED = {
   1: {
-    mongodb: ['eaacc94ad9ef94b9e3cc1c4b5660d6974c4cf660236d76a8dbc236ddc6582336', 5646],
-    postgres: ['fad649a94cdf32404ace76a2dee2538e3f1d44eeb860f08871c4df7ea8d197f6', 5688],
-    spacetime: ['4ed0e3d8e18268816995fd952cfa67240f446bf26292e7a7afb97a1a503df544', 8960],
+    mongodb: ['7a68ac41fbf9685904d0de480a889f7b192ffedb697040ac1d256f1a4d48dba7', 5702],
+    postgres: ['5444d9d6640f2a350e876ff799b4d7daa42150a375173ddfc6f4f98e8c381c66', 5744],
+    spacetime: ['a96468d334a7c9143a1f99a4fe610c28023c63004e8718e6a4afa7da4b935003', 9012],
   },
   2: {
     mongodb: ['45aee8462fc2f6b15348dafb89f5234113efaf345da6281dd508912cf8f0524f', 6669],
@@ -39,8 +39,8 @@ const EXPECTED = {
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
-test('agent contract cleanup changes only complete evaluation phrases', () => {
-  assert.equal(agentVisibleContractText('Use this test action. Keep the contest action.'),
+test('agent contract validation leaves product language unchanged', () => {
+  assert.equal(agentVisibleContractText('Use this application action. Keep the contest action.'),
     'Use this application action. Keep the contest action.');
 });
 

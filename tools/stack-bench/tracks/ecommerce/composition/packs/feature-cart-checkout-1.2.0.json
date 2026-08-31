@@ -40,8 +40,8 @@
         "id": "ecommerce.feature.cart-checkout.hooks",
         "path": "prompts/modular/l1-hooks.md",
         "order": 2300,
-        "from": "## Cart hooks",
-        "until": "## Review hooks",
+        "from": "## Cart controls",
+        "until": "## Review controls",
         "modes": [
           "fresh"
         ]

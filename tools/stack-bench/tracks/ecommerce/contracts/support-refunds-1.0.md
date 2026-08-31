@@ -1,6 +1,6 @@
 # Support refund application interface
 
-## Support refund hooks
+## Support refund controls
 
 Within a `support-ticket`, use `support-refund` for the refund action and
 `support-refund-total` for the recorded refund amount. The refund action must expose its input in

@@ -1,4 +1,4 @@
-## Staff access hooks
+## Staff access controls
 
 Use `staff-signin-username`, `staff-signin-password`, and `staff-signin-submit` for sign-in. Show
 the active account in `staff-current-user`. Use `staff-link` for the staff area and `admin-link`

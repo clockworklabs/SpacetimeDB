@@ -17,7 +17,7 @@
       { "id": "ecommerce.feature.reviews.requirement", "path": "prompts/modular/l1-features.md", "order": 500, "from": "## Reviews", "until": "## Warehouse administration", "modes": ["fresh"] }
     ],
     "contracts": [
-      { "id": "ecommerce.feature.reviews.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2400, "from": "## Review hooks", "until": "## Warehouse administration hooks", "modes": ["fresh"] }
+      { "id": "ecommerce.feature.reviews.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2400, "from": "## Review controls", "until": "## Warehouse administration controls", "modes": ["fresh"] }
     ]
   },
   "checks": [

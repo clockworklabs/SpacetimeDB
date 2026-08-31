@@ -6,4 +6,4 @@ Use these `id` values:
 - `restore-cart` restores that cart.
 - `cart-restore-warning` lists the names of items that could not be restored.
 
-The existing `cart-item` hook identifies each item restored to the active cart.
+The existing `cart-item` control identifies each item restored to the active cart.

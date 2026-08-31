@@ -1,6 +1,6 @@
 # Level 3 application interface
 
-## Reservation hooks
+## Reservation controls
 
 | Element ID | Element |
 |---|---|
@@ -8,7 +8,7 @@
 | `cart-item-expired` | expired marker inside `cart-item` |
 | `cart-expired-notice` | notice shown after cart expiration |
 
-## Scheduled restock hooks
+## Scheduled restock controls
 
 | Element ID | Element |
 |---|---|
@@ -22,7 +22,7 @@
 | `pending-restock-cancel` | cancel button inside the pending row |
 | `stock-ledger-entry` | completed stock movement row |
 
-## Order delivery hooks
+## Order delivery controls
 
 | Element ID | Element |
 |---|---|

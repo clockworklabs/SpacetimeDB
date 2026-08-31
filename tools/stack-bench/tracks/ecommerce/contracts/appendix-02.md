@@ -35,7 +35,7 @@ Rules:
 | `cart-toggle` | control that opens the cart |
 | `cart-count` | the number of items currently in the cart |
 | `orders-toggle` | control that opens the customer's order history |
-| `search-results` | the container holding search results; its item cards carry the same hooks as the storefront's |
+| `search-results` | the container holding search results; its item cards use the same controls as the storefront's |
 | `item-detail` | the panel or page showing one item, opened from its card |
 | `review-rating` | the form control choosing a rating from 1 to 5 — an input or a select, so it can be driven by automation |
 | `review-input` | the text input for a new review's comment |
@@ -91,5 +91,5 @@ Rules:
 | `return-item` | only on orders that have shipped |
 | `order-error` | appears on a transfer that would overdraw a warehouse, or cancelling an order that already shipped |
 
-Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
+Before declaring DEPLOY_COMPLETE, verify the interface by running the contract
 linter (command provided in your build instructions) and fix any failures.

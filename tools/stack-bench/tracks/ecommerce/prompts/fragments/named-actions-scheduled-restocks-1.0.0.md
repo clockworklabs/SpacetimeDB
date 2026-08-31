@@ -1,8 +1,7 @@
 ### Named actions for scheduled restocks
 
-These writes already appear in the requested feature. Give them the exact
-named actions below so external clients can use server authorization without a
-browser. Use the stack's normal write path.
+These writes already appear in the requested feature. Expose the exact named
+actions below through the stack's normal write path.
 
 | Action | MongoDB/PostgreSQL app | SpacetimeDB app |
 |---|---|---|

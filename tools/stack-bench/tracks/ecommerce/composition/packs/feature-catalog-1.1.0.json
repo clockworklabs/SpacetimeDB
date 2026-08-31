@@ -17,7 +17,7 @@
       { "id": "ecommerce.feature.catalog.requirement", "path": "prompts/modular/l1-features.md", "order": 200, "from": "## Catalog", "until": "## Purchasing and orders", "modes": ["fresh"] }
     ],
     "contracts": [
-      { "id": "ecommerce.feature.catalog.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2000, "from": "## Catalog hooks", "until": "## Account hooks", "modes": ["fresh"] }
+      { "id": "ecommerce.feature.catalog.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2000, "from": "## Catalog controls", "until": "## Account controls", "modes": ["fresh"] }
     ]
   },
   "checks": [

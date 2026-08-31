@@ -39,7 +39,7 @@ function commandStderr(error: unknown): string {
   return String(error.stderr);
 }
 
-test('selected hook linting uses only public test ids from the composed contract', () => {
+test('selected contract linting uses only declared control ids', () => {
   assert.deepEqual(contractControlIds([
     'Use `staff-link` and `staff-signin-submit`.',
     'The password is `stackbench-staff-2026`.',
@@ -47,26 +47,18 @@ test('selected hook linting uses only public test ids from the composed contract
   ].join('\n')), ['staff-link', 'staff-signin-submit']);
 });
 
-test('agent-visible contracts do not disclose grading or test execution', () => {
-  const visible = agentVisibleContractText([
-    '## What the harness needs',
-    '# Account testing interface',
-    'The runner locates controls. The test fixture provides accounts.',
-    '| Test ID | Element |',
-  ].join('\n'));
-  assert.doesNotMatch(visible,
-    /harness|runner|testing interface|test fixture|test id|hooks|external client|run configuration/i);
-  assert.match(visible, /provided data/i);
-  assert.match(visible, /Application interface/i);
-  assert.equal(agentVisibleContractText('Keep the contest action. Expose the test action.'),
-    'Keep the contest action. Expose the application action.');
-  const futureFeature = agentVisibleContractText([
-    'Use 1.00 so the grader can verify that a non-admin is refused.',
-    'Expose the testing calls below so Stack Bench can verify server authorization.',
-  ].join('\n'));
-  assert.doesNotMatch(futureFeature, /Stack Bench|benchmark|grader|grading|tests?|testing/i);
-  assert.match(futureFeature, /so that a non-admin is refused/);
-  assert.match(futureFeature, /to support server authorization/);
+test('agent-facing documents reject internal evaluation language', () => {
+  assert.equal(agentVisibleContractText('Expose the account controls.'),
+    'Expose the account controls.');
+  for (const source of [
+    'Stack Bench checks this.',
+    'The grader checks this.',
+    'The automated harness checks this.',
+    'Expose this test action.',
+    'Use data-testid="account-name".',
+  ]) {
+    assert.throws(() => agentVisibleContractText(source), /contains internal language/);
+  }
 });
 
 test('agent-visible contracts include only the selected stack section', () => {
@@ -163,7 +155,7 @@ test('ordinary runs select scored checks while test-development checks require e
   assert.equal(development.selection.completeness, 'subset');
 });
 
-test('selected pack prompts contain only their own framework-neutral testing calls', () => {
+test('selected pack prompts contain only their own framework-neutral named actions', () => {
   const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.sequential-l1@2.5.0');
   const neutral = resolveGuidanceProfile('neutral@1.7.0', ['postgres']);

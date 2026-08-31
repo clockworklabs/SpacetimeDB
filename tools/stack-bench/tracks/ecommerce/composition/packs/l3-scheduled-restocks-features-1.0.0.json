@@ -16,7 +16,7 @@
   "task": {
     "requirements": [{ "id": "ecommerce.l3.scheduled-restocks", "path": "prompts/modular/l3-features-1.0.0.md", "order": 3010, "from": "## Scheduled restocks", "until": "## Order delivery", "modes": ["upgrade"] }],
     "contracts": [
-      { "id": "ecommerce.l3.scheduled-restock-hooks", "path": "contracts/l3-hooks-1.0.md", "order": 3910, "from": "## Scheduled restock hooks", "until": "## Order delivery hooks", "modes": ["upgrade"] },
+      { "id": "ecommerce.l3.scheduled-restock-hooks", "path": "contracts/l3-hooks-1.0.md", "order": 3910, "from": "## Scheduled restock controls", "until": "## Order delivery controls", "modes": ["upgrade"] },
       { "id": "ecommerce.l3.scheduled-restock-testing-calls", "path": "prompts/fragments/named-actions-scheduled-restocks-1.0.0.md", "order": 3911, "modes": ["upgrade"] }
     ]
   },

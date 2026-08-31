@@ -1,10 +1,10 @@
 ## Public application interface
 
-The external client locates visible controls through exact `id` attributes.
+Use these exact `id` attributes on the corresponding visible controls.
 These attributes are only an observation interface; they do not prescribe UI
 structure, data modeling, libraries, transport, or implementation strategy.
 
-## Catalog hooks
+## Catalog controls
 
 | Element ID | Observable element |
 |---|---|
@@ -19,7 +19,7 @@ structure, data modeling, libraries, transport, or implementation strategy.
 | `item-detail` | opened item detail view |
 | `out-of-stock` | visible out-of-stock state |
 
-## Account hooks
+## Account controls
 
 | Element ID | Observable element |
 |---|---|
@@ -34,7 +34,7 @@ structure, data modeling, libraries, transport, or implementation strategy.
 | `signout` | sign-out control |
 | `auth-error` | visible account error |
 
-## Purchasing hooks
+## Purchasing controls
 
 | Element ID | Observable element |
 |---|---|
@@ -45,7 +45,7 @@ structure, data modeling, libraries, transport, or implementation strategy.
 | `order-total` | numeric order total |
 | `buy-error` | visible purchase or checkout error |
 
-## Cart hooks
+## Cart controls
 
 | Element ID | Observable element |
 |---|---|
@@ -60,7 +60,7 @@ structure, data modeling, libraries, transport, or implementation strategy.
 | `checkout-submit` | checkout control |
 | `empty-cart` | visible empty-cart state |
 
-## Review hooks
+## Review controls
 
 | Element ID | Observable element |
 |---|---|
@@ -71,7 +71,7 @@ structure, data modeling, libraries, transport, or implementation strategy.
 | `review-item` | one visible review containing its comment |
 | `review-error` | visible review error |
 
-## Warehouse administration hooks
+## Warehouse administration controls
 
 | Element ID | Observable element |
 |---|---|

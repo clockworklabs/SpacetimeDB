@@ -1,6 +1,6 @@
 # Order-linked support application interface
 
-## Order-linked support hooks
+## Order-linked support controls
 
 Within a `support-ticket`, use `support-order-option` for each order that the customer can attach,
 `support-link-order` to attach the selected order, and `support-order` for the attached order. The

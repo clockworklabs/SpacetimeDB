@@ -1,19 +1,17 @@
 
 
-## Appendix: Testing Hooks (required)
+## Application interface
 
-The app is graded by an automated harness that locates elements **only** via
-`data-testid` attributes. Add the exact test IDs below to the corresponding
-elements. These are plain HTML attributes — they must not change your design,
-styling, architecture, or backend in any way.
+Use these exact `id` attributes on the corresponding visible controls. They do
+not prescribe the design, architecture, or implementation.
 
 Rules:
-- Attribute name is exactly `data-testid`; values are exactly as listed (kebab-case).
-- Repeated elements (each room in the list, each message) carry the same testid on every instance.
+- Attribute name is exactly `id`; values are exactly as listed (kebab-case).
+- Repeated elements such as rooms and messages use the listed ID on every instance.
 - An element that is hidden until a menu/toggle opens still counts, as long as it is in the DOM after its toggle is clicked.
-- Do not add testids beyond this list to elements that could be confused with these.
+- Do not reuse these IDs on unrelated elements.
 
-| Test ID | Element |
+| Element ID | Element |
 |---|---|
 | `app-title` | the app's visible title, naming which backend it is built on (for example "PostgreSQL Chat") |
 | `signup-username` | username input on the sign-up form |
@@ -30,12 +28,12 @@ Rules:
 | `room-name-input` | text input for the new room's name |
 | `room-name-submit` | button that confirms room creation |
 | `room-list` | container listing the rooms |
-| `room-item` | one entry per room inside the room list (repeated testid), containing the room name |
+| `room-item` | one entry per room inside the room list, containing the room name |
 | `online-users` | container listing the usernames of users currently online |
 | `online-user` | appears while that user is signed in, gone once they sign out |
 | `message-input` | text input for composing a message; pressing Enter sends it |
 | `message-list` | scrollable container holding the room's messages |
-| `message-item` | one entry per message (repeated testid), containing the message text and its author's username |
+| `message-item` | one entry per message, containing the message text and its author's username |
 | `leave-room` | button that leaves the current room |
 | `send-error` | visible after a rejected send; must not appear on a successful send |
 | `typing-indicator` | visible while another user in the SAME room is typing; gone within 6s of inactivity |
@@ -60,5 +58,5 @@ Rules:
 | `message-delete` | shown on the author's own messages |
 | `edited-marker` | appears on a message after it is edited |
 
-Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
+Before declaring DEPLOY_COMPLETE, verify the interface by running the contract
 linter (command provided in your build instructions) and fix any failures.
