@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-// Deterministic stand-in used by the fault-injection command. It asks the real Docker
-// launcher to create and lease the build container, enters the partial restart
-// state, then fails before producing an agent result. The benchmark runner must clean up
-// without relying on a successful model session or grade.
+// Enter a partial Docker restart, then fail to test owned-resource cleanup.
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';

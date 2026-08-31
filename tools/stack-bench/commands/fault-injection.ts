@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Model-free lifecycle fault test for the production harness.
-//
-// This creates real Docker and SpacetimeDB resources, enters the real restart
-// script after the owned listener is stopped but before its replacement starts,
-// and proves teardown removes only the exact leased resources. It also verifies
-// that the launcher refuses a same-name container absent from the lease.
+// Fault injection may remove only resources owned by its lease.
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';

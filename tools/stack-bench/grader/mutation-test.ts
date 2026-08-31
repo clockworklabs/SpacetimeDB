@@ -1,23 +1,5 @@
 #!/usr/bin/env node
-// Stack Bench grader validation by mutation testing.
-//
-// A grader that never fails anything is worthless, and one that fails the wrong
-// thing is worse. This deliberately breaks a KNOWN-GOOD app one defect at a
-// time and checks that the grader (a) notices, and (b) notices in the right
-// criterion and nowhere else.
-//
-// A mutation is cleanly caught only when its declared criterion fails
-// conclusively, the known-good baseline is fully passing, and no other
-// criterion regresses. Setup failure, inconclusive evidence and collateral
-// damage are invalid evidence rather than successful kills.
-//
-// Usage: node dist/grader/mutation-test.js --app <app-dir> --url <url> --mutations mutations/<file>.json
-//
-// The manifest binds backend, track, scenario, source edits, and stable check
-// IDs. The selected level and recipe come from the run. Resets and restarts use
-// the same authenticated Docker lease as normal grading. Mutation control has
-// no host-mode or free-form shell escape.
-
+// A valid mutation fails only its declared criterion against a passing baseline.
 import {
   copyFileSync,
   cpSync,
@@ -107,7 +89,6 @@ function jsonObject(value: unknown, label: string): JsonRecord {
   return value as JsonRecord;
 }
 
-// Resolve tooling relative to this file so the runner works from any directory.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GRADER = join(HERE, "grade.js");
 
@@ -172,15 +153,9 @@ function parseArgs(argv: readonly string[]): MutationArgs {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-// Editing a watched source file restarts the server. Grading before it is back
-// fails EVERY feature, which reads as "the mutation was caught" in the target
-// and as collateral everywhere else — three probes were wasted that way. Wait
-// for the app to answer instead of guessing with a sleep.
+// Wait for watched servers to restart before grading.
 async function waitForApp(a: MutationArgs, seconds = 120): Promise<void> {
-  // Git Bash rewrites a bare "/" argument into its own install directory, so a
-  // `--probe /` arrives as "c:/Program Files/Git/" and the check quietly waits
-  // out its timeout against a path that was never part of the app. Anything
-  // that is not a URL or a rooted path is not a probe.
+  // Ignore probe paths mangled by Git Bash path conversion.
   let path = a.probe ?? "/api/rooms";
   if (
     !/^https?:\/\//.test(path) &&

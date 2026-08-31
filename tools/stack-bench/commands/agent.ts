@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// Drives one headless coding session: build a level, upgrade to the next, or fix
-// reported bugs. Self-contained — no dependency on the sequential-upgrade tool.
-//
-// Cost and token usage come from the CLI's own JSON result, so there is no
-// telemetry collector to run.
-//
-// Usage:
-//   node dist/commands/agent.js --mode build   --backend spacetime --level 1 --app <dir>
-//   node dist/commands/agent.js --mode upgrade --backend spacetime --level 2 --app <dir>
-//   node dist/commands/agent.js --mode fix     --backend spacetime --app <dir>
-//
-// Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
 import { execFileSync } from 'node:child_process';
 import type { ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -122,20 +110,14 @@ function sessionUsage(value: unknown): SessionUsage {
   } : {};
 }
 
-// The benchmark runs its own SpacetimeDB host so that measurements describe the
-// module under test rather than whatever else is published on a shared machine,
-// and so restarting it for durability tests cannot take somebody else down.
+// Use only the benchmark-owned SpacetimeDB host.
 const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
 
-// Build the app against the SpacetimeDB in THIS repository, not a published
-// release: otherwise a change to the host, the CLI or the module SDK is not
-// under test, and a result describes software nobody is working on.
+// Test the CLI and SDK from this checkout.
 const LOCAL_CLI = join(REPO, 'target', 'release', 'spacetimedb-cli.exe');
 const STDB_BIN = process.env.SPACETIME_BIN ?? (existsSync(LOCAL_CLI) ? LOCAL_CLI : 'spacetime');
 const LOCAL_PKG = process.env.STDB_PACKAGE ?? join(REPO, 'crates', 'bindings-typescript');
 
-// Both shells and npm read a Windows backslash as an escape, so paths handed to
-// the model are written the one way every tool agrees on.
 const fwd = (path: string): string => path.split('\\').join('/');
 
 // Keep the provider's default thinking budget unless an experiment selects one
@@ -143,22 +125,11 @@ const fwd = (path: string): string => path.split('\\').join('/');
 // visible in the evidence.
 const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 
-// Pin and record effort instead of inheriting an ambient CLI setting.
 const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
 
-// Coding sessions always run in Docker; there is no host execution path. The
-// build container cannot see benchmark definitions, and the model-free
-// container test verifies its lifecycle and SpacetimeDB publish/log path.
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 
-// Set once in main(), because the addresses a build is TOLD to use depend on
-// where the build runs.
-//
-// Host services — the databases and the SpacetimeDB host — stay on
-// the machine, and `localhost` inside a container is the container. Those
-// addresses are rewritten to Docker's host alias. Dev-server ports are NOT
-// rewritten: those servers start inside the container and are published back
-// out, so the grader on the host still reaches them at localhost.
+// Containers reach host services through this address. App ports remain local.
 export function hostServiceAddress(env: NodeJS.ProcessEnv = process.env): string {
   return env.STACK_BENCH_HOST_ALIAS
     ?? (env.STACK_BENCH_APPLIANCE === '1' ? '127.0.0.1' : 'host.docker.internal');
@@ -167,22 +138,14 @@ export function hostServiceAddress(env: NodeJS.ProcessEnv = process.env): string
 const HOST_ADDR = hostServiceAddress();
 const hostUrl = (url: string): string => url.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
 
-// Where the two artifacts under test are mounted. Container paths also keep the
-// repository root out of the prompt.
 const C_PKG = '/deps/spacetimedb.tgz';
 const C_BIN = '/deps/spacetimedb-cli';
 
-// The Linux build of the repository's CLI, which is what a container mounts at
-// C_BIN. Built by container/build-linux-cli.sh; target/release holds the
-// Windows binary and the two must not be confused for each other.
+// The container requires the Linux CLI from this checkout.
 const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
   ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 
-// Measure observed reasoning from the session transcript. The text of a
-// thinking block is redacted at the wire level -- `thinking` is
-// an empty string and the content survives only as an opaque signature -- so
-// this counts blocks and signature bytes. Neither is a token count, but both
-// move with reasoning volume, and they are what the transcript actually has.
+// The transcript exposes reasoning blocks and signature bytes, not reasoning tokens.
 function thinkingVolume(appDir: string, sessionId: string | null | undefined): ThinkingVolume | null {
   if (!sessionId) return null;
   try {
@@ -319,16 +282,10 @@ function parseArgs(argv: readonly string[]): AgentArgs {
       case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i] ?? ''); break;
       case '--thinking': a.thinking = argv[++i] ?? ''; break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
-      // Comma-separated skill directories to inline, e.g.
-      //   --skills typescript-server,typescript-client,cli
       case '--skills': a.skills = (argv[++i] ?? '').split(',').map((skill: string) => skill.trim()).filter(Boolean); break;
       case '--skills-json': a.skills = JSON.parse(argv[++i] ?? ''); break;
       case '--skill-identity-json': a.skillIdentity = validateSkillIdentity(
         JSON.parse(argv[++i] ?? '')); break;
-      // Container or nothing. For sweeps whose claim is that no build could
-      // reach the grader — there, a silent fallback would be a false claim.
-      // An API key, when supplied, is used instead of the mounted plan
-      // credential — it keeps a rotating token off the build's filesystem.
       case '--api-key': a.apiKey = argv[++i] ?? ''; break;
       case '--print-prompt': a.printPrompt = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
@@ -476,23 +433,7 @@ function backendDoc(args: AgentArgs, p: StackRunPorts, track: Track): string {
     .replaceAll('<STDB_PACKAGE>', `file:${C_PKG}`);
 }
 
-// SpacetimeDB is young enough that models have little of it in training data;
-// the skill documents are its API reference, equivalent to what the other stacks
-// get from having been on the internet for a decade.
-// Which documents are inlined is the variable under test in the cost work, so
-// it is a flag rather than an edit: both arms of a comparison then come from
-// one binary, and run.json records which arm produced each number.
-// Whether a containerised run can actually work, checked before anything is
-// spent rather than discovered an hour in as a build error the model gets
-// blamed for. Returns a reason instead of throwing, because the default and the
-// explicit request are answered differently — see resolveIsolation.
-//
-// SpacetimeDB needs a CLI the container can execute. `target/release/
-// spacetimedb-cli.exe` is a Windows PE binary, so container/build-linux-cli.sh
-// compiles a Linux one from this same checkout. The benchmark deliberately
-// tests the CLI in THIS repository rather than a published release, so falling
-// back to a `spacetime` from the image would measure different software and
-// report it under the same name.
+// Fail before a paid session when the selected container cannot run this checkout.
 function containerBlocker(backend: string): string | null {
   try {
     execFileSync('docker', ['image', 'inspect', IMAGE],
@@ -508,9 +449,7 @@ function containerBlocker(backend: string): string | null {
     return `no Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)} — `
       + 'bash tools/stack-bench/container/build-linux-cli.sh';
   }
-  // ELF magic, checked rather than assumed: the path existing says nothing
-  // about which platform the file was built for, and a Windows binary copied
-  // there would fail deep inside a build as an unexplained publish error.
+  // A file at this path must be a Linux executable, not the Windows build.
   const magic = Buffer.alloc(4);
   try {
     const fd = openSync(LINUX_CLI, 'r');
@@ -525,7 +464,6 @@ function containerBlocker(backend: string): string | null {
   return null;
 }
 
-// There is one coding-session topology to secure and clean up: Docker or fail.
 function decideIsolation(args: AgentArgs): { container: true; reason: null } {
   const blocker = containerBlocker(args.backend);
   if (!blocker) return { container: true, reason: null };
@@ -534,17 +472,7 @@ function decideIsolation(args: AgentArgs): { container: true; reason: null } {
   process.exit(2);
 }
 
-// Every round must retain the container pin written by the first round. A
-// missing or non-container marker is ambiguous prior state, never authority to
-// choose a second execution topology.
-//
-// So the decision is made once, at `build`, and recorded beside the app rather
-// than inside it (the app directory is what gets copied into source/ and
-// audited). Later modes read it back and refuse ambiguous prior state.
-//
-// The marker lives outside the app because `build` wipes the app directory.
-// An app with benchmark state and no marker predates this invariant; refuse it
-// rather than guessing where its earlier rounds executed.
+// Pin every round to the build's recorded container topology.
 function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
   const marker = resolve(args.app, '..', '.stack-bench-isolation');
   const backendMarker = resolve(args.app, '..', '.stack-bench-backend');
@@ -573,11 +501,7 @@ function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
     return { container: true, reason: null };
   }
 
-  // No isolation marker. The sibling backend marker is written by every agent
-  // round, so its presence means a previous round already worked here without
-  // recording its topology. (A seeded upgrade does not
-  // have it: restoreSource copies source directories, not dotfiles, so the
-  // first round of a new run still decides fresh.)
+  // A backend marker without an isolation marker is ambiguous prior state.
   if (existsSync(backendMarker)) {
     console.error('agent.js: app has prior benchmark state but no isolation marker');
     console.error('  refusing to guess where earlier rounds ran; start a clean run');
@@ -601,15 +525,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   }
   const common = [
     'Build the app in /app.',
-    // Container runs only, and identical for every backend so no stack gets
-    // more guidance than another.
-    //
-    // Vite binds `localhost` by default. Inside a container that is the
-    // container's own loopback, which a published port does not forward to —
-    // measured: a server on 127.0.0.1 in a container is unreachable from the
-    // host through -p, the same server on 0.0.0.0 answers 200. Without this
-    // every containerised run would build a working app the grader cannot
-    // reach, and fail for a reason that has nothing to do with the database.
+    // Published container ports require the app to bind to all interfaces.
     '',
       'The web application must listen on 0.0.0.0, not localhost, so it is reachable '
       + 'outside its process.',
@@ -741,10 +657,7 @@ async function main() {
     items: recipeBinding.plan.fixture.items,
   }, null, 2) : undefined;
 
-  // Renders what the model would be given, without spending anything or
-  // touching the app directory. The regression gate for harness changes is a
-  // diff of this against a saved copy — captured with the same isolation flags,
-  // since host and container prompts differ by design.
+  // Print the exact prompt without starting a session or changing the app.
   if (args.printPrompt) {
     process.stdout.write(buildPrompt(args, p, track,
       { skillsText, requirementText, contractText, startingCatalog }));
@@ -753,20 +666,11 @@ async function main() {
   if (args.mode === 'build') {
     assertNewOrEmptyDirectory(args.app, 'build application directory');
   }
-  // Printed prompts describe the one supported coding topology but are a pure
-  // review operation: they must work on a release-review machine that does not
-  // have Docker or the build image. A paid session, by contrast, proves the
-  // image and Linux CLI boundary immediately before touching the app.
   resolveIsolation(args);
   const imageIdentity = resolveContainerImage(IMAGE);
-  // Only a build wipes: an upgrade or a fix must find the data the previous
-  // level left, which is the whole point of a cumulative ladder.
-  // Called for every backend, not just those with a dbPort: spacetime has no
-  // database port and would have skipped the pre-build wipe entirely, which is
-  // exactly the backend whose leftover module causes the migration abort.
+  // Build wipes all backend state. Later rounds preserve it.
   ensureDatabase(args.backend, args.runIndex, p.dbPort, track, args.mode === 'build');
-  // A build must start from a new or empty directory. Never turn a caller-
-  // supplied path into permission to recursively erase an existing tree.
+  // Never erase a caller-supplied application tree.
   mkdirSync(args.app, { recursive: true });
   writeFileSync(resolve(args.app, '..', '.stack-bench-backend'), args.backend);
 
@@ -785,10 +689,7 @@ async function main() {
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('STACK_BENCH_CODING_INTERRUPTION_RETRIES must be an integer from 0 to 3');
   }
-  // The benchmark runner stops this process at the adapter deadline.
-  // A wait budget past that point would promise time the
-  // supervisor never grants. DEFAULT_THROTTLE_MAX_WAIT_MS is sized to
-  // span one full subscription usage-window reset.
+  // The throttle wait must fit inside the adapter deadline.
   const throttleWaitRaw = process.env.STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES
     ?? String(DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000);
   const throttleMaxWaitMinutes = Number(throttleWaitRaw);
@@ -803,33 +704,17 @@ async function main() {
     `${args.backend}:${args.runIndex}:${args.level}:${args.mode}`)).slice(0, 8), 16) % 45_001;
   let coding: CodingSessionRecoveryResult;
   try {
-    // The prompt goes in on stdin, not as an argument. Windows caps a command
-    // line at 32767 characters, and the SpacetimeDB prompt carries the skill
-    // documents on top of the level spec — it crossed that line as soon as L1
-    // grew, and the spawn fails with a bare ENOENT that reads as "CLI missing".
+    // Send prompts through stdin to avoid the Windows command-line limit.
     const cliEnv = { ...process.env,
       // Absent unless deliberately overridden — see THINKING_TOKENS above.
       ...((args.thinking ?? THINKING_TOKENS)
         ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
         : {}),
-      // A CLI that updates itself mid-series changes the thing under test
-      // between one backend and the next. The sequential harness has frozen
-      // it since April; this one had not.
+      // Keep the CLI fixed across the campaign.
       DISABLE_AUTOUPDATER: '1',
-      // Cache reads are ~69% of a run's bill, so cache TTL moves cost more
-      // than anything else measured here. Unpinned, runs were getting the
-      // 1-hour tier: a second run of the same backend within the hour reads
-      // a prefix the first one paid to create and looks cheaper for reasons
-      // that have nothing to do with the database. That is fatal for n=5
-      // parallel trials, which would ALL share one warm prefix, and the
-      // effect differs per backend because the prompts differ in size. The
-      // 5-minute tier makes each trial pay its own way. The sequential
-      // harness has pinned this since April for the same reason.
+      // Pin cache lifetime so run order cannot change cost.
       FORCE_PROMPT_CACHING_5M: '1' };
 
-    // Same CLI arguments, run somewhere the harness does not exist. The
-    // container path is a separate script so that what a build can reach is
-    // stated in one place — see the compiled container/run-build.js entry point.
     coding = runCodingSessionWithRecovery({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
       throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
       throttleJitterMs,
@@ -873,11 +758,7 @@ async function main() {
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const turns = result.num_turns ?? 0;
 
-  // A single total cannot say WHY one backend cost more, and the answer is
-  // almost never the database. Cost here is roughly (turns × prompt size):
-  // cache reads dominate the token count and are re-paid every turn, so a
-  // backend handed a bigger guidance pack pays more for identical work. Keep
-  // the parts, so a cost difference can be attributed instead of assumed.
+  // Preserve the cost inputs needed to explain stack differences.
   const setupMetadata = executeStackCapability(adapter, 'agent', 'setup-metadata', {
     imageId: imageIdentity.id,
     localPackage: LOCAL_PKG,
@@ -892,49 +773,26 @@ async function main() {
     backend: args.backend,
     model: args.model,
     guidance: args.guidance,
-    // The setup that produced this number. A score whose reasoning budget,
-    // permission mode or CLI version is unknown cannot be compared with a later
-    // one — the run would look identical in the record and not be.
     setup: {
       thinkingTokens: (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
       permissionMode: 'acceptEdits',
       effort: EFFORT,
-      // Which reference documents the model was handed. The cost work varies
-      // this deliberately, so a number is meaningless without it.
       skills: selectedSkills,
-      // Recorded because it materially changes cost, and because a figure whose
-      // cache tier is unknown cannot be compared with one taken later.
       cacheTier: '5m',
       autoUpdater: 'disabled',
       codingInterruptionRetries: { limit: retryLimit,
         used: interruptions.filter(item => item.kind !== 'provider-throttled').length },
-      // Waiting out a provider throttle is time the model did not work; a
-      // duration compared without this figure blames the backend for the
-      // account's usage window.
       providerThrottle: { maxWaitMinutes: throttleMaxWaitMinutes,
         waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0,
         jitterMs: throttle?.jitterMs ?? throttleJitterMs },
-      // In a container the host CLI is not the one that ran, so the version is
-      // read from the image. Reporting the host's would attribute a number to
-      // software that took no part in producing it.
       cliVersion: imageCliVersion(imageIdentity.id),
-      // Both the human-facing reference and immutable content identity are
-      // recorded; the latter is what Docker actually executes.
       isolation: { mode: 'container', image: imageIdentity.reference,
         imageId: imageIdentity.id, hostAlias: HOST_ADDR },
-      // Whether the run billed to a key or to the plan. Cost figures from the
-      // two are not the same measurement.
       auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key'
         : (process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE)
           ? 'subscription-token' : 'not-selected',
-      // What is actually being benchmarked, not just what drove it.
       ...(isRecord(setupMetadata) ? setupMetadata : {}),
-      // Ambient variables that could have influenced the model, recorded so the
-      // question "what settings produced this" has an answer.
       env: ambientEnv(),
-      // The orchestrator and coding session are separate runtimes. Recording
-      // only the host Node version would attribute the model's tool execution
-      // to a binary that never entered its container.
       node: { orchestrator: process.version, codingContainer: imageNodeVersion(imageIdentity.id) },
       platform: process.platform,
     },
@@ -945,12 +803,8 @@ async function main() {
     usage: { input, output, cacheWrite, cacheRead },
     provenance,
     turns,
-    // What the model was handed before it did anything — the denominator for
-    // every per-turn cost, and the axis the benchmark is least fair on.
     promptBytes: Buffer.byteLength(prompt),
     tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
-    // Reasoning volume, measured rather than assumed — the budget is unpinned,
-    // so this is how a change in the CLI default becomes visible in the record.
     thinking: combinedThinkingVolume(args.app, sessionResults.map(item => item.session_id)),
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,

@@ -1,8 +1,4 @@
-// A pending Promise does not keep Node alive. Undici can leave a connection
-// attempt pending without a referenced handle, which made a readiness process
-// reach beforeExit(0) while still awaiting fetch(). Keep an ordinary timer
-// referenced, abort the request at the deadline, and race even a non-cooperative
-// fetch implementation so every probe has a terminal result.
+// Keep a referenced timer so every readiness probe reaches a terminal result.
 type FetchStatusImplementation = (
   url: string,
   init: RequestInit,

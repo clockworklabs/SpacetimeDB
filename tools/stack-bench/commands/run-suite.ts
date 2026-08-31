@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-// Stack Bench: grade one generated app end to end.
-//
-// Every manual step in this sequence has produced a wrong result at least once
-// (grading a dirty database silently lowers scores; grading the wrong backend
-// entirely when two apps collide on a port), so the sequence is automated and
-// each precondition is verified rather than assumed.
-//
-//   stop hosted app -> reset database -> verify clean -> contract lint -> feature/invariant/delivery
-//   suites -> bundle
-//
-// Usage:
-//   node dist/commands/run-suite.js --app <app-dir> --url <url> --backend spacetime|postgres|mongodb
-//                      --label <id> [--out <dir>] [--media] [--level 1] [--no-reset]
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import type { ExecFileSyncOptionsWithStringEncoding, SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -423,10 +410,7 @@ export async function waitForApplicationProbe(url: string, {
   return result ?? { ok: false, detail: 'application readiness probe did not run' };
 }
 
-// The benchmark's own database containers. A generated app that connects
-// somewhere else is not measuring what we think it is: one Postgres app pointed
-// at an unrelated project's container on 5433 and graded "fine" while writing to
-// a database the harness could not reset.
+// Confirm the app uses the database leased to this run.
 export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backend'>): DatabaseProvenance {
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const expected = executeStackCapability(adapter, 'ports', 'allocations').db;
@@ -538,10 +522,7 @@ function isGradePayload(value: GradePayload | LintPayload | null | undefined): v
 // Report the application size and direct runtime dependency count.
 export function codeMetrics(args: Pick<RunArguments, 'app' | 'backend'>): { serverLoc: number; serverFiles: number;
   totalLoc: number; totalFiles: number; runtimeDeps: number } {
-  // Also a prescribed-stack assumption: under minimal guidance an app may put
-  // its server anywhere, and a missing `server/` reported 0 LOC in 0 files
-  // rather than admitting it had not found the code. Fall back to everything
-  // outside the client when the conventional directory is absent.
+  // Minimal-guidance apps may place server code outside the conventional directory.
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const serverDirectory = executeStackCapability(adapter, 'agent', 'server-directory');
   const conventional = typeof serverDirectory === 'string' ? serverDirectory : '.';
@@ -552,10 +533,7 @@ export function codeMetrics(args: Pick<RunArguments, 'app' | 'backend'>): { serv
       if (/^(node_modules|dist|\.vite|module_bindings|drizzle)$/.test(e.name)) continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p, out);
-      // JavaScript counts too: a stack-free app is under no obligation to use
-      // TypeScript, and one that wrote 17 .js and 10 .jsx files was reported as
-      // "0 server LOC in 0 files" — a lie about the measurement, not a fact
-      // about the app.
+      // Count every supported JavaScript and TypeScript source extension.
       else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(e.name)) out.push(p);
     }
     return out;
@@ -739,10 +717,7 @@ function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
       })}`);
     }
   }
-  // A criterion that PASSED on interface behaviour alone, because its
-  // server-side check could not be run against this backend, is a weaker result
-  // than one where the server refused a real request. Saying so on every run is
-  // the difference between a disclosed limitation and a flattering score.
+  // Disclose passes that lack server-side confirmation.
   const uiOnly = r.features.flatMap(f =>
     f.criteria.filter(c => evidencePassed(criterionEvidence(c)) && c.serverCheck === 'unverified')
       .map(c => `${f.name}/${c.id}`));
@@ -802,10 +777,7 @@ async function main() {
   const bundleArtifactId = `${args.parentAttemptId ?? args.label}-grade-bundle-l${args.level}${observationSuffix}`;
   args.bundleArtifactId = bundleArtifactId;
   mkdirSync(args.out, { recursive: true });
-  // A structural abort can happen before any suite overwrites its old result.
-  // Remove all outputs from the prior grade. A cumulative level can rename
-  // inherited suites, so deleting only the current names leaves stale L1
-  // evidence in an L2 result package.
+  // Remove all prior grade output before writing cumulative evidence.
   clearPreviousGradeOutputs(args.out);
 
   console.log(`\n=== ${args.label} (${args.backend}) ===`);
@@ -887,9 +859,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Reset before EVERY step, not once per run: the lint and each suite create
-  // state of their own, so a single up-front reset leaves later suites grading
-  // dirty state — which silently lowers scores.
+  // Reset before each stateful check.
   let lastResetFailure: string | null = null;
   let lastResetOutcome: ResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
   const freshen = async () => {
@@ -956,9 +926,7 @@ async function main() {
   console.log(`  code        ... ${bundle.code.serverLoc} server LOC in ${bundle.code.serverFiles} files, ` +
     `${bundle.code.totalLoc} total LOC, ${bundle.code.runtimeDeps} runtime deps`);
 
-  // An interrupted mutation run leaves the app deliberately broken with a
-  // backup beside it. Grading that produces confident numbers for source
-  // nobody intended to measure.
+  // Refuse source left modified by an interrupted mutation run.
   const mutated = findMutationBackups(args.app);
   if (mutated.length) {
     bundle.error = `app still carries mutation backups (${mutated.join(', ')}) — its source is mutated, not the build under test`;
@@ -1073,10 +1041,7 @@ async function main() {
     bundle.actions = checkActions(args);
   }
 
-  // Two numbers, kept apart on purpose. `score` is this level's own work.
-  // `regression` is whether the guarantees earned at earlier levels still hold.
-  // Summing them would hide the finding: an app that adds every L3 feature and
-  // silently breaks live stock updates from L1 would still read as progress.
+  // Keep current-level score separate from earlier guarantee regressions.
   let total = 0, max = 0, regTotal = 0, regMax = 0;
   const dirty = false;
   for (const suite of declaredSuites) {
@@ -1117,11 +1082,7 @@ async function main() {
         selectedPackDefinitions);
       const exceeded = exceededPackBudgets(bundle.packRuntime);
       if (exceeded.length) {
-        // Runtime budgets qualify the benchmark's known-good references; they
-        // are not a deadline for generated applications. A broken app can
-        // legitimately consume several assertion timeouts in one pack. Keep
-        // grading so it receives a complete repair report, while retaining the
-        // exceeded measurement for diagnostics and qualification policy.
+        // Runtime budgets qualify references; generated apps still receive a complete grade.
         console.log(`  runtime    ... ${exceeded.map(pack =>
           `${pack.id} ${pack.measuredRuntimeMs}ms > ${pack.budget.maxRuntimeMs}ms`)
           .join(', ')} [recorded; grading continues]`);

@@ -1,13 +1,3 @@
-// A track is one application the benchmark can build and grade: its level
-// prompts, its UI contract, its scenario suites, and the core flow its
-// contract linter walks.
-//
-// Everything that differs between applications lives inside tracks/<name>/, so
-// adding one is a matter of dropping in a directory with a track.json — no
-// change to the harness. Stack-specific text sent to the coding agent stays in
-// backends/, because that axis is what the benchmark measures. Runtime stack
-// adapters are separate under src/stacks/.
-
 import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -97,17 +87,11 @@ export function loadTrack(name: string = DEFAULT_TRACK): Track {
     name,
     dir,
     schemaVersion: m.schemaVersion,
-    // Substituted into the backend guidance docs, so the app is branded for the
-    // application being built rather than always for chat.
     title: m.title ?? name,
-    // Ports, database names and result directories are derived from this, so
-    // two tracks at the same --run-index cannot collide. Empty for chat, whose
-    // names are the ones every existing result was recorded under.
+    // Distinguishes track-owned ports, databases, and result paths.
     slug: m.slug ?? '',
     internal: !!m.internal,
-    // Only these levels may be used as a published baseline. Higher declared
-    // levels are development material until their reference and mutation gates
-    // pass; plannedThrough keeps the intended ladder visible.
+    // Only validated levels may be published as baselines.
     validatedThrough: m.validatedThrough ?? 0,
     plannedThrough: m.plannedThrough ?? Math.max(...Object.keys(m.suites ?? {}).map(Number), 0),
     portOffset: m.portOffset ?? 0,
@@ -131,19 +115,9 @@ export function isDeclaredLevel(track: TrackDefinition | null | undefined, level
   return Number.isInteger(level) && level >= 1 && Boolean(track?.suites?.[String(level)]);
 }
 
-// ─── Ports ───────────────────────────────────────────────────────────────────
-//
-// Keep these values in one source of truth. Bases are spaced per backend,
-// tracks are offset from one another, and assertNoPortCollisions() proves the
-// whole grid is disjoint.
-
 export const PORT_BASES = Object.freeze(stackPortAllocations());
 
-// Run indexes above this are refused: the spacing proof below only covers this
-// range, and an uncapped index walks one backend's window into another's — at
-// 28 and above, chat's postgres client window reaches ecommerce's postgres API
-// base. Twenty concurrent runs of one backend on one machine is already far
-// beyond anything this benchmark does.
+// Keep run ports inside the collision-free range checked below.
 export const RUN_INDEX_CAP = 20;
 
 export function portsFor(track: TrackDefinition, backend: string, runIndex: number): StackRunPorts {
@@ -185,20 +159,7 @@ export function assertNoPortCollisions(): void {
   }
 }
 
-// Where a build actually happens.
-//
-// Building inside results/ put the app underneath the harness that grades it,
-// so every escape was a walk upward: two directories from the app sit the
-// scenario files and the grader. An isolated root removes the class because
-// nothing above the app worth reading.
-//
-// Derived from the platform rather than a fixed path, so this works on a Linux
-// runner as well as here. STACK_BENCH_WORK_DIR overrides it; point it at the
-// same volume as the repo if copying results back matters more than isolation.
-//
-// The platform temp directory is also considerably shorter than the repo path,
-// which buys headroom against the Windows 260-character limit that deep
-// node_modules trees run into.
+// Keep builds outside the harness tree and below the platform path limit.
 export function workRoot(): string {
   return process.env.STACK_BENCH_WORK_DIR ?? join(tmpdir(), 'stack-bench-runs');
 }
@@ -209,10 +170,7 @@ export const workDirFor = (track: TrackDefinition, backend: string, runIndex: nu
   stamp?: string): string =>
   join(workRoot(), resultsName(track, backend, runIndex) + (stamp ? `-${stamp}` : ''));
 
-// Old run directories are deleted on the way in, so finished work does not
-// accumulate in temp forever. Best-effort by design: one locked leftover must
-// not stop the run that is starting. Returns what it could not remove, for the
-// caller to say out loud rather than hide.
+// Remove expired work best-effort and report locked paths.
 export function sweepWorkRoot(maxAgeHours: number = 12): string[] {
   const root = workRoot();
   const stuck: string[] = [];
@@ -253,19 +211,7 @@ export function appendix(track: TrackDefinition, level: number): string {
   return existsSync(f) ? readFileSync(f, 'utf8') : '';
 }
 
-// Suites are declared per level in the manifest, with spec paths relative to
-// the track directory. Missing declarations are an incomplete level, not a
-// reason to silently grade a higher-level prompt with L1's feature suite.
-// Guarantees, unlike features, are promises that must not break later. A level
-// adds features; it must not cost you the invariants the earlier levels earned.
-// These suites are therefore re-run at every level above the one that
-// introduced them.
-//
-// This is the measurement the ladder exists for. Cost per level alone cannot
-// distinguish "grew the app" from "grew the app and quietly broke live stock
-// updates"; a stack that maintains propagation by hand pays for every new write
-// path, and the failure shows up here rather than in the feature score. Without
-// it, L3 never re-checks L1's promises and a regression is invisible.
+// Re-run earlier guarantee suites so later levels cannot hide regressions.
 export function suitesFor(track: TrackSuiteSource, level: number): TrackSuite[] {
   const at = (lvl: number): TrackSuite[] => (track.suites[String(lvl)] ?? [])
     .map(suite => ({ ...suite, spec: join(track.dir, suite.spec) }));
@@ -274,18 +220,14 @@ export function suitesFor(track: TrackSuiteSource, level: number): TrackSuite[] 
   }
   const declared = at(level);
 
-  // Earlier levels' guarantee suites, oldest first, deduped by spec: a suite
-  // declared at several levels (01-contention is listed at 1 and 2) is one
-  // suite, and the current level's own declaration always wins so it keeps its
-  // plain id and its points.
+  // Deduplicate inherited guarantees; the current declaration wins.
   const seen = new Set(declared.map(suite => suite.spec));
   const inherited: TrackSuite[] = [];
   for (let lvl = 1; lvl < level; lvl++) {
     for (const suite of at(lvl)) {
       if (suite.inherit !== 'all-higher-levels' || seen.has(suite.spec)) continue;
       seen.add(suite.spec);
-      // A distinct id, because the bundle keys suites by id and a collision
-      // would silently overwrite one result with another.
+      // Bundle keys must remain unique across inherited suites.
       inherited.push({ ...suite, id: `${suite.id}@L${lvl}`, inherited: true, fromLevel: lvl });
     }
   }

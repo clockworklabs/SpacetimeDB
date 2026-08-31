@@ -606,10 +606,7 @@ function executionStableKeys(execution: CompiledRecipePlan['execution'][number])
     `${group.stablePackId ?? group.packId}.${group.checkGroupId}.${criterion.id}`));
 }
 
-// Ownership is release structure, not an execution-id naming convention. A
-// sequential upgrade inherits every check selected by its exact base recipe;
-// the remaining checks belong to the level being introduced. Recursing through
-// bases preserves the original owner when L3 carries both L1 and L2 checks.
+// Preserve check ownership through the exact base-recipe chain.
 function sequentialUpgradeExecutionPlan(
   plan: CompiledRecipePlan,
   track: { dir: string },
@@ -804,10 +801,7 @@ export function validateExactRecipeRequest(requested: unknown): ResolvedExactRec
     ...(contentSha256 !== undefined ? { contentSha256 } : {}) };
 }
 
-// Normal runs resolve the public promoted L<n> alias. An exact request may use
-// a non-default release from the separate catalog before or after promotion.
-// Both choices use the same runner path. A track without a matching release
-// returns null so every caller must decide whether that absence is allowed.
+// Resolve either the promoted level alias or an exact catalog release.
 export function resolveRecipeRelease(
   track: Track,
   level: number,

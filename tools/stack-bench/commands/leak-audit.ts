@@ -1,11 +1,5 @@
 #!/usr/bin/env node
-// Did a generated build read anything it was not supposed to?
-//
-// Parse Bash commands as well as file tools and take the app boundary from the
-// session's recorded cwd. Reconstructing paths from transcript folder names is
-// ambiguous and is never used as authority.
-//
-// Usage: node dist/commands/leak-audit.js [--dir <transcript-root>] [--json]
+// Use the recorded cwd as the app boundary; transcript folder names are not authority.
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -16,12 +10,7 @@ const arg = (name: string, fallback: string | null = null): string | null => {
   const index = process.argv.indexOf(name);
   return index === -1 ? fallback : process.argv[index + 1] ?? fallback;
 };
-// --dir is the ONLY root when given. Scanning every project on the machine
-// buries the runs under review in unrelated work.
-//
-// --app takes the application directory instead and finds the transcripts the
-// CLI filed for it: they live under ~/.claude/projects in a folder whose name
-// is the app's path with every separator and colon turned into a dash.
+// --dir is exclusive. --app resolves its matching CLI transcript directory.
 function transcriptsFor(appDir: string): string[] {
   const base = join(homedir(), '.claude', 'projects');
   if (!existsSync(base)) return [];
@@ -34,10 +23,7 @@ function transcriptsFor(appDir: string): string[] {
 const norm = (value: unknown): string => String(value ?? '')
   .replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
 
-// Files a build legitimately needs: its own app, plus node_modules noise.
-// ...plus the CLI's own scratch for THIS session (background task output lives
-// under temp/claude/<encoded-app>/<session>/tasks). That is the build reading
-// its own command output, not the harness.
+// Ignore dependencies, build output, and this session's CLI task output.
 const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]temp[/\\]claude[/\\].*[/\\]tasks[/\\]/;
 
 // Commands that pull file contents into context.
@@ -54,15 +40,7 @@ const CLASSES: Array<readonly [RegExp, string]> = [
 const classify = (path: string): string => CLASSES.find(([pattern]) => pattern.test(path))?.[1]
   ?? 'other';
 
-// The boundary is the APP directory, not wherever the session happened to be
-// standing. Taking the most common cwd looked reasonable and was wrong: a
-// SpacetimeDB build spends most of its turns in backend/spacetimedb, so reads of
-// its OWN client/src/module_bindings/*.ts resolved as escapes and the run was
-// reported contaminated by its own generated bindings.
-//
-// When --app names the directory, that is the answer. Otherwise take the
-// SHALLOWEST cwd seen, which is the closest thing to the app root the transcript
-// knows about — never the most frequent.
+// The shallowest recorded cwd is the app boundary when --app is absent.
 function sessionCwd(lines: string[]): string | null {
   const seen = new Set<string>();
   for (const l of lines) {
@@ -88,14 +66,8 @@ export function pathsFromBash(command: unknown): string[] {
   return out;
 }
 
-// An ATTEMPT is not a leak. Once the sandbox actually refuses things, a build
-// that tries to read the rubric and is blocked looks identical to one that
-// succeeded — and marking the blocked run contaminated would void exactly the
-// runs the sandbox is protecting. So a candidate path is held against its
-// tool_use id and only counted once the result comes back not-an-error.
-//
-// Bash is not governed by the Read rules, so its reads resolve as successful
-// unless the command itself failed; that asymmetry is the point of auditing it.
+// Count file-tool reads only after their result confirms success.
+// Bash reads count unless the command fails.
 interface AuditHit {
   path: string;
   via: string;
@@ -132,17 +104,7 @@ interface TranscriptContent {
 
 export function auditTranscript(file: string, boundary: string | null): TranscriptAudit {
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
-  // --app names a HOST directory, but a containerised build worked at /app and
-  // its transcript records container paths. Held against the host boundary,
-  // every legitimate read of the app's own source resolves as an escape and the
-  // run is voided for existing.
-  //
-  // The test is deliberately the exact literal /app. The build container
-  // mounts the app there and nothing else — rather than "cwd is outside the
-  // boundary". The looser rule would have re-broken the case this audit exists
-  // for: the contaminated run cd'd into the harness to run the grader, and
-  // falling back to the session's own shallowest cwd could have adopted the
-  // harness directory as the boundary and reported that run clean.
+  // Container transcripts use /app; --app is its host path.
   const own = sessionCwd(lines);
   const cwd = own === '/app' ? own : (boundary ?? own);
   const hits: AuditHit[] = [];
@@ -180,11 +142,7 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
         const n = norm(raw);
         if (!n || IGNORE.test(n)) continue;
         // The CLI keeps auto-memory for the session's OWN project dir. A build
-        // reading notes it wrote itself, in this same run, is a diary, not a
-        // leak — the run that surfaced this had its 48/50 voided over a file
-        // whose originSessionId was its own. Memory belonging to ANY OTHER
-        // project dir stays flagged: that is somebody's notes about the
-        // harness. Own-ness is decided by the encoded cwd in the path.
+        // A session may read its own memory, never another project's memory.
         if (cwd && /[/\\]projects[/\\][^/\\]+[/\\]memory[/\\]/.test(n)
           && n.includes(cwd.replace(/[\\/:]/g, '-'))) continue;
         const absolute = /^[a-z]:/.test(n) || n.startsWith('/');
@@ -223,11 +181,7 @@ for (const root of roots) {
       const p = join(d, e.name);
       if (e.isDirectory()) { if (!/node_modules/.test(p)) stack.push(p); continue; }
       if (!/\.jsonl$/.test(e.name)) continue;
-      // `agent-*.jsonl` is a subagent's transcript, filed under
-      // <session>/subagents/. They were excluded by this pattern, so the one
-      // channel the sandbox does not govern went unaudited exactly where it
-      // mattered: a SpacetimeDB build dispatched a subagent that made 29 Bash
-      // calls, and none of them were ever checked.
+      // Include transcripts from the main session and its subagents.
       if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
       if (statSync(p).size < 2000) continue;
       results.push({ ...auditTranscript(p, appBoundary), root });

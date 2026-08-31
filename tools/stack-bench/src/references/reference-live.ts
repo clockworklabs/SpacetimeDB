@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Repeatable live qualification for an imported reference fixture.
-//
-// A reference is promotable only after independent, clean Docker runs agree
-// and every criterion passes, including zero-point controls. The benchmark runner remains
-// the lifecycle owner; this wrapper supplies fresh copies and audits the
-// resulting evidence instead of trusting the benchmark process exit code.
+// Qualify fresh reference copies from audited evidence, not process exit codes.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';

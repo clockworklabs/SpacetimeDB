@@ -159,10 +159,7 @@ export function createBugReport(args: ReportBugsArgs): number {
   for (const file of readdirSync(resultsDir).filter(name => /^grading-.*\.json$/.test(name))) {
     const report = readArtifactPayload<GradePayload>(join(resultsDir, file), { expectedKind: 'grade' });
     for (const feature of report.features ?? []) {
-      // Only typed application failures are sent to a fix round. Inconclusive or
-      // harness-failure evidence describes the benchmark, not the generated app.
-      // Zero-point criteria are test-development evidence and never control an
-      // ordinary repair loop, even when their behavioral observation failed.
+      // Repairs receive only scored, typed application failures.
       for (const criterion of feature.criteria ?? []) {
         if (selectedChecks && (!criterion.stableKey
           || !selectedChecks.has(criterion.stableKey))) continue;

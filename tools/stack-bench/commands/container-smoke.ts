@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Model-free production smoke for the isolated SpacetimeDB build path.
-//
-// Starts a dedicated host on an ephemeral loopback port and data directory,
-// prepares the real build image, then builds and publishes a
-// tiny TypeScript module with `spacetime dev`, verifies it through SQL, then
-// removes only the container, process and data directory created here.
+// Use only ephemeral resources owned by this smoke run.
 
 import { spawn, execFileSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';

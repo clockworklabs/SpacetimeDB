@@ -263,9 +263,7 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     credentialAliases };
 }
 
-// Public review surface for tooling that must inspect the exact guidance
-// selected by a profile without manufacturing an otherwise unrelated study
-// condition. Campaign compilation uses the same resolver below.
+// Campaign compilation and review tooling must resolve profiles identically.
 export function resolveGuidanceProfile(reference: string, stacks: readonly string[],
   { stackBenchRoot = ROOT, catalogPath = CATALOG }:
   { stackBenchRoot?: string; catalogPath?: string } = {}): ResolvedGuidanceProfile {

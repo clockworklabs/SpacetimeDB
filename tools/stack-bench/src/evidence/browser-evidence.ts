@@ -1,7 +1,4 @@
-// Browser evidence helpers that preserve the difference between “not present”
-// and “the page disappeared.” A timeout waiting for an optional element is a
-// legitimate zero; any other Playwright failure must reach the harness-fault
-// classifier instead of being coerced to zero.
+// Optional-element timeouts are zero; other browser failures remain typed errors.
 
 interface CountableLocator {
   count(): Promise<number>;

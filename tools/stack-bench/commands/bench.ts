@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-// Stack Bench: run the whole benchmark for one backend, unattended.
-//
-// For each level: build (or upgrade), grade, and if anything failed hand the
-// agent a behavioural bug report and let it fix — up to --fix-rounds times —
-// re-grading after each attempt. Records score, cost, time and fix rounds per
-// level, then writes a summary.
-//
-// Usage:
-//   node dist/commands/bench.js --backend spacetime --levels 1-5 [--model claude-sonnet-5]
-//                  [--fix-rounds 10] [--run-index 0] [--out <dir>]
-//                  [--retain-backend] [--no-media]
-//
-// The benchmark runs its own SpacetimeDB host (STACK_BENCH_STDB_URI, default
-// 127.0.0.1:3210, data in .spacetime-data) rather than a machine-wide one, so
-// resource measurements describe the module under test and a durability restart
-// cannot disturb anything else. It is started if absent and stopped at the end
-// unless --retain-backend.
 
 import { execFile, execFileSync } from 'node:child_process';
 import type { ChildProcess, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
@@ -362,11 +345,7 @@ function recipeRequestIdentity(value: unknown): { recipeSha256: string; selectio
     taskPacks: value.selection.taskPacks, taskSha256: value.task.sha256 };
 }
 
-// Grading writes private evidence into the mounted app directory because the
-// grader and app share one runtime. A repair session may receive only the
-// behavioural BUG_REPORT.md produced from that evidence. Remove the raw
-// bundle, scenario names, screenshots, and grader output before the coding
-// model starts.
+// Repairs receive the bug report, not private grading evidence.
 export function clearPrivateGradingEvidence(appDir: string): void {
   rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
 }
@@ -1268,14 +1247,7 @@ async function main() {
     throw error;
   }
 
-  // Grow one isolated app across levels, outside the harness and results tree.
-  // Copy artifacts back at completion and remove only a work directory created
-  // by this run; an explicit --app remains caller-owned.
-  // Leave nothing running once the run is over, however it ends — but only stop
-  // what this run brought up.
-  // This run's work path is unique. There is no legitimate pre-existing build
-  // container to delete; teardown removes one only after run-build records its
-  // immutable id in the lease.
+  // Teardown stops only resources recorded in this run's lease.
   const interrupt = (signal: NodeJS.Signals, exitCode: number) => {
     console.log(`interrupted by ${signal} — stopping exact owned resources`);
     try { teardown({ reason: `interrupted by ${signal}` }); }
@@ -1292,10 +1264,7 @@ async function main() {
     }
   });
 
-  // Seed the work dir from an existing app, so the first level upgrades it
-  // rather than building from nothing. Source only; the upgrade session
-  // installs its own dependencies exactly as a developer checking out the
-  // earlier code would. The copy is layout-independent for neutral runs.
+  // Seed source only; the upgrade session installs its own dependencies.
   if (args.seedFrom) {
     const from = resolve(args.seedFrom);
     if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
@@ -1538,10 +1507,7 @@ async function main() {
         sessionTotals, costUsd: build.costUsd, durationMs: Date.now() - t0,
       }, progressionSelection);
     }
-    // Carry the agent's own record of the setup up to the run. Comparing two
-    // scores is only meaningful if the reasoning budget, permission mode and
-    // CLI version behind them were the same, and that is not knowable after the
-    // fact unless it was written down at the time.
+    // Record the session setup needed to compare runs.
     run.setup ??= build.setup;
     if (continuing) {
       requireContinuation(run).resumeSetup = {
@@ -1591,11 +1557,7 @@ async function main() {
         { applicationFailure: failure });
     };
     if (continuing) {
-      // The resume session may install dependencies and start arbitrary project
-      // layouts, but it may not perform an unintended correction. Restoring edited source
-      // is insufficient: a running server could still hold code compiled from
-      // those edits. Reject any source mutation and grade only an unchanged
-      // checkpoint runtime.
+      // A resume may restore runtime state but cannot change checkpoint source.
       const resumed = hashAppSource(appDir);
       const repairGrant = args.repairGrant;
       if (!repairGrant) throw new Error('repair continuation has no grant');
@@ -1860,15 +1822,8 @@ async function main() {
 
       const before = bundle?.totals?.score ?? 0;
       const beforeMax = bundle?.totals?.max ?? 0;
-      // Kept whole, not just its total: the regression check compares
-      // per-criterion, because totals are scored out of a denominator that
-      // moves between rounds.
       const beforeBundle = bundle;
-      // A fix can break more than it mends. Keep the source that produced the
-      // best score so far, and roll back to it if a round regresses.
-      // Kept outside the results tree: a snapshot is a known-good copy of the
-      // answer, and a coding session that can reach one will copy it instead of
-      // building. It only has to survive this process.
+      // Keep the accepted source outside paths visible to the coding session.
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       const gradingSnapshot = `${snapshot}-grading`;
       const acceptedSource = hashAppSource(appDir);
@@ -1903,9 +1858,7 @@ async function main() {
         break;
       }
 
-      // Check the round that just ran, before paying to grade it. A fix session
-      // that read the scenario file is not going to be redeemed by another
-      // round, and grading it only produces a number nobody may quote.
+      // Reject contaminated repairs before spending time on grading.
       const fixLeak = auditContamination(appDir);
       if (fixLeak) {
         const buildSession = runSessionRecord(build);
@@ -1959,13 +1912,7 @@ async function main() {
 
       const after = bundle?.totals?.score ?? 0;
       const afterMax = bundle?.totals?.max ?? 0;
-      // Compare the SAME criteria in both rounds, not the totals.
-      //
-      // Compare criteria that were conclusive in both rounds, but never let a
-      // previous observation disappear: conclusive -> inconclusive is lost
-      // evidence and rolls the source back instead of hiding a regression.
-      // The declared denominator is fixed; typed evidence still matters here
-      // because an unmeasured check is not interchangeable with a real failure.
+      // Lost or inconclusive evidence cannot hide a repair regression.
       const decision = repairEvidenceDecision(beforeBundle, bundle);
       const shared = decision.shared;
       if (decision.action === 'keep-setup-repair') {
@@ -2023,10 +1970,7 @@ async function main() {
       }
     }
 
-    // A grading run that crashed writes no bundle, and recording that as 0/0
-    // makes a harness failure indistinguishable from an app that scored nothing
-    // — in a ladder run it silently drops a level's result on the floor. Say so
-    // instead, and leave the score null.
+    // Missing grade evidence is not a zero score.
     const progressionState = progressionExecution
       ? requireProgressionState(progressionExecution.state) : null;
     const progressionAttempt = progressionState
@@ -2131,10 +2075,7 @@ async function main() {
       graded,
       score: finalTotals?.score ?? null,
       max: finalTotals?.max ?? null,
-      // Whether the guarantees earned at earlier levels still hold at this one —
-      // the whole point of growing the app level by level. It reached the
-      // console and the bundle but not run.json, so the thesis metric was
-      // missing from the durable record.
+      // Preserve earlier-level guarantees in the durable result.
       regression: levelBundle?.totals?.regression ?? null,
       selection: levelBundle?.selection ?? null,
       ...(resumedRepair
@@ -2149,16 +2090,12 @@ async function main() {
       repairHistory,
       sessionTotals,
       tokens: sessionTotals.tokens,
-      // Carried up so a run summary can explain a cost, not just report one.
       usage: sessionTotals.usage,
       turns: sessionTotals.turns,
       promptBytes: sessionTotals.promptBytes,
       tokensPerTurn: sessionTotals.turns
         ? Math.round(sessionTotals.tokens / sessionTotals.turns) : null,
-      // Reasoning actually produced. The budget is deliberately unpinned so runs
-      // measure what a customer gets; that is only defensible if a shift in the
-      // CLI default is visible afterwards rather than silently absorbed into
-      // every score.
+      // Record actual reasoning because the provider default is not pinned.
       thinking: sessionTotals.thinking,
       fixRounds,
       ...(resumedRepair ? { priorRepairRounds,
@@ -2303,10 +2240,7 @@ async function main() {
 
   teardown();
 
-  // Leave nothing in temp. Best-effort: a directory some process still holds is
-  // not worth failing a finished run over, and the next run makes its own
-  // anyway. Say so rather than leaving it to be discovered. Only for a
-  // directory THIS run created — an explicit --app is the caller's.
+  // Remove only the temporary directory created by this run.
   if (ownWorkDir) {
     try {
       rmSync(dirname(appDir), { recursive: true, force: true });

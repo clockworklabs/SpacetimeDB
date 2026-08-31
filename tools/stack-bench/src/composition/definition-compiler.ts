@@ -1,8 +1,4 @@
-// Compile human-authored benchmark definitions into a strict, normalized plan.
-//
-// This module is the explicit contract for the scenario language. It preserves
-// the public JSON shape while rejecting unknown or malformed input before a run
-// can acquire backend resources.
+// Validate and normalize scenario definitions before resource acquisition.
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -471,10 +467,7 @@ export function compileScenarioDefinition(input: unknown,
       if (!integer(criterionPoints) || criterionPoints < 0) {
         fail(`${criterionAt}.points`, 'must be a non-negative integer');
       }
-      // Downstream execution must never have to repeat source defaults. Leaving
-      // this implicit made `result.score += criterion.points` add `undefined`,
-      // producing NaN in memory and null in the JSON grade for ordinary
-      // one-point criteria that omitted the field.
+      // Materialize the default so downstream scoring always receives a number.
       criterion.points = criterionPoints;
       points += criterionPoints;
       if (!array(criterion.steps)) fail(`${criterionAt}.steps`, 'must be an array');

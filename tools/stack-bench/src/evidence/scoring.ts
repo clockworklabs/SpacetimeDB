@@ -1,9 +1,4 @@
-// Pure scoring comparisons shared by the benchmark loop and its tests.
-//
-// A grading pass is evidence, not just a numerator and denominator. Losing a
-// conclusive observation in a later pass must never look like an improvement:
-// otherwise a fix can make a passing or failing criterion untestable and have
-// that criterion disappear from the comparison.
+// A later pass cannot improve by losing conclusive evidence.
 
 import {
   criterionEvidence,

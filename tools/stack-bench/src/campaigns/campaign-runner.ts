@@ -463,10 +463,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
     }
     const runClaim = async (claim: CampaignClaim): Promise<AttemptResult> => {
       const output = contained(initialized.paths.root, claim.output, 'attempt output');
-      // Preflight bind-mounts the exact attempt output to prove that evidence is
-      // durable. The first execution's parent may already exist, while a retry's
-      // execution-N directory never does; create both by the same rule before
-      // starting the child so retries cannot fail for a different topology.
+      // Create every execution output before preflight bind-mounts it.
       mkdirSync(output, { recursive: true });
       contained(initialized.paths.root, claim.output, 'attempt output');
       const supervisorState = contained(initialized.paths.root,

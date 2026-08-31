@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-// Model-free deploy adapter for live reference qualification.
-//
-// The benchmark runner owns the backend lease, grader, resets, restart tests, artifacts,
-// and teardown. This adapter replaces only the coding session: it installs and
-// deploys the already-selected fixture in the leased build container.
+// Replace only the coding session with a selected reference fixture.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

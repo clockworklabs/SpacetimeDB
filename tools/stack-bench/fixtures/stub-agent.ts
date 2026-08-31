@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Deterministic stand-in for the coding agent in orchestration tests.
-//
-// Swaps a fixture app into place instead of calling a model: `build` installs
-// the broken one, `fix` installs the good one. That makes the loop's branches —
-// bug report written, fix session invoked, re-grade, score moves, cap respected
-// — deterministic, free and fast to exercise.
+// Deterministic fixture-based coding agent for orchestration tests.
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 

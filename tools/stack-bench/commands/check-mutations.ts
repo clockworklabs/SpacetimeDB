@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Verify that a mutation file can apply to its reference app without grading.
 
 import { existsSync, readFileSync } from 'node:fs';
 

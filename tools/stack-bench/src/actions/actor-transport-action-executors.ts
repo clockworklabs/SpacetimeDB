@@ -362,10 +362,7 @@ function transportJson(chunk: string): unknown[] {
   return parsed;
 }
 
-// Return ids from the entity containing `needle`, deepest first. Keeping the
-// id field and its distance from the matching value lets a replay map an order
-// id to another order id instead of accidentally substituting a nested item id.
-// JSON is preferred; the text fallback covers NDJSON/SSE and opaque payloads.
+// Return nearby entity ids deepest first; fall back to text for streaming payloads.
 interface DiscoveredId {
   readonly key: string;
   readonly value: string;

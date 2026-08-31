@@ -1,8 +1,4 @@
-// The store's core flow: browse signed out -> sign up -> search -> open an
-// item and review it -> fill a cart -> check out -> sign in as the seeded admin.
-//
-// One pass, one browser, one customer. Anything needing a second customer, a
-// concurrent action or a refusal belongs to the scenario suites, not here.
+// This contract walk uses one browser and one customer; scenarios own multi-actor behavior.
 
 import { applyCredentialAliases } from '../../src/composition/credential-aliases.js';
 import type { Locator } from 'playwright';
@@ -14,10 +10,7 @@ const ADMIN_PASS = 'stackbench-admin-2026';
 export const seededAdminPassword = (credentialAliases: unknown): string =>
   applyCredentialAliases(ADMIN_PASS, credentialAliases);
 
-// Seeded items the walk relies on. `SEARCH_ONLY` is outside the opening top ten
-// (the catalogue starts with no purchases, so the storefront is alphabetical),
-// which is what makes searching for it prove that search covers the catalogue
-// rather than filtering what is already on screen.
+// SEARCH_ONLY is outside the opening list so search must cover the full catalog.
 const CART_ITEM = 'Headphones';
 const REVIEW_ITEM = 'Air Purifier';
 const SEARCH_ONLY = 'Webcam';
@@ -183,10 +176,7 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     // later page transition.
     for (const h of byStage('operations')) await checkHook(page, h, results);
 
-    // Checkout above leaves a pending order, so the admin (who may do
-    // everything staff can) can reach a non-empty fulfilment queue. This makes
-    // queue-item, queue-warehouse and ship-submit genuinely lintable instead
-    // of silently absent from the report.
+    // The pending order makes fulfillment controls observable.
     const fulfilmentHooks = byStage('fulfilment');
     if (fulfilmentHooks.length) {
       const staffLink = page.locator(tid('staff-link')).first();

@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Reproducible, model-free compile qualification for canonical fixtures.
-//
-// Each fixture is copied to a unique temporary work directory, built in the
-// same pinned image and authenticated lease boundary used by benchmark runs,
-// and removed afterwards. Canonical source is therefore never populated with
-// node_modules, generated bindings or dist output.
+// Build a temporary fixture copy inside the benchmark image and lease boundary.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';

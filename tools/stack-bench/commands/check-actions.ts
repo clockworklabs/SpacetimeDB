@@ -1,16 +1,5 @@
 #!/usr/bin/env node
-// Report which named write actions answer. Exact recipe grading owns pass/fail.
-//
-// Presence, not behaviour: a 404 means the action is not there. Anything else —
-// including a refusal — means it exists and answered, which is all this checks.
-// Whether it refuses the RIGHT things is what the invariant suites are for.
-//
-// Nothing here is allowed to mutate the database: every probe is unauthenticated
-// or deliberately malformed, so a working app rejects it.
-//
-// Usage:
-//   node dist/commands/check-actions.js --backend spacetime --app <dir> [--out report.json]
-//   node dist/commands/check-actions.js --backend postgres --url http://localhost:6573
+// Probes are unauthenticated or malformed and must never mutate data.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -73,10 +62,7 @@ const args = parseArgs(process.argv);
 const backend = args.backend;
 if (!backend) throw new Error('--backend is required');
 
-// The actions come from the track, not from this file: a track that names none
-// (chat does not) is skipped rather than reported as six missing endpoints.
-// Probes are chosen to be refused by a correct app — no credentials, or
-// arguments that cannot identify a real row — so a check never writes anything.
+// Use non-writing probes declared by the selected track.
 const track = args.track ? JSON.parse(readFileSync(join(TRACKS, args.track, 'track.json'), 'utf8')) as {
   actions?: NamedAction[];
 } : null;

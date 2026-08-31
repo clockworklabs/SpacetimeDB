@@ -197,11 +197,7 @@ function exactModuleRef(value: string, label: string):
   return { id: value.slice(0, split), version: value.slice(split + 1), ref: value };
 }
 
-// Modular recipes keep product features and production specifications
-// independently selectable. A specification has exactly one treatment:
-// requested (prompt + score + repair), expected (score + repair, no initial
-// disclosure), observed (separate first-build measurement), or excluded by
-// omission. The closed treatment set prevents contradictory boolean policies.
+// Assign each selected specification one exclusive treatment.
 export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
   featureIds = [], requestedSpecifications = [], expectedSpecifications = [],
   observedSpecifications = [], checkKeys = [], dependencyExpansion = 'recursive',
@@ -387,10 +383,7 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
   };
 }
 
-// Resolve a caller's pack/check request once, then pass this exact result to
-// every consumer. Packs define the requested task. Checks may narrow grading
-// inside that task, but cannot silently add behavior the agent was not asked
-// to build.
+// Checks may narrow grading but cannot expand the requested task.
 export function resolveRecipeSelection(release: RecipeRelease,
   { packIds = [], checkKeys = [] }: RecipeSelectionOptions = {}): RecipeSelection {
   if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
@@ -700,10 +693,7 @@ export function resolveBoundRecipeTaskRequest(binding: BoundRecipeTaskBinding,
   return resolveRecipeTaskRequest(binding, request);
 }
 
-// The controller owns undisclosed treatments. A coding process receives only
-// requested specifications: expected and observed ids must not leak through
-// argv, logs, process inspection, or adapter metadata. Removing them must not
-// change the composed task because neither contributes prompt fragments.
+// Remove expected and observed treatments from the coding-process request.
 export function createAgentVisibleTaskRequest(binding: BoundRecipeTaskBinding,
   selected: StoredTaskRequest & { request?: StoredTaskRequest }): UnknownRecord {
   const resolved = resolveBoundRecipeTaskRequest(binding, selected?.request ?? selected);

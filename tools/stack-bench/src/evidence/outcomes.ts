@@ -178,10 +178,7 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
     return { kind: 'harness_failure', phase: 'grading', reason: scoreMismatch,
       appFailures: [], inconclusive: [], harnessFailures: ['score-consistency'] };
   }
-  // Point-bearing checks define an ordinary benchmark outcome. Zero-point
-  // criteria are retained as test-development evidence, but they must not
-  // fail, invalidate, or repair a scored run. A deliberately selected
-  // zero-only scope still receives a useful outcome for qualification work.
+  // Zero-point criteria affect an outcome only in a zero-point-only scope.
   const pointBearing = all.filter(criterion => Number(criterion.points) > 0);
   const outcomeCriteria = pointBearing.length ? pointBearing : all;
   const classified = outcomeCriteria.map(criterion => {
@@ -221,18 +218,12 @@ export function runExitCode(outcome: RunOutcome | null | undefined): 0 | 1 {
     .includes(outcome?.kind ?? '') ? 1 : 0;
 }
 
-// A ladder level builds on the source produced by the previous level. If that
-// level was not graded, proceeding would spend another model session on an
-// artifact whose baseline is unknown and produce a run that cannot be compared.
+// Continue only from a measured baseline.
 export function ladderMayContinue(outcome: RunOutcome | null | undefined): boolean {
   return !['provider_failure', 'harness_failure', 'ungraded'].includes(outcome?.kind ?? '');
 }
 
-// Building and repairing a level can continue while its failures are ordinary
-// application failures. Advancing to the next level is stricter: the next
-// upgrade must start from a level that actually passed, otherwise later work
-// hides unresolved lower-level defects and has to be thrown away when that
-// lower level is repaired.
+// Advance only after the current level passes.
 export function ladderMayAdvance(outcome: RunOutcome | null | undefined): boolean {
   return outcome?.kind === 'passed';
 }

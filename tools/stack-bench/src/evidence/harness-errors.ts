@@ -1,8 +1,4 @@
-// Errors raised by the harness's own child processes are not evidence that the
-// application under test is wrong. Keep this deliberately narrow: a command
-// which exits non-zero can still be reporting an application/schema defect,
-// while failure to spawn or a forced process timeout means the measurement did
-// not complete.
+// Only spawn and timeout failures are harness failures; command exits can describe app defects.
 const INFRASTRUCTURE_CODES = new Set(['ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM', 'EPIPE']);
 const BROWSER_INFRASTRUCTURE_FAILURE = Symbol('browserInfrastructureFailure');
 

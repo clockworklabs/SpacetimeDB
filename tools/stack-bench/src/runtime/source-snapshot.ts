@@ -4,14 +4,11 @@ import { basename, join } from 'node:path';
 import { hashDirectory } from '../evidence/provenance.js';
 import type { HashFilesResult } from '../evidence/provenance.js';
 
-// Runtime state, dependencies, and repair evidence are deliberately not part
-// of the model-authored source snapshot.
+// Snapshots contain model-authored source, not runtime state or repair evidence.
 const PRESERVED_DIRS = new Set(['node_modules']);
 const ROOT_PRESERVED_DIRS = new Set(['.git', 'stack-bench']);
 const TRANSIENT_DIRS = new Set([
   'dist', '.vite', 'coverage',
-  // Package and browser tooling can create large trees with dangling links.
-  // They are runtime caches, not model-authored application source.
   '.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache',
 ]);
 const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
@@ -54,8 +51,7 @@ function copySourceTree(from: string, to: string, rel = '', writable = false): v
   }
 }
 
-// Remove model-authored paths absent from the snapshot by walking them in
-// place. Active directory watchers and nested dependency folders survive.
+// Restore source in place without replacing active dependency directories.
 function removeAbsent(path: string, rel: string): void {
   const disposition = directoryDisposition(rel);
   if (disposition === 'preserve') return;

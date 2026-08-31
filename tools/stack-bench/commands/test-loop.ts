@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// Tests the orchestration loop without spending a model call.
-//
-// The benchmark runner uses a stub agent that installs a broken fixture on build
-// and a good one on fix, so every branch — bug report written, fix session
-// invoked, re-grade, score moves, cap respected, run.json shape — is exercised
-// deterministically in seconds.
-//
-// Mutation tests validate the grader separately. This test covers
-// the machinery around it.
-//
-// Usage: node dist/commands/test-loop.js
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';

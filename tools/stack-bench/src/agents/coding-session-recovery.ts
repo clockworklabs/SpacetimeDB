@@ -107,16 +107,10 @@ function text(value: unknown): string {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
 }
 
-// Provider statuses that mean "the account cannot accept work right now", not
-// "this session is broken": 429 is the account rate/usage limit and 529 is
-// provider overload. Both are transient by definition, so the recovery loop
-// waits them out instead of spending its bounded interruption retries — an
-// immediate resume against a throttled account fails in milliseconds and a
-// nine-way campaign burns every retry it has while the window is still closed.
+// Throttling consumes wait time, not interruption retries.
 const THROTTLE_STATUSES = new Set([429, 529]);
 const TRANSIENT_API_STATUSES = new Set([500, 502, 503, 504]);
-// Escalating waits, then a steady 15-minute probe. A subscription usage window
-// can stay closed for hours; the budget below bounds the total, not the count.
+// Escalate to a 15-minute probe until the total wait budget expires.
 const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
 export const DEFAULT_THROTTLE_MAX_WAIT_MS = 300 * 60_000;
 const BROKER_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
@@ -318,10 +312,7 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
   const interruptions: Array<CodingSessionInterruption & UnknownRecord> = [];
   let resumeSession: string | null = null;
   let recoverStoppedContainer = false;
-  // Interruption retries are a bounded count; throttle waits are a bounded
-  // TIME. A throttled provider can reject dozens of near-free probe requests
-  // before the window reopens, and counting those against the retry limit
-  // converts a transient account condition into a terminal harness failure.
+  // Track interruption attempts and throttle time separately.
   let interruptionRetries = 0;
   let throttleWaits = 0;
   let throttleWaitedMs = 0;

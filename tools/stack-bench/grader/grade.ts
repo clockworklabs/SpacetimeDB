@@ -1,22 +1,7 @@
 #!/usr/bin/env node
 /// <reference lib="dom" />
-// Stack Bench functional grader.
+// Score declared criteria from one observed run in isolated actor contexts.
 //
-// Executes versioned scenario specs against a running app using multiple
-// isolated browser contexts (one per actor), and scores each feature from
-// observed behavior only — each criterion contributes exactly its declared
-// points when it passes. Console errors remain visible diagnostic evidence;
-// they never silently rewrite an otherwise unrelated criterion score.
-// Untestable setup still earns zero because each affected criterion records
-// non-passing evidence.
-//
-// The grader never reloads a failed assertion and tries it again, so
-// "realtime" means realtime.
-//
-// Usage: node dist/grader/grade.js --url http://localhost:6173 --level 1 [--out report.json]
-//                      [--label spacetime-l1] [--headed] [--feature N]
-// Exit codes: 0 = graded (any score), 2 = usage/infra error.
-
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { readFileSync, mkdirSync } from 'node:fs';
@@ -173,16 +158,7 @@ if (REGISTERED_ACTIONS.size !== ACTION_REGISTRY.ids.length
   throw new Error('registered action implementations do not cover the action catalog exactly');
 }
 
-// Truncate a failure detail without throwing away the part that explains it.
-//
-// A blunt `slice(0, 300)` kept the wrong half. Playwright leads with ~200
-// characters of `waiting for locator(...)` and only then says WHY —
-// "<div class=backdrop> intercepts pointer events", "element is not enabled".
-// One L2 detail was stored 188 characters long, cut off immediately before the
-// line naming the cause, and the fix round was sent after a phantom.
-//
-// Keep the opening line, then the diagnostic lines from the call log, and drop
-// the "waiting for / retrying / scrolling" noise in between.
+// Keep the cause when Playwright prefixes it with locator retry details.
 function keepReason(detail: unknown, limit = 600): string {
   const s = String(detail ?? '');
   if (s.length <= limit) return s;
@@ -243,7 +219,7 @@ function parseArgs(argv: readonly string[]): GradeArgs {
 const tid = stableElementSelector;
 const uniq = () => Math.random().toString(36).slice(2, 7);
 
-// ─── Actor: an isolated browser context with its own identity ────────────────
+// Isolated browser actor
 
 // Which requests count as writes worth capturing for replay and forgery. The
 // default covers chat's routes; a scenario spec can widen it for an application
@@ -267,29 +243,18 @@ class Actor {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
-    // Everything this client is SENT, whatever the transport: WebSocket frames
-    // (text or binary) and HTTP response bodies. Privacy is a property of what
-    // reaches a browser, not of what that browser chooses to draw — an app that
-    // ships every message to every client and hides the wrong ones in React has
-    // no privacy at all, and this buffer is the only place that shows it.
+    // Test privacy against delivered payloads, not rendered content.
     this.received = [];
     this.attach(page);
   }
   attach(page: Page): void {
     this.page = page;
-    // Record the app's own write requests so a test can replay one with a
-    // tampered field. This adapts to whatever API the app happens to expose,
-    // instead of the harness having to know its shape.
+    // Capture writes so checks can replay them with changed fields or actors.
     this.lastWrite = null;
-    this.lastWrites = {};   // by method: a toggle adds with POST and removes with DELETE,
-                            // so replaying "the last write" can undo instead of redo
-    this.writes = [];       // every write, so another actor can replay a privileged one
+    this.lastWrites = {};
+    this.writes = [];
     this.lastWsWrite = null;
-    // Apps write over WebSocket as often as over HTTP (socket.io emits a text
-    // frame like 42["send_message",{...}]). We cannot replay those as easily,
-    // but we can see whether the payload carries a client-supplied identity at
-    // all — if it does not, the server must be deriving identity from the
-    // connection, which is the property being tested.
+    // A missing client identity in a WebSocket write proves server-derived identity.
     page.on('websocket', ws => {
       ws.on('framesent', f => {
         const p = typeof f.payload === 'string' ? f.payload : '';
@@ -331,11 +296,7 @@ class Actor {
     page.on('console', m => {
       if (m.type() !== 'error') return;
       const text = m.text();
-      // The browser logs a failed fetch as a console error, so an app that
-      // correctly refuses something — a duplicate username, a wrong password —
-      // looks like it has a bug. A 4xx is the server deliberately saying no;
-      // that is the behaviour under test, not a defect. 5xx still counts, and so
-      // does every genuine JavaScript error.
+      // Expected 4xx responses are not application console failures.
       if (/Failed to load resource.*status of 4\d\d/.test(text)) return;
       this.consoleErrors.push(text.slice(0, 200));
     });
@@ -370,33 +331,16 @@ class Actor {
   }
 }
 
-// Scenario strings may reference a run-scoped room as "{room:base}".
-// "{room:base}" is a run-scoped room. "{user:Name}" is the scoped account name
-// signUp actually created — scenarios name people as Alice and Target, but the
-// app only ever sees "Alice-<scope>", so anything matched against real traffic
-// has to be expanded the same way.
+// Expand scenario aliases to the run-scoped values used by the app.
 const expand = (s: unknown, ctx: GradeRunContext): unknown =>
   typeof s === 'string'
     ? s.replace(/\{room:([^}]+)\}/g, (_, b) => ctx.roomName(b))
-       // Scoped account names are alphanumeric so the delimiter cannot join
-       // the name and the scope with a hyphen, so the harness signed up as
-       // "Alice-l1features". The level spec never states which characters a
-       // username must accept, so an app validating them as letters, digits and
-       // underscore — GitHub's rule, an ordinary choice — rejected every account
-       // the harness tried to create, and all 49 criteria reported "setup
-       // failed" for a defensible implementation. uniq() is base36, so dropping
-       // the separator leaves the identifier alphanumeric, which every
-       // reasonable rule accepts. Room names are unaffected: they are display
-       // text, and their bases ({room:room-a}) already contain hyphens.
+       // Keep generated usernames alphanumeric so ordinary validators accept them.
        .replace(/\{user:([^}]+)\}/g, (_, n) => `${n}${ctx.scope}`)
     : s;
 
 
-// ─── On-screen annotation ────────────────────────────────────────────────────
-// Recording a run is only half useful if you cannot tell what it was doing. This
-// paints the current feature, criterion and step onto each actor's page, so the
-// video explains itself. The banner carries no test id and lives outside the app
-// root, so scoped assertions cannot see it.
+// Put test context in recordings without exposing it to scoped app selectors.
 
 const OVERLAY_ID = '__stackbench_overlay';
 
@@ -491,7 +435,7 @@ function describeStep(step: CompiledStep): string {
 }
 
 
-// ─── Step execution ──────────────────────────────────────────────────────────
+// Step execution
 
 function abortableSleep(ms: number, signal: AbortSignal | null = null): Promise<void> {
   if (signal?.aborted) return Promise.reject(signal.reason ?? new Error('action cancelled'));
@@ -732,7 +676,7 @@ export async function closeActorContexts(entries: readonly CleanupActorContextEn
   return failures;
 }
 
-// ─── Feature grading ─────────────────────────────────────────────────────────
+// Feature grading
 
 function completedFeatureResult(result: FeatureResult): CompletedGradeFeatureResult {
   if (!result.setupEvidence) {
@@ -832,11 +776,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       await runStep(step, actors, ctx);
     }
   } catch (err) {
-    // Carry the structured reason onto every criterion so downstream consumers
-    // can distinguish an application setup failure from missing harness evidence.
-    // ECONNREFUSED can mean the generated app never started, so it remains an
-    // application/setup failure. A child-process failure or vanished browser
-    // target supplies no behavioral observation and is inconclusive.
+    // Preserve the typed setup failure on every affected criterion.
     const classified = classifyCheckFailure(err);
     const why = keepReason((classified.summary ?? '').trim());
     const screenshots = await captureFailureScreenshots('setup');
@@ -928,7 +868,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
   return completedFeatureResult(result);
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// Main
 
 async function main(): Promise<void> {
   const startedAt = new Date().toISOString();

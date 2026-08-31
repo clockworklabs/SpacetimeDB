@@ -399,10 +399,7 @@ export function reconcileCredentialBrokerReceipt({ ledger, cliResult, model, max
     cliUsage = normalizeClaudeUsage(isRecord(cliResult) ? cliResult.usage : undefined);
   } catch (error) { if (!issue) issue = errorMessage(error); }
   if (verifiedLedger) usage = structuredClone(verifiedLedger.usage);
-  // The CLI summary can omit provider calls used for internal session work.
-  // The broker sees every billed provider response, so it is the cost source
-  // of truth. The CLI summary remains a useful lower-bound check: if it reports
-  // usage that the broker did not record, the receipt is incomplete.
+  // Broker usage is authoritative; CLI usage is its lower-bound check.
   if (!issue && cliUsage && usage && !brokerCoversCliUsage(usage, cliUsage)) {
     issue = 'credential broker usage is lower than CLI usage totals';
   }
@@ -461,10 +458,7 @@ function clientAuthorized(request: IncomingMessage, sessionToken: string): boole
 function upstreamHeaders(request: IncomingMessage, config: BrokerConfig): OutgoingHttpHeaders {
   const headers: OutgoingHttpHeaders = { ...request.headers };
   delete headers.host;
-  // Usage accounting reads a copy of the provider response. Ask for an
-  // identity response so the accounting path and the client see the same
-  // bytes. The decoder below still handles an encoded response if an upstream
-  // proxy adds one.
+  // Request identity encoding so accounting and the client read the same bytes.
   delete headers['accept-encoding'];
   delete headers.authorization;
   delete headers['proxy-authorization'];
@@ -957,10 +951,7 @@ export async function stopCredentialBroker(broker: CredentialBrokerHandle | null
   const expected = { model: broker.model, maxBudgetUsd: broker.maxBudgetUsd };
   try {
     const deadline = now() + drainTimeoutMs;
-    // A provider connection can close just before the upstream response ends.
-    // Keep the broker alive long enough to settle that request and write its
-    // exact usage. Killing it immediately leaves a reservation in the ledger,
-    // which turns a recoverable provider interruption into an unknown cost.
+    // Drain the final provider response before closing its cost reservation.
     while (drainReason === null) {
       ledger = read('drain', expected) ?? ledger;
       if (ledger?.complete === true) { drainReason = 'ledger-complete'; break; }

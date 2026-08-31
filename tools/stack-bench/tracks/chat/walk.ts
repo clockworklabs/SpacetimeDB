@@ -1,10 +1,6 @@
 import type { LintWalkContext } from '../../linter/lint.js';
 
-// The chat app's core flow: sign up -> create a room -> enter it -> send a
-// message, checking each stage's contract hooks along the way.
-//
-// Keep the operation order and messages stable. The linter output is recorded
-// evidence.
+// Keep this recorded contract walk stable.
 
 export async function walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT }: LintWalkContext): Promise<void> {
   await page.goto(args.url ?? '', { waitUntil: 'domcontentloaded', timeout: 15000 });

@@ -37,19 +37,10 @@ function readableCampaign(campaign: DashboardCampaignSummary): campaign is Campa
   return campaign.status !== 'unreadable';
 }
 
-// Stacks read in a fixed order everywhere, so the same comparison sits in the
-// same columns on every refresh whatever order the scheduler started them in.
 const STACK_ORDER = ['spacetime', 'postgres', 'mongodb'];
-// The same causes the compiled campaign compiler excludes from a campaign's evidence. A
-// result carrying one of these is never counted, never averaged, and never
-// silently treated as a low score.
 const EXCLUDED_OUTCOMES = new Set(['harness_failure', 'inconclusive', 'ungraded', 'contaminated']);
-// Below this many usable repetitions there is no spread worth reporting, so the
-// summary says so rather than implying a settled difference.
+// Spread needs at least three usable repetitions.
 const MIN_REPETITIONS = 3;
-// A finished campaign nobody needs to act on leaves the default view after
-// this long. Running and completed campaigns never archive: one is live, the
-// other is the record.
 const ARCHIVE_AFTER_MS = 72 * 3600 * 1000;
 
 const state: {
@@ -133,9 +124,6 @@ const skeletonRows = (count: number): string => Array.from({ length: count }, ()
   <td class="num"><span class="skeleton num"></span></td>
 </tr>`).join('');
 
-// The load bar reflects requests actually in flight, so it appears for the
-// first paint and for a detail fetch, and never runs on a timer pretending to
-// know how long something takes.
 let inflight = 0;
 function trackLoading(delta: number): void {
   inflight = Math.max(0, inflight + delta);
@@ -198,11 +186,7 @@ async function controlRequest(path: string, options: RequestInit): Promise<void>
   }
 }
 
-// ---------------------------------------------------------------- measurement
-
-// Spend is read from the level records because those are written as the run
-// proceeds; run.totals only appears once an attempt finishes, so a live attempt
-// would otherwise report nothing.
+// Live attempts record cost by level before final totals exist.
 function attemptSpend(attempt: Attempt): number | null {
   const run = attempt.result;
   if (!run || run.unreadable) return null;
@@ -218,10 +202,7 @@ function attemptCostLabel(attempt: Attempt): string {
   return `${money(spend)}${attempt.result?.costComplete === false ? ' <small>incomplete</small>' : ''}`;
 }
 
-// Two numbers per attempt, because they answer different questions: what the
-// model got right unaided, and what the whole correction cost. A first grade
-// that aborted before grading contributes nothing to the first-build figure —
-// an app the grader never scored did not score zero.
+// An ungraded first build has no score; it is not a zero.
 function attemptMetrics(attempt: Attempt): {
   first: number | null; final: number; rounds: number; spend: number | null;
   duration: number | null; scope: string; abortedFirst: number;
@@ -280,9 +261,7 @@ function attemptExcluded(attempt: Attempt): string | null {
   return null;
 }
 
-// Aggregation never crosses a campaign boundary. One campaign is one frozen
-// plan, which is the only guarantee the harness gives that two results share a
-// recipe, grader, image, model and prompt treatment.
+// Compare results only within one frozen campaign.
 function compareCampaign(campaign: Campaign): { rows: ComparisonRow[]; usable: ComparisonRow[];
   priced: ComparisonRow[]; burn: Map<string, number | null>; mixedScope: boolean; comparable: boolean } {
   const byStack = new Map<string, ComparisonEntry>();
@@ -290,8 +269,7 @@ function compareCampaign(campaign: Campaign): { rows: ComparisonRow[]; usable: C
     const entry = byStack.get(attempt.stack)
       ?? { stack: attempt.stack, runs: [], excluded: [], pending: 0, spendSoFar: null, abortedFirst: 0 };
     byStack.set(attempt.stack, entry);
-    // Every attempt's spend counts toward burn, including ones excluded from
-    // the result: a contaminated run still cost money.
+    // Excluded attempts still contribute to actual spend.
     const incurred = attemptSpend(attempt);
     if (incurred != null) entry.spendSoFar = (entry.spendSoFar ?? 0) + incurred;
     const reason = attemptExcluded(attempt);
@@ -325,12 +303,11 @@ function compareCampaign(campaign: Campaign): { rows: ComparisonRow[]; usable: C
   const priced = usable.filter(row => row.spend != null);
   return { rows, usable, priced,
     burn: new Map([...byStack.values()].map(entry => [entry.stack, entry.spendSoFar])),
-    // Costs are only comparable when every stack graded the same amount of work.
     mixedScope: scopes.size > 1,
     comparable: priced.length > 1 && scopes.size === 1 };
 }
 
-// ------------------------------------------------------------- live rendering
+// Live runs
 
 // The attempt's climb, one point per completed grade, normalized by each
 // grade's own maximum so L1 and L2 points share a scale.
@@ -500,10 +477,6 @@ function renderVerdict(): void {
   if (latest) $('#verdict-card').innerHTML = verdictCard(latest);
 }
 
-// ------------------------------------------------------------------ rendering
-
-// One measure, one colour. A per-row hue would double-encode the bar length and
-// collide with the status palette, which is the only hue this page spends.
 function bar(value: number | null, peak: number, label: string): string {
   if (value == null || !peak) return '<div class="bar"></div>';
   return `<div class="bar"><progress max="${peak}" value="${value}" aria-label="${escapeHtml(label)}"></progress></div>`;
@@ -630,11 +603,8 @@ function attemptRows(campaign: Campaign): string {
   </table></td>`;
 }
 
-// Refresh updates rows in place instead of replacing the table, so an element
-// under the pointer survives the poll and a click cannot land on a node that
-// was just thrown away.
+// Preserve row nodes during refresh so pointer targets stay stable.
 function reconcileRows(tbody: HTMLElement, desired: ReadonlyMap<string, RowEntry>): void {
-  // Skeleton and placeholder rows carry no key and never survive a real render.
   const existingRows = Array.from(tbody.children).filter((row): row is HTMLElement => row instanceof HTMLElement);
   for (const row of existingRows) if (!row.dataset.rowKey) row.remove();
   const existing = new Map(Array.from(tbody.children)
@@ -663,8 +633,7 @@ function reconcileRows(tbody: HTMLElement, desired: ReadonlyMap<string, RowEntry
   for (const row of existing.values()) row.remove();
 }
 
-// Running campaigns first, then the record by recency. History nobody acted on
-// leaves the default view after ARCHIVE_AFTER_MS; the toggle brings it back.
+// Show live work first and archive stale history by default.
 function partitionCampaigns(campaigns: readonly DashboardCampaignSummary[]): { visible: DashboardCampaignSummary[]; archivedCount: number } {
   const age = (campaign: DashboardCampaignSummary): number => Date.now() - (Date.parse(readableCampaign(campaign) ? campaign.updatedAt ?? '' : '') || 0);
   const archived = (campaign: DashboardCampaignSummary): boolean => campaign.status !== 'running' && campaign.status !== 'completed'
@@ -719,7 +688,7 @@ function render() {
   $('#mode-tag').hidden = overview.canStart;
 }
 
-// --------------------------------------------------------------------- detail
+// Run detail
 
 function artifactUrl(campaign: Campaign, artifact: DashboardArtifact, download = false): string {
   return `/api/campaigns/${encodeURIComponent(campaign.key)}/artifacts/${encodeURIComponent(artifact.id)}${download ? '?download=1' : ''}`;
@@ -780,11 +749,8 @@ function levelTable(attempt: Attempt): string {
 }
 
 
-// ------------------------------------------------------------- questlines
+// Questlines
 
-// A questline reads as a journey: its stations in order, lit as far as the run
-// got. The dependency edges stay in the engine and the tooltips — drawing all
-// of them made the picture about the compiler instead of the product.
 function questlineLanes(dependency: Dependency): QuestlineLane[] {
   const nodes = dependency.nodes ?? [];
   const byId = new Map(nodes.map(node => [node.id, node]));
@@ -917,9 +883,6 @@ function questlineStrip(columns: readonly DependencyColumn[], lanes: readonly Qu
     aria-label="one row per stack, every questline as a strip of stations">${headers}${rows}</svg>`;
 }
 
-// One stack with the panel to itself: the real dependency graph, every node
-// named, every edge a declared prerequisite. Columns are dependency depth,
-// bands are questlines, and a failed node visibly cuts the branch it blocks.
 function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane[]): string {
   const { attempt } = column;
   const nodes = attempt.dependency.nodes ?? [];
@@ -1015,9 +978,6 @@ function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane
     aria-label="${escapeHtml(`${title(column.stack)} dependency graph`)}">${head}${sides}${edges.join('')}${pills.join('')}</svg>${key}`;
 }
 
-// The section only appears on dependency-mode campaigns with recorded state.
-// Every stack is drawn to the same rules; what differs is how far each journey
-// got before the strikes ran out.
 function dependencyConstellation(campaign: Campaign): string {
   if (campaign.mode !== 'dependency') return '';
   const columns: DependencyColumn[] = [];
@@ -1241,7 +1201,7 @@ function openFromHash() {
   else if ($('#detail-dialog').open) closeDetail();
 }
 
-// ------------------------------------------------------------------- plumbing
+// Events
 
 function populatePlans() {
   const overview = state.overview;

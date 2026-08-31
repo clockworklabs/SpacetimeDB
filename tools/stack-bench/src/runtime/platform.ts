@@ -1,14 +1,4 @@
-// The few things the harness does that differ per operating system.
-//
-// Everything else here is Node and bash, which travel. Process and port
-// control did not: the whole of it was taskkill, netstat and PowerShell with
-// no fallback, so the benchmark could only ever have run on Windows. The
-// nemesis phase wants Linux runners, and a result that cannot be reproduced on
-// another machine is worth less than one that can.
-//
-// Each function returns something sane when its tools are missing rather than
-// throwing, because process cleanup runs in teardown paths where a failure
-// would mask whatever actually went wrong.
+// Cleanup helpers must not hide the original failure when platform tools are absent.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -130,25 +120,7 @@ export function pidsOnPort(
   return [...out];
 }
 
-/**
- * PIDs whose command line mentions `needle` — a dev server holding a directory.
- *
- * The query must not match ITSELF. The PowerShell that runs the search carries
- * the needle in its own command line, so an unfiltered version returns the
- * searcher among the results: a cleanup that killed what this returned would
- * shoot the process asking the question. Confirmed by running it — the only
- * "match" was the powershell doing the matching.
- *
- * Note this finds processes that NAME the directory, not processes standing in
- * it. `npm run dev` shows as `npm-cli.js run dev` with the path nowhere in
- * sight, which is exactly the leftover that wedged a run. Unique per-run work
- * directories are what actually fix that; this narrows the blast radius.
- */
-// The pids this process hangs from: itself, its parent shell, that shell's
-// parent, up to the root. Killing anything in this chain kills the run —
-// which is not hypothetical: an invocation carrying the app path in its own
-// `--app` argument matched itself, killTree took out the invoking bash, and
-// the command died with no output and nothing to debug from.
+// Never return this process or an ancestor as a cleanup target.
 function ancestorPids(): Set<number> {
   const chain = new Set<number>([process.pid]);
   try {

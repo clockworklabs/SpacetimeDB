@@ -1,12 +1,5 @@
 #!/usr/bin/env node
-// Stack Bench UI-contract linter.
-//
-// Walks the selected track's declared path using only contract test ids. It
-// checks every lintable hook for the requested level. Hooks with stage
-// "scenario" need separate setup and are checked by the scenario suites.
-//
-// Usage: node dist/linter/lint.js --url http://localhost:6173 --level 3 [--json] [--headed]
-// Exit codes: 0 = all lintable hooks pass, 1 = failures, 2 = usage/infra error.
+// Scenario-stage hooks require scenario setup and are not linted here.
 
 import { chromium } from 'playwright';
 import type { Page } from 'playwright';

@@ -1,20 +1,5 @@
 #!/usr/bin/env node
-// Run one build session inside the isolation image.
-//
-// The build container has no Stack Bench mount. The grader, scenarios,
-// contracts, and prompts are absent from the filesystem the build can reach.
-// This is stronger than a command blocklist.
-//
-// The prompt arrives on stdin and the CLI's JSON result goes to stdout, exactly
-// as the host path does, so callers do not care which one ran.
-//
-// Usage:
-//   node dist/container/run-build.js --app <dir> --image <tag> --effort high \
-//                      [--ports 6473,6573] [--model claude-sonnet-5]
-//
-// Run it by hand from Git Bash and export MSYS_NO_PATHCONV=1 first, or the shell
-// rewrites `/app/...` arguments into `C:/Program Files/Git/app/...` before this
-// script ever sees them. Stack Bench spawns it without a shell.
+// The build container must not expose Stack Bench source or grading material.
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
@@ -181,18 +166,7 @@ if (!prepareOnly) {
   catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 }
 
-// The audit trail has to survive `--rm`.
-//
-// The contamination audit decides whether a run is contaminated, and the cost ledger
-// reconstructs the bill; both read the session transcript. Inside the container
-// the CLI files it under the isolated user's project directory (cwd is /app, and the CLI
-// names a project folder after its path with separators turned into dashes —
-// checked, not assumed). Mounting the host folder that `leak-audit --app` looks
-// in onto that exact path means the audit keeps working with no argument
-// changes, and a containerised run stays as auditable as a host one.
-//
-// The host's whole ~/.claude/projects is deliberately NOT mounted: it holds
-// every other run's transcripts and the user's own sessions.
+// Persist this run's transcript without exposing other local sessions.
 const projects = prepareOnly ? null : join(homedir(), '.claude', 'projects',
   resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
 function ensureAgentWritable(directory: string): void {
@@ -204,12 +178,7 @@ ensureAgentWritable(appDir);
 if (projects) ensureAgentWritable(projects);
 for (const directory of containerPlan.ensureDirectories) ensureAgentWritable(directory);
 
-// The container outlives the coding process because grading and repair reuse
-// the app's dev servers and Linux dependencies. Sessions execute inside one
-// leased long-lived container; teardown removes that exact container later.
-//
-// The name is derived from the run's work directory, which already carries a
-// timestamp, so it is unique per run and reconstructible from the app path.
+// Grading and repair reuse this leased container.
 const containerName = `stack-bench-${basename(dirname(resolve(appDir)))}`;
 const dockerEnv: NodeJS.ProcessEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 
@@ -297,11 +266,7 @@ const expectedMounts: ContainerMount[] = [
   ...containerPlan.mounts,
 ];
 
-// Resolve ownership before looking at, reusing, or creating a container. A
-// same-name container is not evidence that this run owns it: adopting one
-// would let a collision mount an unrelated filesystem into the benchmark, and
-// deleting it by name would destroy somebody else's resource. The lease's
-// immutable id is the only reuse authority.
+// Only the lease's immutable container id grants reuse or deletion authority.
 let leaseContext;
 try { leaseContext = leaseFromEnv(process.env, { backend, active: true }); }
 catch (error) {
@@ -398,10 +363,7 @@ if (!existing) {
     }
   }
 
-  // Dev servers start inside the container and the grader runs on the host, so
-  // the track's port window has to be published. Publishing happens at create
-  // time only — a port cannot be added to a running container, which is the
-  // other reason the session cannot own the container's lifetime.
+  // Publish the track's ports for the host grader.
   if (expectedNetworkMode === 'bridge') for (const p of ports) create.push('-p', `${p}:${p}`);
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
@@ -503,9 +465,7 @@ if (!existing) {
 }
 
 if (containerPlan.readyFile) {
-  // `docker start` returns while PID 1 is still staging the SDK. Do not race
-  // the coding session against that copy/install: a partial file dependency
-  // fails as an application error and charges the backend for harness setup.
+  // Wait until SDK staging finishes before starting the paid session.
   let ready = false;
   const readyDeadline = Date.now() + 90_000;
   while (Date.now() < readyDeadline) {
@@ -554,21 +514,14 @@ const leasedEnvironment = leasedDatabaseEnvironment(adapter, {
 });
 for (const [key, value] of Object.entries(leasedEnvironment)) args.push('-e', `${key}=${value}`);
 const dockerExecEnv: NodeJS.ProcessEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
-// A container does not inherit the caller's environment, so anything the run is
-// meant to be configured by has to be handed over explicitly. Only variables the
-// harness sets deliberately are forwarded — passing the whole environment would
-// put the host's shape, and CLAUDE_EFFORT, back inside the build.
+// Forward only benchmark-owned environment settings.
 if (process.env.MAX_THINKING_TOKENS) {
   args.push('-e', `MAX_THINKING_TOKENS=${process.env.MAX_THINKING_TOKENS}`);
 }
 
 const claudeArgs = [
   '--print', '--output-format', 'json',
-  // A benchmark session must not inherit Claude Code's project memory,
-  // CLAUDE.md files, plugins, or background integrations. The generated app
-  // and the explicit request are the complete input. Transcripts are still
-  // persisted, so cost reconciliation and the post-session leak audit remain
-  // available.
+  // Isolate the session from project memory, plugins, and integrations.
   '--bare',
   '--permission-mode', 'acceptEdits',
   '--settings', JSON.stringify({ permissions: { allow: ['Bash'] } }),
