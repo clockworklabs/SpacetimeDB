@@ -527,6 +527,7 @@ test('qualification reuse accepts only the declared source and unchanged grading
   const expected = structuredClone(actual);
   expected.executableSha256 = '5'.repeat(64);
   expected.recipe = { id: 'recipe', version: '1.1.0', contentSha256: 'a'.repeat(64) };
+  expected.stack.version = '2.0.0';
   const input = { actual, expected, artifact, calibration,
     entry: { kind: 'mutation', stack: 'mongodb' } };
   assert.equal(canReuseQualificationScope(input), true);

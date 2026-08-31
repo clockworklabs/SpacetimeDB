@@ -76,7 +76,7 @@
       "version": "2.0.1",
       "sha256": "dd91493c5066018cbfd949d6e14d64dc029deb634e93d796752caee3da97682c"
     },
-    "rationale": "Agent workspace isolation, prompt facts, repair diagnostics, and clean generated-application startup changed. Recipe checks, reference sources, mutation definitions, database operations, action probes, the standalone database runtime, and scoring logic did not change.",
+    "rationale": "Appliance admission, adapter metadata, and dependency repair accounting changed. Recipe checks, reference sources, mutation definitions, database operations, action probes, the standalone database runtime, and scoring logic did not change.",
     "evidence": [
       {
         "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/prompt-material-reuse.json",
@@ -88,42 +88,42 @@
         "kind": "reference",
         "stack": "mongodb",
         "fromExecutableSha256": "b806484f7bb42170561e17fa8605b9fd3646d7299d2f2138fa0990e672d26759",
-        "toExecutableSha256": "b8780ae9a56e369ae4a5c45d4bda86217166dc7938870e5399eb1028cfc1ba1e"
+        "toExecutableSha256": "b60f57771ad557d33d42733c8227f5dc5b82d5e6f557111b935bc5e36d43f69d"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "fromExecutableSha256": "68ad187165516dd353c091557caeca8b243fee27321deaf5e3a8468be0cb1bf9",
-        "toExecutableSha256": "0017fd77f3c108e45cec40cf7f68fb4908ef4977827ae780bac530b7508a7f3f"
+        "toExecutableSha256": "2b9ab219e2654ec195f0bcc4de86824f8a59c95ea4e9f179168328ce4e3b267c"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "fromExecutableSha256": "10f59cd1c82887afe4a34fe58383e2d195abf5e9850711f28d0e4ef3c7b2dec9",
-        "toExecutableSha256": "c2212db6ee40f780834c901a6d088a859708e8dbe1ff9f989e9d21b20a9f0774"
+        "toExecutableSha256": "0b12a439ee0fc6cce02598cc3ddda437a65d182dd0218c590f626ede872f8ed4"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "fromExecutableSha256": "d8d3a75d12a7b2fedcffdfd11ab76b1918005335ca8f6fb56f101b691d4002ad",
-        "toExecutableSha256": "4321103f790b8987c273bcfbe13681887ee4b197f7fc8103cd9229b78f084320"
+        "toExecutableSha256": "2cb06a37cb6ed87ced0c49fe144e86e95fcec0274a257c744a5e63fb51213e38"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "fromExecutableSha256": "9cdd1c8cccaf7ecd5e5d3039b0a0cf5c41a42c355ab085d9816b2d064706c2b9",
-        "toExecutableSha256": "84b310258255f6b3d474d92b49dd841da0ce487e4e916295022d30c2ddcf6015"
+        "toExecutableSha256": "51fa500c7b40a6d84712f75ad6ab8b185cf71673087f013daac81f90b45de507"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "fromExecutableSha256": "3d512023e270c2b55c1c1eeeee70b1b6d70261814754e24b618f5c66bd086a0a",
-        "toExecutableSha256": "1937140a960c6bb8d66e8fbea6c745af529bad28f97139b50b9525bb9e6678f2"
+        "toExecutableSha256": "8658a1b4837736ab3aecaf83bc93cb8b8687481ab80e1fbf1fe602c45c79642e"
       },
       {
         "kind": "null",
         "fromExecutableSha256": "58b6187b453a4229b1ff3f403e4d38765468eabc487e137d6f789ee125cbc91a",
-        "toExecutableSha256": "0f158a00b2ef3422f76076909173690012677a61e38cc201ef643ad4297eda00"
+        "toExecutableSha256": "d212bb3f5db126dc106e4daef9cf8b4696db0927297bff657d8dab1670761a1d"
       }
     ]
   },

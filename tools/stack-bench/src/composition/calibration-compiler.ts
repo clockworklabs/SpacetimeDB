@@ -639,6 +639,8 @@ export function canReuseQualificationScope({ actual, expected, artifact, calibra
     contentSha256: reuse.sourceRecipe.contentSha256 };
   const sourceArtifactRecipe = { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
     sha256: reuse.sourceRecipe.contentSha256 };
+  const stackInputs = (value: unknown) => isObject(value)
+    ? { id: value.id, reference: value.reference } : value;
   return actual.schemaVersion === expected.schemaVersion
     && actual.kind === expected.kind
     && actual.executableSha256 === decision.fromExecutableSha256
@@ -647,7 +649,8 @@ export function canReuseQualificationScope({ actual, expected, artifact, calibra
     && evidenceIdentityMatches(read(artifact.identities, 'calibration'), reuse.sourceCalibration)
     && canonicalDefinitionJson(actual.recipe) === canonicalDefinitionJson(sourceScopeRecipe)
     && actual.checksSha256 === expected.checksSha256
-    && canonicalDefinitionJson(actual.stack) === canonicalDefinitionJson(expected.stack)
+    && canonicalDefinitionJson(stackInputs(actual.stack))
+      === canonicalDefinitionJson(stackInputs(expected.stack))
     && actual.mutationSha256 === expected.mutationSha256;
 }
 
