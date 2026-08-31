@@ -2,7 +2,7 @@ import { AGENT_COST_RECEIPT_TOLERANCE_USD } from './agent-adapter-contract.js';
 
 type UnknownRecord = Record<string, unknown>;
 
-export interface CodingSessionResult extends UnknownRecord {
+interface CodingSessionResult {
   api_error_status?: number | null;
   terminal_reason?: string;
   result?: string;
@@ -13,46 +13,53 @@ export interface CodingSessionResult extends UnknownRecord {
   usage?: UnknownRecord;
   stack_bench_cost_receipt?: UnknownRecord;
   stack_bench_credential_broker?: CodingSessionCredentialBroker;
+  terminal_recovery?: unknown;
 }
 
-export interface CodingSessionCredentialBroker extends UnknownRecord {
+interface CodingSessionCredentialBroker {
   endpointKind?: string;
-  child?: {
-    exitCode?: number | null;
-    signal?: string | null;
-  };
-  termination?: {
-    exited?: boolean;
-  };
 }
 
-export interface CodingProcessError {
+interface CodingProcessError {
   code?: string;
   status?: number;
   stdout?: unknown;
   stderr?: unknown;
 }
 
-interface CodingProcessDiagnostic extends UnknownRecord {
+interface CodingProcessDiagnostic {
   status?: unknown;
   signal?: unknown;
   cgroupMemory?: unknown;
   container?: { ExitCode?: unknown; OOMKilled?: unknown };
 }
 
-export interface ProviderSessionFailure {
+interface ProviderSessionFailure {
   code: 'provider-throttle' | 'provider-api-error' | 'credential-broker-unavailable'
     | 'provider-connection-error' | 'provider-session-error';
   status: number | null;
 }
 
-export interface CodingSessionInterruption extends UnknownRecord {
+interface CodingSessionInterruption {
   kind: 'provider-throttled' | 'provider-api-error' | 'credential-broker-unavailable'
     | 'provider-connection-error' | 'coding-session-timeout' | 'coding-process-killed';
   resumeSession: string | null;
   recoverStoppedContainer: boolean;
   terminalReason: string | null;
   providerStatus: number | null;
+  diagnostic?: {
+    status: unknown;
+    signal: unknown;
+    containerExitCode: unknown;
+    oomKilled: unknown;
+  } | null;
+}
+
+interface RecordedCodingSessionInterruption extends CodingSessionInterruption {
+  invocation: number;
+  sessionId: string | null;
+  costUsd: number | null;
+  waitedMs?: number;
 }
 
 export interface CodingSessionInvocation {
@@ -63,7 +70,7 @@ export interface CodingSessionInvocation {
   invocation: number;
 }
 
-export interface CodingSessionRecoveryOptions {
+interface CodingSessionRetryOptions {
   invoke: (invocation: CodingSessionInvocation) => unknown;
   prompt: string;
   retryLimit: number;
@@ -74,7 +81,7 @@ export interface CodingSessionRecoveryOptions {
   log?: ((message: string) => void) | null;
 }
 
-export interface AggregatedCodingSessionResult extends CodingSessionResult {
+interface AggregatedCodingSessionResult extends CodingSessionResult {
   total_cost_usd: number;
   num_turns: number;
   usage: {
@@ -86,11 +93,11 @@ export interface AggregatedCodingSessionResult extends CodingSessionResult {
   stack_bench_cost_receipts: Array<{ invocation: number; receipt: unknown }>;
 }
 
-export interface CodingSessionRecoveryResult {
+export interface CodingSessionRetryResult {
   raw: string;
   spawnError: string | null;
   sessionResults: CodingSessionResult[];
-  interruptions: Array<CodingSessionInterruption & UnknownRecord>;
+  interruptions: RecordedCodingSessionInterruption[];
   throttle: {
     waits: number;
     waitedMs: number;
@@ -110,9 +117,8 @@ function text(value: unknown): string {
 // Throttling consumes wait time, not interruption retries.
 const THROTTLE_STATUSES = new Set([429, 529]);
 const TRANSIENT_API_STATUSES = new Set([500, 502, 503, 504]);
-// Escalate to a 15-minute probe until the total wait budget expires.
-const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
-export const DEFAULT_THROTTLE_MAX_WAIT_MS = 300 * 60_000;
+const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000];
+export const DEFAULT_THROTTLE_MAX_WAIT_MS = 15 * 60_000;
 const BROKER_USAGE_FIELDS = ['input', 'output', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead'];
 
 export function providerSessionFailure(
@@ -141,19 +147,46 @@ export function providerSessionFailure(
   return null;
 }
 
-// Synchronous by design: the surrounding loop drives execFileSync invocations,
-// and each chunk is at most 15 minutes so a pending SIGTERM is honoured at the
-// next chunk boundary rather than never.
 function synchronousSleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function codingSessionResult(value: unknown): CodingSessionResult | null {
+  if (!object(value)) return null;
+  if (value.api_error_status !== undefined && value.api_error_status !== null
+    && typeof value.api_error_status !== 'number') return null;
+  for (const key of ['terminal_reason', 'result', 'session_id'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') return null;
+  }
+  if (value.is_error !== undefined && typeof value.is_error !== 'boolean') return null;
+  for (const key of ['total_cost_usd', 'num_turns'] as const) {
+    if (value[key] !== undefined && (!Number.isFinite(value[key]) || (value[key] as number) < 0)) {
+      return null;
+    }
+  }
+  if (value.usage !== undefined && !object(value.usage)) return null;
+  if (value.stack_bench_cost_receipt !== undefined
+    && !object(value.stack_bench_cost_receipt)) return null;
+  if (value.stack_bench_credential_broker !== undefined
+    && !object(value.stack_bench_credential_broker)) return null;
+  if (object(value.stack_bench_credential_broker)
+    && value.stack_bench_credential_broker.endpointKind !== undefined
+    && typeof value.stack_bench_credential_broker.endpointKind !== 'string') return null;
+  return value;
+}
+
+function parseResultLine(value: string): CodingSessionResult | null {
+  try { return codingSessionResult(JSON.parse(value)); } catch { return null; }
 }
 
 export function parseCodingSessionResult(raw: unknown): CodingSessionResult | null {
   const value = text(raw).trim();
   if (!value) return null;
-  try { return JSON.parse(value) as CodingSessionResult; } catch { /* try the last JSON line */ }
+  const whole = parseResultLine(value);
+  if (whole) return whole;
   for (const line of value.split(/\r?\n/).reverse()) {
-    try { return JSON.parse(line) as CodingSessionResult; } catch { /* keep looking */ }
+    const result = parseResultLine(line);
+    if (result) return result;
   }
   return null;
 }
@@ -167,7 +200,7 @@ function codingProcessDiagnostic(
   try {
     const parsed: unknown = JSON.parse(
       line.slice('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '.length));
-    return parsed as CodingProcessDiagnostic;
+    return object(parsed) ? parsed : null;
   }
   catch { return null; }
 }
@@ -292,9 +325,9 @@ export function codingSessionFailure(error: CodingProcessError): string {
     + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
 }
 
-export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null,
+export function runCodingSessionWithRetries({ invoke, prompt, retryLimit, maxBudgetUsd = null,
   throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, throttleJitterMs = 0,
-  sleep = synchronousSleep, log = null }: CodingSessionRecoveryOptions): CodingSessionRecoveryResult {
+  sleep = synchronousSleep, log = null }: CodingSessionRetryOptions): CodingSessionRetryResult {
   if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('coding interruption retry limit must be an integer from 0 to 3');
@@ -309,7 +342,7 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
   let raw = '';
   let spawnError: string | null = null;
   const sessionResults: CodingSessionResult[] = [];
-  const interruptions: Array<CodingSessionInterruption & UnknownRecord> = [];
+  const interruptions: RecordedCodingSessionInterruption[] = [];
   let resumeSession: string | null = null;
   let recoverStoppedContainer = false;
   // Track interruption attempts and throttle time separately.

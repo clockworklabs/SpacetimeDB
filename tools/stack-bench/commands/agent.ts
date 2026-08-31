@@ -26,8 +26,8 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
-  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.js';
-import type { CodingSessionRecoveryResult } from '../src/agents/coding-session-recovery.js';
+  runCodingSessionWithRetries } from '../src/agents/coding-session-retry.js';
+import type { CodingSessionRetryResult } from '../src/agents/coding-session-retry.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.js';
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
@@ -702,7 +702,7 @@ async function main() {
   // stable offset keeps retries reproducible while spreading them over 45s.
   const throttleJitterMs = parseInt(sha256(Buffer.from(
     `${args.backend}:${args.runIndex}:${args.level}:${args.mode}`)).slice(0, 8), 16) % 45_001;
-  let coding: CodingSessionRecoveryResult;
+  let coding: CodingSessionRetryResult;
   try {
     // Send prompts through stdin to avoid the Windows command-line limit.
     const cliEnv = { ...process.env,
@@ -715,7 +715,7 @@ async function main() {
       // Pin cache lifetime so run order cannot change cost.
       FORCE_PROMPT_CACHING_5M: '1' };
 
-    coding = runCodingSessionWithRecovery({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
+    coding = runCodingSessionWithRetries({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
       throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
       throttleJitterMs,
       invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>

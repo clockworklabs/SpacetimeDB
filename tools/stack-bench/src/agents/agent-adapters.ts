@@ -8,7 +8,7 @@ import type {
   AgentMode,
 } from './agent-adapter-contract.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.js';
-import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.js';
+import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-retry.js';
 import { sha256 } from '../evidence/provenance.js';
 
 import { compiledEntrypoint } from '../package-root.js';
@@ -61,7 +61,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, version: '1.17.0',
+      usesStackSkills: true, version: '1.17.1',
       // Claude can wait through an account throttle. Local adapters keep the
       // shorter default deadline because they have no provider wait state.
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),

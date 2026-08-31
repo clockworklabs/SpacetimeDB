@@ -614,7 +614,7 @@ test('frozen campaigns require exact runtime images', () => {
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.1',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', unit: 'USD-per-million-tokens',
     capturedAt: '2026-08-12T00:00:00.000Z',
@@ -642,7 +642,7 @@ test('frozen campaigns accept a resolved qualification result for every selected
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.1',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', unit: 'USD-per-million-tokens',
     capturedAt: '2026-08-12T00:00:00.000Z',

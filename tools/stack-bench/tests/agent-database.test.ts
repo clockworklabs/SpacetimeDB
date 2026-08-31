@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ensureDatabase, hostServiceAddress } from '../commands/agent.js';
-import { codingSessionFailure } from '../src/agents/coding-session-recovery.js';
+import { codingSessionFailure } from '../src/agents/coding-session-retry.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import type { BackendLease } from '../src/runtime/backend-lease.js';
 import { loadTrack } from '../src/composition/tracks.js';
