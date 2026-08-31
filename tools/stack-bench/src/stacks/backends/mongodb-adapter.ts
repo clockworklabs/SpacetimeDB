@@ -14,11 +14,12 @@ import { controlHostedFor, defineStackAdapter, operationProvider,
 import type { StackAdapter } from '../stack-adapter-contract.js';
 
 const mongodbAdapter: StackAdapter = defineStackAdapter('mongodb', stackLeaseCapability('mongodb'), {
+  activate: activateHosted,
+  control: input => controlHostedFor(mongodbAdapter, input),
+}, {
   reset: operationProvider('mongodb', 'reset',
     { run: resetMongoDb, 'requires-reseed': () => true }),
   'database-write': operationProvider('mongodb', 'database-write', { 'set-stock': setMongoDbStock }),
-  lifecycle: operationProvider('mongodb', 'lifecycle',
-    { activate: activateHosted, control: input => controlHostedFor(mongodbAdapter, input) }),
   diagnostics: operationProvider('mongodb', 'diagnostics', { capture: captureHostedDiagnostics }),
   database: operationProvider('mongodb', 'database',
     { prepare: prepareMongoDbDatabase, 'prove-use': proveMongoDbUse }),

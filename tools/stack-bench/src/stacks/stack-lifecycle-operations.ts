@@ -13,15 +13,17 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, codingContainerAg
 import type { BackendLease, BackendLeaseContainer } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
+export type RuntimeControlMode = 'start' | 'stop' | 'restart';
+
 export interface ApplicationControlInput {
-  adapterId?: unknown;
-  lease: { resources: { buildContainer?: unknown } };
-  app?: unknown;
-  port?: unknown;
-  probe?: unknown;
-  mode?: unknown;
+  adapterId: string;
+  lease: { resources: { buildContainer?: BackendLeaseContainer | null } };
+  app: string;
+  port: number;
+  probe: string;
+  mode: RuntimeControlMode;
   environment?: Record<string, string>;
-  signal?: unknown;
+  signal?: AbortSignal | null;
   exec?: TextCommandExecutor;
 }
 
@@ -189,12 +191,14 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
 
 export async function controlHostedAppServer({ adapterId: stack, lease, app, port, probe, mode,
   environment = {}, signal, exec = execFileSync }: ApplicationControlInput): Promise<void> {
-  const abort = signal instanceof AbortSignal ? signal : null;
-  if (typeof stack !== 'string' || !/^[a-z][a-z0-9-]*$/.test(stack)) {
+  if (mode !== 'start' && mode !== 'stop' && mode !== 'restart') {
+    throw new Error(`unsupported application control mode ${String(mode)}`);
+  }
+  const abort = signal ?? null;
+  if (!/^[a-z][a-z0-9-]*$/.test(stack)) {
     throw new Error('application control requires a valid stack id');
   }
-  if (!Number.isInteger(Number(port)) || Number(port) <= 0 || Number(port) > 65535
-    || typeof probe !== 'string') {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error('application control requires a port and probe');
   }
   const container = inspectBuildContainer(lease, exec);
@@ -261,11 +265,10 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
 }
 
-export async function controlSpacetime({ lease, mode, signal = null }: {
-  lease: BackendLease; mode: string; signal?: AbortSignal | null;
+export async function controlSpacetime({ lease, signal = null }: {
+  lease: BackendLease; signal?: AbortSignal | null;
 }): Promise<void> {
   const leasePath = process.env.STACK_BENCH_LEASE ?? '';
-  if (mode !== 'restart') return;
   const url = leaseUrl(lease.resources.serverUri);
   const port = Number(url.port);
   const cli = process.env.SPACETIME_BIN;

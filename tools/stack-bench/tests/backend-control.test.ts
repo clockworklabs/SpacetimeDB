@@ -7,6 +7,7 @@ import { captureApplicationDiagnostics, controlBackendRuntime, hostedStopScript,
   parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { controlHostedAppServer, hostedLaunchCommand, hostedRecordedProcessStopScript }
   from '../src/stacks/stack-lifecycle-operations.js';
 import type { TextCommandOptions } from '../src/runtime/command-executor.js';
@@ -171,6 +172,24 @@ test('hosted application control inspects and stops listeners as the application
   ]);
   assert.equal(stop.args[7], 'leased-build');
   assert.match(stop.args.at(-1) ?? '', /lsof -ti tcp:65534 -sTCP:LISTEN/);
+});
+
+test('application control rejects unsupported modes before touching a container', async () => {
+  let calls = 0;
+  await assert.rejects(controlHostedAppServer({
+    adapterId: 'mongodb',
+    lease: { resources: { buildContainer: null } },
+    app: '.',
+    port: 6301,
+    probe: '/',
+    mode: 'invalid' as 'restart',
+    exec: () => { calls += 1; return ''; },
+  }), /unsupported application control mode invalid/);
+  assert.equal(calls, 0);
+
+  assert.throws(() => STACK_ADAPTER_REGISTRY.get('spacetime').lifecycle.control!({
+    adapterId: 'spacetime', lease: {} as never, app: '.', port: 6301, probe: '/', mode: 'stop',
+  }), /unsupported SpacetimeDB control mode stop/);
 });
 
 test('SpacetimeDB application start uses the root contract independently of its database host', async () => {

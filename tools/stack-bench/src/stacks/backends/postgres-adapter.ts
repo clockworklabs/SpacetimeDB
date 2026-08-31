@@ -14,11 +14,12 @@ import { controlHostedFor, defineStackAdapter, operationProvider,
 import type { StackAdapter } from '../stack-adapter-contract.js';
 
 const postgresAdapter: StackAdapter = defineStackAdapter('postgres', stackLeaseCapability('postgres'), {
+  activate: activateHosted,
+  control: input => controlHostedFor(postgresAdapter, input),
+}, {
   reset: operationProvider('postgres', 'reset',
     { run: resetPostgres, 'requires-reseed': () => true }),
   'database-write': operationProvider('postgres', 'database-write', { 'set-stock': setPostgresStock }),
-  lifecycle: operationProvider('postgres', 'lifecycle',
-    { activate: activateHosted, control: input => controlHostedFor(postgresAdapter, input) }),
   diagnostics: operationProvider('postgres', 'diagnostics', { capture: captureHostedDiagnostics }),
   database: operationProvider('postgres', 'database',
     { prepare: preparePostgresDatabase, 'prove-use': provePostgresUse }),

@@ -1256,7 +1256,7 @@ async function main() {
   emergencyTeardown = teardown;
 
   try {
-    executeStackCapability(stackAdapter, 'lifecycle', 'activate', {
+    stackAdapter.lifecycle.activate({
       leasePath, leaseToken: initialLease.ownershipToken, lease: initialLease,
       ...stackRuntime.lifecycle,
     });

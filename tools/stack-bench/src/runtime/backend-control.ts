@@ -4,9 +4,11 @@ import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { controlHostedAppServer }
   from '../stacks/stack-lifecycle-operations.js';
+import type { RuntimeControlMode } from '../stacks/stack-lifecycle-operations.js';
 import type { TextCommandExecutor } from './command-executor.js';
 
 export { hostedStopScript } from '../stacks/stack-lifecycle-operations.js';
+export type { RuntimeControlMode } from '../stacks/stack-lifecycle-operations.js';
 
 export interface RuntimeControlSpec {
   backend: string;
@@ -14,8 +16,6 @@ export interface RuntimeControlSpec {
   port: number;
   probe: string;
 }
-
-export type RuntimeControlMode = 'restart' | 'stop' | 'start';
 
 interface DiagnosticsOptions { exec?: TextCommandExecutor }
 interface RuntimeControlOptions { signal?: AbortSignal | null }
@@ -56,8 +56,10 @@ export async function controlBackendRuntime(
 ): Promise<void> {
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
-  await executeStackCapability(adapter, 'lifecycle', 'control',
-    { ...spec, adapterId: adapter.id, lease, mode, signal });
+  if (!adapter.lifecycle.control) {
+    throw new StackCapabilityUnsupportedError(`stack adapter ${adapter.id} does not support runtime control`);
+  }
+  await adapter.lifecycle.control({ ...spec, adapterId: adapter.id, lease, mode, signal });
 }
 
 // Always control the generated app server, not the stack's backend runtime.

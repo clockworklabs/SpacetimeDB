@@ -1,3 +1,6 @@
+import type { BackendLease } from '../runtime/backend-lease.js';
+import type { RuntimeControlMode } from './stack-lifecycle-operations.js';
+
 export const STACK_ADAPTER_SCHEMA_VERSION = 1;
 export const STACK_CAPABILITY_SCHEMA_VERSION = 1;
 
@@ -6,7 +9,6 @@ export const STACK_ENGINE_REQUIREMENTS: Readonly<Record<string, readonly string[
   lease: Object.freeze(['prepare', 'validate-resources']),
   reset: Object.freeze(['requires-reseed']),
   database: Object.freeze(['prepare']),
-  lifecycle: Object.freeze(['activate']),
   grading: Object.freeze(['context']),
   'named-action': Object.freeze(['request']),
   teardown: Object.freeze(['host']),
@@ -17,7 +19,7 @@ export const STACK_ENGINE_REQUIREMENTS: Readonly<Record<string, readonly string[
   orchestrator: Object.freeze(['config']),
 });
 
-const ADAPTER_FIELDS = new Set(['schemaVersion', 'id', 'version', 'capabilities']);
+const ADAPTER_FIELDS = new Set(['schemaVersion', 'id', 'version', 'lifecycle', 'capabilities']);
 const CAPABILITY_FIELDS = new Set(['schemaVersion', 'id', 'version', 'operations', 'execute']);
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -61,7 +63,30 @@ export interface StackAdapter {
   schemaVersion: typeof STACK_ADAPTER_SCHEMA_VERSION;
   id: string;
   version: string;
+  lifecycle: StackLifecycle;
   capabilities: Readonly<Record<string, Readonly<StackCapability>>>;
+}
+
+export interface StackLifecycleInput {
+  adapterId: string;
+  lease: BackendLease;
+  app: string;
+  port: number;
+  probe: string;
+  mode: RuntimeControlMode;
+  signal?: AbortSignal | null;
+}
+
+export interface StackActivationInput {
+  leasePath: string;
+  leaseToken: string;
+  lease: BackendLease;
+  cli?: string;
+}
+
+export interface StackLifecycle {
+  activate(input: StackActivationInput): void;
+  control?(input: StackLifecycleInput): Promise<void>;
 }
 
 // Dispatching a capability needs only the adapter's name and its capability
@@ -134,6 +159,10 @@ export function defineStackAdapter(value: unknown): Readonly<StackAdapter> {
   }
   const id = identifier(record.id, 'stack adapter.id');
   const adapterVersion = version(record.version, `stack adapter ${id}.version`);
+  if (!object(record.lifecycle) || typeof record.lifecycle.activate !== 'function'
+    || (record.lifecycle.control !== undefined && typeof record.lifecycle.control !== 'function')) {
+    throw new Error(`stack adapter ${id}.lifecycle is invalid`);
+  }
   if (!object(record.capabilities)) throw new Error(`stack adapter ${id}.capabilities must be an object`);
   const capabilities: Record<string, Readonly<StackCapability>> = {};
   for (const [name, provider] of Object.entries(record.capabilities)) {
@@ -147,7 +176,8 @@ export function defineStackAdapter(value: unknown): Readonly<StackAdapter> {
   if (Object.keys(capabilities).length === 0) {
     throw new Error(`stack adapter ${id} must declare at least one capability`);
   }
-  return Object.freeze({ schemaVersion: STACK_ADAPTER_SCHEMA_VERSION, id, version: adapterVersion,
+  const lifecycle = record.lifecycle as unknown as StackLifecycle;
+  return Object.freeze({ schemaVersion: STACK_ADAPTER_SCHEMA_VERSION, id, version: adapterVersion, lifecycle,
     capabilities: Object.freeze(capabilities) });
 }
 

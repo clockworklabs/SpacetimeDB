@@ -413,7 +413,7 @@ test('progression reference qualification follows the catalog check selection', 
   assert.equal(selection.grader.checkKeys.length, 97);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
-    [required(selection.grader.checkKeys[0], 'first check key')]).filter((value, index, argv) =>
+    [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>
     argv[index - 1] === '--check'), [required(selection.grader.checkKeys[0], 'first check key')]);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
   assert.equal(scoped.checkCatalog.length, 97);

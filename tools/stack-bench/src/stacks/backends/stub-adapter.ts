@@ -9,8 +9,9 @@ import { STUB_ADAPTER_VERSION } from './stub-identity.js';
 import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';
 
 export const stubAdapter = defineStackAdapter('stub', stackLeaseCapability('stub'), {
+  activate: activateHosted,
+}, {
   reset: operationProvider('stub', 'reset', { 'requires-reseed': () => false }),
-  lifecycle: operationProvider('stub', 'lifecycle', { activate: activateHosted }),
   database: operationProvider('stub', 'database', { prepare: ({ name }) => name }),
   grading: operationProvider('stub', 'grading', { context: createHttpGradingContext }),
   'named-action': operationProvider('stub', 'named-action', { request: httpNamedActionRequest }),

@@ -48,11 +48,11 @@ function namedActionRequest(value: unknown) {
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
   const postgres = STACK_ADAPTER_REGISTRY.get('postgres');
-  assert.equal(postgres.version, '1.3.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.2.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.0.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.0.0');
-  assert.equal(stackAdapterVersion('postgres'), '1.3.0');
+  assert.equal(postgres.version, '1.4.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.3.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.1.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.1.0');
+  assert.equal(stackAdapterVersion('postgres'), '1.4.0');
   assert.throws(() => stackAdapterVersion('unknown'), /unknown stack adapter/);
   assert.deepEqual(executeStackCapability(postgres, 'ports', 'for-run',
     { trackOffset: 100, runIndex: 2 }), { vite: 6375, express: 6103, dbPort: 6532 });
@@ -169,6 +169,7 @@ test('a new stack registers without changing engine code', () => {
     schemaVersion: STACK_ADAPTER_SCHEMA_VERSION,
     id: 'deterministic-fake',
     version: '1.0.0',
+    lifecycle: stub.lifecycle,
     capabilities,
   };
   const registry = createStackAdapterRegistry([...STACK_ADAPTER_REGISTRY.ids
@@ -238,6 +239,7 @@ test('unknown stacks, capabilities, operations, and malformed plugins fail close
   assert.throws(() => createStackAdapterRegistry([{ schemaVersion: 1, id: 'bad', version: 'latest',
     capabilities: {} }]), /version is invalid/);
   assert.throws(() => createStackAdapterRegistry([{ schemaVersion: 1, id: 'thin', version: '1.0.0',
+    lifecycle: { activate: () => {} },
     capabilities: { ports: { schemaVersion: STACK_CAPABILITY_SCHEMA_VERSION, id: 'thin.ports',
       version: '1.0.0', operations: ['allocations', 'for-run'], execute: () => ({ vite: 1 }) } } }]),
   /missing required capability lease/);

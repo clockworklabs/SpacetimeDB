@@ -12,11 +12,17 @@ import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';
 
 export const spacetimeAdapter = defineStackAdapter('spacetime', stackLeaseCapability('spacetime'), {
+  activate: activateSpacetime,
+  control: input => {
+    if (input.mode !== 'restart') {
+      throw new Error(`unsupported SpacetimeDB control mode ${input.mode}`);
+    }
+    return controlSpacetime({ lease: input.lease, signal: input.signal });
+  },
+}, {
   reset: operationProvider('spacetime', 'reset',
     { run: resetSpacetime, 'requires-reseed': () => false }),
   'database-write': operationProvider('spacetime', 'database-write', { 'set-stock': setSpacetimeStock }),
-  lifecycle: operationProvider('spacetime', 'lifecycle',
-    { activate: activateSpacetime, control: controlSpacetime }),
   database: operationProvider('spacetime', 'database', { prepare: prepareSpacetimeDatabase }),
   grading: operationProvider('spacetime', 'grading', { context: createSpacetimeGradingContext }),
   'named-action': operationProvider('spacetime', 'named-action', { request: spacetimeNamedActionRequest }),

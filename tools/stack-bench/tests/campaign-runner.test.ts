@@ -882,7 +882,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
     const firstWave = new Promise<void>(resolve => { releaseFirstWave = resolve; });
     const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
       admit: () => ({ id: 'parallel-admission', payload: { ok: true } }),
-      execute: async (command, argv, options) => {
+      execute: async (_command, argv, options) => {
         assert(options.env);
         const runIndex = Number(argv[argv.indexOf('--run-index') + 1]);
         const parent = argv[argv.indexOf('--parent-attempt-id') + 1]!;
@@ -953,7 +953,7 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
             resultsDir: request.resultsDir, smoke: request.smoke },
           ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
       }),
-      execute: async (_command, argv, options) => {
+      execute: async (_command, _argv, options) => {
         assert(options.env);
         mkdirSync(join(results, '.private'), { recursive: true });
         writeFileSync(options.env.STACK_BENCH_SUPERVISOR_STATE!, '{}');

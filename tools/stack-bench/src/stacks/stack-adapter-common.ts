@@ -1,8 +1,8 @@
 import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
   STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
-import type { StackAdapter, StackCapability, StackOperationHandler } from './stack-adapter-contract.js';
+import type { StackAdapter, StackCapability, StackLifecycle,
+  StackLifecycleInput, StackOperationHandler } from './stack-adapter-contract.js';
 import { controlHostedAppServer } from './stack-lifecycle-operations.js';
-import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
 type AdapterId = keyof typeof PORT_BASES;
 type OperationMap = Readonly<Record<string, StackOperationHandler>>;
@@ -11,8 +11,6 @@ type UnknownRecord = Record<string, unknown>;
 const record = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const operationHandler = (value: unknown): value is StackOperationHandler =>
-  typeof value === 'function';
-const commandExecutor = (value: unknown): value is TextCommandExecutor =>
   typeof value === 'function';
 
 function requireRecord(value: unknown, at: string): UnknownRecord {
@@ -68,12 +66,12 @@ export function runPolicyProvider(adapterId: AdapterId,
   return operationProvider(adapterId, 'run-policy', operations);
 }
 
-export function defineStackAdapter(id: AdapterId, lease: StackCapability,
+export function defineStackAdapter(id: AdapterId, lease: StackCapability, lifecycle: StackLifecycle,
   capabilities: Readonly<Record<string, StackCapability>> = {},
   { version }: { version: string }): StackAdapter {
   return {
     schemaVersion: STACK_ADAPTER_SCHEMA_VERSION,
-    id, version,
+    id, version, lifecycle,
     capabilities: { ports: portsProvider(id), lease, ...capabilities },
   };
 }
@@ -95,20 +93,9 @@ export function leasedDatabaseEnvironment(adapter: StackAdapter, { database, net
   return { DATABASE_URL: databaseUrl };
 }
 
-export function controlHostedFor(adapter: StackAdapter, input: unknown): unknown {
-  const request = requireRecord(input, 'hosted backend control input');
-  const lease = requireRecord(request.lease, 'hosted backend control lease');
-  const resources = requireRecord(lease.resources, 'hosted backend control resources');
-  const buildContainer = record(resources.buildContainer) ? resources.buildContainer : null;
-  const database = resources.database;
-  if (database !== null && typeof database !== 'string') {
-    throw new Error('hosted backend control database must be a string or null');
-  }
-  const networkMode = buildContainer?.networkMode;
-  if (networkMode !== null && networkMode !== undefined && typeof networkMode !== 'string') {
-    throw new Error('hosted backend control network mode must be a string or null');
-  }
-  const exec = request.exec;
+export function controlHostedFor(adapter: StackAdapter,
+  request: StackLifecycleInput): Promise<void> {
+  const { resources } = request.lease;
   return controlHostedAppServer({
     adapterId: request.adapterId,
     app: request.app,
@@ -116,12 +103,10 @@ export function controlHostedFor(adapter: StackAdapter, input: unknown): unknown
     probe: request.probe,
     mode: request.mode,
     signal: request.signal,
-    // Tests inject a command double through the dispatch; the shape cannot be
-    // proven structurally, so the boundary trusts any function here.
-    ...(commandExecutor(exec) ? { exec } : {}),
-    lease: { resources },
+    lease: request.lease,
     environment: {
-      ...leasedDatabaseEnvironment(adapter, { database, networkMode }),
+      ...leasedDatabaseEnvironment(adapter, { database: resources.database,
+        networkMode: resources.buildContainer?.networkMode }),
       VITE_PORT: String(request.port),
     },
   });

@@ -42,7 +42,7 @@ let restartStopped = false;
 let restartFailure = '';
 process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP = '1';
 try {
-  await controlSpacetime({ lease: beforeRestart, mode: 'restart' });
+  await controlSpacetime({ lease: beforeRestart });
 } catch (error: unknown) {
   const failure = error instanceof Error ? error as Error & { code?: string } : null;
   restartStopped = failure?.code === 'injected_restart_stop_failure';
