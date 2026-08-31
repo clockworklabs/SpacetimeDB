@@ -1263,7 +1263,7 @@ jobs:
     permissions:
       contents: read
     runs-on: spacetimedb-unity-runner
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       UNITY_VERSION: 2022.3.32f1
