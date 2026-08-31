@@ -58,9 +58,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-release-invoker:
+    name: Validate release invoker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject direct public release invocations
+        env:
+          EXPECTED_RELEASE_ACTOR: clockwork-labs-bot
+          ACTUAL_RELEASE_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          if [ "$ACTUAL_RELEASE_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]; then
+            echo "::error::Do not invoke the public release workflow directly. Invoke the private release workflow instead."
+            echo "Expected release actor: $EXPECTED_RELEASE_ACTOR"
+            echo "Actual release actor: $ACTUAL_RELEASE_ACTOR"
+            exit 1
+          fi
+
   # This job runs before all of our release jobs. If there is a release problem we should
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
+    needs: validate-release-invoker
     runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout
@@ -360,6 +379,7 @@ jobs:
         run: cargo-release release docker ${{ github.event.inputs.release_tag }} ${{ inputs.dry_run && '--dry-run' || '' }}
 
   update-mirror-latest-version:
+    needs: validate-release-invoker
     runs-on: ubuntu-latest
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
