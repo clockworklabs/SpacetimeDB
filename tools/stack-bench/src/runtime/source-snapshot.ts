@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import { hashDirectory } from '../evidence/provenance.js';
@@ -12,7 +12,7 @@ const TRANSIENT_DIRS = new Set([
   'dist', '.vite', 'coverage',
   // Package and browser tooling can create large trees with dangling links.
   // They are runtime caches, not model-authored application source.
-  '.apt', '.cache', '.debroot', '.libs', '.pw-browsers', '.pwcache',
+  '.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache',
 ]);
 const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
 const ROOT_RUNTIME_FILES = new Set(['BUG_REPORT.md', 'client.log', 'server.log', 'vite.log']);
@@ -35,17 +35,22 @@ function directoryDisposition(rel: string): DirectoryDisposition {
   return 'source';
 }
 
-function copySourceTree(from: string, to: string, rel = ''): void {
+function copySourceTree(from: string, to: string, rel = '', writable = false): void {
   if (!existsSync(from)) return;
   mkdirSync(to, { recursive: true });
+  if (writable) chmodSync(to, lstatSync(to).mode | 0o222);
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
     if (entry.isDirectory() && directoryDisposition(childRel) !== 'source') continue;
     if (!entry.isDirectory() && (preservedRuntimeFile(childRel) || transientRuntimeFile(childRel))) continue;
     const source = join(from, entry.name);
     const target = join(to, entry.name);
-    if (entry.isDirectory()) copySourceTree(source, target, childRel);
-    else cpSync(source, target, { force: true, dereference: false });
+    if (entry.isDirectory()) copySourceTree(source, target, childRel, writable);
+    else if (entry.isFile()) {
+      cpSync(source, target, { force: true, dereference: false });
+      // Materialized source runs as an unprivileged UID in its own workspace.
+      if (writable) chmodSync(target, lstatSync(target).mode | 0o222);
+    } else throw new Error(`application source contains unsupported filesystem entry ${childRel}`);
   }
 }
 
@@ -71,6 +76,7 @@ function removeAbsent(path: string, rel: string): void {
 
 function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
   mkdirSync(appDir, { recursive: true });
+  chmodSync(appDir, lstatSync(appDir).mode | 0o222);
   const snapshotNames = new Set(readdirSync(snapshot));
 
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
@@ -93,11 +99,19 @@ function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
       syncSourceTree(source, target, childRel);
       continue;
     }
-    if (existsSync(target) && lstatSync(target).isDirectory()) {
-      removeAbsent(target, childRel);
-      if (existsSync(target)) throw new Error(`cannot restore source file over preserved directory: ${childRel}`);
+    if (!entry.isFile()) {
+      throw new Error(`source snapshot contains unsupported filesystem entry ${childRel}`);
+    }
+    if (existsSync(target) && !lstatSync(target).isFile()) {
+      if (lstatSync(target).isDirectory()) {
+        removeAbsent(target, childRel);
+        if (existsSync(target)) {
+          throw new Error(`cannot restore source file over preserved directory: ${childRel}`);
+        }
+      } else rmSync(target, { force: true });
     }
     cpSync(source, target, { force: true, dereference: false });
+    chmodSync(target, lstatSync(target).mode | 0o222);
   }
 }
 
@@ -152,10 +166,10 @@ export function resetAppToSource(from: string, appDir: string): void {
     if (entry.name === '.git') continue;
     rmSync(join(appDir, entry.name), { recursive: entry.isDirectory(), force: true });
   }
-  copySourceTree(from, appDir);
+  copySourceTree(from, appDir, '', true);
 }
 
 export function seedAppSource(from: string, appDir: string): void {
   if (!existsSync(from)) throw new Error(`source seed does not exist: ${from}`);
-  copySourceTree(from, appDir);
+  copySourceTree(from, appDir, '', true);
 }

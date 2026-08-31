@@ -206,9 +206,11 @@ function requireCompletedFailure(level: RepairLevel | undefined,
   const exhausted = level.repair?.status === 'budget-exhausted'
     && level.repair?.roundsUsed === level.repair?.budgetRounds;
   const paused = level.repair?.status === 'incomplete'
-    && level.repair?.stopReason === 'repeated-findings'
     && level.repair?.roundsUsed > 0
-    && level.repair?.roundsUsed < level.repair?.budgetRounds;
+    && (level.repair?.stopReason === 'no-source-change'
+      ? level.repair.roundsUsed <= level.repair.budgetRounds
+      : level.repair?.stopReason === 'repeated-findings'
+        && level.repair.roundsUsed < level.repair.budgetRounds);
   if ((!exhausted && !paused)
     || !Number.isSafeInteger(level.repair?.budgetRounds)
     || level.repair.budgetRounds < 0

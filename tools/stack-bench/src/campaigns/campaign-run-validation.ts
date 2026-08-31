@@ -449,9 +449,12 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
         const exhausted = repair.status === 'budget-exhausted'
           && repair.roundsUsed === repair.budgetRounds;
         const paused = repair.status === 'incomplete'
-          && repair.stopReason === 'repeated-findings'
           && integer(repair.roundsUsed) && integer(repair.budgetRounds)
-          && repair.roundsUsed > 0 && repair.roundsUsed < repair.budgetRounds;
+          && repair.roundsUsed > 0
+          && (repair.stopReason === 'no-source-change'
+            ? repair.roundsUsed <= repair.budgetRounds
+            : repair.stopReason === 'repeated-findings'
+              && repair.roundsUsed < repair.budgetRounds);
         mismatch(!exhausted && !paused, `${at}.status`);
         // A perfect level score does not excuse an inherited or contract regression.
         const inheritedDeficit = integer(level.regression?.score)

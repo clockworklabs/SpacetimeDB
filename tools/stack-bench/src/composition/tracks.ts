@@ -27,8 +27,17 @@ export interface TrackSuite {
 }
 
 export interface TrackDatabaseProvenance {
-  scenario: string;
-  [key: string]: unknown;
+  action: string;
+  markerParameter: string;
+}
+
+export interface TrackAction {
+  id: string;
+  path: string;
+  method?: string;
+  reducer: string;
+  args: unknown[];
+  params?: Array<{ name: string; in: 'body' | 'path'; placeholder?: string; wireType?: string }>;
 }
 
 export interface Track {
@@ -45,7 +54,7 @@ export interface Track {
   reseedOnReset: boolean;
   databaseProvenance: TrackDatabaseProvenance | null;
   suites: Record<string, TrackSuite[]>;
-  actions: unknown[];
+  actions: TrackAction[];
   prompts: string;
   contracts: string;
   scenarios: string;
@@ -106,12 +115,9 @@ export function loadTrack(name: string = DEFAULT_TRACK): Track {
     // database also wipes the seed, so the server has to be restarted before
     // grading can assume it is there.
     reseedOnReset: m.reseedOnReset ?? false,
-    databaseProvenance: m.databaseProvenance ? {
-      ...m.databaseProvenance,
-      scenario: join(dir, m.databaseProvenance.scenario),
-    } : null,
+    databaseProvenance: m.databaseProvenance ?? null,
     suites: m.suites ?? {},
-    actions: m.actions ?? [],
+    actions: (m.actions ?? []) as TrackAction[],
     prompts: join(dir, 'prompts'),
     contracts: join(dir, 'contracts'),
     scenarios: join(dir, 'scenarios'),

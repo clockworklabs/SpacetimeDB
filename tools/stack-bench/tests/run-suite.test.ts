@@ -9,11 +9,10 @@ import { isModularRecipeTaskRequest } from '../src/composition/recipe-selection.
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
-  applicationDatabaseMarker, checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
+  checkRuntimeDatabaseProvenance, databaseProvenanceFailure, writeApplicationDatabaseMarker,
   contractLintArgv, databaseContainerForGrading, databaseNameForGrading, runGraderChild,
   verifyApplicationProbe, waitForApplicationProbe }
   from '../commands/run-suite.js';
-import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -215,46 +214,28 @@ test('database provenance parses the port instead of accepting a matching substr
   }
 });
 
-function provenanceEvidence(marker: string, actionStatus: 'passed' | 'failed' = 'passed') {
-  const startedAtMs = 10;
-  const completedAtMs = 20;
-  return createCheckEvidence({
-    status: actionStatus === 'passed' ? 'passed' : 'failed',
-    code: actionStatus === 'passed' ? 'check.passed' : 'check.failed',
-    phase: 'assertion',
-    startedAtMs,
-    completedAtMs,
-    actions: [{ actor: 'shopper', evidence: {
-      schemaVersion: 1,
-      action: { id: 'signUp', version: '1' },
-      status: actionStatus,
-      type: 'browser',
-      code: actionStatus === 'passed' ? 'action.passed' : 'action.failed',
-      phase: 'assertion',
-      summary: null,
-      observation: { user: marker },
-      expected: null,
-      retryable: false,
-      timing: { startedAtMs, completedAtMs, durationMs: 10, deadlineMs: 1_000 },
-      attachments: [],
-      sensitivity: [],
-    } }],
-  });
-}
+test('runtime database marker uses the declared application action', async () => {
+  const track = loadTrack('ecommerce');
+  const requests: Array<{ url: string; body: JsonRecord }> = [];
+  const written = await writeApplicationDatabaseMarker(
+    { backend: 'postgres', url: 'http://shop.test' }, track, track.databaseProvenance,
+    async (url, init) => {
+      requests.push({ url, body: JSON.parse(init.body) as JsonRecord });
+      return { ok: true, status: 201 };
+    });
+  assert(written.ok);
+  const request = requests[0];
+  assert(request);
+  assert.equal(request.url, 'http://shop.test/api/auth/signup');
+  assert.equal(request.body.password, 'stack-bench-provenance-password');
+  assert.equal(request.body.username, written.marker);
+  assert.match(written.marker, /^sb[a-f0-9]{16}$/);
 
-test('application database marker comes only from the configured successful action', () => {
-  const definition = { check: 'accounts.create', action: 'signUp', observationField: 'user' };
-  const report = { total: 1, max: 1, features: [{ criteria: [{
-    id: '1a', stableKey: 'accounts.create', evidence: provenanceEvidence('ann-proof'),
-  }] }] };
-  assert.equal(applicationDatabaseMarker(report, definition), 'ann-proof');
-
-  const feature = report.features[0];
-  assert(feature);
-  const criterion = feature.criteria[0];
-  assert(criterion);
-  criterion.evidence = provenanceEvidence('ann-proof', 'failed');
-  assert.equal(applicationDatabaseMarker(report, definition), null);
+  const refused = await writeApplicationDatabaseMarker(
+    { backend: 'postgres', url: 'http://shop.test' }, track, track.databaseProvenance,
+    async () => ({ ok: false, status: 422 }));
+  assert.deepEqual(refused, { ok: false, marker: null,
+    reason: 'application provenance action returned HTTP 422' });
 });
 
 test('runtime database proof reports command failures as harness failures', () => {

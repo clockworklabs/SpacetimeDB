@@ -105,9 +105,19 @@
       {
         "args": [
           "",
-          ""
+          "stack-bench-provenance-password"
         ],
         "id": "signUp",
+        "params": [
+          {
+            "in": "body",
+            "name": "username"
+          },
+          {
+            "in": "body",
+            "name": "password"
+          }
+        ],
         "path": "/api/auth/signup",
         "reducer": "sign_up"
       },
@@ -123,9 +133,7 @@
     ],
     "databaseProvenance": {
       "action": "signUp",
-      "check": "ecommerce.feature.accounts.accounts.1a",
-      "observationField": "user",
-      "scenario": "scenarios/01-account-create-2.4.0.json"
+      "markerParameter": "username"
     },
     "plannedThrough": 6,
     "portOffset": 300,

@@ -15,6 +15,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import type { ExecFileSyncOptionsWithStringEncoding, SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -118,10 +119,11 @@ type GraderChildResult = { status: number | null; signal: string | null; stdout?
 type GraderChildExecutor = (command: string, argv: readonly string[], options: SpawnSyncOptionsWithStringEncoding) => GraderChildResult;
 type ProbeResponse = { ok: boolean; status: number };
 type ApplicationFetch = (url: string, init: { signal: AbortSignal }) => Promise<ProbeResponse>;
-type DatabaseProvenanceDefinition = Record<string, unknown> | null | undefined;
+type DatabaseProvenanceDefinition = Track['databaseProvenance'];
 type DatabaseNameLease = { resources: { database?: string | null } };
-type MarkerCriterion = { stableKey?: string; evidence?: CheckEvidence };
-type MarkerReport = { features: Array<{ criteria: MarkerCriterion[] }> };
+type ProvenanceFetch = (url: string, init: { method: string; headers: Record<string, string>;
+  body: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number }>;
+type ProvenanceWrite = { ok: true; marker: string } | { ok: false; marker: null; reason: string };
 type ApplicationFailureSelection = { checks: Array<{ executionId: string; points?: number }> };
 type ContractLintArguments = Pick<RunArguments,
   'url' | 'level' | 'track' | 'label' | 'out' | 'bundleArtifactId' | 'credentialAliases'>;
@@ -465,28 +467,45 @@ export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backen
     reason: ok ? 'ok' : `app targets ${urls[0]} but the benchmark database is on port ${expected}` };
 }
 
-export function applicationDatabaseMarker(report: MarkerReport | null,
-  definition: DatabaseProvenanceDefinition): string | null {
-  if (!report || !definition) return null;
-  const check = definition.check;
-  const actionId = definition.action;
-  const observationField = definition.observationField;
-  if (typeof check !== 'string' || typeof actionId !== 'string') return null;
-  const markers: string[] = [];
-  for (const feature of report.features ?? []) {
-    for (const criterion of feature.criteria ?? []) {
-      if (criterion.stableKey !== check) continue;
-      const action = criterionEvidence(criterion).actions.find(entry => isRecord(entry.evidence)
-        && isRecord(entry.evidence.action) && entry.evidence.action.id === actionId
-        && entry.evidence.status === 'passed');
-      const evidence = action?.evidence;
-      const marker = isRecord(evidence) && isRecord(evidence.observation)
-        && typeof observationField === 'string'
-        ? evidence.observation[observationField] : undefined;
-      if (typeof marker === 'string' && marker) markers.push(marker);
-    }
+export async function writeApplicationDatabaseMarker(
+  args: Pick<RunArguments, 'backend' | 'url'>,
+  track: Pick<Track, 'actions'>,
+  definition: DatabaseProvenanceDefinition,
+  fetchImpl: ProvenanceFetch = fetch,
+): Promise<ProvenanceWrite> {
+  if (!definition) throw new Error('track does not define runtime database provenance');
+  const action = track.actions.find(candidate => candidate.id === definition.action);
+  if (!action) throw new Error(`database provenance action is not declared: ${definition.action}`);
+  const params = action.params ?? [];
+  if (!params.some(param => param.name === definition.markerParameter)) {
+    throw new Error(`database provenance marker parameter is not declared by ${definition.action}: ${definition.markerParameter}`);
   }
-  return new Set(markers).size === 1 ? markers[0] ?? null : null;
+  const values = Object.fromEntries(params.map((param, index) => [param.name, action.args[index]]));
+  const marker = `sb${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  values[definition.markerParameter] = marker;
+  if (params.some(param => values[param.name] === undefined)) {
+    throw new Error(`database provenance action ${definition.action} has no default for every parameter`);
+  }
+  const request = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
+    'named-action', 'request', { action, input: { values }, url: args.url });
+  if (!isRecord(request) || typeof request.url !== 'string' || !request.url
+    || typeof request.body !== 'string') {
+    throw new Error('database provenance action produced an invalid request');
+  }
+  try {
+    const response = await fetchImpl(request.url, {
+      method: typeof request.method === 'string' ? request.method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: request.body,
+      signal: AbortSignal.timeout(15_000),
+    });
+    return response.ok ? { ok: true, marker }
+      : { ok: false, marker: null,
+          reason: `application provenance action returned HTTP ${response.status}` };
+  } catch (error) {
+    return { ok: false, marker: null,
+      reason: `application provenance action failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 export function databaseProvenanceFailure(error: unknown): { kind: string; phase: string; reason: string } {
@@ -741,17 +760,6 @@ function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
   return r;
 }
 
-function databaseProvenanceChecks(definition: Track['databaseProvenance'],
-  recipeBinding: RecipeBinding | null): RecipeCheck[] {
-  if (!definition || !recipeBinding) return [];
-  const check = recipeBinding.release.checkCatalog.find(candidate =>
-    candidate.stableKey === definition.check);
-  if (!check) {
-    throw new Error(`database provenance check is absent from the bound recipe: ${definition.check}`);
-  }
-  return [check];
-}
-
 async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
@@ -994,6 +1002,7 @@ async function main() {
     }
     let runtime = checkRuntimeDatabaseProvenance(args);
     let proofError = null;
+    let actionFailure: string | null = null;
     const proof = track.databaseProvenance;
     const requiresRuntimeProof = ['mongodb', 'postgres'].includes(args.backend)
       && args.databaseLease && args.reset;
@@ -1001,16 +1010,9 @@ async function main() {
       proofError = new Error(`${args.track} does not define a runtime database provenance check`);
     } else if (requiresRuntimeProof && proof) {
       try {
-        const checks = databaseProvenanceChecks(proof, recipeBinding);
-        const report = gradeSuite(args, { id: 'database-provenance', spec: proof.scenario },
-          track, recipeBinding, bundleArtifactId, checks,
-          { recordSelection: false, captureMedia: false,
-            outputDirectory: join(args.out, 'database-provenance') });
-        const marker = applicationDatabaseMarker(report, proof);
-        runtime = marker
-          ? checkRuntimeDatabaseProvenance(args, marker)
-          : { ok: false, verified: false,
-              reason: 'the configured application action did not produce one database marker' };
+        const write = await writeApplicationDatabaseMarker(args, track, proof);
+        if (write.ok) runtime = checkRuntimeDatabaseProvenance(args, write.marker);
+        else actionFailure = write.reason;
       } catch (error) {
         proofError = error;
       }
@@ -1037,6 +1039,17 @@ async function main() {
       markRemainingNotRun('run aborted because runtime database provenance could not be verified');
       writeBundle();
       console.log(`\nABORTED: ${bundle.error}`);
+      process.exit(1);
+    }
+
+    if (actionFailure) {
+      bundle.error = actionFailure;
+      bundle.outcome = { kind: 'app_failure', phase: 'database-provenance-action',
+        reason: actionFailure, appFailures: ['database-provenance-action'] };
+      recordApplicationAbort();
+      markRemainingNotRun('run aborted because the application database write failed');
+      writeBundle();
+      console.log(`\nABORTED: ${actionFailure}`);
       process.exit(1);
     }
 

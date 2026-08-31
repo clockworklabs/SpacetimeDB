@@ -19,9 +19,10 @@ structure, data modeling, libraries, or implementation strategy.
 Expose the same account writes used by the UI.
 
 <!-- interface:http -->
-Use `POST /api/auth/signup` and `POST /api/auth/signin`.
+Use `POST /api/auth/signup` and `POST /api/auth/signin`. Both accept JSON with
+`username` and `password` fields.
 <!-- /interface -->
 
 <!-- interface:reducer -->
-Use the `signUp` and `signIn` reducers.
+Use the `signUp` and `signIn` reducers. Both take `username` and `password`, in that order.
 <!-- /interface -->

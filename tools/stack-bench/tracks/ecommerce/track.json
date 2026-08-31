@@ -8,10 +8,8 @@
   "restartProbe": "/api/items",
   "reseedOnReset": true,
   "databaseProvenance": {
-    "scenario": "scenarios/01-account-create-2.4.0.json",
-    "check": "ecommerce.feature.accounts.accounts.1a",
     "action": "signUp",
-    "observationField": "user"
+    "markerParameter": "username"
   },
   "suites": {
     "1": [
@@ -111,7 +109,17 @@
       "reducer": "sign_up",
       "args": [
         "",
-        ""
+        "stack-bench-provenance-password"
+      ],
+      "params": [
+        {
+          "name": "username",
+          "in": "body"
+        },
+        {
+          "name": "password",
+          "in": "body"
+        }
       ]
     },
     {

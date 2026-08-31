@@ -1805,15 +1805,16 @@ async function main() {
 
     // Preserve the first source and scored grading before repair overwrites the
     // app. Observed evidence remains in its own source-bound result directory.
+    const acceptedGradingDirectory = continuing
+      ? `baseline-l${level}-grading` : `first-build-l${level}-grading`;
     try {
       const gradingFrom = join(appDir, 'stack-bench');
       if (existsSync(gradingFrom)) {
-        const gradingDirectory = continuing ? `baseline-l${level}-grading` : `first-build-l${level}-grading`;
-        cpSync(gradingFrom, join(args.out, gradingDirectory), {
+        cpSync(gradingFrom, join(args.out, acceptedGradingDirectory), {
           recursive: true,
           filter: src => !/[\\/]media([\\/]|$)/.test(src),
         });
-        console.log(`  kept the ${continuing ? 'continuation baseline' : 'unaided'} grading at ${join(args.out, gradingDirectory)}`);
+        console.log(`  kept the ${continuing ? 'continuation baseline' : 'unaided'} grading at ${join(args.out, acceptedGradingDirectory)}`);
       }
     } catch (e) {
       // Never worth losing a run over: the score is already recorded.
@@ -1946,7 +1947,18 @@ async function main() {
       // answer, and a coding session that can reach one will copy it instead of
       // building. It only has to survive this process.
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
+      const gradingSnapshot = `${snapshot}-grading`;
+      const acceptedSource = hashAppSource(appDir);
       snapshotSource(appDir, snapshot);
+      rmSync(gradingSnapshot, { recursive: true, force: true });
+      if (existsSync(join(appDir, 'stack-bench'))) {
+        cpSync(join(appDir, 'stack-bench'), gradingSnapshot, { recursive: true });
+      }
+      const cleanupRepairSnapshots = () => {
+        rmSync(snapshot, { recursive: true, force: true });
+        rmSync(gradingSnapshot, { recursive: true, force: true });
+      };
+      try {
       clearPrivateGradingEvidence(appDir);
       fixRounds += 1;
       const displayedRepairBudget = args.progression
@@ -1976,6 +1988,7 @@ async function main() {
         const buildSession = runSessionRecord(build);
         const sessions = resumedRepair ? fixSessions : [buildSession, ...fixSessions];
         const sessionTotals = summarizeSessions(sessions);
+        cleanupRepairSnapshots();
         abortUnusableSession(`repair round ${fixRounds}`, fixLeak, {
           level, graded: false, score: null, max: null,
           selection: bundle?.selection ?? null,
@@ -1994,6 +2007,20 @@ async function main() {
           costUsd: resumedRepair ? addCostUsd(fixCost) : addCostUsd(build.costUsd, fixCost),
           durationMs: Date.now() - t0,
         }, progressionSelection);
+      }
+      if (hashAppSource(appDir).sha256 === acceptedSource.sha256) {
+        clearPrivateGradingEvidence(appDir);
+        if (existsSync(gradingSnapshot)) {
+          cpSync(gradingSnapshot, join(appDir, 'stack-bench'), { recursive: true });
+        }
+        const reason = 'repair made no source change';
+        console.log(`    ${reason}; pausing before another paid round`);
+        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, beforeBundle, reason));
+        repairStopReason = 'no-source-change';
+        if (args.progression) {
+          recordRepairProgression({ failure: { kind: 'inconclusive_evidence', reason } });
+        }
+        break;
       }
       const repairedSource = `${snapshot}-accepted`;
       snapshotSource(appDir, repairedSource);
@@ -2065,6 +2092,9 @@ async function main() {
         shared.after === shared.before ? 'kept with no score gain' : 'kept'));
       if (!recordRepairProgression()) break;
       if (pauseForRepeatedFindings()) break;
+      } finally {
+        cleanupRepairSnapshots();
+      }
     }
 
     // A grading run that crashed writes no bundle, and recording that as 0/0
@@ -2090,7 +2120,8 @@ async function main() {
       ? finalBundleOutcome.kind === 'app_failure'
         && progressionNext?.type !== 'repair'
       : fixRounds >= args.fixRounds;
-    const repairStatus: RepairStatus = !graded ? 'ungraded'
+    const repairStatus: RepairStatus = repairStopReason === 'no-source-change' ? 'incomplete'
+      : !graded ? 'ungraded'
       : finalBundleOutcome.kind === 'passed' ? (fixRounds > 0 ? 'corrected' : 'not-needed')
         : repairBudgetExhausted ? 'budget-exhausted' : 'incomplete';
     const stopReasons: Record<RepairStatus, string | null> = {
@@ -2181,7 +2212,8 @@ async function main() {
       repair,
       checkpoint,
       // Keep the summary flag derived from the typed status so the two cannot drift.
-      stalled: repairStatus === 'budget-exhausted' || repairStopReason === 'repeated-findings',
+      stalled: repairStatus === 'budget-exhausted'
+        || ['repeated-findings', 'no-source-change'].includes(repairStopReason ?? ''),
       regressed,
       outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),

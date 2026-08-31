@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync,
+  symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -93,7 +94,45 @@ test('source seeding copies arbitrary layouts without dependencies or repair evi
   assert.equal(readFileSync(join(target, 'unconventional', 'api', 'main.go'), 'utf8'), 'package main\n');
   assert.equal(existsSync(join(target, 'unconventional', 'node_modules')), false);
   assert.equal(readFileSync(join(target, '.prompt-build-l1.md'), 'utf8'), 'model-authored file\n');
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(join(target, 'unconventional')).mode & 0o002, 0o002);
+    assert.equal(statSync(join(target, 'unconventional', 'api', 'main.go')).mode & 0o002, 0o002);
+  }
 });
+
+test('source copies reject symbolic links before changing permissions', { skip: process.platform === 'win32' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-link-'));
+  const source = join(root, 'source');
+  const outside = join(root, 'outside.txt');
+  try {
+    put(outside, 'outside\n');
+    mkdirSync(source, { recursive: true });
+    symlinkSync(outside, join(source, 'link.txt'));
+    assert.throws(() => seedAppSource(source, join(root, 'target')),
+      /unsupported filesystem entry link\.txt/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('source restore replaces symbolic links without touching their targets',
+  { skip: process.platform === 'win32' }, () => {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-restore-link-'));
+    const snapshot = join(root, 'snapshot');
+    const app = join(root, 'app');
+    const outside = join(root, 'outside.txt');
+    try {
+      put(join(snapshot, 'src', 'app.ts'), 'restored\n');
+      put(outside, 'outside\n');
+      mkdirSync(join(app, 'src'), { recursive: true });
+      symlinkSync(outside, join(app, 'src', 'app.ts'));
+      restoreAppSource(snapshot, app);
+      assert.equal(readFileSync(join(app, 'src', 'app.ts'), 'utf8'), 'restored\n');
+      assert.equal(readFileSync(outside, 'utf8'), 'outside\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
 test('source snapshots exclude package and browser tool caches', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-caches-'));
@@ -102,7 +141,7 @@ test('source snapshots exclude package and browser tool caches', () => {
   try {
     put(join(app, 'src', 'app.ts'), 'export const app = true;\n');
     put(join(app, 'client', 'tsconfig.tsbuildinfo'), 'compiler cache\n');
-    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.pw-browsers', '.pwcache']) {
+    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache']) {
       put(join(app, directory, 'tool-artifact'), 'not application source\n');
     }
     const before = hashAppSource(app);
@@ -112,7 +151,7 @@ test('source snapshots exclude package and browser tool caches', () => {
     assert.equal(existsSync(join(snapshot, 'client', 'tsconfig.tsbuildinfo')), false);
     restoreAppSource(snapshot, app);
     assert.equal(existsSync(join(app, 'client', 'tsconfig.tsbuildinfo')), false);
-    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.pw-browsers', '.pwcache']) {
+    for (const directory of ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache']) {
       assert.equal(existsSync(join(snapshot, directory)), false);
     }
     assert.equal(hashAppSource(snapshot).sha256, before.sha256);
@@ -160,6 +199,13 @@ test('clean source reset removes all runtime state and preserves only root git m
       join('client', 'src', 'module_bindings'), join('server', 'tsconfig.tsbuildinfo'),
       'stack-bench', 'BUG_REPORT.md', 'server.log', 'client.log', 'vite.log']) {
       assert.equal(existsSync(join(app, path)), false, `${path} survived the clean source reset`);
+    }
+    if (process.platform !== 'win32') {
+      chmodSync(join(snapshot, 'src'), 0o555);
+      chmodSync(join(snapshot, 'src', 'app.ts'), 0o444);
+      resetAppToSource(snapshot, app);
+      assert.equal(statSync(join(app, 'src')).mode & 0o002, 0o002);
+      assert.equal(statSync(join(app, 'src', 'app.ts')).mode & 0o002, 0o002);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -499,7 +499,14 @@ async function signUp({ input, capabilities, signal }: ActorArguments) {
   const browser = browserFor(capabilities);
   const user = input.exact ? input.name : browser.scopedUser(input.name);
   const password = input.password ?? `pw-${user}`;
-  await actor.page.locator(browser.testId('signup-username')).first().fill(user);
+  const username = actor.page.locator(browser.testId('signup-username')).first();
+  if (!(await username.isVisible())) {
+    const toggle = actor.loc('signin-toggle');
+    await toggle.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    await toggle.click({ timeout: browser.defaultWithin });
+    await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  }
+  await username.fill(user);
   await actor.page.locator(browser.testId('signup-password')).first().fill(password);
   await actor.page.locator(browser.testId('signup-submit')).first().click();
   if (input.expectFailure) {

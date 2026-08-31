@@ -87,14 +87,26 @@ test('a finite grant is derived only from the exact exhausted parent checkpoint'
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a finite grant can continue an exact repeated-findings checkpoint', () => {
+test('a finite grant can continue an explicitly paused checkpoint', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-paused-'));
   try {
-    parentFixture(root, { repair: { status: 'incomplete', budgetRounds: 10,
-      roundsUsed: 4, stopReason: 'repeated-findings' } });
-    const resolved = createRepairGrant(root, { level: 1, rounds: 3 });
-    assert.equal(resolved.grant.roundsGranted, 3);
-    assert.equal(resolved.grant.cumulativeRoundsBefore, 4);
+    for (const stopReason of ['repeated-findings', 'no-source-change']) {
+      rmSync(root, { recursive: true, force: true });
+      parentFixture(root, { repair: { status: 'incomplete', budgetRounds: 10,
+        roundsUsed: 4, stopReason } });
+      const resolved = createRepairGrant(root, { level: 1, rounds: 3 });
+      assert.equal(resolved.grant.roundsGranted, 3);
+      assert.equal(resolved.grant.cumulativeRoundsBefore, 4);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a no-source-change pause can occur on the final budgeted round', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-no-change-'));
+  try {
+    parentFixture(root, { repair: { status: 'incomplete', budgetRounds: 3,
+      roundsUsed: 3, stopReason: 'no-source-change' } });
+    assert.doesNotThrow(() => inspectRepairParent(root, 1));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -237,21 +237,37 @@ test('an invalid Spacetime u64 input fails before transport and cannot prove ref
 
 test('account setup preserves scoped credentials and classifies browser failures', async () => {
   const calls: unknown[][] = [];
+  let signUpVisible = false;
   const locator = (purpose: string) => ({
     first() { return this; },
+    isVisible: async () => purpose !== '[data-testid="signup-username"]' || signUpVisible,
     fill: async (value: string) => { calls.push([purpose, 'fill', value]); },
     click: async () => { calls.push([purpose, 'click']); },
     waitFor: async (options: unknown) => { calls.push([purpose, 'waitFor', options]); },
   });
-  const actor = { page: { locator: (selector: string) => locator(selector) } };
+  const actor = {
+    loc: (id: string) => ({
+      waitFor: async (options: unknown) => { calls.push([id, 'waitFor', options]); },
+      click: async (options: unknown) => {
+        calls.push([id, 'click', options]);
+        signUpVisible = true;
+      },
+    }),
+    page: { locator: (selector: string) => locator(selector) },
+  };
   const passed = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
     services(new Map<string, unknown>([['a', actor]])));
   assert.equal(passed.status, 'passed');
   assert.equal(record(passed.observation).user, 'Alicescope');
+  assert.deepEqual(calls.slice(0, 2), [
+    ['signin-toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
+    ['signin-toggle', 'click', { timeout: 5000 }],
+  ]);
   assert(calls.some(call => call[2] === 'pw-Alicescope'));
 
   const timeout = Object.assign(new Error('locator.fill: timed out'), { name: 'TimeoutError' });
   const timedOutActor = { page: { locator: () => ({ first() { return this; },
+    isVisible: async () => true,
     fill: async () => { throw timeout; } }) } };
   const timedOut = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
     services(new Map<string, unknown>([['a', timedOutActor]])));
@@ -259,6 +275,7 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(timedOut.code, 'application_failure');
 
   const buggyActor = { page: { locator: () => ({ first() { return this; },
+    isVisible: async () => true,
     fill: async () => { throw new TypeError('executor bug'); } }) } };
   const bug = await run({ do: 'signUp', actor: 'a', name: 'Alice' },
     services(new Map<string, unknown>([['a', buggyActor]])));

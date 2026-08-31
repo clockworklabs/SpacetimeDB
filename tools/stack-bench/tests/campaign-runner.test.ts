@@ -493,6 +493,14 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
     repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1,
       stopReason: 'repeated-findings' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  run.levels[0] = { ...run.levels[0]!,
+    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1,
+      stopReason: 'no-source-change' } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  run.levels[0] = { ...run.levels[0]!, fixRounds: 3,
+    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 3,
+      stopReason: 'no-source-change' } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   run.levels[0] = { ...run.levels[0]!, fixRounds: 3,
     repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);

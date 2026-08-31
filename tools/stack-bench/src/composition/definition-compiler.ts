@@ -85,7 +85,7 @@ export interface CompiledTrackManifest extends Record<string, unknown> {
   portOffset?: number;
   restartProbe?: string;
   reseedOnReset?: boolean;
-  databaseProvenance?: { scenario: string; [key: string]: unknown };
+  databaseProvenance?: { action: string; markerParameter: string };
   actions?: unknown[];
 }
 
@@ -498,7 +498,7 @@ const TRACK_FIELDS = new Set([
 ]);
 const SUITE_FIELDS = new Set(['id', 'inherit', 'spec']);
 const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'params', 'path', 'reducer']);
-const DATABASE_PROVENANCE_FIELDS = new Set(['action', 'check', 'observationField', 'scenario']);
+const DATABASE_PROVENANCE_FIELDS = new Set(['action', 'markerParameter']);
 export function compileTrackManifest(input: unknown,
   { source = '<track>' }: { source?: string } = {}): CompiledTrackManifest {
   const manifest = structuredClone(input);
@@ -522,13 +522,10 @@ export function compileTrackManifest(input: unknown,
   if (manifest.databaseProvenance !== undefined) {
     strictObject(manifest.databaseProvenance, `${source}.databaseProvenance`,
       DATABASE_PROVENANCE_FIELDS);
-    for (const field of ['action', 'check', 'observationField']) {
+    for (const field of ['action', 'markerParameter']) {
       if (!nonEmptyString(manifest.databaseProvenance[field])) {
         fail(`${source}.databaseProvenance.${field}`, 'must be a non-empty string');
       }
-    }
-    if (!relativePath(manifest.databaseProvenance.scenario)) {
-      fail(`${source}.databaseProvenance.scenario`, 'must be a contained relative path');
     }
   }
   if (!object(manifest.suites) || Object.keys(manifest.suites).length === 0) {
@@ -580,6 +577,25 @@ export function compileTrackManifest(input: unknown,
       if (ids.has(actionId)) fail(`${at}.id`, `duplicate named action ${actionId}`);
       ids.add(actionId);
     });
+  }
+  const provenance = manifest.databaseProvenance;
+  if (object(provenance)) {
+    const actionName = provenance.action;
+    const action = manifest.actions?.find(candidate =>
+      object(candidate) && candidate.id === actionName);
+    if (!object(action)) {
+      fail(`${source}.databaseProvenance.action`, 'must name one declared action');
+    }
+    const markerParameter = provenance.markerParameter;
+    if (!array(action.params)
+      || !action.params.some(param => object(param) && param.name === markerParameter)) {
+      fail(`${source}.databaseProvenance.markerParameter`,
+        'must name one parameter of the declared action');
+    }
+    if (!array(action.args) || action.args.length !== action.params.length) {
+      fail(`${source}.databaseProvenance.action`,
+        'must provide one default argument for every action parameter');
+    }
   }
   manifest.schemaVersion = DEFINITION_SCHEMA_VERSION;
   return manifest as CompiledTrackManifest;
