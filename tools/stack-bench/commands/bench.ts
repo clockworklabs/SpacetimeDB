@@ -2014,12 +2014,15 @@ async function main() {
           cpSync(gradingSnapshot, join(appDir, 'stack-bench'), { recursive: true });
         }
         const reason = 'repair made no source change';
-        console.log(`    ${reason}; pausing before another paid round`);
+        console.log(`    ${reason}; ${args.progression
+          ? 'counting the failed attempt'
+          : 'pausing before another paid round'}`);
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, beforeBundle, reason));
-        repairStopReason = 'no-source-change';
         if (args.progression) {
-          recordRepairProgression({ failure: { kind: 'inconclusive_evidence', reason } });
+          if (!recordRepairProgression()) break;
+          continue;
         }
+        repairStopReason = 'no-source-change';
         break;
       }
       const repairedSource = `${snapshot}-accepted`;
