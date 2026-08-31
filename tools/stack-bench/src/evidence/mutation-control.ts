@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { agentRecipeIdentity } from '../agents/agent-adapter-contract.js';
@@ -37,6 +38,25 @@ export interface MutationControlArgs {
   expectedMutationCalibration?: unknown;
   mutationMaxRuntimeMinutes?: number;
   mutationImageId?: string;
+}
+
+interface MutationBaselineArgs {
+  out?: string;
+  levelList?: number[];
+  referenceMutationOnly?: boolean;
+  mutationBaselineBundle?: string;
+}
+
+export function pristineMutationBaselinePath(
+  args: MutationBaselineArgs,
+  exists: (path: string) => boolean = existsSync,
+): string | null {
+  if (args.referenceMutationOnly) return args.mutationBaselineBundle ?? null;
+  if (args.mutationBaselineBundle) return args.mutationBaselineBundle;
+  const level = args.levelList?.at(-1);
+  if (typeof level !== 'number' || !Number.isSafeInteger(level) || level < 1 || !args.out) return null;
+  const candidate = join(args.out, `first-build-l${level}-grading`, 'bundle.json');
+  return exists(candidate) ? candidate : null;
 }
 
 const COMMAND_TIMEOUT_MS = 20 * 60_000;

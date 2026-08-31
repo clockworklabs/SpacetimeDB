@@ -123,6 +123,55 @@ export interface DependencyState extends ProgressionState {
   grants: DependencyStrikeGrant[];
 }
 
+export function dependencyRepairBudget(
+  action: unknown,
+  completedRepairRounds: number,
+  initialGradePending = false,
+): number {
+  if (!object(action) || action.type === 'terminal' || !object(action.strikes)
+    || action.strikes.scope !== 'feature'
+    || !Number.isSafeInteger(action.strikes.maxRemaining)
+    || Number(action.strikes.maxRemaining) < 0
+    || !Number.isSafeInteger(completedRepairRounds) || completedRepairRounds < 0) {
+    throw new Error('dependency repair budget requires one valid feature-strike action');
+  }
+  return Math.max(0, completedRepairRounds + Number(action.strikes.maxRemaining)
+    - (initialGradePending ? 1 : 0));
+}
+
+interface DependencyStrikeState {
+  definition: { nodes: Array<{ id: string; level: number }> };
+  nodes: Record<string, {
+    strikes: { initialBudget: number; granted: number; budget: number; used: number };
+    exhaustedAtLevel: number | null;
+    exhaustionReason: string | null;
+  }>;
+}
+
+export function dependencyStrikeRecords(
+  state: DependencyStrikeState,
+  level: number,
+  includedNodeIds: ReadonlySet<string> | readonly string[] = [],
+) {
+  const included = new Set(includedNodeIds);
+  return state.definition.nodes
+    .filter(node => node.level === level
+      || state.nodes[node.id]?.exhaustedAtLevel === level
+      || included.has(node.id))
+    .map(node => {
+      const nodeState = state.nodes[node.id];
+      if (!nodeState) throw new Error(`progression state is missing node ${node.id}`);
+      return { nodeId: node.id,
+        initialBudget: nodeState.strikes.initialBudget,
+        granted: nodeState.strikes.granted,
+        budget: nodeState.strikes.budget,
+        used: nodeState.strikes.used,
+        remaining: nodeState.strikes.budget - nodeState.strikes.used,
+        exhaustionReason: nodeState.exhaustionReason };
+    })
+    .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+}
+
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at: string, message: string): never => {

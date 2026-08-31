@@ -6,16 +6,19 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { auditFailureSummary, gradeArgv,
-  clearPrivateGradingEvidence, dependencyRepairBudget, dependencyStrikeRecords,
+  clearPrivateGradingEvidence,
   levelGradeIsUsable, materializationAppFailure, materializeAcceptedSource, preserveFinalPackageEvidence,
-  pristineMutationBaselinePath, repairHistoryEntry, repairProgressState,
+  repairHistoryEntry, repairProgressState,
   sourceBoundFirstBuildOutcome }
   from '../commands/bench.js';
 import { finalizeRunTotals, formatLevelSummary }
   from '../src/evidence/benchmark-run.js';
 import type { RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
+import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
+import { dependencyRepairBudget, dependencyStrikeRecords }
+  from '../src/progression/dependency-mode.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
