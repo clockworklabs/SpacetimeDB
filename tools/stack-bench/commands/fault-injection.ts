@@ -163,7 +163,8 @@ async function main() {
       [compiledEntrypoint('commands', 'bench.js'), '--backend', 'spacetime', '--track', 'loop',
         '--levels', '1', '--agent-adapter', 'fault-injection', '--app', app, '--out', out,
         '--url', `file:///${app.replace(/\\/g, '/')}/index.html`, '--skip-probe'],
-      { env: { ...process.env, STACK_BENCH_STDB_URI: uri, STACK_BENCH_IMAGE: IMAGE },
+      { env: { ...process.env, STACK_BENCH_STDB_URI: uri, STACK_BENCH_IMAGE: IMAGE,
+        SPACETIME_BIN: CLI },
         stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const collect = (chunk: Buffer): void => { output = (output + chunk.toString()).slice(-256 * 1024); };
     bench.stdout?.on('data', collect);

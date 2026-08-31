@@ -8,7 +8,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { publicBackendLease, readBackendLease } from '../src/runtime/backend-lease.js';
-import { compiledEntrypoint, STACK_BENCH_ROOT } from '../src/package-root.js';
+import { compiledEntrypoint } from '../src/package-root.js';
+import { controlSpacetime } from '../src/stacks/stack-lifecycle-operations.js';
 const args: Record<string, string | undefined> = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const option = process.argv[i];
@@ -34,26 +35,20 @@ const beforeRestart = readBackendLease(leasePath, {
   token: leaseToken, backend, active: true,
 });
 
-// Enter the real restart script's most dangerous partial state: the old owned
+// Enter the real restart path's most dangerous partial state: the old owned
 // listener is gone, the lease is `restarting`, and the replacement has not yet
-// started. The script's test hook exits 86 at that exact boundary.
-const restartEnv: NodeJS.ProcessEnv = { ...process.env, STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP: '1' };
-if (process.platform === 'win32') {
-  const bridge = (restartEnv.WSLENV ?? '').split(':').filter(Boolean);
-  bridge.push('STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP');
-  restartEnv.WSLENV = [...new Set(bridge)].join(':');
-}
+// started. The test hook fails at that exact boundary.
 let restartStopped = false;
 let restartFailure = '';
+process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP = '1';
 try {
-  execFileSync('bash', ['restart-backend.sh', backend, '.', '', '', 'restart'],
-    { cwd: STACK_BENCH_ROOT, env: restartEnv, stdio: 'pipe' });
+  await controlSpacetime({ lease: beforeRestart, mode: 'restart' });
 } catch (error: unknown) {
-  const childError = error instanceof Error && 'status' in error ? error as Error & {
-    status?: number; stderr?: unknown;
-  } : null;
-  restartStopped = childError?.status === 86;
-  restartFailure = `status=${childError?.status} stderr=${String(childError?.stderr).trim()}`;
+  const failure = error instanceof Error ? error as Error & { code?: string } : null;
+  restartStopped = failure?.code === 'injected_restart_stop_failure';
+  restartFailure = failure?.message ?? String(error);
+} finally {
+  delete process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP;
 }
 if (!restartStopped) throw new Error(
   `restart fault hook did not stop at the expected boundary (${restartFailure || 'restart exited zero'})`);

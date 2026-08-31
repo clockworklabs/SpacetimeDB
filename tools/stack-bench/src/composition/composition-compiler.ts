@@ -63,6 +63,7 @@ export interface CompiledPackDefinition {
   version: string;
   state: string;
   title: string;
+  description?: string;
   moduleType?: string;
   requiresPacks: string[];
   conflictsWith: string[];

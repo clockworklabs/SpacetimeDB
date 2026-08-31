@@ -20,6 +20,7 @@ test('the dependency graph page is generated from the ecommerce definition', () 
   const graph = compileProgressionGraph(definitionPath, { trackRoot });
   assert.equal(graph.nodes.length, 43);
   assert.equal(graph.levels, 6);
+  assert(graph.nodes.every(node => node.description.length > 0));
   assert.deepEqual(graph.nodes.filter(node => node.level === 1).map(node => node.id),
     ['accounts', 'catalog', 'staff-access', 'support-intake']);
   assert.equal(renderProgressionGraphHtml(html, graph), html,

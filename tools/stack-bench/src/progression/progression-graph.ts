@@ -16,6 +16,7 @@ export const GRAPH_END = '/* STACK_BENCH_GRAPH_END */';
 export interface ProgressionGraphNode {
   id: string;
   name: string;
+  description: string;
   level: number;
   state: 'draft' | 'qualified';
   parents: string[];
@@ -115,6 +116,7 @@ export function compileProgressionGraph(
     return {
       id: node.id,
       name: node.title,
+      description: selected.map(pack => pack.description).filter(Boolean).join(' '),
       level: node.level,
       state: selected.every(pack => pack.state === 'qualified') ? 'qualified' : 'draft',
       parents: node.dependencies,

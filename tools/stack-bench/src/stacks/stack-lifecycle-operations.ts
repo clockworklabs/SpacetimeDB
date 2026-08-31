@@ -281,6 +281,10 @@ export async function controlSpacetime({ lease, mode, signal = null }: {
   for (const pid of actual) killTree(pid);
   await waitFor(async () => !(await answers(`${lease.resources.serverUri}/v1/ping`)),
     30_000, 'SpacetimeDB to stop', signal);
+  if (process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP === '1') {
+    throw Object.assign(new Error('injected failure after restart stop'),
+      { code: 'injected_restart_stop_failure' });
+  }
   updateBackendLease(leasePath,
     { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
       next.state = 'starting';

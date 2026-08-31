@@ -62,7 +62,26 @@ Working notes, generated reports, and run artifacts are local operator material
 and are intentionally not tracked in the repository. Reviewable project
 presentations belong in `docs/`.
 
-## Source layout
+## Project layout
+
+| Path | Purpose |
+|---|---|
+| `backends/` | stack-specific text sent to the coding agent; runtime adapters live in `src/stacks/` |
+| `conditions/` | versioned guidance and repair-policy selections |
+| `tracks/` | product briefs, feature definitions, checks, and scenarios |
+| `commands/` | command-line entry points |
+| `src/` | reusable benchmark logic |
+| `grader/` | grader and mutation-test entry points and manifests |
+| `linter/` | generated-app contract linter and its fixtures |
+| `container/` | isolated coding environment |
+| `appliance/` | deployable controller and operator bundle |
+| `dashboard/` | optional web interface |
+| `reference-apps/` | known-good applications used to qualify checks |
+| `qualification-evidence/` | committed evidence for promoted definitions |
+| `tests/` | focused automated tests |
+| `docs/` | maintained product visuals |
+
+### Shared source
 
 | Path | Purpose |
 |---|---|
@@ -72,7 +91,6 @@ presentations belong in `docs/`.
 | `src/campaigns/` | campaign compilation, scheduling, locking, and reports |
 | `src/composition/` | tracks, packs, recipes, definitions, and calibration |
 | `src/evidence/` | artifacts, scoring, provenance, and evidence states |
-| `src/grading/` | grader execution and isolated check workers |
 | `src/progression/` | feature graphs, dependency state, strikes, and progression scoring |
 | `src/references/` | reference fixture selection and qualification |
 | `src/releases/` | release source, bundle, and signature verification |
@@ -357,23 +375,6 @@ but do not silently change unrelated check scores. Failed or unavailable checks 
 zero without changing the declared denominator. The grader does not reload a failed
 live-update assertion and retry it, so "real-time" means real-time.
 
-## Files
-
-| Path | Purpose |
-|---|---|
-| `commands/bench.ts` | runs one benchmark attempt |
-| `commands/agent.ts` | drives one coding session (build, upgrade, or repair) |
-| `commands/run-suite.ts` | resets and grades one prepared app |
-| `commands/report-bugs.ts` | turns failed checks into a repair report |
-| `grader/grade.ts` | executes scenarios against real clients |
-| `grader/mutation-test.ts` | validates checks with known defects |
-| `linter/lint.ts` | checks the app exposes the required test ids |
-| `docker-compose.yaml` | the Postgres and MongoDB services |
-| `appliance/` | dedicated Linux runner controller image, Compose bundle, and operator guide |
-| `reset-db.sh`, `restart-backend.sh` | environment control used by the suites |
-| `src/composition/tracks.ts` | resolves a track: its paths, suites, ports and names |
-| `tracks/<name>/` | one application: prompts, contracts, scenarios, lint walk |
-| `backends/` | per-backend setup and deploy instructions given to the agent |
 ## Validation safeguards
 
 - **Reference qualification.** Every scored recipe must pass against its exact,

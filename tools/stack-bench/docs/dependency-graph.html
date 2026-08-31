@@ -305,6 +305,7 @@
     {
       "id": "accounts",
       "name": "Accounts",
+      "description": "Account creation, sign-in, and sign-out.",
       "level": 1,
       "state": "qualified",
       "parents": [],
@@ -319,8 +320,9 @@
     {
       "id": "catalog",
       "name": "Catalog items",
+      "description": "Public catalog item values used by shopping features.",
       "level": 1,
-      "state": "draft",
+      "state": "qualified",
       "parents": [],
       "dependencyReasons": {},
       "questline": "catalog-discovery",
@@ -333,6 +335,7 @@
     {
       "id": "staff-access",
       "name": "Staff access",
+      "description": "Staff sign-in and customer access boundaries.",
       "level": 1,
       "state": "qualified",
       "parents": [],
@@ -347,6 +350,7 @@
     {
       "id": "support-intake",
       "name": "Support intake",
+      "description": "Public support ticket creation and references.",
       "level": 1,
       "state": "qualified",
       "parents": [],
@@ -361,6 +365,7 @@
     {
       "id": "customer-profile",
       "name": "Customer profile",
+      "description": "Private customer details and shipping address.",
       "level": 2,
       "state": "qualified",
       "parents": [
@@ -379,6 +384,7 @@
     {
       "id": "notification-preferences",
       "name": "Notification preferences",
+      "description": "Durable account-owned notification choices.",
       "level": 2,
       "state": "qualified",
       "parents": [
@@ -397,8 +403,9 @@
     {
       "id": "purchasing",
       "name": "Purchasing and orders",
+      "description": "Immediate purchase and customer order history.",
       "level": 2,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "accounts",
         "catalog"
@@ -417,8 +424,9 @@
     {
       "id": "cart",
       "name": "Cart",
+      "description": "A signed-in customer cart.",
       "level": 2,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "accounts",
         "catalog"
@@ -437,8 +445,9 @@
     {
       "id": "catalog-discovery",
       "name": "Catalog discovery",
+      "description": "Public catalog ranking and full-catalog search.",
       "level": 2,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "catalog"
       ],
@@ -455,6 +464,7 @@
     {
       "id": "support-history",
       "name": "Customer support history",
+      "description": "Durable account-owned support history.",
       "level": 2,
       "state": "qualified",
       "parents": [
@@ -475,8 +485,9 @@
     {
       "id": "warehouse-admin",
       "name": "Warehouse administration",
+      "description": "Warehouse inventory, restocking, and revenue views.",
       "level": 2,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "catalog",
         "staff-access"
@@ -495,8 +506,9 @@
     {
       "id": "promotion-rules",
       "name": "Promotion rules",
+      "description": "Staff-managed bounded promotion codes.",
       "level": 2,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "catalog",
         "staff-access"
@@ -515,6 +527,7 @@
     {
       "id": "staff-roles",
       "name": "Staff roles",
+      "description": "Role assignment and staff permission boundaries.",
       "level": 2,
       "state": "qualified",
       "parents": [
@@ -533,6 +546,7 @@
     {
       "id": "support-triage",
       "name": "Support triage",
+      "description": "Staff assignment, priority, and status changes.",
       "level": 2,
       "state": "qualified",
       "parents": [
@@ -553,8 +567,9 @@
     {
       "id": "sales-dashboard",
       "name": "Sales dashboard",
+      "description": "Live category totals and best sellers.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "purchasing"
       ],
@@ -571,8 +586,9 @@
     {
       "id": "reviews",
       "name": "Reviews",
+      "description": "Item ratings and comments.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "purchasing"
       ],
@@ -589,8 +605,9 @@
     {
       "id": "recommendations",
       "name": "Recommendations",
+      "description": "Customer recommendations based on purchase activity and cart contents.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "cart",
         "purchasing"
@@ -609,8 +626,9 @@
     {
       "id": "checkout",
       "name": "Checkout",
+      "description": "Turn a cart into an order.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "cart"
       ],
@@ -627,8 +645,9 @@
     {
       "id": "stock-alerts",
       "name": "Stock alerts",
+      "description": "Private one-time alerts when stock returns.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "notification-preferences",
         "warehouse-admin"
@@ -647,8 +666,9 @@
     {
       "id": "faceted-search",
       "name": "Faceted search",
+      "description": "Combined catalogue filters with stable pagination.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "catalog-discovery"
       ],
@@ -665,8 +685,9 @@
     {
       "id": "fulfilment-queue",
       "name": "Fulfilment queue",
+      "description": "Staff and administrator fulfilment workflows.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "purchasing",
         "warehouse-admin"
@@ -685,8 +706,9 @@
     {
       "id": "order-cancellation",
       "name": "Order cancellation",
+      "description": "Cancel pending orders without losing stock or accounting accuracy.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "purchasing",
         "warehouse-admin"
@@ -705,8 +727,9 @@
     {
       "id": "catalog-management",
       "name": "Catalog management",
+      "description": "Staff-managed products and named variants.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "catalog-discovery",
         "staff-roles"
@@ -725,8 +748,9 @@
     {
       "id": "inventory-dashboard",
       "name": "Inventory dashboard",
+      "description": "A live low-stock dashboard.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "warehouse-admin"
       ],
@@ -743,8 +767,9 @@
     {
       "id": "scheduled-restocks",
       "name": "Scheduled restocks",
+      "description": "Pending, completed, and cancelled scheduled restocks.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "warehouse-admin"
       ],
@@ -761,8 +786,9 @@
     {
       "id": "stock-transfers",
       "name": "Stock transfers",
+      "description": "Move stock between warehouses without changing the total.",
       "level": 3,
-      "state": "draft",
+      "state": "qualified",
       "parents": [
         "warehouse-admin"
       ],
@@ -779,6 +805,7 @@
     {
       "id": "managed-support",
       "name": "Managed support cases",
+      "description": "Shared support cases with live updates and account privacy.",
       "level": 3,
       "state": "qualified",
       "parents": [
@@ -799,6 +826,7 @@
     {
       "id": "payment-records",
       "name": "Payment records",
+      "description": "Exact and non-duplicated payment records at checkout.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -819,6 +847,7 @@
     {
       "id": "reservations",
       "name": "Reservations",
+      "description": "Timed cart reservations, renewal, checkout, and expiry.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -839,6 +868,7 @@
     {
       "id": "promotion-checkout",
       "name": "Promotion checkout",
+      "description": "Server-calculated discounts recorded on orders.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -859,6 +889,7 @@
     {
       "id": "order-support",
       "name": "Order-linked support",
+      "description": "Owned order links that authorized staff can inspect.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -879,6 +910,7 @@
     {
       "id": "personalized-recommendations",
       "name": "Personalized recommendations",
+      "description": "Deterministic recommendations isolated by customer.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -897,6 +929,7 @@
     {
       "id": "automatic-reorder",
       "name": "Automatic reorder rules",
+      "description": "Threshold rules schedule one pending restock.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -917,6 +950,7 @@
     {
       "id": "order-delivery",
       "name": "Order delivery",
+      "description": "Automatic delivery and final cancellation.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -937,6 +971,7 @@
     {
       "id": "staff-activity",
       "name": "Staff activity history",
+      "description": "Attributable and private history of administrative changes.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -955,6 +990,7 @@
     {
       "id": "price-history",
       "name": "Price history",
+      "description": "Update product prices and retain a history of those changes.",
       "level": 4,
       "state": "draft",
       "parents": [
@@ -973,6 +1009,7 @@
     {
       "id": "delivery-notifications",
       "name": "Delivery notifications",
+      "description": "Exactly one private notification for a delivered order.",
       "level": 5,
       "state": "draft",
       "parents": [
@@ -993,6 +1030,7 @@
     {
       "id": "support-refunds",
       "name": "Support refunds",
+      "description": "Authorized, exact, and single-application support refunds.",
       "level": 5,
       "state": "draft",
       "parents": [
@@ -1013,6 +1051,7 @@
     {
       "id": "cart-expiration",
       "name": "Cart expiration",
+      "description": "Inactive carts expire, release stock, and return empty.",
       "level": 5,
       "state": "draft",
       "parents": [
@@ -1031,6 +1070,7 @@
     {
       "id": "promotion-reporting",
       "name": "Promotion reporting",
+      "description": "Exact promotion redemptions and revenue.",
       "level": 5,
       "state": "draft",
       "parents": [
@@ -1049,6 +1089,7 @@
     {
       "id": "recommendation-feedback",
       "name": "Recommendation feedback",
+      "description": "Durable customer-specific recommendation dismissal.",
       "level": 5,
       "state": "draft",
       "parents": [
@@ -1067,6 +1108,7 @@
     {
       "id": "order-returns",
       "name": "Returns",
+      "description": "Return shipped items without losing stock or accounting accuracy.",
       "level": 5,
       "state": "draft",
       "parents": [
@@ -1085,6 +1127,7 @@
     {
       "id": "cart-recovery",
       "name": "Cart recovery",
+      "description": "Safe restoration of available items from an expired cart.",
       "level": 6,
       "state": "draft",
       "parents": [
@@ -1137,9 +1180,10 @@
       node.type = 'button';
       node.className = `node ${feature.state}`;
       node.dataset.id = feature.id;
-      node.setAttribute('aria-label', `Trace connections for ${feature.name}`);
+      node.title = feature.description;
+      node.setAttribute('aria-label', `${feature.name}. ${feature.description}`);
       node.setAttribute('aria-pressed', 'false');
-      node.innerHTML = `<span class="name">${feature.name}</span><span class="state" title="${feature.state}">●</span>`;
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="state">●</span>`;
         cell.appendChild(node);
       }
       grid.appendChild(cell);

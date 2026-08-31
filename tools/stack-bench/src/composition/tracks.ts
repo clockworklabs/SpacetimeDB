@@ -4,8 +4,9 @@
 //
 // Everything that differs between applications lives inside tracks/<name>/, so
 // adding one is a matter of dropping in a directory with a track.json — no
-// change to the harness. Everything that differs between *backends* stays in
-// backends/, because that axis is what the benchmark measures.
+// change to the harness. Stack-specific text sent to the coding agent stays in
+// backends/, because that axis is what the benchmark measures. Runtime stack
+// adapters are separate under src/stacks/.
 
 import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
