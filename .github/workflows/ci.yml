@@ -582,12 +582,7 @@ jobs:
       - &set-spacetime-bin
         name: Set SpacetimeDB binary path
         shell: bash
-        run: |
-          exe_suffix=""
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            exe_suffix=".exe"
-          fi
-          echo "SPACETIME_BIN=${CARGO_TARGET_DIR}/release/spacetimedb-cli${exe_suffix}" >>"${GITHUB_ENV}"
+        run: echo "SPACETIME_BIN=${CARGO_TARGET_DIR}/release/spacetimedb-cli" >>"${GITHUB_ENV}"
 
       - name: Find Git ref
         env:
