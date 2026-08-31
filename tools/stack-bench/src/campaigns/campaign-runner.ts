@@ -113,7 +113,6 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
   if (!integer(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
-  const levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
   const dependencyMode = attempt.mode?.id === 'dependency';
   if (dependencyMode !== Boolean(attempt.dependencyPolicy)) {
     throw new Error(`attempt ${attempt.id} mode and dependency policy do not match`);
@@ -122,8 +121,7 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
   if (hasFeatureCatalog !== Boolean(attempt.featureCatalog)) {
     throw new Error(`attempt ${attempt.id} feature catalog does not match its campaign`);
   }
-  const guidanceDocument = attempt.condition?.guidance?.documents?.[attempt.stack];
-  if (!guidanceDocument) {
+  if (!attempt.condition?.guidance?.documents?.[attempt.stack]) {
     throw new Error(`attempt ${attempt.id} has no guidance document for ${attempt.stack}`);
   }
   const plannedPricing = { unit: plan.definition.pricing.unit,
@@ -131,15 +129,11 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
   if (canonicalDefinitionJson(attempt.pricing) !== canonicalDefinitionJson(plannedPricing)) {
     throw new Error(`attempt ${attempt.id} pricing does not match its campaign`);
   }
-  const args = [BENCH,
-    '--backend', attempt.stack,
-    '--track', plan.definition.track];
+  const args = [BENCH];
   if (typeof campaignPlanPath !== 'string' || !campaignPlanPath) {
     throw new Error(`attempt ${attempt.id} requires its compiled campaign plan path`);
   }
-  args.push('--campaign-file', resolve(campaignPlanPath),
-    '--campaign-sha256', plan.contentSha256,
-    '--campaign-attempt-id', attempt.id);
+  args.push('--campaign-file', resolve(campaignPlanPath), '--campaign-attempt-id', attempt.id);
   if (campaignAdmissionId !== null) {
     if (typeof campaignAdmissionId !== 'string' || !campaignAdmissionId) {
       throw new Error(`attempt ${attempt.id} has an invalid campaign admission id`);
@@ -147,22 +141,10 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
     args.push('--campaign-admission-id', campaignAdmissionId);
   }
   if (hasFeatureCatalog) {
-    const featureCatalogIdentity = attempt.featureCatalog;
-    if (!featureCatalogIdentity) {
-      throw new Error(`attempt ${attempt.id} feature catalog does not match its campaign`);
-    }
     if (canonicalDefinitionJson(attempt.featureCatalog)
       !== canonicalDefinitionJson(plan.featureCatalog?.identity)) {
       throw new Error(`attempt ${attempt.id} feature catalog identity does not match its campaign`);
     }
-    args.push('--feature-catalog-sha256', featureCatalogIdentity.sha256);
-  }
-  if (dependencyMode) {
-    const dependencyPolicyIdentity = attempt.dependencyPolicy;
-    if (!dependencyPolicyIdentity) {
-      throw new Error(`attempt ${attempt.id} mode and dependency policy do not match`);
-    }
-    args.push('--dependency-policy-sha256', dependencyPolicyIdentity.sha256);
   }
   if (dependencyMode) {
     if (progressionResumeFrom !== null) {
@@ -175,25 +157,9 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
     if (progressionResumeFrom !== null) {
       throw new Error(`strict attempt ${attempt.id} cannot resume dependency progression state`);
     }
-    args.push('--levels', levels);
   }
   args.push('--run-index', String(runIndex),
-    '--out', output,
-    '--agent-adapter', attempt.agentAdapter,
-    '--model', attempt.model,
-    '--pricing-json', JSON.stringify(attempt.pricing),
-    '--guidance', attempt.guidance,
-    '--fix-rounds', String(plan.definition.budgets.fixRounds),
-    '--parent-attempt-id', attempt.id,
-    '--no-media');
-  if (!dependencyMode) {
-    args.push('--guidance-document-json', JSON.stringify(guidanceDocument),
-      '--condition-json', JSON.stringify(attempt.condition),
-      '--selection-json', JSON.stringify(plan.definition.selection));
-  }
-  for (const pack of plan.definition.selection.packs ?? []) args.push('--pack', pack);
-  for (const check of plan.definition.selection.checks ?? []) args.push('--check', check);
-  if (!dependencyMode) args.push('--skills-json', JSON.stringify(attempt.skills));
+    '--out', output);
   const plannedBudget = plan.definition.budgets.maxCostUsdPerAttempt;
   const executionBudget = maxBudgetUsd === undefined ? plannedBudget : maxBudgetUsd;
   if (executionBudget !== null) {

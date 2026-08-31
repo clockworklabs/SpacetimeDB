@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 import { readArtifact } from '../src/evidence/artifacts.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
@@ -14,6 +14,7 @@ import { compileProgressionInput, dependencyRuntimeDefinition, progressionLevels
   from '../src/progression/progression-definition.js';
 import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
   ProgressionInput } from '../src/progression/progression-definition.js';
+import { validatePricingAuthority } from '../src/evidence/pricing-authority.js';
 import type { PricingAuthority } from '../src/evidence/pricing-authority.js';
 
 type StudyCondition = CampaignAttemptPlan['condition'];
@@ -66,9 +67,6 @@ export interface BenchArguments {
   repairLevel?: number;
   recipe?: string;
   campaignFile?: string;
-  featureCatalogSha256?: string;
-  dependencyPolicySha256?: string;
-  campaignSha256?: string;
   campaignAttemptId?: string;
   campaignAdmissionId?: string;
   progressionResumeFrom?: string;
@@ -86,6 +84,82 @@ function normalizeGuidance(value: string): 'neutral' | 'prescribed' {
   throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
 }
 
+const stringListJson = (value: string): string[] => {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || !parsed.every(item => typeof item === 'string')) {
+    throw new Error('--skills-json must be an array of strings');
+  }
+  return parsed;
+};
+
+interface BenchCliOptions extends Partial<BenchArguments> {
+  pack?: string[];
+  check?: string[];
+  pricingJson?: unknown;
+  guidanceDocumentJson?: unknown;
+  conditionJson?: StudyCondition;
+  selectionJson?: CampaignSelection;
+  featureModule?: string[];
+  requestSpec?: string[];
+  expectSpec?: string[];
+  observeSpec?: string[];
+  skillsJson?: string[];
+  expectedMutationCalibrationJson?: unknown;
+}
+
+function parseCli(argv: readonly string[]): BenchCliOptions {
+  const strings = ['backend', 'track', 'levels', 'campaign-file', 'campaign-attempt-id',
+    'campaign-admission-id', 'progression-resume-from', 'recipe', 'model', 'pricing-json',
+    'fix-rounds', 'max-stalled-repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
+    'agent-adapter', 'guidance', 'guidance-document-json', 'condition-json', 'selection-json',
+    'task-mode', 'skills', 'skills-json', 'api-key', 'api-key-file', 'mutations',
+    'mutation-shard-index', 'mutation-shard-count', 'mutation-resume-from',
+    'mutation-checkpoint-out', 'mutation-baseline-bundle',
+    'expected-mutation-calibration-json', 'mutation-max-runtime-minutes', 'seed-from',
+    'parent-attempt-id', 'repair-from', 'repair-level'] as const;
+  const multiple = ['pack', 'check', 'feature-module', 'request-spec', 'expect-spec',
+    'observe-spec'] as const;
+  const options = Object.fromEntries([
+    ...strings.map(name => [name, { type: 'string' as const }]),
+    ...multiple.map(name => [name, { type: 'string' as const, multiple: true }]),
+    ...['no-media', 'retain-backend', 'reference-mutation-only'].map(name =>
+      [name, { type: 'boolean' as const }]),
+  ]);
+  const { values } = parseArgs({ args: [...argv.slice(2)], options, strict: true,
+    allowPositionals: false });
+  const parsed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    parsed[key.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())] = value;
+  }
+  for (const key of ['pack', 'check', 'featureModule', 'requestSpec', 'expectSpec',
+    'observeSpec']) {
+    const value = parsed[key] as string[] | undefined;
+    if (value) parsed[key] = value.flatMap(item => item.split(',').filter(Boolean));
+  }
+  for (const key of ['fixRounds', 'maxStalledRepairs', 'maxBudgetUsd', 'mutationShardIndex',
+    'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel']) {
+    if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
+  }
+  if (typeof parsed.runIndex === 'string') parsed.runIndex = parseInt(parsed.runIndex, 10);
+  for (const key of ['campaignFile', 'progressionResumeFrom', 'apiKeyFile', 'mutations',
+    'mutationResumeFrom', 'mutationCheckpointOut', 'mutationBaselineBundle', 'repairFrom']) {
+    if (typeof parsed[key] === 'string') parsed[key] = resolve(parsed[key]);
+  }
+  for (const key of ['pricingJson', 'guidanceDocumentJson', 'conditionJson', 'selectionJson',
+    'expectedMutationCalibrationJson']) {
+    if (typeof parsed[key] === 'string') parsed[key] = JSON.parse(parsed[key]);
+  }
+  if (typeof parsed.guidance === 'string') parsed.guidance = normalizeGuidance(parsed.guidance);
+  if (parsed.skills !== undefined && parsed.skillsJson !== undefined) {
+    throw new Error('--skills and --skills-json cannot be used together');
+  }
+  if (typeof parsed.skills === 'string') parsed.skills = parsed.skills.split(',').filter(Boolean);
+  if (typeof parsed.skillsJson === 'string') parsed.skillsJson = stringListJson(parsed.skillsJson);
+  if (parsed.noMedia === true) parsed.media = false;
+  delete parsed.noMedia;
+  return parsed as BenchCliOptions;
+}
+
 export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   const args: BenchArguments = { model: null, agentAdapter: 'claude-code',
     fixRounds: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
@@ -93,73 +167,26 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     packIds: [], checkKeys: [], featureIds: [], requestedSpecifications: [],
     expectedSpecifications: [], observedSpecifications: [],
     mutationMaxRuntimeMinutes: 60 };
-  for (let i = 2; i < argv.length; i++) {
-    const option = argv[i];
-    if (!option) continue;
-    const value = (): string => {
-      const next = argv[++i];
-      if (next === undefined) throw new Error(`${option} requires a value`);
-      return next;
-    };
-    switch (option) {
-      case '--backend': args.backend = value(); break;
-      case '--track': args.track = value(); break;
-      case '--levels': args.levels = value(); args.levelsProvided = true; break;
-      case '--campaign-file': args.campaignFile = resolve(value()); break;
-      case '--feature-catalog-sha256': args.featureCatalogSha256 = value(); break;
-      case '--dependency-policy-sha256': args.dependencyPolicySha256 = value(); break;
-      case '--campaign-sha256': args.campaignSha256 = value(); break;
-      case '--campaign-attempt-id': args.campaignAttemptId = value(); break;
-      case '--campaign-admission-id': args.campaignAdmissionId = value(); break;
-      case '--progression-resume-from': args.progressionResumeFrom = resolve(value()); break;
-      case '--recipe': args.recipe = value(); break;
-      case '--pack': args.packIds.push(...value().split(',').filter(Boolean)); break;
-      case '--check': args.checkKeys.push(...value().split(',').filter(Boolean)); break;
-      case '--model': args.model = value(); break;
-      case '--pricing-json': args.pricing = JSON.parse(value()); break;
-      case '--fix-rounds': args.fixRounds = Number(value()); break;
-      case '--max-stalled-repairs': args.maxStalledRepairs = Number(value()); break;
-      case '--max-budget-usd': args.maxBudgetUsd = Number(value()); break;
-      case '--run-index': args.runIndex = parseInt(value(), 10); break;
-      case '--out': args.out = value(); break;
-      case '--app': args.app = value(); break;
-      case '--url': args.url = value(); break;
-      case '--agent-adapter': args.agentAdapter = value(); break;
-      case '--no-media': args.media = false; break;
-      case '--retain-backend': args.retainBackend = true; break;
-      case '--guidance': args.guidance = normalizeGuidance(value()); break;
-      case '--guidance-document-json': args.guidanceDocument = JSON.parse(value()); break;
-      case '--condition-json': args.condition = JSON.parse(value()); break;
-      case '--selection-json': args.selectionRequest = JSON.parse(value()); break;
-      case '--task-mode': args.taskMode = value(); break;
-      case '--feature-module': args.featureIds.push(...value().split(',').filter(Boolean)); break;
-      case '--request-spec': args.requestedSpecifications.push(...value().split(',').filter(Boolean)); break;
-      case '--expect-spec': args.expectedSpecifications.push(...value().split(',').filter(Boolean)); break;
-      case '--observe-spec': args.observedSpecifications.push(...value().split(',').filter(Boolean)); break;
-      case '--skills': args.skills = value().split(',').filter(Boolean); break;
-      case '--skills-json': args.skills = JSON.parse(value()); break;
-      case '--api-key': args.apiKey = value(); break;
-      case '--api-key-file': args.apiKeyFile = resolve(value()); break;
-      case '--mutations': args.mutations = resolve(value()); break;
-      case '--mutation-shard-index': args.mutationShardIndex = Number(value()); break;
-      case '--mutation-shard-count': args.mutationShardCount = Number(value()); break;
-      case '--mutation-resume-from': args.mutationResumeFrom = resolve(value()); break;
-      case '--mutation-checkpoint-out': args.mutationCheckpointOut = resolve(value()); break;
-      case '--mutation-baseline-bundle': args.mutationBaselineBundle = resolve(value()); break;
-      case '--expected-mutation-calibration-json':
-        args.expectedMutationCalibration = JSON.parse(value()); break;
-      case '--mutation-max-runtime-minutes': args.mutationMaxRuntimeMinutes = Number(value()); break;
-      case '--reference-mutation-only': args.referenceMutationOnly = true; break;
-      case '--seed-from': args.seedFrom = value(); break;
-      case '--parent-attempt-id': args.parentAttemptId = value(); break;
-      case '--repair-from': args.repairFrom = resolve(value()); break;
-      case '--repair-level': args.repairLevel = Number(value()); break;
-      default: console.error(`Unknown argument: ${option}`); process.exit(2);
-    }
+  const { pack, check, pricingJson, guidanceDocumentJson, conditionJson, selectionJson,
+    featureModule, requestSpec, expectSpec, observeSpec, skillsJson,
+    expectedMutationCalibrationJson, ...options } = parseCli(argv);
+  Object.assign(args, options);
+  if (pack) args.packIds = pack;
+  if (check) args.checkKeys = check;
+  if (pricingJson !== undefined) {
+    args.pricing = validatePricingAuthority(pricingJson, { at: '--pricing-json' });
   }
-  if (!args.backend && !args.repairFrom) {
-    console.error('Usage: npm run bench -- --backend <stack> --levels 1-3 [--fix-rounds 10] [--run-index N]');
-    process.exit(2);
+  if (guidanceDocumentJson !== undefined) args.guidanceDocument = guidanceDocumentJson;
+  if (conditionJson !== undefined) args.condition = conditionJson;
+  if (selectionJson !== undefined) args.selectionRequest = selectionJson;
+  if (featureModule) args.featureIds = featureModule;
+  if (requestSpec) args.requestedSpecifications = requestSpec;
+  if (expectSpec) args.expectedSpecifications = expectSpec;
+  if (observeSpec) args.observedSpecifications = observeSpec;
+  if (skillsJson !== undefined) args.skills = skillsJson;
+  args.levelsProvided = options.levels !== undefined;
+  if (expectedMutationCalibrationJson !== undefined) {
+    args.expectedMutationCalibration = expectedMutationCalibrationJson;
   }
   if ((args.mutationResumeFrom || args.mutationCheckpointOut || args.mutationBaselineBundle)
       && !args.mutations) {
@@ -183,17 +210,27 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
       || !Number.isSafeInteger(args.repairLevel) || args.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
   }
-  if (args.campaignFile && (!args.campaignSha256 || !args.campaignAttemptId)) {
-    throw new Error('--campaign-file requires --campaign-sha256 and --campaign-attempt-id');
+  if (args.campaignFile && !args.campaignAttemptId) {
+    throw new Error('--campaign-file requires --campaign-attempt-id');
   }
-  if (!args.campaignFile && (args.campaignSha256 || args.campaignAttemptId
-    || args.campaignAdmissionId || args.featureCatalogSha256 || args.dependencyPolicySha256)) {
+  if (!args.campaignFile && (args.campaignAttemptId || args.campaignAdmissionId)) {
     throw new Error('campaign binding requires --campaign-file');
   }
   if (args.progressionResumeFrom && !args.campaignFile) {
     throw new Error('--progression-resume-from requires a compiled campaign');
   }
-  if (args.campaignFile) bindCampaign(args);
+  if (args.campaignFile) {
+    const allowed = new Set(['--campaign-file', '--campaign-attempt-id',
+      '--campaign-admission-id', '--progression-resume-from', '--run-index', '--out',
+      '--max-budget-usd']);
+    const override = argv.slice(2).find(value => value.startsWith('--')
+      && !allowed.has(value.split('=', 1)[0]!));
+    if (override) throw new Error(`campaign attempts cannot override ${override}`);
+    bindCampaign(args);
+  }
+  if (!args.backend && !args.repairFrom) {
+    throw new Error('--backend is required unless --repair-from or --campaign-file is supplied');
+  }
   if (args.progression) {
     if (args.levelsProvided) throw new Error('--levels cannot be combined with progression input');
     args.progression = validateProgressionInput(args.progression);
@@ -230,51 +267,33 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
 
 function bindCampaign(args: BenchArguments): void {
   if (!args.campaignFile) throw new Error('campaign file is required');
-  const unsupported = [
-    [args.maxStalledRepairs !== 3, '--max-stalled-repairs'],
-    [args.mutations !== undefined || args.mutationShardIndex !== undefined
-      || args.mutationShardCount !== undefined, '--mutations'],
-    [args.seedFrom !== undefined, '--seed-from'],
-    [args.repairFrom !== undefined || args.repairLevel !== undefined, '--repair-from'],
-    [args.app !== undefined, '--app'], [args.url !== undefined, '--url'],
-    [args.retainBackend === true, '--retain-backend'],
-    [args.apiKey !== undefined || args.apiKeyFile !== undefined, 'credential override'],
-    [args.recipe !== undefined || args.packIds.length > 0 || args.checkKeys.length > 0
-      || args.featureIds.length > 0 || args.requestedSpecifications.length > 0
-      || args.expectedSpecifications.length > 0 || args.observedSpecifications.length > 0,
-    'direct recipe selection'],
-  ].filter(([changed]) => changed).map(([, name]) => name);
-  if (unsupported.length) {
-    throw new Error(`campaign progression input cannot override ${unsupported.join(', ')}`);
-  }
   const artifact = readArtifact(args.campaignFile, { expectedKind: 'campaign_plan' });
   const plan = validateCompiledCampaignPlan(artifact.payload);
-  if (plan.contentSha256 !== args.campaignSha256) {
-    throw new Error('--campaign-sha256 does not match the compiled campaign plan');
-  }
   const attempt = plan.attempts.find(item => item.id === args.campaignAttemptId);
-  if (attempt) {
-    args.condition ??= structuredClone(attempt.condition);
-    args.skills ??= structuredClone(attempt.skills);
-    args.selectionRequest ??= structuredClone(plan.definition.selection);
-    args.guidanceDocument ??= structuredClone(
-      attempt.condition?.guidance?.documents?.[attempt.stack]);
+  if (!attempt) throw new Error('--campaign-attempt-id is not in the compiled campaign plan');
+  const plannedBudget = plan.definition.budgets.maxCostUsdPerAttempt;
+  if (args.maxBudgetUsd !== undefined
+    && (plannedBudget === null || args.maxBudgetUsd > plannedBudget)) {
+    throw new Error('--max-budget-usd exceeds the compiled campaign budget');
   }
-  if (!attempt || attempt.stack !== args.backend || attempt.agentAdapter !== args.agentAdapter
-    || attempt.model !== args.model
-    || canonicalDefinitionJson(attempt.pricing) !== canonicalDefinitionJson(args.pricing)
-    || plan.definition.track !== args.track || attempt.guidance !== args.guidance
-    || canonicalDefinitionJson(attempt.condition) !== canonicalDefinitionJson(args.condition)
-    || canonicalDefinitionJson(attempt.skills) !== canonicalDefinitionJson(args.skills)
-    || canonicalDefinitionJson(plan.definition.selection)
-      !== canonicalDefinitionJson(args.selectionRequest)
-    || canonicalDefinitionJson(attempt.condition?.guidance?.documents?.[attempt.stack])
-      !== canonicalDefinitionJson(args.guidanceDocument)
-    || plan.definition.budgets.fixRounds !== args.fixRounds
-    || plan.definition.budgets.maxCostUsdPerAttempt !== (args.maxBudgetUsd ?? null)
-    || args.parentAttemptId !== attempt.id || args.media !== false) {
-    throw new Error('--campaign-attempt-id does not match the requested campaign attempt');
-  }
+  args.backend = attempt.stack;
+  args.track = plan.definition.track;
+  args.model = attempt.model;
+  args.agentAdapter = attempt.agentAdapter;
+  args.pricing = validatePricingAuthority(attempt.pricing, { at: 'compiled campaign pricing' });
+  args.guidance = attempt.guidance;
+  args.condition = structuredClone(attempt.condition);
+  args.skills = structuredClone(attempt.skills);
+  args.selectionRequest = structuredClone(plan.definition.selection);
+  args.guidanceDocument = structuredClone(
+    attempt.condition.guidance.documents[attempt.stack]);
+  args.packIds = structuredClone(plan.definition.selection.packs ?? []);
+  args.checkKeys = structuredClone(plan.definition.selection.checks ?? []);
+  args.fixRounds = plan.definition.budgets.fixRounds;
+  args.maxBudgetUsd ??= plannedBudget ?? undefined;
+  args.parentAttemptId = attempt.id;
+  args.media = false;
+  args.levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
   args.experimentIdentity = {
     id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
   };
@@ -296,22 +315,10 @@ function bindCampaign(args: BenchArguments): void {
   args.runMode = structuredClone(attempt.mode);
   if (plan.featureCatalog) {
     args.featureCatalog = validateFeatureCatalogInput(plan.featureCatalog);
-    if (args.featureCatalog.identity.sha256 !== args.featureCatalogSha256
-      || canonicalDefinitionJson(attempt.featureCatalog)
-        !== canonicalDefinitionJson(args.featureCatalog.identity)) {
-      throw new Error('--feature-catalog-sha256 does not match the compiled campaign plan');
-    }
-  } else if (args.featureCatalogSha256 !== undefined || attempt.featureCatalog !== undefined) {
-    throw new Error('campaign attempt has an unexpected feature catalog');
   }
   if (attempt.mode.id === 'dependency') {
     if (!plan.dependencyPolicy || !args.featureCatalog) {
       throw new Error('dependency campaign requires a feature catalog and dependency policy');
-    }
-    if (plan.dependencyPolicy.identity.sha256 !== args.dependencyPolicySha256
-      || canonicalDefinitionJson(attempt.dependencyPolicy)
-        !== canonicalDefinitionJson(plan.dependencyPolicy.identity)) {
-      throw new Error('--dependency-policy-sha256 does not match the compiled campaign plan');
     }
     args.dependencyPolicy = plan.dependencyPolicy;
     args.progression = compileProgressionInput(dependencyRuntimeDefinition(

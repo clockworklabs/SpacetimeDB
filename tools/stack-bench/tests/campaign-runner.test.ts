@@ -138,20 +138,9 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
   const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
     '/campaign/plan.json');
   assert.deepEqual(argv.slice(1), [
-    '--backend', plan.attempts[0].stack,
-    '--track', 'ecommerce', '--campaign-file', resolve('/campaign/plan.json'),
-    '--campaign-sha256', plan.contentSha256,
+    '--campaign-file', resolve('/campaign/plan.json'),
     '--campaign-attempt-id', plan.attempts[0].id,
-    '--levels', '1-1', '--run-index', '0',
-    '--out', '/campaign/attempt', '--agent-adapter', 'deterministic',
-    '--model', 'deterministic', '--pricing-json', JSON.stringify(plan.attempts[0].pricing),
-    '--guidance', 'prescribed',
-    '--fix-rounds', '3', '--parent-attempt-id', plan.attempts[0].id, '--no-media',
-    '--guidance-document-json', JSON.stringify(plan.attempts[0].condition.guidance.documents[
-      plan.attempts[0].stack]),
-    '--condition-json', JSON.stringify(plan.attempts[0].condition),
-    '--selection-json', JSON.stringify(plan.definition.selection),
-    '--skills-json', JSON.stringify(plan.attempts[0].skills),
+    '--run-index', '0', '--out', '/campaign/attempt',
   ]);
   assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], condition: {
     ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,
@@ -203,11 +192,6 @@ test('dependency attempts pass separate catalog and policy identities with no le
   const index = argv.indexOf('--campaign-file');
   assert(index > 0);
   assert.equal(argv[index + 1], resolve('/campaign/plan.json'));
-  assert.equal(argv[argv.indexOf('--feature-catalog-sha256') + 1],
-    dependencyPlan.featureCatalog!.identity.sha256);
-  assert.equal(argv[argv.indexOf('--dependency-policy-sha256') + 1],
-    dependencyPlan.dependencyPolicy!.identity.sha256);
-  assert.equal(argv[argv.indexOf('--campaign-sha256') + 1], dependencyPlan.contentSha256);
   assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
   for (const option of ['--guidance-document-json', '--condition-json', '--selection-json',
     '--skills-json']) assert.equal(argv.includes(option), false);
@@ -768,7 +752,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
         assert.deepEqual(options.logs, {
           stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log'),
         });
-        const parent = argv[argv.indexOf('--parent-attempt-id') + 1]!;
+        const parent = argv[argv.indexOf('--campaign-attempt-id') + 1]!;
         const { emptyArtifactIdentities, writeRunJson } = await import('../src/evidence/artifacts.js');
         const completedAt = new Date().toISOString();
         const attempt = planned.attempts.find(item => item.id === parent)!;
@@ -885,7 +869,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
       execute: async (_command, argv, options) => {
         assert(options.env);
         const runIndex = Number(argv[argv.indexOf('--run-index') + 1]);
-        const parent = argv[argv.indexOf('--parent-attempt-id') + 1]!;
+        const parent = argv[argv.indexOf('--campaign-attempt-id') + 1]!;
         const output = argv[argv.indexOf('--out') + 1]!;
         active += 1;
         maxActive = Math.max(maxActive, active);

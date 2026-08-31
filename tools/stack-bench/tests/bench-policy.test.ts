@@ -161,6 +161,11 @@ test('direct runs default to ten repair rounds while an explicit budget still wi
     '--fix-rounds', '4']).fixRounds, 4);
 });
 
+test('bench arguments validate pricing at the CLI boundary', () => {
+  assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
+    '--pricing-json', '{}']), /--pricing-json/);
+});
+
 test('progression level usability follows its stricter evidence result', () => {
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }), true);
   assert.equal(levelGradeIsUsable({ kind: 'provider_failure' }), false);
@@ -254,9 +259,8 @@ test('dependency campaign progression rejects an incomplete or unbound plan refe
   try {
     const path = join(root, 'plan.json');
     writeArtifact(path, { kind: 'campaign_plan', id: 'plan', payload: {} });
-    assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
-      '--campaign-file', path, '--feature-catalog-sha256', 'a'.repeat(64),
-      '--campaign-sha256', 'b'.repeat(64), '--campaign-attempt-id', 'attempt']),
+    assert.throws(() => parseBenchArguments(['node', 'bench',
+      '--campaign-file', path, '--campaign-attempt-id', 'attempt']),
     /compiled campaign/);
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -350,10 +350,8 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
         agentAdapter: attempt.agentAdapter,
         model: attempt.model, conditionSha256: attempt.condition.sha256 } });
-    const changedParent = [...argv];
-    changedParent[changedParent.indexOf('--parent-attempt-id') + 1] = 'different-attempt';
-    assert.throws(() => parseBenchArguments(['node', ...changedParent]),
-      /does not match the requested campaign attempt/);
+    assert.throws(() => parseBenchArguments(['node', ...argv, '--backend', 'postgres']),
+      /campaign attempts cannot override --backend/);
 
     const now = new Date().toISOString();
     const admission = runCampaignAdmission(plan, root, {
@@ -392,7 +390,7 @@ test('sequential bench input uses the catalog for selection without live gating'
     const planPath = join(root, 'plan.json');
     writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
     const argv = attemptArgv(plan, plan.attempts[0]!, join(root, 'result'), 0, planPath);
-    assert(argv.includes('--levels'));
+    assert.equal(argv.includes('--levels'), false);
     const args = parseBenchArguments(['node', ...argv]);
     assert.deepEqual(args.runMode, plan.attempts[0]!.mode);
     assert.deepEqual(args.experimentIdentity, campaignIdentity(plan));
