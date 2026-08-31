@@ -105,19 +105,9 @@
       {
         "args": [
           "",
-          "stack-bench-provenance-password"
+          ""
         ],
         "id": "signUp",
-        "params": [
-          {
-            "in": "body",
-            "name": "username"
-          },
-          {
-            "in": "body",
-            "name": "password"
-          }
-        ],
         "path": "/api/auth/signup",
         "reducer": "sign_up"
       },
@@ -133,6 +123,10 @@
     ],
     "databaseProvenance": {
       "action": "signUp",
+      "body": {
+        "password": "stack-bench-provenance-password",
+        "username": ""
+      },
       "markerParameter": "username"
     },
     "plannedThrough": 6,

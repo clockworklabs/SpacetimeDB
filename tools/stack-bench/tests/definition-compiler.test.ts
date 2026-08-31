@@ -231,17 +231,17 @@ test('track manifests reject unknown fields and malformed named actions', () => 
   assert.throws(() => compileTrackManifest({ ...base, actions: [{ id: 'buy', path: '/api/buy',
     reducer: 'buy', args: [0], params: [{ name: 'itemId', in: 'path', placeholder: ':id' }] }] }),
   /placeholder: does not appear in path/);
-  const signUp = { id: 'signUp', path: '/api/auth/signup', reducer: 'sign_up',
-    args: ['', 'password'], params: [{ name: 'username', in: 'body' },
-      { name: 'password', in: 'body' }] };
+  const signUp = { id: 'signUp', path: '/api/auth/signup', reducer: 'sign_up', args: ['', ''] };
+  const provenance = { action: 'signUp', markerParameter: 'username',
+    body: { username: '', password: 'password' } };
   assert.throws(() => compileTrackManifest({ ...base,
-    databaseProvenance: { action: 'missing', markerParameter: 'username' }, actions: [signUp] }),
+    databaseProvenance: { ...provenance, action: 'missing' }, actions: [signUp] }),
   /action: must name one declared action/);
   assert.throws(() => compileTrackManifest({ ...base,
-    databaseProvenance: { action: 'signUp', markerParameter: 'missing' }, actions: [signUp] }),
-  /markerParameter: must name one parameter/);
+    databaseProvenance: { ...provenance, markerParameter: 'missing' }, actions: [signUp] }),
+  /markerParameter: must name one field/);
   assert.doesNotThrow(() => compileTrackManifest({ ...base,
-    databaseProvenance: { action: 'signUp', markerParameter: 'username' }, actions: [signUp] }));
+    databaseProvenance: provenance, actions: [signUp] }));
   assert.doesNotThrow(() => compileTrackManifest({ ...base, reseedOnReset: true }));
 });
 

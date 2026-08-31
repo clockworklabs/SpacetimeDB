@@ -29,6 +29,7 @@ export interface TrackSuite {
 export interface TrackDatabaseProvenance {
   action: string;
   markerParameter: string;
+  body: Record<string, string>;
 }
 
 export interface TrackAction {

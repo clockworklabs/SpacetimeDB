@@ -85,7 +85,7 @@ export interface CompiledTrackManifest extends Record<string, unknown> {
   portOffset?: number;
   restartProbe?: string;
   reseedOnReset?: boolean;
-  databaseProvenance?: { action: string; markerParameter: string };
+  databaseProvenance?: { action: string; markerParameter: string; body: Record<string, string> };
   actions?: unknown[];
 }
 
@@ -498,7 +498,7 @@ const TRACK_FIELDS = new Set([
 ]);
 const SUITE_FIELDS = new Set(['id', 'inherit', 'spec']);
 const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'params', 'path', 'reducer']);
-const DATABASE_PROVENANCE_FIELDS = new Set(['action', 'markerParameter']);
+const DATABASE_PROVENANCE_FIELDS = new Set(['action', 'body', 'markerParameter']);
 export function compileTrackManifest(input: unknown,
   { source = '<track>' }: { source?: string } = {}): CompiledTrackManifest {
   const manifest = structuredClone(input);
@@ -525,6 +525,15 @@ export function compileTrackManifest(input: unknown,
     for (const field of ['action', 'markerParameter']) {
       if (!nonEmptyString(manifest.databaseProvenance[field])) {
         fail(`${source}.databaseProvenance.${field}`, 'must be a non-empty string');
+      }
+    }
+    if (!object(manifest.databaseProvenance.body)
+      || Object.keys(manifest.databaseProvenance.body).length === 0) {
+      fail(`${source}.databaseProvenance.body`, 'must be a non-empty object');
+    }
+    for (const [field, value] of Object.entries(manifest.databaseProvenance.body)) {
+      if (!nonEmptyString(field) || typeof value !== 'string') {
+        fail(`${source}.databaseProvenance.body.${field}`, 'must be a string');
       }
     }
   }
@@ -586,15 +595,10 @@ export function compileTrackManifest(input: unknown,
     if (!object(action)) {
       fail(`${source}.databaseProvenance.action`, 'must name one declared action');
     }
-    const markerParameter = provenance.markerParameter;
-    if (!array(action.params)
-      || !action.params.some(param => object(param) && param.name === markerParameter)) {
+    if (!object(provenance.body)
+      || !Object.hasOwn(provenance.body, String(provenance.markerParameter))) {
       fail(`${source}.databaseProvenance.markerParameter`,
-        'must name one parameter of the declared action');
-    }
-    if (!array(action.args) || action.args.length !== action.params.length) {
-      fail(`${source}.databaseProvenance.action`,
-        'must provide one default argument for every action parameter');
+        'must name one field in the provenance body');
     }
   }
   manifest.schemaVersion = DEFINITION_SCHEMA_VERSION;

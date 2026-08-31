@@ -9,7 +9,11 @@
   "reseedOnReset": true,
   "databaseProvenance": {
     "action": "signUp",
-    "markerParameter": "username"
+    "markerParameter": "username",
+    "body": {
+      "username": "",
+      "password": "stack-bench-provenance-password"
+    }
   },
   "suites": {
     "1": [
@@ -109,17 +113,7 @@
       "reducer": "sign_up",
       "args": [
         "",
-        "stack-bench-provenance-password"
-      ],
-      "params": [
-        {
-          "name": "username",
-          "in": "body"
-        },
-        {
-          "name": "password",
-          "in": "body"
-        }
+        ""
       ]
     },
     {

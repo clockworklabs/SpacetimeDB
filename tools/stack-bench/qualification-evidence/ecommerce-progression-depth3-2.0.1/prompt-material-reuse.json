@@ -88,6 +88,28 @@
         "Recorded startup contract failures through the complete selected grading bundle.",
         "Added credential-safe repair details from existing typed evidence without changing probes or scores."
       ]
+    },
+    {
+      "sourceFilesSha256": "c4913cd703d6349de9cd6599b374a7d799ba4a5c1507c0a6f95f73375bb820be",
+      "sourceFiles": [
+        "commands/bench.ts",
+        "commands/run-suite.ts",
+        "src/actions/actor-transport-action-executors.ts",
+        "src/campaigns/campaign-run-validation.ts",
+        "src/composition/definition-compiler.ts",
+        "src/composition/tracks.ts",
+        "src/runtime/repair-grant.ts",
+        "src/runtime/source-snapshot.ts",
+        "tracks/ecommerce/contracts/accounts-1.2.md",
+        "tracks/ecommerce/track.json"
+      ],
+      "effects": [
+        "Clarified the existing account request fields without changing selected checks or scoring.",
+        "Verified hosted database use through the declared application action and exact authenticated database lease.",
+        "Made restored source writable by the isolated application user and rejected symbolic-link source entries.",
+        "Stopped repair loops when a paid repair session made no source change.",
+        "Fixed the declared account-form toggle and verified it with a live browser smoke."
+      ]
     }
   ],
   "invariants": {

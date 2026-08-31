@@ -476,18 +476,10 @@ export async function writeApplicationDatabaseMarker(
   if (!definition) throw new Error('track does not define runtime database provenance');
   const action = track.actions.find(candidate => candidate.id === definition.action);
   if (!action) throw new Error(`database provenance action is not declared: ${definition.action}`);
-  const params = action.params ?? [];
-  if (!params.some(param => param.name === definition.markerParameter)) {
-    throw new Error(`database provenance marker parameter is not declared by ${definition.action}: ${definition.markerParameter}`);
-  }
-  const values = Object.fromEntries(params.map((param, index) => [param.name, action.args[index]]));
   const marker = `sb${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  values[definition.markerParameter] = marker;
-  if (params.some(param => values[param.name] === undefined)) {
-    throw new Error(`database provenance action ${definition.action} has no default for every parameter`);
-  }
+  const body = { ...definition.body, [definition.markerParameter]: marker };
   const request = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-    'named-action', 'request', { action, input: { values }, url: args.url });
+    'named-action', 'request', { action, input: { body }, url: args.url });
   if (!isRecord(request) || typeof request.url !== 'string' || !request.url
     || typeof request.body !== 'string') {
     throw new Error('database provenance action produced an invalid request');
