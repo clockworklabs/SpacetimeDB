@@ -685,7 +685,7 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
     }), /admission failed/);
 
     const paid = JSON.parse(readFileSync(example, 'utf8'));
-    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.16.0', model: 'claude-sonnet-5' }];
+    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.17.0', model: 'claude-sonnet-5' }];
     paid.pricing.models = { 'claude-sonnet-5': {
       input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0,
     } };

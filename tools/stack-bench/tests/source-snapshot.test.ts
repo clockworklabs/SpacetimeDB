@@ -24,7 +24,6 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'BUG_REPORT.md'), 'current harness report\n');
   put(join(app, 'bug-report-quality.json'), '{}\n');
   put(join(app, '.read-guard-settings.json'), '{}\n');
-  put(join(app, '.sandbox-settings.json'), '{}\n');
   put(join(app, '.stack-bench-backend'), 'mongodb\n');
   put(join(app, '.prompt-build-l1.md'), 'prompt\n');
   put(join(app, '.session-fix-l1.json'), '{}\n');
@@ -41,7 +40,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(existsSync(join(snapshot, 'backend', 'spacetimedb', 'node_modules')), false);
   assert.equal(existsSync(join(snapshot, 'BUG_REPORT.md')), false);
   for (const file of ['bug-report-quality.json', '.read-guard-settings.json',
-    '.sandbox-settings.json', '.stack-bench-backend', '.prompt-build-l1.md',
+    '.stack-bench-backend', '.prompt-build-l1.md',
     '.session-fix-l1.json']) {
     assert.equal(existsSync(join(snapshot, file)), true);
   }

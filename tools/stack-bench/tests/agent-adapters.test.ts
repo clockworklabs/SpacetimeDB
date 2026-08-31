@@ -21,16 +21,14 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    const expectedVersion = id === 'claude-code' ? '1.16.0'
-      : id === 'reference-fixture' ? '1.3.0'
-      : id === 'deterministic' ? '1.2.0' : '1.1.0';
+    const expectedVersion = id === 'claude-code' ? '1.17.0'
+      : id === 'reference-fixture' ? '1.4.0'
+      : id === 'deterministic' ? '1.3.0' : '1.2.0';
     assert.equal(identity.version, expectedVersion);
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
   assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').usesStackSkills, true);
-  assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').sandboxProbe, 'direct-cli');
-  assert.equal(AGENT_ADAPTER_REGISTRY.get('reference-fixture').sandboxProbe, 'none');
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').credentialEnvironmentVariables,
     ['CLAUDE_CODE_OAUTH_TOKEN']);
   assert(AGENT_ADAPTER_REGISTRY.get('claude-code').modes.includes('resume'));
@@ -81,7 +79,7 @@ test('requests are normalized and unsupported modes fail before launch', () => {
   assert.doesNotThrow(() => agentRequestArgv(reference, { ...request, mode: 'fix' }));
 });
 
-test('a campaign-bound task supplies the exact recipe when no direct CLI recipe exists', () => {
+test('a campaign-bound task supplies the exact recipe when no explicit recipe exists', () => {
   const recipeTask = { schemaVersion: 3,
     recipe: { id: 'ecommerce.sequential-l1', version: '2.5.0' },
     selection: {}, task: {} };
@@ -169,7 +167,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
     credentialEnvironmentVariables: [], credentialFiles: [], outboundDestinations: [],
     requiredExecutables: [],
-    credentialStatusCommand: null, usesStackSkills: false, sandboxProbe: 'none',
+    credentialStatusCommand: null, usesStackSkills: false,
     costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
   assert.throws(() => createAgentAdapterRegistry([source, source]), /duplicate/);

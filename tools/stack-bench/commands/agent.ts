@@ -701,8 +701,7 @@ export function agentRecipeRequest(explicitRecipe: string | null = null,
   return bound;
 }
 
-// A build must not be able to read the thing that grades it.
-// The sandbox probe imports the same deny list used here.
+// The coding container must not contain the controller or grading inputs.
 
 async function main() {
   const args = parseArgs(process.argv);

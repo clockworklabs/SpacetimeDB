@@ -22,7 +22,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', stackLeaseCapabi
   'named-action': operationProvider('spacetime', 'named-action', { request: spacetimeNamedActionRequest }),
   teardown: operationProvider('spacetime', 'teardown', { host: stopSpacetimeHost }),
   'run-policy': runPolicyProvider('spacetime',
-    { 'reset-enabled': true, 'sandbox-probe-required': true, 'retain-host-supported': true,
+    { 'reset-enabled': true, 'retain-host-supported': true,
       'supervisor-env': ({ spacetimePort }: { spacetimePort: number }) =>
         ({ STACK_BENCH_STDB_URI: `http://127.0.0.1:${spacetimePort}` }) }),
   agent: operationProvider('spacetime', 'agent', {

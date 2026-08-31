@@ -26,8 +26,7 @@ const postgresAdapter: StackAdapter = defineStackAdapter('postgres', stackLeaseC
   'named-action': operationProvider('postgres', 'named-action', { request: httpNamedActionRequest }),
   teardown: operationProvider('postgres', 'teardown', { host: stopHostedHost }),
   'run-policy': runPolicyProvider('postgres',
-    { 'reset-enabled': true, 'sandbox-probe-required': true,
-      'retain-host-supported': false, 'supervisor-env': () => ({}) }),
+    { 'reset-enabled': true, 'retain-host-supported': false, 'supervisor-env': () => ({}) }),
   agent: operationProvider('postgres', 'agent', {
     'connection-url': postgresConnectionUrl,
     'minimal-guidance-supported': () => true,

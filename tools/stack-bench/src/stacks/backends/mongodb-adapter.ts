@@ -26,8 +26,7 @@ const mongodbAdapter: StackAdapter = defineStackAdapter('mongodb', stackLeaseCap
   'named-action': operationProvider('mongodb', 'named-action', { request: httpNamedActionRequest }),
   teardown: operationProvider('mongodb', 'teardown', { host: stopHostedHost }),
   'run-policy': runPolicyProvider('mongodb',
-    { 'reset-enabled': true, 'sandbox-probe-required': true,
-      'retain-host-supported': false, 'supervisor-env': () => ({}) }),
+    { 'reset-enabled': true, 'retain-host-supported': false, 'supervisor-env': () => ({}) }),
   agent: operationProvider('mongodb', 'agent', {
     'connection-url': mongoDbConnectionUrl,
     'minimal-guidance-supported': () => true,

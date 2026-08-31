@@ -118,12 +118,12 @@ quarantines a run when cleanup ownership cannot be proven.
 
 ## Run and inspect
 
-The common CLI flows are documented in [`README.md`](README.md). Use package
-commands instead of importing internal module paths:
+Paid and subscription-backed runs use the Docker appliance. See
+[`appliance/README.md`](appliance/README.md) for single attempts, campaigns,
+repair grants, and status commands. Local commands accept only non-billable
+agent adapters.
 
 ```bash
-npm run bench -- --backend spacetime --track ecommerce --levels 1
-npm run campaign -- status <campaign-directory>
 npm run dashboard
 ```
 

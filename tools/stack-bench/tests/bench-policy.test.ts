@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +20,17 @@ import { loadTrack } from '../src/composition/tracks.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
+import { compiledEntrypoint } from '../src/package-root.js';
+
+test('billable agent runs require the Docker appliance', () => {
+  const env = { ...process.env };
+  delete env.STACK_BENCH_APPLIANCE;
+  const result = spawnSync(process.execPath,
+    [compiledEntrypoint('commands', 'bench.js'), '--backend', 'stub'],
+    { encoding: 'utf8', env });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /agent adapter claude-code requires the Docker appliance/);
+});
 
 test('accepted source is materialized through the application lifecycle before grading', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-materialized-source-'));

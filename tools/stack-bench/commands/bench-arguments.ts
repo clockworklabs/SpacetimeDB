@@ -48,7 +48,6 @@ export interface BenchArguments {
   requestedSpecifications: string[];
   expectedSpecifications: string[];
   observedSpecifications: string[];
-  skipProbe?: boolean;
   skills?: string[];
   apiKey?: string;
   apiKeyFile?: string;
@@ -137,7 +136,6 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
       case '--request-spec': args.requestedSpecifications.push(...value().split(',').filter(Boolean)); break;
       case '--expect-spec': args.expectedSpecifications.push(...value().split(',').filter(Boolean)); break;
       case '--observe-spec': args.observedSpecifications.push(...value().split(',').filter(Boolean)); break;
-      case '--skip-probe': args.skipProbe = true; break;
       case '--skills': args.skills = value().split(',').filter(Boolean); break;
       case '--skills-json': args.skills = JSON.parse(value()); break;
       case '--api-key': args.apiKey = value(); break;
@@ -234,7 +232,6 @@ function bindCampaign(args: BenchArguments): void {
   if (!args.campaignFile) throw new Error('campaign file is required');
   const unsupported = [
     [args.maxStalledRepairs !== 3, '--max-stalled-repairs'],
-    [args.skipProbe === true, '--skip-probe'],
     [args.mutations !== undefined || args.mutationShardIndex !== undefined
       || args.mutationShardCount !== undefined, '--mutations'],
     [args.seedFrom !== undefined, '--seed-from'],

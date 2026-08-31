@@ -2,13 +2,13 @@ import { pricingRatesEqual, validatePricingAuthority }
   from '../evidence/pricing-authority.js';
 import type { PricingRates } from '../evidence/pricing-authority.js';
 
-export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
+export const AGENT_ADAPTER_SCHEMA_VERSION = 5;
 export const AGENT_COST_RECEIPT_TOLERANCE_USD = 0.0001;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
   'defaultModel', 'apiKeyEnvironmentVariable', 'credentialEnvironmentVariables',
   'credentialFiles', 'outboundDestinations', 'requiredExecutables', 'credentialStatusCommand',
-  'usesStackSkills', 'costLimit', 'sandboxProbe']);
+  'usesStackSkills', 'costLimit']);
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
@@ -17,14 +17,12 @@ const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
-const SANDBOX_PROBES = new Set(['direct-cli', 'none']);
 type UnknownRecord = Record<string, unknown>;
 export type AgentMode = 'build' | 'upgrade' | 'resume' | 'fix';
 export type AgentCostLimit = 'native' | 'non-billable' | 'unsupported';
-export type AgentSandboxProbe = 'direct-cli' | 'none';
 
 export interface AgentAdapter {
-  readonly schemaVersion: 4;
+  readonly schemaVersion: 5;
   readonly id: string;
   readonly version: string;
   readonly entrypoint: string;
@@ -39,7 +37,6 @@ export interface AgentAdapter {
   readonly credentialStatusCommand: readonly string[] | null;
   readonly usesStackSkills: boolean;
   readonly costLimit: AgentCostLimit;
-  readonly sandboxProbe: AgentSandboxProbe;
 }
 
 interface ReceiptUsage {
@@ -226,9 +223,6 @@ export function defineAgentAdapter(value: unknown): AgentAdapter {
   }
   if (typeof value.usesStackSkills !== 'boolean') {
     throw new Error(`agent adapter ${value.id}.usesStackSkills is invalid`);
-  }
-  if (typeof value.sandboxProbe !== 'string' || !SANDBOX_PROBES.has(value.sandboxProbe)) {
-    throw new Error(`agent adapter ${value.id}.sandboxProbe is invalid`);
   }
   if (value.credentialStatusCommand !== null
     && (!Array.isArray(value.credentialStatusCommand) || value.credentialStatusCommand.length === 0

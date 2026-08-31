@@ -6,7 +6,6 @@ import type {
   AgentAdapter,
   AgentCostLimit,
   AgentMode,
-  AgentSandboxProbe,
 } from './agent-adapter-contract.js';
 import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.js';
 import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.js';
@@ -24,7 +23,6 @@ interface AdapterOptions {
   credentialStatusCommand?: string[] | null;
   usesStackSkills?: boolean;
   costLimit?: AgentCostLimit;
-  sandboxProbe?: AgentSandboxProbe;
   version?: string;
   deadlineMs?: number;
 }
@@ -44,13 +42,13 @@ const adapter = (id: string, entrypoint: string, defaultModel: string,
     credentialEnvironmentVariables = [], credentialFiles = [], outboundDestinations = [],
     requiredExecutables = [],
     credentialStatusCommand = null, usesStackSkills = false,
-    costLimit = 'unsupported', sandboxProbe = 'none', version = '1.0.0',
+    costLimit = 'unsupported', version = '1.0.0',
     deadlineMs = 75 * 60_000 }: AdapterOptions = {}): AgentAdapter => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
   id, version, entrypoint: compiledEntrypoint(...entrypoint.split(sep)), modes, defaultModel,
   apiKeyEnvironmentVariable, credentialEnvironmentVariables, credentialFiles,
   outboundDestinations, requiredExecutables, credentialStatusCommand, usesStackSkills, costLimit,
-  sandboxProbe, deadlineMs,
+  deadlineMs,
 });
 
 export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
@@ -63,16 +61,16 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, sandboxProbe: 'direct-cli', version: '1.16.0',
+      usesStackSkills: true, version: '1.17.0',
       // Claude can wait through an account throttle. Local adapters keep the
       // shorter default deadline because they have no provider wait state.
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
   adapter('deterministic', join('fixtures', 'stub-agent.js'), 'deterministic',
-    { costLimit: 'non-billable', version: '1.2.0' }),
+    { costLimit: 'non-billable', version: '1.3.0' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.js'), 'fault-injection',
-    { modes: ['build'], costLimit: 'non-billable', version: '1.1.0' }),
+    { modes: ['build'], costLimit: 'non-billable', version: '1.2.0' }),
   adapter('reference-fixture', join('src', 'references', 'reference-agent.js'), 'reference-fixture',
-    { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', version: '1.3.0' }),
+    { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', version: '1.4.0' }),
 ]);
 
 export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity {
@@ -90,7 +88,7 @@ export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity 
         outboundDestinations: value.outboundDestinations,
         requiredExecutables: value.requiredExecutables,
         credentialStatusCommand: value.credentialStatusCommand,
-        usesStackSkills: value.usesStackSkills, sandboxProbe: value.sandboxProbe })}\0`),
+        usesStackSkills: value.usesStackSkills })}\0`),
       readFileSync(value.entrypoint),
     ])),
   };

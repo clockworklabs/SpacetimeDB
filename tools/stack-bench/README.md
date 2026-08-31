@@ -161,55 +161,9 @@ public track is included by default and the complete criterion evidence is
 written under `results/`. A passing null control is only one input to release
 qualification. It is not benchmark data.
 
-```bash
-npm run bench -- --backend spacetime --track ecommerce --levels 1-2
-npm run bench -- --backend postgres  --track ecommerce --levels 1-2 --run-index 1
-npm run bench -- --backend mongodb   --track ecommerce --levels 1-2 --run-index 2
-npm run bench -- --backend postgres --track ecommerce --levels 1 \
-  --pack ecommerce.feature.accounts \
-  --check ecommerce.feature.accounts.accounts.1a
-npm run bench -- --backend postgres --track ecommerce --levels 1 \
-  --recipe ecommerce.sequential-l1@2.5.0
-
-# Inspect an exhausted level, then grant at most four more repair rounds.
-npm run repair -- status <run-directory> --level 1
-npm run repair -- grant <run-directory> --level 1 --rounds 4 \
-  --max-budget-usd 25 --timeout-minutes 120
-```
-
-A repair grant is accepted only when the parent has a complete, conclusive
-application failure, an exhausted round budget, an intact level checkpoint,
-and the exact current harness and adapter identities. A short setup session
-installs dependencies and starts the saved app; it is timed and costed
-separately from repair rounds. The setup session may not change source.
-The controller then verifies the source bytes and reproduces the prior score,
-test selection, denominator, and failed-criterion set before spending a
-repair round. If any of those checks differ, the continuation stops.
-
-Each grant creates `continuations/grant-<id>/` below its parent result. Its
-`run.json` records the original run, immediate parent, grant size, rounds used,
-cumulative rounds/cost/time, reproduced baseline, setup session, and new source
-checkpoint. `process.json` records the bounded controller process and retained
-logs. Repairing an earlier ladder level invalidates the meaning of later-level
-results; those levels are listed explicitly as needing a fresh run and are not
-charged to that earlier level's cumulative correction path.
-
-`--pack` changes requested scope: the agent receives only global recipe framing
-plus the selected packs' requirements and testing contracts. Declared pack
-dependencies are included automatically and recorded as resolved task packs.
-`--check` only narrows measurement inside that requested task; it never removes
-requirements by itself, and a check outside explicitly selected packs is
-rejected. With neither option, the current catalog recipe is requested and
-graded.
-
-`--recipe <id>@<version>` selects one exact non-retired catalogued release for a
-single-level run. It uses the same preflight, agent, grader, artifact, null, and
-qualification paths as the current default. Omitting it resolves the current
-L1/L2 candidates. Selecting an exact release never changes a public label.
-
-Give concurrent runs distinct `--run-index` values; ports and databases are
-allocated from it. Results land under a unique run id inside
-`results/<backend>-run<N>/`.
+Local runs accept only non-billable agent adapters. Paid or subscription-backed
+coding sessions require the Docker appliance. See `appliance/README.md` for
+single attempts, campaigns, repair grants, and result paths.
 
 Public result JSON uses artifact schema v2. Each file records what kind of
 evidence it contains, the attempt and parent attempt that produced it, start and
@@ -254,7 +208,7 @@ SpacetimeDB adapter starts its own dedicated run host:
 docker compose -f tools/stack-bench/docker-compose.yaml up -d
 ```
 
-Local development requires the Claude Code CLI, Node, and Docker. The services
+Local model-free development requires Node and Docker. The services
 use their own ports (6532 Postgres, 6537 MongoDB), container names, and volumes.
 A run does not share their state with other services on the machine.
 
@@ -298,9 +252,9 @@ ecommerce progression definition.
 `recipe diff` reports meaning, scoring, fixture, execution, and metadata changes
 separately, names requirement/contract fragments added or removed, then names the calibration bindings and evidence repetitions that
 must be redone. `recipe show --pack` and `--check` produce a selected scope with
-its own deterministic selection hash, bound to the source recipe hash. The same
-flags on `npm run bench` run that scope. Packs and individual checks are combined as
-a union. Run, bundle, and grade artifacts record the request, the exact checks
+its own deterministic selection hash, bound to the source recipe hash. Appliance
+single-run requests use the same selection fields. Packs and individual checks
+are combined as a union. Run, bundle, and grade artifacts record the request, the exact checks
 it resolved to, which checks were attempted, and any checks not run with their
 reason. A subset can be an intentional benchmark run. Compare only results with
 the same recipe and selection identities. Working notes and superseded local

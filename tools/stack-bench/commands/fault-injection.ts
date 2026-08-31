@@ -162,7 +162,7 @@ async function main() {
     bench = spawn(process.execPath,
       [compiledEntrypoint('commands', 'bench.js'), '--backend', 'spacetime', '--track', 'loop',
         '--levels', '1', '--agent-adapter', 'fault-injection', '--app', app, '--out', out,
-        '--url', `file:///${app.replace(/\\/g, '/')}/index.html`, '--skip-probe'],
+        '--url', `file:///${app.replace(/\\/g, '/')}/index.html`],
       { env: { ...process.env, STACK_BENCH_STDB_URI: uri, STACK_BENCH_IMAGE: IMAGE,
         SPACETIME_BIN: CLI },
         stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });

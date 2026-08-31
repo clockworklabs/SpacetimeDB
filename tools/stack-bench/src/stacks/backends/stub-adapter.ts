@@ -16,8 +16,7 @@ export const stubAdapter = defineStackAdapter('stub', stackLeaseCapability('stub
   'named-action': operationProvider('stub', 'named-action', { request: httpNamedActionRequest }),
   teardown: operationProvider('stub', 'teardown', { host: stopHostedHost }),
   'run-policy': runPolicyProvider('stub',
-    { 'reset-enabled': false, 'sandbox-probe-required': false,
-      'retain-host-supported': false, 'supervisor-env': () => ({}) }),
+    { 'reset-enabled': false, 'retain-host-supported': false, 'supervisor-env': () => ({}) }),
   admission: operationProvider('stub', 'admission', {
     requirements: () => ({ docker: false, services: false, ports: false,
       credentials: false, providerAccess: false }),

@@ -96,5 +96,5 @@ Specification treatment is independent from feature selection:
   and do not alter the requested-feature score or correction loop.
 
 Exact candidate selection cannot change the promotion-catalog hash bound into
-qualified calibration evidence. Campaign conditions and direct CLI requests
+qualified calibration evidence. Campaign conditions and single-run requests
 resolve through the same content-bound task and grading entrypoints.

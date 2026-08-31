@@ -52,7 +52,6 @@ import { runPreflight } from '../src/runtime/preflight.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { resolveAgentCredential } from '../src/agents/agent-credentials.js';
-import { sandboxProbeMode } from '../src/runtime/sandbox.js';
 import { hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
@@ -198,11 +197,6 @@ function stringArray(value: unknown, at: string): string[] {
     throw new Error(`${at} must be an array of strings`);
   }
   return [...value];
-}
-
-function booleanResult(value: unknown, at: string): boolean {
-  if (typeof value !== 'boolean') throw new Error(`${at} must return a boolean`);
-  return value;
 }
 
 function campaignSelection(value: unknown, at: string): CampaignSelection {
@@ -989,6 +983,9 @@ async function main() {
   const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const materializeCodingOutput = stackAdapter.id !== 'stub';
   const agentAdapter = AGENT_ADAPTER_REGISTRY.get(args.agentAdapter);
+  if (process.env.STACK_BENCH_APPLIANCE !== '1' && agentAdapter.costLimit !== 'non-billable') {
+    throw new Error(`agent adapter ${agentAdapter.id} requires the Docker appliance`);
+  }
   if (repairGrant) {
     const currentAgent = agentAdapterIdentity(agentAdapter);
     const parentAgent = repairGrant.parentArtifact.identities.agentAdapter;
@@ -1124,7 +1121,7 @@ async function main() {
   assertNoPortCollisions();
   // The deterministic adapter/stack is the model-free unit loop. Real runs
   // prove the exact requested scope, engine, image, credentials, storage and
-  // ports before the sandbox probe or any paid coding session begins.
+  // ports before any paid coding session begins.
   const admittedSmoke = args.campaignAdmission?.reusable === true
     ? { id: args.campaignAdmission.id, createdAt: args.campaignAdmission.createdAt }
     : null;
@@ -1157,28 +1154,8 @@ async function main() {
   }
   if (preflight) console.log(`  preflight  ... ${preflight.summary.passed} checks passed`
     + `${preflight.summary.warnings ? `, ${preflight.summary.warnings} warning(s)` : ''}`);
-  // In a single-host topology, prove the file-tool sandbox before model spend.
-  // The appliance instead relies on structural isolation: the coding container
-  // has no controller, grader, scenarios, prior results, or Docker socket.
-  // The stub backend is the offline test loop: no model, no cost, nothing to
-  // protect. Spending a real CLI session probing it would make the one test
-  // that is supposed to run for free stop being free.
-  const probeMode = sandboxProbeMode({ appliance: process.env.STACK_BENCH_APPLIANCE === '1',
-    explicitlySkipped: args.skipProbe, stackRequired: booleanResult(executeStackCapability(stackAdapter,
-      'run-policy', 'sandbox-probe-required'), 'sandbox-probe-required')
-      && agentAdapter.sandboxProbe === 'direct-cli' });
-  if (probeMode === 'container-isolation') {
+  if (process.env.STACK_BENCH_APPLIANCE === '1') {
     console.log('  sandbox    ... coding container is isolated from the controller and grading files');
-  } else if (probeMode === 'direct-cli') {
-    console.log('  sandbox    ... probing the deny rules');
-    try {
-      sh('node', [compiledEntrypoint('commands', 'probe-sandbox.js'), '--mode', 'acceptEdits', '--model', args.model],
-        { stdio: 'inherit' });
-    } catch {
-      console.error('\nSANDBOX PROBE FAILED — refusing to start a run whose scores could not be trusted.');
-      console.error('Run `node dist/commands/probe-sandbox.js --mode acceptEdits` to see which path got through.');
-      process.exit(2);
-    }
   }
   let url = args.url ?? `http://localhost:${portsFor(track, args.backend, args.runIndex).vite}`;
   const runDir = resultsName(track, args.backend, args.runIndex);

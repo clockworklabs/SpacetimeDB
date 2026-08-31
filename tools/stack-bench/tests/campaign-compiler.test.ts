@@ -74,11 +74,11 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
     levels: [1],
     selection: { packs: [], checks: [] },
     stacks: [
-      { id: 'spacetime', adapterVersion: '1.0.0' },
-      { id: 'postgres', adapterVersion: '1.3.0' },
-      { id: 'mongodb', adapterVersion: '1.2.0' },
+      { id: 'spacetime', adapterVersion: '1.1.0' },
+      { id: 'postgres', adapterVersion: '1.4.0' },
+      { id: 'mongodb', adapterVersion: '1.3.0' },
     ],
-    agents: [{ adapter: 'deterministic', adapterVersion: '1.2.0', model: 'deterministic' }],
+    agents: [{ adapter: 'deterministic', adapterVersion: '1.3.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
       guidanceProfile: 'prescribed@1.1.0', repairPolicy: 'scored-only@1.0.0' }],
     repetitions: 3,
@@ -350,8 +350,6 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
         agentAdapter: attempt.agentAdapter,
         model: attempt.model, conditionSha256: attempt.condition.sha256 } });
-    assert.throws(() => parseBenchArguments(['node', ...argv, '--skip-probe']),
-      /cannot override --skip-probe/);
     const changedParent = [...argv];
     changedParent[changedParent.indexOf('--parent-attempt-id') + 1] = 'different-attempt';
     assert.throws(() => parseBenchArguments(['node', ...changedParent]),
@@ -472,7 +470,7 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   assert.notEqual(identityOnly.bindings[0]!.task!.sha256, first.bindings[0]!.task!.sha256);
   assert.notEqual(identityOnly.conditions[0].sha256, first.conditions[0].sha256);
   const multiAgent = definition({ agents: [definition().agents[0]!,
-    { adapter: 'fault-injection', adapterVersion: '1.1.0', model: 'deterministic' }] });
+    { adapter: 'fault-injection', adapterVersion: '1.2.0', model: 'deterministic' }] });
   const multiAgentReordered = structuredClone(multiAgent);
   multiAgentReordered.agents.reverse();
   assert.equal(compile(multiAgent).contentSha256, compile(multiAgentReordered).contentSha256);
@@ -480,8 +478,8 @@ test('campaign identity ignores JSON formatting but changes with study semantics
 
 test('balanced rotation covers every stack-agent condition and rotates the global lead', () => {
   const agents = [
-    { adapter: 'deterministic', adapterVersion: '1.2.0', model: 'deterministic' },
-    { adapter: 'fault-injection', adapterVersion: '1.1.0', model: 'deterministic' },
+    { adapter: 'deterministic', adapterVersion: '1.3.0', model: 'deterministic' },
+    { adapter: 'fault-injection', adapterVersion: '1.2.0', model: 'deterministic' },
   ];
   const plan = compile(definition({ agents, repetitions: 6 }));
   for (let repetition = 1; repetition <= 6; repetition += 1) {
@@ -589,7 +587,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   } }), /graph is unknown for sequential mode/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
   assert.throws(() => validateCampaignDefinition(definition({ stacks: [
-    { id: 'postgres', adapterVersion: '1.3.0' }, { id: 'postgres', adapterVersion: '1.3.0' },
+    { id: 'postgres', adapterVersion: '1.4.0' }, { id: 'postgres', adapterVersion: '1.4.0' },
   ] })), /duplicates|name each stack once/);
   assert.throws(() => validateCampaignDefinition(definition({ attemptPolicy: {
     retries: 1, retryOn: [], excludeFromAnalysis: [],
@@ -616,7 +614,7 @@ test('frozen campaigns require exact runtime images', () => {
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.16.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', unit: 'USD-per-million-tokens',
     capturedAt: '2026-08-12T00:00:00.000Z',
@@ -644,7 +642,7 @@ test('frozen campaigns accept a resolved qualification result for every selected
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.16.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', unit: 'USD-per-million-tokens',
     capturedAt: '2026-08-12T00:00:00.000Z',
