@@ -75,7 +75,7 @@
   },
   "attemptPolicy": {
     "retries": 1,
-    "retryOn": ["harness_failure", "inconclusive"],
+    "retryOn": ["provider_failure"],
     "excludeFromAnalysis": ["contaminated", "harness_failure", "inconclusive", "ungraded"]
   },
   "runtime": {

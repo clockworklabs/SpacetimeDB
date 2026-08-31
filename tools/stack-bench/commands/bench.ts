@@ -1402,8 +1402,13 @@ async function main() {
     return selected;
   };
 
-  const recordProgressionGrade = (input: Parameters<NonNullable<typeof progressionExecution>['record']>[0]) =>
-    progressionExecution?.record(input) ?? null;
+  const progressionBundles = new Map<number, GradeBundlePayload>();
+  const recordProgressionGrade = (input: Parameters<NonNullable<typeof progressionExecution>['record']>[0]) => {
+    if (input.bundle && input.selected && isProgressionWorkRecipeAction(input.selected)) {
+      progressionBundles.set(input.selected.action.level, input.bundle as GradeBundlePayload);
+    }
+    return progressionExecution?.record(input) ?? null;
+  };
 
   let runCostComplete = true;
 
@@ -2022,17 +2027,21 @@ async function main() {
     // makes a harness failure indistinguishable from an app that scored nothing
     // — in a ladder run it silently drops a level's result on the floor. Say so
     // instead, and leave the score null.
-    const finalBundleOutcome = classifyBundle(bundle);
-    const progressionAttempt = progressionExecution
-      ? requireProgressionState(progressionExecution.state).attempts.at(-1) ?? null : null;
+    const progressionState = progressionExecution
+      ? requireProgressionState(progressionExecution.state) : null;
+    const progressionAttempt = progressionState
+      ? progressionState.attempts.findLast(attempt => attempt.level === level) ?? null
+      : null;
+    const levelBundle = progressionBundles.get(level) ?? bundle;
+    const finalBundleOutcome = classifyBundle(levelBundle);
     // Progression uses stricter evidence rules than a regular scored bundle.
     // Store one answer when a selected check is not measured: the raw bundle
     // remains available for diagnosis, but the level is not a usable grade.
     const graded = levelGradeIsUsable(finalBundleOutcome,
       args.progression ? progressionAttempt : null);
-    const finalTotals = graded ? bundle?.totals ?? null : null;
-    const nodeStrikes = progressionExecution
-      ? dependencyStrikeRecords(requireProgressionState(progressionExecution.state), level, levelStrikeNodeIds)
+    const finalTotals = graded ? levelBundle?.totals ?? null : null;
+    const nodeStrikes = progressionState
+      ? dependencyStrikeRecords(progressionState, level, levelStrikeNodeIds)
       : null;
     const repairBudgetRounds = progressionExecution
       ? Math.max(priorRepairRounds + fixRounds, progressionRepairBudgetRounds)
@@ -2064,27 +2073,51 @@ async function main() {
         nodeStrikes,
       } : {}),
     };
+    const latestProgressionAttempt = progressionState?.attempts.at(-1) ?? null;
+    if (progressionState && latestProgressionAttempt && latestProgressionAttempt.level !== level) {
+      const prior = run.levels.find(item => item.level === latestProgressionAttempt.level);
+      const latestBundle = progressionBundles.get(latestProgressionAttempt.level);
+      if (prior && latestBundle) {
+        const latestOutcome = classifyBundle(latestBundle);
+        const latestGraded = levelGradeIsUsable(latestOutcome, latestProgressionAttempt);
+        prior.graded = latestGraded;
+        prior.score = latestGraded ? latestBundle.totals?.score ?? null : null;
+        prior.max = latestGraded ? latestBundle.totals?.max ?? null : null;
+        prior.regression = latestBundle.totals?.regression ?? null;
+        prior.selection = latestBundle.selection ?? null;
+        prior.contractPass = latestBundle.totals?.contractPass ?? null;
+        prior.code = latestBundle.code ?? null;
+        prior.repair = { ...repair,
+          nodeStrikes: dependencyStrikeRecords(
+            progressionState, latestProgressionAttempt.level, levelStrikeNodeIds),
+        };
+        prior.stalled = repairStatus === 'budget-exhausted';
+        prior.outcome = latestOutcome;
+      }
+    }
     if (continuing) {
       const continuation = requireContinuation(run);
       continuation.cumulativeRoundsAfter = continuation.cumulativeRoundsBefore + fixRounds;
     }
     let checkpoint = null;
-    try {
-      checkpoint = preserveLevelCheckpoint({
-        appDir,
-        outputDir: args.out,
-        runId,
-        identities: run.identities,
-        track: args.track,
-        backend: args.backend,
-        level,
-        repair,
-        outcome: finalBundleOutcome,
-        selectionSha256: bundle?.selection?.sha256 ?? null,
-      });
-      console.log(`  kept the L${level} source checkpoint at ${join(args.out, checkpoint.directory)}`);
-    } catch (error) {
-      console.log(`  !! could not keep the L${level} source checkpoint: ${errorMessage(error).split('\n')[0]}`);
+    if (!latestProgressionAttempt || latestProgressionAttempt.level === level) {
+      try {
+        checkpoint = preserveLevelCheckpoint({
+          appDir,
+          outputDir: args.out,
+          runId,
+          identities: run.identities,
+          track: args.track,
+          backend: args.backend,
+          level,
+          repair,
+          outcome: finalBundleOutcome,
+          selectionSha256: levelBundle?.selection?.sha256 ?? null,
+        });
+        console.log(`  kept the L${level} source checkpoint at ${join(args.out, checkpoint.directory)}`);
+      } catch (error) {
+        console.log(`  !! could not keep the L${level} source checkpoint: ${errorMessage(error).split('\n')[0]}`);
+      }
     }
     if (!graded) {
       console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
@@ -2102,15 +2135,15 @@ async function main() {
       // the whole point of growing the app level by level. It reached the
       // console and the bundle but not run.json, so the thesis metric was
       // missing from the durable record.
-      regression: bundle?.totals?.regression ?? null,
-      selection: bundle?.selection ?? null,
+      regression: levelBundle?.totals?.regression ?? null,
+      selection: levelBundle?.selection ?? null,
       ...(resumedRepair
         ? { resumedRepair: firstBuild }
         : continuing
         ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
         : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
-      contractPass: bundle?.totals?.contractPass ?? null,
-      code: bundle?.code ?? null,
+      contractPass: levelBundle?.totals?.contractPass ?? null,
+      code: levelBundle?.code ?? null,
       fixCostUsd: addCostUsd(fixCost),
       fixSessions,
       repairHistory,

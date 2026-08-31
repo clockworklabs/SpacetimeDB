@@ -787,7 +787,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
             skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
             backendLease: { runId: 'fake-provider-failure', backend: attempt.stack,
               state: 'released' },
-            levels: [], outcome: { kind: 'harness_failure', phase: 'coding-session',
+            levels: [], outcome: { kind: 'provider_failure', phase: 'coding-session',
               reason: 'coding-session-failed', provider: { providerStatus: 503 } } });
           writeArtifact(join(output, 'recovery.json'), { kind: 'recovery',
             id: 'fake-provider-failure-recovery',

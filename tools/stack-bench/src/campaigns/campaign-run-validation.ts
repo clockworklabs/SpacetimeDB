@@ -208,8 +208,15 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   const mismatch = (condition: unknown, field: string): void => {
     if (condition) mismatches.push(field);
   };
-  const finalGradedLevel = (run.levels ?? []).filter(level => safeInteger(level.score)
-    && safeInteger(level.max) && level.max > 0).at(-1) ?? null;
+  const progressionStatus = run.progressionStatus && typeof run.progressionStatus === 'object'
+    && !Array.isArray(run.progressionStatus) ? run.progressionStatus as UnknownRecord : null;
+  const progressionLevel = dependencyMode && integer(progressionStatus?.level)
+    ? progressionStatus.level : null;
+  const gradedLevels = (run.levels ?? []).filter(level => safeInteger(level.score)
+    && safeInteger(level.max) && level.max > 0);
+  const finalGradedLevel = progressionLevel === null
+    ? gradedLevels.at(-1) ?? null
+    : gradedLevels.find(level => level.level === progressionLevel) ?? null;
   if (resultDir !== null && finalGradedLevel
     && ['passed', 'app_failure'].includes(run.outcome?.kind ?? '')) {
     if (typeof resultDir !== 'string' || !resultDir) {
