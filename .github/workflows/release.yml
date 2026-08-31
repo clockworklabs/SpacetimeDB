@@ -64,7 +64,7 @@ jobs:
     steps:
       - name: Reject direct public release invocations
         env:
-          EXPECTED_RELEASE_ACTOR: clockwork-labs-bot
+          EXPECTED_RELEASE_ACTOR: spacetimedb-devops
           ACTUAL_RELEASE_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
