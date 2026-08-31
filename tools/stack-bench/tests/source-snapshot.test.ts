@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { assertAppSourceIdentity, hashAppSource, resetAppToSource, restoreAppSource, seedAppSource,
-  snapshotAppSource } from '../src/runtime/source-snapshot.js';
+import { assertAppSourceIdentity, assertPlainAppSourceTree, hashAppSource, resetAppToSource,
+  restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 
 const put = (path: string, content: string): void => {
   mkdirSync(join(path, '..'), { recursive: true });
@@ -109,6 +109,31 @@ test('source copies reject symbolic links before changing permissions', { skip: 
     symlinkSync(outside, join(source, 'link.txt'));
     assert.throws(() => seedAppSource(source, join(root, 'target')),
       /unsupported filesystem entry link\.txt/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('source snapshots ignore nested node_modules symlinks', { skip: process.platform === 'win32' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-dependency-link-'));
+  const app = join(root, 'app');
+  const snapshot = join(root, 'snapshot');
+  const dependencies = join(root, 'dependencies');
+  const dependencyLink = join(app, '_scratch', 'rls-client', 'node_modules');
+  try {
+    put(join(app, 'src', 'app.ts'), 'export const app = true;\n');
+    put(join(dependencies, 'package', 'index.js'), 'dependency\n');
+    mkdirSync(join(app, '_scratch', 'rls-client'), { recursive: true });
+    symlinkSync(dependencies, dependencyLink, 'dir');
+
+    const identity = hashAppSource(app);
+    assert.doesNotThrow(() => assertPlainAppSourceTree(app));
+    snapshotAppSource(app, snapshot);
+    assert.equal(existsSync(join(snapshot, '_scratch', 'rls-client', 'node_modules')), false);
+    restoreAppSource(snapshot, app);
+    assert.equal(existsSync(dependencyLink), true);
+    put(join(dependencies, 'package', 'index.js'), 'changed dependency\n');
+    assert.equal(hashAppSource(app).sha256, identity.sha256);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

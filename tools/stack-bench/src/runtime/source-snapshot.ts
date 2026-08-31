@@ -41,7 +41,7 @@ function copySourceTree(from: string, to: string, rel = '', writable = false): v
   if (writable) chmodSync(to, lstatSync(to).mode | 0o222);
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
-    if (entry.isDirectory() && directoryDisposition(childRel) !== 'source') continue;
+    if (directoryDisposition(childRel) !== 'source') continue;
     if (!entry.isDirectory() && (preservedRuntimeFile(childRel) || transientRuntimeFile(childRel))) continue;
     const source = join(from, entry.name);
     const target = join(to, entry.name);
@@ -57,15 +57,15 @@ function copySourceTree(from: string, to: string, rel = '', writable = false): v
 // Remove model-authored paths absent from the snapshot by walking them in
 // place. Active directory watchers and nested dependency folders survive.
 function removeAbsent(path: string, rel: string): void {
-  const stat = lstatSync(path);
-  if (!stat.isDirectory()) {
-    if (!preservedRuntimeFile(rel)) rmSync(path, { force: true });
-    return;
-  }
   const disposition = directoryDisposition(rel);
   if (disposition === 'preserve') return;
   if (disposition === 'transient') {
     rmSync(path, { recursive: true, force: true });
+    return;
+  }
+  const stat = lstatSync(path);
+  if (!stat.isDirectory()) {
+    if (!preservedRuntimeFile(rel)) rmSync(path, { force: true });
     return;
   }
   for (const entry of readdirSync(path, { withFileTypes: true })) {
@@ -81,9 +81,10 @@ function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
 
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
-    if (entry.isDirectory() && directoryDisposition(childRel) === 'preserve') continue;
+    const disposition = directoryDisposition(childRel);
+    if (disposition === 'preserve') continue;
     if (!entry.isDirectory() && preservedRuntimeFile(childRel)) continue;
-    if (entry.isDirectory() && directoryDisposition(childRel) === 'transient') {
+    if (disposition === 'transient') {
       rmSync(join(appDir, entry.name), { recursive: true, force: true });
       continue;
     }
@@ -121,8 +122,8 @@ export function snapshotAppSource(appDir: string, to: string): void {
 }
 
 export function hashAppSource(appDir: string): HashFilesResult {
-  return hashDirectory(appDir, { exclude: (rel, entry) => entry.isDirectory()
-    ? directoryDisposition(rel) !== 'source' : preservedRuntimeFile(rel) || transientRuntimeFile(rel) });
+  return hashDirectory(appDir, { exclude: (rel) => directoryDisposition(rel) !== 'source'
+    || preservedRuntimeFile(rel) || transientRuntimeFile(rel) });
 }
 
 export function assertAppSourceIdentity(appDir: string, expectedSha256: string,
@@ -143,7 +144,7 @@ export function assertPlainAppSourceTree(appDir: string): void {
   const walk = (directory: string, rel = ''): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const childRel = rel ? join(rel, entry.name) : entry.name;
-      if (entry.isDirectory() && directoryDisposition(childRel) !== 'source') continue;
+      if (directoryDisposition(childRel) !== 'source') continue;
       if (!entry.isDirectory() && (preservedRuntimeFile(childRel) || transientRuntimeFile(childRel))) continue;
       if (entry.isDirectory()) walk(join(directory, entry.name), childRel);
       else if (!entry.isFile()) {
