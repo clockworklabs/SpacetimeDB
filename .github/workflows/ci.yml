@@ -21,9 +21,6 @@ permissions:
   contents: read
   pull-requests: read
 
-env:
-  CARGO_TARGET_DIR: ${{ github.workspace }}/target
-
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
