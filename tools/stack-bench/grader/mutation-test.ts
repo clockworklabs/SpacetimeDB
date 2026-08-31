@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeRunJson } from "../src/evidence/artifacts.js";
-import { controlBackend } from "../src/runtime/backend-control.js";
+import { controlBackendRuntime } from "../src/runtime/backend-control.js";
 import {
   classifyMutationResult,
   groupMutationsByScenario,
@@ -202,7 +202,7 @@ async function restartAfterSourceChange(a: MutationArgs): Promise<void> {
   if (!a.restartSpec) {
     throw new Error('mutation testing requires a lease-authenticated --restart-spec');
   }
-  await controlBackend(a.restartSpec, "restart");
+  await controlBackendRuntime(a.restartSpec, "restart");
   await waitForApp(a);
 }
 
@@ -216,7 +216,7 @@ async function reset(a: MutationArgs): Promise<void> {
     if (!a.restartSpec) {
       throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);
     }
-    await controlBackend(a.restartSpec, "restart");
+    await controlBackendRuntime(a.restartSpec, "restart");
     await waitForApp(a);
   }
 }

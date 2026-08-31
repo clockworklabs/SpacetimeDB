@@ -2,7 +2,7 @@ import { leaseFromEnv } from './backend-lease.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { controlApplication as controlLeasedApplication }
+import { controlHostedAppServer }
   from '../stacks/stack-lifecycle-operations.js';
 import type { TextCommandExecutor } from './command-executor.js';
 
@@ -26,7 +26,7 @@ interface ApplicationControlSpec extends BackendControlSpec {
   probe: string;
 }
 
-export function captureBackendDiagnostics(
+export function captureApplicationDiagnostics(
   output: string,
   { exec }: DiagnosticsOptions = {},
 ): unknown {
@@ -43,7 +43,7 @@ export function captureBackendDiagnostics(
   }
 }
 
-export async function controlBackend(
+export async function controlBackendRuntime(
   spec: unknown,
   mode = 'restart',
   { signal = null }: BackendControlOptions = {},
@@ -63,9 +63,8 @@ export async function controlBackend(
     { ...controlSpec, adapterId: adapter.id, lease, mode, signal });
 }
 
-// Adapter lifecycle controls the stack service used during grading. This path
-// always controls the generated application, including the SpacetimeDB client.
-export async function controlApplication(
+// Always control the generated app server, not the stack's backend runtime.
+export async function controlAppServer(
   spec: unknown,
   mode = 'restart',
   { signal = null }: BackendControlOptions = {},
@@ -97,7 +96,7 @@ export async function controlApplication(
     }),
     VITE_PORT: String(controlSpec.port),
   };
-  await controlLeasedApplication({
+  await controlHostedAppServer({
     ...controlSpec,
     adapterId: adapter.id,
     lease,

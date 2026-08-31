@@ -32,9 +32,9 @@ function services(
   return {
     actors: { get: (name: string) => actors.get(name) },
     'application-lifecycle': overrides.applicationLifecycle
-      ?? createLifecycleCapability({ sleep }),
+      ?? createLifecycleCapability({ target: 'app-server', sleep, control: async () => {} }),
     'backend-lifecycle': overrides.backendLifecycle
-      ?? createLifecycleCapability({ sleep }),
+      ?? createLifecycleCapability({ target: 'backend-runtime', sleep, control: async () => {} }),
     'browser-interaction': overrides.browser ?? {
       clients: { open: async () => {}, fresh: async () => 'a-fresh' },
       sleep,
@@ -123,7 +123,8 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   assert.match(missing.summary ?? '', /no backend control/);
 
   const refusedError = Object.assign(new Error('refused'), { status: 3 });
-  const refusedCapability = createLifecycleCapability({ restartSpec: { kind: 'test' }, sleep,
+  const refusedCapability = createLifecycleCapability({ restartSpec: { kind: 'test' },
+    target: 'backend-runtime', sleep,
     control: async () => { throw refusedError; } });
   const refused = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: refusedCapability }));
@@ -131,7 +132,8 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   assert.match(refused.summary ?? '', /benchmark-owned instance/);
 
   const calls: Array<readonly [unknown, string]> = [];
-  const successful = createLifecycleCapability({ restartSpec: { kind: 'test' }, sleep,
+  const successful = createLifecycleCapability({ restartSpec: { kind: 'test' },
+    target: 'backend-runtime', sleep,
     control: async (spec, mode) => { calls.push([spec, mode]); } });
   const passed = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: successful }));
@@ -142,13 +144,14 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
 test('a generated app server timing out is an application failure, not a harness failure', async () => {
   const timedOut = Object.assign(new Error('app start timed out'), { code: 'ETIMEDOUT' });
   const applicationLifecycle = createLifecycleCapability({ restartSpec: { kind: 'test' },
-    application: true, sleep, control: async () => { throw timedOut; } });
+    target: 'app-server', sleep, control: async () => { throw timedOut; } });
   const appResult = await run({ do: 'startAppServer', settleMs: 0 },
     services(new Map(), { applicationLifecycle }));
   assert.equal(appResult.status, 'failed');
   assert.match(appResult.summary ?? '', /could not start the app server/);
 
-  const backendLifecycle = createLifecycleCapability({ restartSpec: { kind: 'test' }, sleep,
+  const backendLifecycle = createLifecycleCapability({ restartSpec: { kind: 'test' },
+    target: 'backend-runtime', sleep,
     control: async () => { throw timedOut; } });
   const backendResult = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle }));

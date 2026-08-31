@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
-import { controlBackend } from '../src/runtime/backend-control.js';
+import { controlBackendRuntime } from '../src/runtime/backend-control.js';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
@@ -899,7 +899,7 @@ async function main() {
     if (controlledRestart) {
       process.stdout.write('  stop application ... ');
       try {
-        await controlBackend(args.restartSpec, 'stop');
+        await controlBackendRuntime(args.restartSpec, 'stop');
         console.log('ok');
       } catch (error) {
         const failure: Failure = error instanceof Error ? error : new Error(String(error));
@@ -933,7 +933,7 @@ async function main() {
       try {
         // Do not give a background server an inherited pipe that keeps the
         // synchronous restart command open.
-        await controlBackend(args.restartSpec, controlledRestart ? 'start' : 'restart');
+        await controlBackendRuntime(args.restartSpec, controlledRestart ? 'start' : 'restart');
       } catch (err) {
         const failure: Failure = err instanceof Error ? err : new Error(String(err));
         lastResetOutcome = resetFailureOutcome(failure);

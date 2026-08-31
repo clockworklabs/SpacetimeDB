@@ -9,7 +9,6 @@ import { evidenceDisposition } from '../evidence/check-evidence.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
-import { controlBackend } from '../runtime/backend-control.js';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
@@ -380,8 +379,8 @@ async function freshClient({ input, capabilities }: ActionArguments<ActorInput>)
 }
 
 interface LifecycleCapabilityOptions {
-  readonly application?: boolean;
-  readonly control?: (
+  readonly target: 'app-server' | 'backend-runtime';
+  readonly control: (
     restartSpec: unknown,
     mode: 'restart' | 'start' | 'stop',
     options: { readonly signal: AbortSignal },
@@ -390,9 +389,10 @@ interface LifecycleCapabilityOptions {
   readonly sleep: Sleep;
 }
 
-export function createLifecycleCapability({ restartSpec, application = false,
-  sleep, control = controlBackend
+export function createLifecycleCapability({ restartSpec, target,
+  sleep, control
 }: LifecycleCapabilityOptions): LifecycleCapability {
+  const application = target === 'app-server';
   return Object.freeze({
     async operate(mode: 'restart' | 'start' | 'stop', settleMs: number, signal: AbortSignal) {
       if (!restartSpec) {

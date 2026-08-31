@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../src/runtime/backend-control.js';
+import { captureApplicationDiagnostics, controlBackendRuntime, hostedStopScript }
+  from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
-import { controlApplication, hostedLaunchCommand, hostedRecordedProcessStopScript }
+import { controlHostedAppServer, hostedLaunchCommand, hostedRecordedProcessStopScript }
   from '../src/stacks/stack-lifecycle-operations.js';
 import type { TextCommandOptions } from '../src/runtime/command-executor.js';
 
@@ -20,7 +21,7 @@ test('backend control refuses without an authenticated lease', async () => {
   delete process.env.STACK_BENCH_LEASE;
   delete process.env.STACK_BENCH_LEASE_TOKEN;
   try {
-    await assert.rejects(controlBackend({ backend: 'mongodb', app: '.', port: 6101, probe: '/api/items' }),
+    await assert.rejects(controlBackendRuntime({ backend: 'mongodb', app: '.', port: 6101, probe: '/api/items' }),
       /STACK_BENCH_LEASE is required/);
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;
@@ -55,7 +56,7 @@ test('restart diagnostics are copied only from the exact leased build container'
     return '===== /run/application/restart-mongodb-6673.log =====\nserver failed clearly\n';
   };
   try {
-    assert.deepEqual(captureBackendDiagnostics(output, { exec }), { captured: true, path: output });
+    assert.deepEqual(captureApplicationDiagnostics(output, { exec }), { captured: true, path: output });
     assert.match(readFileSync(output, 'utf8'), /server failed clearly/);
     const inspect = calls[0];
     const capture = calls[1];
@@ -140,7 +141,7 @@ test('hosted application control inspects and stops listeners as the application
     return '';
   };
 
-  await controlApplication({
+  await controlHostedAppServer({
     adapterId: 'mongodb',
     lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
     app: '.',
@@ -178,7 +179,7 @@ test('SpacetimeDB application start uses the root contract independently of its 
     return '';
   };
   try {
-    await assert.rejects(controlApplication({
+    await assert.rejects(controlHostedAppServer({
       adapterId: 'spacetime',
       lease: { resources: { buildContainer: { name: 'leased-build', id, owned: true } } },
       app: root,

@@ -37,7 +37,7 @@ import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   writeBackendLease } from '../src/runtime/backend-lease.js';
-import { captureBackendDiagnostics, controlApplication } from '../src/runtime/backend-control.js';
+import { captureApplicationDiagnostics, controlAppServer } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
@@ -498,7 +498,7 @@ export async function materializeAcceptedSource(
   sourcePath: string,
   appDir: string,
   application: RestartSpec,
-  lifecycle: typeof controlApplication = controlApplication,
+  lifecycle: typeof controlAppServer = controlAppServer,
 ): Promise<void> {
   const accepted = hashDirectory(sourcePath);
   await lifecycle(application, 'stop');
@@ -1218,7 +1218,7 @@ async function main() {
     // from an application defect, a dead dependency, or host pressure.
     if (activeRun) {
       try {
-        activeRun.backendDiagnostics = captureBackendDiagnostics(join(outputDir, 'backend.log'));
+        activeRun.backendDiagnostics = captureApplicationDiagnostics(join(outputDir, 'backend.log'));
       } catch (error) {
         activeRun.backendDiagnostics = { captured: false,
           reason: errorMessage(error).split(/\r?\n/)[0] };

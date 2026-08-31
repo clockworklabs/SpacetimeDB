@@ -187,7 +187,7 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
   return { captured: true, path: output };
 }
 
-export async function controlApplication({ adapterId: stack, lease, app, port, probe, mode,
+export async function controlHostedAppServer({ adapterId: stack, lease, app, port, probe, mode,
   environment = {}, signal, exec = execFileSync }: ApplicationControlInput): Promise<void> {
   const abort = signal instanceof AbortSignal ? signal : null;
   if (typeof stack !== 'string' || !/^[a-z][a-z0-9-]*$/.test(stack)) {

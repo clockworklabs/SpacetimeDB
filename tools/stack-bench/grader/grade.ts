@@ -55,6 +55,7 @@ import {
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/lifecycle-concurrency-action-executors.js';
+import { controlAppServer, controlBackendRuntime } from '../src/runtime/backend-control.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -589,11 +590,14 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     'application-files': Object.freeze({ root: ctx.appDir ?? null, expand: (value: unknown) => expand(value, ctx) }),
     'application-lifecycle': createLifecycleCapability({
       restartSpec: ctx.restartSpec,
-      application: true,
+      target: 'app-server',
+      control: controlAppServer,
       sleep: abortableSleep,
     }),
     'backend-lifecycle': createLifecycleCapability({
       restartSpec: ctx.restartSpec,
+      target: 'backend-runtime',
+      control: controlBackendRuntime,
       sleep: abortableSleep,
     }),
     'browser-interaction': runtimeValues,

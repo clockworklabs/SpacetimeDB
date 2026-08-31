@@ -1,7 +1,7 @@
 import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
   STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
 import type { StackAdapter, StackCapability, StackOperationHandler } from './stack-adapter-contract.js';
-import { controlApplication } from './stack-lifecycle-operations.js';
+import { controlHostedAppServer } from './stack-lifecycle-operations.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
 type AdapterId = keyof typeof PORT_BASES;
@@ -109,7 +109,7 @@ export function controlHostedFor(adapter: StackAdapter, input: unknown): unknown
     throw new Error('hosted backend control network mode must be a string or null');
   }
   const exec = request.exec;
-  return controlApplication({
+  return controlHostedAppServer({
     adapterId: request.adapterId,
     app: request.app,
     port: request.port,
