@@ -5,7 +5,7 @@ import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
-import { hashAppSource, resetAppToSource } from './source-snapshot.js';
+import { hashAppSource, restoreAppSource } from './source-snapshot.js';
 import { hashDirectory } from '../evidence/provenance.js';
 import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 
@@ -16,7 +16,7 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   lifecycle: typeof controlAppServer = controlAppServer): Promise<void> {
   const accepted = hashDirectory(sourcePath);
   await lifecycle(application, 'stop');
-  resetAppToSource(sourcePath, appDir);
+  restoreAppSource(sourcePath, appDir);
   if (!existsSync(join(appDir, 'start.sh'))) {
     throw Object.assign(new Error(`accepted application source has no ${CODING_CONTAINER_START_SCRIPT}`),
       { code: 'generated_app_start_contract_missing' });
@@ -35,7 +35,7 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
       cleanupFailure = error;
     }
     try {
-      resetAppToSource(sourcePath, appDir);
+      restoreAppSource(sourcePath, appDir);
     } catch (error) {
       cleanupFailure ??= error;
     }

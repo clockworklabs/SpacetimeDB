@@ -58,8 +58,7 @@ test('accepted source is materialized through the application lifecycle before g
         }
         if (mode === 'start') {
           assert.match(readFileSync(join(app, 'index.js'), 'utf8'), /accepted/);
-          assert.equal(existsSync(join(app, 'node_modules')), false);
-          mkdirSync(join(app, 'node_modules'));
+          assert.equal(readFileSync(join(app, 'node_modules', 'state'), 'utf8'), 'stale\n');
         }
       });
     assert.deepEqual(modes, ['stop', 'start']);
@@ -95,7 +94,6 @@ test('accepted source is materialized through the application lifecycle before g
       await materializeAcceptedSource(source, app, application, async (_spec, mode) => {
         failedStartModes.push(mode ?? 'restart');
         if (mode === 'start') {
-          mkdirSync(join(app, 'node_modules'));
           mkdirSync(join(app, 'dist'));
           throw Object.assign(new Error(
             'npm install failed for DATABASE_URL=mongodb://user:secret@database:27017/app'),
@@ -106,7 +104,7 @@ test('accepted source is materialized through the application lifecycle before g
       failedStart = error;
     }
     assert.deepEqual(failedStartModes, ['stop', 'start', 'stop']);
-    assert.equal(existsSync(join(app, 'node_modules')), false);
+    assert.equal(existsSync(join(app, 'node_modules')), true);
     assert.equal(existsSync(join(app, 'dist')), false);
     const failedStartOutcome = materializationAppFailure(failedStart);
     assert.equal(failedStartOutcome?.kind, 'app_failure');
