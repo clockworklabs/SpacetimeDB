@@ -235,14 +235,14 @@ export function aggregateRunOutcome(levels: readonly LevelResult[]): AggregateOu
 }
 
 export function runExitCode(outcome: RunOutcome | null | undefined): 0 | 1 {
-  return outcome?.kind === 'app_failure' || outcome?.kind === 'inconclusive'
-    || outcome?.kind === 'passed' ? 0 : 1;
+  return ladderMayContinue(outcome) ? 0 : 1;
 }
 
 // Continue only from a measured baseline.
 export function ladderMayContinue(outcome: RunOutcome | null | undefined): boolean {
-  return outcome?.kind === 'app_failure' || outcome?.kind === 'inconclusive'
-    || outcome?.kind === 'passed';
+  return (outcome?.kind === 'app_failure' || outcome?.kind === 'passed')
+    && (outcome.inconclusive?.length ?? 0) === 0
+    && (outcome.harnessFailures?.length ?? 0) === 0;
 }
 
 // Advance only after the current level passes.

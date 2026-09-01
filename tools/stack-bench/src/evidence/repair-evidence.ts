@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import type { ProgressionAttempt } from '../progression/progression-state.js';
 import type { GradeBundlePayload } from './benchmark-run.js';
-import { classifyBundle } from './outcomes.js';
+import { classifyBundle, ladderMayContinue } from './outcomes.js';
 import type { RunOutcome } from './outcomes.js';
 import {
   compareCriterionEvidence,
@@ -65,7 +65,7 @@ export function repairHistoryEntry(round: number, before: GradeBundlePayload | n
 export function levelGradeIsUsable(bundleOutcome: RunOutcome,
   progressionAttempt: Pick<ProgressionAttempt, 'outcome'> | null = null): boolean {
   if (progressionAttempt) return progressionAttempt.outcome === 'conclusive';
-  return !['provider_failure', 'ungraded', 'harness_failure'].includes(bundleOutcome.kind);
+  return ladderMayContinue(bundleOutcome);
 }
 
 const APPLICATION_SETUP_PHASES = new Set([

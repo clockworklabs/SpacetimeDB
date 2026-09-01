@@ -177,6 +177,8 @@ test('bench arguments validate pricing at the CLI boundary', () => {
 
 test('progression level usability follows its stricter evidence result', () => {
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }), true);
+  assert.equal(levelGradeIsUsable({ kind: 'app_failure', inconclusive: ['feature/check'] }), false);
+  assert.equal(levelGradeIsUsable({ kind: 'inconclusive' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'provider_failure' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'inconclusive' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'conclusive' }), true);
