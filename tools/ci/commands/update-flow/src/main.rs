@@ -40,7 +40,7 @@ fn main() -> Result<()> {
 
     cmd(
         "cargo",
-        ["build", "-p", "spacetimedb-update"]
+        ["build", "-vv", "-p", "spacetimedb-update"]
             .into_iter()
             .chain(common_args.clone()),
     )
@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     let root_arg = format!("--root-dir={}", root_dir_string);
     cmd(
         "cargo",
-        ["run", "-p", "spacetimedb-update"]
+        ["run", "-vv", "-p", "spacetimedb-update"]
             .into_iter()
             .chain(common_args.clone())
             .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),

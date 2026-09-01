@@ -120,7 +120,7 @@ fn main() -> Result<()> {
 
 fn build_cli() -> Result<()> {
     let mut cmd = Command::new("cargo");
-    cmd.args(["build", "--timings", "--release", "-p", "spacetimedb-cli"]);
+    cmd.args(["build", "-vv", "--timings", "--release", "-p", "spacetimedb-cli"]);
     run_binary_build(cmd, "Failed to build CLI")
 }
 
@@ -128,6 +128,7 @@ fn build_standalone() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.args([
         "build",
+        "-vv",
         "--timings",
         "--release",
         "-p",
@@ -176,6 +177,7 @@ fn build_precompiled_modules() -> Result<()> {
     let status = Command::new("cargo")
         .args([
             "build",
+            "-vv",
             "--timings",
             "--workspace",
             "--release",
