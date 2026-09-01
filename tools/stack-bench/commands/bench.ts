@@ -1556,7 +1556,18 @@ async function main() {
       const displayedRepairBudget = args.progression
         ? progressionRepairBudgetRounds
         : args.fixRounds;
-      console.log(`--- repair round ${fixRounds}/${displayedRepairBudget} ---`);
+      if (args.dependencyPolicy?.definition.repairSelection === 'feature'
+        && progressionSelection && isProgressionWorkRecipeAction(progressionSelection)) {
+        const [strike] = progressionSelection.action.strikes.nodes;
+        const node = requireProgressionState(progressionExecution?.state ?? null).definition.nodes
+          .find(candidate => candidate.id === strike?.nodeId);
+        if (!strike || !node) {
+          throw new Error('feature repair has no selected feature');
+        }
+        console.log(`--- feature repair ${strike.used}/${strike.budget - 1}: ${node.title} ---`);
+      } else {
+        console.log(`--- repair round ${fixRounds}/${displayedRepairBudget} ---`);
+      }
       const fix = await runAgentForLevel('fix', level);
       fixCost += fix.costUsd;
       fixSessions.push(runSessionRecord(fix, priorRepairRounds + fixRounds));

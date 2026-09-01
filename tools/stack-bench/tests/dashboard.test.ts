@@ -55,10 +55,10 @@ test('dashboard run progress reports only completed grades while the next repair
   const progress = parseRunProgress(`
 === postgres-l1-first (postgres) ===
   TOTAL      ... 31/58
---- fix round 1/3 ---
+--- repair round 1/3 ---
 === postgres-l1-fix1 (postgres) ===
   TOTAL      ... 41/58
---- fix round 2/3 ---
+--- repair round 2/3 ---
 === postgres-l1-fix2 (postgres) ===
 `, { fixRounds: 3 });
   assert.deepEqual(progress.firstScore, { score: 31, max: 58 });
@@ -83,17 +83,29 @@ test('dashboard follows the actual level when a completed L1 advances to the fir
   const progress = parseRunProgress(`
 === spacetime-l1 (spacetime) ===
   TOTAL      ... 52/58
---- fix round 1/10 ---
+--- repair round 1/10 ---
 === spacetime-l1-fix1 (spacetime) ===
   TOTAL      ... 58/58
 === spacetime-l2 (spacetime) ===
   TOTAL      ... 52/59
---- fix round 1/10 ---
+--- repair round 1/10 ---
 `, { fixRounds: 10 });
   assert.equal(progress.level, 2);
   assert.equal(progress.phase, 'Repairing L2 · round 1 of 10');
   assert.deepEqual(progress.firstScore, { score: 52, max: 58 });
   assert.deepEqual(progress.latestScore, { score: 52, max: 59 });
+});
+
+test('dashboard reports a dependency repair by feature instead of the level session count', () => {
+  const progress = parseRunProgress(`
+=== mongodb-l3-first (mongodb) ===
+  TOTAL      ... 26/43
+--- feature repair 1/1: Customer recommendations ---
+=== mongodb-l3-fix3 (mongodb) ===
+`, { fixRounds: 3 });
+  assert.equal(progress.phase,
+    'Grading L3 after repair 1 of 1 for Customer recommendations');
+  assert.deepEqual(progress.repair, { round: 1, budget: 1 });
 });
 
 test('an aborted first grade is classified, not treated as a scored zero', () => {
@@ -214,7 +226,7 @@ test('dashboard marks a current-schema campaign as interrupted when its controll
   const output = join(root, claimed.claim.output);
   mkdirSync(output, { recursive: true });
   writeFileSync(join(output, 'process.stdout.log'),
-    '=== postgres-l1-first (postgres) ===\n  TOTAL ... 31/58\n--- fix round 1/3 ---\n');
+    '=== postgres-l1-first (postgres) ===\n  TOTAL ... 31/58\n--- repair round 1/3 ---\n');
 
   const summary = summarizeCampaign(root);
   assert.equal(summary.status, 'running');
