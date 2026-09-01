@@ -5,11 +5,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { z } from 'zod';
 
 import { sha256 } from '../evidence/provenance.js';
 import { parseExactImageReference } from '../runtime/container-image.js';
 import { STACK_BENCH_RUNNER_PLATFORM } from '../runtime/runner-environment.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
+import { formatZodError } from '../zod-error.js';
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 2;
 export type ReleaseState = 'candidate' | 'qualified';
@@ -78,11 +80,8 @@ interface ContainedFile {
   reason?: string;
 }
 
-const STATE = new Set<ReleaseState>(['candidate', 'qualified']);
 const IMAGE_ROLES = new Set<ReleaseImageRole>(['controller', 'build-sandbox', 'postgres', 'mongodb']);
 const REQUIRED_IMAGE_ROLES = Object.freeze([...IMAGE_ROLES]);
-const FILE_ROLES = new Set<ReleaseFileRole>(['compose', 'dependency', 'operator-guide', 'public-key', 'sbom',
-  'secrets-template', 'support-policy']);
 const REQUIRED_FILE_ROLES = Object.freeze(['compose', 'dependency', 'operator-guide',
   'secrets-template', 'support-policy']);
 const HASH = /^[a-f0-9]{64}$/;
@@ -90,23 +89,61 @@ const ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const object = (value: unknown): value is UnknownRecord => value !== null
   && typeof value === 'object' && !Array.isArray(value);
 
-function strict(value: unknown, fields: ReadonlySet<string>, at: string): asserts value is UnknownRecord {
-  if (!object(value)) throw new Error(`${at} must be an object`);
-  for (const key of Object.keys(value)) if (!fields.has(key)) throw new Error(`${at}.${key} is unknown`);
-}
-
-function relativePath(value: unknown, at: string): string {
-  if (typeof value !== 'string' || !value || value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
-    || value.split(/[\\/]/).includes('..') || value.includes('\\')) {
-    throw new Error(`${at} must be a normalized relative POSIX path`);
-  }
-  return value;
-}
-
-function exactHash(value: unknown, at: string): string {
-  if (typeof value !== 'string' || !HASH.test(value)) throw new Error(`${at} must be a SHA-256`);
-  return value;
-}
+const relativePathSchema = z.string().min(1).refine(value => !value.startsWith('/')
+  && !/^[A-Za-z]:[\\/]/.test(value) && !value.split(/[\\/]/).includes('..')
+  && !value.includes('\\'), 'must be a normalized relative POSIX path');
+const hashSchema = z.string().regex(HASH, 'must be a SHA-256');
+const idSchema = z.string().regex(ID, 'is invalid');
+const imageSchema = z.strictObject({
+  id: idSchema,
+  role: z.enum(['controller', 'build-sandbox', 'postgres', 'mongodb']),
+  reference: z.string(),
+  digest: hashSchema,
+  platform: z.literal(STACK_BENCH_RUNNER_PLATFORM),
+  sbomPath: relativePathSchema,
+});
+const fileSchema = z.strictObject({
+  path: relativePathSchema,
+  role: z.enum(['compose', 'dependency', 'operator-guide', 'public-key', 'sbom',
+    'secrets-template', 'support-policy']),
+  sha256: hashSchema,
+  bytes: z.number().int().nonnegative().safe(),
+});
+const signingSchema = z.strictObject({
+  scheme: z.literal('cosign-public-key-v1'),
+  publicKeyPath: relativePathSchema,
+  manifestBundlePath: relativePathSchema,
+});
+const releaseManifestSchema = z.strictObject({
+  schemaVersion: z.literal(RELEASE_MANIFEST_SCHEMA_VERSION),
+  id: idSchema,
+  version: z.string().refine(isExactSemanticVersion, 'is invalid'),
+  state: z.enum(['candidate', 'qualified']),
+  sourceRevision: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/,
+    'must be a 40- or 64-character commit id'),
+  sourceSha256: hashSchema,
+  supportedRunner: z.strictObject({
+    os: z.literal('linux'),
+    architecture: z.literal('amd64'),
+    stateRoot: z.string().startsWith('/'),
+    networkMode: z.literal('host'),
+    dockerSocket: z.literal(true),
+  }),
+  images: z.array(imageSchema),
+  files: z.array(fileSchema),
+  outboundDestinations: z.array(z.strictObject({
+    owner: idSchema,
+    url: z.url().refine(value => new URL(value).protocol === 'https:', 'must be HTTPS'),
+  })),
+  secrets: z.array(z.strictObject({
+    id: idSchema,
+    adapter: idSchema,
+    composeTarget: z.string().refine(value => value.startsWith('/run/secrets/')
+      && !value.split('/').includes('..'), 'must be under /run/secrets'),
+    required: z.boolean(),
+  })),
+  signing: signingSchema.nullable(),
+});
 
 function unique<T>(items: T[], key: (item: T) => unknown, at: string): void {
   const seen = new Set<unknown>();
@@ -119,48 +156,17 @@ function unique<T>(items: T[], key: (item: T) => unknown, at: string): void {
 
 export function validateReleaseManifest(value: unknown,
   { source = 'release manifest' }: { source?: string } = {}): ReleaseManifest {
-  strict(value, new Set(['schemaVersion', 'id', 'version', 'state', 'sourceRevision',
-    'sourceSha256', 'supportedRunner', 'images', 'files', 'outboundDestinations', 'secrets',
-    'signing']), source);
-  if (value.schemaVersion !== RELEASE_MANIFEST_SCHEMA_VERSION) throw new Error(`${source}.schemaVersion is unsupported`);
-  if (typeof value.id !== 'string' || !ID.test(value.id)) throw new Error(`${source}.id is invalid`);
-  if (!isExactSemanticVersion(value.version)) throw new Error(`${source}.version is invalid`);
-  if (typeof value.state !== 'string' || !STATE.has(value.state as ReleaseState)) {
-    throw new Error(`${source}.state must be candidate or qualified`);
-  }
-  if (typeof value.sourceRevision !== 'string' || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(value.sourceRevision)) {
-    throw new Error(`${source}.sourceRevision must be a 40- or 64-character commit id`);
-  }
-  exactHash(value.sourceSha256, `${source}.sourceSha256`);
-
-  strict(value.supportedRunner, new Set(['os', 'architecture', 'stateRoot', 'networkMode',
-    'dockerSocket']), `${source}.supportedRunner`);
-  if (value.supportedRunner.os !== 'linux' || value.supportedRunner.architecture !== 'amd64'
-    || value.supportedRunner.networkMode !== 'host' || value.supportedRunner.dockerSocket !== true) {
-    throw new Error(`${source}.supportedRunner must declare the v1 dedicated ${STACK_BENCH_RUNNER_PLATFORM} host-network Docker-socket topology`);
-  }
-  if (typeof value.supportedRunner.stateRoot !== 'string'
-    || !value.supportedRunner.stateRoot.startsWith('/')) throw new Error(`${source}.supportedRunner.stateRoot must be absolute`);
-
-  if (!Array.isArray(value.images)) throw new Error(`${source}.images must be an array`);
-  value.images.forEach((image, index) => {
+  const parsed = releaseManifestSchema.safeParse(value);
+  if (!parsed.success) throw new Error(formatZodError(parsed.error, source));
+  const manifest = parsed.data;
+  manifest.images.forEach((image, index) => {
     const at = `${source}.images[${index}]`;
-    strict(image, new Set(['id', 'role', 'reference', 'digest', 'platform', 'sbomPath']), at);
-    if (typeof image.id !== 'string' || !ID.test(image.id)) throw new Error(`${at}.id is invalid`);
-    if (typeof image.role !== 'string' || !IMAGE_ROLES.has(image.role as ReleaseImageRole)) {
-      throw new Error(`${at}.role is invalid`);
-    }
-    exactHash(image.digest, `${at}.digest`);
     const reference = parseExactImageReference(image.reference);
     if (!reference || reference.id !== `sha256:${image.digest}`) {
       throw new Error(`${at}.reference must be a normalized registry reference at its exact digest`);
     }
-    if (image.platform !== STACK_BENCH_RUNNER_PLATFORM) {
-      throw new Error(`${at}.platform must be ${STACK_BENCH_RUNNER_PLATFORM}`);
-    }
-    relativePath(image.sbomPath, `${at}.sbomPath`);
   });
-  const images = value.images as UnknownRecord[];
+  const images = manifest.images;
   unique(images, item => item.id, `${source}.images`);
   unique(images, item => item.role, `${source}.images`);
   unique(images, item => item.sbomPath, `${source}.images SBOM paths`);
@@ -168,20 +174,7 @@ export function validateReleaseManifest(value: unknown,
     if (!images.some(image => image.role === role)) throw new Error(`${source}.images is missing ${role}`);
   }
 
-  if (!Array.isArray(value.files)) throw new Error(`${source}.files must be an array`);
-  value.files.forEach((file, index) => {
-    const at = `${source}.files[${index}]`;
-    strict(file, new Set(['path', 'role', 'sha256', 'bytes']), at);
-    relativePath(file.path, `${at}.path`);
-    if (typeof file.role !== 'string' || !FILE_ROLES.has(file.role as ReleaseFileRole)) {
-      throw new Error(`${at}.role is invalid`);
-    }
-    exactHash(file.sha256, `${at}.sha256`);
-    if (!Number.isSafeInteger(file.bytes) || typeof file.bytes !== 'number' || file.bytes < 0) {
-      throw new Error(`${at}.bytes is invalid`);
-    }
-  });
-  const files = value.files as UnknownRecord[];
+  const files = manifest.files;
   unique(files, item => item.path, `${source}.files`);
   for (const role of REQUIRED_FILE_ROLES) {
     if (!files.some(file => file.role === role)) throw new Error(`${source}.files is missing ${role}`);
@@ -192,20 +185,14 @@ export function validateReleaseManifest(value: unknown,
     }
   }
 
-  if (value.state === 'candidate') {
-    if (value.signing !== null) throw new Error(`${source}.signing must be null for a candidate`);
+  if (manifest.state === 'candidate') {
+    if (manifest.signing !== null) throw new Error(`${source}.signing must be null for a candidate`);
     if (files.some(file => file.role === 'public-key')) {
       throw new Error(`${source}.files cannot claim a signing key for a candidate`);
     }
   } else {
-    const signing = value.signing;
-    strict(signing, new Set(['scheme', 'publicKeyPath', 'manifestBundlePath']),
-      `${source}.signing`);
-    if (signing.scheme !== 'cosign-public-key-v1') {
-      throw new Error(`${source}.signing.scheme must be cosign-public-key-v1`);
-    }
-    relativePath(signing.publicKeyPath, `${source}.signing.publicKeyPath`);
-    relativePath(signing.manifestBundlePath, `${source}.signing.manifestBundlePath`);
+    const signing = manifest.signing;
+    if (!signing) throw new Error(`${source}.signing must be an object`);
     if (!files.some(file => file.path === signing.publicKeyPath
       && file.role === 'public-key')) {
       throw new Error(`${source}.signing public key is absent from files`);
@@ -215,31 +202,10 @@ export function validateReleaseManifest(value: unknown,
     }
   }
 
-  if (!Array.isArray(value.outboundDestinations)) throw new Error(`${source}.outboundDestinations must be an array`);
-  value.outboundDestinations.forEach((entry, index) => {
-    const at = `${source}.outboundDestinations[${index}]`;
-    strict(entry, new Set(['owner', 'url']), at);
-    if (typeof entry.owner !== 'string' || !ID.test(entry.owner)) throw new Error(`${at}.owner is invalid`);
-    try { if (typeof entry.url !== 'string' || new URL(entry.url).protocol !== 'https:') throw new Error(); }
-    catch { throw new Error(`${at}.url must be HTTPS`); }
-  });
-  unique(value.outboundDestinations as UnknownRecord[], item => `${String(item.owner)}:${String(item.url)}`,
+  unique(manifest.outboundDestinations, item => `${item.owner}:${item.url}`,
     `${source}.outboundDestinations`);
-
-  if (!Array.isArray(value.secrets)) throw new Error(`${source}.secrets must be an array`);
-  value.secrets.forEach((secret, index) => {
-    const at = `${source}.secrets[${index}]`;
-    strict(secret, new Set(['id', 'adapter', 'composeTarget', 'required']), at);
-    if (typeof secret.id !== 'string' || !ID.test(secret.id)) throw new Error(`${at}.id is invalid`);
-    if (typeof secret.adapter !== 'string' || !ID.test(secret.adapter)) throw new Error(`${at}.adapter is invalid`);
-    if (typeof secret.composeTarget !== 'string' || !secret.composeTarget.startsWith('/run/secrets/')
-      || secret.composeTarget.split('/').includes('..')) {
-      throw new Error(`${at}.composeTarget must be under /run/secrets`);
-    }
-    if (typeof secret.required !== 'boolean') throw new Error(`${at}.required must be boolean`);
-  });
-  unique(value.secrets as UnknownRecord[], item => item.id, `${source}.secrets`);
-  return structuredClone(value) as unknown as ReleaseManifest;
+  unique(manifest.secrets, item => item.id, `${source}.secrets`);
+  return manifest as ReleaseManifest;
 }
 
 function contained(root: string, relative: string): string {

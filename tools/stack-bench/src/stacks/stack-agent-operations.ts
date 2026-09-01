@@ -1,6 +1,7 @@
 import { join, resolve } from 'node:path';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_DEPENDENCY_READY_FILE,
-  CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI }
+  CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI,
+  CODING_CONTAINER_SPACETIME_PACKAGE, CODING_CONTAINER_SPACETIME_STANDALONE }
   from '../runtime/coding-container-policy.js';
 import { databaseContainerName } from './database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
@@ -105,8 +106,8 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
         + `test -x ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-standalone; `
         + `test -f ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb.tgz; `
         + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-cli ${CODING_CONTAINER_SPACETIME_CLI}; `
-        + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-standalone /deps/spacetimedb-standalone; `
-        + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb.tgz /deps/spacetimedb.tgz; `
+        + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-standalone ${CODING_CONTAINER_SPACETIME_STANDALONE}; `
+        + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb.tgz ${CODING_CONTAINER_SPACETIME_PACKAGE}; `
         + `touch ${CODING_CONTAINER_DEPENDENCY_READY_FILE}; exec sleep infinity`,
       readyFile: CODING_CONTAINER_DEPENDENCY_READY_FILE,
       readyDescription: 'SpacetimeDB SDK staging',
@@ -121,7 +122,8 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
         target: `${CODING_CONTAINER_AGENT.home}/.config/spacetime`, readOnly: false },
       { kind: 'bind', source: bindings, target: '/deps-src/bindings-typescript', readOnly: true },
       { kind: 'bind', source: cli, target: CODING_CONTAINER_SPACETIME_CLI, readOnly: true },
-      { kind: 'bind', source: standalone, target: '/deps/spacetimedb-standalone', readOnly: true },
+      { kind: 'bind', source: standalone,
+        target: CODING_CONTAINER_SPACETIME_STANDALONE, readOnly: true },
     ],
     init: 'set -eu; '
       + 'test -f /deps-src/bindings-typescript/dist/server/index.d.ts; '
@@ -131,7 +133,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
       + 'cd /deps/bindings-typescript; '
       + 'npm install --omit=dev --ignore-scripts --no-audit --no-fund; '
       + 'pack_name=$(npm pack --pack-destination /deps --silent); '
-      + 'mv "/deps/$pack_name" /deps/spacetimedb.tgz; '
+      + `mv "/deps/$pack_name" ${CODING_CONTAINER_SPACETIME_PACKAGE}; `
       + `touch ${CODING_CONTAINER_DEPENDENCY_READY_FILE}; exec sleep infinity`,
     readyFile: CODING_CONTAINER_DEPENDENCY_READY_FILE,
     readyDescription: 'SpacetimeDB SDK staging',

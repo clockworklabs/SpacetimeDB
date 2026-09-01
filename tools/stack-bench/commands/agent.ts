@@ -21,7 +21,8 @@ import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
 import { DEFAULT_SPACETIME_SERVER_URI, leaseFromEnv } from '../src/runtime/backend-lease.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_BUG_REPORT_FILE,
-  CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI }
+  CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI,
+  CODING_CONTAINER_SPACETIME_PACKAGE }
   from '../src/runtime/coding-container-policy.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
@@ -147,7 +148,6 @@ export function hostServiceAddress(env: NodeJS.ProcessEnv = process.env): string
 const HOST_ADDR = hostServiceAddress();
 const hostUrl = (url: string): string => url.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
 
-const C_PKG = '/deps/spacetimedb.tgz';
 const C_BIN = CODING_CONTAINER_SPACETIME_CLI;
 
 // The container requires the Linux CLI from this checkout.
@@ -452,7 +452,7 @@ function backendDoc(args: AgentArgs, p: StackRunPorts, track: Track): string {
     .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) ?? '' : '')
     .replaceAll('<STDB_URI>', hostUrl(STDB_URI))
     .replaceAll('<STDB_BIN>', C_BIN)
-    .replaceAll('<STDB_PACKAGE>', `file:${C_PKG}`);
+    .replaceAll('<STDB_PACKAGE>', `file:${CODING_CONTAINER_SPACETIME_PACKAGE}`);
 }
 
 // Fail before a paid session when the selected container cannot run this checkout.

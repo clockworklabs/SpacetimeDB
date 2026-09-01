@@ -1,3 +1,5 @@
+import { CODING_CONTAINER_SPACETIME_PACKAGE } from '../runtime/coding-container-policy.js';
+
 export interface ReferenceInstallMetadata {
   readonly kind: string;
   readonly frozenLock?: boolean;
@@ -17,7 +19,7 @@ export function referenceInstallSteps(
   return metadata.installDirectories.flatMap(directory => [
     ...(metadata.kind === 'spacetime' && metadata.frozenLock !== true ? [{
       directory, command: 'npm' as const,
-      args: ['install', 'spacetimedb@file:/deps/spacetimedb.tgz', '--package-lock-only',
+      args: ['install', `spacetimedb@file:${CODING_CONTAINER_SPACETIME_PACKAGE}`, '--package-lock-only',
         '--ignore-scripts', '--no-audit', '--no-fund'],
     }] : []),
     { directory, command: 'npm' as const, args: ['ci', '--no-audit', '--no-fund'] },
