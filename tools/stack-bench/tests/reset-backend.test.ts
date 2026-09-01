@@ -131,7 +131,7 @@ test('PostgreSQL runtime provenance finds an application marker in the exact lea
   });
   const proof = calls.at(-1);
   assert(proof);
-  assert.deepEqual(proof.args.slice(0, 3), ['exec', '-i', 'postgres-service']);
+  assert.deepEqual(proof.args.slice(0, 3), ['exec', '-i', 'a'.repeat(64)]);
   assert.equal(proof.args.includes('ON_ERROR_STOP=1'), true);
   assert.match(proof.options.input ?? '', /FROM information_schema\.columns/);
   assert.match(proof.options.input ?? '', /ann''proof/);
@@ -279,7 +279,7 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
     assert.deepEqual(publish.argv.slice(0, 8), ['docker', 'exec', '--user', '10001:10001',
       '-e', 'HOME=/home/developer', '-e', 'USER=developer']);
     assert.equal(publish.argv[publish.argv.indexOf('-w') + 1], '/app/backend/spacetimedb');
-    assert.ok(publish.argv.includes('leased-build'));
+    assert.ok(publish.argv.includes(buildContainer.id));
     assert.ok(publish.argv.includes('/deps/spacetimedb-cli'));
     assert.ok(publish.argv.includes('app-ecom-run0'));
     assert.ok(publish.argv.includes('http://host.docker.internal:3310'));
@@ -336,7 +336,7 @@ test('Spacetime reset honors the module path declared by a generated project', (
     assert.deepEqual(publish.argv.slice(0, 8), ['docker', 'exec', '--user', '10001:10001',
       '-e', 'HOME=/home/developer', '-e', 'USER=developer']);
     assert.equal(publish.argv[publish.argv.indexOf('-w') + 1], '/app/server/spacetimedb');
-    assert.ok(publish.argv.includes('leased-build'));
+    assert.ok(publish.argv.includes(buildContainer.id));
     assert.ok(publish.argv.includes('/deps/spacetimedb-cli'));
     assert.equal(publish.argv.filter(value => value === '/app/server/spacetimedb').length, 2);
   } finally {

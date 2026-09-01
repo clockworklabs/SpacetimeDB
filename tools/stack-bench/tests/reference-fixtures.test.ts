@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { hashDirectory } from '../src/evidence/provenance.js';
 import { loadReferenceRegistry, inspectImportedReference, selectReferenceFixture,
-  validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
+  referenceMetadataIssues, validateReferenceRegistry, type ReferenceFixture, type ReferenceRegistry }
   from '../src/references/reference-fixtures.js';
 import { resolveReferenceSelection } from '../src/references/reference-selection.js';
 
@@ -24,6 +24,17 @@ test('the reference registry binds its current statuses and provenance', () => {
   escapedFixture.source = { basePath: 'reference-apps/old', patchPath: 'reference-apps/old.json' };
   assert(validateReferenceRegistry(escaped).issues.some(issue =>
     issue.includes('source overlays are not supported')));
+});
+
+test('reference validation contains malformed input and unsafe execution paths', () => {
+  assert(validateReferenceRegistry({ schemaVersion: 4, fixtures: [null] }).issues
+    .includes('fixture must be an object'));
+  assert(referenceMetadataIssues({ schemaVersion: 1, kind: 'node-api',
+    installDirectories: ['server'], server: { directory: '../server' },
+    client: { directory: 'client' } }).some(issue => issue.includes('server.directory')));
+  assert(referenceMetadataIssues({ schemaVersion: 1, kind: 'node-api',
+    installDirectories: ['server'], server: { directory: 'server' },
+    client: { directory: 'client' } }).some(issue => issue.includes('must be listed')));
 });
 
 test('a recipe-bound full fixture can serve only its declared progression action levels', () => {
@@ -99,10 +110,14 @@ test('reference inspection rejects a symlink that the regular-file hash does not
   try {
     const target = join(root, 'reference-apps', 'linked');
     mkdirSync(join(target, 'server'), { recursive: true });
+    mkdirSync(join(target, 'client'), { recursive: true });
     writeFileSync(join(target, 'server', 'package.json'), '{}\n');
     writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'client', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
     writeFileSync(join(target, 'reference.json'), JSON.stringify({
-      schemaVersion: 1, kind: 'node-api', installDirectories: ['server'],
+      schemaVersion: 1, kind: 'node-api', installDirectories: ['server', 'client'],
+      server: { directory: 'server' }, client: { directory: 'client' },
     }));
     const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
       id: 'linked', backend: 'mongodb', track: 'ecommerce',
@@ -132,9 +147,14 @@ test('imported fixture inspection requires locks and rejects local or generated 
   try {
     const target = join(root, 'reference-apps', 'example');
     mkdirSync(join(target, 'server'), { recursive: true });
+    mkdirSync(join(target, 'client'), { recursive: true });
     writeFileSync(join(target, 'server', 'package.json'), '{}\n');
     writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
-    writeFileSync(join(target, 'reference.json'), JSON.stringify({ schemaVersion: 1, kind: 'node-api', installDirectories: ['server'] }));
+    writeFileSync(join(target, 'client', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'reference.json'), JSON.stringify({ schemaVersion: 1,
+      kind: 'node-api', installDirectories: ['server', 'client'],
+      server: { directory: 'server' }, client: { directory: 'client' } }));
     const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
       id: 'import', backend: 'mongodb', track: 'ecommerce',
       level: 1, status: 'candidate', targetPath: 'reference-apps/example', imported: {
@@ -159,10 +179,14 @@ test('authored references bind checked-in bytes', () => {
   try {
     const target = join(root, 'reference-apps', 'authored');
     mkdirSync(join(target, 'server'), { recursive: true });
+    mkdirSync(join(target, 'client'), { recursive: true });
     writeFileSync(join(target, 'server', 'package.json'), '{}\n');
     writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'client', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
     writeFileSync(join(target, 'reference.json'), JSON.stringify({
-      schemaVersion: 1, kind: 'node-api', installDirectories: ['server'],
+      schemaVersion: 1, kind: 'node-api', installDirectories: ['server', 'client'],
+      server: { directory: 'server' }, client: { directory: 'client' },
     }));
     const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
       id: 'authored', backend: 'mongodb', track: 'ecommerce', level: 2,

@@ -66,9 +66,15 @@ function inspectBinary(path: string, name: string): BinaryRecord {
 
 export function createBinaryProvenance(stackBenchRoot: string,
   source: BinarySourceIdentity): BinaryProvenance {
+  if (source?.identityScheme !== SOURCE_IDENTITY_SCHEME) {
+    throw new Error('binary source identity scheme is unsupported');
+  }
   assertSha256(source?.sha256, 'binary source identity');
   if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(source?.revision ?? '')) {
     throw new Error('binary source revision must be an exact commit id');
+  }
+  if (!Number.isSafeInteger(source?.files) || source.files < 1) {
+    throw new Error('binary source file count must be a positive integer');
   }
   const binaries: Record<string, BinaryRecord> = {};
   for (const name of BINARY_NAMES) binaries[name] = inspectBinary(binaryPath(stackBenchRoot, name), name);
@@ -85,7 +91,8 @@ export function createBinaryProvenance(stackBenchRoot: string,
 export function assertBinarySourceUnchanged(before: BinarySourceIdentity,
   after: BinarySourceIdentity): void {
   if (before?.identityScheme !== after?.identityScheme
-    || before?.revision !== after?.revision || before?.sha256 !== after?.sha256) {
+    || before?.revision !== after?.revision || before?.sha256 !== after?.sha256
+    || before?.files !== after?.files) {
     throw new Error('binary source changed during the build');
   }
 }
@@ -125,6 +132,9 @@ export function verifyBinaryProvenance(stackBenchRoot: string,
   }
   if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(manifest.source?.revision ?? '')) {
     throw new Error('recorded binary source revision is invalid');
+  }
+  if (!Number.isSafeInteger(manifest.source?.files) || manifest.source.files < 1) {
+    throw new Error('recorded binary source file count is invalid');
   }
   for (const name of BINARY_NAMES) {
     const expected = manifest.binaries?.[name];

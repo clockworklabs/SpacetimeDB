@@ -9,6 +9,7 @@ import { processIdentity } from './platform.js';
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',
   'retained', 'stopped', 'released']);
+const CURRENT_PROCESS_START_MARKER = processIdentity(process.pid)?.startMarker ?? null;
 
 export type BackendLeaseState = 'created' | 'starting' | 'active' | 'restarting'
   | 'retained' | 'stopped' | 'released';
@@ -384,7 +385,8 @@ export function acquireResourceLock({ root, key, lease, reclaimStale = true }: {
     key,
     runId: lease.runId,
     ownerPid: lease.ownerPid,
-    ownerStartMarker: processIdentity(lease.ownerPid)?.startMarker ?? null,
+    ownerStartMarker: lease.ownerPid === process.pid
+      ? CURRENT_PROCESS_START_MARKER : processIdentity(lease.ownerPid)?.startMarker ?? null,
     ownershipMarkerSha256: tokenHash(lease.ownershipToken),
     acquiredAt: new Date().toISOString(),
   };

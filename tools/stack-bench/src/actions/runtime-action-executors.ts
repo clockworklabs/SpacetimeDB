@@ -12,7 +12,6 @@ import { browserApplicationBoundary } from './browser-action-executors.js';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { databaseContainerName } from '../stacks/database-containers.js';
 import type { RuntimeControlMode, RuntimeControlSpec } from '../runtime/backend-control.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
@@ -409,19 +408,23 @@ export function createLifecycleCapability({ restartSpec, target,
   });
 }
 
+export interface DatabaseWriteLease {
+  readonly resources: {
+    readonly container: { readonly id: string; readonly name: string };
+    readonly database: string;
+  };
+}
+
 interface DatabaseWriteCapabilityOptions {
   readonly backend?: string | null;
-  readonly dbName: string;
+  readonly databaseLease?: DatabaseWriteLease | null;
   readonly exec?: Exec;
   readonly expand: (value: string) => string;
-  readonly mongoContainer?: string;
-  readonly postgresContainer?: string;
   readonly spacetime?: unknown;
 }
 
-export function createDatabaseWriteCapability({ backend, spacetime, dbName, expand,
-  exec = execFileSync, mongoContainer = databaseContainerName('mongodb'),
-  postgresContainer = databaseContainerName('postgres') }: DatabaseWriteCapabilityOptions) {
+export function createDatabaseWriteCapability({ backend, spacetime, databaseLease, expand,
+  exec = execFileSync }: DatabaseWriteCapabilityOptions) {
   return Object.freeze({
     setStock(input: SetStockInput): unknown {
       const item = expand(input.item);
@@ -433,10 +436,13 @@ export function createDatabaseWriteCapability({ backend, spacetime, dbName, expa
         if (!adapter) return inconclusive(
           `direct stock writes do not support backend ${backend ?? '<unset>'}`,
         );
+        if ((backend === 'mongodb' || backend === 'postgres') && !databaseLease) {
+          throw Object.assign(new Error('direct database writes require an authenticated backend lease'),
+            { classification: 'harness_failure' });
+        }
         return executeStackCapability(adapter,
           'database-write', 'set-stock', {
-            item, warehouse, quantity, spacetime, dbName, exec,
-            containers: { mongodb: mongoContainer, postgres: postgresContainer },
+            item, warehouse, quantity, spacetime, lease: databaseLease, exec,
           });
       } catch (error) {
         if (error instanceof StackCapabilityUnsupportedError) {

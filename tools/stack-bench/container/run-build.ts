@@ -13,10 +13,11 @@ import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
   from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.js';
-import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.js';
+import { LEGACY_SUBSCRIPTION_TOKEN_TARGET, resolveContainerAuth } from './container-auth.js';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt, startCredentialBroker,
   stopCredentialBroker } from './credential-broker.js';
-import { recoverStoppedBuildContainer } from './recover-build-container.js';
+import { clearMissingBuildContainerLease,
+  recoverStoppedBuildContainer } from './recover-build-container.js';
 import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
   removeFailedBuildContainer } from './reconcile-build-container.js';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
@@ -153,7 +154,6 @@ if (!containerPlan) {
   console.error(`run-build.js: ${backend} adapter returned an invalid build-container plan`);
   process.exit(2);
 }
-if (!containerPlan) throw new Error('build-container plan is unavailable');
 
 // Auth is resolved in the controller. A short-lived broker forwards model API
 // requests later. The coding container never receives the long-lived provider
@@ -171,7 +171,7 @@ const projects = prepareOnly ? null : join(homedir(), '.claude', 'projects',
   resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
 function ensureAgentWritable(directory: string): void {
   mkdirSync(directory, { recursive: true });
-  chmodSync(directory, 0o777);
+  chmodSync(directory, process.env.STACK_BENCH_APPLIANCE === '1' ? 0o700 : 0o777);
 }
 
 ensureAgentWritable(appDir);
@@ -208,7 +208,7 @@ function inspectContainer(name: string): InspectedContainer | null {
   const config = isRecord(inspected.Config) ? inspected.Config : {};
   const hostConfig = isRecord(inspected.HostConfig) ? inspected.HostConfig : {};
   const state = isRecord(inspected.State) ? inspected.State : {};
-  const sensitiveTargets = new Set([SUBSCRIPTION_TOKEN_TARGET, '/root/.claude/.credentials.json']);
+  const sensitiveTargets = new Set([LEGACY_SUBSCRIPTION_TOKEN_TARGET, '/root/.claude/.credentials.json']);
   const unsafeCredentialExposure = mounts.some(mount => sensitiveTargets.has(String(mount.Destination)))
     || stringArray(config.Env).some(value => /^(?:ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=/.test(value));
   const capabilities = (values: unknown): string[] => stringArray(values).map(value => value.replace(/^CAP_/, ''));
@@ -275,7 +275,7 @@ catch (error) {
 }
 
 let existing = inspectContainer(containerName);
-let priorContainer = leaseContext.lease.resources.buildContainer ?? null;
+const priorContainer = leaseContext.lease.resources.buildContainer ?? null;
 if (existing) {
   if (!priorContainer) {
     console.error(`run-build.js: refusing to adopt existing unleased container ${containerName}`);
@@ -294,7 +294,6 @@ if (existing) {
     try {
       leaseContext = recoverStoppedBuildContainer({ existing: { ...existing, running: false }, containerName, leaseContext, backend,
         dockerEnv, timeoutMs: DOCKER_TIMEOUT_MS });
-      priorContainer = null;
       existing = null;
     } catch (error) {
       console.error(`run-build.js: could not recover stopped container: ${errorMessage(error)}`);
@@ -316,8 +315,21 @@ if (existing) {
     process.exit(3);
   }
 } else if (priorContainer) {
-  console.error(`run-build.js: leased container ${priorContainer.name}/${priorContainer.id} is missing`);
-  process.exit(3);
+  const leasedById = inspectContainer(priorContainer.id);
+  if (leasedById) {
+    console.error(`run-build.js: leased container ${priorContainer.id} still exists under an unexpected name`);
+    process.exit(3);
+  }
+  if (!recoverStoppedContainer) {
+    console.error(`run-build.js: leased container ${priorContainer.name}/${priorContainer.id} is missing`);
+    process.exit(3);
+  }
+  try {
+    leaseContext = clearMissingBuildContainerLease({ containerName, leaseContext, backend });
+  } catch (error) {
+    console.error(`run-build.js: could not recover missing container lease: ${errorMessage(error)}`);
+    process.exit(3);
+  }
 }
 
 // Create it if this is the first round of the run; reuse it for every round
@@ -368,8 +380,7 @@ if (!existing) {
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
   // build leaves behind are reparented to `sleep`, which never reaps them.
-  const init = 'chmod -R a+rwX /app 2>/dev/null || true; '
-    + 'export HOME=/tmp npm_config_cache=/tmp/npm-cache; '
+  const init = 'export HOME=/tmp npm_config_cache=/tmp/npm-cache; '
     + containerPlan.init;
   create.push('-w', '/app', image, 'sh', '-c', init);
 
@@ -404,6 +415,18 @@ if (!existing) {
       process.exit(3);
     }
     console.error(`run-build.js: cannot inspect ${containerName}`);
+    process.exit(2);
+  }
+  if (containerInspection.unsafeCredentialExposure
+    || !hasRequiredIsolation(containerInspection, expectedMounts)) {
+    try {
+      removeFailedBuildContainer({ containerName, creationToken, createdId, dockerEnv,
+        timeoutMs: DOCKER_TIMEOUT_MS });
+    } catch (cleanupError) {
+      console.error(`run-build.js: ${errorMessage(cleanupError)}`);
+      process.exit(3);
+    }
+    console.error(`run-build.js: created container ${containerName} does not have the required isolation`);
     process.exit(2);
   }
 }
@@ -484,6 +507,24 @@ if (containerPlan.readyFile) {
   }
 }
 
+if (process.env.STACK_BENCH_APPLIANCE === '1') {
+  const writableTargets = [AGENT_HOME,
+    ...expectedMounts.filter(mount => !mount.readOnly).map(mount => mount.target)];
+  for (const [command, commandArgs] of [
+    ['chown', ['-R', `${AGENT_UID}:${AGENT_GID}`, '--', ...writableTargets]],
+    ['chmod', ['-R', 'u+rwX,go-rwx', '--', ...writableTargets]],
+  ] as const) {
+    const permissions = spawnSync('docker', ['exec', containerName, command, ...commandArgs], {
+      encoding: 'utf8', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+    });
+    if (permissions.status !== 0) {
+      console.error(`run-build.js: could not secure writable paths in ${containerName}`);
+      console.error(permissions.stderr || permissions.stdout || permissions.error?.message || '');
+      process.exit(2);
+    }
+  }
+}
+
 // A nested transcript mount makes Docker create its parent directories as
 // root. Confirm that Claude can create its private session state before a
 // provider request can spend money.
@@ -538,14 +579,14 @@ const claudeArgs = [
 // guarantee that Claude stops inside the long-lived build container.
 const invocationToken = randomBytes(16).toString('hex');
 const processRecord = `${CODING_CONTAINER_PROCESS_IDENTITY.recordPrefix}${invocationToken}.pid`;
-const claudeWrapper = 'umask 000; record="$1"; shift; '
+const claudeWrapper = 'umask 022; record="$1"; shift; '
   + 'start="$(awk \'{print $22}\' /proc/$$/stat)" || exit 1; '
   + 'printf \'%s %s\\n\' "$$" "$start" > "$record"; exec "$@"';
 
 if (!auth) throw new Error('container authentication is unavailable');
-let credentialBroker: ReturnType<typeof startCredentialBroker> | null = null;
+let credentialBroker: Awaited<ReturnType<typeof startCredentialBroker>> | null = null;
 try {
-  credentialBroker = startCredentialBroker(auth,
+  credentialBroker = await startCredentialBroker(auth,
     { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS, model,
       maxBudgetUsd: maxBudgetUsd === null ? null : Number(maxBudgetUsd),
       pricingRates: maxBudgetUsd === null ? null : pricing!.rates });
@@ -606,10 +647,13 @@ try {
 } finally {
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
-  spawnSync('docker', ['exec', containerName, ...codingContainerTranscriptHandoffCommand()], {
-    stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
-  });
-  spawnSync('docker', ['exec', containerName, 'chmod', '-R', 'a+rwX', '/app'], {
+  if (process.env.STACK_BENCH_APPLIANCE !== '1') {
+    spawnSync('docker', ['exec', containerName, ...codingContainerTranscriptHandoffCommand()], {
+      stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+    });
+  }
+  const appMode = process.env.STACK_BENCH_APPLIANCE === '1' ? 'u+rwX,go-rwx' : 'a+rwX';
+  spawnSync('docker', ['exec', containerName, 'chmod', '-R', appMode, '/app'], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
   spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {

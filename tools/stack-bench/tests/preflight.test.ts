@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { parsePreflightArgs, probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
+import { parsePreflightArgs } from '../commands/preflight-cli.js';
+import { probeLoopbackPort, runPreflight, verifyPostgresServiceIdentity }
   from '../src/runtime/preflight.js';
 import type { PreflightCheck, PreflightReport } from '../src/runtime/preflight.js';
 import { isExactImageReference } from '../src/runtime/container-image.js';

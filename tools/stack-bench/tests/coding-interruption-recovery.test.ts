@@ -15,7 +15,8 @@ import { agentSessionFailure } from '../src/agents/agent-result-contract.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
   startCredentialBroker, stopCredentialBroker } from '../container/credential-broker.js';
-import { recoverStoppedBuildContainer } from '../container/recover-build-container.js';
+import { clearMissingBuildContainerLease,
+  recoverStoppedBuildContainer } from '../container/recover-build-container.js';
 
 function brokerReceipt(costUsd: number, maxBudgetUsd: number = 10) {
   return { schemaVersion: 2, source: 'credential-broker', model: 'test-model',
@@ -178,9 +179,8 @@ test('a real broker child exit reaches the run result and stops recovery as a ha
   const maxBudgetUsd = 10;
   const pricingRates = { input: 3, output: 15, cacheWrite5m: 3.75,
     cacheWrite1h: 6, cacheRead: 0.3 };
-  const broker = startCredentialBroker({ mode: 'api-key',
-    environment: { name: 'ANTHROPIC_API_KEY', value: 'provider-secret-value-1234567890' },
-    mount: null }, { networkMode: 'host', deadlineMs: 10_000, model,
+  const broker = await startCredentialBroker({ mode: 'api-key',
+    credential: 'provider-secret-value-1234567890' }, { networkMode: 'host', deadlineMs: 10_000, model,
     maxBudgetUsd, pricingRates });
   broker.child.kill('SIGTERM');
   await once(broker.child, 'exit');
@@ -509,6 +509,27 @@ test('stopped-container recovery fails closed on a lease mismatch', () => {
     assert.equal(executed, false);
     assert.equal(required(readBackendLease(path).resources.buildContainer,
       'recovered build container').id, 'a'.repeat(64));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('missing-container recovery clears only the authenticated lease target', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-build-recovery-'));
+  try {
+    const path = join(root, 'lease.json');
+    const lease = createBackendLease({ runId: 'recover-build-test', backend: 'mongodb',
+      track: 'ecommerce', runIndex: 0, database: 'app_ecom_run0',
+      container: { name: 'stack-bench-mongodb', id: 'database-id' } });
+    lease.state = 'active';
+    lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
+      image: 'image-id', owned: true, running: false, networkMode: 'bridge',
+      resourceLimits: { cpuCount: 2, memoryBytes: 2147483648,
+        memorySwapBytes: 2147483648, pids: 512 } };
+    writeBackendLease(path, lease);
+    const recovered = clearMissingBuildContainerLease({
+      containerName: 'leased-build', leaseContext: { path, lease }, backend: 'mongodb',
+    });
+    assert.equal(recovered.lease.resources.buildContainer, null);
+    assert.equal(readBackendLease(path).resources.buildContainer, null);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

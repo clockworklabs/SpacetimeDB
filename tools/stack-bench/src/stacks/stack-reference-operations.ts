@@ -59,7 +59,7 @@ interface SpacetimeLease {
     buildContainer?: { networkMode?: 'host' | 'bridge' } | null };
 }
 
-export interface HostedReferenceDeployment {
+interface HostedReferenceDeployment {
   args: { backend: string; runIndex: number };
   metadata: HostedReferenceMetadata;
   lease: HostedLease;
@@ -70,7 +70,7 @@ export interface HostedReferenceDeployment {
   helpers: HostedReferenceHelpers;
 }
 
-export interface SpacetimeReferenceDeployment {
+interface SpacetimeReferenceDeployment {
   args: { track: string; runIndex: number };
   metadata: SpacetimeReferenceMetadata;
   lease: SpacetimeLease;
@@ -80,7 +80,7 @@ export interface SpacetimeReferenceDeployment {
   helpers: SpacetimeReferenceHelpers;
 }
 
-type HostedDatabase = { expected: string; service: { id: string; name: string } };
+type HostedDatabase = { expected: string; containerId: string };
 
 
 function validateHostedDatabase({ args, lease, track, helpers }:
@@ -93,7 +93,7 @@ function validateHostedDatabase({ args, lease, track, helpers }:
     ['inspect', '--format', '{{.Id}}', service.name],
     { encoding: 'utf8', stdio: 'pipe' }).trim();
   if (actual !== service.id) throw new Error(`${service.name} no longer matches its lease`);
-  return { expected, service };
+  return { expected, containerId: actual };
 }
 
 async function deployHostedReference(input: HostedReferenceDeployment, { databaseUrl, extraEnv = {},
@@ -135,14 +135,14 @@ export function deployPostgresReference(input: HostedReferenceDeployment): Promi
   return deployHostedReference(input, {
     databaseUrl: ({ ports, lease, buildNetworkMode }) =>
       `postgresql://${user}:${password}@${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
-    prepare: ({ expected, service }, helpers) => {
+    prepare: ({ expected, containerId }, helpers) => {
       try {
         helpers.runSync('creating PostgreSQL reference database', 'docker',
-          ['exec', service.name, 'psql', '-U', user, '-d', 'postgres',
+          ['exec', containerId, 'psql', '-U', user, '-d', 'postgres',
             '-c', `CREATE DATABASE ${expected} OWNER ${user};`], { stdio: 'pipe' });
       } catch { /* an existing run-index database is expected */ }
       helpers.runSync('resetting PostgreSQL reference schema', 'docker',
-        ['exec', service.name, 'psql', '-U', user, '-d', expected,
+        ['exec', containerId, 'psql', '-U', user, '-d', expected,
           '-c', `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${user};`],
         { stdio: 'pipe' });
     },
@@ -159,9 +159,9 @@ export function deployMongoDbReference(input: HostedReferenceDeployment): Promis
     databaseUrl: ({ ports, lease, buildNetworkMode }) =>
       `mongodb://${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
     extraEnv: { JWT_SECRET: 'stack-bench-reference-only-secret-2026' },
-    prepare: ({ expected, service }, helpers) => {
+    prepare: ({ expected, containerId }, helpers) => {
       helpers.runSync('resetting MongoDB reference database', 'docker',
-        ['exec', service.name, 'mongosh', expected, '--quiet', '--eval', 'db.dropDatabase()'],
+        ['exec', containerId, 'mongosh', expected, '--quiet', '--eval', 'db.dropDatabase()'],
         { stdio: 'pipe' });
     },
   });

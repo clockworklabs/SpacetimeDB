@@ -2,12 +2,10 @@
 #
 # The generated app must not see the harness, grader, or test definitions.
 #
-# Nothing from tools/stack-bench is copied in or mounted at run time. The only
-# repository paths a container sees are the two artifacts actually under test,
-# mounted read-only by the run-build command.
-# Keep the readable tag, but bind it to the exact multi-platform manifest used
-# to build the benchmark image. A clean rebuild must not silently pick up a new
-# Node or Debian base because the upstream tag moved.
+# No harness, grader, or test definition is copied in or mounted at run time.
+# An adapter can mount only its selected stack artifacts, read-only.
+# Keep the readable tag, but bind the base to an exact manifest. Campaigns use
+# the digest of the completed image, so every attempt runs the same artifact.
 FROM node:22-slim@sha256:f86be15afa9a8277608e141ce2a8aa55d3d9c40845921b8511f4fb7897be2554
 
 # git: builds initialise repositories and some tooling shells out to it.

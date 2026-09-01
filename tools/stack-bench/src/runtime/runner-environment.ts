@@ -45,7 +45,7 @@ function inspectDocker(): Record<string, unknown> {
   try {
     const info: Record<string, unknown> = JSON.parse(
       execFileSync('docker', ['info', '--format', '{{json .}}'], {
-        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000,
       }),
     );
     return info;

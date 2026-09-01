@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { parsePreflightArgs, printPreflightReport, runPreflight,
-  writePreflightReport } from '../src/runtime/preflight.js';
+import { parsePreflightArgs, printPreflightReport } from './preflight-cli.js';
+import { runPreflight, writePreflightReport } from '../src/runtime/preflight.js';
 
 let request;
 try {

@@ -2,7 +2,7 @@ import { executeStackCapability, STACK_ADAPTER_SCHEMA_VERSION,
   STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
 import type { StackAdapter, StackCapability, StackLifecycle,
   StackLifecycleInput, StackOperationHandler } from './stack-adapter-contract.js';
-import { controlHostedAppServer } from './stack-lifecycle-operations.js';
+import { controlHostedAppServer } from './hosted-lifecycle.js';
 
 type AdapterId = keyof typeof PORT_BASES;
 type OperationMap = Readonly<Record<string, StackOperationHandler>>;

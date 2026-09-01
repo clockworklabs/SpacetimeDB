@@ -25,7 +25,7 @@ export function codingContainerAgentExecOptions(): string[] {
 }
 
 export function codingContainerAgentCommand(command: string, args: readonly string[] = []): string[] {
-  return ['sh', '-c', 'umask 000; exec "$@"', 'application-command', command, ...args];
+  return ['sh', '-c', 'umask 022; exec "$@"', 'application-command', command, ...args];
 }
 
 // Give the controller read-only access to session transcripts after handoff.

@@ -65,7 +65,7 @@ test('built-in and deterministic test stack adapters preserve the proven port gr
   });
   assert.deepEqual(prepared, {
     lease: { serverUri: null, database: 'shop-2', module: null, dataDir: null,
-      container: { name: 'stack-bench-postgres', id: 'container-id' } },
+      container: { name: 'stack-bench-dev-postgres', id: 'container-id' } },
     lockKeys: [],
   });
   assert(postgres.capabilities.reset);
@@ -137,13 +137,13 @@ test('SpacetimeDB container operations use the isolated agent identity', () => {
     return '';
   };
   setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
-    spacetime: { buildContainer: { name: 'leased-build' }, mod: 'shop',
+    spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
       containerUri: 'http://host.docker.internal:3000' }, exec });
   assert.equal(calls.length, 4);
   for (const [command, args] of calls) {
     assert.equal(command, 'docker');
     assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
-      'HOME=/home/developer', '-e', 'USER=developer', 'leased-build']);
+      'HOME=/home/developer', '-e', 'USER=developer', 'leased-build-id']);
   }
 });
 

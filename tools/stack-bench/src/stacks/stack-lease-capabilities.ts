@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { executeStackCapability, STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
+import { databaseContainerName } from './database-containers.js';
 
 import type { StackCapability } from './stack-adapter-contract.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
@@ -118,8 +119,6 @@ function spacetimeLeaseProvider(): StackCapability {
 }
 
 function hostedLeaseProvider(adapterId: string): StackCapability {
-  const envKey = adapterId === 'postgres' ? 'POSTGRES_CONTAINER' : 'MONGO_CONTAINER';
-  const defaultContainer = `stack-bench-${adapterId}`;
   return capability(`${adapterId}.lease`, ['prepare', 'validate-resources'], (operation, rawInput) => {
     const input = leaseInput(rawInput);
     const helpers = leaseHelpers(input);
@@ -129,7 +128,7 @@ function hostedLeaseProvider(adapterId: string): StackCapability {
         database: helpers.dbName(requireTrack(input), requireRunIndex(input)),
         module: null,
         dataDir: null,
-        container: helpers.containerIdentity(input.env?.[envKey] ?? defaultContainer),
+        container: helpers.containerIdentity(databaseContainerName(adapterId, input.env)),
       },
       lockKeys: [],
     };
@@ -147,7 +146,7 @@ function resourceFreeLeaseProvider(adapterId: string): StackCapability {
     : undefined);
 }
 
-export const STACK_LEASE_CAPABILITIES = new Map([
+const STACK_LEASE_CAPABILITIES = new Map([
   ['spacetime', spacetimeLeaseProvider()],
   ['postgres', hostedLeaseProvider('postgres')],
   ['mongodb', hostedLeaseProvider('mongodb')],

@@ -141,7 +141,7 @@ test('reference deployment reports both deploy and restoration failures', async 
 });
 
 test('reference clients are explicitly reachable outside their build container', () => {
-  const prefix = 'umask 000; exec /usr/bin/setpriv --reuid=10001 --regid=10001 --init-groups '
+  const prefix = 'umask 022; exec /usr/bin/setpriv --reuid=10001 --regid=10001 --init-groups '
     + '/usr/local/bin/npm run ';
   assert.equal(referenceDevCommand('reference-server'),
     `${prefix}dev > /run/application/reference-server.log 2>&1`);

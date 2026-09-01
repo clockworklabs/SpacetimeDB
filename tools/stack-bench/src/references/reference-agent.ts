@@ -135,7 +135,7 @@ export function referenceDevCommand(logName: string,
     port === null ? null : `--port ${port} --strictPort`].filter(Boolean);
   const networkArgs = cliArgs.length > 0 ? ` -- ${cliArgs.join(' ')}` : '';
   const agent = CODING_CONTAINER_AGENT;
-  return `umask 000; exec /usr/bin/setpriv --reuid=${agent.uid} --regid=${agent.gid} --init-groups `
+  return `umask 022; exec /usr/bin/setpriv --reuid=${agent.uid} --regid=${agent.gid} --init-groups `
     + `/usr/local/bin/npm run ${script}${networkArgs} > ${CONTROL_DIR}/${logName}.log 2>&1`;
 }
 

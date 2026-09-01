@@ -3,10 +3,10 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-export const isWindows = process.platform === 'win32';
+const isWindows = process.platform === 'win32';
 
 /** Discard a command's output the way this platform expects. */
-export const nullDevice = isWindows ? 'NUL' : '/dev/null';
+const nullDevice = isWindows ? 'NUL' : '/dev/null';
 
 export interface ProcessIdentity { pid: number; startMarker: string }
 
@@ -120,58 +120,6 @@ export function pidsOnPort(
   return [...out];
 }
 
-// Never return this process or an ancestor as a cleanup target.
-function ancestorPids(): Set<number> {
-  const chain = new Set<number>([process.pid]);
-  try {
-    if (isWindows) {
-      const out = run('powershell', ['-NoProfile', '-Command',
-        'Get-CimInstance Win32_Process | ForEach-Object { "{0} {1}" -f $_.ProcessId, $_.ParentProcessId }']);
-      const parent = new Map<number, number>();
-      for (const line of out.split(/\r?\n/)) {
-        const [pid, ppid] = line.trim().split(/\s+/);
-        if (pid) parent.set(Number(pid), Number(ppid));
-      }
-      let p = process.pid;
-      while (parent.has(p)) {
-        const next = parent.get(p);
-        if (next === undefined || chain.has(next)) break;
-        p = next;
-        chain.add(p);
-      }
-    } else {
-      const out = run('ps', ['-eo', 'pid=,ppid=']);
-      const parent = new Map<number, number>();
-      for (const line of out.split('\n')) {
-        const [pid, ppid] = line.trim().split(/\s+/);
-        if (pid) parent.set(Number(pid), Number(ppid));
-      }
-      let p = process.pid;
-      while (parent.has(p)) {
-        const next = parent.get(p);
-        if (next === undefined || chain.has(next)) break;
-        p = next;
-        chain.add(p);
-      }
-    }
-  } catch { /* a partial chain still protects this process itself */ }
-  return chain;
-}
-
-export function pidsMatching(needle: string): string[] {
-  const protectedPids = ancestorPids();
-  let found;
-  if (isWindows) {
-    const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${
-      String(needle).replace(/'/g, "''")}*' -and $_.ProcessId -ne $PID `
-      + `-and $_.CommandLine -notlike '*Get-CimInstance*' } | ForEach-Object { $_.ProcessId }`;
-    found = run('powershell', ['-NoProfile', '-Command', script]).split(/\s+/);
-  } else {
-    found = run('pgrep', ['-f', needle]).split('\n').map(s => s.trim());
-  }
-  return found.filter(Boolean).filter(p => !protectedPids.has(Number(p)));
-}
-
 export function processTreePids(rootPid: string | number, processRows: unknown): number[] {
   const root = Number(rootPid);
   if (!Number.isSafeInteger(root) || root <= 0) return [];
@@ -224,47 +172,6 @@ export function killDetachedTree(pid: string | number | null | undefined): void 
 /** Block for `ms` without a child process — `timeout` needs a console on Windows. */
 export function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-/**
- * CPU seconds and resident bytes for every process whose command line or name
- * mentions `needle`, keyed by pid.
- *
- * Keyed rather than summed because a dev server is a watcher supervising a
- * child: the set changes mid-run, and summing a changing set across two
- * samples produces negative CPU. CPU is cumulative for the process, so the
- * difference between two samples is the work done in between.
- */
-export function sampleProcesses(needle: string): { byPid: Map<string, number>; rss: number } {
-  const byPid = new Map<string, number>();
-  let rss = 0;
-  if (isWindows) {
-    const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${needle}*' -or $_.Name -like '*${needle}*' } | ForEach-Object {
-      $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
-      if ($p) { "{0}|{1}|{2}" -f $p.Id, $p.TotalProcessorTime.TotalSeconds, $p.WorkingSet64 } }`;
-    for (const line of run('powershell', ['-NoProfile', '-Command', script]).split(/\r?\n/)) {
-      const [pid, cpu, ws] = line.split('|');
-      if (!pid || cpu === undefined) continue;
-      byPid.set(pid, Number(cpu));
-      rss += Number(ws) || 0;
-    }
-    return { byPid, rss };
-  }
-  // ps gives cumulative CPU as [dd-]hh:mm:ss and RSS in kilobytes.
-  for (const line of run('ps', ['-eo', 'pid=,time=,rss=,args=']).split('\n')) {
-    if (!line.includes(needle)) continue;
-    const m = line.trim().match(/^(\d+)\s+([\d:-]+)\s+(\d+)\s/);
-    if (!m) continue;
-    const pid = m[1];
-    const time = m[2];
-    const kb = m[3];
-    if (pid === undefined || time === undefined || kb === undefined) continue;
-    const parts = time.replace('-', ':').split(':').map(Number);
-    const secs = parts.reduce((acc, v) => acc * 60 + v, 0);
-    byPid.set(pid, secs);
-    rss += Number(kb) * 1024;
-  }
-  return { byPid, rss };
 }
 
 /** Is something answering at this URL? Any response counts. */

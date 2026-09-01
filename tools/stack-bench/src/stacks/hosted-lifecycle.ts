@@ -1,21 +1,17 @@
-import { execFileSync, spawn } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { updateBackendLease } from '../runtime/backend-lease.js';
-import { answers as answersSync, killDetachedTree, killTree, pidsOnPort, processIdentity,
-  processIdentityMatches, sleepSync } from '../runtime/platform.js';
-import { fetchStatus } from '../runtime/readiness.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
 import type { BackendLease, BackendLeaseContainer } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
+import { answers, waitFor } from './lifecycle-readiness.js';
+import type { RuntimeControlMode } from './stack-adapter-contract.js';
 
-export type RuntimeControlMode = 'start' | 'stop' | 'restart';
-
-export interface ApplicationControlInput {
+interface HostedApplicationControlInput {
   adapterId: string;
   lease: { resources: { buildContainer?: BackendLeaseContainer | null } };
   app: string;
@@ -30,57 +26,9 @@ export interface ApplicationControlInput {
 const isOwnedContainer = (value: unknown): value is BackendLeaseContainer =>
   value !== null && typeof value === 'object' && 'owned' in value && Boolean(value.owned);
 
-// A SpacetimeDB lease always records the host it claimed and where it keeps
-// its data.
-const leaseDataDir = (dataDir: string | null | undefined): string => {
-  if (!dataDir) throw new Error('SpacetimeDB lease records no data directory');
-  return dataDir;
-};
-
-const leaseUrl = (serverUri: string | null): URL => {
-  if (!serverUri) throw new Error('SpacetimeDB lease records no server URI');
-  return new URL(serverUri);
-};
-
 const DOCKER_TIMEOUT_MS = 120_000;
 const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
 const { uid: APP_UID, gid: APP_GID } = CODING_CONTAINER_AGENT;
-
-const delay = (ms: number, signal?: AbortSignal | null): Promise<void> =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) { reject(signal.reason ?? new Error('backend control cancelled')); return; }
-    const timer = setTimeout(done, ms);
-    function done(): void {
-      signal?.removeEventListener('abort', cancelled);
-      resolve();
-    }
-    function cancelled(): void {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', cancelled);
-      reject(signal?.reason ?? new Error('backend control cancelled'));
-    }
-    signal?.addEventListener('abort', cancelled, { once: true });
-  });
-
-async function answers(url: string,
-  { freshConnection = false, requireSuccess = false }: {
-    freshConnection?: boolean; requireSuccess?: boolean;
-  } = {}): Promise<boolean> {
-  const status = await fetchStatus(url, { timeoutMs: 5000,
-    ...(freshConnection ? { init: { headers: { connection: 'close' } } } : {}) });
-  return status !== null && (!requireSuccess || (status >= 200 && status < 300));
-}
-
-async function waitFor(check: () => Promise<boolean>, timeoutMs: number,
-  description: string, signal?: AbortSignal | null): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (signal?.aborted) throw signal.reason ?? new Error('backend control cancelled');
-    if (await check()) return;
-    await delay(500, signal);
-  }
-  throw new Error(`timed out waiting for ${description}`);
-}
 
 function inspectBuildContainer(lease: { resources: { buildContainer?: unknown } },
   exec: TextCommandExecutor = execFileSync): BackendLeaseContainer {
@@ -179,7 +127,7 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
   lease: BackendLease; output: string; exec?: TextCommandExecutor;
 }): { captured: boolean; reason?: string; path?: string } {
   const container = inspectBuildContainer(lease, exec);
-  const contents = exec('docker', ['exec', container.name, 'sh', '-c',
+  const contents = exec('docker', ['exec', container.id, 'sh', '-c',
     `for f in ${CONTROL_DIR}/reference-application.log `
       + `${CONTROL_DIR}/restart-*.log; do `
       + '[ -f "$f" ] || continue; printf "===== %s =====\\n" "$f"; tail -n 400 "$f"; done'],
@@ -190,7 +138,7 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
 }
 
 export async function controlHostedAppServer({ adapterId: stack, lease, app, port, probe, mode,
-  environment = {}, signal, exec = execFileSync }: ApplicationControlInput): Promise<void> {
+  environment = {}, signal, exec = execFileSync }: HostedApplicationControlInput): Promise<void> {
   if (mode !== 'start' && mode !== 'stop' && mode !== 'restart') {
     throw new Error(`unsupported application control mode ${String(mode)}`);
   }
@@ -205,12 +153,12 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   const url = `http://127.0.0.1:${port}${probe}`;
   const processRecord = `${CONTROL_DIR}/restart-${stack}-${Number(port)}.pid`;
   if (mode !== 'start') {
-    exec('docker', ['exec', container.name, 'sh', '-c',
+    exec('docker', ['exec', container.id, 'sh', '-c',
       hostedRecordedProcessStopScript(processRecord)],
     { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
     // The reduced root capability set cannot inspect the agent user's sockets.
     // Stop the service as its owner so listener discovery and signals are reliable.
-    exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name,
+    exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id,
       'sh', '-c', hostedStopScript(Number(port))],
       { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
     await waitFor(async () => !(await answers(url, { freshConnection: true })),
@@ -218,7 +166,7 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   }
   if (mode === 'stop') return;
   if (typeof app !== 'string') throw new Error('application control requires an app directory');
-  exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name, 'sh', '-c',
+  exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted application port is still owned by $pids" >&2; exit 4; }'],
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
@@ -232,14 +180,14 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   const log = `${CONTROL_DIR}/restart-${stack}-${Number(port)}.log`;
   exec('docker', ['exec', '-d', '-w', launch.directory === '.' ? '/app' : `/app/${launch.directory}`,
     '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`,
-    '-e', `PORT=${Number(port)}`, ...environmentArgs, container.name, 'sh', '-c',
-    `set -eu; umask 000; : > ${log}; rm -f ${processRecord}; `
+    '-e', `PORT=${Number(port)}`, ...environmentArgs, container.id, 'sh', '-c',
+    `set -eu; umask 022; : > ${log}; rm -f ${processRecord}; `
       + `exec /usr/bin/setsid sh -c 'stat=$(cat /proc/$$/stat); rest=${'${stat##*) }'}; `
       + `set -- $rest; (umask 077; printf "%s %s\\n" "$$" "${'${20}'}" > ${processRecord}); `
       + `exec /usr/bin/setpriv --reuid=${APP_UID} --regid=${APP_GID} --init-groups `
       + `${launch.command}' > ${log} 2>&1`],
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
-  exec('docker', ['exec', container.name, 'sh', '-c',
+  exec('docker', ['exec', container.id, 'sh', '-c',
     `attempt=0; while [ ! -s ${processRecord} ] && [ "$attempt" -lt 100 ]; do `
       + 'attempt=$((attempt + 1)); sleep 0.05; done; '
       + `[ -s ${processRecord} ] || { echo "application process record was not created" >&2; exit 4; }`],
@@ -250,85 +198,19 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   } catch (cause) {
     let detail = '';
     try {
-      detail = redactCredentials(exec('docker', ['exec', container.name, 'tail', '-n', '40', log],
+      detail = redactCredentials(exec('docker', ['exec', container.id, 'tail', '-n', '40', log],
         { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS }))
         .trim().split(/\r?\n/).slice(-3).join(' | ').slice(0, 500);
     } catch { /* the startup error remains useful without a log */ }
     throw Object.assign(new Error(`${stack} application did not start${detail ? `: ${detail}` : ''}`, { cause }),
       { code: 'generated_app_not_restartable' });
   }
-  exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.name, 'sh', '-c',
+  exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + 'set -- $pids; [ "$#" -eq 1 ] || { echo "expected one application listener, found: $pids" >&2; exit 4; }; '
       + 'pgid=$(ps -o pgid= -p "$1" | tr -d " "); '
       + 'case "$pgid" in ""|*[!0-9]*|1) echo "unsafe application process group" >&2; exit 4;; esac'],
   { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
-}
-
-export async function controlSpacetime({ lease, signal = null }: {
-  lease: BackendLease; signal?: AbortSignal | null;
-}): Promise<void> {
-  const leasePath = process.env.STACK_BENCH_LEASE ?? '';
-  const url = leaseUrl(lease.resources.serverUri);
-  const port = Number(url.port);
-  const cli = process.env.SPACETIME_BIN;
-  if (!cli || !existsSync(cli)) throw new Error(`SPACETIME_BIN is unavailable: ${cli ?? '<unset>'}`);
-  const actual = pidsOnPort(port);
-  const unexpected = actual.filter(pid => !lease.resources.listenerProcesses.some(identity =>
-    identity.pid === Number(pid) && processIdentityMatches(identity)));
-  if (unexpected.length) throw new Error(`listener ${unexpected.join(',')} is not owned by lease ${lease.runId}`);
-  updateBackendLease(leasePath,
-    { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
-      next.state = 'restarting'; return next;
-    });
-  for (const pid of actual) killTree(pid);
-  await waitFor(async () => !(await answers(`${lease.resources.serverUri}/v1/ping`)),
-    30_000, 'SpacetimeDB to stop', signal);
-  if (process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP === '1') {
-    throw Object.assign(new Error('injected failure after restart stop'),
-      { code: 'injected_restart_stop_failure' });
-  }
-  updateBackendLease(leasePath,
-    { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
-      next.state = 'starting';
-      next.resources.launchedProcess = null;
-      next.resources.listenerProcesses = [];
-      return next;
-    });
-  let child: ChildProcess | null = null;
-  try {
-    const started = spawn(cli, ['start', '--listen-addr', `127.0.0.1:${port}`,
-      '--data-dir', leaseDataDir(lease.resources.dataDir)], { detached: true, stdio: 'ignore', windowsHide: true });
-    child = started;
-    const spawnFailed = new Promise<never>((_, reject) => started.once('error', reject));
-    started.unref();
-    if (!started.pid) throw new Error('SpacetimeDB restart did not return a process id');
-    updateBackendLease(leasePath,
-      { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
-        const identity = processIdentity(started.pid!);
-        if (!identity) throw new Error('could not record SpacetimeDB restart process identity');
-        next.resources.launchedProcess = identity;
-        return next;
-      });
-    await Promise.race([
-      waitFor(() => answers(`${lease.resources.serverUri}/v1/ping`),
-        240_000, 'SpacetimeDB to start', signal),
-      spawnFailed,
-    ]);
-    const listenerPids = pidsOnPort(port);
-    if (listenerPids.length !== 1) throw new Error(`expected one SpacetimeDB listener, found ${listenerPids.length}`);
-    const listenerIdentity = processIdentity(listenerPids[0]!);
-    if (!listenerIdentity) throw new Error('could not record SpacetimeDB listener identity');
-    updateBackendLease(leasePath,
-      { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
-        next.state = 'active';
-        next.resources.listenerProcesses = [listenerIdentity];
-        return next;
-      });
-  } catch (error) {
-    if (child?.pid) killDetachedTree(child.pid);
-    throw error;
-  }
 }
 
 export function activateHosted({ leasePath, leaseToken, lease }: {
@@ -339,68 +221,4 @@ export function activateHosted({ leasePath, leaseToken, lease }: {
       next.state = 'active';
       return next;
     });
-}
-
-export function activateSpacetime({ leasePath, leaseToken, lease, cli }: {
-  leasePath: string; leaseToken: string; lease: BackendLease; cli?: string;
-}): void {
-  const url = leaseUrl(lease.resources.serverUri);
-  const port = Number(url.port);
-  const ping = `${lease.resources.serverUri}/v1/ping`;
-  if (answersSync(ping, 5)) {
-    throw new Error(`SpacetimeDB is already running on benchmark port :${port}; `
-      + 'refusing to reuse or restart a host this run did not start');
-  }
-  if (!cli || !existsSync(cli)) throw new Error(`SpacetimeDB CLI is unavailable: ${cli ?? '<unset>'}`);
-  console.log(`  spacetime   ... not running, starting a benchmark-owned host on :${port}`);
-  mkdirSync(leaseDataDir(lease.resources.dataDir), { recursive: true });
-  updateBackendLease(leasePath,
-    { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
-      next.state = 'starting';
-      return next;
-    });
-  let child: ChildProcess | null = null;
-  try {
-    const started = spawn(cli,
-      ['start', '--listen-addr', `127.0.0.1:${port}`, '--data-dir', leaseDataDir(lease.resources.dataDir)],
-      { detached: true, stdio: 'ignore', windowsHide: true });
-    child = started;
-    started.once('error', () => { /* surfaced by the missing-pid guard below */ });
-    started.unref();
-    if (!started.pid) throw new Error('SpacetimeDB start did not return a process id');
-    updateBackendLease(leasePath,
-      { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
-        const identity = processIdentity(started.pid!);
-        if (!identity) throw new Error('could not record SpacetimeDB start process identity');
-        next.resources.launchedProcess = identity;
-        return next;
-      });
-    for (let i = 0; i < 60; i++) {
-      sleepSync(2000);
-      if (answersSync(ping, 5)) {
-        const listenerPids = pidsOnPort(port);
-        if (listenerPids.length !== 1) {
-          throw new Error(`Expected one SpacetimeDB listener on :${port}, found ${listenerPids.length}`);
-        }
-        const launchedIdentity = processIdentity(started.pid!);
-        const listenerIdentity = processIdentity(listenerPids[0]!);
-        if (!launchedIdentity || !listenerIdentity) {
-          throw new Error('could not record SpacetimeDB process identity');
-        }
-        updateBackendLease(leasePath,
-          { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
-            next.resources.launchedProcess = launchedIdentity;
-            next.resources.listenerProcesses = [listenerIdentity];
-            next.state = 'active';
-            return next;
-          });
-        console.log(`  spacetime   ... up (lease ${lease.runId}, listener PID ${listenerPids[0]})`);
-        return;
-      }
-    }
-    throw new Error(`SpacetimeDB did not come up on :${port}`);
-  } catch (error) {
-    if (child?.pid) killDetachedTree(child.pid);
-    throw error;
-  }
 }

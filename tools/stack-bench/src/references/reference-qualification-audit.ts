@@ -64,6 +64,9 @@ interface MutationControlPayload {
 const record = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object';
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 export function auditReferenceRun(output: string, fixture: ReferenceFixture,
   { requireMutationControl = false, release = null, level = fixture.level,
     selectedCheckKeys = null }: {
@@ -75,8 +78,14 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
   if (!existsSync(runPath) || !existsSync(bundlePath)) {
     return { ok: false, failures: ['run.json or grading/bundle.json is missing'] };
   }
-  const run = readArtifactPayload<RunPayload>(runPath, { expectedKind: 'benchmark_run' });
-  const bundle = readArtifactPayload<BundlePayload>(bundlePath, { expectedKind: 'grade_bundle' });
+  let run: RunPayload;
+  let bundle: BundlePayload;
+  try {
+    run = readArtifactPayload<RunPayload>(runPath, { expectedKind: 'benchmark_run' });
+    bundle = readArtifactPayload<BundlePayload>(bundlePath, { expectedKind: 'grade_bundle' });
+  } catch (error) {
+    return { ok: false, failures: [`qualification evidence is invalid: ${errorMessage(error)}`] };
+  }
   const failures = [];
   if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
       || release.checkCatalog.length === 0) {
@@ -204,9 +213,15 @@ export function auditMutationWorkerRun(output: string, fixture: ReferenceFixture
   if (!existsSync(runPath) || !existsSync(controlPath)) {
     return { ok: false, failures: ['run.json or mutation-control.json is missing'] };
   }
-  const run = readArtifactPayload<RunPayload>(runPath, { expectedKind: 'benchmark_run' });
-  const control = readArtifactPayload<MutationControlPayload>(controlPath,
-    { expectedKind: 'mutation_control' });
+  let run: RunPayload;
+  let control: MutationControlPayload;
+  try {
+    run = readArtifactPayload<RunPayload>(runPath, { expectedKind: 'benchmark_run' });
+    control = readArtifactPayload<MutationControlPayload>(controlPath,
+      { expectedKind: 'mutation_control' });
+  } catch (error) {
+    return { ok: false, failures: [`mutation evidence is invalid: ${errorMessage(error)}`] };
+  }
   const failures = [];
   if (run.backend !== fixture.backend || run.track !== fixture.track) {
     failures.push('run identity does not match fixture');

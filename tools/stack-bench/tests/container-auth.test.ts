@@ -2,18 +2,13 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-import { containerAuthSecret, resolveContainerAuth,
-  SUBSCRIPTION_TOKEN_TARGET } from '../container/container-auth.js';
+import { resolveContainerAuth } from '../container/container-auth.js';
 
 test('container auth resolves a direct subscription token in controller memory', () => {
   const secret = 'subscription-secret-value';
   const auth = resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN: secret },
     credentialsPath: '/unused/credentials' });
-  assert.equal(auth.mode, 'subscription-token');
-  assert.ok(auth.environment);
-  assert.equal(auth.environment.name, 'CLAUDE_CODE_OAUTH_TOKEN');
-  assert.equal(auth.environment.value, secret);
-  assert.equal(containerAuthSecret(auth), secret);
+  assert.deepEqual(auth, { mode: 'subscription-token', credential: secret });
 });
 
 test('container auth resolves a selected subscription token only in the controller', () => {
@@ -21,10 +16,7 @@ test('container auth resolves a selected subscription token only in the controll
   const auth = resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN_FILE: tokenPath },
     credentialsPath: '/unused/credentials', exists: path => path === tokenPath,
     read: () => 'present\n' });
-  assert.equal(auth.mode, 'subscription-token');
-  assert.deepEqual(auth.mount, { kind: 'bind', source: tokenPath,
-    target: SUBSCRIPTION_TOKEN_TARGET, readOnly: true });
-  assert.equal(containerAuthSecret(auth, { read: () => 'present\n' }), 'present');
+  assert.deepEqual(auth, { mode: 'subscription-token', credential: 'present' });
 });
 
 test('container auth rejects ambiguous or unusable selected credentials', () => {

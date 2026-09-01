@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -260,7 +260,6 @@ export function recoverBackendLease(leasePath: string, output: string,
     throw new Error('recovery output must be outside the private runtime directory');
   }
   const lease = readBackendLease(absoluteLease);
-  mkdirSync(absoluteOutput, { recursive: true });
   const state = validateSupervisorState({ version: SUPERVISOR_STATE_VERSION,
     runId: lease.runId, backend: lease.backend, runtimeDir, leasePath: absoluteLease,
     ownershipToken: lease.ownershipToken, output: absoluteOutput }, { source: absoluteLease });

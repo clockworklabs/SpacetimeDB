@@ -142,6 +142,10 @@ export function prepareGrantWorkspace(root: string, executionDirectory: string,
   if (!Number.isSafeInteger(level) || level < 1) {
     throw new Error('grant workspace requires a positive level');
   }
+  const execution = lstatSync(executionDirectory);
+  if (execution.isSymbolicLink() || !execution.isDirectory()) {
+    throw new Error('completed campaign execution must be a real directory');
+  }
   const relativePath = `continuations/${attemptId}/${grantId}`;
   const target = childPath(root, relativePath, 'grant workspace');
   if (existsSync(target)) {

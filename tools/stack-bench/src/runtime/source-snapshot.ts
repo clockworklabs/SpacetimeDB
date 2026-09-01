@@ -1,5 +1,5 @@
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { hashDirectory } from '../evidence/provenance.js';
 import type { HashFilesResult } from '../evidence/provenance.js';
@@ -15,6 +15,18 @@ const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
 const ROOT_RUNTIME_FILES = new Set(['BUG_REPORT.md', 'client.log', 'server.log', 'vite.log']);
 
 type DirectoryDisposition = 'preserve' | 'transient' | 'source';
+
+function assertSeparateTrees(from: string, to: string): void {
+  const source = resolve(from);
+  const target = resolve(to);
+  const overlaps = (root: string, candidate: string): boolean => {
+    const rel = relative(root, candidate);
+    return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
+  };
+  if (overlaps(source, target) || overlaps(target, source)) {
+    throw new Error(`source and destination trees must not overlap: ${source} and ${target}`);
+  }
+}
 
 function preservedRuntimeFile(rel: string): boolean {
   return ROOT_RUNTIME_FILES.has(rel.replaceAll('\\', '/'));
@@ -113,6 +125,7 @@ function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
 }
 
 export function snapshotAppSource(appDir: string, to: string): void {
+  assertSeparateTrees(appDir, to);
   rmSync(to, { recursive: true, force: true });
   copySourceTree(appDir, to);
 }
@@ -153,11 +166,13 @@ export function assertPlainAppSourceTree(appDir: string): void {
 
 export function restoreAppSource(from: string, appDir: string): void {
   if (!existsSync(from)) throw new Error(`source snapshot does not exist: ${from}`);
+  assertSeparateTrees(from, appDir);
   syncSourceTree(from, appDir);
 }
 
 export function resetAppToSource(from: string, appDir: string): void {
   if (!existsSync(from)) throw new Error(`source snapshot does not exist: ${from}`);
+  assertSeparateTrees(from, appDir);
   mkdirSync(appDir, { recursive: true });
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
     if (entry.name === '.git') continue;
@@ -168,5 +183,6 @@ export function resetAppToSource(from: string, appDir: string): void {
 
 export function seedAppSource(from: string, appDir: string): void {
   if (!existsSync(from)) throw new Error(`source seed does not exist: ${from}`);
+  assertSeparateTrees(from, appDir);
   copySourceTree(from, appDir, '', true);
 }

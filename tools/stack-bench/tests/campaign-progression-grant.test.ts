@@ -30,7 +30,7 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
     title: 'Test catalog',
     nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity',
       featureRefs: ['feature.accounts@1.0.0'], promptModules: [],
-      gradingChecks: [{ id: 'accounts.create', points: 1 }], dependencies: [] }],
+      gradingChecks: [{ id: 'accounts.create', points: 1, role: 'feature' }], dependencies: [] }],
     questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
   });
   const dependencyPolicy = compileDependencyPolicyInput({ default: 1, levels: {} }, featureCatalog);

@@ -10,11 +10,12 @@ import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, checkDatabaseProvenance, codeMetrics, resetFailureOutcome, suitesForRecipe,
   checkRuntimeDatabaseProvenance, databaseProvenanceFailure, writeApplicationDatabaseMarker,
-  contractLintArgv, databaseContainerForGrading, databaseNameForGrading, runGraderChild,
+  contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
   verifyApplicationProbe, waitForApplicationProbe }
   from '../commands/run-suite.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
+import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
@@ -171,23 +172,27 @@ test('grader subprocess output is retained with credentials redacted', () => {
 });
 
 test('database grading uses the exact container from the authenticated run lease', () => {
-  const calls: Array<{ path: string; expected: { token?: string; backend?: string; active?: boolean } }> = [];
-  const container = databaseContainerForGrading('mongodb', {
+  const calls: Array<{ path: string;
+    expected?: { token?: string; backend?: string; active?: boolean } }> = [];
+  const lease = databaseLeaseForGrading('mongodb', {
     STACK_BENCH_LEASE: 'private/lease.json',
     STACK_BENCH_LEASE_TOKEN: 'secret-token',
   }, {
     readLease: (path, expected) => {
       calls.push({ path, expected });
-      return { resources: { container: { name: 'stack-bench-mongodb' } } };
+      return createBackendLease({ runId: 'grading-test', backend: 'mongodb', track: 'ecommerce',
+        runIndex: 0, database: 'app_ecommerce_run0', container: {
+          name: 'stack-bench-mongodb', id: 'mongodb-container-id' } });
     },
   });
-  assert.equal(container, 'stack-bench-mongodb');
+  assert.equal(lease?.resources.container?.name, 'stack-bench-mongodb');
+  assert.equal(lease?.resources.container?.id, 'mongodb-container-id');
   assert.deepEqual(calls, [{ path: 'private/lease.json',
     expected: { token: 'secret-token', backend: 'mongodb', active: true } }]);
-  assert.throws(() => databaseContainerForGrading('postgres', {
+  assert.throws(() => databaseLeaseForGrading('postgres', {
     STACK_BENCH_LEASE: 'private/lease.json',
   }), /both lease path and lease token/);
-  assert.equal(databaseContainerForGrading('spacetime', {}), null);
+  assert.equal(databaseLeaseForGrading('spacetime', {}), null);
 });
 
 test('database grading uses the exact database from the authenticated run lease', () => {

@@ -3,12 +3,11 @@ import type { PathLike } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
 export const SUBSCRIPTION_TOKEN_ENVIRONMENT = 'CLAUDE_CODE_OAUTH_TOKEN';
-export const SUBSCRIPTION_TOKEN_TARGET = '/run/secrets/claude-code-oauth-token';
+export const LEGACY_SUBSCRIPTION_TOKEN_TARGET = '/run/secrets/claude-code-oauth-token';
 
 export type ContainerAuth = {
   mode: 'api-key' | 'subscription-token';
-  environment: { name: string; value: string } | null;
-  mount: { kind: 'bind'; source: string; target: string; readOnly: true } | null;
+  credential: string;
 };
 
 type ReadTextFile = (path: PathLike | number, encoding: BufferEncoding) => string;
@@ -32,21 +31,19 @@ export function resolveContainerAuth({ apiKey = '', env = process.env, credentia
   if (apiKey && (token || tokenFileValue)) {
     throw new Error('use only one of API-key and subscription-token authentication');
   }
-  if (apiKey) return { mode: 'api-key',
-    environment: { name: 'ANTHROPIC_API_KEY', value: apiKey }, mount: null };
-  if (token) return { mode: 'subscription-token',
-    environment: { name: SUBSCRIPTION_TOKEN_ENVIRONMENT, value: token }, mount: null };
+  if (apiKey) return { mode: 'api-key', credential: apiKey };
+  if (token) return { mode: 'subscription-token', credential: token };
   if (tokenFileValue) {
     if (!isAbsolute(tokenFileValue)) {
       throw new Error(`${SUBSCRIPTION_TOKEN_ENVIRONMENT}_FILE must be an absolute path`);
     }
     const source = resolve(tokenFileValue);
     if (!exists(source)) throw new Error(`subscription token file does not exist: ${source}`);
-    if (!String(read(source, 'utf8')).trim()) {
+    const credential = String(read(source, 'utf8')).trim();
+    if (!credential) {
       throw new Error(`subscription token file is empty: ${source}`);
     }
-    return { mode: 'subscription-token', environment: null,
-      mount: { kind: 'bind', source, target: SUBSCRIPTION_TOKEN_TARGET, readOnly: true } };
+    return { mode: 'subscription-token', credential };
   }
   if (credentialsPath && exists(credentialsPath)) {
     throw new Error('rotating Claude credential files cannot be isolated from generated shell commands; '
@@ -54,11 +51,4 @@ export function resolveContainerAuth({ apiKey = '', env = process.env, credentia
   }
   throw new Error(`no API key, ${SUBSCRIPTION_TOKEN_ENVIRONMENT}, `
     + `${SUBSCRIPTION_TOKEN_ENVIRONMENT}_FILE, or credentials file is available`);
-}
-
-export function containerAuthSecret(auth: ContainerAuth,
-  { read = readFileSync as ReadTextFile }: { read?: ReadTextFile } = {}): string {
-  if (auth?.environment?.value) return String(auth.environment.value).trim();
-  if (auth?.mount?.source) return String(read(auth.mount.source, 'utf8')).trim();
-  throw new Error('selected container authentication has no broker credential');
 }

@@ -28,10 +28,10 @@ export function resetSpacetime({ lease, app, exec = execFileSync }:
   if (!container) throw new Error('leased build container is not active');
   const containerModule = layout.containerPath;
   try {
-    exec('docker', [...agentExec(), container.name,
+    exec('docker', [...agentExec(), container.id,
       ...codingContainerAgentCommand('test', ['-d', containerModule])],
       { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
-    exec('docker', [...agentExec(), '-w', containerModule, container.name,
+    exec('docker', [...agentExec(), '-w', containerModule, container.id,
       ...codingContainerAgentCommand('/deps/spacetimedb-cli',
         ['publish', lease.resources.module, '--module-path', containerModule,
           '-s', target.containerUri, '--delete-data', '-y'])],
@@ -46,13 +46,13 @@ export function resetSpacetime({ lease, app, exec = execFileSync }:
 export function setSpacetimeStock({ item, warehouse, quantity, spacetime,
   exec = execFileSync }: {
   item: string; warehouse: string; quantity: number; exec?: TextCommandExecutor;
-  spacetime?: { buildContainer?: { name: string } | null; mod: string; containerUri: string };
+  spacetime?: { buildContainer?: { id: string; name: string } | null; mod: string; containerUri: string };
 }): { backend: string; item: string; warehouse: string; quantity: number } {
   const container = spacetime?.buildContainer;
   if (!container) {
     throw new Error('SpacetimeDB build container is unavailable for direct SQL');
   }
-  const query = (sql: string): string => exec('docker', [...agentExec(), container.name,
+  const query = (sql: string): string => exec('docker', [...agentExec(), container.id,
     ...codingContainerAgentCommand('/deps/spacetimedb-cli',
       ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],
   { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });

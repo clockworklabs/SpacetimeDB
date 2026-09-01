@@ -15,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
-import { containerAuthSecret } from './container-auth.js';
+import type { ContainerAuth } from './container-auth.js';
 import { killTree } from '../src/runtime/platform.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.js';
@@ -475,20 +475,14 @@ function requestPath(value: string | undefined): string | null {
 
 function rejectRequest(request: IncomingMessage, response: ServerResponse,
   status: number, message: string): void {
-  const send = () => {
-    if (response.destroyed || response.writableEnded) return;
-    try {
-      if (!response.headersSent) response.writeHead(status, { 'content-type': 'text/plain' });
-      response.end(message);
-    } catch { response.destroy(); }
-  };
   request.on('error', () => {});
   response.on('error', () => {});
-  if (request.complete) send();
-  else {
-    request.once('end', send);
-    request.resume();
-  }
+  try {
+    response.shouldKeepAlive = false;
+    response.writeHead(status, { 'content-type': 'text/plain', connection: 'close' });
+    response.end(message);
+  } catch { response.destroy(); }
+  request.resume();
 }
 
 function parseProviderRequest(body: Buffer, path: string, config: BrokerConfig): JsonRecord {
@@ -757,14 +751,15 @@ export function createCredentialBroker(configInput: unknown, {
     spentUsd: Number(spentUsd.toFixed(6)), reservedUsd: Number(reservedUsd.toFixed(6)) }) };
 }
 
-export function startCredentialBroker(selectedAuth: Parameters<typeof containerAuthSecret>[0], { networkMode, deadlineMs,
+export async function startCredentialBroker(selectedAuth: ContainerAuth, { networkMode, deadlineMs,
   model, maxOutputTokens = MAX_OUTPUT_TOKENS, maxBudgetUsd = null, pricingRates = null,
   env = process.env }: { networkMode: 'bridge' | 'host'; deadlineMs: number; model: string;
   maxOutputTokens?: number; maxBudgetUsd?: number | null; pricingRates?: PricingRates | null;
-  env?: NodeJS.ProcessEnv }): CredentialBroker {
+  env?: NodeJS.ProcessEnv }): Promise<CredentialBroker> {
   if (!['bridge', 'host'].includes(networkMode)) fail('network mode is invalid');
   if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) fail('deadline is invalid');
-  const credential = containerAuthSecret(selectedAuth);
+  const credential = selectedAuth.credential.trim();
+  if (!credential) fail('selected authentication has no broker credential');
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-credential-broker-'));
   let child: ChildProcess | null = null;
   const processState: BrokerProcessState = { exitCode: null, signal: null, exitedAt: null,
@@ -776,8 +771,7 @@ export function startCredentialBroker(selectedAuth: Parameters<typeof containerA
     const ledgerPath = join(root, 'spend-ledger.json');
     const sessionToken = randomBytes(32).toString('hex');
     const listenHost = networkMode === 'host' ? '127.0.0.1' : '0.0.0.0';
-    const config = validateConfig({ schemaVersion: 1,
-      mode: selectedAuth.mode, credential, sessionToken, readyPath, parentPid: process.pid,
+    const config = validateConfig({ mode: selectedAuth.mode, credential, sessionToken, readyPath, parentPid: process.pid,
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath, model, maxOutputTokens,
       maxBudgetUsd, pricingRates });
     writeFileSync(configPath, `${JSON.stringify(config)}\n`, { flag: 'wx', mode: 0o600 });
@@ -803,7 +797,7 @@ export function startCredentialBroker(selectedAuth: Parameters<typeof containerA
     const readyDeadline = Date.now() + 10_000;
     while (!spawnError && child.exitCode === null && !existsSync(readyPath)
       && Date.now() < readyDeadline) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      await new Promise(resolveWait => setTimeout(resolveWait, 100));
     }
     if (spawnError) throw spawnError;
     if (!existsSync(readyPath)) throw new Error('credential broker did not become ready');

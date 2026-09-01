@@ -57,6 +57,11 @@ test('binary provenance rejects stale source and an unbuilt clean checkout', () 
     record(root);
     assert.throws(() => verifyBinaryProvenance(root, { sourceSha256: 'c'.repeat(64) }),
       /do not match the selected release source/);
+    const invalid = record(root);
+    invalid.source.files = 0;
+    writeFileSync(join(root, 'container', 'spacetimedb-binaries.json'), JSON.stringify(invalid));
+    assert.throws(() => verifyBinaryProvenance(root, { sourceSha256: SOURCE.sha256 }),
+      /source file count is invalid/);
     writeFileSync(join(root, 'container', 'spacetimedb-binaries.json'), JSON.stringify({
       schemaVersion: 1, status: 'unbuilt',
     }));
@@ -105,6 +110,10 @@ test('binary provenance refuses a source change during the build', () => {
     { ...SOURCE, sha256: 'c'.repeat(64) }), /source changed during the build/);
   assert.throws(() => assertBinarySourceUnchanged(SOURCE,
     { ...SOURCE, revision: 'd'.repeat(40) }), /source changed during the build/);
+  assert.throws(() => assertBinarySourceUnchanged(SOURCE,
+    { ...SOURCE, files: SOURCE.files + 1 }), /source changed during the build/);
+  assert.throws(() => createBinaryProvenance('unused',
+    { ...SOURCE, files: 0 }), /file count must be a positive integer/);
 });
 
 test('controller verifies recorded binaries before it installs them', () => {

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, constants, mkdirSync, openSync, writeSync } from 'node:fs';
+import { closeSync, constants, mkdirSync, openSync, rmSync, writeSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import { killTree } from './platform.js';
@@ -60,6 +60,12 @@ export function runBounded(command: string, argv: readonly string[],
       terminate?: (pid: number) => void; gracefulCancellationMs?: number;
     }): Promise<BoundedProcessResult> {
   return new Promise(resolveRun => {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('runBounded timeoutMs must be a positive safe integer');
+    }
+    if (!Number.isSafeInteger(gracefulCancellationMs) || gracefulCancellationMs < 0) {
+      throw new Error('runBounded gracefulCancellationMs must be a non-negative safe integer');
+    }
     const maximum = logs?.maxBytes ?? 4 * 1024 * 1024;
     if (logs && (!Number.isInteger(maximum) || maximum <= 0)) {
       throw new Error('runBounded logs.maxBytes must be a positive integer');
@@ -84,36 +90,51 @@ export function runBounded(command: string, argv: readonly string[],
         throw error;
       }
     }
-    const child = spawn(command, argv, { cwd, env,
-      stdio: streams ? ['inherit', 'pipe', 'pipe'] : stdio });
-    const capture = (name: StreamName, destination: NodeJS.WriteStream) =>
-      (chunk: Buffer | string): void => {
-      if (!streams) return;
-      const state = streams[name];
-      const data = Buffer.from(chunk);
-      state.bytes += data.length;
-      const remaining = maximum - state.retainedBytes;
-      if (remaining > 0) {
-        const retained = data.subarray(0, remaining);
-        writeSync(state.fd, retained);
-        state.hash.update(retained);
-        state.retainedBytes += retained.length;
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(command, argv, { cwd, env,
+        stdio: streams ? ['inherit', 'pipe', 'pipe'] : stdio });
+    } catch (error) {
+      if (streams) for (const stream of Object.values(streams)) {
+        closeSync(stream.fd);
+        rmSync(stream.path, { force: true });
       }
-      state.tail = `${state.tail}${data.toString('utf8')}`.slice(-2000);
-      destination.write(data);
-    };
-    if (streams) {
-      child.stdout?.on('data', capture('stdout', process.stdout));
-      child.stderr?.on('data', capture('stderr', process.stderr));
+      throw error;
     }
     let timedOut = false;
     let cancelled = false;
     let spawnError: Error | null = null;
+    let captureError: Error | null = null;
     let forceTimer: NodeJS.Timeout | null = null;
     const stop = (): void => {
       if (child.pid !== undefined) terminate(child.pid);
       try { child.kill('SIGKILL'); } catch { /* already exited */ }
     };
+    const capture = (name: StreamName, destination: NodeJS.WriteStream) =>
+      (chunk: Buffer | string): void => {
+      if (!streams || captureError) return;
+      try {
+        const state = streams[name];
+        const data = Buffer.from(chunk);
+        state.bytes += data.length;
+        const remaining = maximum - state.retainedBytes;
+        if (remaining > 0) {
+          const retained = data.subarray(0, remaining);
+          writeSync(state.fd, retained);
+          state.hash.update(retained);
+          state.retainedBytes += retained.length;
+        }
+        state.tail = `${state.tail}${data.toString('utf8')}`.slice(-2000);
+        destination.write(data);
+      } catch (error) {
+        captureError = error instanceof Error ? error : new Error(String(error));
+        stop();
+      }
+    };
+    if (streams) {
+      child.stdout?.on('data', capture('stdout', process.stdout));
+      child.stderr?.on('data', capture('stderr', process.stderr));
+    }
     const cancel = (): void => {
       cancelled = true;
       if (gracefulCancellationMs > 0) {
@@ -140,9 +161,10 @@ export function runBounded(command: string, argv: readonly string[],
         return [name, { path: state.path, sha256: state.hash.digest('hex'), bytes: state.bytes,
           retainedBytes: state.retainedBytes, truncated: state.bytes > state.retainedBytes }];
       })) : null;
-      resolveRun({ ok: !timedOut && !cancelled && !spawnError && code === 0,
+      const error = captureError ?? spawnError;
+      resolveRun({ ok: !timedOut && !cancelled && !error && code === 0,
         code, signal: childSignal, timedOut, cancelled,
-        error: spawnError, logs: captured,
+        error, logs: captured,
         stdoutTail: streams?.stdout.tail.trim() ?? '',
         stderrTail: streams?.stderr.tail.trim() ?? '' });
     });

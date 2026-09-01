@@ -404,3 +404,18 @@ test('resource acquisition reclaims a lock whose owner process is gone', () => {
     releaseResourceLocks(current);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('resource acquisition rejects PID reuse as lock ownership', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-pid-reuse-'));
+  const key = 'shared-listener';
+  const digest = createHash('sha256').update(key).digest('hex');
+  const path = join(root, `${digest}.lock.json`);
+  try {
+    writeFileSync(path, JSON.stringify({ version: 1, key, runId: 'dead-owner',
+      ownerPid: process.pid, ownerStartMarker: 'not-this-process',
+      ownershipMarkerSha256: 'dead-owner', acquiredAt: new Date().toISOString() }));
+    const current = createBackendLease({ runId: 'current', backend: 'stub', track: 'loop', runIndex: 1 });
+    current.resources.locks.push(acquireResourceLock({ root, key, lease: current }));
+    releaseResourceLocks(current);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

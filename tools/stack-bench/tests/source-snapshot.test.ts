@@ -99,6 +99,20 @@ test('source seeding copies arbitrary layouts without dependencies or repair evi
   }
 });
 
+test('source operations reject overlapping trees before deleting data', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-overlap-'));
+  const app = join(root, 'app');
+  try {
+    put(join(app, 'src', 'app.ts'), 'preserve me\n');
+    assert.throws(() => snapshotAppSource(app, app), /must not overlap/);
+    assert.throws(() => snapshotAppSource(app, join(app, 'snapshot')), /must not overlap/);
+    assert.throws(() => resetAppToSource(join(app, 'src'), app), /must not overlap/);
+    assert.equal(readFileSync(join(app, 'src', 'app.ts'), 'utf8'), 'preserve me\n');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('source copies reject symbolic links before changing permissions', { skip: process.platform === 'win32' }, () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-link-'));
   const source = join(root, 'source');

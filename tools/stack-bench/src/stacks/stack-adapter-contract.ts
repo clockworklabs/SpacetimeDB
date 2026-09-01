@@ -1,10 +1,9 @@
 import type { BackendLease } from '../runtime/backend-lease.js';
-import type { RuntimeControlMode } from './stack-lifecycle-operations.js';
 
 export const STACK_ADAPTER_SCHEMA_VERSION = 1;
 export const STACK_CAPABILITY_SCHEMA_VERSION = 1;
 
-export const STACK_ENGINE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+const STACK_ENGINE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   ports: Object.freeze(['allocations', 'for-run']),
   lease: Object.freeze(['prepare', 'validate-resources']),
   reset: Object.freeze(['requires-reseed']),
@@ -31,7 +30,7 @@ export class StackCapabilityUnsupportedError extends Error {
   }
 }
 
-export type StackCapabilityExecutor = (operation: string, input: unknown) => unknown;
+type StackCapabilityExecutor = (operation: string, input: unknown) => unknown;
 // The base ports a backend claims, before any per-run offset. A backend that
 // serves its own API or runs a database container declares those too.
 export interface StackPortBases {
@@ -48,7 +47,6 @@ export interface StackRunPorts {
   readonly dbPort: number | null;
 }
 
-export type StackOperation = (input: unknown) => unknown;
 export type StackOperationHandler = (input: never) => unknown;
 
 export interface StackCapability {
@@ -67,6 +65,8 @@ export interface StackAdapter {
   capabilities: Readonly<Record<string, Readonly<StackCapability>>>;
 }
 
+export type RuntimeControlMode = 'start' | 'stop' | 'restart';
+
 export interface StackLifecycleInput {
   adapterId: string;
   lease: BackendLease;
@@ -77,7 +77,7 @@ export interface StackLifecycleInput {
   signal?: AbortSignal | null;
 }
 
-export interface StackActivationInput {
+interface StackActivationInput {
   leasePath: string;
   leaseToken: string;
   lease: BackendLease;
@@ -91,9 +91,9 @@ export interface StackLifecycle {
 
 // Dispatching a capability needs only the adapter's name and its capability
 // map, so a caller may hold a lease provider without a whole adapter.
-export type CapabilityHolder = Pick<StackAdapter, 'id' | 'capabilities'>;
+type CapabilityHolder = Pick<StackAdapter, 'id' | 'capabilities'>;
 
-export interface StackAdapterRegistry {
+interface StackAdapterRegistry {
   readonly ids: readonly string[];
   get(id: string): Readonly<StackAdapter>;
 }
@@ -128,7 +128,7 @@ function version(value: unknown, at: string): string {
   return value;
 }
 
-export function defineStackCapability(
+function defineStackCapability(
   value: unknown,
   at = 'stack capability',
 ): Readonly<StackCapability> {

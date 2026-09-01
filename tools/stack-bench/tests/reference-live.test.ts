@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseReferenceQualificationArgs,
@@ -158,6 +158,9 @@ test('parallel Spacetime qualification derives an isolated listener port from th
   assert.equal(parallel.spacetimePort, 3324);
   assert.notEqual(first.spacetimePort, parallel.spacetimePort);
   assert.equal(explicit.spacetimePort, 4411);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
+    '--backend', 'spacetime', '--mutations', '--release-candidate', '--mutation-workers', '2',
+    '--spacetime-port', '65535']), /worker offsets/);
 });
 
 test('parallel mutation qualification reserves bounded slots and exact child shards', () => {
@@ -287,7 +290,7 @@ test('parallel worker evidence is read only from its exact contained output', ()
       payload: { ok: true, shard: { index: 0, count: 1, mutationIds },
         results: mutationIds.toReversed().map(id => ({ id, status: 'CAUGHT' })) } });
     writeArtifact(artifactPath, { kind: 'reference_qualification', id: 'worker', identities,
-      payload: { mutationControl: true, requiredRepetitions: 1, ok: true,
+      payload: { fixture: 'fixture', mutationControl: true, requiredRepetitions: 1, ok: true,
         runs: [{ ok: true, output: 'w1.runs/r1' }] } });
     const inspected = readParallelMutationWorker(artifactPath, { ok: true },
       { ...identities, workerIndex: 0, workerCount: 1 },
@@ -295,6 +298,19 @@ test('parallel worker evidence is read only from its exact contained output', ()
     assert.deepEqual(inspected.failures, []);
     assert.deepEqual(required(inspected.control, 'worker mutation control').results
       ?.map(result => result.id), ['second', 'first']);
+
+    writeArtifact(join(output, 'mutation-control.json'), { kind: 'mutation_control', id: 'control',
+      payload: { ok: true } });
+    const empty = readParallelMutationWorker(artifactPath, { ok: true },
+      { ...identities, workerIndex: 0, workerCount: 1 },
+      { scenario: 'shared', mutations: mutationIds.map(id => ({ id })) });
+    assert.equal(empty.shardVerified, false);
+    assert(empty.failures.includes('worker mutation shard is missing'));
+    assert(empty.failures.includes('worker mutation results are missing'));
+
+    writeArtifact(join(output, 'mutation-control.json'), { kind: 'mutation_control', id: 'control',
+      payload: { ok: true, shard: { index: 0, count: 1, mutationIds },
+        results: mutationIds.map(id => ({ id, status: 'CAUGHT' })) } });
 
     const escaped = readArtifact<{ runs: Array<{ output: string }> }>(artifactPath);
     required(escaped.payload.runs[0], 'worker run').output = '../outside';
@@ -326,7 +342,7 @@ test('parallel mutation accounting keeps the expected assignment when a worker s
       payload: { ok: false, outcome: { kind: 'harness_failure', phase: 'mutation-control',
         reason: 'baseline deadline exceeded' } } });
     writeArtifact(artifactPath, { kind: 'reference_qualification', id: 'worker', identities,
-      payload: { mutationControl: true, requiredRepetitions: 1, ok: false,
+      payload: { fixture: 'fixture', mutationControl: true, requiredRepetitions: 1, ok: false,
         runs: [{ ok: false, output: 'w2.runs/r1' }] } });
 
     const inspected = readParallelMutationWorker(artifactPath, { ok: false, code: 2 },
@@ -551,6 +567,21 @@ test('reference qualification reports the exact level score', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('reference qualification reports malformed evidence instead of throwing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    mkdirSync(join(root, 'grading'), { recursive: true });
+    writeFileSync(join(root, 'run.json'), '{');
+    writeFileSync(join(root, 'grading', 'bundle.json'), '{}');
+    const audit = auditReferenceRun(root, fixture);
+    assert.equal(audit.ok, false);
+    assert.match(audit.failures[0] ?? '', /qualification evidence is invalid/);
+    writeFileSync(join(root, 'mutation-control.json'), '{}');
+    const mutationAudit = auditMutationWorkerRun(root, fixture);
+    assert.match(mutationAudit.failures[0] ?? '', /mutation evidence is invalid/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a mutation run reuses its stored clean baseline as reference evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
   try {
@@ -643,6 +674,32 @@ test('reference qualification terminates a child at its repetition deadline', as
   assert.equal(result.ok, false);
   assert.equal(result.timedOut, true);
   assert(Date.now() - started < 10_000, 'timed-out child was not terminated promptly');
+});
+
+test('bounded execution validates deadlines before opening logs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-process-deadline-'));
+  const stdout = join(root, 'stdout.log');
+  const stderr = join(root, 'stderr.log');
+  try {
+    await assert.rejects(runBounded(process.execPath, [], {
+      timeoutMs: 0, logs: { stdout, stderr },
+    }), /timeoutMs must be a positive safe integer/);
+    assert.equal(existsSync(stdout), false);
+    assert.equal(existsSync(stderr), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('bounded execution removes empty logs when process setup throws', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-process-setup-'));
+  const stdout = join(root, 'stdout.log');
+  const stderr = join(root, 'stderr.log');
+  try {
+    await assert.rejects(runBounded(null as unknown as string, [], {
+      timeoutMs: 1_000, logs: { stdout, stderr },
+    }));
+    assert.equal(existsSync(stdout), false);
+    assert.equal(existsSync(stderr), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('parallel qualification cancellation terminates every bounded child', async () => {

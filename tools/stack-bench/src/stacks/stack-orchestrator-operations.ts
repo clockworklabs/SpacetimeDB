@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-export interface OrchestratorConfig {
+interface OrchestratorConfig {
   environment: Record<string, string>;
   lease: { serverUri: string | null };
   lifecycle: { cli?: string };

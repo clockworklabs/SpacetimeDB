@@ -3,12 +3,12 @@ import { executeStackCapability, StackCapabilityUnsupportedError } from '../stac
 import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { controlHostedAppServer }
-  from '../stacks/stack-lifecycle-operations.js';
-import type { RuntimeControlMode } from '../stacks/stack-lifecycle-operations.js';
+  from '../stacks/hosted-lifecycle.js';
+import type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 import type { TextCommandExecutor } from './command-executor.js';
 
-export { hostedStopScript } from '../stacks/stack-lifecycle-operations.js';
-export type { RuntimeControlMode } from '../stacks/stack-lifecycle-operations.js';
+export { hostedStopScript } from '../stacks/hosted-lifecycle.js';
+export type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 
 export interface RuntimeControlSpec {
   backend: string;

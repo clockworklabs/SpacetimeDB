@@ -98,7 +98,8 @@ test('report read model keeps invalid evidence separate and computes declared di
     'admissions/admission-1.json');
   assert.match(report.contentSha256, /^[a-f0-9]{64}$/);
   assert.throws(() => validateCampaignReport({ ...report,
-    summary: { ...report.summary, completedAttempts: 99 } }), /content identity/);
+    summary: { ...report.summary, completedAttempts: 99 } }),
+  /summary does not match its attempts/);
   const inconsistent = structuredClone(report);
   inconsistent.summary.completedAttempts = 99;
   const { contentSha256: _oldIdentity, ...inconsistentBody } = inconsistent;
@@ -382,11 +383,9 @@ test('human reports format normalized usage and elapsed time for people', () => 
   assert.match(html, /100% coverage/);
   assert.doesNotMatch(html, />4893s</);
 
-  const { contentSha256: _identity, ...costBody } = buildCampaignReport(plan, state,
-    () => evidence);
-  costBody.policy.primaryMetric = 'totalCostUsd';
-  const costHtml = renderCampaignHtml({ ...costBody,
-    contentSha256: sha256(canonicalDefinitionJson(costBody)) });
+  const costPlan = structuredClone(plan);
+  costPlan.definition.analysis.primaryMetric = 'totalCostUsd';
+  const costHtml = renderCampaignHtml(buildCampaignReport(costPlan, state, () => evidence));
   assert.match(costHtml, /<th>totalCostUsd<\/th>/);
   assert.match(costHtml, />\$19\.899<br><small>\$19\.899 normalized usage/);
   assert.doesNotMatch(costHtml, /% coverage/);

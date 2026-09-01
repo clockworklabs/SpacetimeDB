@@ -1,5 +1,5 @@
 import { createHttpGradingContext, httpNamedActionRequest } from '../stack-grading-operations.js';
-import { activateHosted } from '../stack-lifecycle-operations.js';
+import { activateHosted } from '../hosted-lifecycle.js';
 import { emptySetupMetadata, noConnectionUrl,
   standardBuildContainerPlan } from '../stack-agent-operations.js';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';

@@ -7,7 +7,7 @@ import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
 export const GENERATED_APP_LAYOUT_EXIT_CODE = 10;
 
-export interface BackendResetRequest {
+interface BackendResetRequest {
   backend: string;
   app: string;
   exec?: TextCommandExecutor;

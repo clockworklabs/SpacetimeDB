@@ -158,6 +158,23 @@ test('credential broker rejects unauthorized and unsupported requests before ups
   });
 });
 
+test('credential broker rejects an unauthorized request before its body completes', async () => {
+  await withBroker('api-key', async ({ brokerPort }) => {
+    const result = await new Promise<SendResult>((resolveResult, reject) => {
+      const request = httpRequest({ hostname: '127.0.0.1', port: brokerPort,
+        method: 'POST', path: '/v1/messages', headers: { 'content-length': '1000000' } }, response => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => resolveResult({ status: response.statusCode,
+          body: Buffer.concat(chunks).toString('utf8') }));
+      });
+      request.once('error', reject);
+      request.write('{');
+    });
+    assert.deepEqual(result, { status: 401, body: 'unauthorized' });
+  });
+});
+
 test('credential broker survives a downstream disconnect and settles exact upstream usage', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-disconnect-'));
   const ledgerPath = join(root, 'ledger.json');
@@ -654,8 +671,7 @@ test('receipt reconciliation rejects spend that cannot be reproduced from broker
 test('credential broker lifecycle creates only an attempt-scoped session credential', async () => {
   const providerCredential = 'provider-secret-value-1234567890';
   const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
-  const broker = startCredentialBroker({ mode: 'api-key',
-    environment: { name: 'ANTHROPIC_API_KEY', value: providerCredential }, mount: null },
+  const broker = await startCredentialBroker({ mode: 'api-key', credential: providerCredential },
   { networkMode: 'host', deadlineMs: 10_000, model: 'test-model',
     maxBudgetUsd: 1, pricingRates: rates });
   let ledger: BrokerLedger | null = null;
@@ -682,9 +698,8 @@ test('credential broker lifecycle creates only an attempt-scoped session credent
 
 test('credential broker diagnostics retain child exit, stderr, and the final ledger', async () => {
   const providerCredential = 'provider-secret-value-1234567890';
-  const broker = startCredentialBroker({ mode: 'api-key',
-    environment: { name: 'ANTHROPIC_API_KEY', value: providerCredential },
-    mount: null }, { networkMode: 'host', deadlineMs: 10_000, model: 'test-model' });
+  const broker = await startCredentialBroker({ mode: 'api-key', credential: providerCredential },
+    { networkMode: 'host', deadlineMs: 10_000, model: 'test-model' });
   const providerCut = 11;
   const sessionCut = 19;
   const stderr = broker.child.stderr;
@@ -721,9 +736,9 @@ test('credential broker closes an active request after its parent exits',
     const moduleUrl = pathToFileURL(compiledEntrypoint('container', 'credential-broker.js')).href;
     const script = `
       import { startCredentialBroker } from ${JSON.stringify(moduleUrl)};
-      const broker = startCredentialBroker({ mode: 'api-key',
-        environment: { name: 'ANTHROPIC_API_KEY', value: 'provider-secret-value-1234567890' },
-        mount: null }, { networkMode: 'host', deadlineMs: 10000, model: 'test-model' });
+      const broker = await startCredentialBroker({ mode: 'api-key',
+        credential: 'provider-secret-value-1234567890' },
+        { networkMode: 'host', deadlineMs: 10000, model: 'test-model' });
       process.stdout.write(JSON.stringify({ pid: broker.child.pid, baseUrl: broker.baseUrl,
         sessionToken: broker.sessionToken, root: broker.root, ledgerPath: broker.ledgerPath }) + '\\n');
       process.stdin.once('data', () => process.exit(0));

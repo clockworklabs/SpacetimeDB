@@ -5,7 +5,7 @@ import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
 
 type HostUrl = (url: string) => string;
 
-export interface StackSetupMetadata {
+interface StackSetupMetadata {
   spacetime: string | null;
   spacetimeBindings: string | null;
   database: string | null;

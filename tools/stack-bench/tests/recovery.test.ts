@@ -97,7 +97,8 @@ test('wrong credentials and malformed supervisor state never clean resources', (
   try {
     const wrong = { ...f.supervisor, ownershipToken: 'wrong' };
     writeFileSync(f.statePath, JSON.stringify(wrong));
-    assert.throws(() => recoverSupervisedRun(f.statePath), /token does not match/);
+    assert.throws(() => recoverSupervisedRun(f.statePath, { runtimeRoot: f.runtimeRoot }),
+      /token does not match/);
     assert.equal(readBackendLease(f.leasePath, { token: f.lease.ownershipToken }).state, 'active');
     assert.equal(existsSync(firstLockPath(f.lease)), true);
     assert.throws(() => validateSupervisorState({ ...f.supervisor, extra: true }), /extra is unknown/);

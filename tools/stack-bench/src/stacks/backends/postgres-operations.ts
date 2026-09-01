@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
-import { databaseContainerName } from '../database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../hosted-database-identity.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 
@@ -24,8 +23,8 @@ const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;
 
 export function resetPostgres({ lease, exec = execFileSync }:
   { lease: LeasedDatabase; exec?: TextCommandExecutor }): string {
-  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
-  exec('docker', ['exec', lease.resources.container.name, 'psql', '-U', POSTGRES_USER,
+  const containerId = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
+  exec('docker', ['exec', containerId, 'psql', '-U', POSTGRES_USER,
     '-d', lease.resources.database, '-v', 'ON_ERROR_STOP=1', '-c',
     "DO $block$ DECLARE tables text; BEGIN "
       + "SELECT string_agg(format('%I.%I', schemaname, tablename), ', ') INTO tables "
@@ -42,13 +41,13 @@ export function provePostgresUse({ lease, marker, exec = execFileSync }:
   if (typeof marker !== 'string' || !marker) {
     throw new Error('PostgreSQL provenance requires a non-empty application marker');
   }
-  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
+  const containerId = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
     'database provenance');
   const sql = "SELECT format('SELECT %L WHERE EXISTS (SELECT 1 FROM %I.%I WHERE %I::text = %L LIMIT 1);', "
     + "table_schema || '.' || table_name || '.' || column_name, table_schema, table_name, "
     + `column_name, ${sqlString(marker)}) FROM information_schema.columns `
     + "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position\n\\gexec\n";
-  const output = exec('docker', ['exec', '-i', lease.resources.container.name,
+  const output = exec('docker', ['exec', '-i', containerId,
     'psql', '-U', POSTGRES_USER, '-d', lease.resources.database,
     '-v', 'ON_ERROR_STOP=1', '-At'],
   { encoding: 'utf8', input: sql, stdio: 'pipe', timeout: RESET_TIMEOUT_MS }).trim();
@@ -59,12 +58,13 @@ export function provePostgresUse({ lease, marker, exec = execFileSync }:
       : 'the application marker is absent from the leased PostgreSQL database' };
 }
 
-export function setPostgresStock({ item, warehouse, quantity, dbName, exec = execFileSync,
-  containers = {} }: {
-  item: string; warehouse: string; quantity: number; dbName: string;
-  exec?: TextCommandExecutor; containers?: { postgres?: string };
+export function setPostgresStock({ item, warehouse, quantity, lease, exec = execFileSync }: {
+  item: string; warehouse: string; quantity: number; lease: LeasedDatabase;
+  exec?: TextCommandExecutor;
 }): { backend: string; item: string; warehouse: string; quantity: number } {
-  const container = containers.postgres ?? databaseContainerName('postgres');
+  const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
+    'direct database write');
+  const dbName = lease.resources.database;
   const sql = `UPDATE stock SET quantity = ${quantity} WHERE item_id = `
     + `(SELECT id FROM item WHERE name = ${sqlString(item)}) AND warehouse_id = `
     + `(SELECT id FROM warehouse WHERE name = ${sqlString(warehouse)})`;
@@ -94,8 +94,8 @@ export function preparePostgresDatabase({ lease, name, expectedName, wipe,
   if (name !== expectedName) {
     throw new Error(`backend lease database ${name} does not match harness target ${expectedName}`);
   }
-  const container = lease.resources.container.name;
-  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'database mutation');
+  const container = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
+    'database mutation');
   try {
     exec('docker', ['exec', container, 'psql', '-U', POSTGRES_USER, '-d', 'postgres',
       '-c', `CREATE DATABASE ${name} OWNER ${POSTGRES_USER};`],

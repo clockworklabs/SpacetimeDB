@@ -34,9 +34,11 @@ import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
 } from '../src/actions/runtime-action-executors.js';
+import type { DatabaseWriteLease } from '../src/actions/runtime-action-executors.js';
 import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
+import { leaseFromEnv } from '../src/runtime/backend-lease.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -90,7 +92,6 @@ type GradeArgs = {
   selectionSha256?: string;
   parentAttemptId?: string;
   dbName?: string;
-  databaseContainer?: string;
   app?: string;
   media?: string;
   failureMedia?: string;
@@ -105,7 +106,7 @@ type GradeRunContext = {
   actions: TrackAction[];
   spacetime: unknown;
   dbName?: string;
-  databaseContainer?: string;
+  databaseLease?: DatabaseWriteLease | null;
   appDir?: string;
   scope?: string;
   extraContexts?: ActorContextEntry[];
@@ -176,7 +177,6 @@ function parseArgs(argv: readonly string[]): GradeArgs {
       case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
       // Which database to write to directly for out-of-band writes.
       case '--db-name': args.dbName = argv[++i]; break;
-      case '--database-container': args.databaseContainer = argv[++i]; break;
       case '--app': args.app = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       // Lightweight evidence for otherwise media-free qualification runs.
@@ -530,11 +530,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     'database-write': createDatabaseWriteCapability({
       backend: ctx.backend,
       spacetime: ctx.spacetime,
-      dbName: ctx.dbName!,
-      ...(ctx.backend === 'mongodb' && ctx.databaseContainer
-        ? { mongoContainer: ctx.databaseContainer } : {}),
-      ...(ctx.backend === 'postgres' && ctx.databaseContainer
-        ? { postgresContainer: ctx.databaseContainer } : {}),
+      databaseLease: ctx.databaseLease,
       expand: (value: string) => String(expand(value, ctx)),
     }),
     'named-actions': namedActions,
@@ -900,11 +896,23 @@ async function main(): Promise<void> {
     ? executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'grading', 'context', { requireBuildContainer: true })
     : null;
+  const hostedBackend = args.backend === 'mongodb' || args.backend === 'postgres';
+  const hasLeaseAuthority = Boolean(process.env.STACK_BENCH_LEASE
+    || process.env.STACK_BENCH_LEASE_TOKEN);
+  let databaseLease: DatabaseWriteLease | null = null;
+  if (hostedBackend && hasLeaseAuthority) {
+    const lease = leaseFromEnv(process.env, { backend: args.backend, active: true }).lease;
+    const { container, database } = lease.resources;
+    if (!container || !database) {
+      throw new Error(`active ${args.backend} lease has no complete database identity`);
+    }
+    databaseLease = { resources: { container, database } };
+  }
 
   const ctx: GradeRunContext = { runId, roomName: (base: string) => `${base}-${runId}`,
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
-    databaseContainer: args.databaseContainer,
+    databaseLease,
     appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });

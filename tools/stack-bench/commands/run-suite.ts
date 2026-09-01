@@ -23,7 +23,6 @@ import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pa
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
 import { readBackendLease } from '../src/runtime/backend-lease.js';
-import { databaseContainerName } from '../src/stacks/database-containers.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { sha256 } from '../src/evidence/provenance.js';
@@ -82,7 +81,6 @@ type RunArguments = {
   applicationFailure?: ApplicationFailure;
   parentAttemptId?: string;
   databaseLease?: BackendLease | null;
-  databaseContainer?: string | null;
   selection?: Selection | null;
   bundleArtifactId: string;
 };
@@ -97,9 +95,7 @@ type ApplicationProbeResult = { ok: boolean; detail: string | null };
 type ResetOutcome = { kind: string; phase: string; appFailures?: string[] };
 type ApplicationFailure = ResetOutcome & { kind: 'app_failure'; reason: string };
 type DatabaseProvenance = { ok: boolean; reason: string; url?: string };
-type GradeDatabaseLease = { resources: { container?: { name?: string | null } | null;
-  database?: string | null } };
-type GradeLeaseReader = (path: string, expected: BackendLeaseExpectation) => GradeDatabaseLease;
+type GradeLeaseReader = typeof readBackendLease;
 type MutationDirectoryEntry = { name: string; isDirectory(): boolean; isFile(): boolean };
 type MutationDirectoryReader = (path: string, options: { withFileTypes: true }) => readonly MutationDirectoryEntry[];
 type GraderChildResult = { status: number | null; signal: string | null; stdout?: unknown; stderr?: unknown;
@@ -233,24 +229,17 @@ function gradeLeaseInput(backend: string, env: NodeJS.ProcessEnv): { path: strin
   return { path, expected: { token, backend, active: true } };
 }
 
-export function databaseContainerForGrading(backend: string, env = process.env, {
+export function databaseLeaseForGrading(backend: string, env = process.env, {
   readLease = readBackendLease,
 }: { readLease?: GradeLeaseReader } = {}) {
   const input = gradeLeaseInput(backend, env);
   if (!input) return null;
   const lease = readLease(input.path, input.expected);
-  if (lease?.resources.container) return String(lease.resources.container.name);
-  return databaseContainerName(backend, env);
-}
-
-export function databaseLeaseForGrading(backend: string, env = process.env, {
-  readLease = readBackendLease,
-} = {}) {
-  const input = gradeLeaseInput(backend, env);
-  if (!input) return null;
-  const lease = readLease(input.path, input.expected);
   const container = String(lease.resources?.container?.name ?? '').trim();
-  if (!container) throw new Error(`active ${backend} lease has no database container`);
+  const containerId = String(lease.resources?.container?.id ?? '').trim();
+  if (!container || !containerId) {
+    throw new Error(`active ${backend} lease has no complete database container identity`);
+  }
   return lease;
 }
 
@@ -686,7 +675,6 @@ function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
   // The out-of-band write goes straight to this run's database, with no
   // app code in the loop; only the harness knows which one that is.
   argv.push('--db-name', databaseNameForGrading(track, args.runIndex ?? 0, args.databaseLease));
-  if (args.databaseContainer) argv.push('--database-container', args.databaseContainer);
   if (args.restartSpec) argv.push('--restart-spec', JSON.stringify(args.restartSpec));
   // The systems criteria run scripts the app itself ships (back-office writes),
   // so the grader has to know where the app lives.
@@ -732,8 +720,6 @@ async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
   args.databaseLease = databaseLeaseForGrading(args.backend);
-  args.databaseContainer = args.databaseLease?.resources.container?.name
-    ?? (['mongodb', 'postgres'].includes(args.backend) ? databaseContainerName(args.backend) : null);
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, Number(args.level), args.recipeTask?.recipe ?? args.recipe);
   if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {

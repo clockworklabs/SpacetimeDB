@@ -66,7 +66,14 @@ export interface ReferenceQualificationArgs {
   featureCatalog?: string;
   out?: string;
   releaseCandidate?: boolean;
-  [flag: string]: unknown;
+  artifactDirectory?: string;
+  runsRoot?: string;
+  timeoutMs?: number;
+  spacetimePortExplicit?: boolean;
+  mutationBaselineBundle?: string;
+  mutationCheckpoint?: string | null;
+  mutationCheckpointDir?: string;
+  referenceMutationOnly?: boolean;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -82,10 +89,6 @@ export interface QualificationContext {
   progressionSelection?: ProgressionRecipeSelections | null;
   selectedCheckKeys?: string[];
   level?: number;
-  runsRoot?: string;
-  artifactDirectory?: string;
-  release?: UnknownRecord;
-  [key: string]: unknown;
 }
 
 export interface MutationManifest {
@@ -127,7 +130,7 @@ export interface MutationWorkerResult {
   payload: WorkerPayload | null;
   run: WorkerRun | null;
   control: MutationShardControl | null;
-  assigned: unknown;
+  assigned: string[];
   shardVerified: boolean;
   failures: string[];
 }

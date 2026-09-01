@@ -157,11 +157,16 @@ test('a generated app server timing out is an application failure, not a harness
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
   const calls: Array<readonly [string, readonly string[]]> = [];
   const waits: number[] = [];
+  const databaseLease = { resources: { database: 'bench',
+    container: { name: 'leased-postgres', id: 'postgres-id' } } };
   const capability = createDatabaseWriteCapability({
     backend: 'postgres',
-    dbName: 'bench',
+    databaseLease,
     expand: value => value,
-    exec: (command, args) => { calls.push([command, args]); return 'UPDATE 1\n'; },
+    exec: (command, args) => {
+      calls.push([command, args]);
+      return args[0] === 'inspect' ? 'postgres-id\n' : 'UPDATE 1\n';
+    },
   });
   const passed = await run({ do: 'dbSetStock', item: "Kid's Keyboard", warehouse: 'Main',
     quantity: 7, settleMs: 17 }, {
@@ -170,11 +175,12 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     } }),
   });
   assert.equal(passed.status, 'passed');
-  assert.match(calls[0]?.[1].at(-1) ?? '', /Kid''s Keyboard/);
+  assert.match(calls.find(([, args]) => args.includes('psql'))?.[1].at(-1) ?? '', /Kid''s Keyboard/);
   assert.deepEqual(waits, [17]);
 
-  const missed = createDatabaseWriteCapability({ backend: 'postgres', dbName: 'bench',
-    expand: value => value, exec: () => 'UPDATE 0\n' });
+  const missed = createDatabaseWriteCapability({ backend: 'postgres', databaseLease,
+    expand: value => value, exec: (_command, args) => args[0] === 'inspect'
+      ? 'postgres-id\n' : 'UPDATE 0\n' });
   const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
   assert.equal(failed.status, 'failed');
@@ -187,8 +193,13 @@ test('database-write feedback preserves the actionable schema error ahead of ter
   assert.match(databaseWriteFailureDetail(error), /singular collections/);
   assert.match(databaseWriteFailureDetail(error), /MISSING/);
 
-  const capability = createDatabaseWriteCapability({ backend: 'mongodb', dbName: 'bench',
-    expand: value => value, exec: () => { throw error; } });
+  const capability = createDatabaseWriteCapability({ backend: 'mongodb',
+    databaseLease: { resources: { database: 'bench',
+      container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
+    expand: value => value, exec: (_command, args) => {
+      if (args[0] === 'inspect') return 'mongodb-id\n';
+      throw error;
+    } });
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
   assert.equal(result.status, 'failed');
@@ -200,15 +211,29 @@ test('direct database writes target the container selected by the run lease', as
   const calls: Array<readonly [string, readonly string[]]> = [];
   const capability = createDatabaseWriteCapability({
     backend: 'mongodb',
-    dbName: 'bench',
-    mongoContainer: 'leased-mongodb',
+    databaseLease: { resources: { database: 'bench',
+      container: { name: 'leased-mongodb', id: 'mongodb-id' } } },
     expand: value => value,
-    exec: (command, args) => { calls.push([command, args]); return 'OK\n'; },
+    exec: (command, args) => {
+      calls.push([command, args]);
+      return args[0] === 'inspect' ? 'mongodb-id\n' : 'OK\n';
+    },
   });
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
   assert.equal(result.status, 'passed');
-  assert.deepEqual(calls[0]?.[1].slice(0, 2), ['exec', 'leased-mongodb']);
+  assert.deepEqual(calls.find(([, args]) => args.includes('mongosh'))?.[1].slice(0, 2),
+    ['exec', 'mongodb-id']);
+});
+
+test('direct database writes fail as harness errors without lease authority', async () => {
+  const capability = createDatabaseWriteCapability({
+    backend: 'postgres', expand: value => value, exec: () => 'UPDATE 1\n',
+  });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  assert.equal(result.status, 'harness_failure');
+  assert.match(result.summary ?? '', /authenticated backend lease/);
 });
 
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {

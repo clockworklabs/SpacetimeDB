@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
-import { databaseContainerName } from '../database-containers.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 
 const RESET_TIMEOUT_MS = 120_000;
@@ -20,8 +19,8 @@ type LeasedDatabase = {
 
 export function resetMongoDb({ lease, exec = execFileSync }:
   { lease: LeasedDatabase; exec?: TextCommandExecutor }): string {
-  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
-  exec('docker', ['exec', lease.resources.container.name, 'mongosh', lease.resources.database,
+  const containerId = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'reset');
+  exec('docker', ['exec', containerId, 'mongosh', lease.resources.database,
     '--quiet', '--eval', 'db.dropDatabase()'],
   { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   return `reset mongodb database ${lease.resources.database}`;
@@ -33,7 +32,7 @@ export function proveMongoDbUse({ lease, marker, exec = execFileSync }:
   if (typeof marker !== 'string' || !marker) {
     throw new Error('MongoDB provenance requires a non-empty application marker');
   }
-  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
+  const containerId = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
     'database provenance');
   const script = `const marker = ${JSON.stringify(marker)};
 function containsMarker(value) {
@@ -50,7 +49,7 @@ for (const name of db.getCollectionNames()) {
   }
 }
 print(matches);`;
-  const output = exec('docker', ['exec', lease.resources.container.name,
+  const output = exec('docker', ['exec', containerId,
     'mongosh', lease.resources.database, '--quiet', '--eval', script],
   { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS }).trim();
   const matches = Number(output.split(/\r?\n/).at(-1));
@@ -63,12 +62,13 @@ print(matches);`;
       : 'the application marker is absent from the leased MongoDB database' };
 }
 
-export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = execFileSync,
-  containers = {} }: {
-  item: string; warehouse: string; quantity: number; dbName: string;
-  exec?: TextCommandExecutor; containers?: { mongodb?: string };
+export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execFileSync }: {
+  item: string; warehouse: string; quantity: number; lease: LeasedDatabase;
+  exec?: TextCommandExecutor;
 }): { backend: string; item: string; warehouse: string; quantity: number } {
-  const container = containers.mongodb ?? databaseContainerName('mongodb');
+  const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
+    'direct database write');
+  const dbName = lease.resources.database;
   const script = `
     const it = db.item.findOne({ name: ${JSON.stringify(item)} });
     const wh = db.warehouse.findOne({ name: ${JSON.stringify(warehouse)} });
@@ -106,10 +106,11 @@ export function prepareMongoDbDatabase({ lease, name, expectedName, wipe,
   if (name !== expectedName) {
     throw new Error(`backend lease database ${name} does not match harness target ${expectedName}`);
   }
-  assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS, 'database mutation');
+  const containerId = assertLeasedContainer(lease.resources.container, exec, RESET_TIMEOUT_MS,
+    'database mutation');
   if (wipe) {
     try {
-      exec('docker', ['exec', lease.resources.container.name, 'mongosh', name, '--quiet',
+      exec('docker', ['exec', containerId, 'mongosh', name, '--quiet',
         '--eval', 'db.dropDatabase()'],
       { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
       console.error(`  wiped ${name} — a build starts on an empty database`);

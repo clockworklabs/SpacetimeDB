@@ -9,7 +9,7 @@ import { captureApplicationDiagnostics, controlBackendRuntime, hostedStopScript,
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { controlHostedAppServer, hostedLaunchCommand, hostedRecordedProcessStopScript }
-  from '../src/stacks/stack-lifecycle-operations.js';
+  from '../src/stacks/hosted-lifecycle.js';
 import type { TextCommandOptions } from '../src/runtime/command-executor.js';
 
 interface RecordedCommand {
@@ -73,7 +73,7 @@ test('restart diagnostics are copied only from the exact leased build container'
     const capture = calls[1];
     assert(inspect);
     assert(capture);
-    assert.deepEqual(capture.argv.slice(0, 4), ['docker', 'exec', 'leased-build', 'sh']);
+    assert.deepEqual(capture.argv.slice(0, 4), ['docker', 'exec', buildContainer.id, 'sh']);
     assert.match(capture.argv.at(-1) ?? '', /reference-application\.log/);
     assert.match(capture.argv.at(-1) ?? '', /restart-\*\.log/);
     assert.equal(inspect.options.timeout, 120_000);
@@ -165,12 +165,12 @@ test('hosted application control inspects and stops listeners as the application
   const recordedStop = calls[1];
   const stop = calls[2];
   assert(recordedStop && stop);
-  assert.deepEqual(recordedStop.args.slice(0, 3), ['exec', 'leased-build', 'sh']);
+  assert.deepEqual(recordedStop.args.slice(0, 3), ['exec', id, 'sh']);
   assert.match(recordedStop.args.at(-1) ?? '', /restart-mongodb-65534\.pid/);
   assert.deepEqual(stop.args.slice(0, 7), [
     'exec', '--user', '10001:10001', '-e', 'HOME=/home/developer', '-e', 'USER=developer',
   ]);
-  assert.equal(stop.args[7], 'leased-build');
+  assert.equal(stop.args[7], id);
   assert.match(stop.args.at(-1) ?? '', /lsof -ti tcp:65534 -sTCP:LISTEN/);
 });
 

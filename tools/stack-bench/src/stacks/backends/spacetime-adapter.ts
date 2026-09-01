@@ -1,6 +1,6 @@
 import { createSpacetimeGradingContext,
   spacetimeNamedActionRequest } from '../stack-grading-operations.js';
-import { activateSpacetime, controlSpacetime } from '../stack-lifecycle-operations.js';
+import { activateSpacetime, controlSpacetime } from '../spacetime-lifecycle.js';
 import { noConnectionUrl, spacetimeBuildContainerPlan,
   spacetimeSetupMetadata } from '../stack-agent-operations.js';
 import { deploySpacetimeReference } from '../stack-reference-operations.js';
