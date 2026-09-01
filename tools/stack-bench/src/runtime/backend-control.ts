@@ -80,6 +80,7 @@ export async function controlAppServer(
     lease,
     mode,
     signal,
+    handoffWorkspace: mode !== 'stop',
     environment,
   });
 }

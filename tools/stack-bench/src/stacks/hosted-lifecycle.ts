@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { updateBackendLease } from '../runtime/backend-lease.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
-  codingContainerAgentExecOptions }
+  codingContainerAgentExecOptions, codingContainerWorkspaceHandoffCommands }
   from '../runtime/coding-container-policy.js';
 import type { BackendLease, BackendLeaseContainer } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
@@ -21,6 +21,7 @@ interface HostedApplicationControlInput {
   mode: RuntimeControlMode;
   environment?: Record<string, string>;
   signal?: AbortSignal | null;
+  handoffWorkspace?: boolean;
   exec?: TextCommandExecutor;
 }
 
@@ -139,7 +140,8 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync }:
 }
 
 export async function controlHostedAppServer({ adapterId: stack, lease, app, port, probe, mode,
-  environment = {}, signal, exec = execFileSync }: HostedApplicationControlInput): Promise<void> {
+  environment = {}, signal, handoffWorkspace = false,
+  exec = execFileSync }: HostedApplicationControlInput): Promise<void> {
   if (mode !== 'start' && mode !== 'stop' && mode !== 'restart') {
     throw new Error(`unsupported application control mode ${String(mode)}`);
   }
@@ -167,6 +169,12 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
   }
   if (mode === 'stop') return;
   if (typeof app !== 'string') throw new Error('application control requires an app directory');
+  if (handoffWorkspace) {
+    for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
+      exec('docker', ['exec', container.id, ...command],
+        { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
+    }
+  }
   exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted application port is still owned by $pids" >&2; exit 4; }'],

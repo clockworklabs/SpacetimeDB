@@ -229,12 +229,14 @@ test('SpacetimeDB application start uses the root contract independently of its 
       port: 65534,
       probe: '/',
       mode: 'start',
+      handoffWorkspace: true,
       signal: abort.signal,
       exec,
     }), error => error instanceof Error
       && error.message.includes('set: Illegal option -o pipefail')
       && 'code' in error && error.code === 'generated_app_not_restartable');
     const launch = calls.find(args => args[0] === 'exec' && args.includes('-d'));
+    assert(calls.some(args => args.slice(0, 3).join(' ') === `exec ${id} chown`));
     assert(launch);
     assert.match(launch.at(-1) ?? '', /\/bin\/bash \.\/start\.sh/);
     assert.match(launch.at(-1) ?? '', /restart-spacetime-65534\.log/);
