@@ -26,6 +26,7 @@ import type { Track } from '../src/composition/tracks.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
 const GRADE = compiledEntrypoint('grader', 'grade.js');
+const NULL_CONTROL_WORKERS = 4;
 
 interface NullControlArgs {
   tracks: string[];
@@ -170,7 +171,7 @@ async function main() {
 
   const started = Date.now();
   const suiteReports = [];
-  let qualification = null;
+  let qualification: ReturnType<typeof createNullQualification> | null = null;
   try {
     const port = await listen(server);
     const url = `http://127.0.0.1:${port}`;
@@ -189,21 +190,26 @@ async function main() {
       const selectedSuites = nullControlSuites(track, args.level, binding);
       const resolvedRecipe = binding
         ? `${binding.release.id}@${binding.release.version}` : args.recipe;
-      for (const suite of selectedSuites) {
-        const reportPath = join(reportsDir, `${trackName}-l${suite.level}-${suite.id.replaceAll('@', '-')}.json`);
-        process.stdout.write(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)}) ... `);
-        await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
-          '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
-          '--parent-attempt-id', nullAttemptId,
-          ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
-          ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
-          ...(qualification ? ['--selection-sha256', qualification.selectionSha256] : []),
-          ...(('checks' in suite ? suite.checks : []) ?? [])
-            .flatMap(check => ['--selected-check', check.stableKey])]);
-        const report = readArtifactPayload(reportPath, { expectedKind: 'grade' });
-        suiteReports.push({ track: trackName, level: suite.level, id: suite.id,
-          scenario: relative(track.dir, suite.spec).replaceAll('\\', '/'), report });
-        console.log(`${report.total}/${report.max}`);
+      for (let index = 0; index < selectedSuites.length; index += NULL_CONTROL_WORKERS) {
+        const reports = await Promise.all(selectedSuites
+          .slice(index, index + NULL_CONTROL_WORKERS).map(async suite => {
+            const reportPath = join(reportsDir,
+              `${trackName}-l${suite.level}-${suite.id.replaceAll('@', '-')}.json`);
+            console.log(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)})`);
+            await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
+              '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
+              '--parent-attempt-id', nullAttemptId,
+              ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
+              ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
+              ...(qualification ? ['--selection-sha256', qualification.selectionSha256] : []),
+              ...(('checks' in suite ? suite.checks : []) ?? [])
+                .flatMap(check => ['--selected-check', check.stableKey])]);
+            const report = readArtifactPayload(reportPath, { expectedKind: 'grade' });
+            console.log(`${suite.id}: ${report.total}/${report.max}`);
+            return { track: trackName, level: suite.level, id: suite.id,
+              scenario: relative(track.dir, suite.spec).replaceAll('\\', '/'), report };
+          }));
+        suiteReports.push(...reports);
       }
     }
 
