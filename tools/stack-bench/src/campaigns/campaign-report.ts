@@ -168,7 +168,9 @@ export interface CampaignReport {
     track: string;
     levels: number[];
     selection: unknown;
-    bindings: unknown;
+    bindings: Array<{ level: number; qualification: {
+      status: 'qualified' | 'pending'; reasons: string[];
+    }; [key: string]: unknown }>;
     stacks: Array<{ id: string; [key: string]: unknown }>;
     agents: unknown[];
     conditions: CampaignReportCondition['condition'][];
@@ -569,6 +571,19 @@ export function validateCampaignReport(input: unknown): CampaignReport {
       }
     }
   }
+  for (const [index, binding] of report.scope.bindings.entries()) {
+    const at = `campaign report.scope.bindings[${index}].qualification`;
+    if (!Number.isSafeInteger(binding.level) || !isRecord(binding.qualification)
+      || !['qualified', 'pending'].includes(String(binding.qualification.status))
+      || !Array.isArray(binding.qualification.reasons)
+      || binding.qualification.reasons.some(reason => typeof reason !== 'string' || !reason)
+      || (binding.qualification.status === 'qualified'
+        && binding.qualification.reasons.length > 0)
+      || (binding.qualification.status === 'pending'
+        && binding.qualification.reasons.length === 0)) {
+      throw new Error(`${at} is invalid`);
+    }
+  }
   for (const [index, attempt] of report.attempts.entries()) {
     if (!isRecord(attempt) || typeof attempt.id !== 'string' || !attempt.id
       || typeof attempt.status !== 'string' || !Array.isArray(attempt.executions)
@@ -636,6 +651,8 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         ? latest.firstBuildObservations : null });
   }
   const conditions = reportConditions(rows, plan.definition.analysis);
+  const qualificationPending = plan.bindings.some(binding =>
+    binding.qualification.status === 'pending');
   const body = canonicalizeDefinition({
     reportSchemaVersion: CAMPAIGN_REPORT_SCHEMA_VERSION,
     campaign: { id: plan.id, version: plan.version, state: plan.state,
@@ -652,6 +669,8 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     conditions,
     summary: reportSummary(rows, state.status),
     limitations: [
+      ...(qualificationPending
+        ? ['Grading qualification is pending. Treat these scores as provisional.'] : []),
       'Statistics describe only the exact scope and conditions recorded above.',
       'Score rates use measurable points; read them with coverage and the typed execution outcome.',
       'Observed specifications are diagnostic, contribute zero score, and are never shown to repairs.',
@@ -714,7 +733,11 @@ export function renderCampaignHtml(report: CampaignReport,
       + `<br><small>${escape(formatRate(condition.firstBuildObservations.metrics.coverageRate.center))} coverage</small></td></tr>`)
     .join('');
   const observationSection = observationRows ? `<h2>Additional first-build measurements</h2><p>These checks record selected behavior in the original build. They are shown separately, add no points to the score, and do not enter repair feedback.</p><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Run setup</th><th>Measured</th><th>Pass rate</th></tr></thead><tbody>${observationRows}</tbody></table>` : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
+  const qualificationWarning = report.scope.bindings.some(binding =>
+    binding.qualification.status === 'pending')
+    ? '<div class="warn"><strong>Provisional scores.</strong> Grading qualification is pending.</div>'
+    : '';
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p>${qualificationWarning}<p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
 
 export interface GeneratedCampaignReport { report: CampaignReport; reportPath: string;

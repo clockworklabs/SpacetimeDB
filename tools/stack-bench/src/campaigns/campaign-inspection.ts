@@ -132,8 +132,13 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
 
 export function campaignFacts(plan: CompiledCampaignPlan) {
   const requested = plan.attempts[0]?.condition.requested.levels;
+  const gradingPending = plan.bindings.some(binding =>
+    binding.qualification.status === 'pending');
   return {
     mode: plan.definition.mode?.id ?? 'sequential',
+    grading: {
+      status: gradingPending ? 'pending' : 'qualified',
+    },
     agents: plan.agents.map(agent => ({
       adapter: agent.adapter,
       version: agent.adapterVersion,

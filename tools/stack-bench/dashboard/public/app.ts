@@ -1086,6 +1086,7 @@ function factsBlock(campaign: Campaign): string {
   const fact = (label: string, value: string | number | null): [string, string | number | null] => [label, value];
   const entries: Array<[string, string | number | null] | null> = [
     facts.mode ? fact('Mode', title(facts.mode)) : null,
+    facts.grading?.status ? fact('Grading', title(facts.grading.status)) : null,
     ...facts.agents.map(agent => fact('Agent', [agent.adapter, agent.version ? `@${agent.version}` : '',
       agent.model ? ` · ${agent.model}` : ''].join(''))),
     ...facts.recipes.filter(recipe => recipe.id).map(recipe =>

@@ -145,6 +145,7 @@ interface RecipeIdentity extends UnknownRecord {
 
 interface PublicBinding extends UnknownRecord {
   level: number;
+  qualification: { status: 'qualified' | 'pending'; reasons: string[] };
   promotion: { alias: string; status: string; catalog?: unknown };
   recipe: RecipeIdentity;
   fixture: UnknownRecord & { state: string };
@@ -750,6 +751,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     });
     const publicBinding: PublicBinding = {
       level,
+      qualification: { status: 'pending', reasons: [] },
       promotion: { alias: binding.alias, status: binding.status, catalog: binding.catalog },
       recipe: recipeReleaseIdentity(binding.release),
       fixture: binding.release.components.fixture,
@@ -786,43 +788,33 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
       [record.level, resolveProgressionRecipeLevelSelection(record.binding,
         featureCatalog, record.level, { cumulative: definition.mode.id === 'dependency' })]));
   }
-  if (definition.state === 'frozen') {
-    if (progressionSelections) {
-      for (const record of bindingRecords) {
-        const selected = progressionSelections.get(record.level)?.grader.checkKeys ?? [];
-        const qualified = new Set(record.calibration?.qualification.checks
-          ?? record.binding.release.checkCatalog.map(check => check.stableKey));
-        const missing = selected.filter(check => !qualified.has(check));
-        if (missing.length > 0) {
-          fail('state', `cannot freeze L${record.level}: calibration does not cover `
-            + `${missing.length} selected checks`);
-        }
-      }
+  for (const record of bindingRecords) {
+    const binding = record.publicBinding;
+    const reasons: string[] = [];
+    const selected = progressionSelections?.get(record.level)?.grader.checkKeys ?? [];
+    const qualifiedChecks = new Set(record.calibration?.qualification.checks
+      ?? record.binding.release.checkCatalog.map(check => check.stableKey));
+    const missingChecks = selected.filter(check => !qualifiedChecks.has(check));
+    if (missingChecks.length > 0) reasons.push(`calibration does not cover ${missingChecks.length} selected checks`);
+    if (binding.recipe.state !== 'qualified') reasons.push('recipe is not qualified');
+    if (binding.promotion.status !== 'promoted') reasons.push('recipe is not promoted');
+    if (binding.fixture.state !== 'qualified') reasons.push('fixture is not qualified');
+    if (binding.calibration?.state !== 'qualified') reasons.push('calibration is not qualified');
+    const supported = new Map(binding.qualifiedStacks.map(stack => [stack.id, stack.status]));
+    for (const stack of definition.stacks) {
+      if (supported.get(stack.id) !== 'qualified') reasons.push(`${stack.id} is not qualified`);
     }
-    for (const binding of bindings) {
-      if (binding.recipe.state !== 'qualified' || binding.promotion.status !== 'promoted'
-        || binding.fixture.state !== 'qualified' || binding.calibration?.state !== 'qualified') {
-        fail('state', `cannot freeze with unqualified L${binding.level} recipe, fixture, calibration, or promotion`);
-      }
-      const supported = new Map(binding.qualifiedStacks.map(stack => [stack.id, stack.status]));
-      for (const stack of definition.stacks) {
-        if (supported.get(stack.id) !== 'qualified') {
-          fail('state', `cannot freeze L${binding.level} for unqualified stack ${stack.id}`);
-        }
-      }
+    const qualifiedImage = binding.calibration?.buildImage;
+    if (!qualifiedImage || imageContentDigest(definition.runtime.buildImage) !== qualifiedImage) {
+      reasons.push('build image does not match qualification evidence');
     }
-    for (const record of bindingRecords) {
-      const qualifiedImage = record.publicBinding.calibration?.buildImage;
-      if (!qualifiedImage || imageContentDigest(definition.runtime.buildImage) !== qualifiedImage) {
-        fail('state', `cannot freeze L${record.level}: runtime buildImage does not match the qualified build image`);
-      }
+    if (record.qualificationStaleness.length > 0) {
+      reasons.push(`${record.qualificationStaleness.length} qualification artifacts are stale`);
     }
-    const staleLevels = bindingRecords.filter(record => record.qualificationStaleness.length > 0);
-    if (staleLevels.length > 0) {
-      const summary = staleLevels.map(record =>
-        `L${record.level} (${record.qualificationStaleness.length} artifacts)`).join(', ');
-      fail('state', `cannot freeze with stale qualification evidence for ${summary}; regenerate the qualification evidence`);
-    }
+    binding.qualification = {
+      status: reasons.length === 0 ? 'qualified' : 'pending',
+      reasons,
+    };
   }
 
   const stacks = definition.stacks.map(selection => {

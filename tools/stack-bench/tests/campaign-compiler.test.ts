@@ -665,18 +665,20 @@ test('frozen campaigns accept a resolved qualification result for every selected
   assert.deepEqual(compiled.bindings.map(binding => binding.level), [1, 2]);
 });
 
-test('frozen campaigns require the build image used for qualification', () => {
+test('frozen campaigns record a build image that has not been qualified', () => {
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
   const frozen = definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
-  assert.throws(() => compile(frozen, qualifiedCompilerOptions),
-    /buildImage does not match the qualified build image/);
+  const compiled = compile(frozen, qualifiedCompilerOptions);
+  assert.equal(compiled.bindings[0]!.qualification.status, 'pending');
+  assert(compiled.bindings[0]!.qualification.reasons
+    .includes('build image does not match qualification evidence'));
 });
 
-test('frozen dependency campaigns require calibration coverage for every selected check', () => {
+test('frozen dependency campaigns record incomplete calibration coverage', () => {
   const value = dependencyDefinition();
   value.state = 'frozen';
   value.budgets.maxCostUsdPerAttempt = 25;
@@ -692,9 +694,11 @@ test('frozen dependency campaigns require calibration coverage for every selecte
     calibration.qualification.checks = [];
     return calibration;
   };
-  assert.throws(() => compile(value, { calibrationResolver,
-    recipeResolver: promotedRecipe }),
-    /calibration does not cover 1 selected checks/);
+  const incomplete = compile(value, { calibrationResolver,
+    recipeResolver: promotedRecipe });
+  assert.equal(incomplete.bindings[0]!.qualification.status, 'pending');
+  assert(incomplete.bindings[0]!.qualification.reasons
+    .includes('calibration does not cover 1 selected checks'));
 
   const coveredResolver: CalibrationResolver = (release, options) => {
     const calibration = resolvedQualification(release, options);
@@ -702,8 +706,10 @@ test('frozen dependency campaigns require calibration coverage for every selecte
     calibration.qualification.checks = ['ecommerce.feature.accounts.accounts.1a'];
     return calibration;
   };
-  assert.equal(compile(value, { calibrationResolver: coveredResolver,
-    recipeResolver: promotedRecipe }).state, 'frozen');
+  const covered = compile(value, { calibrationResolver: coveredResolver,
+    recipeResolver: promotedRecipe });
+  assert.equal(covered.state, 'frozen');
+  assert.equal(covered.bindings[0]!.qualification.status, 'qualified');
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {

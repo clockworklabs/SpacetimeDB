@@ -100,6 +100,7 @@ test('report read model keeps invalid evidence separate and computes declared di
   assert.equal(condition.metrics.totalCostUsd?.center, 2);
   assert.equal(condition.sample.invalidExecutionRate, 0.5);
   assert.deepEqual(report.scope.bindings, plan.bindings);
+  assert(report.limitations.some(item => /qualification is pending/.test(item)));
   assert.deepEqual(report.scope.runtime, plan.definition.runtime);
   assert.deepEqual(report.scope.pricing, plan.definition.pricing);
   assert.deepEqual(report.scope.repetitionsByStack, plan.summary.repetitionsByStack);
@@ -273,6 +274,7 @@ test('campaign HTML labels observed-only behavior as zero-score first-build obse
   assert.equal(condition.firstBuildObservations.sample.measuredAttempts, 1);
   assert.equal(condition.firstBuildObservations.metrics.passRate.center, 1);
   assert.match(html, /Additional first-build measurements/);
+  assert.match(html, /Provisional scores/);
   assert.match(html, /add no points to the score/);
   assert.match(html, /do not enter repair feedback/);
   assert.match(html, /first-build-l1-observed\/bundle\.json/);

@@ -94,6 +94,10 @@ A frozen campaign binds the model, stacks, work, checks, budgets, repetitions,
 parallelism, pricing, controller image, and build image. The runner must match
 those identities.
 
+Frozen means immutable. It does not mean the grading checks are qualified.
+The plan, dashboard, and report show qualification status. Publish scores as
+verified comparison data only after every selected level is qualified.
+
 `campaign.example.json` is a zero-cost deterministic example. Copy it outside
 the image before changing it.
 

@@ -123,6 +123,7 @@ test('campaign facts surface the identity an operator otherwise reads plan.json 
     controllerImage: plan.definition.runtime.controllerImage,
     buildImage: plan.definition.runtime.buildImage,
   });
+  assert.equal(facts.grading.status, 'pending');
 });
 
 test('dashboard reports dependency work from the validated persisted state', t => {
