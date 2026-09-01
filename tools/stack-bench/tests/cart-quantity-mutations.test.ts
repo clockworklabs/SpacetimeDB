@@ -17,19 +17,19 @@ const scenarioPath = 'tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.1.jso
 const cases = [
   {
     backend: 'mongodb',
-    fixtureSha256: 'b38c9ccd5bcdbb092f44b2f5f42674273c6f22d4b148be55fdf2c999df3475cf',
+    fixtureSha256: 'e183f9581446ed52c36d422e79298f933eb57b973591f5473da687008161428e',
     manifest: 'mongodb-ecommerce-2.0.1.json',
     mutationId: 'concurrent-cart-add-does-not-increment',
   },
   {
     backend: 'postgres',
-    fixtureSha256: 'ad3a7237947690a409039c1e32c9012333c0c03fdd60aeee240b10743a8320d5',
+    fixtureSha256: '2c6d23e255d1ca930dd9fd8af1290dcfe0207cc0a7c9feefd9ec40889b0520bf',
     manifest: 'postgres-ecommerce-2.0.1.json',
     mutationId: 'progression-concurrent-cart-line-does-not-increment',
   },
   {
     backend: 'spacetime',
-    fixtureSha256: 'c09cfbbaf76ab99765b110db3d0ccf04ec6147b03c005ae49e074f094927fcb5',
+    fixtureSha256: '66ebf11ff476e23909ec7f972e509eb89844c42ba70ad91b6051d5078dd2e101',
     manifest: 'spacetime-ecommerce-2.0.1.json',
     mutationId: 'existing-cart-line-does-not-increment',
   },
