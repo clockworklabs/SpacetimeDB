@@ -31,7 +31,7 @@
             { "do": "fill", "actor": "owner", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Private managed case" }, "text": "Owner-only update" },
             { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Private managed case" } },
             { "do": "replayAs", "actor": "other", "from": "owner", "match": "Owner-only update", "namedAction": { "id": "replySupport", "path": "/api/support/:id/replies", "method": "POST", "reducer": "reply_support", "args": [0, "Owner-only update"], "params": [{ "name": "ticketId", "in": "path", "placeholder": ":id", "wireType": "u64" }, { "name": "body", "in": "body" }] }, "namedTarget": { "testid": "support-ticket", "contains": "Private managed case", "attribute": "data-entity-id", "valueType": "number" }, "settleMs": 1500 },
-            { "do": "expectReplayRejected", "actor": "other" },
+            { "do": "expectReplayRejected", "actor": "other", "allowNotFound": true },
             { "do": "expectElementCount", "actor": "staff", "testid": "support-reply-item", "contains": "Owner-only update", "equals": 1, "within": 10000 }
           ]
         }

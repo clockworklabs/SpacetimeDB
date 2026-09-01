@@ -39,7 +39,7 @@ interface CallActionInput {
 
 interface OutcomeInput {
   readonly actor: string;
-  readonly outcome: 'accepted' | 'refused';
+  readonly outcome: 'accepted' | 'refused' | 'validation-refused';
   readonly routeProvenBy?: string;
 }
 
@@ -145,6 +145,15 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
     if (!call.accepted) {
       fail(`server did not accept action "${call.action}" as ${actor.name} `
         + `(${call.status ? `HTTP ${call.status}` : 'no server response'})`
+        + missingOperationHint(call));
+    }
+  } else if (input.outcome === 'validation-refused') {
+    if (call.accepted) {
+      fail(`server accepted invalid action "${call.action}" as ${actor.name}`);
+    }
+    if (![400, 409, 422].includes(call.status) && call.applicationRejected !== true) {
+      fail(`action "${call.action}" failed with ${call.status ? `HTTP ${call.status}` : 'no server response'}; `
+        + 'that does not prove the server rejected invalid input'
         + missingOperationHint(call));
     }
   } else {

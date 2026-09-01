@@ -304,6 +304,25 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   return { visible: true, ...(input.value === undefined ? {} : { value: input.value }) };
 }
 
+async function waitUntilAbsent({ input, capabilities }: BrowserArguments<CommonInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = observation(capabilities);
+  const contains = browser.expand(input.contains);
+  const scope = inputScope(browser, input.in);
+  const loc = actor.loc(input.testid, { contains, scope });
+  const within = input.within ?? browser.defaultWithin;
+  const hidden = await loc.waitFor({ state: 'hidden', timeout: within })
+    .then(() => true).catch(error => {
+      if (harnessBrowserFailure(error)) throw error;
+      return false;
+    });
+  if (!hidden) {
+    fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''} `
+      + `still visible after ${within}ms`);
+  }
+  return { absent: true };
+}
+
 async function expectElementCount({ input, capabilities, signal }:
     BrowserArguments<ElementCountInput>) {
   const actor = actorFor(capabilities, input.actor);
@@ -646,4 +665,5 @@ export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
   reload: contractBrowserAction(reload),
   typeInto: contractBrowserAction(typeInto),
   wait: contractBrowserAction(wait),
+  waitUntilAbsent: contractBrowserAction(waitUntilAbsent),
 });

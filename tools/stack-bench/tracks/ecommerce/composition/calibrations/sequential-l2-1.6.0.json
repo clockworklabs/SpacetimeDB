@@ -10,9 +10,9 @@
     "path": "../recipes/sequential-l2-1.6.0.json",
     "id": "ecommerce.sequential-l2",
     "version": "1.6.0",
-    "meaningSha256": "9f6650c6e07c79f57038c1b8057de5774b8a348188d66fc60aa8ec9912cd6539",
-    "executionSha256": "ce9cd7ddd904621004b6bbf7f0c18fb9ea30e3fef47719423bc51b71a8bf3a1b",
-    "contentSha256": "8695fae625f4ad1c4a09ba4ce640cdfd7cb03f992ecd540fa36b4124eb6279d2"
+    "meaningSha256": "6132f7295c909984f6862486570aa54f7e9fbb31be13802971715536119906a5",
+    "executionSha256": "4dc8202c1516c0952b2a133313b77992d7898fd627539fa67a8dc6a1f82cb625",
+    "contentSha256": "98a98d89affa60955d5f6241b02686664c3258ed336d87128c8738c8bb7ade64"
   },
   "fixture": {
     "id": "ecommerce.operations",

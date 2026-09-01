@@ -96,7 +96,7 @@
               "input": {"testid":"cart-item","contains":"Coffee Grinder","attribute":"data-cart-input"},
               "settleMs": 2000
             },
-            {"do":"expectActionOutcome","actor":"owner","outcome":"refused"},
+            {"do":"expectActionOutcome","actor":"owner","outcome":"validation-refused"},
             {
               "do": "expectNumber",
               "actor": "owner",

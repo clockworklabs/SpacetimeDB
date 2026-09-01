@@ -57,6 +57,7 @@ const ACTION_CATEGORY = {
   stopAppServer: 'lifecycle',
   typeInto: 'browser-interaction',
   wait: 'timing',
+  waitUntilAbsent: 'browser-observation',
 } as const satisfies Record<ActionId, ActionCategory>;
 
 interface CategoryPolicy {

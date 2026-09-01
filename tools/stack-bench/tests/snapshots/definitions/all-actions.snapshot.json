@@ -315,6 +315,11 @@
               "actor": "a",
               "do": "wait",
               "ms": 1
+            },
+            {
+              "actor": "a",
+              "do": "waitUntilAbsent",
+              "testid": "status"
             }
           ]
         }

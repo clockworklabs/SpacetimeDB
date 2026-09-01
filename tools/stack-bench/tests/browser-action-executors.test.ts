@@ -205,6 +205,15 @@ test('absence checks do not pass before a late element appears', async () => {
   assert.match(result.summary ?? '', /became visible/);
 });
 
+test('waitUntilAbsent waits for a visible element to leave', async () => {
+  const calls: unknown[] = [];
+  const actor = { loc: () => ({ waitFor: async (options: unknown) => { calls.push(options); } }) };
+  const result = await run({ do: 'waitUntilAbsent', actor: 'a', testid: 'queue-item',
+    contains: 'Keyboard', within: 1000 }, services(actor));
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(calls, [{ state: 'hidden', timeout: 1000 }]);
+});
+
 test('unavailable checks do not pass before a control becomes enabled', async () => {
   let checks = 0;
   const locator = {

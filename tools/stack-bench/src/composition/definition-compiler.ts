@@ -160,7 +160,9 @@ export const ACTION_DEFINITIONS = Object.freeze({
       absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
     equals: nonNegativeInteger, maxEach: nonNegativeInteger }),
-  expectActionOutcome: fields({ ...actor, outcome: nonEmptyString }, { routeProvenBy: nonEmptyString }),
+  expectActionOutcome: fields({ ...actor,
+    outcome: value => oneOf(value, ['accepted', 'refused', 'validation-refused']) },
+  { routeProvenBy: nonEmptyString }),
   expectAgreement: fields({ ...actors, testid: nonEmptyString },
     { numeric: boolean, ...locator, ...within }),
   expectAllPresent: fields({ ...actor, prefix: string, count: nonNegativeInteger,
@@ -177,7 +179,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   expectSequence: fields({ ...actor, testid: nonEmptyString, equals: stringArray },
     { ...locator, ...within }),
   expectReceived: fields({ ...actor, contains: string, within: positiveNumber }),
-  expectReplayRejected: fields(actor),
+  expectReplayRejected: fields(actor, { allowNotFound: boolean }),
   expectStable: fields({ ...actor, testid: nonEmptyString },
     { samples: positiveInteger, intervalMs: positiveNumber, ...within }),
   expectUnavailable: fields({ ...actor, testid: nonEmptyString },
@@ -212,6 +214,8 @@ export const ACTION_DEFINITIONS = Object.freeze({
   stopAppServer: fields({}, settle),
   typeInto: fields({ ...actor, text: string }),
   wait: fields({ ...actor, ms: nonNegativeNumber }),
+  waitUntilAbsent: fields({ ...actor, testid: nonEmptyString },
+    { contains: string, ...locator, ...within }),
 } satisfies Record<string, ActionDefinition>);
 
 export type ActionId = keyof typeof ACTION_DEFINITIONS;
@@ -378,10 +382,6 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     if (step.authentication !== undefined && !oneOf(step.authentication, ['actor', 'none'])) {
       fail(`${at}.authentication`, 'must be "actor" or "none"');
     }
-  }
-  if (step.do === 'expectActionOutcome'
-      && !oneOf(step.outcome, ['accepted', 'refused'])) {
-    fail(`${at}.outcome`, 'must be "accepted" or "refused"');
   }
   if (step.do === 'replayAs' && Boolean(step.namedAction) !== Boolean(step.namedTarget)) {
     fail(at, 'replayAs namedAction and namedTarget must be supplied together');

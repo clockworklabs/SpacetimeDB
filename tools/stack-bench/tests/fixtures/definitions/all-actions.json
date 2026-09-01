@@ -62,7 +62,8 @@
             { "do": "startAppServer" },
             { "do": "stopAppServer" },
             { "do": "typeInto", "actor": "a", "text": "value" },
-            { "do": "wait", "actor": "a", "ms": 1 }
+            { "do": "wait", "actor": "a", "ms": 1 },
+            { "do": "waitUntilAbsent", "actor": "a", "testid": "status" }
           ]
         }
       ]

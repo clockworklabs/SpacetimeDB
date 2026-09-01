@@ -24,7 +24,7 @@
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
             { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
-            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "absent": true, "within": 10000 },
+            { "do": "waitUntilAbsent", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
             { "do": "click", "actor": "customer", "testid": "orders-toggle" },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 }
           ]

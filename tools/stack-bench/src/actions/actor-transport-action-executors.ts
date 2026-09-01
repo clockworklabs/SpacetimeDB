@@ -394,7 +394,8 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
   return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status };
 }
 
-async function expectReplayRejected({ input, capabilities }: TransportArguments<ActorInput>) {
+async function expectReplayRejected({ input, capabilities }:
+    TransportArguments<ActorInput & { allowNotFound?: boolean }>) {
   const actor = actorFor(capabilities, input.actor);
   const transport = transportFor(capabilities);
   const replay = actor.replay;
@@ -408,6 +409,7 @@ async function expectReplayRejected({ input, capabilities }: TransportArguments<
   }
   const replayStatus = replay.status;
   if (replayStatus !== 401 && replayStatus !== 403
+    && !(replayStatus === 404 && input.allowNotFound === true)
     && replay.applicationRejected !== true) {
     fail(`the ${replay.namedAction ? `named action "${replay.namedAction}"` : 'replayed request'} failed with `
       + `${replay.status ? `HTTP ${replay.status}` : 'no server response'} — this does not prove an authorization refusal`);

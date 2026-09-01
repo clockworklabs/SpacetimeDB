@@ -220,6 +220,18 @@ test('generic client errors do not prove a named action was refused for authoriz
   }
 });
 
+test('validation refusal accepts only deliberate application rejection statuses', async () => {
+  for (const [status, expected] of [[400, 'passed'], [409, 'passed'], [422, 'passed'],
+    [403, 'failed'], [500, 'failed']] as const) {
+    const actor = { name: 'customer',
+      actionCall: { action: 'cart-set-quantity', accepted: false, status } };
+    const provided = services(new Map<string, unknown>([['customer', actor]]));
+    const checked = await run({ do: 'expectActionOutcome', actor: 'customer',
+      outcome: 'validation-refused' }, provided);
+    assert.equal(checked.status, expected, checked.summary ?? undefined);
+  }
+});
+
 test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
   let requests = 0;
   const customer = {
@@ -565,6 +577,15 @@ test('only an explicit authorization response proves a replay refusal', async ()
     assert.match(checked.summary ?? '', /does not prove an authorization refusal/);
     assert.equal(provided.verification.length, 0);
   }
+});
+
+test('a private-resource replay may explicitly treat not found as refusal', async () => {
+  const actor = { name: 'customer',
+    replay: { accepted: false, status: 404, method: 'POST', url: '/support/1/replies' } };
+  const provided = services(new Map<string, unknown>([['customer', actor]]));
+  const checked = await run({ do: 'expectReplayRejected', actor: 'customer',
+    allowNotFound: true }, provided);
+  assert.equal(checked.status, 'passed');
 });
 
 test('only an explicit authorization response proves a forged-write refusal', async () => {
