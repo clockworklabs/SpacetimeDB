@@ -12,11 +12,15 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 
-import { createCredentialBroker, credentialBrokerDiagnostics, readCredentialBrokerLedger,
-  reconcileCredentialBrokerReceipt, startCredentialBroker,
-  stopCredentialBroker } from '../container/credential-broker.js';
-import type { BrokerConfig, BrokerLedger, BrokerMode, BrokerStats, CredentialBrokerHandle }
-  from '../container/credential-broker.js';
+import { createCredentialBroker } from '../container/credential-broker.js';
+import { readCredentialBrokerLedger, reconcileCredentialBrokerReceipt }
+  from '../container/credential-broker-accounting.js';
+import type { BrokerConfig, BrokerLedger, BrokerMode }
+  from '../container/credential-broker-accounting.js';
+import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
+  from '../container/credential-broker-process.js';
+import type { CredentialBrokerHandle } from '../container/credential-broker-process.js';
+import type { BrokerStats } from '../container/credential-broker.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 
 const PRICING_RATES = {
@@ -734,7 +738,7 @@ test('credential broker diagnostics retain child exit, stderr, and the final led
 
 test('credential broker closes an active request after its parent exits',
   { timeout: 10_000 }, async () => {
-    const moduleUrl = pathToFileURL(compiledEntrypoint('container', 'credential-broker.js')).href;
+    const moduleUrl = pathToFileURL(compiledEntrypoint('container', 'credential-broker-process.js')).href;
     const script = `
       import { startCredentialBroker } from ${JSON.stringify(moduleUrl)};
       const broker = await startCredentialBroker({ mode: 'api-key',

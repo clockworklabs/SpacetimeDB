@@ -17,7 +17,7 @@ export interface RuntimeControlSpec {
 }
 
 interface DiagnosticsOptions { exec?: TextCommandExecutor }
-interface RuntimeControlOptions { signal?: AbortSignal | null }
+interface RuntimeControlOptions { signal?: AbortSignal | null; exec?: TextCommandExecutor }
 
 export function parseRuntimeControlSpec(value: unknown): RuntimeControlSpec {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -47,14 +47,15 @@ export function captureApplicationDiagnostics(
 export async function controlBackendRuntime(
   spec: RuntimeControlSpec,
   mode: RuntimeControlMode = 'restart',
-  { signal = null }: RuntimeControlOptions = {},
+  { signal = null, exec }: RuntimeControlOptions = {},
 ): Promise<void> {
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
   if (!adapter.lifecycle.control) {
     throw new Error(`stack adapter ${adapter.id} does not support runtime control`);
   }
-  await adapter.lifecycle.control({ ...spec, adapterId: adapter.id, lease, mode, signal });
+  await adapter.lifecycle.control({ ...spec, adapterId: adapter.id, lease, mode, signal,
+    ...(exec ? { exec } : {}) });
 }
 
 // Always control the generated app server, not the stack's backend runtime.

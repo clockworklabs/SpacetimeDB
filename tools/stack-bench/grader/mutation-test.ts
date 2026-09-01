@@ -38,28 +38,36 @@ import {
 import { dbName, loadTrack, TRACK_MANIFEST_FILE } from "../src/composition/tracks.js";
 import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
 import { resetBackend } from "../src/stacks/backend-reset.js";
-import { fetchStatus } from "../src/runtime/readiness.js";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.js";
 import { mutationShard } from "../src/evidence/mutation-shards.js";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
   from "../src/evidence/mutation-control.js";
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";
+import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
 import type { LoadedMutationManifest, MutationDefinition } from '../src/evidence/mutation-analysis.js';
 import type { MutationCheckpointBaseline, MutationCheckpointIdentity,
   MutationCheckpointResult } from '../src/evidence/mutation-checkpoint.js';
-import type { RecipeRelease } from '../src/composition/recipe-release.js';
 
 type JsonRecord = Record<string, unknown>;
 type MutationSpec = LoadedMutationManifest;
 type MutationArgs = {
   app?: string; url?: string; mutations?: string; level?: string; spec?: string; backend?: string;
   track?: string; recipe?: string; selectedCheckKeys?: string[]; dbName?: string; runIndex?: string;
-  slug?: string; probe?: string; restartSpec?: RuntimeControlSpec; out?: string; parentAttemptId?: string;
+  restartSpec?: RuntimeControlSpec; out?: string; parentAttemptId?: string;
   mutationShardIndex?: number; mutationShardCount?: number; resumeFrom?: string; checkpointOut?: string;
   baselineBundle?: string; expectedCalibrationIdentity?: JsonRecord; maxRuntimeMinutes?: number;
   imageId?: string; mutationAttemptId?: string; expectedRecipeSha256?: string;
-  recipeRelease?: RecipeRelease; reseedOnReset?: boolean;
+  reseedOnReset?: boolean;
+};
+type ParsedMutationArgs = MutationArgs & {
+  app: string;
+  url: string;
+  mutations: string;
+  level: string;
+  recipe: string;
+  maxRuntimeMinutes: number;
+  mutationAttemptId: string;
 };
 type GradeReport = { total?: unknown; max?: unknown;
   features?: Array<{ id?: unknown; score?: unknown;
@@ -83,13 +91,13 @@ function jsonObject(value: unknown, label: string): JsonRecord {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GRADER = join(HERE, "grade.js");
 
-function parseArgs(argv: readonly string[]): MutationArgs {
+export function parseMutationArgs(argv: readonly string[]): ParsedMutationArgs {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
     app: { type: 'string' }, url: { type: 'string' }, mutations: { type: 'string' },
     level: { type: 'string' }, spec: { type: 'string' }, backend: { type: 'string' },
     track: { type: 'string' }, recipe: { type: 'string' },
     'selected-check': { type: 'string', multiple: true }, 'db-name': { type: 'string' },
-    'run-index': { type: 'string' }, 'track-slug': { type: 'string' }, probe: { type: 'string' },
+    'run-index': { type: 'string' },
     'restart-spec': { type: 'string' }, out: { type: 'string' }, 'parent-attempt-id': { type: 'string' },
     'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
     'resume-from': { type: 'string' }, 'checkpoint-out': { type: 'string' },
@@ -99,7 +107,7 @@ function parseArgs(argv: readonly string[]): MutationArgs {
   const a: MutationArgs = { app: values.app, url: values.url, mutations: values.mutations,
     level: values.level, spec: values.spec, backend: values.backend, track: values.track,
     recipe: values.recipe, selectedCheckKeys: values['selected-check'], dbName: values['db-name'],
-    runIndex: values['run-index'] ?? '0', slug: values['track-slug'], probe: values.probe,
+    runIndex: values['run-index'] ?? '0',
     restartSpec: values['restart-spec'] === undefined ? undefined
       : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
     out: values.out, parentAttemptId: values['parent-attempt-id'],
@@ -115,16 +123,31 @@ function parseArgs(argv: readonly string[]): MutationArgs {
     maxRuntimeMinutes: values['max-runtime-minutes'] === undefined
       ? 60 : Number(values['max-runtime-minutes']),
     imageId: values['image-id'] };
-  if (!a.app || !a.url || !a.mutations) {
-    console.error(
-      "Usage: node dist/grader/mutation-test.js --app <dir> --url <url> --mutations <file>",
+  if (!a.app || !a.url || !a.mutations || !a.level || !a.recipe) {
+    throw new Error(
+      "Usage: node dist/grader/mutation-test.js --app <dir> --url <url> --mutations <file> "
+        + "--level <N> --recipe <id@version>",
     );
-    process.exit(2);
+  }
+  let url: URL;
+  try { url = new URL(a.url); }
+  catch { throw new Error('--url must be a valid HTTP or HTTPS URL'); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('--url must use HTTP or HTTPS');
+  }
+  if (!Number.isInteger(Number(a.level)) || Number(a.level) < 1) {
+    throw new Error('--level must be a positive integer');
   }
   const shardFields = [a.mutationShardIndex, a.mutationShardCount]
     .filter(value => value !== undefined);
   if (shardFields.length === 1) {
     throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
+  }
+  if (a.mutationShardCount !== undefined
+    && (!Number.isInteger(a.mutationShardIndex) || !Number.isInteger(a.mutationShardCount)
+      || a.mutationShardIndex! < 0 || a.mutationShardCount < 1
+      || a.mutationShardIndex! >= a.mutationShardCount)) {
+    throw new Error('--mutation-shard-index must be within the positive shard count');
   }
   a.maxRuntimeMinutes ??= 60;
   if (!Number.isFinite(a.maxRuntimeMinutes) || a.maxRuntimeMinutes < 1
@@ -132,56 +155,43 @@ function parseArgs(argv: readonly string[]): MutationArgs {
     throw new Error('--max-runtime-minutes must be from 1 through 120');
   }
   if (a.resumeFrom && !a.checkpointOut) a.checkpointOut = a.resumeFrom;
-  return a;
-}
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-// Wait for watched servers to restart before grading.
-async function waitForApp(a: MutationArgs, seconds = 120): Promise<void> {
-  // Ignore probe paths mangled by Git Bash path conversion.
-  let path = a.probe ?? "/api/rooms";
-  if (
-    !/^https?:\/\//.test(path) &&
-    (/^[a-zA-Z]:/.test(path) || /Program Files|\\/.test(path))
-  ) {
-    console.log(
-      `  (ignoring mangled --probe "${path}" — pass a full URL to avoid shell path conversion)`,
-    );
-    path = "/";
-  }
-  const probe = new URL(path, a.url).toString();
-  const deadline = Date.now() + seconds * 1000;
-  while (Date.now() < deadline) {
-    const status = await fetchStatus(probe, { timeoutMs: 3000 });
-    if (status !== null && status < 500) return; // 401/404 still means it is serving
-    await sleep(250);
-  }
-  throw new Error(`app did not answer at ${probe} within ${seconds}s`);
-}
-
-async function restartAfterSourceChange(a: MutationArgs): Promise<void> {
-  if (!a.restartSpec) {
-    throw new Error('mutation testing requires a lease-authenticated --restart-spec');
-  }
-  await controlBackendRuntime(a.restartSpec, "restart");
-  await waitForApp(a);
-}
-
-// Grading a dirty database silently lowers scores, and this compares scores
-// across runs — an accumulated room would read as a mutation being "caught".
-async function reset(a: MutationArgs): Promise<void> {
-  resetBackend({ backend: a.backend!, app: a.app! });
-  const requiresReseed = STACK_ADAPTER_REGISTRY.get(a.backend!).reset.requiresReseed;
-  if (a.reseedOnReset && requiresReseed) {
-    if (!a.restartSpec) {
-      throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);
-    }
-    await controlBackendRuntime(a.restartSpec, "restart");
-    await waitForApp(a);
-  }
+  return { ...a, app: a.app, url: a.url, mutations: a.mutations, level: a.level, recipe: a.recipe,
+    maxRuntimeMinutes: a.maxRuntimeMinutes,
+    mutationAttemptId: `mutation-${new Date().toISOString().replace(/[:.]/g, "-")}` };
 }
 
 class MutationBatchDeadlineError extends Error {}
+
+export function remainingMutationBatchMs(deadlineMs: number, nowMs: number = Date.now()): number {
+  const remaining = Math.floor(deadlineMs - nowMs);
+  if (remaining <= 0) throw new MutationBatchDeadlineError('mutation batch deadline reached');
+  return remaining;
+}
+
+// Reset publishes SpacetimeDB source. Hosted stacks restart once to load source
+// and seed the empty database. A separate source-change restart is redundant.
+async function reset(a: MutationArgs, deadlineMs: number | null): Promise<void> {
+  const exec: TextCommandExecutor = deadlineMs === null ? execFileSync : ((file, commandArgs, options) =>
+    execFileSync(file, commandArgs, { ...options,
+      timeout: Math.min(options.timeout, remainingMutationBatchMs(deadlineMs)) }));
+  try {
+    resetBackend({ backend: a.backend!, app: a.app!, exec });
+    const requiresReseed = STACK_ADAPTER_REGISTRY.get(a.backend!).reset.requiresReseed;
+    if (a.reseedOnReset && requiresReseed) {
+      if (!a.restartSpec) {
+        throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);
+      }
+      const signal = deadlineMs === null ? null
+        : AbortSignal.timeout(remainingMutationBatchMs(deadlineMs));
+      await controlBackendRuntime(a.restartSpec, "restart", { signal, exec });
+    }
+  } catch (error) {
+    if (deadlineMs !== null && Date.now() >= deadlineMs) {
+      throw new MutationBatchDeadlineError('mutation batch deadline reached', { cause: error });
+    }
+    throw error;
+  }
+}
 
 function rebuildClientAfterSourceChange(a: MutationArgs, deadlineMs: number): void {
   const timeout = deadlineMs - Date.now();
@@ -197,7 +207,7 @@ function rebuildClientAfterSourceChange(a: MutationArgs, deadlineMs: number): vo
 }
 
 async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | null = null): Promise<GradeReport> {
-  await reset(a);
+  await reset(a, deadlineMs);
   if (existsSync(reportPath)) unlinkSync(reportPath);
   const gradeArgs: string[] = [
     GRADER,
@@ -248,10 +258,9 @@ async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | n
   return readArtifactPayload<GradeReport>(reportPath, { expectedKind: "grade" });
 }
 
-const args = parseArgs(process.argv) as Required<MutationArgs>;
-const startedAt = Date.now();
-const startedIso = new Date(startedAt).toISOString();
-args.mutationAttemptId = `mutation-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+let args: ParsedMutationArgs;
+let startedAt: number;
+let startedIso: string;
 const artifactPath = (id: string) =>
   resolve(args.out ?? join(HERE, "..", "results", `${id}.json`));
 let spec!: MutationSpec;
@@ -352,7 +361,7 @@ async function main(): Promise<void> {
     ? { index: 0, count: 1, mutationIds: fullMutations.map(mutation => mutation.id as string),
       mutations: fullMutations }
     : mutationShard(fullMutations,
-      { index: args.mutationShardIndex, count: args.mutationShardCount,
+      { index: args.mutationShardIndex!, count: args.mutationShardCount,
         defaultScenario: spec.scenario });
   if (shard.mutations.length === 0) throw new Error('mutation shard has no assigned mutations');
   spec.mutations = shard.mutations;
@@ -364,10 +373,6 @@ async function main(): Promise<void> {
   if (args.track && args.track !== spec.track) {
     throw new Error(`--track conflicts with manifest track ${spec.track}`);
   }
-  if (!Number.isInteger(Number(args.level)) || Number(args.level) < 1) {
-    throw new Error('--level must be a positive integer');
-  }
-  if (!args.recipe) throw new Error('--recipe is required for mutation control');
   args.backend = spec.backend;
   args.track = spec.track;
   const track = loadTrack(args.track);
@@ -375,9 +380,7 @@ async function main(): Promise<void> {
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
   args.recipe = `${binding.release.id}@${binding.release.version}`;
   args.expectedRecipeSha256 = binding.release.contentSha256;
-  args.recipeRelease = binding.release;
-  args.slug ??= track.slug;
-  args.probe ??= track.restartProbe;
+  const recipeRelease = binding.release;
   args.dbName ??= dbName(track, Number(args.runIndex));
   args.reseedOnReset = track.reseedOnReset;
   const definitions = validateMutationDefinitions(spec.mutations,
@@ -441,9 +444,8 @@ async function main(): Promise<void> {
   }
 
   const plans = [...groups].map(([scenarioPath, mutations]) => {
-    const selectedCheckKeys = args.recipeRelease
-      ? releaseScenarioCheckKeys(args.recipeRelease, track.dir, scenarioPath,
-        args.selectedCheckKeys ?? null) : [];
+    const selectedCheckKeys = releaseScenarioCheckKeys(recipeRelease, track.dir, scenarioPath,
+      args.selectedCheckKeys ?? null);
     return { scenarioPath, scenario: scenarioKey(scenarioPath), mutations, selectedCheckKeys,
       checkpoint: checkpointGroup(scenarioPath, mutations, selectedCheckKeys) };
   });
@@ -479,8 +481,8 @@ async function main(): Promise<void> {
       parentAttemptId: args.parentAttemptId ?? null,
       identities: emptyArtifactIdentities({
         fixture: { id: 'source-under-mutation', sha256: spec.fixtureSha256 },
-        recipe: { id: args.recipeRelease.id, version: args.recipeRelease.version,
-          sha256: args.expectedRecipeSha256, state: args.recipeRelease.state },
+        recipe: { id: recipeRelease.id, version: recipeRelease.version,
+          sha256: recipeRelease.contentSha256, state: recipeRelease.state },
         stackAdapter: { id: args.backend },
       }),
       durationMs: Date.now() - startedAt,
@@ -541,8 +543,8 @@ async function main(): Promise<void> {
         track: args.track,
         level: Number(args.level),
         fixtureSha256: spec.fixtureSha256,
-        recipe: { id: args.recipeRelease.id, version: args.recipeRelease.version,
-          sha256: args.expectedRecipeSha256 },
+        recipe: { id: recipeRelease.id, version: recipeRelease.version,
+          sha256: recipeRelease.contentSha256 },
         identities: {
           engine: currentEngineIdentity(),
           calibration: args.expectedCalibrationIdentity,
@@ -627,7 +629,6 @@ async function main(): Promise<void> {
               file.original));
         }
         if (clientChanged) rebuildClientAfterSourceChange(args, deadline);
-        await restartAfterSourceChange(args);
         r = await grade(args, reportPath, deadline);
         classified = classifyMutationResult(
           baseline as Parameters<typeof classifyMutationResult>[0],
@@ -677,12 +678,11 @@ async function main(): Promise<void> {
             { cause: error }));
         }
       }
-      // The next mutation restarts the app after it edits the restored source.
-      // If grading aborted, restore the clean runtime before the worker exits.
-      if ((mutationError !== null || deadlineReached) && cleanupErrors.length === 0) {
+      // A normal error leaves enough budget to restore the clean runtime. A
+      // deadline stop leaves clean source and lets the lease owner stop it.
+      if (mutationError !== null && cleanupErrors.length === 0) {
         try {
-          await restartAfterSourceChange(args);
-          await reset(args);
+          await reset(args, deadline);
         } catch (error) {
           cleanupErrors.push(new Error(`cannot restore the clean runtime: ${errorMessage(error)}`,
             { cause: error }));
@@ -718,8 +718,7 @@ async function main(): Promise<void> {
   // Detect any source change outside the files restored above.
   assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture after worker completion');
   // Restore the clean runtime and database before releasing the worker lease.
-  await restartAfterSourceChange(args);
-  await reset(args);
+  await reset(args, null);
 
   rmSync(work, { recursive: true, force: true });
   const artifact = persist('complete');
@@ -728,4 +727,17 @@ async function main(): Promise<void> {
   if (!artifact.ok) process.exitCode = 1;
 }
 
-main().catch(recordHarnessFailure);
+function run(): void {
+  try {
+    args = parseMutationArgs(process.argv);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exitCode = 2;
+    return;
+  }
+  startedAt = Date.now();
+  startedIso = new Date(startedAt).toISOString();
+  main().catch(recordHarnessFailure);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) run();

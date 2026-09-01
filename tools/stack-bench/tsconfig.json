@@ -19,7 +19,6 @@
     "commands/**/*.ts",
     "container/**/*.ts",
     "dashboard/**/*.ts",
-    "fixtures/**/*.ts",
     "grader/**/*.ts",
     "linter/**/*.ts",
     "scripts/**/*.ts",

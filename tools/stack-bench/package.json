@@ -8,7 +8,7 @@
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json && node dist/scripts/copy-dashboard-assets.js",
     "clean": "node --eval \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "lint": "eslint appliance commands container dashboard fixtures grader linter scripts src tests",
+    "lint": "eslint appliance commands container dashboard grader linter scripts src tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "bootstrap:browsers": "playwright install chromium",
     "prebench": "npm run build --silent",

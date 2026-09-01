@@ -1,4 +1,5 @@
 import type { BackendLease } from '../runtime/backend-lease.js';
+import type { TextCommandExecutor } from '../runtime/command-executor.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 
 export interface StackPortBases {
@@ -23,6 +24,7 @@ export interface StackLifecycleInput {
   probe: string;
   mode: RuntimeControlMode;
   signal?: AbortSignal | null;
+  exec?: TextCommandExecutor;
 }
 
 interface StackActivationInput {

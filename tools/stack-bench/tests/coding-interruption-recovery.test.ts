@@ -13,8 +13,9 @@ import { aggregateCodingSessionResults, codingSessionInterruption,
   from '../src/agents/coding-session-retry.js';
 import { agentSessionFailure } from '../src/agents/agent-result-contract.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
-import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt,
-  startCredentialBroker, stopCredentialBroker } from '../container/credential-broker.js';
+import { reconcileCredentialBrokerReceipt } from '../container/credential-broker-accounting.js';
+import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
+  from '../container/credential-broker-process.js';
 import { clearMissingBuildContainerLease,
   recoverStoppedBuildContainer } from '../container/recover-build-container.js';
 

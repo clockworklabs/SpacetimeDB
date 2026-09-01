@@ -12,10 +12,14 @@ import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks
 import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
   from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
+import type { ContainerMount } from '../src/runtime/container-mount.js';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.js';
-import { LEGACY_SUBSCRIPTION_TOKEN_TARGET, resolveContainerAuth } from './container-auth.js';
-import { credentialBrokerDiagnostics, reconcileCredentialBrokerReceipt, startCredentialBroker,
-  stopCredentialBroker } from './credential-broker.js';
+import { resolveContainerAuth } from './container-auth.js';
+import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parsePublishedPorts }
+  from './build-container-inspection.js';
+import { reconcileCredentialBrokerReceipt } from './credential-broker-accounting.js';
+import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
+  from './credential-broker-process.js';
 import { clearMissingBuildContainerLease,
   recoverStoppedBuildContainer } from './recover-build-container.js';
 import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
@@ -33,28 +37,8 @@ import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
 import { REPOSITORY_ROOT } from '../src/package-root.js';
 
-type JsonRecord = Record<string, unknown>;
-type ContainerMount = { kind: 'bind' | 'volume'; source: string; target: string; readOnly: boolean };
-type InspectedMount = { type: string; source: string; name: string | null; destination: string; readOnly: boolean };
-type InspectedContainer = { id: string; image: string; running: boolean; networkMode: string | null;
-  readonlyRootfs: boolean; tmpfs: Record<string, string>; capAdd: string[]; capDrop: string[];
-  securityOpt: string[]; pidsLimit: number | null; nanoCpus: number | null; memoryBytes: number | null;
-  memorySwapBytes: number | null; mounts: InspectedMount[]; unsafeCredentialExposure: boolean };
-
-function isRecord(value: unknown): value is JsonRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-}
-
-function numberOrNull(value: unknown): number | null {
-  return typeof value === 'number' ? value : null;
 }
 
 const { values } = parseArgs({ args: process.argv.slice(2), options: {
@@ -99,8 +83,12 @@ catch (error) {
   process.exit(2);
 }
 const image = imageIdentity.id;
-const effort = values.effort ?? 'high';
-const model = values.model ?? 'claude-sonnet-5';
+const effort = values.effort ?? '';
+const model = values.model ?? '';
+if (!prepareOnly && (!effort || !model)) {
+  console.error('run-build.js: --effort and --model are required');
+  process.exit(2);
+}
 const maxBudgetUsd = values['max-budget-usd'] ?? null;
 if (maxBudgetUsd !== null && (!Number.isFinite(Number(maxBudgetUsd)) || Number(maxBudgetUsd) <= 0)) {
   console.error('run-build.js: --max-budget-usd must be a positive number');
@@ -133,7 +121,9 @@ if (!prepareOnly && !/^[A-Z][A-Z0-9_]*$/.test(completionMarker ?? '')) {
   console.error('run-build.js: --completion-marker must be an uppercase marker');
   process.exit(2);
 }
-const ports = (values.ports ?? '').split(',').filter(Boolean);
+let ports: string[] = [];
+try { ports = parsePublishedPorts(values.ports); }
+catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 
 const containerPlan = adapter.buildContainer.plan({
   repo: REPO, appDir, env: process.env,
@@ -181,67 +171,20 @@ catch (error) {
   process.exit(2);
 }
 
-function inspectContainer(name: string): InspectedContainer | null {
-  const r = spawnSync('docker', ['inspect', name],
-  { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS });
-  if (r.status !== 0) return null;
-  const parsed: unknown = JSON.parse(r.stdout);
-  if (!Array.isArray(parsed) || !isRecord(parsed[0])) throw new Error('Docker returned an invalid container inspection');
-  const inspected = parsed[0];
-  const mounts = Array.isArray(inspected.Mounts) ? inspected.Mounts.filter(isRecord) : [];
-  const config = isRecord(inspected.Config) ? inspected.Config : {};
-  const hostConfig = isRecord(inspected.HostConfig) ? inspected.HostConfig : {};
-  const state = isRecord(inspected.State) ? inspected.State : {};
-  const sensitiveTargets = new Set([LEGACY_SUBSCRIPTION_TOKEN_TARGET, '/root/.claude/.credentials.json']);
-  const unsafeCredentialExposure = mounts.some(mount => sensitiveTargets.has(String(mount.Destination)))
-    || stringArray(config.Env).some(value => /^(?:ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=/.test(value));
-  const capabilities = (values: unknown): string[] => stringArray(values).map(value => value.replace(/^CAP_/, ''));
-  const tmpfs = isRecord(hostConfig.Tmpfs)
-    ? Object.fromEntries(Object.entries(hostConfig.Tmpfs).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
-  return { id: String(inspected.Id), image: String(inspected.Image), running: state.Running === true,
-    networkMode: typeof hostConfig.NetworkMode === 'string' ? hostConfig.NetworkMode : null,
-    readonlyRootfs: hostConfig.ReadonlyRootfs === true, tmpfs,
-    capAdd: capabilities(hostConfig.CapAdd), capDrop: capabilities(hostConfig.CapDrop),
-    securityOpt: stringArray(hostConfig.SecurityOpt).map(option => option.replace(/:true$/, '')),
-    pidsLimit: numberOrNull(hostConfig.PidsLimit), nanoCpus: numberOrNull(hostConfig.NanoCpus),
-    memoryBytes: numberOrNull(hostConfig.Memory), memorySwapBytes: numberOrNull(hostConfig.MemorySwap),
-    mounts: mounts.map(mount => ({ type: String(mount.Type), source: String(mount.Source),
-      name: typeof mount.Name === 'string' ? mount.Name : null, destination: String(mount.Destination),
-      readOnly: mount.RW !== true })),
-    unsafeCredentialExposure };
-}
+const inspectContainer = (name: string) => inspectBuildContainer(name,
+  { env: dockerEnv, timeoutMs: DOCKER_TIMEOUT_MS });
 
-function sameHostPath(left: string, right: string): boolean {
-  const normalize = (value: string): string => resolve(value).replaceAll('\\', '/').toLowerCase();
-  return normalize(left) === normalize(right);
-}
-
-function hasRequiredMounts(container: InspectedContainer, expectedMounts: ContainerMount[]): boolean {
-  if (container.mounts.length !== expectedMounts.length) return false;
-  return expectedMounts.every(expected => container.mounts.some(actual =>
-    actual.type === expected.kind
-      && actual.destination === expected.target
-      && actual.readOnly === expected.readOnly
-      && (expected.kind === 'volume'
-        ? actual.name === expected.source
-        : sameHostPath(actual.source, expected.source))));
-}
-
-function hasRequiredIsolation(container: InspectedContainer, expectedMounts: ContainerMount[]): boolean {
-  return container.readonlyRootfs
-    && Object.entries(REQUIRED_TMPFS).every(([path, options]) => container.tmpfs[path] === options)
-    && Object.keys(container.tmpfs).length === Object.keys(REQUIRED_TMPFS).length
-    && REQUIRED_CAPABILITIES.every(capability => container.capAdd.includes(capability))
-    && container.capAdd.length === REQUIRED_CAPABILITIES.length
-    && container.capDrop.includes('ALL')
-    && container.securityOpt.includes('no-new-privileges')
-    && container.pidsLimit === BUILD_CONTAINER_RESOURCE_LIMITS.pids
-    && container.nanoCpus === BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount * 1_000_000_000
-    && container.memoryBytes === BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes
-    && container.memorySwapBytes === BUILD_CONTAINER_RESOURCE_LIMITS.memorySwapBytes
-    && container.image === image
-    && hasRequiredMounts(container, expectedMounts);
-}
+const hasRequiredIsolation = (container: NonNullable<ReturnType<typeof inspectBuildContainer>>,
+  expectedMounts: ContainerMount[]): boolean => hasRequiredBuildContainerIsolation(container, {
+  expectedMounts,
+  requiredTmpfs: REQUIRED_TMPFS,
+  requiredCapabilities: REQUIRED_CAPABILITIES,
+  pidsLimit: BUILD_CONTAINER_RESOURCE_LIMITS.pids,
+  cpuCount: BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount,
+  memoryBytes: BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes,
+  memorySwapBytes: BUILD_CONTAINER_RESOURCE_LIMITS.memorySwapBytes,
+  image,
+});
 
 const expectedMounts: ContainerMount[] = [
   { kind: 'bind' as const, source: resolve(appDir), target: CODING_CONTAINER_APP_ROOT, readOnly: false },
@@ -611,9 +554,18 @@ function terminateClaude(child: { kill(signal?: NodeJS.Signals): boolean }): voi
   force.unref();
 }
 
-let res;
+let res: Awaited<ReturnType<typeof runTranscriptAwareProcess>> | undefined;
+let sessionError: unknown = null;
 let brokerLedger = null;
 let brokerDiagnostics = null;
+const cleanupErrors: string[] = [];
+const runCleanupCommand = (description: string, command: readonly string[]): void => {
+  const result = spawnSync('docker', ['exec', containerName, ...command], {
+    encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
+  if (result.status !== 0) cleanupErrors.push(`${description}: ${String(result.stderr || result.stdout
+    || result.error?.message || `exit ${result.status}`).trim()}`);
+};
 try {
   res = await runTranscriptAwareProcess({ command: 'docker', args,
     input: promptInput,
@@ -628,23 +580,33 @@ try {
     resumeSession: resumeSession ?? undefined,
     terminate: terminateClaude,
   });
+} catch (error) {
+  sessionError = error;
 } finally {
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
   if (process.env.STACK_BENCH_APPLIANCE !== '1') {
-    spawnSync('docker', ['exec', containerName, ...codingContainerTranscriptHandoffCommand()], {
-      stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
-    });
+    runCleanupCommand('transcript handoff', codingContainerTranscriptHandoffCommand());
   }
   const handoff = process.env.STACK_BENCH_APPLIANCE === '1'
     ? codingContainerWorkspaceHandoffCommands(CONTROLLER_GID)
     : [['chmod', '-R', 'a+rwX', CODING_CONTAINER_APP_ROOT]];
-  for (const command of handoff) spawnSync('docker', ['exec', containerName, ...command], {
-    stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
-  });
-  spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {
-    stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
-  });
+  for (const command of handoff) runCleanupCommand('workspace handoff', command);
+  runCleanupCommand('process-record cleanup', ['rm', '-f', processRecord]);
+}
+
+if (sessionError) {
+  if (cleanupErrors.length) {
+    throw new AggregateError([sessionError, ...cleanupErrors.map(message => new Error(message))],
+      'coding session and container cleanup failed');
+  }
+  throw sessionError;
+}
+if (!res) throw new Error('coding session returned no process result');
+if (cleanupErrors.length) {
+  res.status = res.status === 0 ? 3 : res.status ?? 3;
+  res.stderr = `${res.stderr ?? ''}${res.stderr ? '\n' : ''}`
+    + `run-build.js: container cleanup failed: ${cleanupErrors.join('; ')}\n`;
 }
 
 let cliResult = null;

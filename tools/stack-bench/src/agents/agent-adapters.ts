@@ -65,9 +65,9 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // Claude can wait through an account throttle. Local adapters keep the
       // shorter default deadline because they have no provider wait state.
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
-  adapter('deterministic', join('fixtures', 'stub-agent.js'), 'deterministic',
+  adapter('deterministic', join('tests', 'fixtures', 'repair-agent.js'), 'deterministic',
     { costLimit: 'non-billable', version: '1.3.0' }),
-  adapter('fault-injection', join('fixtures', 'fault-agent.js'), 'fault-injection',
+  adapter('fault-injection', join('tests', 'fixtures', 'crash-agent.js'), 'fault-injection',
     { modes: ['build'], costLimit: 'non-billable', version: '1.2.0' }),
   adapter('reference-fixture', join('src', 'references', 'reference-agent.js'), 'reference-fixture',
     { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', version: '1.4.0' }),

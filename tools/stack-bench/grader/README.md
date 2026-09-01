@@ -4,7 +4,9 @@ Executes versioned scenario specs against a running generated app and scores eac
 check from structured browser, transport, lifecycle, and database evidence.
 
 ```bash
-node dist/grader/grade.js --url http://localhost:6173 --level 1 --label spacetime-l1 --out report.json
+node dist/grader/grade.js --url http://localhost:6173 --level 1 \
+  --spec tracks/ecommerce/scenarios/01-account-create-2.4.0.json \
+  --label spacetime-l1 --out report.json
 ```
 
 Each actor in a scenario gets its own browser context, so identities are genuinely
@@ -46,10 +48,9 @@ the search inside a container:
 
 `{room:NAME}` expands to that scenario run's unique room name.
 
-## Writing assertions that don't lie
+## Assertion rules
 
-Two false-positive classes found while building this, both worth guarding against in new
-scenarios:
+Guard against these false positives:
 
 - **Scope anything that repeats.** An unscoped `unread-badge` matched a *different room's*
   leftover badge and passed a feature that was entirely broken. Use `in` whenever the
@@ -82,10 +83,12 @@ expected criterion fails without unrelated failures:
 
 ```bash
 node dist/grader/mutation-test.js --app <app-dir> --url <url> \
-  --mutations grader/mutations/spacetime-ecommerce-2.0.1.json
+  --mutations grader/mutations/spacetime-ecommerce-2.0.1.json \
+  --level <N> --recipe <id@version>
 ```
 
-Backend, track, level and scenario come from the mutation manifest. The runner
+Backend, track, and scenario come from the mutation manifest. Level and recipe
+select the scoring release. The runner
 fails closed if the baseline is not fully passing, an anchor is dead or
 ambiguous, reset/redeploy/readiness fails, setup breaks, evidence is
 inconclusive, the wrong criterion fails, or the intended kill has collateral.
@@ -93,6 +96,10 @@ It writes an atomic criterion-level artifact for both completed controls and
 harness failures. A surviving mutation means the expected check did not detect
 the defect. An equivalent mutation can also survive, so confirm that the edit
 changes observable behavior before changing the grader.
+
+One check can have more than one mutation when it asserts independent behavior.
+The same source edit can also qualify separate scenario checks. Each scenario is
+still graded against a clean database.
 
 A defect may edit one file with the manifest-level `file`, or several files by
 putting `file` on each entry in `edits`. Multi-file defects are applied and
@@ -113,13 +120,15 @@ moment any assertion fails. `--trace` additionally writes a Playwright trace per
 steppable with DOM snapshots and network:
 
 ```bash
-node dist/grader/grade.js --url http://localhost:6273 --level 1 --feature 4 --label postgres --media ../media
-npx playwright show-trace ../media/postgres-f4-bob.trace.zip
+node dist/grader/grade.js --url http://localhost:6273 --level 1 --feature 4 \
+  --spec tracks/ecommerce/scenarios/01-cart-2.4.0.json \
+  --label postgres --media ../media
+npx playwright show-trace ../media/postgres-f4-quantity.trace.zip
 ```
 
 Videos are `<label>-f<feature>-<actor>.webm`, screenshots `<label>-f<feature>-<criterion>.png`.
-Watching Bob's video for a failing feature is the fastest way to confirm a verdict is real
-before reporting it, and the recordings double as the evidence artifact published with results.
+Inspect the failing actor's video before reporting the verdict. Recordings are also
+published with the result evidence.
 `media/` is gitignored — recordings belong with the run output, not the repo.
 
 ## Verify the execution target

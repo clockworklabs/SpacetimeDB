@@ -4,9 +4,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { publicBackendLease, readBackendLease } from '../src/runtime/backend-lease.js';
-import { compiledEntrypoint } from '../src/package-root.js';
-import { controlSpacetime } from '../src/stacks/spacetime-lifecycle.js';
+import { publicBackendLease, readBackendLease } from '../../src/runtime/backend-lease.js';
+import { compiledEntrypoint } from '../../src/package-root.js';
+import { controlSpacetime } from '../../src/stacks/spacetime-lifecycle.js';
 const args: Record<string, string | undefined> = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const option = process.argv[i];
@@ -16,18 +16,19 @@ for (let i = 2; i < process.argv.length; i += 2) {
 const app = args.app;
 const backend = args.backend;
 if (!app || !backend) throw new Error('fault-agent requires --app and --backend');
+if (backend !== 'spacetime') throw new Error('fault-agent supports only the spacetime backend');
 const leasePath = process.env.STACK_BENCH_LEASE ?? '';
 const leaseToken = process.env.STACK_BENCH_LEASE_TOKEN ?? '';
+if (!leasePath || !leaseToken) throw new Error('fault-agent requires an active backend lease');
 mkdirSync(app, { recursive: true });
 // Match the real agent's build-mode pin. Teardown must know that any app
 // watchers live inside Docker before it considers host process cleanup.
 writeFileSync(join(app, '..', '.stack-bench-isolation'), 'container');
 
-const output = execFileSync(process.execPath,
+execFileSync(process.execPath,
   [compiledEntrypoint('container', 'run-build.js'), '--app', app,
     '--backend', backend, '--prepare-only'],
-  { encoding: 'utf8', stdio: 'pipe', maxBuffer: 16 * 1024 * 1024 });
-const prepared = JSON.parse(output.trim().split(/\r?\n/).pop() ?? '');
+  { stdio: 'pipe', maxBuffer: 16 * 1024 * 1024 });
 const beforeRestart = readBackendLease(leasePath, {
   token: leaseToken, backend, active: true,
 });
@@ -55,9 +56,7 @@ const lease = readBackendLease(leasePath, {
 if (lease.state !== 'restarting') throw new Error(`expected restarting lease, got ${lease.state}`);
 const marker = join(app, '.fault-ready.json');
 const temporary = `${marker}.${process.pid}.tmp`;
-writeFileSync(temporary, `${JSON.stringify({ prepared, phase: 'restart-stopped',
-  listenerBeforeRestart: beforeRestart.resources.listenerProcesses,
-  leasePath,
+writeFileSync(temporary, `${JSON.stringify({ phase: 'restart-stopped', leasePath,
   lease: publicBackendLease(lease) }, null, 2)}\n`);
 renameSync(temporary, marker);
 

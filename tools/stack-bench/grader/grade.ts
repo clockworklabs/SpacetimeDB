@@ -4,6 +4,7 @@
 //
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,7 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { executeAction } from '../src/actions/action-contract.js';
+import { ActionApplicationFailure, executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
@@ -156,7 +157,7 @@ function keepReason(detail: unknown, limit = 600): string {
   return out.length > limit ? out.slice(0, limit) : out;
 }
 
-function parseArgs(argv: readonly string[]): GradeArgs {
+export function parseGradeArgs(argv: readonly string[]): GradeArgs {
   const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
     url: { type: 'string' }, level: { type: 'string' }, out: { type: 'string' },
     label: { type: 'string' }, feature: { type: 'string' }, spec: { type: 'string' },
@@ -183,15 +184,32 @@ function parseArgs(argv: readonly string[]): GradeArgs {
     dbName: values['db-name'], app: values.app, media: values.media,
     failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false,
     nullControl: values['null-control'] ?? false };
-  if (!args.url) {
-    console.error('Usage: node dist/grader/grade.js --url <app-url> --level <N> [--out <file>] [--label <s>] [--feature <N>]');
-    process.exit(2);
+  if (!args.url || !args.spec) {
+    throw new Error('Usage: node dist/grader/grade.js --url <app-url> --spec <scenario.json> '
+      + '--level <N> [--out <file>] [--label <s>] [--feature <N>]');
+  }
+  let url: URL;
+  try { url = new URL(args.url); }
+  catch { throw new Error('--url must be a valid HTTP or HTTPS URL'); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('--url must use HTTP or HTTPS');
+  }
+  if (!Number.isInteger(args.level) || args.level < 1) {
+    throw new Error('--level must be a positive integer');
+  }
+  if (args.feature !== undefined && (!Number.isInteger(args.feature) || args.feature < 1)) {
+    throw new Error('--feature must be a positive integer');
+  }
+  if (args.selectionSha256 && !/^[a-f0-9]{64}$/.test(args.selectionSha256)) {
+    throw new Error('--selection-sha256 must be 64 lowercase hexadecimal characters');
   }
   return args;
 }
 
 const tid = stableElementSelector;
-const uniq = () => Math.random().toString(36).slice(2, 7);
+const uniq = () => randomUUID().slice(0, 16);
+const MAX_RECEIVED_BYTES = 8 * 1024 * 1024;
+const MAX_CONSOLE_ERRORS = 200;
 
 // Isolated browser actor
 
@@ -207,6 +225,8 @@ class Actor {
   page!: Page;
   readonly consoleErrors: string[];
   readonly received: string[];
+  receivedBytes = 0;
+  receivedOverflow = false;
   lastWrite: ActorWrite | null = null;
   lastWrites: Record<string, ActorWrite> = {};
   writes: ActorWrite[] = [];
@@ -273,24 +293,40 @@ class Actor {
       // Expected 4xx responses are not application console failures.
       if (/Failed to load resource.*status of 4\d\d/.test(text)) return;
       this.consoleErrors.push(text.slice(0, 200));
+      if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
     });
-    page.on('pageerror', e => this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`));
+    page.on('pageerror', e => {
+      this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`);
+      if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
+    });
     page.on('response', async res => {
       const type = res.headers()['content-type'] ?? '';
       // Data only. Scripts and markup are served as text/* too, and a Vite
       // bundle would bury the buffer in megabytes of application source.
       if (!/(application\/json|application\/x-ndjson|text\/event-stream|text\/plain)/.test(type)) return;
+      const length = Number(res.headers()['content-length']);
+      if (Number.isFinite(length) && length > MAX_RECEIVED_BYTES) {
+        this.receivedOverflow = true;
+        return;
+      }
       try { this.record(await res.text()); } catch { /* body gone, or page closed */ }
     });
   }
   record(payload: string | Buffer): void {
     const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
     if (!text) return;
-    this.received.push(text.slice(0, 200_000));
-    if (this.received.length > 2000) this.received.shift();
+    const chunk = text.slice(0, 200_000);
+    this.received.push(chunk);
+    this.receivedBytes += Buffer.byteLength(chunk);
+    while (this.receivedBytes > MAX_RECEIVED_BYTES && this.received.length > 1) {
+      this.receivedOverflow = true;
+      this.receivedBytes -= Buffer.byteLength(this.received.shift()!);
+    }
   }
   wasSent(needle: string): boolean {
-    return this.received.some(chunk => chunk.includes(needle));
+    if (this.received.some(chunk => chunk.includes(needle))) return true;
+    if (this.receivedOverflow) throw new Error('transport evidence exceeded its memory limit');
+    return false;
   }
   loc(testid: string, { contains, scope }:
     { contains?: string; scope?: { testid: string; contains?: string } } = {}) {
@@ -344,67 +380,6 @@ async function annotate(actor: Actor | undefined, { feature, criterion, step, st
     ].filter(Boolean).join(String.fromCharCode(10));
   }, { id: OVERLAY_ID, feature, criterion, step, status, who: actor.name }).catch(() => {});
 }
-
-// A one-line description of a step, for the banner and the timeline.
-function describeStep(step: CompiledStep): string {
-  switch (step.do) {
-    case 'signUp': return `sign up as ${step.name}${step.expectFailure ? ' (expected to fail)' : ''}`;
-    case 'signIn': return `sign in as ${step.name}${step.expectFailure ? ' (expected to fail)' : ''}`;
-    case 'createRoom': return `create room "${step.room}"`;
-    case 'enterRoom': return `enter room "${step.room}"`;
-    case 'send': return `send "${step.text}"`;
-    case 'sendMany': return `send ${step.count} messages`;
-    case 'sendConcurrently': return `${Array.isArray(step.senders) ? step.senders.length : 0} clients send at once`;
-    case 'typeInto': return 'start typing';
-    case 'clearInput': return 'stop typing';
-    case 'click': return `click ${step.testid}`;
-    case 'fill': return `type "${step.text}" into ${step.testid}`;
-    case 'pressKey': return `press ${step.key ?? 'Escape'}`;
-    case 'reload': return 'reload the page';
-    case 'closeClient': return 'close the browser';
-    case 'openClient': return 'reopen the browser';
-    case 'setOffline': return step.offline === false ? 'reconnect' : 'go offline';
-    case 'restartBackend': return 'restart the backend';
-    case 'wait': return `wait ${step.ms}ms`;
-    case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.nonEmpty ? 'non-empty ' : ''}`
-      + `${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
-    case 'recordNumber': return `note the current ${step.testid}`;
-    case 'expectNumber': {
-      const want = [
-        step.relativeTo !== undefined ? `has risen by ${step.plus ?? 0}` : null,
-        step.equals !== undefined ? `is ${step.equals}` : null,
-        step.atLeast !== undefined ? `is at least ${step.atLeast}` : null,
-        step.atMost !== undefined ? `is at most ${step.atMost}` : null,
-      ].filter(Boolean).join(' and ') || 'is a number';
-      return `expect ${step.testid} ${want}`;
-    }
-    case 'expectAgreement': return `expect all clients agree on ${step.testid}`;
-    case 'dbSetStock': return `set ${step.item}'s ${step.warehouse} stock to ${step.quantity}, straight in the database`;
-    case 'callConcurrently': return `${Array.isArray(step.actors) ? step.actors.length : 0} actors issue "${step.action}" at the same instant`;
-    case 'expectCallOutcomes': return `expect exactly ${step.accepted} of those requests were accepted`;
-    case 'expectActorsWith': {
-      const parts = [
-        step.equals !== undefined ? `exactly ${step.equals} of ${Array.isArray(step.actors) ? step.actors.length : 0} actors have` : `actors have`,
-        `${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`,
-        step.maxEach !== undefined ? `and none has more than ${step.maxEach}` : null,
-      ].filter(Boolean);
-      return `expect ${parts.join(' ')}`;
-    }
-    case 'race': return `two things happen at once (${Array.isArray(step.branches) ? step.branches.length : 0} branches)`;
-    case 'runScript': return `run the app's ${step.script}${Array.isArray(step.args) && step.args.length ? ` ${step.args.join(' ')}` : ''}`;
-    case 'expectElementCount': return `expect exactly ${step.equals} ${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
-    case 'expectSequence': return `expect ${step.testid} in the declared order`;
-    case 'expectUnavailable': return `expect ${step.testid} to be unavailable`;
-    case 'expectAllPresent': return `expect all ${step.count} "${step.prefix}" messages exactly once`;
-    case 'expectOrderMatches': return 'expect both clients agree on order';
-    case 'expectForgeryRejected': return 'expect the forged write to be rejected';
-    case 'expectNotReceived': return `expect "${step.contains}" is never sent to this client`;
-    case 'replayAs': return `replay ${step.from}'s "${step.match}" request as this actor`;
-    case 'expectReplayRejected': return 'expect the server refuses the replayed request';
-    default: return step.do;
-  }
-}
-
 
 // Step execution
 
@@ -570,8 +545,13 @@ function classifyCheckFailure(error: unknown, fallbackActor: string | null = nul
   const browserFailure = harnessBrowserFailure(error);
   if (browserFailure) return { status: 'harness_failure', code: 'browser_failure', actor: fallbackActor,
     summary: browserFailure, observation: null, expected: null, retryable: false };
-  return { status: 'failed', code: 'application_failure', actor: fallbackActor,
-    summary: errorMessage(error ?? 'unknown application failure'),
+  if (error instanceof ActionApplicationFailure) {
+    return { status: 'failed', code: 'application_failure', actor: fallbackActor,
+      summary: error.message, observation: error.details.observation ?? null,
+      expected: error.details.expected ?? null, retryable: false };
+  }
+  return { status: 'harness_failure', code: 'unclassified_exception', actor: fallbackActor,
+    summary: errorMessage(error ?? 'unknown grader failure'),
     observation: null, expected: null, retryable: false };
 }
 
@@ -602,7 +582,6 @@ function buildCheckEvidence({ ctx, phase, startedAtMs, failure = null, actor = n
 }
 
 async function runStep(step: CompiledStep, actors: Map<string, Actor>, ctx: GradeRunContext): Promise<unknown> {
-  ACTION_REGISTRY.get(step.do);
   return runRegisteredAction(step, actors, ctx);
 }
 
@@ -691,7 +670,14 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
-      await page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      try {
+        await page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      } catch (cause) {
+        if (harnessBrowserFailure(cause)) throw cause;
+        throw new ActionApplicationFailure('application did not load during browser setup', {
+          observation: errorMessage(cause), expected: 'a reachable application page',
+        });
+      }
       const actor = new Actor(name, page, context);
       actor.annotate = Boolean(args.media);
       actors.set(name, actor);
@@ -734,7 +720,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
   try {
     // Setup is not scored, but a failure makes the feature untestable (0).
     for (const step of feature.setup) {
-      await annotate(actors.get(step.actor), { feature: feature.name, criterion: 'setup', step: describeStep(step) });
+      await annotate(actors.get(step.actor), { feature: feature.name, criterion: 'setup', step: step.do });
       await runStep(step, actors, ctx);
     }
   } catch (err) {
@@ -776,7 +762,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       for (const step of criterion.steps) {
         activeActor = step.actor ?? activeActor;
         await annotate(actors.get(step.actor) ?? actors.values().next().value,
-          { feature: feature.name, criterion: criterion.id, step: describeStep(step) });
+          { feature: feature.name, criterion: criterion.id, step: step.do });
         await runStep(step, actors, ctx);
       }
       for (const a of actors.values()) {
@@ -834,8 +820,8 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
 
 async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
-  const args = parseArgs(process.argv);
-  const specPath = args.spec ? args.spec : join(ROOT, 'scenarios', `level-${String(args.level).padStart(2, '0')}.json`);
+  const args = parseGradeArgs(process.argv);
+  const specPath = args.spec!;
   let spec: CompiledScenarioDefinition;
   try {
     const compiled = compileScenarioDefinition(JSON.parse(readFileSync(specPath, 'utf8')),
@@ -845,9 +831,6 @@ async function main(): Promise<void> {
     throw new Error(`cannot compile scenario ${specPath}: ${errorMessage(error)}`, { cause: error });
   }
 
-  if (args.selectionSha256 && !/^[a-f0-9]{64}$/.test(args.selectionSha256)) {
-    throw new Error('--selection-sha256 must be 64 lowercase hexadecimal characters');
-  }
   if (typeof spec.writeUrlPattern === 'string' && spec.writeUrlPattern) {
     WRITE_URL_RE = new RegExp(spec.writeUrlPattern);
   }
@@ -934,36 +917,37 @@ async function main(): Promise<void> {
     `${String(check.featureId)}\0${String(check.criterionId)}`, check,
   ]));
 
-  for (const feature of features) {
-    process.stdout.write(`Feature ${feature.id}: ${feature.name} ... `);
-    const r = await gradeFeature(browser, feature, args, ctx);
-    if (recipeRelease) {
-      for (const criterion of r.criteria) {
-        const check = checkByCriterion.get(`${String(feature.id)}\0${String(criterion.id)}`);
-        if (!check) throw new Error(`graded criterion ${feature.id}/${criterion.id} has no recipe check`);
-        criterion.stableKey = check.stableKey;
+  try {
+    for (const feature of features) {
+      process.stdout.write(`Feature ${feature.id}: ${feature.name} ... `);
+      const r = await gradeFeature(browser, feature, args, ctx);
+      if (recipeRelease) {
+        for (const criterion of r.criteria) {
+          const check = checkByCriterion.get(`${String(feature.id)}\0${String(criterion.id)}`);
+          if (!check) throw new Error(`graded criterion ${feature.id}/${criterion.id} has no recipe check`);
+          criterion.stableKey = check.stableKey;
+        }
+      }
+      report.features.push(r);
+      report.total += r.score;
+      // The recipe owns the denominator. An unmeasured criterion earns zero and
+      // remains explicitly inconclusive; it must never change the contract.
+      if (r.inconclusive?.length) {
+        report.inconclusive = [...(report.inconclusive ?? []),
+          ...r.inconclusive.map(c => ({ feature: r.id, ...c }))];
+      }
+      console.log(`${r.score}/${r.max}`);
+      for (const c of r.criteria.filter(c => !evidencePassed(c.evidence))) {
+        console.log(`    ${renderEvidenceConsoleLine(c.evidence, c.id)}`);
       }
     }
-    report.features.push(r);
-    report.total += r.score;
-    // The recipe owns the denominator. An unmeasured criterion earns zero and
-    // remains explicitly inconclusive; it must never make a 58-point contract
-    // look like a different 57-point benchmark.
-    if (r.inconclusive?.length) {
-      report.inconclusive = [...(report.inconclusive ?? []),
-        ...r.inconclusive.map(c => ({ feature: r.id, ...c }))];
+  } finally {
+    try { await browser.close(); }
+    catch (error) {
+      report.cleanupEvidence = { status: 'harness_failure', failures: [{
+        actor: null, stage: 'browser-close', reason: keepReason(errorMessage(error)),
+      }] };
     }
-    console.log(`${r.score}/${r.max}`);
-    for (const c of r.criteria.filter(c => !evidencePassed(c.evidence))) {
-      console.log(`    ${renderEvidenceConsoleLine(c.evidence, c.id)}`);
-    }
-  }
-
-  try { await browser.close(); }
-  catch (error) {
-    report.cleanupEvidence = { status: 'harness_failure', failures: [{
-      actor: null, stage: 'browser-close', reason: keepReason(errorMessage(error)),
-    }] };
   }
 
   if (recipeRelease) report.packRuntime = measureGradePackRuntime(report);

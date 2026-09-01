@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -116,7 +116,7 @@ function readProvenance(stackBenchRoot: string): BinaryProvenance {
 }
 
 export function verifyBinaryProvenance(stackBenchRoot: string,
-  { sourceSha256 }: { sourceSha256?: string } = {}): BinaryProvenance {
+  { sourceSha256 }: { sourceSha256: string }): BinaryProvenance {
   assertSha256(sourceSha256, 'expected binary source identity');
   const manifest = readProvenance(stackBenchRoot);
   if (manifest.schemaVersion !== 2) throw new Error('unsupported binary provenance schema');
@@ -174,9 +174,10 @@ function main(): void {
     assertBinarySourceUnchanged(source, current);
     const manifest = createBinaryProvenance(stackBenchRoot, source);
     const path = provenancePath(stackBenchRoot);
-    const temporary = `${path}.tmp`;
+    const temporary = `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
-    renameSync(temporary, path);
+    try { renameSync(temporary, path); }
+    catch (error) { rmSync(temporary, { force: true }); throw error; }
     console.log(`recorded ${path}`);
     return;
   }

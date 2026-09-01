@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Deterministic fixture-based coding agent for orchestration tests.
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+// Deterministic coding agent for repair-loop tests.
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
+const passingApp = '<!doctype html><html><body><h1 id="app-title">Fixture Chat</h1></body></html>\n';
+const failingApp = '<!doctype html><html><body><h1>Fixture</h1></body></html>\n';
 
 const args: Record<string, string | undefined> = {};
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -19,10 +20,8 @@ if (args.mode === 'resume' && args.model === 'deterministic-deferred') {
 }
 const canFix = args.model !== 'deterministic-stall'
   && (args.model !== 'deterministic-deferred' || existsSync(resumed));
-const which = args.mode === 'fix' && canFix
-  ? 'app-good' : 'app-broken';
 mkdirSync(app, { recursive: true });
-copyFileSync(join(STACK_BENCH_ROOT, 'fixtures', which, 'index.html'), join(app, 'index.html'));
+writeFileSync(join(app, 'index.html'), args.mode === 'fix' && canFix ? passingApp : failingApp);
 
 console.log(JSON.stringify({
   appDir: app, mode: args.mode, level: Number(args.level ?? 1),

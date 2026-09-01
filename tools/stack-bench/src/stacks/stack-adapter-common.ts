@@ -82,6 +82,7 @@ export function controlHostedFor(adapterId: 'postgres' | 'mongodb',
     probe: request.probe,
     mode: request.mode,
     signal: request.signal,
+    exec: request.exec,
     lease: request.lease,
     environment: {
       ...leasedDatabaseEnvironment(adapter, { database: resources.database,

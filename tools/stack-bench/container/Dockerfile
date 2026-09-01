@@ -34,13 +34,6 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION} \
 RUN useradd --uid 10001 --create-home --shell /bin/bash developer \
     && chmod 0700 /home/developer
 
-# Cache reads are 97-98% of a run's bill, so the cache tier moves cost more than
-# anything else measured. Pinned here for the same reason it is pinned on the
-# host: on the 1-hour tier a second run of the same backend within the hour
-# reads a prefix the first paid to create and looks cheaper for reasons that
-# have nothing to do with the database.
-ENV FORCE_PROMPT_CACHING_5M=1
-
 # The app under construction. Everything the build writes lives here, and the
 # host mounts its own work directory over it.
 WORKDIR /app
