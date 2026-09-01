@@ -23,7 +23,6 @@ import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import {
@@ -40,6 +39,7 @@ import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { leaseFromEnv } from '../src/runtime/backend-lease.js';
+import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -105,7 +105,7 @@ type GradeRunContext = {
   url: string;
   backend?: string;
   actions: TrackAction[];
-  spacetime: unknown;
+  spacetime: LeasedSpacetimeTarget | null;
   dbName?: string;
   databaseLease?: DatabaseWriteLease | null;
   appDir?: string;
@@ -855,7 +855,8 @@ async function main(): Promise<void> {
   // Where the named actions live. The track declares their names; the
   // authenticated backend lease—not generated application config—selects the
   // SpacetimeDB host, module and exact build container used for direct SQL.
-  let actions: TrackAction[] = [], spacetime: unknown = null, recipeRelease: RecipeGradeRelease | null = null,
+  let actions: TrackAction[] = [], spacetime: LeasedSpacetimeTarget | null = null,
+    recipeRelease: RecipeGradeRelease | null = null,
     recipeIdentityRelease: RecipeRelease | null = null,
     calibration: ReturnType<typeof resolveCalibrationForRelease> | null = null;
   if (args.track) {
@@ -884,8 +885,7 @@ async function main(): Promise<void> {
     });
   }
   spacetime = args.backend
-    ? executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-      'grading', 'context', { requireBuildContainer: true })
+    ? STACK_ADAPTER_REGISTRY.get(args.backend).grading.context({ requireBuildContainer: true })
     : null;
   const hostedBackend = args.backend === 'mongodb' || args.backend === 'postgres';
   const hasLeaseAuthority = Boolean(process.env.STACK_BENCH_LEASE

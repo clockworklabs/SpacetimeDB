@@ -1,5 +1,4 @@
 import { leaseFromEnv } from './backend-lease.js';
-import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { controlHostedAppServer }
@@ -38,15 +37,11 @@ export function captureApplicationDiagnostics(
 ): unknown {
   const { lease } = leaseFromEnv(process.env, { active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(lease.backend);
-  try {
-    return executeStackCapability(adapter, 'diagnostics', 'capture',
-      { adapterId: adapter.id, lease, output, ...(exec ? { exec } : {}) });
-  } catch (error) {
-    if (error instanceof StackCapabilityUnsupportedError) {
-      return { captured: false, reason: 'backend has no hosted app restart log' };
-    }
-    throw error;
+  if (!('diagnostics' in adapter)) {
+    return { captured: false, reason: 'backend has no hosted app restart log' };
   }
+  return adapter.diagnostics.capture(
+    { lease, output, ...(exec ? { exec } : {}) });
 }
 
 export async function controlBackendRuntime(
@@ -57,7 +52,7 @@ export async function controlBackendRuntime(
   const { lease } = leaseFromEnv(process.env, { backend: spec.backend, active: true });
   const adapter = STACK_ADAPTER_REGISTRY.get(spec.backend);
   if (!adapter.lifecycle.control) {
-    throw new StackCapabilityUnsupportedError(`stack adapter ${adapter.id} does not support runtime control`);
+    throw new Error(`stack adapter ${adapter.id} does not support runtime control`);
   }
   await adapter.lifecycle.control({ ...spec, adapterId: adapter.id, lease, mode, signal });
 }

@@ -28,7 +28,6 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../src/composition/recipe-selection.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { agentRecipeIdentity, agentRequestArgv } from '../src/agents/agent-adapter-contract.js';
 import { agentSessionFailure, validateAgentResult }
@@ -84,7 +83,7 @@ import type { ProgressionAction } from '../src/progression/progression-engine.js
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionRecipeAction, ProgressionRecipeSelections }
   from '../src/progression/progression-recipe-selection.js';
-import type { BackendLease, BackendLeaseContainer } from '../src/runtime/backend-lease.js';
+import type { BackendLease } from '../src/runtime/backend-lease.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
@@ -109,22 +108,6 @@ type BenchArgs = BenchArguments & {
   repairGrant?: RepairGrantResolution;
   mutationImageId?: string;
   spentBudgetUsd?: number;
-};
-type StackRuntimeConfig = {
-  environment: Record<string, string>;
-  lease: { serverUri: string | null };
-  lifecycle: UnknownRecord;
-  windowsEnvironmentBridge: string[];
-};
-type PreparedLease = {
-  lease: {
-    serverUri: string | null;
-    database: string | null;
-    module: string | null;
-    dataDir: string | null;
-    container: Pick<BackendLeaseContainer, 'name' | 'id'> | null;
-  };
-  lockKeys: string[];
 };
 type ProgressionWorkRecipeAction = ProgressionRecipeSelections & {
   action: Exclude<ProgressionAction, { type: 'terminal' }>;
@@ -170,22 +153,6 @@ function parseLeakAudit(value: string): LeakAuditEntry[] {
   });
 }
 
-function nullableString(value: unknown, at: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== 'string') throw new Error(`${at} must be a string or null`);
-  return value;
-}
-
-function stringRecord(value: unknown, at: string): Record<string, string> {
-  if (!object(value)) throw new Error(`${at} must be an object`);
-  const result: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry !== 'string') throw new Error(`${at}.${key} must be a string`);
-    result[key] = entry;
-  }
-  return result;
-}
-
 function stringArray(value: unknown, at: string): string[] {
   if (!Array.isArray(value) || value.some(entry => typeof entry !== 'string')) {
     throw new Error(`${at} must be an array of strings`);
@@ -220,46 +187,6 @@ function campaignSelection(value: unknown, at: string): CampaignSelection {
   return { ...(optionalStrings('packs') === undefined ? {} : { packs: optionalStrings('packs') }),
     ...(optionalStrings('checks') === undefined ? {} : { checks: optionalStrings('checks') }),
     ...(levels === undefined ? {} : { levels }) };
-}
-
-function stackRuntimeConfig(value: unknown): StackRuntimeConfig {
-  if (!object(value)) throw new Error('stack orchestrator config must be an object');
-  if (!object(value.lease)) throw new Error('stack orchestrator config.lease must be an object');
-  if (!object(value.lifecycle)) throw new Error('stack orchestrator config.lifecycle must be an object');
-  if (!Array.isArray(value.windowsEnvironmentBridge)
-    || value.windowsEnvironmentBridge.some(entry => typeof entry !== 'string')) {
-    throw new Error('stack orchestrator config.windowsEnvironmentBridge must be strings');
-  }
-  return { environment: stringRecord(value.environment, 'stack orchestrator config.environment'),
-    lease: { serverUri: nullableString(value.lease.serverUri,
-      'stack orchestrator config.lease.serverUri') },
-    lifecycle: value.lifecycle,
-    windowsEnvironmentBridge: [...value.windowsEnvironmentBridge] };
-}
-
-function preparedLeaseResult(value: unknown): PreparedLease {
-  if (!object(value) || !object(value.lease) || !Array.isArray(value.lockKeys)
-    || value.lockKeys.some(key => typeof key !== 'string')) {
-    throw new Error('stack lease preparation result is invalid');
-  }
-  const lease = value.lease;
-  const container = lease.container;
-  if (container === null) {
-    return { lease: { serverUri: nullableString(lease.serverUri, 'stack lease serverUri'),
-      database: nullableString(lease.database, 'stack lease database'),
-      module: nullableString(lease.module, 'stack lease module'),
-      dataDir: nullableString(lease.dataDir, 'stack lease dataDir'), container: null },
-    lockKeys: [...value.lockKeys] };
-  }
-  if (!object(container) || typeof container.name !== 'string' || typeof container.id !== 'string') {
-    throw new Error('stack lease preparation result.container is invalid');
-  }
-  return { lease: { serverUri: nullableString(lease.serverUri, 'stack lease serverUri'),
-    database: nullableString(lease.database, 'stack lease database'),
-    module: nullableString(lease.module, 'stack lease module'),
-    dataDir: nullableString(lease.dataDir, 'stack lease dataDir'),
-    container: { name: container.name, id: container.id } },
-  lockKeys: [...value.lockKeys] };
 }
 
 function isProgressionWorkRecipeAction(value: ProgressionRecipeAction):
@@ -546,8 +473,7 @@ export function gradeArgv(
         .flatMap(([, priorTask]) => checksForGrade(priorTask, 'scored')
           .map(check => check.stableKey)))] : []),
     ...(args.media && observation === 'scored' ? [] : ['--no-media']),
-    ...(!executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-      'run-policy', 'reset-enabled')
+    ...(!STACK_ADAPTER_REGISTRY.get(args.backend).runPolicy.resetEnabled
       ? ['--no-reset']
       : ['--restart-spec', JSON.stringify(restartSpec)])];
 }
@@ -718,12 +644,11 @@ async function main() {
   } else {
     args.pricing = null;
   }
-  if (args.retainBackend
-    && !executeStackCapability(stackAdapter, 'run-policy', 'retain-host-supported')) {
+  if (args.retainBackend && !stackAdapter.runPolicy.retainHostSupported) {
     throw new Error(`stack adapter ${args.backend} does not support --retain-backend`);
   }
-  const stackRuntime = stackRuntimeConfig(executeStackCapability(stackAdapter,
-    'orchestrator', 'config', { root: ROOT, env: process.env, helpers: { exists: existsSync } }));
+  const stackRuntime = stackAdapter.orchestrator.config(
+    { root: ROOT, env: process.env, helpers: { exists: existsSync } });
   Object.assign(process.env, stackRuntime.environment);
   process.env.STACK_BENCH_NODE_BIN = process.platform === 'win32' ? 'node.exe' : process.execPath;
   const track = loadTrack(args.track);
@@ -901,14 +826,14 @@ async function main() {
     ?? join(tmpdir(), 'stack-bench-runtime'));
   const runtimeDir = join(runtimeRoot, runId);
   const leasePath = join(runtimeDir, ARTIFACT_FILE.backendLease);
-  const preparedLease = preparedLeaseResult(executeStackCapability(stackAdapter, 'lease', 'prepare', {
+  const preparedLease = stackAdapter.lease.prepare({
     track,
     runIndex: args.runIndex,
     runtimeDir,
     serverUri: stackRuntime.lease.serverUri,
     env: process.env,
     helpers: { containerIdentity: runningContainerIdentity, dbName, moduleName },
-  }));
+  });
   const initialLease = createBackendLease({
     runId,
     backend: args.backend,

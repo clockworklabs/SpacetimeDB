@@ -3,7 +3,7 @@ import { chmodSync, constants, copyFileSync, existsSync, readFileSync, writeFile
   mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.js';
+import { validateStackLeaseResources } from '../stacks/stack-lease-capabilities.js';
 import { processIdentity } from './platform.js';
 
 export const LEASE_VERSION = 1;
@@ -162,7 +162,7 @@ export function createBackendLease({ runId, backend, track, runIndex, ownerPid =
     listenerProcesses: [],
   };
   try {
-    executeStackLeaseCapability(backend, 'validate-resources', {
+    validateStackLeaseResources(backend, {
       resources,
       helpers: { requireString, loopbackHttpUri },
     });
@@ -216,7 +216,7 @@ export function validateBackendLease(
   if (runId !== undefined && runId !== leaseRunId) fail(`runId is ${leaseRunId}, not ${runId}`);
   if (active && !['active', 'restarting'].includes(lease.state)) fail(`lease is ${lease.state}, not active`);
   try {
-    executeStackLeaseCapability(leaseBackend, 'validate-resources', {
+    validateStackLeaseResources(leaseBackend, {
       resources: lease.resources,
       helpers: { requireString, loopbackHttpUri },
     });

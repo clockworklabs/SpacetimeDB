@@ -9,16 +9,27 @@ import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
 type HostUrl = (url: string) => string;
 
 interface StackSetupMetadata {
-  spacetime: string | null;
-  spacetimeBindings: string | null;
-  database: string | null;
+  spacetime: { commit: string | null; binarySha256: string | null; raw: string } | null;
+  spacetimeBindings: { package: string; sourceSha256: string | null; sourceFiles: number } | null;
+  database: { reference: string; imageId: string | null | undefined } | null;
+}
+
+interface StackSetupMetadataInput {
+  imageId: string;
+  localPackage: string;
+  env?: NodeJS.ProcessEnv;
+  helpers: {
+    linuxSpacetimeVersion: (imageId: string) => NonNullable<StackSetupMetadata['spacetime']>;
+    bindingsIdentity: (localPackage: string) => NonNullable<StackSetupMetadata['spacetimeBindings']>;
+    containerImage: (container: string) => NonNullable<StackSetupMetadata['database']>;
+  };
 }
 
 export interface BuildContainerPlan {
   networkNamespace: string | null;
   requiredPaths: string[];
   ensureDirectories: string[];
-  mounts: Array<{ kind: string; source: string; target: string; readOnly: boolean }>;
+  mounts: Array<{ kind: 'bind' | 'volume'; source: string; target: string; readOnly: boolean }>;
   init: string;
   readyFile: string | null;
   readyDescription: string | null;
@@ -39,14 +50,8 @@ export function noConnectionUrl(): null {
   return null;
 }
 
-export function spacetimeSetupMetadata({ imageId, localPackage, helpers }: {
-  imageId: string;
-  localPackage: string;
-  helpers: {
-    linuxSpacetimeVersion: (imageId: string) => string;
-    bindingsIdentity: (localPackage: string) => string;
-  };
-}): StackSetupMetadata {
+export function spacetimeSetupMetadata({ imageId, localPackage, helpers }:
+  StackSetupMetadataInput): StackSetupMetadata {
   return {
     spacetime: helpers.linuxSpacetimeVersion(imageId),
     spacetimeBindings: helpers.bindingsIdentity(localPackage),
@@ -54,10 +59,8 @@ export function spacetimeSetupMetadata({ imageId, localPackage, helpers }: {
   };
 }
 
-export function postgresSetupMetadata({ helpers, env }: {
-  helpers: { containerImage: (container: string) => string };
-  env?: NodeJS.ProcessEnv;
-}): StackSetupMetadata {
+export function postgresSetupMetadata({ helpers, env }:
+  StackSetupMetadataInput): StackSetupMetadata {
   return {
     spacetime: null,
     spacetimeBindings: null,
@@ -65,10 +68,8 @@ export function postgresSetupMetadata({ helpers, env }: {
   };
 }
 
-export function mongoDbSetupMetadata({ helpers, env }: {
-  helpers: { containerImage: (container: string) => string };
-  env?: NodeJS.ProcessEnv;
-}): StackSetupMetadata {
+export function mongoDbSetupMetadata({ helpers, env }:
+  StackSetupMetadataInput): StackSetupMetadata {
   return {
     spacetime: null,
     spacetimeBindings: null,
@@ -76,7 +77,7 @@ export function mongoDbSetupMetadata({ helpers, env }: {
   };
 }
 
-export function emptySetupMetadata(): StackSetupMetadata {
+export function emptySetupMetadata(_input?: StackSetupMetadataInput): StackSetupMetadata {
   return { spacetime: null, spacetimeBindings: null, database: null };
 }
 

@@ -26,9 +26,10 @@ import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_BUG_REPORT_FILE,
   from '../src/runtime/coding-container-policy.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import type { StackRunPorts } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
+import { requireLeasedDatabase, requireLeasedSpacetime }
+  from '../src/stacks/backend-reset-guard.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
@@ -341,19 +342,15 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
 }
 
 const dbUrl = (backend: string, runIndex: number, dbPort: number | null, track: Track): string | null => {
-  const url = executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'agent', 'connection-url',
-    { dbPort, database: dbName(track, runIndex), hostUrl });
-  return typeof url === 'string' ? url : null;
+  const adapter = STACK_ADAPTER_REGISTRY.get(backend);
+  if (adapter.id === 'spacetime' || adapter.id === 'stub') return null;
+  if (!dbPort) throw new Error(`${backend} has no assigned database port`);
+  return adapter.agent.connectionUrl({ dbPort, database: dbName(track, runIndex), hostUrl });
 };
 
 // Create the leased database before the app connects. A build clears its schema.
 // A reset between suites preserves the schema required by the running app.
-interface DatabasePreparationLease {
-  runId: string;
-  track: string;
-  runIndex: number;
-  resources: Pick<BackendLease['resources'], 'database'>;
-}
+type DatabasePreparationLease = BackendLease;
 
 type DatabaseCommandOptions = Pick<ExecFileSyncOptionsWithStringEncoding, 'stdio' | 'timeout'>;
 
@@ -379,10 +376,16 @@ export function ensureDatabase(backend: string, runIndex: number, dbPort: number
   }
   const expectedName = dbName(track, runIndex);
   const name = lease.resources.database ?? expectedName;
-  return executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'database', 'prepare', {
-    lease, name, expectedName, wipe, exec, cli: stdbBin,
-    expectedServerUri: STDB_URI, expectedModule: moduleName(track, runIndex), dbPort,
-  });
+  const input = { name, expectedName, wipe, exec, cli: stdbBin,
+    expectedServerUri: STDB_URI, expectedModule: moduleName(track, runIndex), dbPort };
+  const adapter = STACK_ADAPTER_REGISTRY.get(backend);
+  if (adapter.id === 'postgres' || adapter.id === 'mongodb') {
+    return adapter.database.prepare({ ...input, lease: requireLeasedDatabase(lease) });
+  }
+  if (adapter.id === 'spacetime') {
+    return adapter.database.prepare({ ...input, lease: requireLeasedSpacetime(lease) });
+  }
+  return adapter.database.prepare({ name });
 }
 
 // Prescribed guidance chooses an implementation stack. Neutral guidance gives
@@ -465,8 +468,7 @@ function containerBlocker(backend: string): string | null {
     return `cannot verify isolation image ${IMAGE}: ${detail} — `
       + `build it with docker build -t ${IMAGE} ${fwd(join(ROOT, 'container'))}`;
   }
-  if (!executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend),
-    'agent', 'linux-cli-required')) return null;
+  if (!STACK_ADAPTER_REGISTRY.get(backend).agent.linuxCliRequired) return null;
   if (!existsSync(LINUX_CLI)) {
     return `no Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)} — `
       + 'bash tools/stack-bench/container/build-linux-cli.sh';
@@ -648,12 +650,7 @@ async function main() {
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const profileSkills = resolveDefaultGuidanceForStack(args.guidance, args.backend)
     ?.skills[args.backend]?.ids;
-  const adapterSkills = executeStackCapability(adapter, 'agent', 'default-skills');
-  if (!profileSkills && (!Array.isArray(adapterSkills)
-    || adapterSkills.some(skill => typeof skill !== 'string'))) {
-    throw new Error(`stack adapter ${args.backend} returned invalid default skills`);
-  }
-  const defaultSkills = profileSkills ?? adapterSkills as string[];
+  const defaultSkills = profileSkills ?? [...adapter.agent.defaultSkills];
   const selectedSkills = selectAgentSkills(defaultSkills,
     args.skillIdentity?.ids ?? args.skills ?? null);
   const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
@@ -782,7 +779,7 @@ async function main() {
   const turns = result.num_turns ?? 0;
 
   // Preserve the cost inputs needed to explain stack differences.
-  const setupMetadata = executeStackCapability(adapter, 'agent', 'setup-metadata', {
+  const setupMetadata = adapter.agent.setupMetadata({
     imageId: imageIdentity.id,
     localPackage: LOCAL_PKG,
     env: process.env,

@@ -10,8 +10,8 @@ import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
-import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import type { LeasedSpacetimeTarget } from '../runtime/spacetime-target.js';
 import type { RuntimeControlMode, RuntimeControlSpec } from '../runtime/backend-control.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
@@ -411,7 +411,7 @@ interface DatabaseWriteCapabilityOptions {
   readonly databaseLease?: DatabaseWriteLease | null;
   readonly exec?: Exec;
   readonly expand: (value: string) => string;
-  readonly spacetime?: unknown;
+  readonly spacetime?: LeasedSpacetimeTarget | null;
 }
 
 export function createDatabaseWriteCapability({ backend, spacetime, databaseLease, expand,
@@ -422,25 +422,18 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
       const warehouse = expand(input.warehouse);
       const quantity = Number(input.quantity);
       if (!Number.isInteger(quantity)) fail(`dbSetStock: quantity must be a whole number, got ${input.quantity}`);
-      try {
-        const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
-        if (!adapter) return inconclusive(
-          `direct stock writes do not support backend ${backend ?? '<unset>'}`,
-        );
-        if ((backend === 'mongodb' || backend === 'postgres') && !databaseLease) {
-          throw Object.assign(new Error('direct database writes require an authenticated backend lease'),
-            { classification: 'harness_failure' });
-        }
-        return executeStackCapability(adapter,
-          'database-write', 'set-stock', {
-            item, warehouse, quantity, spacetime, lease: databaseLease, exec,
-          });
-      } catch (error) {
-        if (error instanceof StackCapabilityUnsupportedError) {
-          inconclusive(`direct stock writes do not support backend ${backend ?? '<unset>'}`);
-        }
-        throw error;
+      const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
+      if (!adapter || !('databaseWrite' in adapter)) {
+        return inconclusive(`direct stock writes do not support backend ${backend ?? '<unset>'}`);
       }
+      if (adapter.id === 'spacetime') {
+        return adapter.databaseWrite.setStock({ item, warehouse, quantity, spacetime: spacetime ?? undefined, exec });
+      }
+      if (!databaseLease) {
+        throw Object.assign(new Error('direct database writes require an authenticated backend lease'),
+          { classification: 'harness_failure' });
+      }
+      return adapter.databaseWrite.setStock({ item, warehouse, quantity, lease: databaseLease, exec });
     },
   });
 }

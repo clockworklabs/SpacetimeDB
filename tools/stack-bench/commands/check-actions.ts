@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 // Probes are unauthenticated or malformed and must never mutate data.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { TRACK_MANIFEST_FILE, TRACKS_DIR } from '../src/composition/tracks.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
+import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 
 interface CheckActionsArgs {
@@ -20,19 +17,7 @@ interface CheckActionsArgs {
   parentAttemptId?: string;
 }
 
-interface NamedAction {
-  id: string;
-  path: string;
-  args?: unknown;
-}
-
-interface NamedActionRequest {
-  url?: string;
-  method?: string;
-  body?: BodyInit | null;
-  missingNote: string;
-  applicationRejectionStatuses?: number[];
-}
+import type { NamedAction } from '../src/composition/tracks.js';
 
 interface ActionResult {
   id: string;
@@ -59,11 +44,9 @@ const backend = args.backend;
 if (!backend) throw new Error('--backend is required');
 
 // Use non-writing probes declared by the selected track.
-const track = args.track
-  ? JSON.parse(readFileSync(join(TRACKS_DIR, args.track, TRACK_MANIFEST_FILE), 'utf8')) as {
-  actions?: NamedAction[];
-} : null;
-const ACTIONS = (track?.actions ?? []).map(action => ({ ...action, http: { method: 'POST', path: action.path } }));
+const track = args.track ? loadTrack(args.track) : null;
+const ACTIONS = (track?.actions ?? []).map(action => ({ ...action,
+  http: { method: 'POST', path: action.path } }));
 if (!ACTIONS.length) {
   if (!args.quiet) console.log(`  no named actions declared for track "${args.track ?? '(none)'}" — nothing to check`);
   if (args.out) {
@@ -80,20 +63,20 @@ if (!ACTIONS.length) {
 // is app-controlled input and may use environment expressions rather than
 // literals; it is neither authoritative nor safe for harness operations.
 const adapter = STACK_ADAPTER_REGISTRY.get(backend);
-const spacetime = executeStackCapability(adapter, 'grading', 'context',
-  { requireBuildContainer: false });
+const spacetime = adapter.grading.context({ requireBuildContainer: false });
 
 async function probe(action: NamedAction): Promise<Omit<ActionResult, 'id'>> {
   try {
-    const request = executeStackCapability(adapter, 'named-action', 'request',
-      { action, input: { args: action.args }, spacetime, url: args.url }) as NamedActionRequest;
+    const request = adapter.namedAction.request(
+      { action, input: { args: action.args }, spacetime, url: args.url });
     if (!request.url) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
     const r = await fetch(request.url, {
       method: request.method ?? 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: request.body,
     });
-    const rejectedByApplication = request.applicationRejectionStatuses?.includes(r.status) ?? false;
+    const rejectedByApplication = 'applicationRejectionStatuses' in request
+      && request.applicationRejectionStatuses.includes(r.status);
     const recognizedWithoutRunning = r.status >= 400 && r.status < 500
       && ![404, 405, 429].includes(r.status);
     const ok = r.ok || rejectedByApplication || recognizedWithoutRunning;

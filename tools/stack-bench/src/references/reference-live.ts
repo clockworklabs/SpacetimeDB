@@ -6,7 +6,6 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeRunJson } from '../evidence/artifacts.js';
@@ -493,10 +492,10 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   try {
     prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
-    const supervisorEnv = executeStackCapability(adapter, 'run-policy', 'supervisor-env',
+    const supervisorEnv = adapter.runPolicy.supervisorEnvironment(
       { spacetimePort: args.spacetimePort });
     const env = { ...process.env, STACK_BENCH_SUPERVISOR_STATE: supervisorState,
-      ...(record(supervisorEnv) ? supervisorEnv : {}) };
+      ...supervisorEnv };
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(args.level), '--run-index', String(args.runIndex), '--fix-rounds', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--no-media'];

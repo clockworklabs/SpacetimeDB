@@ -32,7 +32,7 @@ import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.
 import { isExactSemanticVersion } from '../semantic-version.js';
 import { parseVersionedProgressionId } from '../progression/progression-identifiers.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import type { StackAdapter } from '../stacks/stack-adapter-contract.js';
+import type { StackAdapterIdentity } from '../stacks/stack-adapter-contract.js';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.js';
 import type { Track } from '../composition/tracks.js';
 import type { ConditionReference, ResolvedStudyCondition } from './condition-compiler.js';
@@ -641,7 +641,7 @@ function rotate<T>(values: T[], offset: number): T[] {
   return [...values.slice(offset), ...values.slice(0, offset)];
 }
 
-function identityForStack(adapter: StackAdapter): ResolvedStackIdentity {
+function identityForStack(adapter: StackAdapterIdentity): ResolvedStackIdentity {
   return { id: adapter.id, version: adapter.version, sha256: null, state: null };
 }
 

@@ -3,7 +3,6 @@
 
 import { execFileSync } from 'node:child_process';
 import { readBackendLease, releaseResourceLocks, updateBackendLease } from './backend-lease.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 
 const DOCKER_TIMEOUT_MS = 120_000;
@@ -101,8 +100,7 @@ export function releaseBackendLease(
   let lease = readBackendLease(leasePath, { token: leaseToken });
   if (lease.state === 'released') return true;
   let released = stopLeasedContainer(leasePath, leaseToken);
-  released = executeStackCapability(STACK_ADAPTER_REGISTRY.get(lease.backend),
-    'teardown', 'host', {
+  released = STACK_ADAPTER_REGISTRY.get(lease.backend).teardown.host({
       leasePath, leaseToken, lease, retainHost: retainBackend,
     }) && released;
   if (!released || retainBackend) return released;

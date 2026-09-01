@@ -1,8 +1,8 @@
 import { fail } from './actor-action-runtime.js';
 import type { Actor, HeaderRecord } from './actor-action-runtime.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { NamedAction } from '../composition/tracks.js';
+import type { SpacetimeTarget } from '../stacks/stack-grading-operations.js';
 
 interface StorageLike {
   readonly length: number;
@@ -135,7 +135,7 @@ export function createNamedActionsCapability({
   readonly actions?: readonly NamedAction[];
   readonly backend: string;
   readonly url?: string | null;
-  readonly spacetime?: unknown;
+  readonly spacetime?: SpacetimeTarget | null;
   readonly lastCalls: {
     get(): ConcurrentCallResult | null;
     set(result: ConcurrentCallResult): void;
@@ -147,7 +147,7 @@ export function createNamedActionsCapability({
   return Object.freeze({
     resolve: (id: string) => (actions ?? []).find(action => action.id === id) ?? null,
     request(action: NamedAction, input: unknown) {
-      return executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'named-action', 'request',
+      return STACK_ADAPTER_REGISTRY.get(backend).namedAction.request(
         { action, input, spacetime, url }) as NamedActionRequest | null;
     },
     fetch: fetchImpl,

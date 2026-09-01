@@ -22,7 +22,7 @@ interface ServiceOverrides {
   readonly backend?: string;
   readonly fetchImpl?: NamedOptions['fetchImpl'];
   readonly sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-  readonly spacetime?: unknown;
+  readonly spacetime?: { uri: string; mod: string };
 }
 
 interface ProvidedServices {

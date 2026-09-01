@@ -12,8 +12,10 @@ import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import { requireLeasedDatabase, requireLeasedSpacetime } from '../stacks/backend-reset-guard.js';
+import type { HostedReferenceMetadata, SpacetimeReferenceMetadata }
+  from '../stacks/stack-reference-operations.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   REFERENCE_METADATA_FILE, referenceMetadataIssues, validateReferenceRegistry }
@@ -261,12 +263,37 @@ async function main(): Promise<void> {
     throw new Error('prepared build container did not report its name and identity');
   }
   const containerIdentity = identity.identity;
+  const containerName = identity.containerName;
+  if (identity.networkMode !== undefined && identity.networkMode !== 'host'
+    && identity.networkMode !== 'bridge') {
+    throw new Error('prepared build container reported an invalid network mode');
+  }
+  const buildNetworkMode = identity.networkMode;
   phase(`prepared build container ${identity.containerName}`);
-  await deployReferenceAndRestoreSource(() => executeStackCapability(adapter, 'reference', 'deploy', {
-    args, metadata, lease, track, container: identity.containerName, ports,
-    buildNetworkMode: identity.networkMode,
-    helpers: { dbName, loadTrack, moduleName, runSync, docker, startDetached, waitFor, containerLogs, phase },
-  }), () => restoreReferenceSourceIdentity(source.fixture, args.app));
+  if (!('reference' in adapter)) throw new Error(`${adapter.id} has no reference deployment`);
+  const helpers = { dbName, loadTrack, moduleName, runSync, docker, startDetached,
+    waitFor, containerLogs, phase };
+  await deployReferenceAndRestoreSource(() => {
+    if (adapter.id === 'postgres' || adapter.id === 'mongodb') {
+      return adapter.reference.deploy({
+        args, metadata: metadata as HostedReferenceMetadata,
+        lease: requireLeasedDatabase(lease), track,
+        container: containerName, ports, buildNetworkMode, helpers,
+      });
+    }
+    if (adapter.id === 'spacetime') {
+      const target = requireLeasedSpacetime(lease);
+      return adapter.reference.deploy({
+        args, metadata: metadata as SpacetimeReferenceMetadata,
+        lease: { resources: {
+          ...target.resources,
+          buildContainer: lease.resources.buildContainer,
+        } },
+        container: containerName, ports, buildNetworkMode, helpers,
+      });
+    }
+    throw new Error('unsupported reference adapter');
+  }, () => restoreReferenceSourceIdentity(source.fixture, args.app));
 
   phase('deployment complete');
   console.log(JSON.stringify({ appDir: args.app, mode: args.mode, level: args.level,

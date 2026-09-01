@@ -39,7 +39,6 @@ import { dbName, loadTrack, TRACK_MANIFEST_FILE } from "../src/composition/track
 import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
 import { resetBackend } from "../src/stacks/backend-reset.js";
 import { fetchStatus } from "../src/runtime/readiness.js";
-import { executeStackCapability } from "../src/stacks/stack-adapter-contract.js";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.js";
 import { mutationShard } from "../src/evidence/mutation-shards.js";
 import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
@@ -172,8 +171,7 @@ async function restartAfterSourceChange(a: MutationArgs): Promise<void> {
 // across runs — an accumulated room would read as a mutation being "caught".
 async function reset(a: MutationArgs): Promise<void> {
   resetBackend({ backend: a.backend!, app: a.app! });
-  const requiresReseed = executeStackCapability(STACK_ADAPTER_REGISTRY.get(a.backend!),
-    "reset", "requires-reseed");
+  const requiresReseed = STACK_ADAPTER_REGISTRY.get(a.backend!).reset.requiresReseed;
   if (a.reseedOnReset && requiresReseed) {
     if (!a.restartSpec) {
       throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);

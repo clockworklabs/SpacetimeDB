@@ -4,34 +4,34 @@ import { emptySetupMetadata, noConnectionUrl,
   standardBuildContainerPlan } from '../stack-agent-operations.js';
 import { standardOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopHostedHost } from '../stack-teardown-operations.js';
-import { stackLeaseCapability } from '../stack-lease-capabilities.js';
+import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { STUB_ADAPTER_VERSION } from './stub-identity.js';
-import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';
+import { defineStackAdapter } from '../stack-adapter-common.js';
 
-export const stubAdapter = defineStackAdapter('stub', stackLeaseCapability('stub'), {
+export const stubAdapter = defineStackAdapter('stub', {
   activate: activateHosted,
 }, {
-  reset: operationProvider('stub', 'reset', { 'requires-reseed': () => false }),
-  database: operationProvider('stub', 'database', { prepare: ({ name }) => name }),
-  grading: operationProvider('stub', 'grading', { context: createHttpGradingContext }),
-  'named-action': operationProvider('stub', 'named-action', { request: httpNamedActionRequest }),
-  teardown: operationProvider('stub', 'teardown', { host: stopHostedHost }),
-  'run-policy': runPolicyProvider('stub',
-    { 'reset-enabled': false, 'retain-host-supported': false, 'supervisor-env': () => ({}) }),
-  admission: operationProvider('stub', 'admission', {
-    requirements: () => ({ docker: false, services: false, ports: false,
-      credentials: false, providerAccess: false }),
-  }),
-  agent: operationProvider('stub', 'agent', {
-    'connection-url': noConnectionUrl,
-    'minimal-guidance-supported': () => true,
-    'default-skills': () => [],
-    'linux-cli-required': () => false,
-    'setup-metadata': emptySetupMetadata,
-    'server-directory': () => 'server',
-    'find-database-urls': () => [],
-  }),
-  'build-container': operationProvider('stub', 'build-container',
-    { plan: () => standardBuildContainerPlan() }),
-  orchestrator: operationProvider('stub', 'orchestrator', { config: standardOrchestratorConfig }),
+  lease: stackLeaseOperations('stub'),
+  reset: { requiresReseed: false },
+  database: { prepare: ({ name }: { name: string }) => name },
+  grading: { context: createHttpGradingContext },
+  namedAction: { request: httpNamedActionRequest },
+  teardown: { host: stopHostedHost },
+  runPolicy: { resetEnabled: false, retainHostSupported: false,
+    supervisorEnvironment: (_input: { spacetimePort: number | null }) => ({}) },
+  admission: {
+    requirements: { docker: false, services: false, ports: false,
+      credentials: false, providerAccess: false },
+  },
+  agent: {
+    connectionUrl: (_input: { dbPort: number; database: string; hostUrl(url: string): string }) => noConnectionUrl(),
+    minimalGuidanceSupported: true,
+    defaultSkills: [],
+    linuxCliRequired: false,
+    setupMetadata: emptySetupMetadata,
+    serverDirectory: 'server',
+    findDatabaseUrls: (_input: { text: string }) => [],
+  },
+  buildContainer: { plan: () => standardBuildContainerPlan() },
+  orchestrator: { config: standardOrchestratorConfig },
 }, { version: STUB_ADAPTER_VERSION });

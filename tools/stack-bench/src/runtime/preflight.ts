@@ -18,7 +18,6 @@ import { createBoundRecipeTaskRequest, resolveRecipeSelection } from '../composi
 import { validateFeatureCatalogInput } from '../progression/progression-definition.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainer, isDatabaseContainerBackend } from '../stacks/database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
@@ -524,12 +523,7 @@ export function runPreflight(
       const adapter = STACK_ADAPTER_REGISTRY.get(backend);
       const profileSkills = resolveDefaultGuidanceForStack(request.guidance, backend)
         ?.skills[backend]?.ids;
-      const adapterSkills = executeStackCapability(adapter, 'agent', 'default-skills');
-      if (!profileSkills && (!Array.isArray(adapterSkills)
-        || adapterSkills.some(skill => typeof skill !== 'string'))) {
-        throw new Error(`stack adapter ${backend} returned invalid default skills`);
-      }
-      const defaultSkills = profileSkills ?? adapterSkills as string[];
+      const defaultSkills = profileSkills ?? [...adapter.agent.defaultSkills];
       const skills = agent?.usesStackSkills
         ? selectAgentSkills(defaultSkills, request.agentSkills ?? null) : [];
       const missingSkills = agentSkillPaths(REPO, skills).filter(path => !exists(path));
@@ -558,8 +552,8 @@ export function runPreflight(
 
   if (request.backends.includes('spacetime')) {
     try {
-      const runtime = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
-        'orchestrator', 'config', { root: ROOT, env, helpers: { exists } });
+      const runtime = STACK_ADAPTER_REGISTRY.get('spacetime').orchestrator.config(
+        { root: ROOT, env, helpers: { exists } });
       const port = Number(new URL(spacetimeServerUri(runtime)).port);
       const availability = probePort(port);
       const listeners = availability.free ? [] : inspectPorts(port);

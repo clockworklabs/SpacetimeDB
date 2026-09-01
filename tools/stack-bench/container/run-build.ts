@@ -8,7 +8,6 @@ import { homedir } from 'node:os';
 import { parseArgs } from 'node:util';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
   from '../src/composition/product-config.js';
@@ -35,8 +34,6 @@ import { REPOSITORY_ROOT } from '../src/package-root.js';
 
 type JsonRecord = Record<string, unknown>;
 type ContainerMount = { kind: 'bind' | 'volume'; source: string; target: string; readOnly: boolean };
-type BuildContainerPlan = { requiredPaths: string[]; ensureDirectories: string[]; mounts: ContainerMount[];
-  networkNamespace: 'host' | null; init: string; readyFile?: string; readyDescription?: string };
 type InspectedMount = { type: string; source: string; name: string | null; destination: string; readOnly: boolean };
 type InspectedContainer = { id: string; image: string; running: boolean; networkMode: string | null;
   readonlyRootfs: boolean; tmpfs: Record<string, string>; capAdd: string[]; capDrop: string[];
@@ -57,21 +54,6 @@ function stringArray(value: unknown): string[] {
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
-}
-
-function buildContainerPlan(value: unknown): BuildContainerPlan | null {
-  if (!isRecord(value) || !Array.isArray(value.requiredPaths) || !Array.isArray(value.ensureDirectories)
-    || !Array.isArray(value.mounts) || (value.networkNamespace !== null && value.networkNamespace !== 'host')
-    || typeof value.init !== 'string' || !value.init
-    || !value.requiredPaths.every((path): path is string => typeof path === 'string')
-    || !value.ensureDirectories.every((path): path is string => typeof path === 'string')
-    || !value.mounts.every((mount): mount is ContainerMount => isRecord(mount)
-      && (mount.kind === 'bind' || mount.kind === 'volume') && typeof mount.source === 'string'
-      && typeof mount.target === 'string' && typeof mount.readOnly === 'boolean')) return null;
-  return { requiredPaths: value.requiredPaths, ensureDirectories: value.ensureDirectories,
-    mounts: value.mounts, networkNamespace: value.networkNamespace, init: value.init,
-    ...(typeof value.readyFile === 'string' ? { readyFile: value.readyFile } : {}),
-    ...(typeof value.readyDescription === 'string' ? { readyDescription: value.readyDescription } : {}) };
 }
 
 const { values } = parseArgs({ args: process.argv.slice(2), options: {
@@ -151,13 +133,9 @@ if (!prepareOnly && !/^[A-Z][A-Z0-9_]*$/.test(completionMarker ?? '')) {
 }
 const ports = (values.ports ?? '').split(',').filter(Boolean);
 
-const containerPlan = buildContainerPlan(executeStackCapability(adapter, 'build-container', 'plan', {
+const containerPlan = adapter.buildContainer.plan({
   repo: REPO, appDir, env: process.env,
-}));
-if (!containerPlan) {
-  console.error(`run-build.js: ${backend} adapter returned an invalid build-container plan`);
-  process.exit(2);
-}
+});
 
 // Auth is resolved in the controller. A short-lived broker forwards model API
 // requests later. The coding container never receives the long-lived provider

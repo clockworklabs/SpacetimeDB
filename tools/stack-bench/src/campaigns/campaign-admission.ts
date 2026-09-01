@@ -8,7 +8,6 @@ import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
 import { runPreflight } from '../runtime/preflight.js';
 import type { PreflightReport } from '../runtime/preflight.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { RequestedScope } from './condition-compiler.js';
@@ -260,12 +259,8 @@ function hasNoAgentResources(agent: NonNullable<AgentAdapter>): boolean {
 
 function hasNoStackResources(stack: CompiledCampaignPlan['stacks'][number]): boolean {
   const adapter = STACK_ADAPTER_REGISTRY.get(stack.id);
-  if (!adapter) return false;
-  const capability = adapter.capabilities.admission;
-  if (!capability || typeof capability !== 'object' || !('operations' in capability)
-    || !Array.isArray(capability.operations)
-    || !capability.operations.includes('requirements')) return false;
-  return canonicalDefinitionJson(executeStackCapability(adapter, 'admission', 'requirements'))
+  if (!('admission' in adapter)) return false;
+  return canonicalDefinitionJson(adapter.admission.requirements)
     === canonicalDefinitionJson(RESOURCE_FREE_REQUIREMENTS);
 }
 

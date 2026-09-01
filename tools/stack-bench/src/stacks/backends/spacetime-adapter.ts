@@ -6,12 +6,12 @@ import { noConnectionUrl, spacetimeBuildContainerPlan,
 import { deploySpacetimeReference } from '../stack-reference-operations.js';
 import { spacetimeOrchestratorConfig } from '../stack-orchestrator-operations.js';
 import { stopSpacetimeHost } from '../stack-teardown-operations.js';
-import { stackLeaseCapability } from '../stack-lease-capabilities.js';
+import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './spacetime-operations.js';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
-import { defineStackAdapter, operationProvider, runPolicyProvider } from '../stack-adapter-common.js';
+import { defineStackAdapter } from '../stack-adapter-common.js';
 
-export const spacetimeAdapter = defineStackAdapter('spacetime', stackLeaseCapability('spacetime'), {
+export const spacetimeAdapter = defineStackAdapter('spacetime', {
   activate: activateSpacetime,
   control: input => {
     if (input.mode !== 'restart') {
@@ -20,27 +20,28 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', stackLeaseCapabi
     return controlSpacetime({ lease: input.lease, signal: input.signal });
   },
 }, {
-  reset: operationProvider('spacetime', 'reset',
-    { run: resetSpacetime, 'requires-reseed': () => false }),
-  'database-write': operationProvider('spacetime', 'database-write', { 'set-stock': setSpacetimeStock }),
-  database: operationProvider('spacetime', 'database', { prepare: prepareSpacetimeDatabase }),
-  grading: operationProvider('spacetime', 'grading', { context: createSpacetimeGradingContext }),
-  'named-action': operationProvider('spacetime', 'named-action', { request: spacetimeNamedActionRequest }),
-  teardown: operationProvider('spacetime', 'teardown', { host: stopSpacetimeHost }),
-  'run-policy': runPolicyProvider('spacetime',
-    { 'reset-enabled': true, 'retain-host-supported': true,
-      'supervisor-env': ({ spacetimePort }: { spacetimePort: number }) =>
-        ({ STACK_BENCH_STDB_URI: `http://127.0.0.1:${spacetimePort}` }) }),
-  agent: operationProvider('spacetime', 'agent', {
-    'connection-url': noConnectionUrl,
-    'minimal-guidance-supported': () => false,
-    'default-skills': () => ['typescript-server', 'typescript-client'],
-    'linux-cli-required': () => true,
-    'setup-metadata': spacetimeSetupMetadata,
-    'server-directory': () => 'backend',
-    'find-database-urls': () => [],
-  }),
-  'build-container': operationProvider('spacetime', 'build-container', { plan: spacetimeBuildContainerPlan }),
-  reference: operationProvider('spacetime', 'reference', { deploy: deploySpacetimeReference }),
-  orchestrator: operationProvider('spacetime', 'orchestrator', { config: spacetimeOrchestratorConfig }),
+  lease: stackLeaseOperations('spacetime'),
+  reset: { run: resetSpacetime, requiresReseed: false },
+  databaseWrite: { setStock: setSpacetimeStock },
+  database: { prepare: prepareSpacetimeDatabase },
+  grading: { context: createSpacetimeGradingContext },
+  namedAction: { request: spacetimeNamedActionRequest },
+  teardown: { host: stopSpacetimeHost },
+  runPolicy: { resetEnabled: true, retainHostSupported: true,
+    supervisorEnvironment: ({ spacetimePort }: { spacetimePort: number | null }) => {
+      if (!spacetimePort) throw new Error('SpacetimeDB supervisor requires a port');
+      return { STACK_BENCH_STDB_URI: `http://127.0.0.1:${spacetimePort}` };
+    } },
+  agent: {
+    connectionUrl: (_input: { dbPort: number; database: string; hostUrl(url: string): string }) => noConnectionUrl(),
+    minimalGuidanceSupported: false,
+    defaultSkills: ['typescript-server', 'typescript-client'],
+    linuxCliRequired: true,
+    setupMetadata: spacetimeSetupMetadata,
+    serverDirectory: 'backend',
+    findDatabaseUrls: (_input: { text: string }) => [],
+  },
+  buildContainer: { plan: spacetimeBuildContainerPlan },
+  reference: { deploy: deploySpacetimeReference },
+  orchestrator: { config: spacetimeOrchestratorConfig },
 }, { version: SPACETIME_ADAPTER_VERSION });

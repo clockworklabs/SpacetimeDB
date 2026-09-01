@@ -18,7 +18,6 @@ import { runningContainerIdentity } from '../runtime/container-identity.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI,
   codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack } from '../composition/tracks.js';
@@ -162,7 +161,7 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
   try {
     prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
-    const preparedLease = executeStackCapability(adapter, 'lease', 'prepare', {
+    const preparedLease = adapter.lease.prepare({
       track: loadTrack(fixture.track), runIndex: 0, runtimeDir: work,
       serverUri: 'http://127.0.0.1:1', env: process.env,
       helpers: {
@@ -171,9 +170,8 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
         containerIdentity: runningContainerIdentity,
       },
     });
-    const prepared_ = record(preparedLease) ? preparedLease : {};
-    const preparedResources = record(prepared_.lease) ? prepared_.lease : {};
-    const lockKeys = Array.isArray(prepared_.lockKeys) ? prepared_.lockKeys : [];
+    const preparedResources = preparedLease.lease;
+    const lockKeys = preparedLease.lockKeys;
     lease = createBackendLease({ runId: basename(work), backend: fixture.backend,
       track: fixture.track, runIndex: 0,
       ...preparedResources });

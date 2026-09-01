@@ -7,7 +7,13 @@ interface NamedActionInput {
   readonly values?: Readonly<Record<string, unknown>>;
 }
 
-interface SpacetimeTarget {
+function namedActionInput(value: unknown): NamedActionInput {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as NamedActionInput
+    : {};
+}
+
+export interface SpacetimeTarget {
   readonly uri: string;
   readonly mod: string;
 }
@@ -18,7 +24,9 @@ export function createSpacetimeGradingContext(
   return leasedSpacetimeTarget({ requireBuildContainer });
 }
 
-export function createHttpGradingContext() {
+export function createHttpGradingContext(
+  _input: { requireBuildContainer?: boolean } = {},
+) {
   return null;
 }
 
@@ -48,13 +56,15 @@ function spacetimeReducerBody(action: NamedAction, args: readonly unknown[]): st
 
 export function spacetimeNamedActionRequest({
   action,
-  input = {},
+  input: rawInput,
   spacetime,
 }: {
   action: NamedAction;
-  input?: NamedActionInput;
+  input?: unknown;
   spacetime?: SpacetimeTarget | null;
+  url?: string | null;
 }) {
+  const input = namedActionInput(rawInput);
   if (!action.reducer) throw new TypeError('SpacetimeDB named action requires a reducer');
   const args = input.values === undefined
     ? (input.args ?? action.args ?? [])
@@ -72,13 +82,16 @@ export function spacetimeNamedActionRequest({
 
 export function httpNamedActionRequest({
   action,
-  input = {},
+  input: rawInput,
   url,
+  spacetime: _spacetime,
 }: {
   action: NamedAction;
-  input?: NamedActionInput;
+  input?: unknown;
   url?: string | null;
+  spacetime?: SpacetimeTarget | null;
 }) {
+  const input = namedActionInput(rawInput);
   const base = String(url ?? '').replace(/\/$/, '');
   if (!action.path) throw new TypeError('HTTP named action requires a path');
   let path = action.path;

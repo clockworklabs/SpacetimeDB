@@ -97,7 +97,7 @@ presentations belong in `docs/`.
 | `src/references/` | reference fixture selection and qualification |
 | `src/releases/` | release source, bundle, and signature verification |
 | `src/runtime/` | leases, containers, snapshots, recovery, and platform control |
-| `src/stacks/` | stack adapter contracts and stack-specific operations |
+| `src/stacks/` | typed stack adapters and stack-specific operations |
 
 Use the `npm run` commands documented below instead of depending on internal
 module locations. `src/package-root.ts` is the single source of truth for the

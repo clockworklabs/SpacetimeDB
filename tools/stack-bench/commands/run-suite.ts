@@ -19,8 +19,8 @@ import { contractControlIds } from '../src/composition/agent-visible-contract.js
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
-import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
+import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
@@ -408,7 +408,7 @@ export async function waitForApplicationProbe(url: string, {
 // Confirm the app uses the database leased to this run.
 export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backend'>): DatabaseProvenance {
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
-  const expected = executeStackCapability(adapter, 'ports', 'allocations').db;
+  const expected = adapter.ports.allocations().db;
   if (!expected) return { ok: true, reason: 'no external database for this backend' };
   // Neutral guidance does not prescribe project layout. Search the app for the
   // connection string instead of assuming it is in server/.env.
@@ -426,8 +426,7 @@ export function checkDatabaseProvenance(args: Pick<RunArguments, 'app' | 'backen
         if (/process\.env(?:\.DATABASE_URL|\[['"]DATABASE_URL['"]\])/.test(text)) {
           usesLeasedEnvironment = true;
         }
-        const m = executeStackCapability(adapter, 'agent', 'find-database-urls', { text });
-        if (Array.isArray(m) && m.every(value => typeof value === 'string')) urls.push(...m);
+        urls.push(...adapter.agent.findDatabaseUrls({ text }));
       } catch { /* unreadable file proves nothing */ }
     }
   };
@@ -458,15 +457,12 @@ export async function writeApplicationDatabaseMarker(
   if (!action) throw new Error(`database provenance action is not declared: ${definition.action}`);
   const marker = `sb${randomUUID().replaceAll('-', '').slice(0, 16)}`;
   const body = { ...definition.body, [definition.markerParameter]: marker };
-  const request = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-    'named-action', 'request', { action, input: { body }, url: args.url });
-  if (!isRecord(request) || typeof request.url !== 'string' || !request.url
-    || typeof request.body !== 'string') {
-    throw new Error('database provenance action produced an invalid request');
-  }
+  const request = STACK_ADAPTER_REGISTRY.get(args.backend).namedAction.request(
+    { action, input: { body }, url: args.url });
+  if (!request.url) throw new Error('database provenance action has no URL');
   try {
     const response = await fetchImpl(request.url, {
-      method: typeof request.method === 'string' ? request.method : 'POST',
+      method: request.method,
       headers: { 'Content-Type': 'application/json' },
       body: request.body,
       signal: AbortSignal.timeout(15_000),
@@ -499,15 +495,11 @@ export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend
     return { ok: null, verified: false,
       reason: 'the application action did not produce a database marker' };
   }
-  const result = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-    'database', 'prove-use', { lease: args.databaseLease, marker });
-  if (!isRuntimeProvenance(result)) throw new Error('database provenance proof returned an invalid result');
-  return result;
-}
-
-function isRuntimeProvenance(value: unknown): value is RuntimeProvenance {
-  return isRecord(value) && (value.ok === true || value.ok === false || value.ok === null)
-    && typeof value.verified === 'boolean' && typeof value.reason === 'string';
+  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  if (!('proveUse' in adapter.database)) {
+    throw new Error(`runtime database proof is not implemented for ${args.backend}`);
+  }
+  return adapter.database.proveUse({ lease: requireLeasedDatabase(args.databaseLease), marker });
 }
 
 function isGradePayload(value: GradePayload | LintPayload | null | undefined): value is GradePayload {
@@ -519,8 +511,7 @@ export function codeMetrics(args: Pick<RunArguments, 'app' | 'backend'>): { serv
   totalLoc: number; totalFiles: number; runtimeDeps: number } {
   // Minimal-guidance apps may place server code outside the conventional directory.
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
-  const serverDirectory = executeStackCapability(adapter, 'agent', 'server-directory');
-  const conventional = typeof serverDirectory === 'string' ? serverDirectory : '.';
+  const conventional = adapter.agent.serverDirectory;
   const SERVER_DIR = existsSync(join(args.app, conventional)) ? conventional : '.';
   const walk = (dir: string, out: string[] = []): string[] => {
     if (!existsSync(dir)) return out;
@@ -856,8 +847,7 @@ async function main() {
   let lastResetOutcome: ResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
   const freshen = async () => {
     if (!args.reset) return true;
-    const requiresReseed = executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
-      'reset', 'requires-reseed');
+    const requiresReseed = STACK_ADAPTER_REGISTRY.get(args.backend).reset.requiresReseed;
     const restartSpec = args.restartSpec;
     if (track.reseedOnReset && restartSpec && requiresReseed) {
       process.stdout.write('  stop application ... ');

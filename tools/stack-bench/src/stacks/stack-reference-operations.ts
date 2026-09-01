@@ -20,8 +20,8 @@ export interface HostedReferenceHelpers {
     env: Record<string, string>,
     options?: { script?: string; networkVisible?: boolean; port?: number }) => unknown;
   waitFor: (url: string, timeoutMs: number, description: string,
-    logs: () => unknown) => Promise<unknown>;
-  containerLogs: (container: string, name: string) => unknown;
+    logs: () => string) => Promise<void>;
+  containerLogs: (container: string, name: string) => string;
   runSync: (purpose: string, file: string, args: readonly string[],
     options?: Record<string, unknown>) => string;
   dbName: (track: Pick<TrackDefinition, 'slug'>, runIndex: number) => string;
@@ -34,19 +34,19 @@ export interface SpacetimeReferenceHelpers {
     env: Record<string, string>,
     options?: { script?: string; networkVisible?: boolean; port?: number }) => unknown;
   waitFor: (url: string, timeoutMs: number, description: string,
-    logs: () => unknown) => Promise<unknown>;
-  containerLogs: (container: string, name: string) => unknown;
+    logs: () => string) => Promise<void>;
+  containerLogs: (container: string, name: string) => string;
   moduleName: (track: TrackDefinition, runIndex: number) => string;
   loadTrack: (name: string) => Track;
 }
 
-interface HostedReferenceMetadata {
+export interface HostedReferenceMetadata {
   installDirectories: string[];
   server: { directory: string };
   client: { directory: string };
 }
 
-interface SpacetimeReferenceMetadata extends ReferenceInstallMetadata {
+export interface SpacetimeReferenceMetadata extends ReferenceInstallMetadata {
   moduleDirectory: string;
   bindingsDirectory: string;
   client: { directory: string };
@@ -61,7 +61,7 @@ interface SpacetimeLease {
     buildContainer?: { networkMode?: 'host' | 'bridge' } | null };
 }
 
-interface HostedReferenceDeployment {
+export interface HostedReferenceDeployment {
   args: { backend: string; runIndex: number };
   metadata: HostedReferenceMetadata;
   lease: HostedLease;
@@ -72,7 +72,7 @@ interface HostedReferenceDeployment {
   helpers: HostedReferenceHelpers;
 }
 
-interface SpacetimeReferenceDeployment {
+export interface SpacetimeReferenceDeployment {
   args: { track: string; runIndex: number };
   metadata: SpacetimeReferenceMetadata;
   lease: SpacetimeLease;
