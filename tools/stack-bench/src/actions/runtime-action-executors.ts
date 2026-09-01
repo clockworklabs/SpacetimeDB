@@ -409,15 +409,17 @@ export interface DatabaseWriteLease {
 interface DatabaseWriteCapabilityOptions {
   readonly backend?: string | null;
   readonly databaseLease?: DatabaseWriteLease | null;
+  readonly skip?: boolean;
   readonly exec?: Exec;
   readonly expand: (value: string) => string;
   readonly spacetime?: LeasedSpacetimeTarget | null;
 }
 
-export function createDatabaseWriteCapability({ backend, spacetime, databaseLease, expand,
+export function createDatabaseWriteCapability({ backend, spacetime, databaseLease, skip = false, expand,
   exec = execFileSync }: DatabaseWriteCapabilityOptions) {
   return Object.freeze({
     setStock(input: SetStockInput): unknown {
+      if (skip) return { skipped: true };
       const item = expand(input.item);
       const warehouse = expand(input.warehouse);
       const quantity = Number(input.quantity);

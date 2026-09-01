@@ -198,6 +198,7 @@ async function main() {
             console.log(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)})`);
             await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
               '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
+              '--null-control',
               '--parent-attempt-id', nullAttemptId,
               ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
               ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),

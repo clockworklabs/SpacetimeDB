@@ -97,6 +97,7 @@ type GradeArgs = {
   media?: string;
   failureMedia?: string;
   trace?: boolean;
+  nullControl: boolean;
 };
 type GradeRunContext = {
   runId: string;
@@ -118,6 +119,7 @@ type GradeRunContext = {
   serverCheck?: string | null;
   lastCalls?: ConcurrentCallResult | null;
   defaultWithin?: number;
+  nullControl: boolean;
 };
 type ActionFailure = Error & { actionEvidence?: ActionEvidence; actionActor?: string | null };
 type CheckFailure = {
@@ -165,6 +167,7 @@ function parseArgs(argv: readonly string[]): GradeArgs {
     'parent-attempt-id': { type: 'string' }, 'db-name': { type: 'string' },
     app: { type: 'string' }, media: { type: 'string' }, 'failure-media': { type: 'string' },
     trace: { type: 'boolean' }, headed: { type: 'boolean' },
+    'null-control': { type: 'boolean' },
   } });
   const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
     out: values.out, label: values.label,
@@ -178,7 +181,8 @@ function parseArgs(argv: readonly string[]): GradeArgs {
       ? undefined : JSON.parse(values['credential-aliases-json']),
     selectionSha256: values['selection-sha256'], parentAttemptId: values['parent-attempt-id'],
     dbName: values['db-name'], app: values.app, media: values.media,
-    failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false };
+    failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false,
+    nullControl: values['null-control'] ?? false };
   if (!args.url) {
     console.error('Usage: node dist/grader/grade.js --url <app-url> --level <N> [--out <file>] [--label <s>] [--feature <N>]');
     process.exit(2);
@@ -522,6 +526,7 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
       backend: ctx.backend,
       spacetime: ctx.spacetime,
       databaseLease: ctx.databaseLease,
+      skip: ctx.nullControl,
       expand: (value: string) => String(expand(value, ctx)),
     }),
     'named-actions': namedActions,
@@ -904,6 +909,7 @@ async function main(): Promise<void> {
     restartSpec: args.restartSpec, url: args.url!,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     databaseLease,
+    nullControl: args.nullControl,
     appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });

@@ -236,6 +236,16 @@ test('direct database writes fail as harness errors without lease authority', as
   assert.match(result.summary ?? '', /authenticated backend lease/);
 });
 
+test('the null control can skip direct database writes', async () => {
+  const capability = createDatabaseWriteCapability({
+    backend: 'postgres', skip: true, expand: value => value,
+    exec: () => { throw new Error('must not execute'); },
+  });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  assert.equal(result.status, 'passed');
+});
+
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {
   const offlineStates: boolean[] = [];
   const waits: number[] = [];
