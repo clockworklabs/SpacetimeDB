@@ -2,7 +2,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readCampaignState } from './campaign-scheduler.js';
-import { ARTIFACT_FILE } from '../evidence/artifacts.js';
+import type { CampaignAttemptState } from './campaign-scheduler.js';
+import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 import { progressionEngine } from '../progression/progression-engine.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
@@ -11,6 +12,144 @@ import type { DependencyEvent, DependencyState } from '../progression/dependency
 import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
+import { validateCampaignRun } from './campaign-run-validation.js';
+
+interface Score {
+  score: number;
+  max: number;
+}
+
+interface CheckFailure {
+  stableKey?: string;
+  description?: string;
+}
+
+interface RunOutcome {
+  kind?: string;
+  phase?: string;
+  reason?: string | null;
+  appFailures?: Array<string | CheckFailure>;
+}
+
+interface RunLevel {
+  level: number;
+  score: number;
+  max: number;
+  graded?: boolean;
+  durationSec?: number | null;
+  buildCostUsd?: number | null;
+  fixCostUsd?: number | null;
+  firstBuild?: Score & { outcome?: RunOutcome; missed?: Array<string | CheckFailure> };
+  repair?: { roundsUsed?: number; status?: string | null };
+  outcome?: RunOutcome;
+  missed?: Array<string | CheckFailure>;
+}
+
+interface BenchmarkRunPayload {
+  outcome?: RunOutcome;
+  totals?: Score & {
+    costUsd?: number | null;
+    costComplete?: boolean | null;
+    durationSec?: number | null;
+  };
+  backendLease?: { state?: string | null };
+  levels?: RunLevel[];
+}
+
+interface CampaignRunLevelResult {
+  level: number;
+  firstScore: Score | null;
+  firstAbort: { phase: string; reason: string | null } | null;
+  finalScore: Score | null;
+  roundsUsed: number;
+  repairStatus: string | null;
+  outcome: string | null;
+  durationSec: number | null;
+  costUsd: number | null;
+  failures: string[];
+}
+
+interface CampaignRunResult {
+  unreadable?: string;
+  outcome?: string;
+  outcomePhase?: string | null;
+  outcomeReason?: string | null;
+  score?: Score | null;
+  costUsd?: number | null;
+  costComplete?: boolean | null;
+  durationSec?: number | null;
+  cleanup?: string | null;
+  levels?: CampaignRunLevelResult[];
+}
+
+export function firstGradeAbort(firstBuild: (Score & { outcome?: RunOutcome }) | null | undefined): {
+  phase: string;
+  reason: string | null;
+} | null {
+  const outcome = firstBuild?.outcome;
+  if (!outcome || outcome.kind === 'passed' || !outcome.phase || outcome.phase === 'grading') {
+    return null;
+  }
+  return { phase: outcome.phase, reason: outcome.reason ?? null };
+}
+
+function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
+  attempt: CampaignAttemptPlan): CampaignRunResult | null {
+  if (!existsSync(path)) return null;
+  try {
+    const run = readArtifactPayload<BenchmarkRunPayload>(path, { expectedKind: 'benchmark_run' });
+    validateCampaignRun(plan, attempt, run);
+    return {
+      outcome: run.outcome?.kind ?? 'ungraded',
+      outcomePhase: run.outcome?.phase ?? null,
+      outcomeReason: run.outcome?.reason ?? null,
+      score: run.totals ? { score: run.totals.score, max: run.totals.max } : null,
+      costUsd: run.totals?.costUsd ?? null,
+      costComplete: run.totals?.costComplete ?? null,
+      durationSec: run.totals?.durationSec ?? null,
+      cleanup: run.backendLease?.state ?? null,
+      levels: (run.levels ?? []).map(level => ({
+        level: level.level,
+        firstScore: level.firstBuild
+          ? { score: level.firstBuild.score, max: level.firstBuild.max } : null,
+        firstAbort: firstGradeAbort(level.firstBuild),
+        finalScore: level.graded ? { score: level.score, max: level.max } : null,
+        roundsUsed: level.repair?.roundsUsed ?? 0,
+        repairStatus: level.repair?.status ?? null,
+        outcome: level.outcome?.kind ?? null,
+        durationSec: level.durationSec ?? null,
+        costUsd: level.buildCostUsd == null && level.fixCostUsd == null
+          ? null : (level.buildCostUsd ?? 0) + (level.fixCostUsd ?? 0),
+        failures: (level.outcome?.appFailures
+          ?? (level.graded ? [] : level.missed ?? level.firstBuild?.missed ?? [])).map(item =>
+          typeof item === 'string' ? item : item.stableKey ?? item.description ?? 'Failed check'),
+      })),
+    };
+  } catch (error) {
+    return { unreadable: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export function campaignFacts(plan: CompiledCampaignPlan) {
+  const requested = plan.attempts[0]?.condition.requested.levels;
+  return {
+    mode: plan.definition.mode?.id ?? 'sequential',
+    agents: plan.agents.map(agent => ({
+      adapter: agent.adapter,
+      version: agent.adapterVersion,
+      model: agent.model,
+    })),
+    recipes: (requested ?? []).map(level => ({
+      level: level.level,
+      id: level.recipe?.id ?? null,
+      version: level.recipe?.version ?? null,
+    })),
+    runtime: {
+      controllerImage: plan.definition.runtime.controllerImage ?? null,
+      buildImage: plan.definition.runtime.buildImage ?? null,
+    },
+  };
+}
 
 export interface DependencyProgressNode {
   id: string;
@@ -213,23 +352,68 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
   }
 }
 
+export function inspectCampaignAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
+  directory: string) {
+  const execution = attempt.executions.at(-1) ?? null;
+  const executionDirectory = execution ? join(directory, execution.output) : null;
+  const artifactPath = (name: string): string | null => execution && executionDirectory
+    && existsSync(join(executionDirectory, name))
+    ? join(execution.output, name).replaceAll('\\', '/') : null;
+  return {
+    id: attempt.plan.id,
+    stack: attempt.plan.stack,
+    model: attempt.plan.model,
+    guidance: attempt.plan.guidance,
+    repetition: attempt.plan.repetition,
+    levels: attempt.plan.levels,
+    status: attempt.status,
+    executions: attempt.executions.length,
+    execution: execution ? {
+      id: execution.id,
+      ordinal: execution.ordinal,
+      status: execution.status,
+      outcome: execution.outcome,
+      reason: execution.reason,
+      output: execution.output,
+      startedAt: execution.startedAt,
+      completedAt: execution.completedAt,
+      runIndex: execution.runIndex,
+    } : null,
+    result: executionDirectory
+      ? readCampaignRunResult(join(executionDirectory, ARTIFACT_FILE.run), plan, attempt.plan)
+      : null,
+    artifacts: executionDirectory ? {
+      run: artifactPath(ARTIFACT_FILE.run),
+      progression: artifactPath(ARTIFACT_FILE.progressionState),
+      process: artifactPath(ARTIFACT_FILE.process),
+      preflight: artifactPath(ARTIFACT_FILE.preflight),
+      recovery: artifactPath(ARTIFACT_FILE.recovery),
+    } : null,
+    dependency: dependencyProgress(plan, attempt.plan, executionDirectory),
+  };
+}
+
 export function inspectCampaignSummary(directory: string) {
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   return {
+    schemaVersion: 1,
     id: plan.id,
     version: plan.version,
     sha256: plan.contentSha256,
+    title: plan.title,
+    state: plan.state,
     mode: plan.definition.mode?.id ?? 'sequential',
     status: state.status,
-    attempts: state.attempts.map(attempt => {
-      const execution = attempt.executions.at(-1) ?? null;
-      const executionDirectory = execution ? join(directory, execution.output) : null;
-      return {
-        id: attempt.plan.id,
-        status: attempt.status,
-        executions: attempt.executions.length,
-        dependency: dependencyProgress(plan, attempt.plan, executionDirectory),
-      };
-    }),
+    track: plan.definition.track,
+    levels: plan.definition.levels,
+    stacks: plan.stacks.map(stack => stack.id),
+    repetitions: plan.definition.repetitions,
+    maxParallel: state.maxParallel,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
+    summary: state.summary,
+    budgets: plan.definition.budgets,
+    facts: campaignFacts(plan),
+    attempts: state.attempts.map(attempt => inspectCampaignAttempt(plan, attempt, directory)),
   };
 }

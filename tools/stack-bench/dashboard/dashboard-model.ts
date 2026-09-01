@@ -6,12 +6,11 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import type { CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
-import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
-import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
-import { dependencyProgress } from '../src/campaigns/campaign-inspection.js';
+import { campaignFacts, inspectCampaignAttempt } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
 
@@ -37,70 +36,6 @@ export interface DashboardArtifact {
 
 export interface ResolvedDashboardArtifact extends DashboardArtifact {
   absolute: string;
-}
-
-interface Score {
-  score: number;
-  max: number;
-}
-
-interface CheckFailure {
-  stableKey?: string;
-  description?: string;
-}
-
-interface RunOutcome {
-  kind?: string;
-  phase?: string;
-  reason?: string | null;
-  appFailures?: Array<string | CheckFailure>;
-}
-
-interface RunLevel {
-  level: number;
-  score: number;
-  max: number;
-  graded?: boolean;
-  durationSec?: number | null;
-  buildCostUsd?: number | null;
-  fixCostUsd?: number | null;
-  firstBuild?: Score & { outcome?: RunOutcome; missed?: Array<string | CheckFailure> };
-  repair?: { roundsUsed?: number; status?: string | null };
-  outcome?: RunOutcome;
-  missed?: Array<string | CheckFailure>;
-}
-
-interface BenchmarkRunPayload {
-  outcome?: RunOutcome;
-  totals?: Score & { costUsd?: number | null; costComplete?: boolean | null; durationSec?: number | null };
-  backendLease?: { state?: string | null };
-  levels?: RunLevel[];
-}
-
-export interface DashboardLevel {
-  level: number;
-  firstScore: Score | null;
-  firstAbort: { phase: string; reason: string | null } | null;
-  finalScore: Score | null;
-  roundsUsed: number;
-  repairStatus: string | null;
-  outcome: string | null;
-  durationSec: number | null;
-  costUsd: number | null;
-  failures: string[];
-}
-
-export interface DashboardRunResult {
-  unreadable?: string;
-  outcome?: string;
-  outcomePhase?: string | null;
-  outcomeReason?: string | null;
-  score?: Score | null;
-  costUsd?: number | null;
-  costComplete?: boolean | null;
-  durationSec?: number | null;
-  cleanup?: string | null;
-  levels?: DashboardLevel[];
 }
 
 function errorMessage(error: unknown): string {
@@ -325,109 +260,14 @@ export function parseRunProgress(log: string, { fixRounds = 0, running = true, s
   };
 }
 
-// A first grade that never ran is not a zero. The run records the phase that
-// stopped it (for example application-readiness); surfacing that keeps an aborted
-// grade from being averaged into first-build scores as if the app scored 0.
-export function firstGradeAbort(firstBuild: (Score & { outcome?: RunOutcome }) | null | undefined): {
-  phase: string;
-  reason: string | null;
-} | null {
-  const outcome = firstBuild?.outcome;
-  if (!outcome || outcome.kind === 'passed') return null;
-  if (!outcome.phase || outcome.phase === 'grading') return null;
-  return { phase: outcome.phase, reason: outcome.reason ?? null };
-}
-
-function readRun(path: string, plan: CompiledCampaignPlan, attempt: CampaignAttemptState['plan']): DashboardRunResult | null {
-  if (!existsSync(path)) return null;
-  try {
-    const run = readArtifactPayload<BenchmarkRunPayload>(path, { expectedKind: 'benchmark_run' });
-    validateCampaignRun(plan, attempt, run);
-    return {
-      outcome: run.outcome?.kind ?? 'ungraded',
-      outcomePhase: run.outcome?.phase ?? null,
-      outcomeReason: run.outcome?.reason ?? null,
-      score: run.totals ? { score: run.totals.score, max: run.totals.max } : null,
-      costUsd: run.totals?.costUsd ?? null,
-      costComplete: run.totals?.costComplete ?? null,
-      durationSec: run.totals?.durationSec ?? null,
-      cleanup: run.backendLease?.state ?? null,
-      levels: (run.levels ?? []).map(level => ({
-        level: level.level,
-        firstScore: level.firstBuild ? { score: level.firstBuild.score, max: level.firstBuild.max } : null,
-        firstAbort: firstGradeAbort(level.firstBuild),
-        finalScore: level.graded ? { score: level.score, max: level.max } : null,
-        roundsUsed: level.repair?.roundsUsed ?? 0,
-        repairStatus: level.repair?.status ?? null,
-        outcome: level.outcome?.kind ?? null,
-        durationSec: level.durationSec ?? null,
-        // Level records carry spend as it is incurred, while run.totals only
-        // appears once an attempt finishes. Reporting both lets a view show
-        // what a still-running attempt has already cost.
-        costUsd: level.buildCostUsd == null && level.fixCostUsd == null
-          ? null : (level.buildCostUsd ?? 0) + (level.fixCostUsd ?? 0),
-        // The FINAL failing set. level.outcome.appFailures is authoritative for
-        // a graded level; the older fallbacks describe the first build and must
-        // not be shown as "still failing" on an attempt that repaired them.
-        failures: (level.outcome?.appFailures
-          ?? (level.graded ? [] : level.missed ?? level.firstBuild?.missed ?? [])).map(item =>
-          typeof item === 'string' ? item : item?.stableKey ?? item?.description ?? 'Failed check'),
-      })),
-    };
-  } catch (error) {
-    return { unreadable: errorMessage(error) };
-  }
-}
-
-// Derive operator-facing facts from the compiled plan so they cannot drift
-// from the campaign that ran.
-interface CampaignFactsPlan {
-  attempts?: Array<{
-    condition?: {
-      requested?: {
-        levels?: Array<{
-          level: number;
-          recipe?: { id?: string; version?: string };
-        }>;
-      };
-    };
-  }>;
-  agents?: CompiledCampaignPlan['agents'];
-  definition?: {
-    mode?: { id?: string };
-    runtime?: { controllerImage?: string | null; buildImage?: string | null };
-  };
-}
-
-export function campaignFacts(plan: CampaignFactsPlan) {
-  const requested = plan.attempts?.[0]?.condition?.requested?.levels;
-  return {
-    mode: plan.definition?.mode?.id ?? 'sequential',
-    agents: (plan.agents ?? []).map(agent => ({
-      adapter: agent.adapter ?? agent.identity?.id ?? null,
-      version: agent.adapterVersion ?? agent.identity?.version ?? null,
-      model: agent.model ?? null,
-    })),
-    recipes: Array.isArray(requested) ? requested.map(level => ({
-      level: level.level,
-      id: level.recipe?.id ?? null,
-      version: level.recipe?.version ?? null,
-    })) : [],
-    runtime: plan.definition?.runtime ? {
-      controllerImage: plan.definition.runtime.controllerImage ?? null,
-      buildImage: plan.definition.runtime.buildImage ?? null,
-    } : null,
-  };
-}
-
 function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
   campaignDirectory: string, fixRounds: number, { includeLog = false }: {
     includeLog?: boolean;
   } = {}) {
-  const execution = attempt.executions.at(-1) ?? null;
+  const inspected = inspectCampaignAttempt(plan, attempt, campaignDirectory);
+  const execution = inspected.execution;
   let executionDirectory = null;
   let log = '';
-  let run = null;
   let logUpdatedAt = null;
   if (execution) {
     executionDirectory = contained(campaignDirectory, execution.output, 'campaign execution');
@@ -436,33 +276,14 @@ function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptSt
     // When the run last wrote anything. A running attempt whose output has
     // been silent for a long time is wedged in a way no score can show.
     if (existsSync(logPath)) logUpdatedAt = new Date(statSync(logPath).mtimeMs).toISOString();
-    run = readRun(join(executionDirectory, ARTIFACT_FILE.run), plan, attempt.plan);
   }
   const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running',
     status: attempt.status });
-  if (run?.score) progress.latestScore = run.score;
+  if (inspected.result?.score) progress.latestScore = inspected.result.score;
   return {
-    id: attempt.plan.id,
-    stack: attempt.plan.stack,
-    model: attempt.plan.model,
-    guidance: attempt.plan.guidance,
-    repetition: attempt.plan.repetition,
-    levels: attempt.plan.levels,
-    status: attempt.status,
-    execution: execution ? {
-      id: execution.id,
-      ordinal: execution.ordinal,
-      status: execution.status,
-      outcome: execution.outcome,
-      reason: execution.reason,
-      startedAt: execution.startedAt,
-      completedAt: execution.completedAt,
-      runIndex: execution.runIndex ?? null,
-    } : null,
+    ...inspected,
     progress,
     logUpdatedAt,
-    result: run,
-    dependency: dependencyProgress(plan, attempt.plan, executionDirectory),
     ...(includeLog ? { log: log.split(/\r?\n/).slice(-160).join('\n') } : {}),
   };
 }

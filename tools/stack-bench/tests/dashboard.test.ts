@@ -15,9 +15,11 @@ import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
-import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
+import { campaignDetail, parseRunProgress,
   readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from '../dashboard/dashboard-model.js';
+import { campaignFacts, firstGradeAbort, inspectCampaignSummary }
+  from '../src/campaigns/campaign-inspection.js';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.js';
 import type { DashboardOperation, LaunchInput } from '../dashboard/dashboard-server.js';
 import { sha256 } from '../src/evidence/provenance.js';
@@ -110,24 +112,17 @@ test('an aborted first grade is classified, not treated as a scored zero', () =>
 });
 
 test('campaign facts surface the identity an operator otherwise reads plan.json for', () => {
-  const facts = campaignFacts({
-    agents: [{ adapter: 'claude-code', adapterVersion: '1.12.0', model: 'claude-sonnet-5',
-      costLimit: 'native', identity: { id: 'claude-code', version: '1.12.0',
-        sha256: 'b'.repeat(64) } }],
-    attempts: [{ condition: { requested: { levels: [
-      { level: 1, recipe: { id: 'ecommerce.sequential-l1', version: '2.4.0' } },
-      { level: 2, recipe: { id: 'ecommerce.sequential-l2', version: '1.5.0' } },
-    ] } } }],
-    definition: { runtime: { controllerImage: 'stack-bench-controller@sha256:' + 'a'.repeat(64),
-      buildImage: null } },
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const facts = campaignFacts(plan);
+  assert.deepEqual(facts.agents, plan.agents.map(agent => ({ adapter: agent.adapter,
+    version: agent.adapterVersion, model: agent.model })));
+  assert.deepEqual(facts.recipes, plan.attempts[0]?.condition.requested.levels.map(level => ({
+    level: level.level, id: level.recipe?.id ?? null, version: level.recipe?.version ?? null,
+  })));
+  assert.deepEqual(facts.runtime, {
+    controllerImage: plan.definition.runtime.controllerImage,
+    buildImage: plan.definition.runtime.buildImage,
   });
-  assert.deepEqual(facts.agents, [{ adapter: 'claude-code', version: '1.12.0', model: 'claude-sonnet-5' }]);
-  assert.deepEqual(facts.recipes, [
-    { level: 1, id: 'ecommerce.sequential-l1', version: '2.4.0' },
-    { level: 2, id: 'ecommerce.sequential-l2', version: '1.5.0' },
-  ]);
-  assert.ok(facts.runtime);
-  assert.equal(facts.runtime.controllerImage, 'stack-bench-controller@sha256:' + 'a'.repeat(64));
 });
 
 test('dashboard reports dependency work from the validated persisted state', t => {
@@ -293,6 +288,11 @@ test('dashboard rejects a run artifact that does not belong to its frozen attemp
 
   const attempt = summarizeCampaign(root).attempts[0];
   assert.match(attempt?.result?.unreadable ?? '', /attempt\.parentId/);
+  const inspection = inspectCampaignSummary(root);
+  const inspected = inspection.attempts[0];
+  assert.equal(inspection.schemaVersion, 1);
+  assert.match(inspected?.result?.unreadable ?? '', /attempt\.parentId/);
+  assert.equal(inspected?.artifacts?.run, `${claimed.claim.output}/run.json`);
 });
 
 test('campaign detail exposes the evidence package but not arbitrary campaign files', async t => {

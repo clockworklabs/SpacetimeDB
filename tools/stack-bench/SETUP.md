@@ -137,9 +137,10 @@ npm run campaign -- report <campaign-directory>
 
 `validate` and `show` spend no model usage. `prepare` creates durable state but
 does not start an attempt. `status` is the normal compact view. `inspect` adds
-feature progress. Use `status --full` only when the durable state itself is
-needed. Start or resume paid work only through the explicit appliance commands.
-Do not infer campaign state from logs.
+attempt identity, score, cost, duration, cleanup, evidence paths, and feature
+progress. Use `status --full` only when the durable state itself is needed.
+Start or resume paid work only through the explicit appliance commands. Do not
+infer campaign state from logs.
 
 ```bash
 npm run dashboard
