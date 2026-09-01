@@ -824,7 +824,7 @@ function questlineColumn(lanes: readonly QuestlineLane[], dependency: Dependency
     });
     const score = scores.get(lane.id);
     const value = score?.percentage ?? null;
-    pieces.push(`<text class="lq" x="${layout.width - 8}" y="${y + 3}" text-anchor="end">${value == null ? '—' : `${value}%`}</text>`);
+    pieces.push(`<text class="lq" x="${layout.width - 8}" y="${y + 3}" text-anchor="end">${value == null ? '—' : `${Math.round(value)}%`}</text>`);
     return pieces.join('');
   });
   return `<g transform="translate(${offsetX} 0)">${parts.join('')}</g>`;
@@ -974,7 +974,7 @@ function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane
     const laneScore = scores.get(band.lane.id);
     const laneValue = laneScore?.percentage ?? null;
     const label = `<text class="cq" x="${LABEL - 14}" y="${laneY + 3}" text-anchor="end">${escapeHtml(laneTitle(band.lane))}</text>`;
-    return label + `<text class="lq${laneValue === 100 ? ' full' : ''}" x="${width - 10}" y="${laneY + 3}" text-anchor="end">${laneValue == null ? '—' : `${laneValue}%`}</text>`;
+    return label + `<text class="lq${laneValue === 100 ? ' full' : ''}" x="${width - 10}" y="${laneY + 3}" text-anchor="end">${laneValue == null ? '—' : `${Math.round(laneValue)}%`}</text>`;
   }).join('');
 
   const key = `<details class="graph-key"><summary>Feature key</summary><ol>${orderedNodes.map(node =>

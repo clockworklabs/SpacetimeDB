@@ -12,9 +12,11 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "support-owner" },
         { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "owner@example.com" },
         { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Owner ticket" },
         { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private account issue." },
         { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
         { "do": "signUp", "actor": "other", "name": "support-other" }
       ],
       "criteria": [

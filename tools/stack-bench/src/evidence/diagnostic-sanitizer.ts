@@ -15,7 +15,7 @@ function publicControlName(value: unknown): string | null {
     ?? raw.match(/(?:getByTestId|locator)\(\s*["']([^"']+)["']/i);
   const name = match?.[1] ?? match?.[2] ?? match?.[3];
   if (!name || !/^[a-z0-9][a-z0-9_.:-]{0,79}$/i.test(name)) return null;
-  return name.replace(/[-_.:]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  return name.toLowerCase();
 }
 
 export function redactCredentials(value: unknown): string {
@@ -80,11 +80,11 @@ export function humaniseDiagnostic(detail: unknown = ''): string {
   const raw = String(detail ?? '');
   if (/still visible after/i.test(raw)) {
     const control = publicControlName(raw);
-    return control ? `the ${control} was still visible` : sanitiseDiagnostic(raw);
+    return control ? `the ${control} control was still visible` : sanitiseDiagnostic(raw);
   }
   if (/not visible within/i.test(raw)) {
     const control = publicControlName(raw);
-    return control ? `the ${control} did not appear` : sanitiseDiagnostic(raw);
+    return control ? `the ${control} control did not appear` : sanitiseDiagnostic(raw);
   }
   if (/missing, \d+ duplicated/i.test(raw)) {
     const match = raw.match(/(\d+) missing, (\d+) duplicated/i);
@@ -119,7 +119,7 @@ export function humaniseDiagnostic(detail: unknown = ''): string {
 
   if (/Timeout/i.test(raw)) {
     const control = publicControlName(raw);
-    if (control) return `the ${control} did not become usable`;
+    if (control) return `the ${control} control did not become usable`;
     const why = sanitiseDiagnostic(raw).replace(/^timeout\b[:\s-]*/i, '').trim();
     return why ? `the app did not respond in time: ${why}` : 'the app did not respond in time';
   }

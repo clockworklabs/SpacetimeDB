@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Turns grading results into a behavioral BUG_REPORT.md for the fix agent.
-// Selectors, test mechanics, local topology and raw paths are deliberately
-// removed so a fix cannot overfit the harness instead of repairing the app.
+// Internal selector mechanics, local topology and raw paths are removed.
+// Public control names remain because the agent already received them.
 
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

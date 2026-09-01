@@ -44,7 +44,7 @@ test('credential redaction covers provider environment and JSON spellings', () =
 
 test('humanisation keeps useful behaviour while hiding the implementation', () => {
   assert.equal(humaniseDiagnostic('[data-testid="toast"] not visible within 5000ms'),
-    'the toast did not appear');
+    'the toast control did not appear');
   assert.equal(humaniseDiagnostic('signup-username not visible within 5000ms'),
     'signup-username not visible in time');
   assert.equal(humaniseDiagnostic('ACCEPTED a write with a tampered ownerId'),
@@ -53,5 +53,5 @@ test('humanisation keeps useful behaviour while hiding the implementation', () =
     'signing in never completed, so nothing behind it could be reached');
   assert.equal(humaniseDiagnostic(`locator.click: Timeout 5000ms exceeded.\n`
     + `waiting for locator('[data-testid="profile-link"],#profile-link')`),
-  'the profile link did not become usable');
+  'the profile-link control did not become usable');
 });
