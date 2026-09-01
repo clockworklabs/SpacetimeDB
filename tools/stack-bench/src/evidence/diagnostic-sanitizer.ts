@@ -78,8 +78,14 @@ export function sanitiseConsoleError(detail: unknown = ''): string {
 
 export function humaniseDiagnostic(detail: unknown = ''): string {
   const raw = String(detail ?? '');
-  if (/still visible after/i.test(raw)) return 'it was still showing when it should have disappeared';
-  if (/not visible within/i.test(raw)) return 'it never appeared';
+  if (/still visible after/i.test(raw)) {
+    const control = publicControlName(raw);
+    return control ? `the ${control} was still visible` : sanitiseDiagnostic(raw);
+  }
+  if (/not visible within/i.test(raw)) {
+    const control = publicControlName(raw);
+    return control ? `the ${control} did not appear` : sanitiseDiagnostic(raw);
+  }
   if (/missing, \d+ duplicated/i.test(raw)) {
     const match = raw.match(/(\d+) missing, (\d+) duplicated/i);
     const missing = Number(match?.[1]);

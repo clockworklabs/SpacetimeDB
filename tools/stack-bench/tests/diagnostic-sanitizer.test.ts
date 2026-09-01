@@ -43,7 +43,10 @@ test('credential redaction covers provider environment and JSON spellings', () =
 });
 
 test('humanisation keeps useful behaviour while hiding the implementation', () => {
-  assert.equal(humaniseDiagnostic('[data-testid="toast"] not visible within 5000ms'), 'it never appeared');
+  assert.equal(humaniseDiagnostic('[data-testid="toast"] not visible within 5000ms'),
+    'the toast did not appear');
+  assert.equal(humaniseDiagnostic('signup-username not visible within 5000ms'),
+    'signup-username not visible in time');
   assert.equal(humaniseDiagnostic('ACCEPTED a write with a tampered ownerId'),
     'the server accepted a request that claimed to be from a different user');
   assert.equal(humaniseDiagnostic('setup failed: waiting for [data-testid="current-user"]'),

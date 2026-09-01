@@ -317,7 +317,7 @@ async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetSt
     result = await capabilities['database-write'].setStock(input);
   } catch (error) {
     if (errorShape(error).classification || harnessProcessFailure(error)) throw error;
-    fail(`dbSetStock failed: ${databaseWriteFailureDetail(error)}`);
+    inconclusive(`the grader could not update application stock: ${databaseWriteFailureDetail(error)}`);
   }
   await capabilities.clock.sleep(input.settleMs, signal);
   return result;

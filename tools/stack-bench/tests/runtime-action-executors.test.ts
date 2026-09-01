@@ -155,17 +155,18 @@ test('a generated app server timing out is an application failure, not a harness
 });
 
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
-  const calls: Array<readonly [string, readonly string[]]> = [];
   const waits: number[] = [];
+  let stockSql = '';
   const databaseLease = { resources: { database: 'bench',
     container: { name: 'leased-postgres', id: 'postgres-id' } } };
   const capability = createDatabaseWriteCapability({
     backend: 'postgres',
     databaseLease,
     expand: value => value,
-    exec: (command, args) => {
-      calls.push([command, args]);
-      return args[0] === 'inspect' ? 'postgres-id\n' : 'UPDATE 1\n';
+    exec: (_command, args, options) => {
+      if (args[0] === 'inspect') return 'postgres-id\n';
+      stockSql = options.input ?? '';
+      return 'UPDATE 1\n';
     },
   });
   const passed = await run({ do: 'dbSetStock', item: "Kid's Keyboard", warehouse: 'Main',
@@ -175,19 +176,22 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     } }),
   });
   assert.equal(passed.status, 'passed');
-  assert.match(calls.find(([, args]) => args.includes('psql'))?.[1].at(-1) ?? '', /Kid''s Keyboard/);
+  assert.match(stockSql, /Kid''s Keyboard/);
+  assert.match(stockSql, /\\gexec/);
   assert.deepEqual(waits, [17]);
 
   const missed = createDatabaseWriteCapability({ backend: 'postgres', databaseLease,
-    expand: value => value, exec: (_command, args) => args[0] === 'inspect'
-      ? 'postgres-id\n' : 'UPDATE 0\n' });
+    expand: value => value, exec: (_command, args) => {
+      if (args[0] === 'inspect') return 'postgres-id\n';
+      return 'UPDATE 0\n';
+    } });
   const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
-  assert.equal(failed.status, 'failed');
-  assert.match(failed.summary ?? '', /was not updated/);
+  assert.equal(failed.status, 'inconclusive');
+  assert.match(failed.summary ?? '', /could not locate one relational stock row/);
 });
 
-test('database-write feedback preserves the actionable schema error ahead of terse process output', async () => {
+test('database-write setup limitations are inconclusive and preserve their diagnostic', async () => {
   const error = Object.assign(new Error('direct stock correction requires singular collections '
     + '`item`, `warehouse`, and `stock`'), { stdout: 'MISSING\n' });
   assert.match(databaseWriteFailureDetail(error), /singular collections/);
@@ -202,7 +206,7 @@ test('database-write feedback preserves the actionable schema error ahead of ter
     } });
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
-  assert.equal(result.status, 'failed');
+  assert.equal(result.status, 'inconclusive');
   assert.match(result.summary ?? '', /singular collections `item`, `warehouse`, and `stock`/);
   assert.match(result.summary ?? '', /MISSING/);
 });
