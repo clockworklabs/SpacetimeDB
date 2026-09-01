@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -404,13 +405,20 @@ namespace SpacetimeDB
                 return dbOps;
             }
 
-            string DecodeReducerError(IReadOnlyList<byte> bytes)
+            string DecodeReducerError(List<byte> bytes)
             {
                 try
                 {
-                    using var stream = new ListStream(bytes);
-                    using var reader = new BinaryReader(stream);
-                    return new SpacetimeDB.BSATN.String().Read(reader);
+                    using var stream = BSATNHelpers.MakePooledListStream(bytes, out var pooledBuffer);
+                    try
+                    {
+                        using var reader = new BinaryReader(stream);
+                        return new SpacetimeDB.BSATN.String().Read(reader);
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(pooledBuffer);
+                    }
                 }
                 catch
                 {

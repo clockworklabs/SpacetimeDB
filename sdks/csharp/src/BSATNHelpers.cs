@@ -69,7 +69,7 @@ namespace SpacetimeDB
             return IStructuralReadWrite.Read<T>(reader);
         }
 
-        private static MemoryStream MakePooledListStream(System.Collections.Generic.List<byte> bsatn, out byte[] pooledBuffer)
+        public static MemoryStream MakePooledListStream(System.Collections.Generic.List<byte> bsatn, out byte[] pooledBuffer)
         {
             pooledBuffer = ArrayPool<byte>.Shared.Rent(bsatn.Count);
             bsatn.CopyTo(pooledBuffer);
