@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { readArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifact } from '../evidence/artifacts.js';
 import type { RecipeBinding, RecipeCheck } from '../composition/recipe-release.js';
 import { progressionEngine } from './progression-engine.js';
 import type { ProgressionWorkAction } from './progression-engine.js';
@@ -230,8 +230,8 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
   const validatedOwner = validateProgressionOwner(owner, { requireWorkspace: true });
   const validatedRelease = auditRecipeRelease(release);
   const recipeIdentity = exactRecipeIdentity(validatedRelease);
-  const runArtifact = readArtifact(join(root, 'run.json'), { expectedKind: 'benchmark_run' });
-  const stored = readProgressionState(join(root, 'progression-state.json'), {
+  const runArtifact = readArtifact(join(root, ARTIFACT_FILE.run), { expectedKind: 'benchmark_run' });
+  const stored = readProgressionState(join(root, ARTIFACT_FILE.progressionState), {
     progression: validatedProgression,
     featureCatalogIdentity,
     dependencyPolicyIdentity,
@@ -270,7 +270,7 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
     }
     const savedResult = recordedResult(event);
     const bundlePath = join(root, 'progression',
-      `attempt-${String(attemptSequence).padStart(3, '0')}`, 'bundle.json');
+      `attempt-${String(attemptSequence).padStart(3, '0')}`, ARTIFACT_FILE.gradeBundle);
     if (!existsSync(bundlePath)) {
       throw new Error(`progression attempt ${attemptSequence} grade bundle is missing`);
     }
@@ -307,7 +307,7 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
       selectionSha256: converted.selectionSha256,
       sourceSha256: converted.sourceSha256,
       evidence: converted.evidence,
-      bundle: `progression/attempt-${String(attemptSequence).padStart(3, '0')}/bundle.json`,
+      bundle: `progression/attempt-${String(attemptSequence).padStart(3, '0')}/${ARTIFACT_FILE.gradeBundle}`,
       outcome: converted.outcome,
       passed,
       ...(converted.outcome === 'conclusive'

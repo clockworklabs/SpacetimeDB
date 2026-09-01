@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -11,6 +12,7 @@ import type { CampaignAttemptPlan, CompiledCampaignPlan }
 import { emptyArtifactIdentities, readArtifact,
   writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
+import { campaignChildPath } from '../src/campaigns/campaign-path.js';
 import { attemptArgv, campaignRetryAuthority,
   executeCampaign, reconcileCampaign,
   processFailureDetail, remainingAttemptCostBudget } from '../src/campaigns/campaign-runner.js';
@@ -33,6 +35,23 @@ interface MutableSelection extends UnknownRecord {
   scoredChecks?: Array<UnknownRecord & { stableKey: string; points: number }>;
   observedChecks?: Array<UnknownRecord & { stableKey: string; points: number }>;
 }
+
+test('campaign paths reject escapes and existing symbolic-link segments', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-path-'));
+  const outside = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-path-outside-'));
+  try {
+    assert.equal(campaignChildPath(root, join('attempts', 'one'), 'attempt output'),
+      join(root, 'attempts', 'one'));
+    assert.throws(() => campaignChildPath(root, '..', 'attempt output'),
+      /not a child of the campaign directory/);
+    symlinkSync(outside, join(root, 'linked'), 'junction');
+    assert.throws(() => campaignChildPath(root, join('linked', 'one'), 'attempt output'),
+      /contains a symbolic link/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
 type CampaignExecute = NonNullable<NonNullable<Parameters<typeof executeCampaign>[2]>['execute']>;
 type ExecuteCall = {
   command: Parameters<CampaignExecute>[0];

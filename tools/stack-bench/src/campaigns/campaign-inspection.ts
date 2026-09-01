@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readCampaignState } from './campaign-scheduler.js';
+import { ARTIFACT_FILE } from '../evidence/artifacts.js';
 import { progressionEngine } from '../progression/progression-engine.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
@@ -127,7 +128,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
   executionDirectory: string | null): DependencyProgress | null {
   if (attempt.mode?.id !== 'dependency' || !plan.featureCatalog
     || !plan.dependencyPolicy || !executionDirectory) return null;
-  const statePath = join(executionDirectory, 'progression-state.json');
+  const statePath = join(executionDirectory, ARTIFACT_FILE.progressionState);
   if (!existsSync(statePath)) return null;
   try {
     const stored = readProgressionState(statePath, {

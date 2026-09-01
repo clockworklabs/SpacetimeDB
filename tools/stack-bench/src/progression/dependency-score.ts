@@ -4,6 +4,7 @@ import type {
   ProgressionState,
   ProgressionTerminalOutcome,
 } from './progression-state.js';
+import { dependencyNodeState } from './dependency-state.js';
 
 export const INCONCLUSIVE_CATEGORIES = [
   'provider_failure',
@@ -52,16 +53,10 @@ interface ScoringState extends ProgressionState {
   definition: CompiledProgressionDefinition;
 }
 
-function getNodeState(state: ScoringState, nodeId: string): ProgressionNodeState {
-  const node = state.nodes[nodeId];
-  if (!node) throw new Error(`dependency mode state is missing node ${nodeId}`);
-  return node;
-}
-
 function nodePoints(state: ScoringState, nodeId: string): PointTotals {
   const node = state.definition.nodes.find(candidate => candidate.id === nodeId);
   if (!node) throw new Error(`unknown dependency node ${nodeId}`);
-  const nodeState = getNodeState(state, nodeId);
+  const nodeState = dependencyNodeState(state, nodeId);
   const checks = nodeState.checks;
   const blocked = nodeState.status === 'blocked';
   const passedPoints = node.gradingChecks.reduce((total, check) =>
@@ -116,13 +111,13 @@ export function scoreDependencyState(state: ScoringState): DependencyScore {
   const uniqueChecks = state.definition.nodes.reduce((total, node) =>
     addPoints(total, nodePoints(state, node.id)), emptyPoints());
   const nodes = state.definition.nodes.map(node => {
-    const nodeState = getNodeState(state, node.id);
+    const nodeState = dependencyNodeState(state, node.id);
     return {
       id: node.id,
       status: nodeState.status,
       blockedBy: nodeState.status === 'blocked'
         ? node.dependencies.filter(parentId => {
-          const status = getNodeState(state, parentId).status;
+          const status = dependencyNodeState(state, parentId).status;
           return status === 'failed' || status === 'blocked';
         })
         : [],

@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { CODING_CONTAINER_APP_ROOT } from './coding-container-policy.js';
 
 const SKIP_DIRECTORIES = new Set([
   '.git', '.vite', 'dist', 'module_bindings', 'node_modules', 'stack-bench',
@@ -67,8 +68,9 @@ function walk(root: string, visit: (path: string, name: string) => void): void {
 
 function configuredPath(appRoot: string, configPath: string, modulePath: string): string {
   const normalized = modulePath.replaceAll('\\', '/');
-  if (normalized === '/app') return appRoot;
-  if (normalized.startsWith('/app/')) return resolve(appRoot, normalized.slice('/app/'.length));
+  if (normalized === CODING_CONTAINER_APP_ROOT) return appRoot;
+  const prefix = `${CODING_CONTAINER_APP_ROOT}/`;
+  if (normalized.startsWith(prefix)) return resolve(appRoot, normalized.slice(prefix.length));
   return resolve(dirname(configPath), modulePath);
 }
 
@@ -128,7 +130,7 @@ function validateTarget(appRoot: string, target: ModuleTarget): Omit<SpacetimeMo
   return {
     moduleDirectory,
     hostPath: actual,
-    containerPath: `/app/${moduleDirectory}`,
+    containerPath: `${CODING_CONTAINER_APP_ROOT}/${moduleDirectory}`,
     configPath: target.configPath
       ? relative(appRoot, target.configPath).split(sep).join('/') : null,
   };

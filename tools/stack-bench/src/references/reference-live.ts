@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
+  writeRunJson } from '../evidence/artifacts.js';
 import { hashDirectory } from '../evidence/provenance.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.js';
@@ -685,7 +686,7 @@ export function readParallelMutationWorker(path: string, processResult: {
     if (outputRoot !== childRoot && !outputRoot.startsWith(`${childRoot}${sep}`)) {
       failures.push('worker run output escapes its artifact directory');
     } else {
-      const controlPath = join(outputRoot, 'mutation-control.json');
+      const controlPath = join(outputRoot, ARTIFACT_FILE.mutationControl);
       try { control = readArtifactPayload(controlPath, { expectedKind: 'mutation_control' }); }
       catch (error) {
         failures.push(`worker mutation artifact is invalid: ${errorMessage(error)}`);
@@ -761,7 +762,7 @@ async function runParallelMutationRepetition(fixture: ReferenceFixture,
       mutations: { caught: 0, total: 0 } };
   }
   const baselineBundle = resolve(String(args.artifactDirectory), String(clean.output),
-    `first-build-l${args.level}-grading`, 'bundle.json');
+    `first-build-l${args.level}-grading`, ARTIFACT_FILE.gradeBundle);
   if (!existsSync(baselineBundle)) {
     return { ...clean, ok: false, durationMs: Date.now() - started,
       processError: `clean baseline bundle is missing: ${baselineBundle}`,

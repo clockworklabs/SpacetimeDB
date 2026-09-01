@@ -7,21 +7,23 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { writeRunJson } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, writeRunJson } from '../evidence/artifacts.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
 import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
   publicBackendLease, readBackendLease, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../runtime/backend-lease.js';
 import { resolveContainerImage } from '../runtime/container-image.js';
 import type { ResolvedContainerImage } from '../runtime/container-image.js';
-import { codingContainerAgentCommand, codingContainerAgentExecOptions }
+import { runningContainerIdentity } from '../runtime/container-identity.js';
+import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI,
+  codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack } from '../composition/tracks.js';
 import { inspectImportedReference, loadReferenceRegistry,
-  prepareReferenceFixtureSource, referenceMetadataIssues,
+  prepareReferenceFixtureSource, REFERENCE_METADATA_FILE, referenceMetadataIssues,
   validateReferenceRegistry } from './reference-fixtures.js';
 import { referenceInstallSteps } from './reference-install.js';
 
@@ -85,16 +87,6 @@ function parseArgs(argv: readonly string[]): {
   return args;
 }
 
-function containerIdentity(name: string): { name: string; id: string } {
-  const output = execFileSync('docker', ['inspect', '--format', '{{.Id}} {{.State.Running}}', name],
-    { encoding: 'utf8', stdio: 'pipe' }).trim();
-  const [id, running] = output.split(/\s+/);
-  if (!id || !/^[a-f0-9]{64}$/.test(id) || running !== 'true') {
-    throw new Error(`${name} is not a running Docker container`);
-  }
-  return { name, id };
-}
-
 function run(container: string, cwd: string, command: string,
   args: readonly string[], commands: BuildCommand[]): void {
   const started = Date.now();
@@ -116,23 +108,26 @@ function run(container: string, cwd: string, command: string,
 function buildCommands(metadata: ReferenceMetadataForBuild, container: string,
   commands: BuildCommand[]): void {
   for (const directory of metadata.installDirectories) {
-    run(container, `/app/${directory}`, 'node', ['-e',
+    run(container, `${CODING_CONTAINER_APP_ROOT}/${directory}`, 'node', ['-e',
       "const fs=require('node:fs'); for(const f of ['package.json','package-lock.json']) if(!fs.existsSync(f)) throw new Error(`${process.cwd()}/${f} is missing`);"], commands);
   }
   for (const step of referenceInstallSteps(metadata)) {
-    run(container, `/app/${step.directory}`, step.command, step.args, commands);
+    run(container, `${CODING_CONTAINER_APP_ROOT}/${step.directory}`, step.command, step.args, commands);
   }
   if (metadata.kind === 'node-api') {
-    run(container, `/app/${metadata.server.directory}`, 'npm', ['exec', 'tsc', '--', '--noEmit'], commands);
-    run(container, `/app/${metadata.client.directory}`, 'npm', ['run', 'build'], commands);
+    run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.server.directory}`,
+      'npm', ['exec', 'tsc', '--', '--noEmit'], commands);
+  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
+    'npm', ['run', 'build'], commands);
     return;
   }
-  run(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
-    ['build', '--module-path', `/app/${metadata.moduleDirectory}`], commands);
-  run(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
-    ['generate', '--lang', 'typescript', '--module-path', `/app/${metadata.moduleDirectory}`,
-      '--out-dir', `/app/${metadata.bindingsDirectory}`, '--yes', '--no-config'], commands);
-  run(container, `/app/${metadata.client.directory}`, 'npm', ['run', 'build'], commands);
+  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`, CODING_CONTAINER_SPACETIME_CLI,
+    ['build', '--module-path', `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`], commands);
+  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`, CODING_CONTAINER_SPACETIME_CLI,
+    ['generate', '--lang', 'typescript', '--module-path', `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`,
+      '--out-dir', `${CODING_CONTAINER_APP_ROOT}/${metadata.bindingsDirectory}`, '--yes', '--no-config'], commands);
+  run(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
+    'npm', ['run', 'build'], commands);
 }
 
 function removeLeasedBuildContainer(leasePath: string, token: string): void {
@@ -155,7 +150,7 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
   const started = Date.now();
   const work = mkdtempSync(join(tmpdir(), `stack-bench-reference-${fixture.backend}-`));
   const app = join(work, 'app');
-  const leasePath = join(work, 'backend-lease.json');
+  const leasePath = join(work, ARTIFACT_FILE.backendLease);
   const commands: BuildCommand[] = [];
   let lease: BackendLease | undefined;
   let leaseEvidence: unknown = null;
@@ -173,7 +168,7 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
       helpers: {
         moduleName: () => `reference-${fixture.track}`,
         dbName: () => `reference_${fixture.track}`,
-        containerIdentity,
+        containerIdentity: runningContainerIdentity,
       },
     });
     const prepared_ = record(preparedLease) ? preparedLease : {};
@@ -201,7 +196,8 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
     }
     const metadata: ReferenceMetadataForBuild = JSON.parse(
       execFileSync('docker', ['exec', identity.containerName,
-        'cat', '/app/reference.json'], { encoding: 'utf8', stdio: 'pipe' }));
+        'cat', `${CODING_CONTAINER_APP_ROOT}/${REFERENCE_METADATA_FILE}`],
+      { encoding: 'utf8', stdio: 'pipe' }));
     const metadataIssues = referenceMetadataIssues(metadata);
     if (metadataIssues.length) throw new Error(metadataIssues.join('; '));
     buildCommands(metadata, identity.containerName, commands);

@@ -2,6 +2,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSyn
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { hashDirectory } from '../evidence/provenance.js';
+import { CODING_CONTAINER_BUG_REPORT_FILE } from './coding-container-policy.js';
 import type { HashFilesResult } from '../evidence/provenance.js';
 
 // Snapshots contain model-authored source, not runtime state or repair evidence.
@@ -12,7 +13,9 @@ const TRANSIENT_DIRS = new Set([
   '.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache',
 ]);
 const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
-const ROOT_RUNTIME_FILES = new Set(['BUG_REPORT.md', 'client.log', 'server.log', 'vite.log']);
+const ROOT_RUNTIME_FILES = new Set([
+  CODING_CONTAINER_BUG_REPORT_FILE, 'client.log', 'server.log', 'vite.log',
+]);
 
 type DirectoryDisposition = 'preserve' | 'transient' | 'source';
 

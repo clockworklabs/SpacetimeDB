@@ -23,6 +23,7 @@ import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLe
 import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
   ProgressionInput } from '../progression/progression-definition.js';
 import type { ProgressionOwner } from '../progression/progression-state.js';
+import { STACK_BENCH_RUNNER_PLATFORM } from '../runtime/runner-environment.js';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.js';
 import type { ProgressionRecipeSelections as ProgressionLevelSelection }
@@ -122,7 +123,7 @@ export interface CampaignDefinition {
     releaseManifestSha256: string | null;
     controllerImage: string | null;
     buildImage: string | null;
-    platform: 'linux/amd64';
+    platform: typeof STACK_BENCH_RUNNER_PLATFORM;
   };
   featureCatalog?: string | FeatureCatalogInput['definition'];
 }
@@ -560,7 +561,9 @@ export function validateCampaignDefinition(input: unknown,
       fail(`${source}.runtime.${field}`, 'must be an exact image digest reference or null');
     }
   }
-  if (value.runtime.platform !== 'linux/amd64') fail(`${source}.runtime.platform`, 'must be linux/amd64');
+  if (value.runtime.platform !== STACK_BENCH_RUNNER_PLATFORM) {
+    fail(`${source}.runtime.platform`, `must be ${STACK_BENCH_RUNNER_PLATFORM}`);
+  }
 
   strict(value.pricing, `${source}.pricing`, PRICING_FIELDS);
   if (value.pricing.currency !== 'USD') fail(`${source}.pricing.currency`, 'must be USD');

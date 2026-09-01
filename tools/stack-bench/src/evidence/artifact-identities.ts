@@ -1,7 +1,9 @@
 import type { Dirent } from 'node:fs';
+import { z } from 'zod';
 
 import { STACK_BENCH_ROOT } from '../package-root.js';
 import { hashDirectory } from './provenance.js';
+import { formatZodError } from '../zod-error.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -30,6 +32,30 @@ export type ArtifactIdentities = Record<ArtifactIdentityKey, ArtifactIdentity | 
 };
 
 const HASH = /^[a-f0-9]{64}$/;
+const identityShape = {
+  id: z.string().min(1),
+  version: z.string().min(1).nullable().optional(),
+  sha256: z.string().regex(HASH).nullable().optional(),
+  state: z.string().min(1).nullable().optional(),
+};
+const identitySchema = z.strictObject(identityShape);
+const completeIdentitySchema = z.strictObject({
+  id: identityShape.id,
+  version: identityShape.version.unwrap(),
+  sha256: identityShape.sha256.unwrap(),
+  state: identityShape.state.unwrap(),
+});
+const optionalIdentitySchema = identitySchema.nullable().optional();
+const identitiesSchema = z.strictObject({
+  engine: optionalIdentitySchema,
+  recipe: optionalIdentitySchema,
+  fixture: optionalIdentitySchema,
+  calibration: optionalIdentitySchema,
+  experiment: optionalIdentitySchema,
+  agentAdapter: optionalIdentitySchema,
+  stackAdapter: optionalIdentitySchema,
+  packs: z.array(identitySchema).optional(),
+});
 let cachedEngineIdentity: EngineArtifactIdentity | null = null;
 
 const isObject = (value: unknown): value is UnknownRecord =>
@@ -46,25 +72,18 @@ function asObject(value: unknown, message: string): UnknownRecord {
 
 function identity(value: unknown, at: string, requireComplete: boolean): ArtifactIdentity | null {
   if (value === null) return null;
-  const candidate = asObject(value, `${at} must be an object or null`);
   const fields = ['id', 'version', 'sha256', 'state'] as const;
-  for (const key of Object.keys(candidate)) {
-    if (!fields.includes(key as typeof fields[number])) fail(`${at}.${key} is unknown`);
-  }
   if (requireComplete) {
+    const candidate = asObject(value, `${at} must be an object or null`);
     for (const field of fields) {
       if (!Object.hasOwn(candidate, field)) fail(`${at}.${field} is required`);
     }
   }
-  if (typeof candidate.id !== 'string' || !candidate.id) fail(`${at}.id must be a non-empty string`);
-  if (candidate.version !== null && candidate.version !== undefined
-    && (typeof candidate.version !== 'string' || !candidate.version)) fail(`${at}.version is invalid`);
-  if (candidate.sha256 !== null && candidate.sha256 !== undefined
-    && (typeof candidate.sha256 !== 'string' || !HASH.test(candidate.sha256))) {
-    fail(`${at}.sha256 must be 64 lowercase hexadecimal characters`);
+  const parsed = (requireComplete ? completeIdentitySchema : identitySchema).safeParse(value);
+  if (!parsed.success) {
+    fail(formatZodError(parsed.error, at));
   }
-  if (candidate.state !== null && candidate.state !== undefined
-    && (typeof candidate.state !== 'string' || !candidate.state)) fail(`${at}.state is invalid`);
+  const candidate = parsed.data;
   return {
     id: candidate.id,
     version: candidate.version ?? null,
@@ -81,16 +100,19 @@ export function validateArtifactIdentities(
     sortPacks = true,
   }: { requireEngine?: boolean; requireComplete?: boolean; sortPacks?: boolean } = {},
 ): ArtifactIdentities {
-  const candidate = asObject(value, 'identities must be an object');
   const allowed = new Set([...ARTIFACT_IDENTITY_KEYS, 'packs']);
-  for (const key of Object.keys(candidate)) if (!allowed.has(key)) fail(`identities.${key} is unknown`);
   if (requireComplete) {
+    const candidate = asObject(value, 'identities must be an object');
     for (const key of allowed) {
       if (!Object.hasOwn(candidate, key)) fail(`identities.${key} is required`);
     }
   }
+  const parsed = identitiesSchema.safeParse(value);
+  if (!parsed.success) {
+    fail(formatZodError(parsed.error, 'identities'));
+  }
+  const candidate = parsed.data;
   const packsValue = candidate.packs ?? [];
-  if (!Array.isArray(packsValue)) fail('identities.packs must be an array');
   const normalized: ArtifactIdentities = {
     engine: identity(candidate.engine ?? null, 'identities.engine', requireComplete),
     recipe: identity(candidate.recipe ?? null, 'identities.recipe', requireComplete),

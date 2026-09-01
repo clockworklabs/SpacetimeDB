@@ -5,6 +5,7 @@ import { agentRecipeIdentity } from '../agents/agent-adapter-contract.js';
 import { portsFor } from '../composition/tracks.js';
 import type { Track } from '../composition/tracks.js';
 import { compiledEntrypoint } from '../package-root.js';
+import { ARTIFACT_FILE } from './artifacts.js';
 
 interface SelectedCheck {
   stableKey?: unknown;
@@ -55,7 +56,7 @@ export function pristineMutationBaselinePath(
   if (args.mutationBaselineBundle) return args.mutationBaselineBundle;
   const level = args.levelList?.at(-1);
   if (typeof level !== 'number' || !Number.isSafeInteger(level) || level < 1 || !args.out) return null;
-  const candidate = join(args.out, `first-build-l${level}-grading`, 'bundle.json');
+  const candidate = join(args.out, `first-build-l${level}-grading`, ARTIFACT_FILE.gradeBundle);
   return exists(candidate) ? candidate : null;
 }
 
@@ -92,7 +93,7 @@ export function mutationControlArgv(
   if (typeof level !== 'number' || !Number.isSafeInteger(level) || level < 1) {
     throw new Error('mutation control requires a positive integer run level');
   }
-  const output = join(args.out, 'mutation-control.json');
+  const output = join(args.out, ARTIFACT_FILE.mutationControl);
   const recipeTask = args.recipeTasks?.get(level)?.agentRequest
     ?? args.recipeTasks?.get(level)?.request ?? null;
   const recipe = agentRecipeIdentity(args.recipe, recipeTask);

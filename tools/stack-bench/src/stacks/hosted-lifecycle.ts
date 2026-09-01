@@ -4,7 +4,8 @@ import { join } from 'node:path';
 
 import { updateBackendLease } from '../runtime/backend-lease.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
-import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, codingContainerAgentExecOptions }
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
+  codingContainerAgentExecOptions }
   from '../runtime/coding-container-policy.js';
 import type { BackendLease, BackendLeaseContainer } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
@@ -178,7 +179,8 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
     return ['-e', `${key}=${value}`];
   });
   const log = `${CONTROL_DIR}/restart-${stack}-${Number(port)}.log`;
-  exec('docker', ['exec', '-d', '-w', launch.directory === '.' ? '/app' : `/app/${launch.directory}`,
+  exec('docker', ['exec', '-d', '-w', launch.directory === '.' ? CODING_CONTAINER_APP_ROOT
+    : `${CODING_CONTAINER_APP_ROOT}/${launch.directory}`,
     '-e', `HOME=${CODING_CONTAINER_AGENT.home}`, '-e', `USER=${CODING_CONTAINER_AGENT.name}`,
     '-e', `PORT=${Number(port)}`, ...environmentArgs, container.id, 'sh', '-c',
     `set -eu; umask 022; : > ${log}; rm -f ${processRecord}; `

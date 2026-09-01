@@ -1,8 +1,8 @@
-import { existsSync, lstatSync, mkdirSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload,
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeArtifact } from '../evidence/artifacts.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
 import { compileCampaignFile } from './campaign-compiler.js';
@@ -18,6 +18,7 @@ import type { BoundedProcessResult, RunBoundedOptions }
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { readCampaignAdmission, runCampaignAdmission } from './campaign-admission.js';
+import { campaignChildPath as contained } from './campaign-path.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
 import type { BenchmarkRun } from './campaign-run-validation.js';
 import { campaignExecutionEnvironment, campaignSlotEnvironment } from './campaign-runtime.js';
@@ -87,24 +88,6 @@ interface AttemptResult extends CampaignExecutionResult {
   reason?: string;
 }
 
-
-function contained(root: string, path: string, label: string): string {
-  const absoluteRoot = resolve(root);
-  const absolute = resolve(absoluteRoot, path);
-  const rel = relative(absoluteRoot, absolute);
-  if (rel === '..' || rel.startsWith(`..${sep}`) || rel === '') {
-    throw new Error(`${label} is not a child of the campaign directory`);
-  }
-  let cursor = absoluteRoot;
-  for (const segment of rel.split(sep)) {
-    cursor = join(cursor, segment);
-    if (!existsSync(cursor)) break;
-    if (lstatSync(cursor).isSymbolicLink()) {
-      throw new Error(`${label} contains a symbolic link: ${cursor}`);
-    }
-  }
-  return absolute;
-}
 
 export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
   output: string, runIndex: unknown = undefined, campaignPlanPath: string | null = null,
@@ -213,7 +196,7 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
       run: { outcome: { kind: 'scheduler_interrupted',
         reason: 'campaign cancellation requested' } } });
   }
-  const runPath = join(output, 'run.json');
+  const runPath = join(output, ARTIFACT_FILE.run);
   let run = null;
   let artifactError = null;
   if (existsSync(runPath)) {
@@ -231,12 +214,12 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
       ? processFailureDetail(processResult) : null;
     return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
       run: { outcome: { kind: 'harness_failure',
-        reason: `${processDetail ? `${processDetail}; ` : ''}partial run.json is invalid: ${artifactError.message}` } } });
+        reason: `${processDetail ? `${processDetail}; ` : ''}partial ${ARTIFACT_FILE.run} is invalid: ${artifactError.message}` } } });
   }
   if (!run && processResult.code !== 0 && !processResult.timedOut) {
     const detail = processFailureDetail(processResult);
     return withRetryAuthority({ exitCode: processResult.code, timedOut: false, run: { outcome: {
-      kind: 'harness_failure', reason: detail || 'attempt ended before producing run.json' } } });
+      kind: 'harness_failure', reason: detail || `attempt ended before producing ${ARTIFACT_FILE.run}` } } });
   }
   return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut, run });
 }
@@ -249,7 +232,7 @@ export function remainingAttemptCostBudget(
   if (cap === null) return null;
   let spent = 0;
   for (const output of claim.priorOutputs ?? []) {
-    const runPath = join(contained(directory, output, 'prior attempt output'), 'run.json');
+    const runPath = join(contained(directory, output, 'prior attempt output'), ARTIFACT_FILE.run);
     if (!existsSync(runPath)) {
       throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
     }
@@ -296,9 +279,9 @@ export function inspectCampaign(directory: string, {
 
 function publicRecoveryProvesCleanup(output: string, backend: string, attemptId: string,
   executionId: string, currentRun: BenchmarkRun | null = null): boolean {
-  const runPath = join(output, 'run.json');
-  const processPath = join(output, 'process.json');
-  const recoveryPath = join(output, 'recovery.json');
+  const runPath = join(output, ARTIFACT_FILE.run);
+  const processPath = join(output, ARTIFACT_FILE.process);
+  const recoveryPath = join(output, ARTIFACT_FILE.recovery);
   if ((!currentRun && !existsSync(runPath)) || !existsSync(processPath) || !existsSync(recoveryPath)) {
     return false;
   }
@@ -467,7 +450,7 @@ export async function executeCampaign(campaignFile: string, directory: string,
           run: { outcome: { kind: 'harness_failure', reason } } };
       }
       try {
-        writeArtifact(join(output, 'process.json'), { kind: 'campaign_process',
+        writeArtifact(join(output, ARTIFACT_FILE.process), { kind: 'campaign_process',
           id: `${claim.executionId}-process`,
           attempt: { id: claim.executionId, parentId: claim.attempt.id },
           identities: emptyArtifactIdentities({ experiment: {

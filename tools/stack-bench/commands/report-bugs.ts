@@ -9,9 +9,12 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { redactCredentials, sanitiseConsoleError,
   sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
+  writeArtifact } from '../src/evidence/artifacts.js';
 import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
 import { renderRepairDiagnostic } from '../src/evidence/evidence-presentation.js';
+import { CODING_CONTAINER_BUG_REPORT_FILE, CODING_CONTAINER_START_SCRIPT }
+  from '../src/runtime/coding-container-policy.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 
 interface RepairHistoryEntry {
@@ -110,7 +113,7 @@ export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
   if (!args.app) {
     throw new Error('Usage: report-bugs --app <dir> [--out <file>]');
   }
-  args.out ??= join(args.app, 'BUG_REPORT.md');
+  args.out ??= join(args.app, CODING_CONTAINER_BUG_REPORT_FILE);
   args.history ??= [];
   if (!Array.isArray(args.history)) throw new Error('--history-json must contain an array');
   args.checks ??= null;
@@ -185,7 +188,7 @@ export function createBugReport(args: ReportBugsArgs): number {
 
   // Contract failures are separate because the element id is itself the public
   // requirement here. Behavioral failures above must never expose one.
-  const lintPath = join(resultsDir, 'contract-lint.json');
+  const lintPath = join(resultsDir, ARTIFACT_FILE.contractLint);
   if (existsSync(lintPath)) {
     const lint = readArtifactPayload<ContractLintPayload>(lintPath, { expectedKind: 'contract_lint' });
     for (const result of (lint.results ?? []).filter(item => item.status === 'FAIL'
@@ -202,14 +205,14 @@ export function createBugReport(args: ReportBugsArgs): number {
     }
   }
 
-  const bundlePath = join(resultsDir, 'bundle.json');
+  const bundlePath = join(resultsDir, ARTIFACT_FILE.gradeBundle);
   if (existsSync(bundlePath)) {
     const bundle = readArtifactPayload<GradeBundlePayload>(bundlePath, { expectedKind: 'grade_bundle' });
     if (bundle.outcome?.kind === 'app_failure' && bundle.outcome.reason) {
       const expectedByPhase: Record<string, string> = {
         'database-provenance': `The app must use the ${bundle.backend} database and connection supplied for this run.`,
         'application-layout': 'The app must use a project layout that can be built, started, and reset repeatedly.',
-        'application-restart': 'The app must provide /app/start.sh. From clean source, it must install dependencies, build, and start the complete application without changing source files.',
+        'application-restart': `The app must provide ${CODING_CONTAINER_START_SCRIPT}. From clean source, it must install dependencies, build, and start the complete application without changing source files.`,
       };
       const expected = expectedByPhase[bundle.outcome.phase ?? '']
         ?? 'The app must start successfully in the supplied environment.';

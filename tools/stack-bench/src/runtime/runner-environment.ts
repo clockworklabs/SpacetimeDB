@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
+export const STACK_BENCH_RUNNER_PLATFORM = 'linux/amd64' as const;
+
 export const RUNNER_OBSERVATION_FIELDS = Object.freeze([
   'dockerEngineVersion',
   'dockerOs',

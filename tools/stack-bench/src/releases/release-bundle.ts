@@ -7,10 +7,10 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { sha256 } from '../evidence/provenance.js';
+import { parseExactImageReference } from '../runtime/container-image.js';
+import { STACK_BENCH_RUNNER_PLATFORM } from '../runtime/runner-environment.js';
 import { validateReleaseManifest, validateSpdxImageSbom } from './release-manifest.js';
 import type { ReleaseFileRole } from './release-manifest.js';
-
-const DIGEST_REFERENCE = /^[a-z0-9](?:[a-z0-9._:/-]*[a-z0-9])?@sha256:([a-f0-9]{64})$/;
 
 interface ImageReference { reference: string; digest: string }
 interface RunOptions { timeout?: number }
@@ -26,9 +26,9 @@ interface ReleaseSpecificationFile { path: string; role: ReleaseFileRole }
 type UnknownRecord = Record<string, unknown>;
 
 function exactImage(reference: string): ImageReference {
-  const match = !reference.includes('://') && reference.match(DIGEST_REFERENCE);
-  if (!match) throw new Error('image must be a normalized registry reference at an exact @sha256: digest');
-  return { reference, digest: match[1]! };
+  const image = parseExactImageReference(reference);
+  if (!image) throw new Error('image must be a normalized registry reference at an exact @sha256: digest');
+  return { reference: image.reference, digest: image.id.slice('sha256:'.length) };
 }
 
 function contained(root: string, relative: unknown): string {
@@ -48,10 +48,13 @@ function run(executable: string, args: string[], { timeout = 600_000 }: RunOptio
     || `${executable} exited ${outcome.status}`).trim().slice(0, 4096));
 }
 
-export function generateSpdxImageSbom({ reference, outputPath, platform = 'linux/amd64',
+export function generateSpdxImageSbom({ reference, outputPath,
+  platform = STACK_BENCH_RUNNER_PLATFORM,
   docker = 'docker', runCommand = run }: GenerateSbomOptions) {
   const image = exactImage(reference);
-  if (platform !== 'linux/amd64') throw new Error('v1 release SBOM platform must be linux/amd64');
+  if (platform !== STACK_BENCH_RUNNER_PLATFORM) {
+    throw new Error(`v1 release SBOM platform must be ${STACK_BENCH_RUNNER_PLATFORM}`);
+  }
   const output = resolve(outputPath);
   if (existsSync(output)) throw new Error(`refusing to overwrite existing SBOM: ${output}`);
   mkdirSync(dirname(output), { recursive: true });

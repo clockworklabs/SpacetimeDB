@@ -7,6 +7,8 @@ import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { sha256 } from '../evidence/provenance.js';
+import { parseExactImageReference } from '../runtime/container-image.js';
+import { STACK_BENCH_RUNNER_PLATFORM } from '../runtime/runner-environment.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 2;
@@ -20,7 +22,7 @@ export interface ReleaseImage {
   role: ReleaseImageRole;
   reference: string;
   digest: string;
-  platform: 'linux/amd64';
+  platform: typeof STACK_BENCH_RUNNER_PLATFORM;
   sbomPath: string;
 }
 
@@ -85,7 +87,6 @@ const REQUIRED_FILE_ROLES = Object.freeze(['compose', 'dependency', 'operator-gu
   'secrets-template', 'support-policy']);
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
-const IMAGE_REFERENCE = /^[a-z0-9](?:[a-z0-9._:/-]*[a-z0-9])?@sha256:([a-f0-9]{64})$/;
 const object = (value: unknown): value is UnknownRecord => value !== null
   && typeof value === 'object' && !Array.isArray(value);
 
@@ -136,7 +137,7 @@ export function validateReleaseManifest(value: unknown,
     'dockerSocket']), `${source}.supportedRunner`);
   if (value.supportedRunner.os !== 'linux' || value.supportedRunner.architecture !== 'amd64'
     || value.supportedRunner.networkMode !== 'host' || value.supportedRunner.dockerSocket !== true) {
-    throw new Error(`${source}.supportedRunner must declare the v1 dedicated linux/amd64 host-network Docker-socket topology`);
+    throw new Error(`${source}.supportedRunner must declare the v1 dedicated ${STACK_BENCH_RUNNER_PLATFORM} host-network Docker-socket topology`);
   }
   if (typeof value.supportedRunner.stateRoot !== 'string'
     || !value.supportedRunner.stateRoot.startsWith('/')) throw new Error(`${source}.supportedRunner.stateRoot must be absolute`);
@@ -150,12 +151,13 @@ export function validateReleaseManifest(value: unknown,
       throw new Error(`${at}.role is invalid`);
     }
     exactHash(image.digest, `${at}.digest`);
-    const reference = typeof image.reference === 'string' && !image.reference.includes('://')
-      && image.reference.match(IMAGE_REFERENCE);
-    if (!reference || reference[1] !== image.digest) {
+    const reference = parseExactImageReference(image.reference);
+    if (!reference || reference.id !== `sha256:${image.digest}`) {
       throw new Error(`${at}.reference must be a normalized registry reference at its exact digest`);
     }
-    if (image.platform !== 'linux/amd64') throw new Error(`${at}.platform must be linux/amd64`);
+    if (image.platform !== STACK_BENCH_RUNNER_PLATFORM) {
+      throw new Error(`${at}.platform must be ${STACK_BENCH_RUNNER_PLATFORM}`);
+    }
     relativePath(image.sbomPath, `${at}.sbomPath`);
   });
   const images = value.images as UnknownRecord[];

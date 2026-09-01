@@ -16,7 +16,8 @@ import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
-  referenceMetadataIssues, validateReferenceRegistry } from './reference-fixtures.js';
+  REFERENCE_METADATA_FILE, referenceMetadataIssues, validateReferenceRegistry }
+  from './reference-fixtures.js';
 import { resolveReferenceSelection } from './reference-selection.js';
 import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.js';
 
@@ -242,7 +243,7 @@ async function main(): Promise<void> {
   const { lease } = leaseFromEnv(process.env, { backend: args.backend, active: true });
   phase(`validated ${args.backend} lease ${lease.runId}`);
   if (lease.track !== args.track || lease.runIndex !== args.runIndex) throw new Error('lease does not match this reference run');
-  const metadataPath = join(args.app, 'reference.json');
+  const metadataPath = join(args.app, REFERENCE_METADATA_FILE);
   if (!existsSync(metadataPath)) throw new Error(`missing ${metadataPath}`);
   const metadata: unknown = JSON.parse(readFileSync(metadataPath, 'utf8'));
   const metadataIssues = referenceMetadataIssues(metadata);

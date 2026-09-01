@@ -1,13 +1,13 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
-import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
 import { calibrationQualificationIdentity } from './calibration-compiler.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
-import { PACK_RUNTIME_METRIC } from './pack-runtime.js';
+import { nonNegativeInteger, PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';
 import type { RecipeBinding } from './recipe-release.js';
 import { missingRunnerObservation } from '../runtime/runner-environment.js';
@@ -138,13 +138,6 @@ function equalIdentityFields(actual: unknown, expected: unknown, fields: readonl
   }
 }
 
-function positiveInteger(value: unknown, at: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${at} must be a non-negative integer`);
-  }
-  return value;
-}
-
 export function recommendPackBudgets({ binding, calibration, evidence }: {
   binding: RecipeBinding;
   calibration: CalibrationPlan;
@@ -228,14 +221,16 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
         if (!expectedPackCounts.has(pack.id)) throw new Error(`${item.path} measured unknown pack ${pack.id}`);
         if (seenPacks.has(pack.id)) throw new Error(`${item.path} repeats measured pack ${pack.id}`);
         seenPacks.add(pack.id);
-        const checkCount = positiveInteger(pack.checkCount, `${item.path}.${pack.id}.checkCount`);
+        const checkCount = nonNegativeInteger(pack.checkCount,
+          `${item.path}.${pack.id}.checkCount`);
         if (checkCount !== expectedPackCounts.get(pack.id)) {
           throw new Error(`${item.path} measured ${checkCount} checks for ${pack.id}; expected ${expectedPackCounts.get(pack.id)}`);
         }
-        const setupRuntimeMs = positiveInteger(pack.setupRuntimeMs, `${item.path}.${pack.id}.setupRuntimeMs`);
-        const criterionRuntimeMs = positiveInteger(pack.criterionRuntimeMs,
+        const setupRuntimeMs = nonNegativeInteger(pack.setupRuntimeMs,
+          `${item.path}.${pack.id}.setupRuntimeMs`);
+        const criterionRuntimeMs = nonNegativeInteger(pack.criterionRuntimeMs,
           `${item.path}.${pack.id}.criterionRuntimeMs`);
-        const measuredRuntimeMs = positiveInteger(pack.measuredRuntimeMs,
+        const measuredRuntimeMs = nonNegativeInteger(pack.measuredRuntimeMs,
           `${item.path}.${pack.id}.measuredRuntimeMs`);
         if (measuredRuntimeMs !== setupRuntimeMs + criterionRuntimeMs) {
           throw new Error(`${item.path}.${pack.id}.measuredRuntimeMs does not equal its components`);
@@ -288,8 +283,8 @@ export function loadPackBudgetEvidence(paths: string[]): PackBudgetEvidence[] {
     let runtimeCalibration: ArtifactIdentity | null = null;
     for (const run of artifact.payload.runs ?? []) {
       const output = containedRunPath(path, run.output);
-      const bundlePath = resolve(output, 'grading', 'bundle.json');
-      const runPath = resolve(output, 'run.json');
+      const bundlePath = resolve(output, 'grading', ARTIFACT_FILE.gradeBundle);
+      const runPath = resolve(output, ARTIFACT_FILE.run);
       if (!existsSync(runPath)) throw new Error(`${path} retained run is missing ${runPath}`);
       if (!existsSync(bundlePath)) throw new Error(`${path} retained run is missing ${bundlePath}`);
       const raw = readArtifact(runPath, { expectedKind: 'benchmark_run' });

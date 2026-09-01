@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { readArtifactPayload } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';
 import { aggregateRunOutcome } from '../evidence/outcomes.js';
 import type { RunOutcome as EvidenceRunOutcome } from '../evidence/outcomes.js';
@@ -198,7 +198,7 @@ function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
     mismatch(true, 'packageEvidence.source');
   }
   try {
-    const bundlePath = join(resolve(resultDir), 'grading', 'bundle.json');
+    const bundlePath = join(resolve(resultDir), 'grading', ARTIFACT_FILE.gradeBundle);
     if (!existsSync(bundlePath)) throw new Error('missing grading bundle');
     grading = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' }) as GradeBundle;
   } catch {
@@ -226,7 +226,7 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
     const dependencyPolicy = plan.dependencyPolicy!;
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
       featureCatalog, dependencyPolicy));
-    const stored = readProgressionState(join(resolve(resultDir), 'progression-state.json'), {
+    const stored = readProgressionState(join(resolve(resultDir), ARTIFACT_FILE.progressionState), {
       progression,
       featureCatalogIdentity: featureCatalog.identity,
       dependencyPolicyIdentity: dependencyPolicy.identity,
@@ -464,7 +464,7 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
       || (safeInteger(observation.observedPoints)
         && (observation.observedPoints > selectedPoints
           || observation.observedPoints !== reportedPoints))), `${at}.observedPoints`);
-    const exactArtifact = `first-build-l${level.level}-observed/bundle.json`;
+    const exactArtifact = `first-build-l${level.level}-observed/${ARTIFACT_FILE.gradeBundle}`;
     mismatch(observation.artifact !== null && observation.artifact !== exactArtifact, `${at}.artifact`);
     mismatch(observation.artifact === null && numericEvidence, `${at}.artifact`);
     mismatch(observation.artifact !== null && !numericEvidence, `${at}.artifact`);
@@ -560,7 +560,7 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
       'costEvidence');
   }
   if (mismatches.length) {
-    throw new Error(`run.json does not match its planned campaign attempt: ${mismatches.join(', ')}`);
+    throw new Error(`${ARTIFACT_FILE.run} does not match its planned campaign attempt: ${mismatches.join(', ')}`);
   }
   return run;
 }

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.js';
-import { codingContainerAgentCommand, codingContainerAgentExecOptions }
+import { CODING_CONTAINER_SPACETIME_CLI, codingContainerAgentCommand, codingContainerAgentExecOptions }
   from '../../runtime/coding-container-policy.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 
@@ -32,7 +32,7 @@ export function resetSpacetime({ lease, app, exec = execFileSync }:
       ...codingContainerAgentCommand('test', ['-d', containerModule])],
       { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
     exec('docker', [...agentExec(), '-w', containerModule, container.id,
-      ...codingContainerAgentCommand('/deps/spacetimedb-cli',
+      ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
         ['publish', lease.resources.module, '--module-path', containerModule,
           '-s', target.containerUri, '--delete-data', '-y'])],
     { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
@@ -53,7 +53,7 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime,
     throw new Error('SpacetimeDB build container is unavailable for direct SQL');
   }
   const query = (sql: string): string => exec('docker', [...agentExec(), container.id,
-    ...codingContainerAgentCommand('/deps/spacetimedb-cli',
+    ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
       ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],
   { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   const idOf = (table: string, name: string): string => {

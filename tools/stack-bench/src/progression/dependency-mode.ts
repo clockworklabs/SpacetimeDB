@@ -23,11 +23,22 @@ import type {
 } from './progression-engine.js';
 import type {
   ProgressionEvent,
+  ProgressionGrant,
   ProgressionNodeState,
   ProgressionState,
   ProgressionTerminalOutcome,
 } from './progression-state.js';
-import { isProgressionIdentifier } from './progression-identifiers.js';
+import { dependencyNodeState } from './dependency-state.js';
+import {
+  assertDependencyObject as strictObject,
+  dependencyFailure as fail,
+  dependencyIdentifier as identifier,
+  dependencyNonEmptyString as nonEmptyString,
+  dependencyPositiveInteger as positiveInteger,
+  isDependencyObject as object,
+} from './dependency-validation.js';
+
+const getNodeState = dependencyNodeState;
 
 const HASH = /^[a-f0-9]{64}$/;
 const NODE_STATUSES = new Set(['locked', 'active', 'working', 'passed', 'failed', 'blocked'] as const);
@@ -93,12 +104,7 @@ interface InconclusiveResult extends ResultBase {
 
 export type DependencyResult = ConclusiveResult | InconclusiveResult;
 
-export interface DependencyStrikeGrant extends Record<string, unknown> {
-  grantId: string;
-  level: number;
-  nodeIds: string[];
-  strikes: number;
-}
+export type DependencyStrikeGrant = ProgressionGrant;
 
 interface AttemptRecordedEvent extends ProgressionEvent {
   sequence: number;
@@ -171,19 +177,6 @@ export function dependencyStrikeRecords(
     .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
 }
 
-const object = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
-const fail = (at: string, message: string): never => {
-  throw new Error(`invalid dependency mode at ${at}: ${message}`);
-};
-
-function strictObject(value: unknown, at: string, fields: ReadonlySet<string>): asserts value is Record<string, unknown> {
-  if (!object(value)) return fail(at, 'must be an object');
-  for (const key of Object.keys(value)) {
-    if (!fields.has(key)) fail(`${at}.${key}`, 'unknown field');
-  }
-}
-
 function validateSourceEvidence(value: unknown, at: string): asserts value is SourceEvidence {
   strictObject(value, at, new Set(['kind', 'id', 'sha256']));
   if (value.kind !== 'grade_bundle' || typeof value.id !== 'string' || !value.id
@@ -198,26 +191,6 @@ function validateApplicationFailure(value: unknown, at: string): asserts value i
   nonEmptyString(value.reason, `${at}.reason`);
 }
 
-function nonEmptyString(value: unknown, at: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) return fail(at, 'must be a non-empty string');
-  return value;
-}
-
-function identifier(value: unknown, at: string): string {
-  const result = nonEmptyString(value, at);
-  if (!isProgressionIdentifier(result)) {
-    return fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
-  }
-  return result;
-}
-
-function positiveInteger(value: unknown, at: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 1) {
-    return fail(at, 'must be a positive integer within the safe range');
-  }
-  return value as number;
-}
-
 function uniqueStrings(value: unknown, at: string): string[] {
   if (!Array.isArray(value) || value.length === 0) {
     fail(at, 'must be a non-empty array');
@@ -230,12 +203,6 @@ function uniqueStrings(value: unknown, at: string): string[] {
     identifier(result, `${at}[${index}]`);
     return result;
   });
-}
-
-function getNodeState(state: ProgressionState, nodeId: string): ProgressionNodeState {
-  const node = state.nodes[nodeId];
-  if (!node) throw new Error(`dependency mode state is missing node ${nodeId}`);
-  return node;
 }
 
 function getDefinitionNode(definition: CompiledDependencyDefinition,

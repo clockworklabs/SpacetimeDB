@@ -14,6 +14,7 @@ import { campaignDetail, discoverPlans, readCampaignArtifactBody, readDashboardO
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const RUNTIME_ROOT = dirname(DASHBOARD_ROOT);
@@ -135,7 +136,7 @@ export function parseDashboardArgs(argv: string[], env: NodeJS.ProcessEnv = proc
   } });
   const args: DashboardArgs = { host: values.host ?? '127.0.0.1',
     port: values.port === undefined ? 7331 : Number(values.port),
-    resultsRoot: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(STACK_BENCH_ROOT, 'results')),
+    resultsRoot: stackBenchResultsRoot(STACK_BENCH_ROOT, env),
     plansRoot: '', allowContainerBind: values['allow-container-bind'] ?? false };
   if (values.results) args.resultsRoot = resolve(values.results);
   if (values.plans) args.plansRoot = resolve(values.plans);

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
-import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifactPayload, writeArtifact }
+  from '../evidence/artifacts.js';
 import { inspectCampaign } from './campaign-runner.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
@@ -10,6 +11,7 @@ import { sha256 } from '../evidence/provenance.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExecution, CampaignState } from './campaign-scheduler.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
+import { CAMPAIGN_FILE } from './campaign-path.js';
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
 
@@ -621,7 +623,8 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         startedAt: execution.startedAt, completedAt: execution.completedAt,
         admissionId: execution.admissionId,
         admissionEvidence: `admissions/${execution.admissionId}.json`,
-        evidence: execution.status === 'completed' ? `${execution.output}/run.json` : 'state.json',
+        evidence: execution.status === 'completed'
+          ? `${execution.output}/${ARTIFACT_FILE.run}` : CAMPAIGN_FILE.state,
         metrics: run ? campaignRunMetrics(run) : null,
         firstBuildObservations: run ? campaignRunFirstBuildObservations(run) : null,
       };
@@ -711,7 +714,7 @@ export function renderCampaignHtml(report: CampaignReport,
       + `<br><small>${escape(formatRate(condition.firstBuildObservations.metrics.coverageRate.center))} coverage</small></td></tr>`)
     .join('');
   const observationSection = observationRows ? `<h2>Additional first-build measurements</h2><p>These checks record selected behavior in the original build. They are shown separately, add no points to the score, and do not enter repair feedback.</p><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Run setup</th><th>Measured</th><th>Pass rate</th></tr></thead><tbody>${observationRows}</tbody></table>` : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -'run.json'.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
 
 export interface GeneratedCampaignReport { report: CampaignReport; reportPath: string;
@@ -730,16 +733,17 @@ export function generateCampaignReport(directory: string,
   }
   const report = buildCampaignReport(plan, state, (attempt, execution) =>
     validateCampaignRun(plan, attempt,
-      readArtifactPayload(join(paths.root, execution.output, 'run.json'), { expectedKind: 'benchmark_run' }),
+      readArtifactPayload(join(paths.root, execution.output, ARTIFACT_FILE.run),
+        { expectedKind: 'benchmark_run' }),
       { resultDir: join(paths.root, execution.output) }) as BenchmarkRun);
   mkdirSync(output, { recursive: true });
-  const reportPath = join(output, 'report.json');
+  const reportPath = join(output, CAMPAIGN_FILE.reportJson);
   writeArtifact(reportPath, { kind: 'campaign_report', id: `${plan.id}-report-${report.contentSha256.slice(0, 16)}`,
     timestamps: { startedAt: state.createdAt, completedAt: state.updatedAt },
     identities: emptyArtifactIdentities({ experiment: {
       id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
     } }), payload: report });
-  const htmlPath = join(output, 'report.html');
+  const htmlPath = join(output, CAMPAIGN_FILE.reportHtml);
   const evidencePrefix = relative(output, paths.root).replaceAll('\\', '/') || '.';
   const temporaryHtml = `${htmlPath}.${process.pid}.${randomUUID()}.tmp`;
   writeFileSync(temporaryHtml, renderCampaignHtml(report, { evidencePrefix }), { flag: 'wx' });

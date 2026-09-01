@@ -10,6 +10,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { isDeclaredLevel, listTracks, loadTrack } from '../src/composition/tracks.js';
 import { PACK_BUDGET_POLICY } from '../src/composition/pack-budget.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import { companionReferenceArtifactPath } from '../src/references/reference-live.js';
 import type { CalibrationPlan } from '../src/composition/calibration-compiler.js';
 import type { RecipeBinding, RecipeRelease } from '../src/composition/recipe-release.js';
@@ -192,7 +193,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
     target: stack.status === 'unsupported' ? 'unsupported' : 'qualified',
   })));
 
-  const output = '/var/lib/stack-bench/results/qualification';
+  const output = join(stackBenchResultsRoot(STACK_BENCH_ROOT), 'qualification');
   const stacks = calibration.qualification.stacks
     .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
   const qualificationLevel = Number(calibration.promotion.alias.slice(1));

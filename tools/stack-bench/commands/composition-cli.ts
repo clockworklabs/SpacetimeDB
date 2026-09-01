@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
+import { canonicalDefinitionJson, readDefinitionJson }
+  from '../src/composition/definition-plan.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { composeSelectedRecipeTask, selectRecipeRelease } from '../src/composition/recipe-selection.js';
 import { TRACKS_DIR } from '../src/composition/tracks.js';
@@ -35,14 +36,6 @@ interface CalibrationValue {
 type RecipeOptions = TrackRootOptions & RecipeSelectionOptions;
 type RecipeTaskKind = 'requirements' | 'contracts';
 
-function json<T = unknown>(path: string, label: string): T {
-  try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
-  }
-}
-
 function contained(root: string, path: string, label: string): string {
   const absoluteRoot = realpathSync(resolve(root));
   const candidate = resolve(path);
@@ -60,7 +53,7 @@ function packIndex(trackRoot: string): Map<string, PackIndexEntry> {
   const byRef = new Map<string, PackIndexEntry>();
   for (const name of readdirSync(directory).filter(file => file.endsWith('.json')).sort()) {
     const path = join(directory, name);
-    const pack = compilePackDefinition(json(path, 'pack'), {
+    const pack = compilePackDefinition(readDefinitionJson(path, 'pack'), {
       source: relative(trackRoot, path).replaceAll('\\', '/'),
     });
     const ref = `${pack.id}@${pack.version}`;
@@ -80,7 +73,7 @@ export function validatePackFile(path: string, options: Partial<TrackRootOptions
   if (trackRoot === undefined) throw new Error('pack validation requires trackRoot');
   const root = realpathSync(resolve(trackRoot));
   const absolute = contained(join(root, 'composition'), path, 'pack path');
-  const pack = compilePackDefinition(json(absolute, 'pack'), {
+  const pack = compilePackDefinition(readDefinitionJson(absolute, 'pack'), {
     source: relative(root, absolute).replaceAll('\\', '/'),
   });
   const packs = packIndex(root);
@@ -115,7 +108,7 @@ export function validatePackFile(path: string, options: Partial<TrackRootOptions
   let criteria = 0;
   for (const check of pack.checks) {
     const scenarioPath = contained(root, join(root, check.source), `${pack.id}.${check.id}.source`);
-    const scenario = compileScenarioDefinition(json(scenarioPath, 'scenario'), {
+    const scenario = compileScenarioDefinition(readDefinitionJson(scenarioPath, 'scenario'), {
       source: relative(root, scenarioPath).replaceAll('\\', '/'),
     });
     const feature = scenario.features.find(candidate => candidate.id === check.feature);
@@ -184,7 +177,7 @@ function matchingCalibrations(trackRoot: string, release: RecipeRelease): Array<
   if (!existsSync(directory)) return [];
   return readdirSync(directory).filter(name => name.endsWith('.json')).sort()
     .map(name => ({ path: join(directory, name),
-      value: json<CalibrationValue>(join(directory, name), 'calibration') }))
+      value: readDefinitionJson<CalibrationValue>(join(directory, name), 'calibration') }))
     .filter(({ value }) => value.recipe?.id === release.id
       && value.recipe?.version === release.version
       && value.recipe?.contentSha256 === release.contentSha256);

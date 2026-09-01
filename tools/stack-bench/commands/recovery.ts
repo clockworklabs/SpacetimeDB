@@ -9,7 +9,7 @@ const leaseRequest = command === 'recover-lease' && statePath !== undefined && o
 if (!supervisorRequest && !leaseRequest) {
   console.error('Usage:\n'
     + '  stack-bench recover <private-supervisor-state.json>\n'
-    + '  stack-bench recover-lease <private-backend-lease.json> --out <directory>');
+    + '  stack-bench recover-lease <private-lease.json> --out <directory>');
   process.exit(2);
 }
 

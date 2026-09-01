@@ -7,7 +7,8 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { acquireCampaignLock, releaseCampaignLock } from '../src/campaigns/campaign-lock.js';
-import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, writeArtifact }
+  from '../src/evidence/artifacts.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { rescueSupervisedLease } from '../src/runtime/recovery.js';
 import { runBounded } from '../src/runtime/bounded-process.js';
@@ -160,7 +161,7 @@ export async function executeRepairGrant(args: RepairGrantArgs,
     }
     const streams = processResult.logs ? Object.fromEntries(Object.entries(processResult.logs)
       .map(([name, value]) => [name, { ...value, path: `process.${name}.log` }])) : null;
-    writeArtifact(join(output, 'process.json'), {
+    writeArtifact(join(output, ARTIFACT_FILE.process), {
       kind: 'repair_process',
       id: `${executionId}-process`,
       attempt: { id: `${executionId}-process`, parentId: resolved.parent.id },
@@ -177,7 +178,7 @@ export async function executeRepairGrant(args: RepairGrantArgs,
       const detail = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
       throw new Error(`repair continuation cleanup failed: ${detail}`);
     }
-    const runPath = join(output, 'run.json');
+    const runPath = join(output, ARTIFACT_FILE.run);
     if (!existsSync(runPath)) {
       throw new Error(`repair continuation produced no run artifact${processResult.timedOut ? ' before its timeout' : ''}`);
     }

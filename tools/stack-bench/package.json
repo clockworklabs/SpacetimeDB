@@ -65,7 +65,8 @@
   },
   "dependencies": {
     "playwright": "1.62.1",
-    "semver": "7.7.4"
+    "semver": "7.7.4",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/node": "22.15.30",

@@ -2,6 +2,8 @@ import { dockerHostServiceAddress } from '../runtime/docker-network.js';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.js';
 import { referenceInstallSteps } from '../references/reference-install.js';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
+import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI }
+  from '../runtime/coding-container-policy.js';
 
 import type { StackRunPorts } from './stack-adapter-contract.js';
 import type { Track, TrackDefinition } from '../composition/tracks.js';
@@ -115,13 +117,16 @@ async function deployHostedReference(input: HostedReferenceDeployment, { databas
   };
   for (const directory of metadata.installDirectories) {
     helpers.phase(`installing ${directory}`);
-    helpers.docker(container, `/app/${directory}`, 'npm', ['ci', '--no-audit', '--no-fund']);
+    helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${directory}`,
+      'npm', ['ci', '--no-audit', '--no-fund']);
   }
   if (pushSchema) pushSchema({ container, metadata, applicationEnv, helpers });
   helpers.phase('building reference client');
-  helpers.docker(container, `/app/${metadata.client.directory}`, 'npm', ['run', 'build']);
+  helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
+    'npm', ['run', 'build']);
   helpers.phase('starting reference application');
-  helpers.startDetached(container, '/app', 'reference-application', applicationEnv, { script: 'start' });
+  helpers.startDetached(container, CODING_CONTAINER_APP_ROOT,
+    'reference-application', applicationEnv, { script: 'start' });
   await helpers.waitFor(`http://127.0.0.1:${ports.vite}${track.restartProbe}`, 180_000,
     `${args.backend} API`, () => helpers.containerLogs(container, 'reference-application'));
   helpers.phase('reference API ready');
@@ -148,7 +153,7 @@ export function deployPostgresReference(input: HostedReferenceDeployment): Promi
     },
     pushSchema: ({ container, metadata, applicationEnv, helpers }) => {
       helpers.phase('pushing PostgreSQL schema');
-      helpers.docker(container, `/app/${metadata.server.directory}`,
+      helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.server.directory}`,
         './node_modules/.bin/drizzle-kit', ['push', '--force'], applicationEnv);
     },
   });
@@ -170,19 +175,26 @@ export function deployMongoDbReference(input: HostedReferenceDeployment): Promis
 export async function deploySpacetimeReference({ args, metadata, lease, container, ports,
   buildNetworkMode, helpers }: SpacetimeReferenceDeployment): Promise<void> {
   for (const step of referenceInstallSteps(metadata)) {
-    helpers.docker(container, `/app/${step.directory}`, step.command, step.args);
+    helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${step.directory}`,
+      step.command, step.args);
   }
   const module = helpers.moduleName(helpers.loadTrack(args.track), args.runIndex);
   if (lease.resources.module !== module) throw new Error(`lease module is not ${module}`);
   const serverUri = lease.resources.serverUri;
   if (!serverUri) throw new Error('SpacetimeDB lease records no server URI');
   const hostUri = containerReachableSpacetimeUri(lease, buildNetworkMode ?? null);
-  helpers.docker(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
-    ['publish', module, '--module-path', `/app/${metadata.moduleDirectory}`, '-s', hostUri, '-y']);
-  helpers.docker(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
-    ['generate', '--lang', 'typescript', '--module-path', `/app/${metadata.moduleDirectory}`,
-      '--out-dir', `/app/${metadata.bindingsDirectory}`, '--yes', '--no-config']);
-  helpers.startDetached(container, `/app/${metadata.client.directory}`, 'reference-client', {
+  helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`,
+    CODING_CONTAINER_SPACETIME_CLI,
+    ['publish', module, '--module-path', `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`,
+      '-s', hostUri, '-y']);
+  helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`,
+    CODING_CONTAINER_SPACETIME_CLI,
+    ['generate', '--lang', 'typescript',
+      '--module-path', `${CODING_CONTAINER_APP_ROOT}/${metadata.moduleDirectory}`,
+      '--out-dir', `${CODING_CONTAINER_APP_ROOT}/${metadata.bindingsDirectory}`,
+      '--yes', '--no-config']);
+  helpers.startDetached(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
+    'reference-client', {
     VITE_MODULE_NAME: module, VITE_SPACETIMEDB_URI: serverUri,
     VITE_PORT: String(ports.vite),
   }, { networkVisible: true, port: ports.vite });

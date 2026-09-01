@@ -35,7 +35,7 @@ import {
   validateMutationBaseline,
   validateMutationDefinitions,
 } from "../src/evidence/mutation-analysis.js";
-import { dbName, loadTrack } from "../src/composition/tracks.js";
+import { dbName, loadTrack, TRACK_MANIFEST_FILE } from "../src/composition/tracks.js";
 import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
 import { resetBackend } from "../src/stacks/backend-reset.js";
 import { fetchStatus } from "../src/runtime/readiness.js";
@@ -289,7 +289,7 @@ function checkpointIdentity(groups: MutationCheckpointIdentity['groups'], shard:
     backend: args.backend,
     track: args.track,
     level: Number(args.level),
-    trackSha256: sha256(readFileSync(join(track.dir, 'track.json'))),
+    trackSha256: sha256(readFileSync(join(track.dir, TRACK_MANIFEST_FILE))),
     shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
     groups,
   };

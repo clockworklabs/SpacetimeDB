@@ -11,7 +11,8 @@ import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/
 import { controlBackendRuntime, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
-import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifactPayload, recipeArtifactIdentities, writeArtifact }
+  from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { contractControlIds } from '../src/composition/agent-visible-contract.js';
@@ -193,7 +194,8 @@ export function applicationFailureTotals(selection: ApplicationFailureSelection 
 export function clearPreviousGradeOutputs(output: string): void {
   const generated = existsSync(output) ? readdirSync(output).filter(name =>
     /^grading-.+\.json$/.test(name) || /^grader-.+\.(?:stdout|stderr)\.log$/.test(name)) : [];
-  for (const name of ['bundle.json', 'contract-lint.json', 'actions.json', 'media', 'failure-media',
+  for (const name of [ARTIFACT_FILE.gradeBundle, ARTIFACT_FILE.contractLint,
+    ARTIFACT_FILE.actions, 'media', 'failure-media',
     'database-provenance', ...generated]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }
@@ -602,7 +604,7 @@ function resetDatabase(args: RunArguments): { ok: boolean; detail: string | null
 export function contractLintArgv(args: ContractLintArguments,
   selectedTask: BoundRecipeTaskRequestResult | null = null): string[] {
   const controls = selectedTask ? contractControlIds(selectedTask.task.contractText) : [];
-  const out = join(args.out, 'contract-lint.json');
+  const out = join(args.out, ARTIFACT_FILE.contractLint);
   return [compiledEntrypoint('linter', 'lint.js'), '--url', args.url, '--level', args.level,
       '--track', args.track, '--label', args.label, '--out', out,
       '--parent-attempt-id', args.bundleArtifactId,
@@ -613,7 +615,7 @@ export function contractLintArgv(args: ContractLintArguments,
 
 function lint(args: RunArguments, selectedTask: BoundRecipeTaskRequestResult | null = null): LintPayload | null {
   process.stdout.write('  contract lint ... ');
-  const out = join(args.out, 'contract-lint.json');
+  const out = join(args.out, ARTIFACT_FILE.contractLint);
   rmSync(out, { force: true });
   let failure: unknown = null;
   try {
@@ -637,7 +639,7 @@ function lint(args: RunArguments, selectedTask: BoundRecipeTaskRequestResult | n
 // without prescribing one transport. Missing actions are reported explicitly.
 function checkActions(args: RunArguments): ActionsPayload | null {
   process.stdout.write(`  ${'actions'.padEnd(10)} ... `);
-  const out = join(args.out, 'actions.json');
+  const out = join(args.out, ARTIFACT_FILE.actions);
   rmSync(out, { force: true });
   try {
     run('node', [compiledEntrypoint('commands', 'check-actions.js'), '--backend', args.backend,
@@ -809,7 +811,7 @@ async function main() {
           reason: bundle.error };
       }
     }
-    return writeArtifact(join(args.out, 'bundle.json'), {
+    return writeArtifact(join(args.out, ARTIFACT_FILE.gradeBundle), {
       kind: 'grade_bundle',
       id: bundleArtifactId,
       attempt: { id: bundleArtifactId, parentId: args.parentAttemptId ?? null },
@@ -1095,7 +1097,7 @@ async function main() {
     const kept = regTotal === regMax ? 'all earlier guarantees still hold' : `${regMax - regTotal} EARLIER GUARANTEE(S) LOST`;
     console.log(`  ${'REGRESSION'.padEnd(10)} ... ${regTotal}/${regMax}  — ${kept}`);
   }
-  console.log(`  bundle: ${join(args.out, 'bundle.json')}`);
+  console.log(`  bundle: ${join(args.out, ARTIFACT_FILE.gradeBundle)}`);
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) main();

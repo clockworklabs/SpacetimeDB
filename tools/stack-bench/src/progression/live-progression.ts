@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import type { RecipeBinding } from '../composition/recipe-release.js';
-import { artifactPayload, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, artifactPayload, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
 import type { GradeBundlePayload, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
@@ -28,15 +28,14 @@ import {
   validateProgressionOwner,
   writeProgressionState,
 } from './progression-state.js';
-import type { ProgressionOwner, ProgressionState } from './progression-state.js';
+import type {
+  ProgressionOwner,
+  ProgressionResumeBinding,
+  ProgressionState,
+} from './progression-state.js';
 
 interface WorkspaceProgressionOwner extends ProgressionOwner {
   workspace: { appDirectory: string };
-}
-
-interface ResumeBinding {
-  actionSha256: string;
-  source: { directory: string; sha256: string; files: number };
 }
 
 interface BenchmarkRunPayload extends Record<string, unknown> {
@@ -140,7 +139,7 @@ function workspaceOwner(input: unknown): WorkspaceProgressionOwner {
   return { ...owner, workspace: owner.workspace };
 }
 
-function resumeBinding(input: unknown): ResumeBinding {
+function resumeBinding(input: unknown): ProgressionResumeBinding {
   if (!object(input) || typeof input.actionSha256 !== 'string' || !object(input.source)
     || typeof input.source.directory !== 'string' || typeof input.source.sha256 !== 'string'
     || !Number.isSafeInteger(input.source.files) || Number(input.source.files) < 0) {
@@ -161,7 +160,7 @@ function actionSha256(state: ProgressionState): string {
 }
 
 export function liveProgressionStatus(state: ProgressionState,
-  stateArtifact = 'progression-state.json'): LiveProgressionStatus {
+  stateArtifact = ARTIFACT_FILE.progressionState): LiveProgressionStatus {
   return {
     stateArtifact,
     phase: state.phase,
@@ -201,7 +200,7 @@ export function createLiveProgressionExecution(
     return state;
   };
   const status = (): LiveProgressionStatus => liveProgressionStatus(currentState());
-  const sourceBinding = ({ capture = false }: { capture?: boolean } = {}): ResumeBinding => {
+  const sourceBinding = ({ capture = false }: { capture?: boolean } = {}): ProgressionResumeBinding => {
     if (capture) {
       mkdirSync(appDir, { recursive: true });
       snapshotAppSource(appDir, sourceDirectory);
@@ -225,7 +224,7 @@ export function createLiveProgressionExecution(
   };
   const validateSavedSource = (stored: StoredProgression, root: string): {
     path: string;
-    resume: ResumeBinding;
+    resume: ProgressionResumeBinding;
   } => {
     const resume = resumeBinding(stored.resume);
     if (resume.actionSha256 !== actionSha256(stored.state)
@@ -246,7 +245,7 @@ export function createLiveProgressionExecution(
   };
   const validatePriorRun = (root: string, stored: StoredProgression):
   Artifact<BenchmarkRunPayload> => {
-    const artifact = readArtifact<BenchmarkRunPayload>(join(root, 'run.json'),
+    const artifact = readArtifact<BenchmarkRunPayload>(join(root, ARTIFACT_FILE.run),
       { expectedKind: 'benchmark_run' });
     const runOwner = artifact.payload.progressionOwner;
     const lastEvent = stored.state.events.at(-1);
@@ -286,7 +285,7 @@ export function createLiveProgressionExecution(
       throw new Error('saved repair action has no conclusive grading evidence');
     }
     const from = join(root, 'progression', `attempt-${String(index + 1).padStart(3, '0')}`);
-    const bundle = readArtifact<GradeBundlePayload>(join(from, 'bundle.json'),
+    const bundle = readArtifact<GradeBundlePayload>(join(from, ARTIFACT_FILE.gradeBundle),
       { expectedKind: 'grade_bundle' });
     const engine = bundle.identities.engine;
     if (bundle.id !== evidence.id
@@ -349,7 +348,7 @@ export function createLiveProgressionExecution(
       if (previousRoot === stateRoot) {
         throw new Error('dependency progression resume source is the current output directory');
       }
-      const stored = readProgressionState(join(previousRoot, 'progression-state.json'), {
+      const stored = readProgressionState(join(previousRoot, ARTIFACT_FILE.progressionState), {
         progression, featureCatalogIdentity, dependencyPolicyIdentity, owner,
         requireCurrentEngine: true,
       });
@@ -410,7 +409,7 @@ export function createLiveProgressionExecution(
         reason: failure.reason ?? `${category.replaceAll('_', ' ')} during coding`,
       };
     } else if (!object(bundle) || !object(bundle.selection)
-      || !existsSync(join(evidenceDirectory, 'bundle.json'))) {
+      || !existsSync(join(evidenceDirectory, ARTIFACT_FILE.gradeBundle))) {
       result = {
         attemptId: `${runId}-progression-${sequence}`,
         outcome: 'inconclusive',
@@ -421,7 +420,7 @@ export function createLiveProgressionExecution(
       const source = hashAppSource(appDir);
       const recipe = selected.grader.request.recipe;
       const persistedBundle = readArtifact<GradeBundlePayload>(
-        join(evidenceDirectory, 'bundle.json'), { expectedKind: 'grade_bundle' });
+        join(evidenceDirectory, ARTIFACT_FILE.gradeBundle), { expectedKind: 'grade_bundle' });
       result = gradeBundleToProgressionResult(
         persistedBundle,
         selected.action,

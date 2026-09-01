@@ -5,12 +5,13 @@ import { readFileSync, existsSync, rmSync, mkdirSync, mkdtempSync, readdirSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import type { ArtifactIdentities } from '../src/evidence/artifacts.js';
 import type { CostRun, CostSession } from '../src/evidence/cost-proof.js';
 import type { PublicBackendLease } from '../src/runtime/backend-lease.js';
 import type { RepairLevel, RepairOutcome } from '../src/runtime/repair-grant.js';
 import type { LevelCheckpoint } from '../src/runtime/source-checkpoint.js';
+import { CODING_CONTAINER_BUG_REPORT_FILE } from '../src/runtime/coding-container-policy.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
 const WORK = mkdtempSync(join(tmpdir(), 'stack-bench-loop-'));
@@ -109,19 +110,26 @@ mkdirSync(APP, { recursive: true });
 
 console.log('\nLoop test — one fix round available');
 const out = runBench(['--fix-rounds', '1']);
-const runPath = join(WORK, 'run.json');
+const runPath = join(WORK, ARTIFACT_FILE.run);
 
-check('the benchmark run produced run.json', existsSync(runPath));
-if (!existsSync(runPath)) { console.log('\ncannot continue without run.json'); process.exit(1); }
+check(`the benchmark run produced ${ARTIFACT_FILE.run}`, existsSync(runPath));
+if (!existsSync(runPath)) {
+  console.log(`\ncannot continue without ${ARTIFACT_FILE.run}`);
+  process.exit(1);
+}
 
 const run = readArtifactPayload<LoopRun>(runPath);
 const level = run.levels?.[0];
 const evidenceDir = join(APP, 'stack-bench');
-const bundleArtifact = readArtifact(join(evidenceDir, 'bundle.json'), { expectedKind: 'grade_bundle' });
-const lintArtifact = readArtifact(join(evidenceDir, 'contract-lint.json'), { expectedKind: 'contract_lint' });
-const actionArtifact = readArtifact(join(evidenceDir, 'actions.json'), { expectedKind: 'action_check' });
+const bundleArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.gradeBundle),
+  { expectedKind: 'grade_bundle' });
+const lintArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.contractLint),
+  { expectedKind: 'contract_lint' });
+const actionArtifact = readArtifact(join(evidenceDir, ARTIFACT_FILE.actions),
+  { expectedKind: 'action_check' });
 const gradeArtifact = readArtifact<GradePayload>(join(evidenceDir, 'grading-features.json'), { expectedKind: 'grade' });
-const leaseArtifact = readArtifact<PublicBackendLease>(join(WORK, 'backend-lease.json'), { expectedKind: 'backend_lease_evidence' });
+const leaseArtifact = readArtifact<PublicBackendLease>(join(WORK, ARTIFACT_FILE.backendLease),
+  { expectedKind: 'backend_lease_evidence' });
 const checkpointArtifact = readArtifact<SourceCheckpointPayload>(join(WORK, 'level-l1-checkpoint.json'),
   { expectedKind: 'source_checkpoint' });
 
@@ -157,8 +165,9 @@ check('grade artifacts retain typed setup, criterion, and action evidence',
   JSON.stringify(gradedFeatures.map(feature => ({ id: feature.id,
     setup: feature.setupEvidence?.status,
     criteria: feature.criteria?.map(criterion => criterion.evidence?.status) }))));
-const publicJson = [runPath, join(WORK, 'backend-lease.json'), join(evidenceDir, 'bundle.json'), join(evidenceDir, 'contract-lint.json'),
-  join(evidenceDir, 'actions.json'), join(evidenceDir, 'grading-features.json')]
+const publicJson = [runPath, join(WORK, ARTIFACT_FILE.backendLease),
+  join(evidenceDir, ARTIFACT_FILE.gradeBundle), join(evidenceDir, ARTIFACT_FILE.contractLint),
+  join(evidenceDir, ARTIFACT_FILE.actions), join(evidenceDir, 'grading-features.json')]
   .map(path => readFileSync(path, 'utf8')).join('\n');
 check('public envelopes contain no secret or lease-token fields',
   !/"(?:apiKey|leaseToken|ownershipToken|password|secret)"\s*:/i.test(publicJson));
@@ -171,7 +180,7 @@ check('successful repair is explicit', level?.repair?.status === 'corrected'
   && level.repair.budgetRounds === 1 && level.repair.roundsUsed === 1
   && level.repair.stopReason === 'passed',
   JSON.stringify(level?.repair));
-const reportPath = join(APP, 'BUG_REPORT.md');
+const reportPath = join(APP, CODING_CONTAINER_BUG_REPORT_FILE);
 const reportExists = existsSync(reportPath);
 check('the bug report was written', reportExists);
 // Behavioural findings must never reveal how they were detected, or a fix can
@@ -217,7 +226,8 @@ mkdirSync(APP, { recursive: true });
 runBench(['--fix-rounds', '0']);
 const capped = readArtifactPayload<LoopRun>(runPath);
 check('no fix ran when the cap is zero', capped.levels?.[0]?.fixRounds === 0);
-check('no bug report was written when no fix is allowed', !existsSync(join(APP, 'BUG_REPORT.md')));
+check('no bug report was written when no fix is allowed',
+  !existsSync(join(APP, CODING_CONTAINER_BUG_REPORT_FILE)));
 
 console.log('\nLoop test - flat corrections exhaust their declared budget');
 rmSync(WORK, { recursive: true, force: true });
@@ -257,7 +267,8 @@ const continuationDirectories = existsSync(continuationRoot)
   ? readdirSync(continuationRoot, { withFileTypes: true }).filter(entry => entry.isDirectory()) : [];
 const continuationDirectory = continuationDirectories.length === 1
   ? join(continuationRoot, continuationDirectories[0]?.name ?? '') : null;
-const continuationPath = continuationDirectory ? join(continuationDirectory, 'run.json') : null;
+const continuationPath = continuationDirectory
+  ? join(continuationDirectory, ARTIFACT_FILE.run) : null;
 check('repair grant produced one linked continuation',
   continuationPath !== null && existsSync(continuationPath), continuationOutput.slice(-2000));
 if (continuationDirectory && continuationPath && existsSync(continuationPath)) {
@@ -286,7 +297,7 @@ if (continuationDirectory && continuationPath && existsSync(continuationPath)) {
     JSON.stringify({ setup: continuationDetails?.resumeSetup,
       resume: continuedLevel?.resumeSession, fixes: continuedLevel?.fixRounds }));
   check('continuation process outcome is retained as a typed child artifact',
-    readArtifact(join(continuationDirectory, 'process.json'),
+    readArtifact(join(continuationDirectory, ARTIFACT_FILE.process),
       { expectedKind: 'repair_process' }).attempt.parentId === deferred.id);
 }
 check('grant left the original run artifact byte-for-byte unchanged',

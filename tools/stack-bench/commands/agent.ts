@@ -8,16 +8,21 @@ import { join, dirname, resolve, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
+import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor,
+  DEFAULT_TRACK, TRACK_MANIFEST_FILE } from '../src/composition/tracks.js';
 import type { Track, TrackDefinition } from '../src/composition/tracks.js';
 import type { BackendLease } from '../src/runtime/backend-lease.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
-import { resolveDefaultGuidanceForStack, type ResolvedSkills }
+import { parseGuidanceMode, resolveDefaultGuidanceForStack, type GuidanceMode,
+  type ResolvedGuidanceDocument, type ResolvedSkills }
   from '../src/campaigns/condition-compiler.js';
 import type { ExactRecipeRequest, RecipeBinding } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
-import { leaseFromEnv } from '../src/runtime/backend-lease.js';
+import { DEFAULT_SPACETIME_SERVER_URI, leaseFromEnv } from '../src/runtime/backend-lease.js';
+import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_BUG_REPORT_FILE,
+  CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI }
+  from '../src/runtime/coding-container-policy.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { hashDirectory, sessionProvenance, sha256 } from '../src/evidence/provenance.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
@@ -42,13 +47,6 @@ const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
 
 type UnknownRecord = Record<string, unknown>;
-interface GuidanceDocument {
-  path: string;
-  sha256: string;
-  bytes: number;
-  applicationInterface: 'http' | 'reducer';
-}
-
 interface PromptMaterials {
   skillsText?: string;
   requirementText?: string;
@@ -69,10 +67,10 @@ interface AgentArgs {
   level: number;
   runIndex: number;
   model: string;
-  guidance: string;
+  guidance: GuidanceMode;
   track: string;
   pricing: Readonly<PricingAuthority> | null;
-  guidanceDocument?: GuidanceDocument;
+  guidanceDocument?: ResolvedGuidanceDocument;
   credentialAliases?: Readonly<Record<string, string>>;
   recipe?: string;
   recipeTask?: RecipeTaskRequest;
@@ -122,7 +120,7 @@ function sessionUsage(value: unknown): SessionUsage {
 }
 
 // Use only the benchmark-owned SpacetimeDB host.
-const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
+const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI;
 
 // Test the CLI and SDK from this checkout.
 const LOCAL_CLI = join(REPO, 'target', 'release', 'spacetimedb-cli.exe');
@@ -150,7 +148,7 @@ const HOST_ADDR = hostServiceAddress();
 const hostUrl = (url: string): string => url.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
 
 const C_PKG = '/deps/spacetimedb.tgz';
-const C_BIN = '/deps/spacetimedb-cli';
+const C_BIN = CODING_CONTAINER_SPACETIME_CLI;
 
 // The container requires the Linux CLI from this checkout.
 const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
@@ -206,9 +204,11 @@ function linuxSpacetimeVersion(image: string): { commit: string | null; binarySh
     const releaseVolume = process.env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
     const mountArgs = releaseVolume
       ? dockerMountArguments({ kind: 'volume', source: releaseVolume,
-        target: '/release-deps', readOnly: true })
-      : ['-v', `${LINUX_CLI}:/deps/spacetimedb-cli:ro`];
-    const entrypoint = releaseVolume ? '/release-deps/spacetimedb-cli' : '/deps/spacetimedb-cli';
+        target: CODING_CONTAINER_RELEASE_DEPS_ROOT, readOnly: true })
+      : ['-v', `${LINUX_CLI}:${CODING_CONTAINER_SPACETIME_CLI}:ro`];
+    const entrypoint = releaseVolume
+      ? `${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-cli`
+      : CODING_CONTAINER_SPACETIME_CLI;
     const out = execFileSync('docker',
       ['run', '--rm', ...mountArgs, '--entrypoint', entrypoint, image, '--version'],
       { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
@@ -268,11 +268,6 @@ function ambientEnv(): Record<string, string | undefined> {
   return seen;
 }
 
-function normalizeGuidance(value: string): 'neutral' | 'prescribed' {
-  if (value === 'neutral' || value === 'prescribed') return value;
-  throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
-}
-
 export function parseAgentArgs(argv: readonly string[]): AgentArgs {
   const strings = ['mode', 'track', 'backend', 'level', 'app', 'run-index', 'model',
     'pricing-json', 'guidance', 'guidance-document-json', 'credential-aliases-json',
@@ -323,10 +318,10 @@ export function parseAgentArgs(argv: readonly string[]): AgentArgs {
       { at: 'default pricing' });
   }
   return { mode, backend, app, level, runIndex, model,
-    guidance: normalizeGuidance(values.guidance ?? 'prescribed'),
+    guidance: parseGuidanceMode(values.guidance ?? 'prescribed'),
     track: values.track ?? DEFAULT_TRACK, pricing: pricing ?? null,
     ...(values['guidance-document-json'] ? {
-      guidanceDocument: JSON.parse(values['guidance-document-json']) as GuidanceDocument,
+      guidanceDocument: JSON.parse(values['guidance-document-json']) as ResolvedGuidanceDocument,
     } : {}),
     ...(values['credential-aliases-json'] ? {
       credentialAliases: JSON.parse(values['credential-aliases-json']) as Record<string, string>,
@@ -392,7 +387,10 @@ export function ensureDatabase(backend: string, runIndex: number, dbPort: number
 
 // Prescribed guidance chooses an implementation stack. Neutral guidance gives
 // only stack access facts and the selected API references.
-export function readBackendGuidanceDocument(document: GuidanceDocument | undefined, fallbackRelativePath: string): string {
+export function readBackendGuidanceDocument(
+  document: ResolvedGuidanceDocument | undefined,
+  fallbackRelativePath: string,
+): string {
   if (typeof fallbackRelativePath !== 'string' || !fallbackRelativePath) {
     throw new Error('backend guidance fallback path is required');
   }
@@ -548,7 +546,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     throw new Error(`stack ${args.backend} has no application interface`);
   }
   const common = [
-    'Build the app in /app.',
+    `Build the app in ${CODING_CONTAINER_APP_ROOT}.`,
     // Published container ports require the app to bind to all interfaces.
     '',
       'The web application must listen on 0.0.0.0, not localhost, so it is reachable '
@@ -581,7 +579,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     return [
       'Fix the reported application bugs.',
       '',
-      'Read BUG_REPORT.md in the app directory. Each entry says what was expected',
+      `Read ${CODING_CONTAINER_BUG_REPORT_FILE} in the app directory. Each entry says what was expected`,
       'and what actually happened. Fix the app so the behaviour matches, redeploy,',
       'and make sure the dev server is running.',
       '',
@@ -700,12 +698,12 @@ async function main() {
 
   const prompt = buildPrompt(args, p, track,
     { skillsText, requirementText, contractText, startingCatalog });
-  const bugReportPath = join(args.app, 'BUG_REPORT.md');
+  const bugReportPath = join(args.app, CODING_CONTAINER_BUG_REPORT_FILE);
   const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
     ? readFileSync(bugReportPath, 'utf8') : null;
   const provenance = sessionProvenance({ prompt, skillsText, contractText, bugReportText,
     scenarioPaths: agentScenarioPaths(track, args.level, recipeBinding),
-    trackDir: track.dir, trackManifestPath: join(track.dir, 'track.json') });
+    trackDir: track.dir, trackManifestPath: join(track.dir, TRACK_MANIFEST_FILE) });
   const started = Date.now();
   const retryLimitRaw = process.env.STACK_BENCH_CODING_INTERRUPTION_RETRIES
     ?? String(DEFAULT_CODING_INTERRUPTION_RETRIES);

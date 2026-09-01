@@ -6,6 +6,13 @@ export const CODING_CONTAINER_AGENT = Object.freeze({
 });
 
 export const CODING_CONTAINER_CONTROL_DIR = '/run/application';
+export const CODING_CONTAINER_APP_ROOT = '/app';
+export const CODING_CONTAINER_SPACETIME_CLI = '/deps/spacetimedb-cli';
+export const CODING_CONTAINER_DEPENDENCY_READY_FILE = '/deps/.ready';
+export const CODING_CONTAINER_RELEASE_DEPS_ROOT = '/release-deps';
+export const CODING_CONTAINER_AGENT_CREDENTIAL_FILE = '/run/secrets/agent-credential';
+export const CODING_CONTAINER_START_SCRIPT = `${CODING_CONTAINER_APP_ROOT}/start.sh`;
+export const CODING_CONTAINER_BUG_REPORT_FILE = 'BUG_REPORT.md';
 
 export const CODING_CONTAINER_PROCESS_IDENTITY = Object.freeze({
   recordPrefix: '/tmp/developer-session-',

@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { CODING_CONTAINER_APP_ROOT } from '../src/runtime/coding-container-policy.js';
 
 // --dir is exclusive. --app resolves its matching CLI transcript directory.
 function transcriptsFor(appDir: string): string[] {
@@ -103,7 +104,7 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
   // Container transcripts use /app; --app is its host path.
   const own = sessionCwd(lines);
-  const cwd = own === '/app' ? own : (boundary ?? own);
+  const cwd = own === CODING_CONTAINER_APP_ROOT ? own : (boundary ?? own);
   const hits: AuditHit[] = [];
   const refused: AuditHit[] = [];
   const pending = new Map<string, PendingRead>();

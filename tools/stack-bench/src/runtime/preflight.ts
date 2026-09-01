@@ -25,6 +25,8 @@ import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identit
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.js';
 import { pidsOnPort } from './platform.js';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.js';
+import { STACK_BENCH_RUNNER_PLATFORM } from './runner-environment.js';
+import { CODING_CONTAINER_AGENT_CREDENTIAL_FILE } from './coding-container-policy.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const REPO = resolve(ROOT, '..', '..');
@@ -365,7 +367,8 @@ export function runPreflight(
     ? process.platform === 'linux' && process.arch === 'x64'
     : ['win32', 'linux'].includes(process.platform) && ['x64', 'arm64'].includes(process.arch);
   add('host.architecture', supportedHost ? 'pass' : 'fail', `${process.platform}/${process.arch}`,
-    supportedHost ? null : appliance ? 'Run the appliance on its supported linux/amd64 dedicated runner.'
+    supportedHost ? null : appliance
+      ? `Run the appliance on its supported ${STACK_BENCH_RUNNER_PLATFORM} dedicated runner.`
       : 'Use a supported x64 or arm64 Windows/Linux host.');
 
   for (const name of ['STACK_BENCH_LEASE', 'STACK_BENCH_LEASE_TOKEN']) {
@@ -593,12 +596,15 @@ export function runPreflight(
       ? { kind: 'bind', source: auth.path,
         target: `/root/${auth.source.slice('file:'.length)}`, readOnly: true }
       : auth.kind === 'credential-secret-file' && credentialStatusCommand && auth.path
-        ? { kind: 'bind', source: auth.path, target: '/run/secrets/agent-credential', readOnly: true }
+        ? { kind: 'bind', source: auth.path,
+          target: CODING_CONTAINER_AGENT_CREDENTIAL_FILE, readOnly: true }
         : null;
     const credentialEnvironment = auth.kind !== undefined
       && ['credential-environment', 'credential-secret-file'].includes(auth.kind)
       && credentialStatusCommand && auth.variable ? { name: auth.variable,
-        ...(auth.kind === 'credential-secret-file' ? { file: '/run/secrets/agent-credential' } : {}) }
+        ...(auth.kind === 'credential-secret-file'
+          ? { file: CODING_CONTAINER_AGENT_CREDENTIAL_FILE }
+          : {}) }
         : null;
     try {
       const smoke = runContainerSmoke({ command: run, imageId, resultsDir: request.resultsDir,

@@ -1,3 +1,6 @@
+import { z } from 'zod';
+import { formatZodError } from '../zod-error.js';
+
 export const CHECK_EVIDENCE_SCHEMA_VERSION = 1;
 
 export const CHECK_EVIDENCE_STATUSES = Object.freeze([
@@ -97,38 +100,46 @@ export const CHECK_EVIDENCE_DISPOSITIONS = Object.freeze({
   }),
 } satisfies Record<CheckEvidenceStatus, CheckEvidenceDisposition>);
 
-type UnknownRecord = Record<string, unknown>;
-
 const STATUS = new Set<string>(CHECK_EVIDENCE_STATUSES);
-const PHASE = new Set<string>(CHECK_EVIDENCE_PHASES);
-const FIELDS = new Set([
-  'schemaVersion', 'status', 'code', 'phase', 'actor', 'summary', 'observation', 'expected',
-  'retryable', 'timing', 'actions', 'attachments', 'sensitivity',
-]);
-const TIMING_FIELDS = new Set(['startedAtMs', 'completedAtMs', 'durationMs']);
-const ACTION_ENTRY_FIELDS = new Set(['actor', 'evidence']);
-const ATTACHMENT_FIELDS = new Set(['kind', 'ref']);
-const ACTION_EVIDENCE_FIELDS = new Set([
-  'schemaVersion', 'action', 'status', 'type', 'code', 'phase', 'summary', 'observation',
-  'expected', 'retryable', 'timing', 'attachments', 'sensitivity',
-]);
-const ACTION_FIELDS = new Set(['id', 'version']);
-const ACTION_TIMING_FIELDS = new Set([
-  'startedAtMs', 'completedAtMs', 'durationMs', 'deadlineMs',
-]);
 const CODE = /^[a-z][a-z0-9_]*(?:[.:-][a-z0-9_]+)*$/;
-
-const object = (value: unknown): value is UnknownRecord =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
-const nonEmpty = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0;
-
-function strict(value: unknown, fields: ReadonlySet<string>, at: string): asserts value is UnknownRecord {
-  if (!object(value)) throw new Error(`${at} must be an object`);
-  for (const key of Object.keys(value)) {
-    if (!fields.has(key)) throw new Error(`${at}.${key} is unknown`);
-  }
-}
+const nonEmptyStringSchema = z.string().refine(value => value.trim().length > 0);
+const timingSchema = z.strictObject({
+  startedAtMs: z.number().finite().nonnegative(),
+  completedAtMs: z.number().finite().nonnegative(),
+  durationMs: z.number().finite().nonnegative(),
+});
+const actionTimingSchema = timingSchema.extend({ deadlineMs: z.number().finite().nonnegative() });
+const actionEvidenceSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  action: z.strictObject({ id: nonEmptyStringSchema, version: nonEmptyStringSchema }),
+  status: z.enum(CHECK_EVIDENCE_STATUSES),
+  type: nonEmptyStringSchema,
+  code: nonEmptyStringSchema,
+  phase: nonEmptyStringSchema,
+  summary: z.string().nullable(),
+  observation: z.unknown(),
+  expected: z.unknown(),
+  retryable: z.boolean(),
+  timing: actionTimingSchema,
+  attachments: z.array(z.unknown()),
+  sensitivity: z.array(nonEmptyStringSchema),
+});
+const checkEvidenceSchema = z.strictObject({
+  schemaVersion: z.literal(CHECK_EVIDENCE_SCHEMA_VERSION),
+  status: z.enum(CHECK_EVIDENCE_STATUSES),
+  code: z.string().regex(CODE),
+  phase: z.enum(CHECK_EVIDENCE_PHASES),
+  actor: nonEmptyStringSchema.nullable(),
+  summary: z.string().nullable(),
+  observation: z.unknown(),
+  expected: z.unknown(),
+  retryable: z.boolean(),
+  timing: timingSchema,
+  actions: z.array(z.strictObject({ actor: nonEmptyStringSchema.nullable(),
+    evidence: actionEvidenceSchema })),
+  attachments: z.array(z.strictObject({ kind: nonEmptyStringSchema, ref: nonEmptyStringSchema })),
+  sensitivity: z.array(nonEmptyStringSchema),
+});
 
 function structured(value: unknown, at: string, seen = new Set<object>()): void {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
@@ -149,33 +160,17 @@ function structured(value: unknown, at: string, seen = new Set<object>()): void 
   seen.delete(value);
 }
 
-function finiteNonNegative(value: unknown, at: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new Error(`${at} must be a non-negative number`);
-  }
-  return value;
-}
-
 function validateTiming(
-  value: unknown,
+  value: CheckEvidenceTiming & { deadlineMs?: number },
   at: string,
-  fields: ReadonlySet<string> = TIMING_FIELDS,
 ): void {
-  strict(value, fields, at);
-  const startedAtMs = finiteNonNegative(value.startedAtMs, `${at}.startedAtMs`);
-  const completedAtMs = finiteNonNegative(value.completedAtMs, `${at}.completedAtMs`);
-  const durationMs = finiteNonNegative(value.durationMs, `${at}.durationMs`);
-  if (completedAtMs < startedAtMs) throw new Error(`${at} completes before it starts`);
-  if (durationMs !== completedAtMs - startedAtMs) {
+  if (value.completedAtMs < value.startedAtMs) throw new Error(`${at} completes before it starts`);
+  if (value.durationMs !== value.completedAtMs - value.startedAtMs) {
     throw new Error(`${at}.durationMs does not match its endpoints`);
   }
-  if (fields.has('deadlineMs')) finiteNonNegative(value.deadlineMs, `${at}.deadlineMs`);
 }
 
-function validateStringList(value: unknown, at: string): void {
-  if (!Array.isArray(value) || !value.every(nonEmpty)) {
-    throw new Error(`${at} must be a string array`);
-  }
+function validateStringList(value: string[], at: string): void {
   if (new Set(value).size !== value.length) throw new Error(`${at} contains duplicates`);
 }
 
@@ -183,26 +178,10 @@ function isCheckEvidenceStatus(value: unknown): value is CheckEvidenceStatus {
   return typeof value === 'string' && STATUS.has(value);
 }
 
-function validateActionEvidence(value: unknown, at: string): void {
-  strict(value, ACTION_EVIDENCE_FIELDS, at);
-  if (value.schemaVersion !== 1) throw new Error(`${at}.schemaVersion is unsupported`);
-  const action = value.action;
-  strict(action, ACTION_FIELDS, `${at}.action`);
-  if (!nonEmpty(action.id) || !nonEmpty(action.version)) {
-    throw new Error(`${at}.action requires id and version`);
-  }
-  if (!isCheckEvidenceStatus(value.status)) throw new Error(`${at}.status is invalid`);
-  for (const key of ['type', 'code', 'phase']) {
-    if (!nonEmpty(value[key])) throw new Error(`${at}.${key} must be a non-empty string`);
-  }
-  if (value.summary !== null && typeof value.summary !== 'string') {
-    throw new Error(`${at}.summary must be a string or null`);
-  }
+function validateActionEvidence(value: z.infer<typeof actionEvidenceSchema>, at: string): void {
   structured(value.observation, `${at}.observation`);
   structured(value.expected, `${at}.expected`);
-  if (typeof value.retryable !== 'boolean') throw new Error(`${at}.retryable must be boolean`);
-  validateTiming(value.timing, `${at}.timing`, ACTION_TIMING_FIELDS);
-  if (!Array.isArray(value.attachments)) throw new Error(`${at}.attachments must be an array`);
+  validateTiming(value.timing, `${at}.timing`);
   structured(value.attachments, `${at}.attachments`);
   validateStringList(value.sensitivity, `${at}.sensitivity`);
 }
@@ -211,44 +190,20 @@ export function validateCheckEvidence(
   value: unknown,
   { at = 'check evidence' }: { at?: string } = {},
 ): CheckEvidence {
-  strict(value, FIELDS, at);
-  if (value.schemaVersion !== CHECK_EVIDENCE_SCHEMA_VERSION) {
-    throw new Error(`${at}.schemaVersion is unsupported`);
+  const parsed = checkEvidenceSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(formatZodError(parsed.error, at));
   }
-  if (!isCheckEvidenceStatus(value.status)) throw new Error(`${at}.status is invalid`);
-  if (!nonEmpty(value.code) || !CODE.test(value.code)) throw new Error(`${at}.code is invalid`);
-  if (typeof value.phase !== 'string' || !PHASE.has(value.phase)) {
-    throw new Error(`${at}.phase is invalid`);
-  }
-  if (value.actor !== null && !nonEmpty(value.actor)) {
-    throw new Error(`${at}.actor must be a string or null`);
-  }
-  if (value.summary !== null && typeof value.summary !== 'string') {
-    throw new Error(`${at}.summary must be a string or null`);
-  }
-  structured(value.observation, `${at}.observation`);
-  structured(value.expected, `${at}.expected`);
-  if (typeof value.retryable !== 'boolean') throw new Error(`${at}.retryable must be boolean`);
-  validateTiming(value.timing, `${at}.timing`);
-  if (!Array.isArray(value.actions)) throw new Error(`${at}.actions must be an array`);
-  value.actions.forEach((entry, index) => {
+  const evidence = parsed.data;
+  structured(evidence.observation, `${at}.observation`);
+  structured(evidence.expected, `${at}.expected`);
+  validateTiming(evidence.timing, `${at}.timing`);
+  evidence.actions.forEach((entry, index) => {
     const entryAt = `${at}.actions[${index}]`;
-    strict(entry, ACTION_ENTRY_FIELDS, entryAt);
-    if (entry.actor !== null && !nonEmpty(entry.actor)) {
-      throw new Error(`${entryAt}.actor must be a string or null`);
-    }
     validateActionEvidence(entry.evidence, `${entryAt}.evidence`);
   });
-  if (!Array.isArray(value.attachments)) throw new Error(`${at}.attachments must be an array`);
-  value.attachments.forEach((attachment, index) => {
-    const attachmentAt = `${at}.attachments[${index}]`;
-    strict(attachment, ATTACHMENT_FIELDS, attachmentAt);
-    if (!nonEmpty(attachment.kind) || !nonEmpty(attachment.ref)) {
-      throw new Error(`${attachmentAt} requires kind and ref`);
-    }
-  });
-  validateStringList(value.sensitivity, `${at}.sensitivity`);
-  return value as unknown as CheckEvidence;
+  validateStringList(evidence.sensitivity, `${at}.sensitivity`);
+  return value as CheckEvidence;
 }
 
 export function createCheckEvidence({

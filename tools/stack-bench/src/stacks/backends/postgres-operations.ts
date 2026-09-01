@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
+import type { LeasedDatabase } from '../backend-reset-guard.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../hosted-database-identity.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 
@@ -16,9 +17,6 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const streams = (error: unknown, ...keys: readonly string[]): string =>
   record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
 
-type LeasedDatabase = {
-  resources: { container: { id: string; name: string }; database: string };
-};
 const POSTGRES_USER = POSTGRES_APPLICATION_IDENTITY.user;
 
 export function resetPostgres({ lease, exec = execFileSync }:

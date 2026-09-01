@@ -1,8 +1,9 @@
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 import type { PreflightReport, PreflightRequest } from '../src/runtime/preflight.js';
 
 function splitList(value: unknown): string[] {
@@ -34,7 +35,7 @@ export function parsePreflightArgs(
     runIndex: 0, parallelism: 1,
     agentAdapter: 'claude-code', guidance: 'prescribed', packIds: [], checkKeys: [], smoke: false,
     image: env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
-    resultsDir: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(STACK_BENCH_ROOT, 'results')) };
+    resultsDir: stackBenchResultsRoot(STACK_BENCH_ROOT, env) };
   request.backends = (values.backend ?? []).flatMap(splitList);
   if (values.track !== undefined) request.track = values.track;
   if (values.levels !== undefined) request.levels = values.levels;

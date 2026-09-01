@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { STACK_BENCH_ROOT } from '../package-root.js';
-import { operationalOutputRoot } from '../runtime/operational-paths.js';
+import { stackBenchResultsRoot } from '../runtime/operational-paths.js';
 
 function transcriptStoreFor(appDirectory: string, storeRoot: string): string | null {
   if (!existsSync(storeRoot)) return null;
@@ -25,7 +25,7 @@ function collectTranscripts(directory: string, output: string[] = []): string[] 
 }
 
 export function archiveTranscripts(appDirectory: string, label: string,
-  outputDirectory = join(operationalOutputRoot(STACK_BENCH_ROOT), 'transcripts'),
+  outputDirectory = join(stackBenchResultsRoot(STACK_BENCH_ROOT), 'transcripts'),
   storeRoot = join(homedir(), '.claude', 'projects')) {
   mkdirSync(outputDirectory, { recursive: true });
   const store = transcriptStoreFor(appDirectory, storeRoot);

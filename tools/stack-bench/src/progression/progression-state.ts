@@ -94,6 +94,11 @@ export interface ProgressionGrant extends Record<string, unknown> {
   strikes: number;
 }
 
+export interface ProgressionResumeBinding extends Record<string, unknown> {
+  actionSha256: string;
+  source: { directory: string; sha256: string; files: number };
+}
+
 export interface ProgressionState extends Record<string, unknown> {
   schemaVersion: number;
   policy: string;
@@ -109,11 +114,6 @@ export interface ProgressionState extends Record<string, unknown> {
 
 interface WorkspaceProgressionOwner extends ProgressionOwner {
   workspace: { appDirectory: string };
-}
-
-interface ResumeBinding extends Record<string, unknown> {
-  actionSha256: string;
-  source: { directory: string; sha256: string; files: number };
 }
 
 export interface ProgressionStatePayload extends Record<string, unknown> {
@@ -485,7 +485,7 @@ function grantSource(state: ProgressionState, owner: WorkspaceProgressionOwner,
 }
 
 function grantResumeBinding(state: ProgressionState, owner: WorkspaceProgressionOwner,
-  workspaceRoot: string): ResumeBinding {
+  workspaceRoot: string): ProgressionResumeBinding {
   const sourcePath = ownedPath(workspaceRoot, owner.workspace.appDirectory,
     'progression application');
   const source = hashAppSource(sourcePath);
@@ -552,14 +552,4 @@ export function grantProgressionState(path: string, { progression, featureCatalo
   } finally {
     releaseCampaignLock(lock);
   }
-}
-
-export function acquireProgressionStateLock(path: string, progression: unknown,
-  featureCatalogIdentity: unknown, dependencyPolicyIdentity: unknown,
-  owner: unknown): CampaignLock {
-  return stateLock(path, progression, featureCatalogIdentity, dependencyPolicyIdentity, owner);
-}
-
-export function releaseProgressionStateLock(lock: CampaignLock): boolean {
-  return releaseCampaignLock(lock);
 }

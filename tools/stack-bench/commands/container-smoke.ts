@@ -14,7 +14,9 @@ import { createBackendLease, readBackendLease, writeBackendLease } from '../src/
 import { fetchStatus } from '../src/runtime/readiness.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
-import { codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
+import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_SPACETIME_CLI,
+  codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
+import { ARTIFACT_FILE } from '../src/evidence/artifacts.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
 const REPO = resolve(ROOT, '..', '..');
@@ -77,7 +79,7 @@ async function main() {
   const uri = `http://127.0.0.1:${port}`;
   const module = `stackbench-container-smoke-${process.pid}`;
   const containerName = `stack-bench-${basename(root)}`;
-  const leasePath = join(root, 'backend-lease.json');
+  const leasePath = join(root, ARTIFACT_FILE.backendLease);
   let host: ChildProcess | null = null;
   let dev: ChildProcess | null = null;
   let output = '';
@@ -120,11 +122,12 @@ async function main() {
     cpSync(FIXTURE, join(app, 'spacetimedb'), { recursive: true });
     const agentExec = ['exec', ...codingContainerAgentExecOptions()];
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
-      'umask 000; cd /app/spacetimedb && npm install --no-audit --no-fund'], { stdio: 'pipe' });
+      `umask 000; cd ${CODING_CONTAINER_APP_ROOT}/spacetimedb && npm install --no-audit --no-fund`],
+    { stdio: 'pipe' });
 
     const startedDev = spawn('docker', [...agentExec, '-i', containerName, 'sh', '-c',
-      `umask 000; cd /app/spacetimedb && /deps/spacetimedb-cli dev ${module} `
-      + '--no-config --project-path /app/spacetimedb --module-path . '
+      `umask 000; cd ${CODING_CONTAINER_APP_ROOT}/spacetimedb && ${CODING_CONTAINER_SPACETIME_CLI} dev ${module} `
+      + `--no-config --project-path ${CODING_CONTAINER_APP_ROOT}/spacetimedb --module-path . `
       + '--server-only --skip-generate '
       + `-s ${containerReachableSpacetimeUri({ resources: { serverUri: uri,
         buildContainer: lease.resources.buildContainer } }, identity.networkMode)} -y`],
@@ -168,7 +171,7 @@ async function main() {
     const targetUri = containerReachableSpacetimeUri({ resources: { serverUri: uri,
       buildContainer: lease.resources.buildContainer } }, identity.networkMode);
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
-      `umask 000; cd /app/spacetimedb && /deps/spacetimedb-cli publish ${module} `
+      `umask 000; cd ${CODING_CONTAINER_APP_ROOT}/spacetimedb && ${CODING_CONTAINER_SPACETIME_CLI} publish ${module} `
       + `--no-config --module-path . -s ${targetUri} --delete-data -y`],
     { stdio: 'pipe', timeout: 240_000 });
     const afterReset = execFileSync(CLI, ['sql', module, 'SELECT * FROM smoke_item', '-s', uri],

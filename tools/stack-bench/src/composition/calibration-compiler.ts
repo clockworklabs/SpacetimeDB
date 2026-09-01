@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { compilePromotionFile } from './composition-compiler.js';
-import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
+import { canonicalDefinitionJson, canonicalizeDefinition, readDefinitionJson }
+  from './definition-plan.js';
 import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
 import type { MutationDefinition } from '../evidence/mutation-analysis.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -208,14 +209,6 @@ function array(value: unknown, at: string,
     fail(at, `must be a${nonEmpty ? ' non-empty' : 'n'} array`);
   }
   return value;
-}
-
-function readJson(path: string, label: string): unknown {
-  try { return JSON.parse(readFileSync(path, 'utf8')); }
-  catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
-  }
 }
 
 function contained(root: string, from: string, path: unknown,
@@ -1018,7 +1011,8 @@ export function compileCalibrationFile(calibrationPath: string,
   const calibrationRef = contained(root, root, calibrationPath, 'calibration path');
   const absolute = calibrationRef.absolute;
   const source = relative(root, absolute).replaceAll('\\', '/');
-  const calibration = compileCalibrationDefinition(readJson(absolute, 'calibration'), { source });
+  const calibration = compileCalibrationDefinition(
+    readDefinitionJson(absolute, 'calibration'), { source });
   if (calibration.track !== release.track) fail(`${source}.track`, `expected ${release.track}`);
   for (const [field, declared] of [['id', calibration.recipe.id],
     ['version', calibration.recipe.version],
@@ -1095,7 +1089,7 @@ export function compileCalibrationFile(calibrationPath: string,
     const ref = contained(benchRoot, benchRoot, selection.path, `${at}.path`);
     const digest = sha256(readFileSync(ref.absolute));
     if (digest !== selection.sha256) fail(`${at}.sha256`, `stale digest for ${selection.path}`);
-    const manifest = readJson(ref.absolute, 'mutation manifest');
+    const manifest = readDefinitionJson(ref.absolute, 'mutation manifest');
     if (!isObject(manifest)) fail(at, 'mutation manifest must be an object');
     if (manifest.schemaVersion !== 2 || manifest.level !== undefined) {
       fail(at, 'mutation manifest must use schema 2 and must not own a level');
@@ -1347,7 +1341,7 @@ export function resolveCalibrationForRelease(release: RecipeRelease | null,
   const matches = [];
   for (const name of readdirSync(directory).filter(file => file.endsWith('.json')).sort()) {
     const path = join(directory, name);
-    const raw = readJson(path, 'calibration');
+    const raw = readDefinitionJson(path, 'calibration');
     if (read(raw, 'recipe', 'id') !== release.id
       || read(raw, 'recipe', 'version') !== release.version
       || read(raw, 'recipe', 'contentSha256') !== release.contentSha256) continue;

@@ -13,6 +13,13 @@ const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
 type UnknownRecord = Record<string, unknown>;
 
+export type GuidanceMode = 'prescribed' | 'neutral';
+
+export function parseGuidanceMode(value: unknown): GuidanceMode {
+  if (value === 'neutral' || value === 'prescribed') return value;
+  throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
+}
+
 const parseConditionReference = (value: unknown): { id: string; version: string } | null =>
   parseVersionedReference(value, identifier => ID.test(identifier));
 
@@ -30,7 +37,7 @@ interface Catalog {
 }
 
 interface GuidanceProfile extends IdentityProfile {
-  mode: 'prescribed' | 'neutral';
+  mode: GuidanceMode;
   material: { accessFacts: boolean; apiReference: boolean; designAdvice: boolean };
   documents: Record<string, string>;
   applicationInterfaces: Record<string, string>;
@@ -38,7 +45,7 @@ interface GuidanceProfile extends IdentityProfile {
   credentialAliases?: unknown;
 }
 
-interface ResolvedDocument {
+export interface ResolvedGuidanceDocument {
   path: string;
   sha256: string;
   bytes: number;
@@ -50,9 +57,9 @@ export interface ResolvedGuidanceProfile {
   version: string;
   sha256: string;
   state: 'draft' | 'qualified';
-  mode: 'prescribed' | 'neutral';
+  mode: GuidanceMode;
   material: GuidanceProfile['material'];
-  documents: Record<string, ResolvedDocument>;
+  documents: Record<string, ResolvedGuidanceDocument>;
   skills: Record<string, ResolvedSkills>;
   credentialAliases?: Readonly<Record<string, string>>;
 }
@@ -216,12 +223,12 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     'documents', 'applicationInterfaces', 'skills', 'credentialAliases']);
   const { profile } = loadProfile<GuidanceProfile>(catalog, 'guidanceProfiles', reference,
     'backend-guidance-profile', fields, new Set(['credentialAliases']));
-  if (!['prescribed', 'neutral'].includes(profile.mode)) fail(`${reference}.mode`, 'must be prescribed or neutral');
+  const mode = parseGuidanceMode(profile.mode);
   strict(profile.material, `${reference}.material`, new Set(['accessFacts', 'apiReference', 'designAdvice']));
   for (const field of ['accessFacts', 'apiReference', 'designAdvice'] as const) {
     if (typeof profile.material[field] !== 'boolean') fail(`${reference}.material.${field}`, 'must be boolean');
   }
-  if (profile.mode === 'neutral' && profile.material.designAdvice) {
+  if (mode === 'neutral' && profile.material.designAdvice) {
     fail(`${reference}.material.designAdvice`, 'must be false for neutral guidance');
   }
   if (!object(profile.documents)) fail(`${reference}.documents`, 'must be an object');
@@ -229,7 +236,7 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     fail(`${reference}.applicationInterfaces`, 'must be an object');
   }
   if (!object(profile.skills)) fail(`${reference}.skills`, 'must be an object');
-  const documents: Record<string, ResolvedDocument> = {};
+  const documents: Record<string, ResolvedGuidanceDocument> = {};
   const skills: Record<string, ResolvedSkills> = {};
   for (const stack of stacks) {
     const rel = profile.documents[stack];
@@ -257,7 +264,7 @@ function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly s
     skills[stack] = { ids: [...skillIds], sha256: sha256(text), bytes: Buffer.byteLength(text) };
   }
   const hasCredentialAliases = Object.hasOwn(profile, 'credentialAliases');
-  const base = { mode: profile.mode, material: profile.material, documents, skills };
+  const base = { mode, material: profile.material, documents, skills };
   if (!hasCredentialAliases) return { ...identity(profile, { documents, skills }), ...base };
   const credentialAliases = validateCredentialAliases(profile.credentialAliases,
     `${reference}.credentialAliases`);
@@ -279,7 +286,8 @@ export function resolveGuidanceProfile(reference: string, stacks: readonly strin
 
 export function resolveDefaultGuidanceForStack(mode: string,
   stack: string): ResolvedGuidanceProfile | null {
-  const reference = mode === 'neutral' ? 'neutral@1.7.0' : 'prescribed@1.1.0';
+  const reference = parseGuidanceMode(mode) === 'neutral'
+    ? 'neutral@1.7.0' : 'prescribed@1.1.0';
   const catalog = loadCatalog();
   const { profile } = readProfile(catalog, 'guidanceProfiles', reference);
   if (object(profile) && object(profile.documents) && !Object.hasOwn(profile.documents, stack)) {

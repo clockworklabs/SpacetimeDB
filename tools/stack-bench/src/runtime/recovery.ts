@@ -2,7 +2,8 @@ import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
+  writeArtifact } from '../evidence/artifacts.js';
 import { publicBackendLease, readBackendLease } from './backend-lease.js';
 import { releaseBackendLease } from './backend-teardown.js';
 import type { BackendLease, PublicBackendLease } from './backend-lease.js';
@@ -49,7 +50,7 @@ export function rescueSupervisedLease(path: string, output: string): void {
     throw new Error(`supervisor output does not match requested output: ${state.runId}`);
   }
   if (!existsSync(state.leasePath)) {
-    const runPath = join(output, 'run.json');
+    const runPath = join(output, ARTIFACT_FILE.run);
     if (!existsSync(runPath)) {
       throw new Error(`backend lease disappeared without released run evidence: ${state.runId}`);
     }
@@ -125,7 +126,7 @@ export function validateSupervisorState(
   if (!isAbsolute(runtimeDirValue)) throw new Error(`${source}.runtimeDir must be absolute`);
   if (!isAbsolute(output)) throw new Error(`${source}.output must be absolute`);
   const runtimeDir = resolve(runtimeDirValue);
-  if (resolve(leasePath) !== join(runtimeDir, 'backend-lease.json')) {
+  if (resolve(leasePath) !== join(runtimeDir, ARTIFACT_FILE.backendLease)) {
     throw new Error(`${source}.leasePath must be the exact lease below runtimeDir`);
   }
   return {
@@ -210,7 +211,7 @@ function recoverAuthorizedLease(
     lease = readBackendLease(state.leasePath, { token: state.ownershipToken,
       backend: state.backend, runId: state.runId });
   } else {
-    const evidencePath = join(state.output, 'backend-lease.json');
+    const evidencePath = join(state.output, ARTIFACT_FILE.backendLease);
     if (!existsSync(evidencePath)) throw new Error('private lease is missing without public lease evidence');
     const evidence = readArtifactPayload<PublicBackendLease>(evidencePath,
       { expectedKind: 'backend_lease_evidence' });
@@ -219,7 +220,7 @@ function recoverAuthorizedLease(
     cleanupSucceeded = true;
     lease = { ...evidence, ownershipToken: state.ownershipToken };
   }
-  writeRecoveryArtifact(join(state.output, 'recovery.json'), lease,
+  writeRecoveryArtifact(join(state.output, ARTIFACT_FILE.recovery), lease,
     { cleanupSucceeded, reason: reason ?? (cleanupSucceeded ? null : 'authenticated cleanup refused') });
   if (cleanupSucceeded) {
     if (existsSync(runtimeDir)) {
@@ -231,7 +232,7 @@ function recoverAuthorizedLease(
     if (removeState && statePath) rmSync(statePath, { force: true });
   }
   return { ok: cleanupSucceeded, state: cleanupSucceeded ? 'clean' : 'quarantined',
-    runId: state.runId, recoveryPath: join(state.output, 'recovery.json') };
+    runId: state.runId, recoveryPath: join(state.output, ARTIFACT_FILE.recovery) };
 }
 
 export function recoverSupervisedRun(
@@ -249,8 +250,8 @@ export function recoverBackendLease(leasePath: string, output: string,
   { runtimeRoot }: RecoveryRuntimeOptions = {}): RecoveryResult {
   const absoluteLease = realpathSync(leasePath);
   if (!statSync(absoluteLease).isFile()) throw new Error('backend lease must be a regular file');
-  if (basename(absoluteLease) !== 'backend-lease.json') {
-    throw new Error('backend lease path must end in backend-lease.json');
+  if (basename(absoluteLease) !== ARTIFACT_FILE.backendLease) {
+    throw new Error(`backend lease path must end in ${ARTIFACT_FILE.backendLease}`);
   }
   if (!isAbsolute(output)) throw new Error('recovery output must be absolute');
   const runtimeDir = dirname(absoluteLease);

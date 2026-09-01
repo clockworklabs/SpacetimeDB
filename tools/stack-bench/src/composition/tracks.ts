@@ -77,20 +77,22 @@ export interface TrackSuiteSource {
 }
 
 export const TRACKS_DIR = join(ROOT, 'tracks');
+export const TRACK_MANIFEST_FILE = 'track.json';
 export const DEFAULT_TRACK = 'chat';
 
 export function listTracks({ includeInternal = false }: { includeInternal?: boolean } = {}): string[] {
   if (!existsSync(TRACKS_DIR)) return [];
   return readdirSync(TRACKS_DIR, { withFileTypes: true })
-    .filter(e => e.isDirectory() && existsSync(join(TRACKS_DIR, e.name, 'track.json')))
-    .filter(e => includeInternal || !JSON.parse(readFileSync(join(TRACKS_DIR, e.name, 'track.json'), 'utf8')).internal)
+    .filter(e => e.isDirectory() && existsSync(join(TRACKS_DIR, e.name, TRACK_MANIFEST_FILE)))
+    .filter(e => includeInternal
+      || !JSON.parse(readFileSync(join(TRACKS_DIR, e.name, TRACK_MANIFEST_FILE), 'utf8')).internal)
     .map(e => e.name)
     .sort();
 }
 
 export function loadTrack(name: string = DEFAULT_TRACK): Track {
   const dir = join(TRACKS_DIR, name);
-  const manifest = join(dir, 'track.json');
+  const manifest = join(dir, TRACK_MANIFEST_FILE);
   if (!existsSync(manifest)) {
     throw new Error(
       `Unknown track "${name}". Available: ${listTracks({ includeInternal: true }).join(', ') || 'none'}`,

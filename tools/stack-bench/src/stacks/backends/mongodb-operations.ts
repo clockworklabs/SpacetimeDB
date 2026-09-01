@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
+import type { LeasedDatabase } from '../backend-reset-guard.js';
 import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 
 const RESET_TIMEOUT_MS = 120_000;
@@ -12,10 +13,6 @@ const record = (value: unknown): value is Record<string, unknown> =>
 // A failed child process carries its output on the error.
 const streams = (error: unknown, ...keys: readonly string[]): string =>
   record(error) ? keys.map(key => String(error[key] ?? '')).join('') : '';
-
-type LeasedDatabase = {
-  resources: { container: { id: string; name: string }; database: string };
-};
 
 export function resetMongoDb({ lease, exec = execFileSync }:
   { lease: LeasedDatabase; exec?: TextCommandExecutor }): string {

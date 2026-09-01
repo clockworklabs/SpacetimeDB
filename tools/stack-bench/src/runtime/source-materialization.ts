@@ -7,6 +7,7 @@ import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
 import { hashAppSource, resetAppToSource } from './source-snapshot.js';
 import { hashDirectory } from '../evidence/provenance.js';
+import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
@@ -17,7 +18,7 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
   await lifecycle(application, 'stop');
   resetAppToSource(sourcePath, appDir);
   if (!existsSync(join(appDir, 'start.sh'))) {
-    throw Object.assign(new Error('accepted application source has no /app/start.sh'),
+    throw Object.assign(new Error(`accepted application source has no ${CODING_CONTAINER_START_SCRIPT}`),
       { code: 'generated_app_start_contract_missing' });
   }
   let startFailure: unknown = null;
@@ -67,7 +68,7 @@ export function materializationAppFailure(error: unknown): RunOutcome {
     : code === 'generated_app_not_restartable'
     ? `application did not start from clean source: ${redactCredentials(message(error))
         .replace(/\s+/g, ' ').slice(0, 600)}`
-    : 'accepted application source has no /app/start.sh';
+    : `accepted application source has no ${CODING_CONTAINER_START_SCRIPT}`;
   return { kind: 'app_failure', phase: 'application-restart', reason,
     appFailures: ['application-restart'], inconclusive: [], harnessFailures: [] };
 }

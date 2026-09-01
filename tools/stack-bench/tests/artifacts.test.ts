@@ -30,6 +30,9 @@ function writableEngineRoot(): { temp: string; root: string } {
     if (source === BENCH_ROOT) return true;
     return !excluded.has(relative(BENCH_ROOT, source).split(/[\\/]/)[0] ?? '');
   } });
+  mkdirSync(join(root, 'node_modules'), { recursive: true });
+  cpSync(join(BENCH_ROOT, 'node_modules', 'zod'), join(root, 'node_modules', 'zod'),
+    { recursive: true });
   return { temp, root };
 }
 

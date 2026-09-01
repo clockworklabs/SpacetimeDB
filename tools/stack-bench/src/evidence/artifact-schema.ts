@@ -1,7 +1,9 @@
 import { validateCheckEvidence } from './check-evidence.js';
 import type { CheckEvidence } from './check-evidence.js';
+import { z } from 'zod';
 import { runOutcomeKind } from './outcomes.js';
 import { RUNNER_OBSERVATION_FIELDS } from '../runtime/runner-environment.js';
+import { ARTIFACT_FILE } from './artifact-layout.js';
 import {
   ARTIFACT_IDENTITY_KEYS as IDENTITY_KEYS,
   currentEngineIdentity,
@@ -14,6 +16,7 @@ import type {
   ArtifactIdentity,
   EngineArtifactIdentity,
 } from './artifact-identities.js';
+import { formatZodError } from '../zod-error.js';
 
 export {
   currentEngineIdentity,
@@ -82,9 +85,6 @@ const SECRET_KEYS = new Set([
   'apikey', 'authorization', 'credential', 'credentials', 'leasetoken', 'ownershiptoken',
   'password', 'secret',
 ]);
-const ENVELOPE_KEYS = new Set([
-  'artifactSchemaVersion', 'kind', 'id', 'attempt', 'timestamps', 'identities', 'payload',
-]);
 const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backend', 'model', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
@@ -137,8 +137,25 @@ const PAYLOAD_FIELDS = Object.freeze({
   source_checkpoint: new Set(['schemaVersion', 'track', 'backend', 'level', 'source',
     'repair', 'outcome', 'selectionSha256']),
 });
+const PAYLOAD_SCHEMAS = Object.fromEntries(Object.entries(PAYLOAD_FIELDS).map(([kind, fields]) => [
+  kind,
+  z.strictObject(Object.fromEntries([...fields].map(field => [field, z.unknown().optional()]))),
+])) as unknown as Record<ArtifactKind, z.ZodType<UnknownRecord>>;
 const HASH = /^[a-f0-9]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const artifactTimestampSchema = z.string().regex(ISO).refine(value => !Number.isNaN(Date.parse(value)));
+const artifactEnvelopeSchema = z.strictObject({
+  artifactSchemaVersion: z.literal(ARTIFACT_SCHEMA_VERSION),
+  kind: z.enum(ARTIFACT_KINDS),
+  id: z.string().min(1),
+  attempt: z.strictObject({ id: z.string().min(1), parentId: z.string().min(1).nullable() }),
+  timestamps: z.strictObject({
+    startedAt: artifactTimestampSchema,
+    completedAt: artifactTimestampSchema.nullable(),
+  }),
+  identities: z.record(z.string(), z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
+});
 
 const isObject = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -181,10 +198,11 @@ function timestamp(value: unknown, at: string): string {
 }
 
 function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
-  const payload = asObject(input, 'payload must be an object');
-  for (const key of Object.keys(payload)) {
-    if (!PAYLOAD_FIELDS[kind].has(key)) fail(`${kind} payload.${key} is unknown`);
+  const parsed = PAYLOAD_SCHEMAS[kind].safeParse(input);
+  if (!parsed.success) {
+    fail(formatZodError(parsed.error, `${kind} payload`));
   }
+  const payload = parsed.data;
   const arrayWhenPresent = (field: string): unknown[] | undefined => {
     const value = payload[field];
     if (value !== undefined && !Array.isArray(value)) {
@@ -256,7 +274,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     for (const key of Object.keys(progressionStatus)) {
       if (!fields.has(key)) fail(`${kind} payload.progressionStatus.${key} is unknown`);
     }
-    if (progressionStatus.stateArtifact !== 'progression-state.json') {
+    if (progressionStatus.stateArtifact !== ARTIFACT_FILE.progressionState) {
       fail(`${kind} payload.progressionStatus.stateArtifact is invalid`);
     }
     if (!['active', 'terminal'].includes(String(progressionStatus.phase))) {
@@ -829,53 +847,37 @@ export function validateArtifact(
   input: unknown,
   { source = '<artifact>' }: { source?: string } = {},
 ): Artifact {
-  const candidate = asObject(input, `${source} must be an object`);
-  if (candidate.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
-    fail(`${source} uses unsupported schema ${candidate.artifactSchemaVersion ?? 'missing'}`);
+  if (!isObject(input)) fail(`${source} must be an object`);
+  if (input.artifactSchemaVersion !== ARTIFACT_SCHEMA_VERSION) {
+    fail(`${source} uses unsupported schema ${input.artifactSchemaVersion ?? 'missing'}`);
   }
-  for (const key of Object.keys(candidate)) {
-    if (!ENVELOPE_KEYS.has(key)) fail(`${source}.${key} is unknown`);
-  }
-  for (const key of ENVELOPE_KEYS) {
-    if (!Object.hasOwn(candidate, key)) fail(`${source}.${key} is required`);
-  }
-  if (!isObject(candidate.attempt) || !Object.hasOwn(candidate.attempt, 'id')
-    || !Object.hasOwn(candidate.attempt, 'parentId')) fail(`${source}.attempt is incomplete`);
-  if (!isObject(candidate.timestamps) || !Object.hasOwn(candidate.timestamps, 'startedAt')
-    || !Object.hasOwn(candidate.timestamps, 'completedAt')) fail(`${source}.timestamps is incomplete`);
-  if (!isObject(candidate.identities)) fail(`${source}.identities must be an object`);
+  if (!isObject(input.attempt) || !Object.hasOwn(input.attempt, 'id')
+    || !Object.hasOwn(input.attempt, 'parentId')) fail(`${source}.attempt is incomplete`);
+  if (!isObject(input.timestamps) || !Object.hasOwn(input.timestamps, 'startedAt')
+    || !Object.hasOwn(input.timestamps, 'completedAt')) fail(`${source}.timestamps is incomplete`);
+  if (!Object.hasOwn(input, 'identities')) fail(`${source}.identities is required`);
+  if (!isObject(input.identities)) fail(`${source}.identities must be an object`);
   for (const key of [...IDENTITY_KEYS, 'packs']) {
-    if (!Object.hasOwn(candidate.identities, key)) fail(`${source}.identities.${key} is required`);
+    if (!Object.hasOwn(input.identities, key)) fail(`${source}.identities.${key} is required`);
   }
-  const kind = normalizeKind(candidate.kind);
-  if (typeof candidate.id !== 'string' || !candidate.id) fail(`${source}.id must be a non-empty string`);
-  const attempt = asObject(candidate.attempt, `${source}.attempt must be an object`);
-  for (const key of Object.keys(attempt)) {
-    if (key !== 'id' && key !== 'parentId') fail(`${source}.attempt.${key} is unknown`);
+  const parsed = artifactEnvelopeSchema.safeParse(structuredClone(input));
+  if (!parsed.success) {
+    fail(formatZodError(parsed.error, source));
   }
-  if (typeof attempt.id !== 'string' || !attempt.id) fail(`${source}.attempt.id must be a non-empty string`);
-  if (attempt.parentId !== null && (typeof attempt.parentId !== 'string' || !attempt.parentId)) {
-    fail(`${source}.attempt.parentId must be a non-empty string or null`);
-  }
-  const timestamps = asObject(candidate.timestamps, `${source}.timestamps must be an object`);
-  for (const key of Object.keys(timestamps)) {
-    if (key !== 'startedAt' && key !== 'completedAt') fail(`${source}.timestamps.${key} is unknown`);
-  }
-  const startedAt = timestamp(timestamps.startedAt, `${source}.timestamps.startedAt`);
-  const completedAt = timestamps.completedAt === null
-    ? null : timestamp(timestamps.completedAt, `${source}.timestamps.completedAt`);
+  const candidate = parsed.data;
+  const { startedAt, completedAt } = candidate.timestamps;
   if (completedAt && Date.parse(completedAt) < Date.parse(startedAt)) {
     fail(`${source}.timestamps.completedAt precedes timestamps.startedAt`);
   }
   const artifact: Artifact = {
     artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
-    kind,
+    kind: candidate.kind,
     id: candidate.id,
-    attempt: { id: attempt.id, parentId: attempt.parentId as string | null },
+    attempt: candidate.attempt,
     timestamps: { startedAt, completedAt },
     identities: validateArtifactIdentities(candidate.identities,
       { requireEngine: true, requireComplete: true, sortPacks: false }),
-    payload: validatePayload(kind, structuredClone(candidate.payload)),
+    payload: validatePayload(candidate.kind, structuredClone(candidate.payload)),
   };
   rejectSecrets(artifact);
   return artifact;

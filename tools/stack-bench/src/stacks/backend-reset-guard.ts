@@ -5,6 +5,10 @@ interface LeasedContainer {
   name: string;
 }
 
+export interface LeasedDatabase {
+  resources: { container: LeasedContainer; database: string };
+}
+
 export function assertLeasedContainer(
   container: LeasedContainer,
   exec: TextCommandExecutor,

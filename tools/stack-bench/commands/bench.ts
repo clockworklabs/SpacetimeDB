@@ -12,7 +12,8 @@ import { parseBenchArguments } from './bench-arguments.js';
 import type { BenchArguments } from './bench-arguments.js';
 import { killTree } from '../src/runtime/platform.js';
 import { formatRepairProgress } from '../src/evidence/scoring.js';
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
+  writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode, runOutcomeKind } from '../src/evidence/outcomes.js';
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
@@ -86,6 +87,8 @@ import type { ProgressionRecipeAction, ProgressionRecipeSelections }
 import type { BackendLease, BackendLeaseContainer } from '../src/runtime/backend-lease.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
+import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
+import { runningContainerIdentity } from '../src/runtime/container-identity.js';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 type UnknownRecord = Record<string, unknown>;
@@ -398,17 +401,6 @@ export function auditFailureSummary(error: unknown): string {
   return details.length ? `${message} (${details.join('; ')})` : message;
 }
 
-function containerIdentity(name: string): { name: string; id: string } {
-  try {
-    const id = execFileSync('docker', ['inspect', '--format', '{{.Id}}', name],
-      { encoding: 'utf8', stdio: 'pipe', timeout: 120_000 }).trim();
-    if (!id) throw new Error('empty container id');
-    return { name, id };
-  } catch (error) {
-    throw new Error(`cannot lease ${name}: ${errorMessage(error).split('\n')[0]}`);
-  }
-}
-
 const sh = (cmd: string, args: readonly string[],
   opts: Omit<ExecFileSyncOptionsWithStringEncoding, 'encoding'> = {}): string =>
   execFileSync(cmd, [...args], {
@@ -575,7 +567,7 @@ function grade(
   const argv = gradeArgv(args, appDir, url, label, level, track, parentAttemptId, {
     ...options, sourceSha256: options.sourceSha256 ?? source.sha256,
   });
-  const bundle = join(out ?? join(appDir, 'stack-bench'), 'bundle.json');
+  const bundle = join(out ?? join(appDir, 'stack-bench'), ARTIFACT_FILE.gradeBundle);
   rmSync(bundle, { force: true });
   const task = args.recipeTasks?.get(level);
   const currentChecks = checksForGrade(task, options.observation);
@@ -610,7 +602,7 @@ function runMutationControl(
   imageId: string | null,
 ): MutationControlResult {
   if (!args.out || !args.mutations) throw new Error('mutation control requires output and manifest paths');
-  const output = join(args.out, 'mutation-control.json');
+  const output = join(args.out, ARTIFACT_FILE.mutationControl);
   if (!args.mutationResumeFrom || resolve(args.mutationResumeFrom) !== resolve(output)) {
     rmSync(output, { force: true });
   }
@@ -854,7 +846,7 @@ async function main() {
     ...(process.env.STACK_BENCH_SUPERVISOR_STATE
       ? { supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE } : {}),
     image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
-    resultsDir: resolve(args.out ?? process.env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')),
+    resultsDir: resolve(args.out ?? stackBenchResultsRoot(ROOT)),
   }, { env: args.apiKey && agentAdapter.apiKeyEnvironmentVariable
     ? { ...process.env, [agentAdapter.apiKeyEnvironmentVariable]: '<provided-by-argument>' }
     : process.env });
@@ -878,14 +870,14 @@ async function main() {
   const artifactLabel = `${runDir}-${runId}`;
   // Default results never reuse a directory. The stable backend/run name is a
   // grouping directory only; every artifact beneath it belongs to one run id.
-  args.out ??= join(process.env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results'), runDir, runId);
+  args.out ??= join(stackBenchResultsRoot(ROOT), runDir, runId);
   if (!args.out) throw new Error('benchmark run has no results directory');
   const outputDir = args.out;
   mkdirSync(args.out, { recursive: true });
-  if (existsSync(join(args.out, 'run.json'))) {
-    throw new Error(`refusing to reuse result directory containing run.json: ${args.out}`);
+  if (existsSync(join(args.out, ARTIFACT_FILE.run))) {
+    throw new Error(`refusing to reuse result directory containing ${ARTIFACT_FILE.run}: ${args.out}`);
   }
-  if (preflight) writeArtifact(join(args.out, 'preflight.json'), {
+  if (preflight) writeArtifact(join(args.out, ARTIFACT_FILE.preflight), {
     kind: 'preflight', id: `${runId}-preflight`,
     attempt: { id: `${runId}-preflight`, parentId: runId },
     identities: emptyArtifactIdentities({
@@ -908,14 +900,14 @@ async function main() {
   const runtimeRoot = resolve(process.env.STACK_BENCH_RUNTIME_DIR
     ?? join(tmpdir(), 'stack-bench-runtime'));
   const runtimeDir = join(runtimeRoot, runId);
-  const leasePath = join(runtimeDir, 'backend-lease.json');
+  const leasePath = join(runtimeDir, ARTIFACT_FILE.backendLease);
   const preparedLease = preparedLeaseResult(executeStackCapability(stackAdapter, 'lease', 'prepare', {
     track,
     runIndex: args.runIndex,
     runtimeDir,
     serverUri: stackRuntime.lease.serverUri,
     env: process.env,
-    helpers: { containerIdentity, dbName, moduleName },
+    helpers: { containerIdentity: runningContainerIdentity, dbName, moduleName },
   }));
   const initialLease = createBackendLease({
     runId,
@@ -964,11 +956,11 @@ async function main() {
 
   let tornDown = false;
   let activeRun: BenchmarkRunRecord | null = null;
-  const recoveryPath = join(outputDir, 'recovery.json');
+  const recoveryPath = join(outputDir, ARTIFACT_FILE.recovery);
   const writeLeaseEvidence = (knownLease: BackendLease | null = null) => {
     const lease = knownLease ?? readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId });
-    const out = join(outputDir, 'backend-lease.json');
+    const out = join(outputDir, ARTIFACT_FILE.backendLease);
     const evidence = publicBackendLease(lease);
     const id = `${runId}-backend-lease`;
     writeArtifact(out, {
@@ -1017,7 +1009,7 @@ async function main() {
     if (activeRun) {
       activeRun.backendLease = evidence;
       activeRun.outcome ??= aggregateRunOutcome(activeRun.levels);
-      writeRunJson(join(outputDir, 'run.json'), activeRun);
+      writeRunJson(join(outputDir, ARTIFACT_FILE.run), activeRun);
     }
     tornDown = released;
     if (released && !retainBackend) {
@@ -1108,7 +1100,7 @@ async function main() {
       featureCatalogIdentity: args.featureCatalog?.identity,
       dependencyPolicyIdentity: args.dependencyPolicy?.identity,
       owner: progressionOwner,
-      statePath: join(args.out, 'progression-state.json'),
+      statePath: join(args.out, ARTIFACT_FILE.progressionState),
       runId,
       outputDir: args.out,
       appDir,
@@ -1118,12 +1110,12 @@ async function main() {
       recipeBindings: args.recipeBindings,
       resumeFrom: args.progressionResumeFrom ?? null,
       getRunArtifact: () => {
-        writeRunJson(join(outputDir, 'run.json'), run);
-        return readArtifact(join(outputDir, 'run.json'));
+        writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+        return readArtifact(join(outputDir, ARTIFACT_FILE.run));
       },
       onState: status => {
         run.progressionStatus = status;
-        writeRunJson(join(outputDir, 'run.json'), run);
+        writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
       },
     }) : null;
   const progressionStart = progressionExecution?.initialize() ?? null;
@@ -1148,7 +1140,7 @@ async function main() {
       priorTotals: prior.payload.totals ?? null,
     };
     run.progressionStatus = progressionStart.status;
-    writeRunJson(join(args.out, 'run.json'), run);
+    writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
   }
 
   const bindProgressionAction = (level: number): ProgressionRecipeAction | null => {
@@ -1195,13 +1187,13 @@ async function main() {
       }
       finalizeRunTotals(run, started, { costComplete: false });
       run.completedAt = new Date().toISOString();
-      writeRunJson(join(outputDir, 'run.json'), run);
+      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
       throw error;
     }
   };
 
   // Stop before grading if a coding session read protected material or if the
-  // audit itself failed. Keep the paid session and exact cost in run.json even
+  // audit itself failed. Keep the paid session and exact cost in the run artifact even
   // though no score may be used.
   const abortUnusableSession = (whichSession: string, audit: ContaminationAudit,
     levelRecord: UnknownRecord & { level: number },
@@ -1239,7 +1231,7 @@ async function main() {
       for (const evidence of audit.evidence) console.log(`     ${evidence}`);
       console.log('     The audit did not establish a usable result.');
     }
-    try { writeRunJson(join(outputDir, 'run.json'), run); } catch { /* best effort */ }
+    try { writeRunJson(join(outputDir, ARTIFACT_FILE.run), run); } catch { /* best effort */ }
     try { archiveTranscripts(appDir, artifactLabel); } catch { /* best effort */ }
     teardown();
     process.exit(4);
@@ -1316,7 +1308,7 @@ async function main() {
     // that is a harness failure, not a result for this backend.
     const buildFailure = agentSessionFailure(build);
     if (buildFailure) {
-      console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, 'run.json')}`);
+      console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, ARTIFACT_FILE.run)}`);
       const failedSession = runSessionRecord(build);
       if (progressionExecution) {
         recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
@@ -1478,7 +1470,8 @@ async function main() {
         observedPoints: observationBundle?.totals?.max ?? null,
         scoreContribution: false,
         repairVisible: false,
-        artifact: observationBundle ? `first-build-l${level}-observed/bundle.json` : null,
+        artifact: observationBundle
+          ? `first-build-l${level}-observed/${ARTIFACT_FILE.gradeBundle}` : null,
         outcome: observationOutcome,
       };
     }
@@ -1908,21 +1901,21 @@ async function main() {
       .some(attempt => attempt.level === level && attempt.outcome === 'conclusive')) {
       run.validation.ladder.completedLevels.push(level);
     }
-    writeRunJson(join(args.out, 'run.json'), run);
+    writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
     const blockedLevels = args.levelList.filter(candidate => candidate > level);
     if (args.progression) {
       const progressionState = requireProgressionState(progressionExecution?.state ?? null);
       if (progressionState.phase === 'terminal') {
         if (blockedLevels.length) run.validation.ladder.stoppedAfterLevel = level;
         run.validation.ladder.blockedLevels = blockedLevels;
-        writeRunJson(join(args.out, 'run.json'), run);
+        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
         break;
       }
       if (progressionState.level <= level) {
         if (progressionState.attempts.at(-1)?.outcome === 'inconclusive') {
           run.validation.ladder.stoppedAfterLevel = level;
           run.validation.ladder.blockedLevels = [level, ...blockedLevels];
-          writeRunJson(join(args.out, 'run.json'), run);
+          writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
           break;
         }
         throw new Error(`dependency progression did not leave L${level} after its strike budget`);
@@ -1932,7 +1925,7 @@ async function main() {
     if (blockedLevels.length && !ladderMayAdvance(finalBundleOutcome)) {
       run.validation.ladder.stoppedAfterLevel = level;
       run.validation.ladder.blockedLevels = blockedLevels;
-      writeRunJson(join(args.out, 'run.json'), run);
+      writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
       console.log(`  ladder paused after L${level}: L${level} must pass before `
         + `${blockedLevels.map(candidate => `L${candidate}`).join(', ')} can start`);
       console.log('  inspect the failures, then explicitly grant more repair rounds or correct the benchmark');
@@ -1956,7 +1949,7 @@ async function main() {
         outcome: { kind: pristineOutcome.kind, phase: 'mutation-control-prerequisite',
           reason: `pristine outcome is ${pristineOutcome.kind}` } };
     }
-    writeRunJson(join(args.out, 'run.json'), run);
+    writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
   }
 
   // Record a final transcript audit in addition to the per-session hard gates.
@@ -2020,7 +2013,7 @@ async function main() {
     continuation.cumulativeDurationAfterSec = continuation.cumulativeDurationBeforeSec + totals.durationSec;
   }
   run.completedAt = new Date().toISOString();
-  writeRunJson(join(args.out, 'run.json'), run);
+  writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {
@@ -2029,7 +2022,7 @@ async function main() {
   const totals = requireRunTotals(run);
   console.log(`  TOTAL ${totals.score}/${totals.max}  ` +
     `$${totals.costUsd}  ${totals.fixRounds} repair round(s)  ${totals.durationSec}s`);
-  console.log(`  ${join(outputDir, 'run.json')}`);
+  console.log(`  ${join(outputDir, ARTIFACT_FILE.run)}`);
 
   teardown();
 

@@ -6,12 +6,12 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { archiveTranscripts } from '../src/agents/transcript-archive.js';
-import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
+import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 
-test('operational output stays beside the module outside appliance mode', t => {
+test('results default to the package results directory', t => {
   const moduleRoot = mkdtempSync(join(tmpdir(), 'stack-bench-module-'));
   t.after(() => rmSync(moduleRoot, { recursive: true, force: true }));
-  assert.equal(operationalOutputRoot(moduleRoot, {}), resolve(moduleRoot));
+  assert.equal(stackBenchResultsRoot(moduleRoot, {}), resolve(moduleRoot, 'results'));
 });
 
 test('appliance output uses the configured durable results root', t => {
@@ -20,19 +20,19 @@ test('appliance output uses the configured durable results root', t => {
   t.after(() => rmSync(moduleRoot, { recursive: true, force: true }));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
   assert.equal(
-    operationalOutputRoot(moduleRoot, { STACK_BENCH_RESULTS_DIR: resultsRoot }),
+    stackBenchResultsRoot(moduleRoot, { STACK_BENCH_RESULTS_DIR: resultsRoot }),
     resolve(resultsRoot),
   );
 });
 
 test('configured operational output must be an exact absolute path', () => {
   assert.throws(
-    () => operationalOutputRoot('/opt/stack-bench', { STACK_BENCH_RESULTS_DIR: 'results' }),
+    () => stackBenchResultsRoot('/opt/stack-bench', { STACK_BENCH_RESULTS_DIR: 'results' }),
     /absolute path/,
   );
   const absolute = resolve(tmpdir(), 'stack-bench-results');
   assert.throws(
-    () => operationalOutputRoot('/opt/stack-bench', { STACK_BENCH_RESULTS_DIR: ` ${absolute}` }),
+    () => stackBenchResultsRoot('/opt/stack-bench', { STACK_BENCH_RESULTS_DIR: ` ${absolute}` }),
     /surrounding whitespace/,
   );
 });

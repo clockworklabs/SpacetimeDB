@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
+
 interface OrchestratorConfig {
   environment: Record<string, string>;
   lease: { serverUri: string | null };
@@ -12,11 +14,8 @@ export function spacetimeOrchestratorConfig({ root, env, helpers }: {
   env: NodeJS.ProcessEnv;
   helpers: { exists: (path: string) => boolean };
 }): OrchestratorConfig {
-  const serverUri = env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
-  const target = new URL(serverUri);
-  if (!['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) || !target.port) {
-    throw new Error(`STACK_BENCH_STDB_URI must be an explicit loopback port, got ${serverUri}`);
-  }
+  const serverUri = env.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI;
+  loopbackHttpUri(serverUri);
   const localCli = join(root, '..', '..', 'target', 'release', 'spacetimedb-cli.exe');
   const cli = env.SPACETIME_BIN ?? (helpers.exists(localCli) ? localCli : 'spacetime');
   return {

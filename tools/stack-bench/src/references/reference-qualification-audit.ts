@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.js';
-import { readArtifactPayload } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 
 import type { ReferenceFixture } from './reference-fixtures.js';
 
@@ -73,10 +73,12 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
       requireMutationControl?: boolean; release?: UnknownRecord | null;
       level?: number; selectedCheckKeys?: string[] | null;
     } = {}): { ok: boolean; failures: string[]; [key: string]: unknown } {
-  const runPath = join(output, 'run.json');
-  const bundlePath = join(output, 'grading', 'bundle.json');
+  const runPath = join(output, ARTIFACT_FILE.run);
+  const bundlePath = join(output, 'grading', ARTIFACT_FILE.gradeBundle);
   if (!existsSync(runPath) || !existsSync(bundlePath)) {
-    return { ok: false, failures: ['run.json or grading/bundle.json is missing'] };
+    return { ok: false, failures: [
+      `${ARTIFACT_FILE.run} or grading/${ARTIFACT_FILE.gradeBundle} is missing`,
+    ] };
   }
   let run: RunPayload;
   let bundle: BundlePayload;
@@ -175,8 +177,8 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
   }
   let mutationControl = null;
   if (requireMutationControl) {
-    const mutationPath = join(output, 'mutation-control.json');
-    if (!existsSync(mutationPath)) failures.push('mutation-control.json is missing');
+    const mutationPath = join(output, ARTIFACT_FILE.mutationControl);
+    if (!existsSync(mutationPath)) failures.push(`${ARTIFACT_FILE.mutationControl} is missing`);
     else {
       mutationControl = readArtifactPayload(mutationPath, { expectedKind: 'mutation_control' });
       if (run.mutationControl?.ok !== true || mutationControl.ok !== true) {
@@ -208,10 +210,12 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
 
 export function auditMutationWorkerRun(output: string, fixture: ReferenceFixture):
   { ok: boolean; failures: string[]; [key: string]: unknown } {
-  const runPath = join(output, 'run.json');
-  const controlPath = join(output, 'mutation-control.json');
+  const runPath = join(output, ARTIFACT_FILE.run);
+  const controlPath = join(output, ARTIFACT_FILE.mutationControl);
   if (!existsSync(runPath) || !existsSync(controlPath)) {
-    return { ok: false, failures: ['run.json or mutation-control.json is missing'] };
+    return { ok: false, failures: [
+      `${ARTIFACT_FILE.run} or ${ARTIFACT_FILE.mutationControl} is missing`,
+    ] };
   }
   let run: RunPayload;
   let control: MutationControlPayload;

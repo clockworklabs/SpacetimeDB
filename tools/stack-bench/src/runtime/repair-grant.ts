@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
-import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { hashDirectory } from '../evidence/provenance.js';
+import type { LevelCheckpoint } from './source-checkpoint.js';
 
 export interface RepairOutcome extends Record<string, unknown> {
   kind: string;
@@ -26,13 +27,6 @@ export interface RepairSelection extends Record<string, unknown> {
   recipe?: { id?: string; version?: string };
 }
 
-interface CheckpointReference extends Record<string, unknown> {
-  artifact: string;
-  directory: string;
-  sha256: string;
-  files: number;
-}
-
 export interface RepairLevel extends Record<string, unknown> {
   level: number;
   outcome: RepairOutcome;
@@ -41,7 +35,7 @@ export interface RepairLevel extends Record<string, unknown> {
   score: number;
   max: number;
   selection?: RepairSelection;
-  checkpoint?: CheckpointReference;
+  checkpoint?: LevelCheckpoint;
   buildCostUsd?: number;
   resumeCostUsd?: number;
   fixCostUsd?: number;
@@ -238,7 +232,7 @@ export function inspectRepairParent(parentDirectory: string,
   if (!Number.isSafeInteger(levelNumber) || levelNumber < 1) {
     throw new Error('repair grant level must be a positive integer');
   }
-  const runPath = join(root, 'run.json');
+  const runPath = join(root, ARTIFACT_FILE.run);
   if (!existsSync(runPath)) throw new Error(`parent run does not exist: ${runPath}`);
   const parentArtifact = readArtifact<RepairParentPayload>(runPath);
   if (!['benchmark_run', 'repair_continuation'].includes(parentArtifact.kind)) {

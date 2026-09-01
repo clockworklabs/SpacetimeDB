@@ -3,6 +3,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSy
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import { ARTIFACT_FILE } from '../evidence/artifacts.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
@@ -154,7 +155,7 @@ export function prepareGrantWorkspace(root: string, executionDirectory: string,
   }
   mkdirSync(dirname(target), { recursive: true });
   const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
-  const required = new Set(['source', 'progression-state.json', 'run.json', 'progression',
+  const required = new Set(['source', ARTIFACT_FILE.progressionState, ARTIFACT_FILE.run, 'progression',
     `level-l${level}-checkpoint.json`, `level-l${level}-source`]);
   for (const name of required) {
     const source = join(executionDirectory, name);
@@ -275,7 +276,7 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
       campaign.plan.featureCatalog, campaign.plan.dependencyPolicy));
     const owner = campaignProgressionOwner(campaign.plan, attempt.plan, { workspace: true });
-    const statePath = join(workspace.directory, 'progression-state.json');
+    const statePath = join(workspace.directory, ARTIFACT_FILE.progressionState);
     const stored = readState(statePath, {
       progression,
       featureCatalogIdentity: campaign.plan.featureCatalog.identity,

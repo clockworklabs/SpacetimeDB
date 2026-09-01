@@ -3,7 +3,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 import { compilePromotionFile, compileRecipeFile } from './composition-compiler.js';
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.js';
-import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
+import { canonicalDefinitionJson, canonicalizeDefinition, readDefinitionJson }
+  from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import type {
   CompiledOwnedTaskFragment,
@@ -11,7 +12,7 @@ import type {
   CompiledRecipePlan,
 } from './composition-compiler.js';
 import type { CompiledStep } from './definition-compiler.js';
-import type { Track } from './tracks.js';
+import { TRACK_MANIFEST_FILE, type Track } from './tracks.js';
 
 export const RECIPE_RELEASE_SCHEMA_VERSION = 2;
 
@@ -246,15 +247,6 @@ const ASSERTION_CONTAINS_ACTIONS = new Set([
   'expectUnavailable',
 ]);
 
-function readJson(path: string, label: string): unknown {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
-  }
-}
-
 function trackRelative(trackRoot: string, path: string): string {
   return relative(resolve(trackRoot), realpathSync(path)).replaceAll('\\', '/');
 }
@@ -378,9 +370,10 @@ export function buildRecipeRelease(recipePath: string, {
   const absoluteRecipe = realpathSync(resolve(recipePath));
   const root = realpathSync(resolve(trackRoot ?? dirname(dirname(dirname(absoluteRecipe)))));
   const plan = compileRecipeFile(absoluteRecipe, { trackRoot: root });
-  const rawRecipe = readJson(absoluteRecipe, 'recipe');
-  const trackManifestPath = join(root, 'track.json');
-  const trackManifest = compileTrackManifest(readJson(trackManifestPath, 'track manifest'), {
+  const rawRecipe = readDefinitionJson(absoluteRecipe, 'recipe');
+  const trackManifestPath = join(root, TRACK_MANIFEST_FILE);
+  const trackManifest = compileTrackManifest(
+    readDefinitionJson(trackManifestPath, 'track manifest'), {
     source: trackManifestPath,
   });
   const documents = taskDocuments(plan);
@@ -433,7 +426,8 @@ export function buildRecipeRelease(recipePath: string, {
 
   const scenarioDefinitions = Object.fromEntries(plan.execution.map(execution => {
     const path = join(root, execution.source);
-    const scenario = compileScenarioDefinition(readJson(path, 'scenario'), { source: path });
+    const scenario = compileScenarioDefinition(readDefinitionJson(path, 'scenario'),
+      { source: path });
     return [execution.source, {
       level: scenario.level,
       writeUrlPattern: scenario.writeUrlPattern ?? null,

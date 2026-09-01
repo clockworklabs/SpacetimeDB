@@ -1,7 +1,7 @@
 import { cpSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
 import type { GradeBundlePayload } from '../evidence/benchmark-run.js';
 import { classifyBundle } from '../evidence/outcomes.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
@@ -57,21 +57,22 @@ export function preserveFinalPackageEvidence(
   try {
     const from = join(appDir, 'stack-bench');
     const gradingDirectory = join(outputDir, 'grading');
-    if (!existsSync(join(from, 'bundle.json'))) {
-      throw new Error('final grader produced no bundle.json');
+    if (!existsSync(join(from, ARTIFACT_FILE.gradeBundle))) {
+      throw new Error(`final grader produced no ${ARTIFACT_FILE.gradeBundle}`);
     }
     rmSync(gradingDirectory, { recursive: true, force: true });
     cpSync(from, gradingDirectory, {
       recursive: true,
       filter: path => !/[\\/]media([\\/]|$)/.test(path),
     });
-    const bundle = readArtifactPayload<GradeBundlePayload>(join(gradingDirectory, 'bundle.json'), {
+    const bundle = readArtifactPayload<GradeBundlePayload>(
+      join(gradingDirectory, ARTIFACT_FILE.gradeBundle), {
       expectedKind: 'grade_bundle',
     });
     if (!source || bundle.source?.sha256 !== source.sha256) {
       throw new Error('final grading bundle does not match the preserved application source');
     }
-    grading = { directory: 'grading', artifact: 'grading/bundle.json',
+    grading = { directory: 'grading', artifact: `grading/${ARTIFACT_FILE.gradeBundle}`,
       sourceSha256: bundle.source.sha256 };
   } catch (error) {
     failures.push(`grading: ${message(error).split(/\r?\n/)[0]}`);

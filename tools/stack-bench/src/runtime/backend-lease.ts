@@ -128,6 +128,8 @@ export function loopbackHttpUri(value: unknown): URL {
   return url;
 }
 
+export const DEFAULT_SPACETIME_SERVER_URI = 'http://127.0.0.1:3210';
+
 export function newRunId({ track, backend, runIndex, now = new Date(), nonce = randomUUID() }: {
   track: string;
   backend: string;

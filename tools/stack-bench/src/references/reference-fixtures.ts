@@ -58,6 +58,7 @@ const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
+export const REFERENCE_METADATA_FILE = 'reference.json';
 const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb']);
 const STATUSES = new Set(['blocked', 'candidate', 'active']);
 const FIXTURE_KINDS = new Set(['node-api', 'spacetime']);
@@ -86,22 +87,6 @@ export function selectReferenceFixture(registry: ReferenceRegistry,
     throw new Error(`reference source requires exactly one ${track} L${level} ${backend} fixture for ${recipe ?? 'the default recipe'}`);
   }
   return match;
-}
-
-export interface ImportedReferenceFixture extends ReferenceFixture {
-  targetPath: string;
-  imported: { sourceSha256: string };
-}
-
-export function selectImportedReferenceFixture(registry: ReferenceRegistry,
-  selector: ReferenceFixtureSelector = {}): ImportedReferenceFixture {
-  const fixture = selectReferenceFixture(registry, selector);
-  if (typeof fixture.targetPath !== 'string' || !fixture.targetPath
-    || typeof fixture.imported?.sourceSha256 !== 'string' || !fixture.imported.sourceSha256) {
-    throw new Error(`reference fixture ${fixture.id} requires an imported source and target path`);
-  }
-  return { ...fixture, targetPath: fixture.targetPath,
-    imported: { ...fixture.imported, sourceSha256: fixture.imported.sourceSha256 } };
 }
 
 export function validateReferenceRegistry(registry: unknown,
@@ -250,7 +235,7 @@ export function inspectImportedReference(fixture: ReferenceFixture,
   const sourceHash = hashEffectiveFiles(source.files);
   if (sourceHash.sha256 !== fixture.imported?.sourceSha256) failures.push('imported fixture hash does not match registry');
   let metadata: unknown;
-  const metadataBytes = source.files.get('reference.json');
+  const metadataBytes = source.files.get(REFERENCE_METADATA_FILE);
   if (!metadataBytes) failures.push('reference.json is missing');
   else {
     try { metadata = JSON.parse(metadataBytes.toString('utf8')); }

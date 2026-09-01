@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
 import { compileScenarioDefinition } from './definition-compiler.js';
+import { readDefinitionJson } from './definition-plan.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -275,15 +276,6 @@ function identityFields(value: UnknownRecord, at: string, kind: string): void {
   version(value.version, `${at}.version`);
   if (!isMember(STATES, value.state)) fail(`${at}.state`, 'must be draft, qualified, or retired');
   string(value.title, `${at}.title`);
-}
-
-function readJson(path: string, label: string): unknown {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
-  }
 }
 
 function contained(root: string, from: string, path: unknown,
@@ -754,14 +746,15 @@ export function compileRecipeFile(recipePath: string,
     fail(recipeSource, `recipe dependency cycle: ${[...recipeStack, absoluteRecipe]
       .map(path => relative(root, path).replaceAll('\\', '/')).join(' -> ')}`);
   }
-  const recipe = compileRecipeDefinition(readJson(absoluteRecipe, 'recipe'), { source: recipeSource });
+  const recipe = compileRecipeDefinition(readDefinitionJson(absoluteRecipe, 'recipe'),
+    { source: recipeSource });
   if (recipe.track !== root.split(sep).at(-1)) {
     fail(`${recipeSource}.track`, `must match track directory ${root.split(sep).at(-1)}`);
   }
 
   const fixtureRef = contained(compositionRoot, dirname(absoluteRecipe), recipe.fixture.path,
     `${recipeSource}.fixture.path`);
-  const fixture = compileFixtureDefinition(readJson(fixtureRef.absolute, 'fixture'), {
+  const fixture = compileFixtureDefinition(readDefinitionJson(fixtureRef.absolute, 'fixture'), {
     source: relative(root, fixtureRef.absolute).replaceAll('\\', '/'),
   });
   if (fixture.id !== recipe.fixture.id || fixture.version !== recipe.fixture.version) {
@@ -788,7 +781,7 @@ export function compileRecipeFile(recipePath: string,
   for (const [index, selection] of recipe.packs.entries()) {
     const at = `${recipeSource}.packs[${index}]`;
     const packRef = contained(compositionRoot, dirname(absoluteRecipe), selection.path, `${at}.path`);
-    const pack = compilePackDefinition(readJson(packRef.absolute, 'pack'), {
+    const pack = compilePackDefinition(readDefinitionJson(packRef.absolute, 'pack'), {
       source: relative(root, packRef.absolute).replaceAll('\\', '/'),
     });
     if (pack.id !== selection.id || pack.version !== selection.version) {
@@ -972,7 +965,8 @@ export function compileRecipeFile(recipePath: string,
       const scenarioRef = contained(root, root, check.source, `${path}.${check.id}.source`);
       let scenario = scenarioCache.get(scenarioRef.relative);
       if (!scenario) {
-        scenario = compileScenarioDefinition(readJson(scenarioRef.absolute, 'scenario'), {
+        scenario = compileScenarioDefinition(
+          readDefinitionJson(scenarioRef.absolute, 'scenario'), {
           source: scenarioRef.relative,
         });
         scenarioCache.set(scenarioRef.relative, scenario);
@@ -1190,7 +1184,8 @@ export function compilePromotionFile(catalogPath: string,
   const root = resolve(trackRoot ?? dirname(dirname(absoluteCatalog)));
   const compositionRoot = resolve(root, 'composition');
   const source = relative(root, absoluteCatalog).replaceAll('\\', '/');
-  const catalog = compilePromotionDefinition(readJson(absoluteCatalog, 'promotion catalog'), { source });
+  const catalog = compilePromotionDefinition(
+    readDefinitionJson(absoluteCatalog, 'promotion catalog'), { source });
   const entries = catalog.entries.map((entry, index) => {
     const at = `${source}.entries[${index}].recipe`;
     const ref = contained(compositionRoot, dirname(absoluteCatalog), entry.recipe.path, `${at}.path`);

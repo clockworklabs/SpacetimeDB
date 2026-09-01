@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
-import { executeStackCapability, STACK_CAPABILITY_SCHEMA_VERSION } from './stack-adapter-contract.js';
+import { executeStackCapability } from './stack-adapter-contract.js';
+import { capability } from './stack-adapter-common.js';
 import { databaseContainerName } from './database-containers.js';
 
 import type { StackCapability } from './stack-adapter-contract.js';
@@ -62,12 +63,6 @@ function leaseHelpers(input: LeaseInput): LeaseHelpers {
   const { helpers } = input;
   if (!helpers) throw new Error('stack lease capability requires its helpers');
   return helpers;
-}
-
-
-function capability(id: string, operations: readonly string[],
-  execute: (operation: string, input: unknown) => unknown): StackCapability {
-  return { schemaVersion: STACK_CAPABILITY_SCHEMA_VERSION, id, version: '1.0.0', operations, execute };
 }
 
 function spacetimeLeaseProvider(): StackCapability {

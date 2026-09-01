@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
-import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
@@ -94,7 +94,7 @@ async function assertRefusesUnleasedCollision() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-container-collision-'));
   const app = join(root, 'app');
   const name = `stack-bench-${basename(root)}`;
-  const leasePath = join(root, 'backend-lease.json');
+  const leasePath = join(root, ARTIFACT_FILE.backendLease);
   let foreign = null;
   try {
     mkdirSync(app, { recursive: true });
@@ -189,10 +189,11 @@ async function main() {
     assert.match(marker.lease.resources.buildContainer.image, /^sha256:[0-9a-f]{64}$/,
       'build container lease did not record an immutable image id');
 
-    const evidencePath = join(out, 'backend-lease.json');
+    const evidencePath = join(out, ARTIFACT_FILE.backendLease);
     assert.ok(existsSync(evidencePath), `teardown did not preserve lease evidence:\n${output}`);
     const evidence = readArtifactPayload<FaultLeaseEvidence>(evidencePath, { expectedKind: 'backend_lease_evidence' });
-    const preflight = readArtifact(join(out, 'preflight.json'), { expectedKind: 'preflight' });
+    const preflight = readArtifact(join(out, ARTIFACT_FILE.preflight),
+      { expectedKind: 'preflight' });
     assert.equal(preflight.payload.ok, true, 'paid-run preflight did not pass');
     assert.equal(preflight.attempt.parentId, marker.lease.runId,
       'preflight evidence is not attached to the run it admitted');

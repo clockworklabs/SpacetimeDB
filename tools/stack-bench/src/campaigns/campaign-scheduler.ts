@@ -1,11 +1,15 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { z } from 'zod';
 
-import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, writeArtifact }
+  from '../evidence/artifacts.js';
 import { campaignIdentity, validateCompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
+import { formatZodError } from '../zod-error.js';
+import { CAMPAIGN_FILE } from './campaign-path.js';
 
 export const CAMPAIGN_STATE_SCHEMA_VERSION = 2;
 type AttemptStatus = 'pending' | 'running' | 'completed' | 'invalid';
@@ -109,22 +113,73 @@ export interface CampaignExecutionResult {
 }
 
 const ATTEMPT_STATUSES = new Set<AttemptStatus>(['pending', 'running', 'completed', 'invalid']);
-const EXECUTION_STATUSES = new Set<ExecutionStatus>(['running', 'completed', 'invalid']);
-const CAMPAIGN_STATUSES = new Set<CampaignStatus>(['prepared', 'running', 'completed', 'attention-required']);
 const TERMINAL_OUTCOMES = new Set<string>(['passed', 'app_failure']);
 const INVALID_OUTCOMES = new Set<string>(['provider_failure', 'harness_failure', 'inconclusive',
   'ungraded', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted']);
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const FEATURE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
-const object = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (message: string): never => { throw new Error(`invalid campaign state: ${message}`); };
 
-function timestamp(value: unknown, at: string): string {
-  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) fail(`${at} must be an ISO timestamp`);
-  return value as string;
-}
+const timestampSchema = z.string().refine(value => !Number.isNaN(Date.parse(value)),
+  'must be an ISO timestamp');
+const retrySchema = z.strictObject({
+  requested: z.boolean(),
+  transient: z.boolean(),
+  recoveryClean: z.boolean(),
+  budgetKnown: z.boolean(),
+  scheduled: z.boolean(),
+  cause: z.string().min(1).nullable(),
+  reason: z.string().min(1),
+});
+const continuationSchema = z.strictObject({
+  grantId: z.string().min(1),
+  level: z.number().int(),
+  nodeIds: z.array(z.string()),
+  strikes: z.number().int(),
+  stateSha256: z.string(),
+  resumeFrom: z.string(),
+  scheduledAt: timestampSchema,
+});
+const executionSchema = z.strictObject({
+  id: z.string().min(1),
+  ordinal: z.number().int(),
+  status: z.enum(['running', 'completed', 'invalid']),
+  output: z.string().min(1),
+  startedAt: timestampSchema,
+  completedAt: timestampSchema.nullable(),
+  exitCode: z.number().int().nullable(),
+  outcome: z.enum(['passed', 'app_failure', 'provider_failure', 'harness_failure',
+    'inconclusive', 'ungraded', 'contaminated', 'timed_out', 'missing_artifact',
+    'scheduler_interrupted']).nullable(),
+  reason: z.string().min(1).nullable(),
+  admissionId: z.string().min(1),
+  runIndex: z.number().int(),
+  retry: retrySchema.nullable().optional(),
+  continuation: continuationSchema.optional(),
+});
+const campaignStateSchema = z.strictObject({
+  schemaVersion: z.literal(CAMPAIGN_STATE_SCHEMA_VERSION),
+  campaignId: z.string().min(1),
+  campaignSha256: z.string().regex(HASH),
+  status: z.enum(['prepared', 'running', 'completed', 'attention-required']),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+  maxParallel: z.number().int(),
+  attempts: z.array(z.strictObject({
+    plan: z.looseObject({ id: z.string().min(1) }),
+    status: z.enum(['pending', 'running', 'completed', 'invalid']),
+    executions: z.array(executionSchema),
+  })).min(1),
+  summary: z.strictObject({
+    total: z.number().int(),
+    pending: z.number().int(),
+    running: z.number().int(),
+    completed: z.number().int(),
+    invalid: z.number().int(),
+    executions: z.number().int(),
+  }),
+});
 
 function string(value: unknown, at: string): string {
   if (typeof value !== 'string' || !value) fail(`${at} is required`);
@@ -146,64 +201,40 @@ function recalculate(state: CampaignState, now: string): CampaignState {
 }
 
 export function validateCampaignState(input: unknown): CampaignState {
-  if (!object(input)) fail('document must be an object');
-  const state = structuredClone(input) as CampaignState & Record<string, unknown>;
-  const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'status',
-    'createdAt', 'updatedAt', 'maxParallel', 'attempts', 'summary']);
-  for (const key of Object.keys(state)) if (!fields.has(key)) fail(`${key} is unknown`);
-  if (state.schemaVersion !== CAMPAIGN_STATE_SCHEMA_VERSION) fail('schemaVersion is unsupported');
-  string(state.campaignId, 'campaignId');
-  if (!/^[a-f0-9]{64}$/.test(state.campaignSha256)) fail('campaignSha256 is invalid');
-  if (!CAMPAIGN_STATUSES.has(state.status)) fail(`status ${state.status} is invalid`);
-  timestamp(state.createdAt, 'createdAt');
-  timestamp(state.updatedAt, 'updatedAt');
+  const parsed = campaignStateSchema.safeParse(structuredClone(input));
+  if (!parsed.success) {
+    fail(formatZodError(parsed.error, 'document'));
+  }
+  const state = parsed.data as unknown as CampaignState;
   if (!Number.isInteger(state.maxParallel) || state.maxParallel < 1
     || state.maxParallel > RUN_INDEX_CAP + 1) {
     fail(`maxParallel must be an integer from 1 through ${RUN_INDEX_CAP + 1}`);
   }
   if (Date.parse(state.updatedAt) < Date.parse(state.createdAt)) fail('updatedAt precedes createdAt');
-  if (!Array.isArray(state.attempts) || state.attempts.length === 0) fail('attempts must be non-empty');
   const ids = new Set<string>();
   let running = 0;
   const runningSlots = new Set<number>();
   for (const [index, attempt] of state.attempts.entries()) {
     const at = `attempts[${index}]`;
-    if (!object(attempt)) fail(`${at} must be an object`);
-    const allowed = new Set(['plan', 'status', 'executions']);
-    for (const key of Object.keys(attempt)) if (!allowed.has(key)) fail(`${at}.${key} is unknown`);
-    if (!object(attempt.plan)) fail(`${at}.plan must be an object`);
-    string(attempt.plan.id, `${at}.plan.id`);
     if (!SAFE_ID.test(attempt.plan.id)) fail(`${at}.plan.id is not a safe path component`);
     if (ids.has(attempt.plan.id)) fail(`${at}.plan.id duplicates ${attempt.plan.id}`);
     ids.add(attempt.plan.id);
-    if (!ATTEMPT_STATUSES.has(attempt.status as AttemptStatus)) fail(`${at}.status is invalid`);
-    if (!Array.isArray(attempt.executions)) fail(`${at}.executions must be an array`);
     let previousCompletedAt = null;
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
-      const executionFields = new Set(['id', 'ordinal', 'status', 'output', 'startedAt',
-        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId', 'runIndex', 'retry',
-        'continuation']);
-      if (!object(execution)) fail(`${executionAt} must be an object`);
-      for (const key of Object.keys(execution)) if (!executionFields.has(key)) fail(`${executionAt}.${key} is unknown`);
-      string(execution.id, `${executionAt}.id`);
-      string(execution.admissionId, `${executionAt}.admissionId`);
       if (!Number.isInteger(execution.runIndex) || execution.runIndex < 0
         || execution.runIndex >= state.maxParallel) fail(`${executionAt}.runIndex is invalid`);
       if (execution.ordinal !== executionIndex + 1) fail(`${executionAt}.ordinal is not contiguous`);
       if (execution.id !== `${attempt.plan.id}-execution${execution.ordinal}`) {
         fail(`${executionAt}.id does not match its attempt and ordinal`);
       }
-      if (!EXECUTION_STATUSES.has(execution.status as ExecutionStatus)) fail(`${executionAt}.status is invalid`);
       if (executionIndex < attempt.executions.length - 1 && execution.status !== 'invalid'
         && !(execution.status === 'completed' && execution.continuation !== undefined)) {
         fail(`${executionAt} is historical but not invalid`);
       }
-      string(execution.output, `${executionAt}.output`);
       if (execution.output !== `attempts/${attempt.plan.id}/execution-${execution.ordinal}`) {
         fail(`${executionAt}.output is not the exact execution directory`);
       }
-      timestamp(execution.startedAt, `${executionAt}.startedAt`);
       if (Date.parse(execution.startedAt) < Date.parse(state.createdAt)) {
         fail(`${executionAt}.startedAt precedes campaign creation`);
       }
@@ -220,35 +251,24 @@ export function validateCampaignState(input: unknown): CampaignState {
           fail(`${executionAt} running fields are inconsistent`);
         }
       } else {
-        const completedAt = timestamp(execution.completedAt, `${executionAt}.completedAt`);
+        const completedAt = execution.completedAt!;
         if (Date.parse(completedAt) < Date.parse(execution.startedAt)) {
           fail(`${executionAt}.completedAt precedes startedAt`);
         }
         previousCompletedAt = completedAt;
-        if (execution.exitCode !== null && !Number.isInteger(execution.exitCode)) fail(`${executionAt}.exitCode is invalid`);
-        const outcome = string(execution.outcome, `${executionAt}.outcome`);
+        const outcome = execution.outcome!;
         if (execution.status === 'completed'
           && (execution.exitCode !== 0 || execution.reason !== null)) fail(`${executionAt} completed fields are inconsistent`);
         if (execution.status === 'completed' && !TERMINAL_OUTCOMES.has(outcome)) {
           fail(`${executionAt}.outcome is not terminal`);
         }
         if (execution.status === 'invalid') {
-          string(execution.reason, `${executionAt}.reason`);
           if (!INVALID_OUTCOMES.has(outcome)) fail(`${executionAt}.outcome is not invalid`);
           if (execution.retry !== undefined) {
-            const retryInput: unknown = execution.retry;
-            if (!object(retryInput)) fail(`${executionAt}.retry must be an object`);
-            const retry = retryInput as Record<string, unknown>;
-            const retryFields = new Set(['requested', 'transient', 'recoveryClean', 'budgetKnown', 'scheduled',
-              'cause', 'reason']);
-            for (const key of Object.keys(retry)) {
-              if (!retryFields.has(key)) fail(`${executionAt}.retry.${key} is unknown`);
+            if (execution.retry === null) {
+              throw new Error(`invalid campaign state: ${executionAt}.retry must be an object`);
             }
-            for (const key of ['requested', 'transient', 'recoveryClean', 'budgetKnown', 'scheduled'] as const) {
-              if (typeof retry[key] !== 'boolean') fail(`${executionAt}.retry.${key} must be boolean`);
-            }
-            if (retry.cause !== null) string(retry.cause, `${executionAt}.retry.cause`);
-            string(retry.reason, `${executionAt}.retry.reason`);
+            const retry = execution.retry;
             if (retry.scheduled === true
               && (retry.requested !== true || retry.transient !== true
                 || retry.recoveryClean !== true || retry.budgetKnown !== true)) {
@@ -261,17 +281,9 @@ export function validateCampaignState(input: unknown): CampaignState {
         const continuation = execution.continuation;
         const continuationAt = `${executionAt}.continuation`;
         if (attempt.plan.mode?.id !== 'dependency' || execution.status !== 'completed'
-          || !object(continuation)) {
+          || continuation === undefined) {
           fail(`${continuationAt} requires a completed dependency execution`);
         }
-        const continuationFields = new Set([
-          'grantId', 'level', 'nodeIds', 'strikes', 'stateSha256', 'resumeFrom',
-          'scheduledAt',
-        ]);
-        for (const key of Object.keys(continuation)) {
-          if (!continuationFields.has(key)) fail(`${continuationAt}.${key} is unknown`);
-        }
-        string(continuation.grantId, `${continuationAt}.grantId`);
         if (!SAFE_ID.test(continuation.grantId)) {
           fail(`${continuationAt}.grantId is not a safe path component`);
         }
@@ -294,7 +306,6 @@ export function validateCampaignState(input: unknown): CampaignState {
         if (continuation.resumeFrom !== expectedResume) {
           fail(`${continuationAt}.resumeFrom is not the exact grant workspace`);
         }
-        timestamp(continuation.scheduledAt, `${continuationAt}.scheduledAt`);
         if (Date.parse(continuation.scheduledAt) < Date.parse(execution.completedAt!)) {
           fail(`${continuationAt}.scheduledAt precedes execution completion`);
         }
@@ -315,17 +326,16 @@ export function validateCampaignState(input: unknown): CampaignState {
     if (attempt.status === 'invalid' && latest?.status !== 'invalid') fail(`${at} has no invalid execution`);
   }
   if (running > state.maxParallel) fail('running executions exceed maxParallel');
-  if (!object(state.summary)) fail('summary must be an object');
   const expected = recalculate(structuredClone(state), state.updatedAt);
-  if (JSON.stringify(expected.summary) !== JSON.stringify(state.summary) || expected.status !== state.status) {
+  if (expected.status !== state.status
+    || Object.entries(expected.summary).some(([key, value]) => state.summary[key] !== value)) {
     fail('summary or status does not match attempts');
   }
   return state;
 }
 
-export function createCampaignState(input: unknown,
+export function createCampaignState(plan: CompiledCampaignPlan,
   { now = new Date().toISOString() }: { now?: string } = {}): CampaignState {
-  const plan = validateCompiledCampaignPlan(input);
   const identity = campaignIdentity(plan);
   const state: CampaignState = {
     schemaVersion: CAMPAIGN_STATE_SCHEMA_VERSION,
@@ -340,16 +350,16 @@ export function createCampaignState(input: unknown,
     summary: { total: 0, pending: 0, running: 0, completed: 0, invalid: 0,
       executions: 0 },
   };
-  return validateCampaignState(recalculate(state, now));
+  return recalculate(state, now);
 }
 
-export function claimNextAttempt(input: unknown, { now = new Date().toISOString(), admissionId }:
+export function claimNextAttempt(input: CampaignState, { now = new Date().toISOString(), admissionId }:
   { now?: string; admissionId?: string } = {}): {
     state: CampaignState;
     claim: CampaignClaim | null;
     capacityFull: boolean;
   } {
-  const state = validateCampaignState(input);
+  const state = structuredClone(input);
   const exactAdmissionId = string(admissionId, 'admissionId');
   const usedSlots = new Set(state.attempts.flatMap(attempt => attempt.executions
     .filter(execution => execution.status === 'running').map(execution => execution.runIndex)));
@@ -369,7 +379,7 @@ export function claimNextAttempt(input: unknown, { now = new Date().toISOString(
   attempt.executions.push({ id, ordinal, status: 'running', output, startedAt: now,
     completedAt: null, exitCode: null, outcome: null, reason: null, retry: null,
     admissionId: exactAdmissionId, runIndex });
-  return { state: validateCampaignState(recalculate(state, now)),
+  return { state: recalculate(state, now),
     claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex,
       resumeFrom, priorOutputs },
     capacityFull: false };
@@ -395,7 +405,7 @@ export function scheduleDependencyContinuation(input: unknown, attemptId: string
   execution.continuation = { ...structuredClone(continuation),
     nodeIds: [...(continuation?.nodeIds ?? [])].sort(), scheduledAt: now };
   attempt.status = 'pending';
-  return validateCampaignState(recalculate(state, now));
+  return recalculate(state, now);
 }
 
 export function classifyCampaignExecution({ exitCode = null, timedOut = false, run = null }:
@@ -421,7 +431,8 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
     reason: run.contamination?.verdict ?? 'run was contaminated' };
   if (exitCode !== 0) return { status: 'invalid', outcome: 'harness_failure',
     reason: `attempt process exited ${exitCode ?? 'without a code'}` };
-  if (!run) return { status: 'invalid', outcome: 'missing_artifact', reason: 'run.json was not produced' };
+  if (!run) return { status: 'invalid', outcome: 'missing_artifact',
+    reason: `${ARTIFACT_FILE.run} was not produced` };
   const outcome = run.outcome?.kind ?? 'ungraded';
   if (TERMINAL_OUTCOMES.has(outcome)) {
     return { status: 'completed', outcome: outcome as TerminalOutcome, reason: null };
@@ -434,11 +445,11 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
     reason: `unknown run outcome ${outcome}; exit code ${exitCode ?? 'missing'}` };
 }
 
-export function finishCampaignExecution(input: unknown, executionId: string,
+export function finishCampaignExecution(input: CampaignState, executionId: string,
   result: CampaignExecutionResult,
   { retryOn = [], retries = 0, now = new Date().toISOString() }:
   { retryOn?: string[]; retries?: number; now?: string } = {}): CampaignState {
-  const state = validateCampaignState(input);
+  const state = structuredClone(input);
   const attempt = state.attempts.find(candidate => candidate.executions.at(-1)?.id === executionId);
   if (!attempt || attempt.status !== 'running') throw new Error(`execution ${executionId} is not running`);
   const execution = attempt.executions.at(-1);
@@ -469,13 +480,13 @@ export function finishCampaignExecution(input: unknown, executionId: string,
     };
     attempt.status = scheduled ? 'pending' : 'invalid';
   }
-  return validateCampaignState(recalculate(state, now));
+  return recalculate(state, now);
 }
 
-export function markInterruptedExecution(input: unknown, executionId: string,
+export function markInterruptedExecution(input: CampaignState, executionId: string,
   { now = new Date().toISOString(), reason = 'scheduler process ended before recording completion',
     retryOn = [] }: { now?: string; reason?: string; retryOn?: string[] } = {}): CampaignState {
-  const state = validateCampaignState(input);
+  const state = structuredClone(input);
   const attempt = state.attempts.find(candidate => candidate.executions.at(-1)?.id === executionId);
   if (!attempt || attempt.status !== 'running') throw new Error(`execution ${executionId} is not running`);
   const execution = attempt.executions.at(-1);
@@ -489,7 +500,7 @@ export function markInterruptedExecution(input: unknown, executionId: string,
     recoveryClean: false, budgetKnown: false, scheduled: false, cause: null,
     reason: 'operator reconciliation is required after scheduler interruption' };
   attempt.status = 'invalid';
-  return validateCampaignState(recalculate(state, now));
+  return recalculate(state, now);
 }
 
 export interface CampaignPaths {
@@ -500,7 +511,7 @@ export interface CampaignPaths {
 
 function paths(directory: string): CampaignPaths {
   const root = resolve(directory);
-  return { root, plan: join(root, 'plan.json'), state: join(root, 'state.json') };
+  return { root, plan: join(root, CAMPAIGN_FILE.plan), state: join(root, CAMPAIGN_FILE.state) };
 }
 
 function identities(plan: CompiledCampaignPlan): ReturnType<typeof emptyArtifactIdentities> {

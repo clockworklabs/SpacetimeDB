@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -11,6 +11,7 @@ import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { RequestedScope } from './condition-compiler.js';
+import { campaignChildPath as contained } from './campaign-path.js';
 import { campaignExecutionEnvironment, campaignSlotEnvironment } from './campaign-runtime.js';
 
 const SMOKE_REUSE_MS = 15 * 60_000;
@@ -139,16 +140,6 @@ function validReport(value: unknown): value is CampaignAdmissionReport {
     && value.summary.failed === checks.filter(check => check.status === 'fail').length
     && value.summary.warnings === checks.filter(check => check.status === 'warn').length
     && value.ok === !checks.some(check => check.status === 'fail');
-}
-
-function contained(root: string, path: string, label: string): string {
-  const absoluteRoot = resolve(root);
-  const absolute = resolve(absoluteRoot, path);
-  const rel = relative(absoluteRoot, absolute);
-  if (rel === '..' || rel.startsWith(`..${sep}`) || rel === '') {
-    throw new Error(`${label} is not a child of the campaign directory`);
-  }
-  return absolute;
 }
 
 export function validateCampaignAdmission(

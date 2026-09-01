@@ -1,15 +1,11 @@
 import { validatePricingAuthority } from '../evidence/pricing-authority.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
+import { formatZodError } from '../zod-error.js';
+import { z } from 'zod';
 
 export const AGENT_ADAPTER_SCHEMA_VERSION = 5;
 
-const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
-  'defaultModel', 'apiKeyEnvironmentVariable', 'credentialEnvironmentVariables',
-  'credentialFiles', 'outboundDestinations', 'requiredExecutables', 'credentialStatusCommand',
-  'usesStackSkills', 'costLimit']);
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
-const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
-const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
 type UnknownRecord = Record<string, unknown>;
 export type AgentMode = 'build' | 'upgrade' | 'resume' | 'fix';
 export type AgentCostLimit = 'native' | 'non-billable' | 'unsupported';
@@ -59,76 +55,44 @@ export interface AgentAdapterRegistry {
 
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+const unique = (items: readonly string[]) => new Set(items).size === items.length;
+const environmentVariableSchema = z.string().regex(/^[A-Z][A-Z0-9_]*$/);
+const agentAdapterSchema = z.strictObject({
+  schemaVersion: z.literal(AGENT_ADAPTER_SCHEMA_VERSION),
+  id: z.string().regex(ID),
+  version: z.string().refine(isExactSemanticVersion),
+  entrypoint: z.string().min(1),
+  modes: z.array(z.enum(['build', 'upgrade', 'resume', 'fix'])).min(1).refine(unique),
+  deadlineMs: z.number().int().min(1_000),
+  defaultModel: z.string().min(1),
+  apiKeyEnvironmentVariable: environmentVariableSchema.nullable(),
+  credentialEnvironmentVariables: z.array(environmentVariableSchema).refine(unique),
+  credentialFiles: z.array(z.string().min(1).refine(item => !item.startsWith('/')
+    && !/^[A-Za-z]:[\\/]/.test(item) && !item.split(/[\\/]/).includes('..'))).refine(unique),
+  outboundDestinations: z.array(z.string().refine(item => {
+    try { return new URL(item).protocol === 'https:'; } catch { return false; }
+  })).refine(unique),
+  requiredExecutables: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/)).refine(unique),
+  credentialStatusCommand: z.array(z.string().min(1).refine(item => !/[\r\n\0]/.test(item)))
+    .min(1).nullable(),
+  usesStackSkills: z.boolean(),
+  costLimit: z.enum(['native', 'non-billable', 'unsupported']),
+});
 
 export function defineAgentAdapter(value: unknown): AgentAdapter {
-  if (!object(value)) throw new Error('agent adapter must be an object');
-  for (const key of Object.keys(value)) if (!FIELDS.has(key)) throw new Error(`agent adapter.${key} is unknown`);
-  if (value.schemaVersion !== AGENT_ADAPTER_SCHEMA_VERSION) throw new Error('agent adapter schema is unsupported');
-  if (typeof value.id !== 'string' || !ID.test(value.id)) throw new Error('agent adapter.id is invalid');
-  if (!isExactSemanticVersion(value.version)) {
-    throw new Error(`agent adapter ${value.id}.version is invalid`);
+  const parsed = agentAdapterSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(formatZodError(parsed.error, 'agent adapter'));
   }
-  if (typeof value.entrypoint !== 'string' || !value.entrypoint) {
-    throw new Error(`agent adapter ${value.id}.entrypoint is required`);
-  }
-  if (!Array.isArray(value.modes) || value.modes.length === 0
-    || value.modes.some(mode => !MODES.has(mode)) || new Set(value.modes).size !== value.modes.length) {
-    throw new Error(`agent adapter ${value.id}.modes is invalid`);
-  }
-  if (typeof value.deadlineMs !== 'number'
-    || !Number.isInteger(value.deadlineMs) || value.deadlineMs < 1_000) {
-    throw new Error(`agent adapter ${value.id}.deadlineMs is invalid`);
-  }
-  if (typeof value.defaultModel !== 'string' || !value.defaultModel) {
-    throw new Error(`agent adapter ${value.id}.defaultModel is required`);
-  }
-  if (typeof value.costLimit !== 'string' || !COST_LIMITS.has(value.costLimit)) {
-    throw new Error(`agent adapter ${value.id}.costLimit is invalid`);
-  }
-  if (typeof value.usesStackSkills !== 'boolean') {
-    throw new Error(`agent adapter ${value.id}.usesStackSkills is invalid`);
-  }
-  if (value.credentialStatusCommand !== null
-    && (!Array.isArray(value.credentialStatusCommand) || value.credentialStatusCommand.length === 0
-      || value.credentialStatusCommand.some(item => typeof item !== 'string' || !item
-        || /[\r\n\0]/.test(item)))) {
-    throw new Error(`agent adapter ${value.id}.credentialStatusCommand is invalid`);
-  }
-  if (value.apiKeyEnvironmentVariable !== null
-    && (typeof value.apiKeyEnvironmentVariable !== 'string'
-      || !/^[A-Z][A-Z0-9_]*$/.test(value.apiKeyEnvironmentVariable))) {
-    throw new Error(`agent adapter ${value.id}.apiKeyEnvironmentVariable is invalid`);
-  }
-  const relativeCredential = (item: unknown): boolean => typeof item === 'string' && Boolean(item)
-    && !item.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(item)
-    && !item.split(/[\\/]/).includes('..');
-  const secureDestination = (item: unknown): boolean => {
-    if (typeof item !== 'string') return false;
-    try { return new URL(item).protocol === 'https:'; } catch { return false; }
-  };
-  const arrayFields: Array<[string, (item: unknown) => boolean]> = [
-    ['credentialEnvironmentVariables', (item: unknown) => typeof item === 'string'
-      && /^[A-Z][A-Z0-9_]*$/.test(item)],
-    ['credentialFiles', relativeCredential],
-    ['outboundDestinations', secureDestination],
-    ['requiredExecutables', (item: unknown) => typeof item === 'string'
-      && /^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(item)],
-  ];
-  for (const [field, validate] of arrayFields) {
-    const items = value[field];
-    if (!Array.isArray(items) || items.some(item => !validate(item))
-      || new Set(items).size !== items.length) {
-      throw new Error(`agent adapter ${value.id}.${field} is invalid`);
-    }
-  }
-  return Object.freeze({ ...value, modes: Object.freeze([...(value.modes as string[])].sort()),
+  const adapter = parsed.data;
+  return Object.freeze({ ...adapter, modes: Object.freeze([...adapter.modes].sort()),
     credentialEnvironmentVariables: Object.freeze(
-      [...value.credentialEnvironmentVariables as string[]].sort()),
-    credentialFiles: Object.freeze([...value.credentialFiles as string[]].sort()),
-    outboundDestinations: Object.freeze([...value.outboundDestinations as string[]].sort()),
-    requiredExecutables: Object.freeze([...value.requiredExecutables as string[]].sort()),
-    credentialStatusCommand: value.credentialStatusCommand === null ? null
-      : Object.freeze([...value.credentialStatusCommand as string[]]) }) as unknown as AgentAdapter;
+      [...adapter.credentialEnvironmentVariables].sort()),
+    credentialFiles: Object.freeze([...adapter.credentialFiles].sort()),
+    outboundDestinations: Object.freeze([...adapter.outboundDestinations].sort()),
+    requiredExecutables: Object.freeze([...adapter.requiredExecutables].sort()),
+    credentialStatusCommand: adapter.credentialStatusCommand === null ? null
+      : Object.freeze([...adapter.credentialStatusCommand]) });
 }
 
 export function createAgentAdapterRegistry(adapters: unknown): AgentAdapterRegistry {

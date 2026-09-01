@@ -17,7 +17,12 @@ const defaultImageInspectRunner: ImageInspectRunner = (command, args, options) =
   execFileSync(command, [...args], options);
 
 export function isExactImageReference(value: unknown): value is string {
-  return typeof value === 'string' && EXACT_IMAGE_REFERENCE.test(value);
+  return typeof value === 'string' && !value.includes('://') && EXACT_IMAGE_REFERENCE.test(value);
+}
+
+export function parseExactImageReference(value: unknown): ResolvedContainerImage | null {
+  if (!isExactImageReference(value)) return null;
+  return { reference: value, id: value.slice(value.indexOf('@') + 1) };
 }
 
 export function parseImageId(value: unknown): string {

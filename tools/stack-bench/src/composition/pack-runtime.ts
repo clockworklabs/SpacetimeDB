@@ -34,7 +34,7 @@ export interface AggregatedPackRuntimeEvidence {
   packs: AggregatedPackRuntimeMeasurement[];
 }
 
-function positiveInteger(value: unknown, at: string): number {
+export function nonNegativeInteger(value: unknown, at: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
     throw new Error(`${at} must be a non-negative integer`);
   }
@@ -73,7 +73,7 @@ export function measureGradePackRuntime(report: CompletedGradeReport): PackRunti
       seen.add(stableKey);
       featurePacks.add(packId);
       const evidence = criterionEvidence(criterion);
-      const durationMs = positiveInteger(evidence.timing.durationMs, `${stableKey} durationMs`);
+      const durationMs = nonNegativeInteger(evidence.timing.durationMs, `${stableKey} durationMs`);
       const current = totals.get(packId) ?? {
         id: packId,
         checkCount: 0,
@@ -93,7 +93,7 @@ export function measureGradePackRuntime(report: CompletedGradeReport): PackRunti
     if (setupEvidence.phase !== 'setup') {
       throw new Error(`feature ${String(feature.id ?? '<unknown>')}.setupEvidence must use setup phase`);
     }
-    const setupRuntimeMs = positiveInteger(
+    const setupRuntimeMs = nonNegativeInteger(
       setupEvidence.timing.durationMs,
       `feature ${String(feature.id ?? '<unknown>')} setup durationMs`,
     );
@@ -138,13 +138,13 @@ export function aggregatePackRuntime(
     for (const measured of report.packRuntime.packs) {
       const definition = definitions.get(measured.id);
       if (!definition) throw new Error(`suite measured unselected pack ${measured.id}`);
-      const checkCount = positiveInteger(measured.checkCount, `${measured.id} checkCount`);
-      const setupRuntimeMs = positiveInteger(measured.setupRuntimeMs, `${measured.id} setupRuntimeMs`);
-      const criterionRuntimeMs = positiveInteger(
+      const checkCount = nonNegativeInteger(measured.checkCount, `${measured.id} checkCount`);
+      const setupRuntimeMs = nonNegativeInteger(measured.setupRuntimeMs, `${measured.id} setupRuntimeMs`);
+      const criterionRuntimeMs = nonNegativeInteger(
         measured.criterionRuntimeMs,
         `${measured.id} criterionRuntimeMs`,
       );
-      const measuredRuntimeMs = positiveInteger(
+      const measuredRuntimeMs = nonNegativeInteger(
         measured.measuredRuntimeMs,
         `${measured.id} measuredRuntimeMs`,
       );

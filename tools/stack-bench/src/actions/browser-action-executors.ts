@@ -2,6 +2,7 @@ import { actionImplementation, ActionApplicationFailure } from './action-contrac
 import type {
   ActionImplementation,
 } from './action-contract.js';
+import { actorFor, fail, pad } from './actor-action-runtime.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 
@@ -122,14 +123,7 @@ type ActorsWithInput = Omit<CommonInput, 'actor'> & {
   readonly maxEach?: number;
 };
 
-const fail = (message: string): never => { throw new ActionApplicationFailure(message); };
 const escapePattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-function actorFor(capabilities: BrowserCapabilities, name: string): BrowserActor {
-  const actor = capabilities.actors.get(name);
-  if (!actor) throw new Error(`harness did not create actor "${name}"`);
-  return actor;
-}
 
 function interaction(capabilities: BrowserCapabilities): BrowserCapability {
   return capabilities['browser-interaction'];
@@ -166,9 +160,6 @@ export function parseRenderedNumber(text: string | null | undefined): number | n
   const match = (text ?? '').replace(/[,\u00a0]/g, '').match(/-?\d+(\.\d+)?/);
   return match ? Number(match[0]) : null;
 }
-
-const pad = (index: number, count: number): string =>
-  String(index).padStart(String(count).length, '0');
 
 async function clearInput({ input, capabilities }: BrowserArguments<{ actor: string }>) {
   await actorFor(capabilities, input.actor).loc('message-input').fill('');

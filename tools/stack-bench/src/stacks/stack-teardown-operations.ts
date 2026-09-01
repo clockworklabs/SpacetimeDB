@@ -1,4 +1,5 @@
-import { readBackendLease, updateBackendLease } from '../runtime/backend-lease.js';
+import { loopbackHttpUri, readBackendLease, updateBackendLease }
+  from '../runtime/backend-lease.js';
 import { killDetachedTree, killTree, pidsOnPort, processIdentityMatches, sleepSync }
   from '../runtime/platform.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
@@ -81,8 +82,9 @@ export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false }:
     console.error(`  REFUSED to stop SpacetimeDB from lease state ${lease.state}`);
     return false;
   }
-  const url = leaseUrl(lease.resources.serverUri);
-  if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || !url.port) {
+  let url: URL;
+  try { url = loopbackHttpUri(lease.resources.serverUri); }
+  catch {
     console.error(`  REFUSED to stop non-loopback SpacetimeDB target ${lease.resources.serverUri}`);
     return false;
   }

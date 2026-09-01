@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { currentEngineIdentity } from '../evidence/artifacts.js';
 import { sha256 } from '../evidence/provenance.js';
 import { validateReleaseManifest } from '../releases/release-manifest.js';
+import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
 
 interface CampaignRuntimePlan {
   state: string;
@@ -76,12 +77,7 @@ export function campaignSlotEnvironment(env: NodeJS.ProcessEnv, stack: string | 
   runIndex: number): NodeJS.ProcessEnv {
   const executionEnv = { ...env };
   if (stack !== 'spacetime') return executionEnv;
-  const base = new URL(executionEnv.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210');
-  if (base.protocol !== 'http:'
-    || !['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname)
-    || !base.port) {
-    throw new Error(`STACK_BENCH_STDB_URI must be an explicit loopback port, got ${base}`);
-  }
+  const base = loopbackHttpUri(executionEnv.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
   const port = Number(base.port) + runIndex;
   if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535) {
     throw new Error(`campaign run slot ${runIndex} cannot allocate a SpacetimeDB host port`);

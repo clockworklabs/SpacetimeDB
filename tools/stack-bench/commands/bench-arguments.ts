@@ -16,6 +16,8 @@ import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
   ProgressionInput } from '../src/progression/progression-definition.js';
 import { validatePricingAuthority } from '../src/evidence/pricing-authority.js';
 import type { PricingAuthority } from '../src/evidence/pricing-authority.js';
+import { parseGuidanceMode } from '../src/campaigns/condition-compiler.js';
+import type { GuidanceMode } from '../src/campaigns/condition-compiler.js';
 
 type StudyCondition = CampaignAttemptPlan['condition'];
 type UnknownRecord = Record<string, unknown>;
@@ -38,7 +40,7 @@ export interface BenchArguments {
   url?: string;
   media: boolean;
   retainBackend?: boolean;
-  guidance: string;
+  guidance: GuidanceMode;
   guidanceDocument?: unknown;
   condition?: StudyCondition;
   selectionRequest?: CampaignSelection;
@@ -77,11 +79,6 @@ export interface BenchArguments {
   dependencyPolicy?: ProgressionInput<CompiledDependencyPolicyDefinition>;
   progression?: ProgressionInput<CompiledProgressionDefinition>;
   progressionOwner?: UnknownRecord;
-}
-
-function normalizeGuidance(value: string): 'neutral' | 'prescribed' {
-  if (value === 'neutral' || value === 'prescribed') return value;
-  throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
 }
 
 interface BenchCliOptions extends Partial<BenchArguments> {
@@ -135,7 +132,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
   for (const key of ['pricingJson', 'expectedMutationCalibrationJson']) {
     if (typeof parsed[key] === 'string') parsed[key] = JSON.parse(parsed[key]);
   }
-  if (typeof parsed.guidance === 'string') parsed.guidance = normalizeGuidance(parsed.guidance);
+  if (typeof parsed.guidance === 'string') parsed.guidance = parseGuidanceMode(parsed.guidance);
   if (typeof parsed.skills === 'string') parsed.skills = parsed.skills.split(',').filter(Boolean);
   if (parsed.noMedia === true) parsed.media = false;
   delete parsed.noMedia;
@@ -261,7 +258,7 @@ function bindCampaign(args: BenchArguments): void {
   args.model = attempt.model;
   args.agentAdapter = attempt.agentAdapter;
   args.pricing = validatePricingAuthority(attempt.pricing, { at: 'compiled campaign pricing' });
-  args.guidance = attempt.guidance;
+  args.guidance = parseGuidanceMode(attempt.guidance);
   args.condition = structuredClone(attempt.condition);
   args.skills = structuredClone(attempt.skills);
   args.selectionRequest = structuredClone(plan.definition.selection);

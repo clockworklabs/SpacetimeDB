@@ -130,7 +130,10 @@ export function inconclusive(message: string): never {
   throw new ActionInconclusive(message);
 }
 
-export function actorFor(capabilities: ActorCapabilities, name: string): Actor {
+export function actorFor<T>(
+  capabilities: { readonly actors: { get(name: string): T | undefined } },
+  name: string,
+): T {
   const actor = capabilities.actors.get(name);
   if (!actor) throw new Error(`harness did not create actor "${name}"`);
   return actor;

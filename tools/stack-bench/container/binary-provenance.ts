@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { binarySourceIdentity, SOURCE_IDENTITY_SCHEME }
   from '../src/releases/release-source.js';
+import { STACK_BENCH_RUNNER_PLATFORM } from '../src/runtime/runner-environment.js';
 
 export const RUST_BUILDER_IMAGE =
   'rust:1.93-slim-bookworm@sha256:8f8609d448e821fbc0e44241bc5ca4ce49663cc6306ff1a17f655a0e2a7cd084';
@@ -27,7 +28,7 @@ interface BinaryRecord {
 
 interface BinaryProvenance {
   schemaVersion: 2;
-  platform: 'linux/amd64';
+  platform: typeof STACK_BENCH_RUNNER_PLATFORM;
   builderImage: string;
   source: BinarySourceIdentity;
   binaries: Record<string, BinaryRecord>;
@@ -80,7 +81,7 @@ export function createBinaryProvenance(stackBenchRoot: string,
   for (const name of BINARY_NAMES) binaries[name] = inspectBinary(binaryPath(stackBenchRoot, name), name);
   return {
     schemaVersion: 2,
-    platform: 'linux/amd64',
+    platform: STACK_BENCH_RUNNER_PLATFORM,
     builderImage: RUST_BUILDER_IMAGE,
     source: { identityScheme: source.identityScheme,
       revision: source.revision, sha256: source.sha256, files: source.files },
@@ -119,7 +120,9 @@ export function verifyBinaryProvenance(stackBenchRoot: string,
   assertSha256(sourceSha256, 'expected binary source identity');
   const manifest = readProvenance(stackBenchRoot);
   if (manifest.schemaVersion !== 2) throw new Error('unsupported binary provenance schema');
-  if (manifest.platform !== 'linux/amd64') throw new Error('binary provenance platform must be linux/amd64');
+  if (manifest.platform !== STACK_BENCH_RUNNER_PLATFORM) {
+    throw new Error(`binary provenance platform must be ${STACK_BENCH_RUNNER_PLATFORM}`);
+  }
   if (manifest.builderImage !== RUST_BUILDER_IMAGE) {
     throw new Error('binary provenance does not use the pinned Rust builder image');
   }

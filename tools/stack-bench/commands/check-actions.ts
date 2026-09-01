@@ -6,12 +6,9 @@ import { join } from 'node:path';
 import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
+import { TRACK_MANIFEST_FILE, TRACKS_DIR } from '../src/composition/tracks.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
-
-const TRACKS = join(STACK_BENCH_ROOT, 'tracks');
 
 interface CheckActionsArgs {
   backend?: string;
@@ -62,7 +59,8 @@ const backend = args.backend;
 if (!backend) throw new Error('--backend is required');
 
 // Use non-writing probes declared by the selected track.
-const track = args.track ? JSON.parse(readFileSync(join(TRACKS, args.track, 'track.json'), 'utf8')) as {
+const track = args.track
+  ? JSON.parse(readFileSync(join(TRACKS_DIR, args.track, TRACK_MANIFEST_FILE), 'utf8')) as {
   actions?: NamedAction[];
 } : null;
 const ACTIONS = (track?.actions ?? []).map(action => ({ ...action, http: { method: 'POST', path: action.path } }));

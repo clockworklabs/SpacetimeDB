@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 
-import { actionImplementation, ActionApplicationFailure,
-  ActionInconclusive } from './action-contract.js';
+import { actionImplementation } from './action-contract.js';
 import type {
   ActionImplementation,
 } from './action-contract.js';
+import { actorFor, fail, inconclusive } from './actor-action-runtime.js';
 import { evidenceDisposition } from '../evidence/check-evidence.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
 import { replayHeaders } from './actor-transport-action-executors.js';
@@ -165,9 +165,6 @@ const errorEvidence = (error: unknown): NestedActionEvidence | null => {
   return evidence !== null && typeof evidence === 'object' ? evidence as NestedActionEvidence : null;
 };
 
-const fail = (message: string): never => { throw new ActionApplicationFailure(message); };
-const inconclusive = (message: string): never => { throw new ActionInconclusive(message); };
-
 export function databaseWriteFailureDetail(error: unknown): string {
   const value = errorShape(error);
   const details = [value.message, value.stdout, value.stderr]
@@ -196,12 +193,6 @@ async function dispatchNested(
     }
     throw error;
   }
-}
-
-function actorFor(capabilities: LifecycleConcurrencyCapabilities, name: string): Actor {
-  const actor = capabilities.actors.get(name);
-  if (!actor) throw new Error(`harness did not create actor "${name}"`);
-  return actor;
 }
 
 async function replayConcurrently(

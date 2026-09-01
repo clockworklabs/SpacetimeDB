@@ -20,6 +20,7 @@ import type { ContainerAuth } from './container-auth.js';
 import { killTree } from '../src/runtime/platform.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.js';
+import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import { validatePricingRates as validateSharedPricingRates } from '../src/evidence/pricing-authority.js';
 
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -36,8 +37,7 @@ const BROKER_STOP_FORCE_MS = 2_000;
 const BROKER_SERVER_CLOSE_GRACE_MS = 1_000;
 const USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'] as const;
 
-export type ClaudeUsage = { input: number; output: number; cacheRead: number;
-  cacheWrite5m: number; cacheWrite1h: number };
+export type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 export type PricingRates = ReturnType<typeof validateSharedPricingRates>;
 type JsonRecord = Record<string, unknown>;
 export type BrokerMode = 'api-key' | 'subscription-token';
@@ -1008,7 +1008,7 @@ export async function stopCredentialBroker(broker: CredentialBrokerHandle | null
 function parseArgs(argv: string[]): string {
   const { values } = parseNodeArgs({ args: argv, options: { config: { type: 'string' } } });
   const configPath = values.config;
-  if (!configPath) fail('use --config <private-file>');
+  if (!configPath || argv.length !== 2) fail('use --config <private-file>');
   return resolve(configPath);
 }
 

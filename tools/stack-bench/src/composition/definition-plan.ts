@@ -6,7 +6,7 @@ import {
   compileScenarioDefinition,
   compileTrackManifest,
 } from './definition-compiler.js';
-import { TRACKS_DIR } from './tracks.js';
+import { TRACK_MANIFEST_FILE, TRACKS_DIR } from './tracks.js';
 
 export type CanonicalDefinition = null | boolean | number | string
   | CanonicalDefinition[] | { [key: string]: CanonicalDefinition };
@@ -16,12 +16,12 @@ const record = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.getPrototypeOf(value) === Object.prototype;
 
-function readJson(path: string): unknown {
+export function readDefinitionJson<T = unknown>(path: string, label = 'benchmark definition'): T {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`cannot read benchmark definition ${path}: ${message}`, { cause: error });
+    throw new Error(`cannot read ${label} ${path}: ${message}`, { cause: error });
   }
 }
 
@@ -63,8 +63,8 @@ export function compileTrackPlan(name: string, {
     throw new Error(`invalid track name ${JSON.stringify(name)}`);
   }
   const track = containedPath(tracksDir, name, 'track').path;
-  const manifestPath = containedPath(track, 'track.json', 'manifest').path;
-  const manifest = compileTrackManifest(readJson(manifestPath), { source: manifestPath });
+  const manifestPath = containedPath(track, TRACK_MANIFEST_FILE, 'manifest').path;
+  const manifest = compileTrackManifest(readDefinitionJson(manifestPath), { source: manifestPath });
   const scenarios = new Map<string, unknown>();
   const levels: Array<{ level: number; suites: Array<{
     id: string; inherit: 'none' | 'all-higher-levels'; scenario: string;
@@ -76,7 +76,8 @@ export function compileTrackPlan(name: string, {
     const suites = declaredSuites.map(suite => {
       const spec = containedPath(track, suite.spec, `L${level} suite ${suite.id}`);
       if (!scenarios.has(spec.relative)) {
-        scenarios.set(spec.relative, compileScenarioDefinition(readJson(spec.path), { source: spec.path }));
+        scenarios.set(spec.relative,
+          compileScenarioDefinition(readDefinitionJson(spec.path), { source: spec.path }));
       }
       return { id: suite.id, inherit: suite.inherit, scenario: spec.relative };
     });

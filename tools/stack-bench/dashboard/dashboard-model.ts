@@ -6,7 +6,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import type { CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
-import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
+import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
@@ -14,6 +14,7 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { validateCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { dependencyProgress } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
+import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
 
 const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;
@@ -137,20 +138,20 @@ function artifactId(relativePath: string): string {
 
 function artifactLabel(path: string): string {
   const name = basename(path);
-  if (path === 'plan.json') return 'Frozen plan';
-  if (path === 'state.json') return 'Campaign state';
-  if (path === 'report/report.html') return 'Campaign report';
-  if (path === 'report/report.json') return 'Report data';
-  if (name === 'run.json') return 'Run result';
-  if (name === 'preflight.json') return 'Preflight result';
-  if (name === 'recovery.json') return 'Recovery record';
-  if (name === 'progression-state.json') return 'Dependency progress';
+  if (path === CAMPAIGN_FILE.plan) return 'Frozen plan';
+  if (path === CAMPAIGN_FILE.state) return 'Campaign state';
+  if (path === `report/${CAMPAIGN_FILE.reportHtml}`) return 'Campaign report';
+  if (path === `report/${CAMPAIGN_FILE.reportJson}`) return 'Report data';
+  if (name === ARTIFACT_FILE.run) return 'Run result';
+  if (name === ARTIFACT_FILE.preflight) return 'Preflight result';
+  if (name === ARTIFACT_FILE.recovery) return 'Recovery record';
+  if (name === ARTIFACT_FILE.progressionState) return 'Dependency progress';
   if (name === 'process.stdout.log') return 'Run output';
   if (name === 'process.stderr.log') return 'Run errors';
   if (name === 'backend.log') return 'Backend output';
-  if (name === 'bundle.json') return `${basename(dirname(path))} bundle`;
-  if (name === 'actions.json') return `${basename(dirname(path))} actions`;
-  if (name === 'contract-lint.json') return `${basename(dirname(path))} contract check`;
+  if (name === ARTIFACT_FILE.gradeBundle) return `${basename(dirname(path))} bundle`;
+  if (name === ARTIFACT_FILE.actions) return `${basename(dirname(path))} actions`;
+  if (name === ARTIFACT_FILE.contractLint) return `${basename(dirname(path))} contract check`;
   return name.replace(/[-_]/g, ' ');
 }
 
@@ -216,7 +217,8 @@ function walkPublicExecutionArtifacts(campaignDirectory: string, executionDirect
 }
 
 function campaignPackage(campaignDirectory: string, attempts: CampaignAttemptState[]) {
-  const campaign = ['plan.json', 'state.json', 'report/report.html', 'report/report.json']
+  const campaign = [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state,
+    `report/${CAMPAIGN_FILE.reportHtml}`, `report/${CAMPAIGN_FILE.reportJson}`]
     .filter(path => existsSync(join(campaignDirectory, path)))
     .map(path => artifactMetadata(campaignDirectory, path));
   const executions: Array<{
@@ -421,10 +423,10 @@ export function campaignFacts(plan: CampaignFactsPlan) {
 
 function readDashboardCampaignState(directory: string) {
   const plan = validateCompiledCampaignPlan(
-    readArtifact(join(directory, 'plan.json'), { expectedKind: 'campaign_plan' }).payload,
+    readArtifact(join(directory, CAMPAIGN_FILE.plan), { expectedKind: 'campaign_plan' }).payload,
     { requireCurrentInputs: false });
   const state = validateCampaignState(
-    readArtifact(join(directory, 'state.json'), { expectedKind: 'campaign_state' }).payload);
+    readArtifact(join(directory, CAMPAIGN_FILE.state), { expectedKind: 'campaign_state' }).payload);
   if (state.campaignId !== plan.id || state.campaignSha256 !== plan.contentSha256
     || state.maxParallel !== plan.summary.parallelism
     || canonicalDefinitionJson(state.attempts.map(attempt => attempt.plan))
@@ -450,7 +452,7 @@ function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptSt
     // When the run last wrote anything. A running attempt whose output has
     // been silent for a long time is wedged in a way no score can show.
     if (existsSync(logPath)) logUpdatedAt = new Date(statSync(logPath).mtimeMs).toISOString();
-    run = readRun(join(executionDirectory, 'run.json'), plan, attempt.plan);
+    run = readRun(join(executionDirectory, ARTIFACT_FILE.run), plan, attempt.plan);
   }
   const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running',
     status: attempt.status });
@@ -551,7 +553,8 @@ export function discoverCampaigns(campaignsRoot: string, {
   for (const entry of readdirSync(campaignsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const directory = join(campaignsRoot, entry.name);
-    if (!existsSync(join(directory, 'state.json')) || !existsSync(join(directory, 'plan.json'))) continue;
+    if (!existsSync(join(directory, CAMPAIGN_FILE.state))
+      || !existsSync(join(directory, CAMPAIGN_FILE.plan))) continue;
     try {
       campaigns.push(summarizeCampaign(directory, { includeLogs, controllerActive }));
     } catch (error) {

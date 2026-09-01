@@ -22,7 +22,8 @@ import { clearMissingBuildContainerLease,
 import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
   removeFailedBuildContainer } from './reconcile-build-container.js';
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
-import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
+import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
+  CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommand }
   from '../src/runtime/coding-container-policy.js';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
@@ -263,7 +264,7 @@ function hasRequiredIsolation(container: InspectedContainer, expectedMounts: Con
 }
 
 const expectedMounts: ContainerMount[] = [
-  { kind: 'bind' as const, source: resolve(appDir), target: '/app', readOnly: false },
+  { kind: 'bind' as const, source: resolve(appDir), target: CODING_CONTAINER_APP_ROOT, readOnly: false },
   ...(projects ? [{ kind: 'bind' as const, source: projects,
     target: `${AGENT_HOME}/.claude/projects/-app`, readOnly: false }] : []),
   ...containerPlan.mounts,
@@ -352,7 +353,7 @@ if (!existing) {
     // The agent may write the app, its own home directory, and temporary files.
     // It must not replace system binaries or libraries used by later grading.
     '--read-only',
-    '-v', `${resolve(appDir)}:/app`,
+    '-v', `${resolve(appDir)}:${CODING_CONTAINER_APP_ROOT}`,
   ];
   for (const capability of REQUIRED_CAPABILITIES) create.push('--cap-add', capability);
   for (const [path, options] of Object.entries(REQUIRED_TMPFS)) {
@@ -385,7 +386,7 @@ if (!existing) {
   // build leaves behind are reparented to `sleep`, which never reaps them.
   const init = 'export HOME=/tmp npm_config_cache=/tmp/npm-cache; '
     + containerPlan.init;
-  create.push('-w', '/app', image, 'sh', '-c', init);
+  create.push('-w', CODING_CONTAINER_APP_ROOT, image, 'sh', '-c', init);
 
   const made = spawnSync('docker', create, {
     encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS,
@@ -549,7 +550,7 @@ if (prepareOnly) {
   process.exit(0);
 }
 
-const args = ['exec', '-i', '--user', `${AGENT_UID}:${AGENT_GID}`, '-w', '/app'];
+const args = ['exec', '-i', '--user', `${AGENT_UID}:${AGENT_GID}`, '-w', CODING_CONTAINER_APP_ROOT];
 
 args.push('-e', `HOME=${AGENT_ENVIRONMENT.HOME}`, '-e', `USER=${AGENT_ENVIRONMENT.USER}`,
   '-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
@@ -575,7 +576,7 @@ const claudeArgs = [
   // The app is the only directory a session may reach; inside the container
   // that is all there is, but the flag is kept so host and container runs are
   // configured identically.
-  '--add-dir', '/app',
+  '--add-dir', CODING_CONTAINER_APP_ROOT,
   ...(resumeSession !== null ? ['--resume', resumeSession] : []),
 ];
 // Record the exact remote PID. Killing the local `docker exec` client does not
@@ -656,7 +657,7 @@ try {
     });
   }
   const appMode = process.env.STACK_BENCH_APPLIANCE === '1' ? 'u+rwX,go-rwx' : 'a+rwX';
-  spawnSync('docker', ['exec', containerName, 'chmod', '-R', appMode, '/app'], {
+  spawnSync('docker', ['exec', containerName, 'chmod', '-R', appMode, CODING_CONTAINER_APP_ROOT], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
   spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {
