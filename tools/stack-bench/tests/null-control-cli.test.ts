@@ -6,7 +6,7 @@ import test from 'node:test';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { compileCalibrationFile } from '../src/composition/calibration-compiler.js';
 import { nullControlSuites, parseNullControlArgs,
-  selectNullQualificationBinding } from '../commands/null-control.js';
+  createNullQualification, selectNullQualificationBinding } from '../commands/null-control.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeCheck } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
@@ -99,6 +99,7 @@ test('progression null qualification grades only the checks selected for its lev
     release: binding.release,
   });
   const selectedBinding = selectNullQualificationBinding(binding, calibration);
+  const qualification = createNullQualification(binding, calibration);
   const selectedSuites = nullControlSuites(track, 3, selectedBinding).filter(hasChecks);
   const checks = selectedSuites.flatMap(suite => suite.checks);
 
@@ -106,4 +107,5 @@ test('progression null qualification grades only the checks selected for its lev
   assert.equal(checks.length, calibrationChecks.length);
   assert.deepEqual(checks.map(check => check.stableKey).sort(),
     [...calibrationChecks].sort());
+  assert.match(qualification.selectionSha256, /^[a-f0-9]{64}$/);
 });

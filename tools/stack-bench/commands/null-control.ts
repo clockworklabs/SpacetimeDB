@@ -17,6 +17,7 @@ import { calibrationQualificationIdentity, calibrationQualificationRelease,
 import { qualificationScopeIdentity } from '../src/composition/qualification-scope.js';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
+import { resolveRecipeSelection } from '../src/composition/recipe-selection.js';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.js';
 import { controllerRunner } from '../src/runtime/runner-environment.js';
 import type { CalibrationPlan } from '../src/composition/calibration-compiler.js';
@@ -126,10 +127,15 @@ export function selectNullQualificationBinding(binding: RecipeBinding, calibrati
 }
 
 export function createNullQualification(binding: RecipeBinding, calibration: CalibrationPlan) {
+  const selectedBinding = selectNullQualificationBinding(binding, calibration);
+  const selection = resolveRecipeSelection(selectedBinding.release, {
+    checkKeys: selectedBinding.release.checkCatalog.map(check => check.stableKey),
+  });
   return {
-    binding: selectNullQualificationBinding(binding, calibration),
+    binding: selectedBinding,
     calibration,
     identity: calibrationQualificationIdentity(calibration),
+    selectionSha256: selection.sha256,
   };
 }
 
@@ -191,6 +197,7 @@ async function main() {
           '--parent-attempt-id', nullAttemptId,
           ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
           ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
+          ...(qualification ? ['--selection-sha256', qualification.selectionSha256] : []),
           ...(('checks' in suite ? suite.checks : []) ?? [])
             .flatMap(check => ['--selected-check', check.stableKey])]);
         const report = readArtifactPayload(reportPath, { expectedKind: 'grade' });

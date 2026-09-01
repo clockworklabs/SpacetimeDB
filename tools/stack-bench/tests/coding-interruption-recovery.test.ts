@@ -571,7 +571,7 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       'container host configuration');
     assert.equal(booleanField(hostConfig, 'ReadonlyRootfs', 'container host configuration'), true);
     assert.deepEqual([...stringArrayField(hostConfig, 'CapAdd', 'container host configuration')].sort(),
-      ['CAP_DAC_OVERRIDE', 'CAP_FOWNER', 'CAP_KILL', 'CAP_SETGID', 'CAP_SETUID']);
+      ['CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FOWNER', 'CAP_KILL', 'CAP_SETGID', 'CAP_SETUID']);
     assert.equal(stringArrayField(hostConfig, 'CapDrop', 'container host configuration')
       .map(value => value.replace(/^CAP_/, '')).includes('ALL'), true);
     assert.equal(stringArrayField(hostConfig, 'SecurityOpt', 'container host configuration')

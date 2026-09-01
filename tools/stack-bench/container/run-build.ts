@@ -78,7 +78,7 @@ const { uid: AGENT_UID, gid: AGENT_GID, home: AGENT_HOME } = CODING_CONTAINER_AG
 const AGENT_ENVIRONMENT = codingContainerAgentEnvironment();
 const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
 const REQUIRED_CAPABILITIES = Object.freeze([
-  'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID',
+  'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID',
 ]);
 const REQUIRED_TMPFS = Object.freeze({
   '/tmp': 'rw,nosuid,nodev,mode=1777',
