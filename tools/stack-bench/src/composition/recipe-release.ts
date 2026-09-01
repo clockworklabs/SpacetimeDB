@@ -203,17 +203,17 @@ const gradeRecipeReleaseSchema = z.looseObject({
   checks: z.array(z.unknown()),
   contentSha256: z.string(),
 });
+const bundledRecipeReleaseSchema = z.looseObject({ selection: z.looseObject({}) });
 
 function record(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function recipeFixturePath(value: unknown, source: string): string {
-  const parsed = z.looseObject({ fixture: z.looseObject({ path: z.string() }) }).safeParse(value);
-  if (!parsed.success) {
+  if (!record(value) || !record(value.fixture) || typeof value.fixture.path !== 'string') {
     throw new Error(`recipe ${source} has no fixture path`);
   }
-  return parsed.data.fixture.path;
+  return value.fixture.path;
 }
 
 function assertRecipeRelease(value: unknown): asserts value is RecipeRelease {
@@ -229,18 +229,17 @@ function assertRecipeGradeRelease(value: unknown): asserts value is RecipeGradeR
 }
 
 function assertBundledRecipeRelease(value: unknown): asserts value is BundledRecipeRelease {
-  if (!z.looseObject({ selection: z.looseObject({}) }).safeParse(value).success) {
+  if (!bundledRecipeReleaseSchema.safeParse(value).success) {
     throw new Error('bundled recipe release has no selection');
   }
   assertRecipeRelease(value);
 }
 
 function sortedTrackActions(value: unknown): Array<UnknownRecord & { id: string }> {
-  const parsed = z.array(z.looseObject({ id: z.string() })).safeParse(value);
-  if (!parsed.success) {
+  if (!Array.isArray(value) || value.some(action => !record(action) || typeof action.id !== 'string')) {
     throw new Error('track manifest actions must have string ids');
   }
-  return parsed.data.sort((left, right) => left.id.localeCompare(right.id));
+  return value.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 
