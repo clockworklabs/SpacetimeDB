@@ -45,6 +45,7 @@ use spacetimedb_physical_plan::plan::ProjectPlan;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
 use std::{
+    ops::Range,
     sync::{
         atomic::{AtomicU8, Ordering},
         Arc,
@@ -224,8 +225,24 @@ struct CompiledQueryBatch {
 struct CompiledQueries {
     queries: Vec<Arc<Plan>>,
     physical_plans: HashMap<QueryHash, Vec<ProjectPlan>>,
-    auth: AuthCtx,
     compile_timer: HistogramTimer,
+}
+
+/// The result of [`ModuleSubscriptions::subscribe_query_sets`].
+struct SubscribedQuerySets<G: FnOnce(TxId)> {
+    /// The outcome of each query set, in the order the sets were requested.
+    outcomes: Vec<ws_v2::SubscribeSetOutcome>,
+    /// The transaction the applied sets were evaluated at, or `None` if no set
+    /// applied. The caller is expected to hold this until it has enqueued its
+    /// response.
+    tx: Option<TxGuard<G>>,
+    /// The offset of the transaction the applied sets were evaluated at,
+    /// or `None` if no set applied.
+    tx_offset: Option<TransactionOffset>,
+    /// The metrics of evaluating every applied set.
+    metrics: ExecutionMetrics,
+    /// Whether materializing the subscribed views trapped.
+    trapped: bool,
 }
 
 /// The queries of a subscribe message, hashed by [`hash_queries`]
@@ -1124,9 +1141,8 @@ impl ModuleSubscriptions {
         let CompiledQueries {
             queries,
             physical_plans,
-            auth,
             compile_timer,
-        } = self.compile_hashed_queries(hashed, auth, metrics, &mut_tx)?;
+        } = self.compile_hashed_queries(hashed, &auth, metrics, &mut_tx)?;
 
         Ok(CompiledQueryBatch {
             queries,
@@ -1141,7 +1157,7 @@ impl ModuleSubscriptions {
     fn compile_hashed_queries(
         &self,
         hashed: HashedQueries<'_>,
-        auth: AuthCtx,
+        auth: &AuthCtx,
         metrics: &SubscriptionMetrics,
         mut_tx: &MutTxId,
     ) -> Result<CompiledQueries, DBError> {
@@ -1170,7 +1186,7 @@ impl ModuleSubscriptions {
                 |relational_db, tx| relational_db.get_all_tables_mut(tx).map(|schemas| schemas.into_iter()),
                 &self.relational_db,
                 mut_tx,
-                &auth,
+                auth,
             )? {
                 add_compiled_query(
                     compiled,
@@ -1198,7 +1214,7 @@ impl ModuleSubscriptions {
                             plans.push(unit);
                         }
                         _ => {
-                            let compiled = compile_query_with_hashes(&auth, mut_tx, sql, hash, hash_with_param)
+                            let compiled = compile_query_with_hashes(auth, mut_tx, sql, hash, hash_with_param)
                                 .map_err(|err| DBError::WithSql {
                                     error: Box::new(DBError::Other(err.into())),
                                     sql: sql.into(),
@@ -1223,7 +1239,6 @@ impl ModuleSubscriptions {
         Ok(CompiledQueries {
             queries: plans,
             physical_plans,
-            auth,
             compile_timer,
         })
     }
@@ -1466,95 +1481,51 @@ impl ModuleSubscriptions {
         _timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
-        // Send an error message to the client
-        // TODO: update for v2
-        let send_err_msg = |message| {
-            let _ = self.broadcast_queue.send_client_message_v2(
-                sender.clone(),
-                None,
-                ws_v2::SubscriptionError {
-                    request_id: Some(request.request_id),
-                    query_set_id: request.query_set_id,
-                    error: message,
-                },
-            );
-        };
-        let subscription_metrics = &self.metrics.subscribe;
-        let num_queries = request.query_strings.len();
-        subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
+        let ws_v2::Subscribe {
+            request_id,
+            query_set_id,
+            query_strings,
+        } = request;
+        let sets = [ws_v2::SubscribeSet {
+            query_set_id,
+            query_strings,
+        }];
 
-        let CompiledQueryBatch {
-            queries,
-            physical_plans,
-            auth,
-            mut_tx,
-            compile_timer: _compile_timer,
-        } = return_on_err!(
-            self.compile_queries(
-                sender.id.identity,
-                auth,
-                &request.query_strings,
-                num_queries,
-                subscription_metrics
-            ),
-            send_err_msg,
-            (None, false)
-        );
-        let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
+        let SubscribedQuerySets {
+            outcomes,
+            // Held until the response below has been enqueued.
+            tx: _tx,
+            tx_offset,
+            metrics,
+            trapped,
+        } = self.subscribe_query_sets(instance, &sender, auth, &sets)?;
+        let outcome = outcomes.into_iter().next().expect("one outcome for the set");
 
-        // We minimize locking so that other clients can add subscriptions concurrently.
-        // We are protected from race conditions with broadcasts, because we have the db lock,
-        // an `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still has a
-        // write lock on the db.
-        let queries = {
-            let mut subscriptions = {
-                // How contended is the lock?
-                let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
-                let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
-                self.subscriptions.write()
-            };
-
-            subscriptions.add_subscription_v2(sender.clone(), queries, request.query_set_id)?
-        };
-
-        let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-
-        let (mut tx, tx_offset, trapped) =
-            self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
-
-        let failed_subscription = FailedSubscription::V2(request.query_set_id);
-        if let Err(err) = self.check_new_query_row_limit(&queries, &physical_plans, &tx, &auth) {
-            self.remove_failed_subscription(subscription_metrics, sender.id, failed_subscription)?;
-            send_err_msg(err.to_string().into());
-            return Ok((None, trapped));
-        }
-
-        let Ok((update, metrics)) = self.evaluate_queries(sender.clone(), &queries, &tx, TableUpdateType::Subscribe)
-        else {
-            self.remove_failed_subscription(subscription_metrics, sender.id, failed_subscription)?;
-            send_err_msg("Internal error evaluating queries".into());
-            return Ok((None, trapped));
-        };
-        tx.metrics.merge(metrics);
-
-        subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
-
-        let ws_v2::QueryRows { tables } = match update {
-            ws_v1::FormatSwitch::Bsatn(update) => query_rows_from_update(update, false)?,
-            ws_v1::FormatSwitch::Json(_) => {
-                return Err(DBError::Other(anyhow::anyhow!(
-                    "v2 subscriptions require binary protocol"
-                )))
+        let rows = match outcome {
+            ws_v2::SubscribeSetOutcome::Applied(rows) => rows,
+            // Send an error message to the client
+            // TODO: update for v2
+            ws_v2::SubscribeSetOutcome::Error(error) => {
+                let _ = self.broadcast_queue.send_client_message_v2(
+                    sender.clone(),
+                    None,
+                    ws_v2::SubscriptionError {
+                        request_id: Some(request_id),
+                        query_set_id,
+                        error,
+                    },
+                );
+                return Ok((None, trapped));
             }
         };
 
         let _ = self.broadcast_queue.send_client_message_v2(
             sender.clone(),
-            Some(tx_offset),
+            tx_offset,
             ws_v2::SubscribeApplied {
-                request_id: request.request_id,
-                query_set_id: request.query_set_id,
-                rows: ws_v2::QueryRows { tables },
+                request_id,
+                query_set_id,
+                rows,
             },
         );
 
@@ -1563,13 +1534,9 @@ impl ModuleSubscriptions {
 
     /// Implementation of [`Self::add_batch_subscription`].
     ///
-    /// Each set is compiled and evaluated in the same way as an individual
-    /// `Subscribe` ([`Self::compile_queries`], [`Self::check_new_query_row_limit`],
-    /// [`Self::evaluate_queries`]).
-    /// All subscription queries are evaluated at a single transaction snapshot
-    /// and answered in one response. A set which fails compilation,
-    /// the row limit, or evaluation is reported as an error in the response and
-    /// is not registered while the remaining sets still apply.
+    /// The whole batch is subscribed to by [`Self::subscribe_query_sets`],
+    /// and answered by a single [`ws_v2::SubscribeBatchApplied`],
+    /// so that nothing interleaves with the response.
     fn add_batch_subscription_inner<I: WasmInstance>(
         &self,
         instance: Option<&mut RefInstance<'_, I>>,
@@ -1579,107 +1546,170 @@ impl ModuleSubscriptions {
         _timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
+        let ws_v2::SubscribeBatch { request_id, sets } = request;
+
+        let SubscribedQuerySets {
+            outcomes,
+            // Held until the response below has been enqueued.
+            tx: _tx,
+            tx_offset,
+            metrics,
+            trapped,
+        } = self.subscribe_query_sets(instance, &sender, auth, &sets)?;
+
+        let results = sets
+            .iter()
+            .zip(outcomes)
+            .map(|(set, outcome)| ws_v2::SubscribeSetResult {
+                query_set_id: set.query_set_id,
+                outcome,
+            })
+            .collect();
+
+        let _ = self.broadcast_queue.send_client_message_v2(
+            sender.clone(),
+            tx_offset,
+            ws_v2::SubscribeBatchApplied { request_id, results },
+        );
+
+        Ok((Some(metrics), trapped))
+    }
+
+    /// Subscribe `sender` to each of `sets`, returning an outcome per set.
+    ///
+    /// Every set is compiled, registered and evaluated within a single
+    /// transaction, and all of them are registered under a single tx lock.
+    ///
+    /// A set which fails to compile, fails to register, exceeds the row limit,
+    /// or fails to evaluate is reported as a [`ws_v2::SubscribeSetOutcome::Error`]
+    /// and is not registered, while the remaining sets still apply.
+    /// An `Err` is only returned for a failure of the request as a whole.
+    fn subscribe_query_sets<I: WasmInstance>(
+        &self,
+        instance: Option<&mut RefInstance<'_, I>>,
+        sender: &Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        sets: &[ws_v2::SubscribeSet],
+    ) -> Result<SubscribedQuerySets<impl FnOnce(TxId)>, DBError> {
         let subscription_metrics = &self.metrics.subscribe;
 
-        // The per-set outcome, in request order. Sets which fail before
-        // evaluation are filled in here and skipped later.
-        let mut outcomes: Vec<Option<ws_v2::SubscribeSetOutcome>> = (0..request.sets.len()).map(|_| None).collect();
-        // The sets which compiled, as (request index, query set id, plans).
-        let mut compiled_sets: Vec<(usize, ws_v2::QuerySetId, Vec<Arc<Plan>>)> = Vec::new();
-        let mut physical_plans: HashMap<QueryHash, Vec<ProjectPlan>> = HashMap::default();
-
-        let num_queries: usize = request.sets.iter().map(|set| set.query_strings.len()).sum();
+        let num_queries: usize = sets.iter().map(|set| set.query_strings.len()).sum();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
-        // Hash every set's queries before taking the db lock,
-        // for the reasons described in [`Self::compile_queries`].
-        let hashed_sets: Vec<HashedQueries<'_>> = request
-            .sets
+        // We hash queries to avoid recompilation
+        let hashed_sets = sets
             .iter()
             .map(|set| hash_queries(sender.id.identity, &set.query_strings, set.query_strings.len()))
-            .collect();
+            .collect::<Vec<_>>();
+
+        // The outcome of each set, in the order of `sets`.
+        // Each stage below records the outcome of the sets which fail in it,
+        // and those sets are skipped by the later stages.
+        // The initial value is only ever observed if a stage fails to do so.
+        let mut outcomes = sets
+            .iter()
+            .map(|_| ws_v2::SubscribeSetOutcome::Error("Internal error subscribing to query set".into()))
+            .collect::<Vec<_>>();
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
         //
-        // A single transaction spans the compilation, registration, and
-        // evaluation of every set, exactly as an individual `Subscribe` holds
-        // one transaction end-to-end. This means no schema change can
-        // invalidate a compiled set before it is registered, at the cost of
-        // holding the db lock across all compilations.
+        // A single transaction spans the compilation, registration and evaluation
+        // of every set, so no schema change can invalidate a compiled set before
+        // it is registered, at the cost of holding the db lock across all compilations.
         let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
 
-        // Compile every set. A set which fails to compile is reported in its
-        // outcome and does not fail the batch.
+        // Compile every set. A set which fails to compile does not fail the others.
+        let mut physical_plans: HashMap<QueryHash, Vec<ProjectPlan>> = HashMap::default();
+        let mut compiled_sets = Vec::with_capacity(sets.len());
         for (index, hashed) in hashed_sets.into_iter().enumerate() {
-            match self.compile_hashed_queries(hashed, auth.clone(), subscription_metrics, &mut_tx) {
+            match self.compile_hashed_queries(hashed, &auth, subscription_metrics, &mut_tx) {
                 Ok(CompiledQueries {
                     queries,
                     physical_plans: set_physical_plans,
-                    auth: _,
                     compile_timer: _compile_timer,
                 }) => {
                     physical_plans.extend(set_physical_plans);
-                    compiled_sets.push((index, request.sets[index].query_set_id, queries));
+                    compiled_sets.push((index, queries));
                 }
-                Err(err) => {
-                    outcomes[index] = Some(ws_v2::SubscribeSetOutcome::Error(err.to_string().into()));
-                }
+                Err(err) => outcomes[index] = ws_v2::SubscribeSetOutcome::Error(err.to_string().into()),
             }
         }
 
-        // Register every compiled set under a single write lock, so no
-        // transaction committed between registrations can be observed by some
-        // sets but not others.
-        let mut registered: Vec<(usize, ws_v2::QuerySetId, Vec<Arc<Plan>>)> = Vec::new();
+        // Register every compiled set under a single write lock, so that no
+        // transaction committed between two registrations can be observed by
+        // some sets but not others.
+        //
+        // We minimize locking so that other clients can add subscriptions concurrently.
+        // We are protected from race conditions with broadcasts, because we have the db lock,
+        // and `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still
+        // has a write lock on the db.
+        //
+        // The registered queries of all sets are stored contiguously,
+        // each set holding the range of `registered_queries` which is its own.
+        let mut registered_queries: Vec<Arc<Plan>> = Vec::with_capacity(num_queries);
+        let mut registered: Vec<(usize, Range<usize>)> = Vec::with_capacity(compiled_sets.len());
         {
             let mut subscriptions = {
+                // How contended is the lock?
                 let _wait_guard = subscription_metrics.lock_waiters.inc_scope();
                 let _wait_timer = subscription_metrics.lock_wait_time.start_timer();
                 self.subscriptions.write()
             };
-            for (index, query_set_id, queries) in compiled_sets {
-                match subscriptions.add_subscription_v2(sender.clone(), queries.clone(), query_set_id) {
-                    Ok(_) => registered.push((index, query_set_id, queries)),
-                    Err(err) => {
-                        outcomes[index] = Some(ws_v2::SubscribeSetOutcome::Error(err.to_string().into()));
+            for (index, queries) in compiled_sets {
+                match subscriptions.add_subscription_v2(sender.clone(), queries, sets[index].query_set_id) {
+                    // Note that we evaluate the queries returned by the subscription manager,
+                    // as those are the ones it deduplicated and registered.
+                    Ok(queries) => {
+                        let start = registered_queries.len();
+                        registered_queries.extend(queries);
+                        registered.push((index, start..registered_queries.len()));
                     }
+                    Err(err) => outcomes[index] = ws_v2::SubscribeSetOutcome::Error(err.to_string().into()),
                 }
             }
         }
 
+        if registered.is_empty() {
+            // No set was registered, so there is nothing to evaluate,
+            // and no snapshot to evaluate it at.
+            // No update can concern a set which is not registered,
+            // so the caller's response needs no transaction to order it.
+            // The mutable transaction is committed when `mut_tx` is dropped.
+            return Ok(SubscribedQuerySets {
+                outcomes,
+                tx: None,
+                tx_offset: None,
+                metrics: ExecutionMetrics::default(),
+                trapped: false,
+            });
+        }
+
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-        let all_queries: Vec<Arc<Plan>> = registered
-            .iter()
-            .flat_map(|(_, _, queries)| queries.iter().cloned())
-            .collect();
         let (mut tx, tx_offset, trapped) =
-            self.materialize_views_and_downgrade_tx(mut_tx, instance, &all_queries, auth.caller())?;
+            self.materialize_views_and_downgrade_tx(mut_tx, instance, &registered_queries, auth.caller())?;
 
         // Evaluate every registered set against the single snapshot above.
-        // This will do the same row-limit check and evaluation of an individual
-        // `Subscribe` (see [`Self::add_v2_subscription_inner`]), except that a
-        // failure is recorded as the set's outcome instead of aborting the
-        // request, and the registration is removed so the failed set never
-        // receives transaction updates.
+        // A set which fails has its registration removed,
+        // so that it never receives transaction updates.
         let mut total_metrics = ExecutionMetrics::default();
-        for (index, query_set_id, queries) in registered {
-            let failed_subscription = FailedSubscription::V2(query_set_id);
-            if let Err(err) = self.check_new_query_row_limit(&queries, &physical_plans, &tx, &auth) {
+        for (index, range) in registered {
+            let queries = &registered_queries[range];
+            let failed_subscription = FailedSubscription::V2(sets[index].query_set_id);
+
+            if let Err(err) = self.check_new_query_row_limit(queries, &physical_plans, &tx, &auth) {
                 self.remove_failed_subscription(subscription_metrics, sender.id, failed_subscription)?;
-                outcomes[index] = Some(ws_v2::SubscribeSetOutcome::Error(err.to_string().into()));
+                outcomes[index] = ws_v2::SubscribeSetOutcome::Error(err.to_string().into());
                 continue;
             }
 
-            let Ok((update, metrics)) =
-                self.evaluate_queries(sender.clone(), &queries, &tx, TableUpdateType::Subscribe)
+            let Ok((update, metrics)) = self.evaluate_queries(sender.clone(), queries, &tx, TableUpdateType::Subscribe)
             else {
                 self.remove_failed_subscription(subscription_metrics, sender.id, failed_subscription)?;
-                outcomes[index] = Some(ws_v2::SubscribeSetOutcome::Error(
-                    "Internal error evaluating queries".into(),
-                ));
+                outcomes[index] = ws_v2::SubscribeSetOutcome::Error("Internal error evaluating queries".into());
                 continue;
             };
             tx.metrics.merge(metrics);
+            total_metrics.merge(metrics);
 
             subscription_metrics.num_queries_evaluated.inc_by(queries.len() as _);
 
@@ -1691,33 +1721,16 @@ impl ModuleSubscriptions {
                     )))
                 }
             };
-            total_metrics.merge(metrics);
-            outcomes[index] = Some(ws_v2::SubscribeSetOutcome::Applied(rows));
+            outcomes[index] = ws_v2::SubscribeSetOutcome::Applied(rows);
         }
 
-        // One response for the whole batch, so nothing interleaves with it.
-        let results = outcomes
-            .into_iter()
-            .zip(request.sets.iter())
-            .map(|(outcome, set)| ws_v2::SubscribeSetResult {
-                query_set_id: set.query_set_id,
-                outcome: outcome.unwrap_or_else(|| {
-                    ws_v2::SubscribeSetOutcome::Error("Internal error registering query set".into())
-                }),
-            })
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-
-        let _ = self.broadcast_queue.send_client_message_v2(
-            sender.clone(),
-            Some(tx_offset),
-            ws_v2::SubscribeBatchApplied {
-                request_id: request.request_id,
-                results,
-            },
-        );
-
-        Ok((Some(total_metrics), trapped))
+        Ok(SubscribedQuerySets {
+            outcomes,
+            tx: Some(tx),
+            tx_offset: Some(tx_offset),
+            metrics: total_metrics,
+            trapped,
+        })
     }
 
     fn add_multi_subscription_inner<I: WasmInstance>(
@@ -2189,13 +2202,15 @@ impl ModuleSubscriptions {
     /// Materialize the views returned by the `view_collector`, if not already materialized,
     /// and subsequently downgrade to a read-only transaction.
     #[allow(clippy::type_complexity)]
-    fn materialize_views_and_downgrade_tx<I: WasmInstance>(
-        &self,
+    // The returned guard only borrows `self`, so it may outlive the borrows of
+    // `instance` and `view_collector`, which `use<..>` keeps out of its type.
+    fn materialize_views_and_downgrade_tx<'a, I: WasmInstance, V: CollectViews>(
+        &'a self,
         mut tx: MutTxId,
         instance: Option<&mut RefInstance<'_, I>>,
-        view_collector: &impl CollectViews,
+        view_collector: &V,
         sender: Identity,
-    ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset, bool), DBError> {
+    ) -> Result<(TxGuard<impl FnOnce(TxId) + use<'a, I, V>>, TransactionOffset, bool), DBError> {
         let mut trapped = false;
         if let Some(instance) = instance {
             (tx, trapped) = ModuleHost::materialize_views(tx, instance, view_collector, sender, Workload::Subscribe)?;
@@ -2774,6 +2789,68 @@ mod tests {
         let metrics = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
         assert_eq!(metrics.delta_queries_evaluated, 0);
         assert_eq!(metrics.delta_queries_matched, 0);
+
+        Ok(())
+    }
+
+    /// Test that a failed v2 subscription is answered with an error message,
+    /// and that its query set id is left free to re-use.
+    #[tokio::test]
+    async fn subscribe_v2_error() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
+        let client_id = client_id_from_u8(1);
+        let (sender, mut rx) = v2_client_connection(client_id, &db);
+
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
+
+        // Subscribe to an invalid query (r is not in scope).
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            sender.clone(),
+            auth.clone(),
+            ws_v2::Subscribe {
+                request_id: 1,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                query_strings: ["select r.* from t".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscriptionError(msg))) => {
+                assert_eq!(msg.request_id, Some(1));
+                assert_eq!(msg.query_set_id, ws_v2::QuerySetId::new(1));
+            }
+            other => panic!("Expected v2 SubscriptionError, got: {other:?}"),
+        }
+
+        // The failed subscription was not registered,
+        // so the same query set id can be used again.
+        subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+            None,
+            sender.clone(),
+            auth,
+            ws_v2::Subscribe {
+                request_id: 2,
+                query_set_id: ws_v2::QuerySetId::new(1),
+                query_strings: ["select * from t".into()].into(),
+            },
+            Instant::now(),
+            None,
+        )?;
+
+        match rx.recv().await {
+            Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(msg))) => {
+                assert_eq!(msg.request_id, 2);
+                assert_eq!(msg.query_set_id, ws_v2::QuerySetId::new(1));
+            }
+            other => panic!("Expected v2 SubscribeApplied, got: {other:?}"),
+        }
 
         Ok(())
     }
