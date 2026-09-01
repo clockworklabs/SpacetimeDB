@@ -123,6 +123,24 @@ Paid and subscription-backed runs use the Docker appliance. See
 repair grants, and status commands. Local commands accept only non-billable
 agent adapters.
 
+The campaign file is the run authority. Use the same control loop for the CLI
+and dashboard:
+
+```bash
+npm run campaign -- validate <campaign.json>
+npm run campaign -- show <campaign.json>
+npm run campaign -- prepare <campaign.json> --out <campaign-directory>
+npm run campaign -- status <campaign-directory>
+npm run campaign -- inspect <campaign-directory>
+npm run campaign -- report <campaign-directory>
+```
+
+`validate` and `show` spend no model usage. `prepare` creates durable state but
+does not start an attempt. `status` is the normal compact view. `inspect` adds
+feature progress. Use `status --full` only when the durable state itself is
+needed. Start or resume paid work only through the explicit appliance commands.
+Do not infer campaign state from logs.
+
 ```bash
 npm run dashboard
 ```

@@ -6,12 +6,11 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import type { CompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptState } from '../src/campaigns/campaign-scheduler.js';
-import { ARTIFACT_FILE, readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
-import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
+import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
-import { validateCampaignState } from '../src/campaigns/campaign-scheduler.js';
+import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { dependencyProgress } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
@@ -421,21 +420,6 @@ export function campaignFacts(plan: CampaignFactsPlan) {
   };
 }
 
-function readDashboardCampaignState(directory: string) {
-  const plan = validateCompiledCampaignPlan(
-    readArtifact(join(directory, CAMPAIGN_FILE.plan), { expectedKind: 'campaign_plan' }).payload,
-    { requireCurrentInputs: false });
-  const state = validateCampaignState(
-    readArtifact(join(directory, CAMPAIGN_FILE.state), { expectedKind: 'campaign_state' }).payload);
-  if (state.campaignId !== plan.id || state.campaignSha256 !== plan.contentSha256
-    || state.maxParallel !== plan.summary.parallelism
-    || canonicalDefinitionJson(state.attempts.map(attempt => attempt.plan))
-      !== canonicalDefinitionJson(plan.attempts)) {
-    throw new Error('stored campaign state does not match its compiled plan');
-  }
-  return { plan, state };
-}
-
 function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
   campaignDirectory: string, fixRounds: number, { includeLog = false }: {
     includeLog?: boolean;
@@ -492,7 +476,7 @@ export function summarizeCampaign(directory: string, {
   includePackage?: boolean;
   controllerActive?: ControllerActive | null;
 } = {}) {
-  const { plan, state } = readDashboardCampaignState(directory);
+  const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   let attempts = state.attempts.map(attempt => summarizeAttempt(plan, attempt, directory,
     plan.definition.budgets.fixRounds, { includeLog: includeLogs }));
   const interrupted = state.status === 'running' && controllerActive !== null

@@ -49,6 +49,7 @@ and dashboard-started work remains fully operable from the CLI. See
 
 ## Documentation
 
+- `SYSTEM-DESIGN.md` — system ownership, data flow, and operator loop
 - `SETUP.md` — local prerequisites and first-run setup
 - `APPLIANCE-DESIGN.md` — appliance boundaries and execution model
 - `appliance/README.md` — Docker appliance operation
@@ -121,6 +122,11 @@ complete mutation set only for a release candidate.
 The supported v1 deployment is the Docker appliance on a dedicated Linux
 runner. Follow `appliance/README.md` to build or verify the controller image,
 configure credentials, run preflight, and start a campaign.
+
+Use one campaign file as the run authority. Compile and inspect it before model
+work. During execution, read campaign state first and open logs only for
+diagnosis. Generate reports only from the retained campaign package. See
+`SYSTEM-DESIGN.md` for the complete control model.
 
 ### Local harness development
 
