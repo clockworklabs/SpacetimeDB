@@ -32,7 +32,7 @@
           "statedBy": "items enter and leave this list as stock moves, sells, is restocked, cancelled or returned",
           "steps": [
             {
-              "do": "waitUntilAbsent",
+              "do": "expect",
               "actor": "admin",
               "testid": "low-stock-item",
               "contains": "Air Purifier",
@@ -52,7 +52,7 @@
               "in": { "testid": "admin-location-row", "contains": "Air Purifier" }
             },
             {
-              "do": "expect",
+              "do": "waitUntilAbsent",
               "actor": "admin",
               "testid": "low-stock-item",
               "contains": "Air Purifier",
