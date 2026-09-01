@@ -62,6 +62,11 @@ Run Docker checks only when the changed code affects their boundary. Run
 targeted mutations while developing checks and the complete mutation set only
 for a release candidate.
 
+A passing check stays valid until one of its inputs changes. Do not rerun it for
+reassurance. Add a test only when it protects a distinct invariant that an
+existing test does not cover. Pending qualification marks campaign scores as
+provisional; it blocks publishing verified comparisons, not campaign execution.
+
 ## Generated files
 
 Run `npm run graph` to rebuild `docs/dependency-graph.html` from the versioned
