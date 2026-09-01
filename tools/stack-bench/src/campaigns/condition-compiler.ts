@@ -287,7 +287,7 @@ export function resolveGuidanceProfile(reference: string, stacks: readonly strin
 export function resolveDefaultGuidanceForStack(mode: string,
   stack: string): ResolvedGuidanceProfile | null {
   const reference = parseGuidanceMode(mode) === 'neutral'
-    ? 'neutral@1.7.0' : 'prescribed@1.1.0';
+    ? 'neutral@1.7.0' : 'prescribed@1.2.0';
   const catalog = loadCatalog();
   const { profile } = readProfile(catalog, 'guidanceProfiles', reference);
   if (object(profile) && object(profile.documents) && !Object.hasOwn(profile.documents, stack)) {

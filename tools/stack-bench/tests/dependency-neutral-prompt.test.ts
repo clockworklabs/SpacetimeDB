@@ -28,14 +28,14 @@ const EXPECTED = {
     spacetime: ['a96468d334a7c9143a1f99a4fe610c28023c63004e8718e6a4afa7da4b935003', 9012],
   },
   2: {
-    mongodb: ['45aee8462fc2f6b15348dafb89f5234113efaf345da6281dd508912cf8f0524f', 6669],
-    postgres: ['9710f842442dfc465b75cbcf40ae4d1577db08d36a2de2b90ded9a35ff4956a6', 6711],
-    spacetime: ['3b8499a1afbfe08df80636d721ddf814c6087c3e83ca4fdc992a5be79467e3fb', 9989],
+    mongodb: ['ebdd8c887d41274d86fdc65440a123ff35746f7d27b7f9f8ac5b6244eee7eee1', 6661],
+    postgres: ['a6b57fce8b373c4a7d2349e252024aad8b899d559c6c8bd7ebe706036d918b90', 6703],
+    spacetime: ['f0f6bf0eccb00d7210f8bd00f736e1dcb9d13534213cc8bf0d83d6b97fe7aa4f', 9981],
   },
   3: {
-    mongodb: ['dbeef756ab53eb1f62e1eff565a1516ffae5013ccb68f1a490a0a225c2f63112', 9495],
-    postgres: ['c2333c353ee6d9325d36e9f67e819cf3e2d8ecf2fe0bda740a4b10cb9faee621', 9537],
-    spacetime: ['c7465d5045ee931886082922d23d242019579672b9294fbe94d587effdf796cd', 12748],
+    mongodb: ['506f12e147976f27cbc5c4bd73d194fe9765cd365664d9eafacbee2b55b89425', 9487],
+    postgres: ['20aaa1893d426934bc8a47050712f024b6d2a5993fc389b121cae00eccdf3058', 9529],
+    spacetime: ['ed109fc3897250e5cade15124eb9ad5ace04254fe2aa26c951076e37c0cc51b9', 12740],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
@@ -98,6 +98,7 @@ test('neutral dependency prompts through L3 contain only the selected stack inte
       assert.deepEqual([sha256(prompt), Buffer.byteLength(prompt)], EXPECTED[level][stack]);
       assert.doesNotMatch(prompt,
         new RegExp(`${EVALUATION_LANGUAGE.source}|Branding & Styling|App title:|<!-- /?interface`, 'i'));
+      assert.doesNotMatch(prompt, /\blevel\s+\d+\b/i);
       assert.doesNotMatch(prompt,
         /After the client|client must listen|client architecture|application behavior/i);
       const marker = level === 1 ? '## New application' : '## Existing application';
@@ -148,6 +149,8 @@ test('direct neutral guidance uses the current stack access documents', () => {
         STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
     });
     assert.doesNotMatch(prompt, /Branding & Styling|App title:/i);
+    assert.doesNotMatch(prompt, EVALUATION_LANGUAGE);
+    assert.match(prompt, /store-admin-2026/);
     assert.match(prompt, /Create `\/app\/start\.sh`/);
     assert.match(prompt, /clean\s+source checkout.*install\s+dependencies.*build.*start/s);
     assert.match(prompt, /script must not change source files/);
@@ -184,6 +187,8 @@ test('direct prescribed SpacetimeDB guidance includes token-handling guidance', 
   });
   assert.match(prompt, /withToken/);
   assert.match(prompt, /localStorage/);
+  assert.doesNotMatch(prompt, EVALUATION_LANGUAGE);
+  assert.match(prompt, /store-admin-2026/);
 });
 
 test('campaign skill material cannot change after compilation', () => {

@@ -13,6 +13,7 @@ import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPaylo
   writeArtifact } from '../src/evidence/artifacts.js';
 import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
 import { renderRepairDiagnostic } from '../src/evidence/evidence-presentation.js';
+import { assertAgentVisibleText } from '../src/composition/agent-visible-contract.js';
 import { CODING_CONTAINER_BUG_REPORT_FILE, CODING_CONTAINER_START_SCRIPT }
   from '../src/runtime/coding-container-policy.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
@@ -299,7 +300,7 @@ export function createBugReport(args: ReportBugsArgs): number {
     return 4;
   }
 
-  const reportText = lines.join('\n');
+  const reportText = assertAgentVisibleText(lines.join('\n'));
   writeFileSync(args.out, reportText);
   if (args.archive) {
     mkdirSync(dirname(args.archive), { recursive: true });

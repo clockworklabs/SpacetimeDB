@@ -1,7 +1,15 @@
 import { applyCredentialAliases } from './credential-aliases.js';
 type StackApplicationInterface = 'http' | 'reducer';
 const INTERFACE_SECTION = /<!-- interface:(http|reducer) -->([\s\S]*?)<!-- \/interface -->/g;
-const INTERNAL_LANGUAGE = /\b(?:Stack Bench|benchmark|grader|grading|harness|test runner|test fixture|testing (?:hooks|interface)|test action|test IDs?)\b|data-testid/i;
+const INTERNAL_LANGUAGE = /\b(?:stack\s*bench|benchmark|harness|grader|graded|grading|scored|scoring|tests?|testing|evaluation|criterion|testids?|external client|run configuration)\b|data-testid/i;
+
+export function assertAgentVisibleText(text: string): string {
+  const disclosure = text.match(INTERNAL_LANGUAGE)?.[0];
+  if (disclosure) {
+    throw new Error(`agent-facing text contains internal language ${JSON.stringify(disclosure)}`);
+  }
+  return text;
+}
 
 function selectedInterfaceText(value: unknown, selected: StackApplicationInterface | null): string {
   const source = String(value ?? '');
@@ -28,11 +36,7 @@ export function agentVisibleContractText(
 ): string {
   const text = applyCredentialAliases(
     selectedInterfaceText(value, applicationInterface), credentialAliases);
-  const disclosure = text.match(INTERNAL_LANGUAGE)?.[0];
-  if (disclosure) {
-    throw new Error(`agent-facing text contains internal language ${JSON.stringify(disclosure)}`);
-  }
-  return text;
+  return assertAgentVisibleText(text);
 }
 
 // Contract fragments declare stable element IDs in the first column of a table.

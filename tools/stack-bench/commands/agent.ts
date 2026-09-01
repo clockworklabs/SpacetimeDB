@@ -18,7 +18,8 @@ import { parseGuidanceMode, resolveDefaultGuidanceForStack, type GuidanceMode,
   from '../src/campaigns/condition-compiler.js';
 import type { ExactRecipeRequest, RecipeBinding } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
-import { agentVisibleContractText } from '../src/composition/agent-visible-contract.js';
+import { agentVisibleContractText, assertAgentVisibleText }
+  from '../src/composition/agent-visible-contract.js';
 import { DEFAULT_SPACETIME_SERVER_URI, leaseFromEnv } from '../src/runtime/backend-lease.js';
 import { CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_BUG_REPORT_FILE,
   CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI,
@@ -541,6 +542,7 @@ function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
 
 export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   materials: PromptMaterials = {}): string {
+  const prompt = (lines: string[]): string => assertAgentVisibleText(lines.join('\n'));
   const applicationInterface = args.guidanceDocument?.applicationInterface
     ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
       ?.documents[args.backend]?.applicationInterface;
@@ -563,7 +565,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   if (skills) common.push('', '## Selected API reference', '', skills);
 
   if (args.mode === 'resume') {
-    return [
+    return prompt([
       'Restore the existing application to a runnable state.',
       '',
       'This is a saved application from an earlier completed run. Install its',
@@ -574,11 +576,11 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       'Output RESUME_COMPLETE when the existing app is running.',
       '',
       ...common,
-    ].join('\n');
+    ]);
   }
 
   if (args.mode === 'fix') {
-    return [
+    return prompt([
       'Fix the reported application bugs.',
       '',
       `Read ${CODING_CONTAINER_BUG_REPORT_FILE} in the app directory. Each entry says what was expected`,
@@ -590,12 +592,12 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       'Output FIX_COMPLETE when done.',
       '',
       ...common,
-    ].join('\n');
+    ]);
   }
 
   const verb = args.mode === 'upgrade'
     ? [
-        `Add the level ${args.level} features below to the existing app.`,
+        'Add the features below to the existing app.',
         '',
         'Keep completed features working. Add only the current features below.',
       ]
@@ -604,7 +606,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     ? ['', '## Starting catalog', '', 'Use exactly this starting data:', '',
         '```json', materials.startingCatalog, '```'] : [];
 
-  return [
+  return prompt([
     ...verb,
     '',
     `After the web application is running, reply with ${args.mode === 'upgrade'
@@ -620,7 +622,7 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     '',
     agentVisibleContractText(materials.contractText ?? appendix(track, args.level),
       args.credentialAliases, applicationInterface),
-  ].join('\n');
+  ]);
 }
 
 export function agentScenarioPaths(track: Track, level: number,
@@ -648,8 +650,9 @@ async function main() {
   const track = loadTrack(args.track);
   const p = portsFor(track, args.backend, args.runIndex);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
-  const profileSkills = resolveDefaultGuidanceForStack(args.guidance, args.backend)
-    ?.skills[args.backend]?.ids;
+  const defaultGuidance = resolveDefaultGuidanceForStack(args.guidance, args.backend);
+  args.credentialAliases ??= defaultGuidance?.credentialAliases ?? {};
+  const profileSkills = defaultGuidance?.skills[args.backend]?.ids;
   const defaultSkills = profileSkills ?? [...adapter.agent.defaultSkills];
   const selectedSkills = selectAgentSkills(defaultSkills,
     args.skillIdentity?.ids ?? args.skills ?? null);

@@ -8,7 +8,7 @@ import { resolveGuidanceProfile, resolveStudyConditions,
   validateConditionReference } from '../src/campaigns/condition-compiler.js';
 
 const prescribed = { id: 'prescribed', version: '1.0.0',
-  guidanceProfile: 'prescribed@1.1.0', repairPolicy: 'scored-only@1.0.0' };
+  guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.0.0' };
 const requested = { track: 'example', levels: [{ level: 1,
   recipe: { id: 'example.l1', version: '1.0.0', contentSha256: 'a'.repeat(64),
     meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64), state: 'qualified' },
@@ -50,6 +50,11 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.deepEqual(spacetimeSkills.ids,
     ['typescript-server', 'typescript-client']);
   assert.deepEqual(mongodbSkills.ids, []);
+  assert.deepEqual(condition.guidance.credentialAliases, {
+    'stackbench-admin-2026': 'store-admin-2026',
+    'stackbench-customer-2026': 'store-customer-2026',
+    'stackbench-staff-2026': 'store-staff-2026',
+  });
   assert.match(spacetimeSkills.sha256, /^[a-f0-9]{64}$/);
   assert.equal(condition.repair.scoredEvidence, true);
   assert.equal(condition.repair.observedEvidence, false);

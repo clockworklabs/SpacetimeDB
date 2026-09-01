@@ -78,7 +78,8 @@ test('model-free scenarios keep their original credentials without aliases', () 
     { do: 'fill', text: 'stackbench-customer-2026' },
   ] }] }] };
   assert.strictEqual(materializeScenarioCredentials(scenario), scenario);
-  assert.equal(agentVisibleContractText('stackbench-staff-2026'), 'stackbench-staff-2026');
+  assert.throws(() => agentVisibleContractText('stackbench-staff-2026'),
+    /contains internal language/);
   assert.equal(seededAdminPassword({}), 'stackbench-admin-2026');
 });
 

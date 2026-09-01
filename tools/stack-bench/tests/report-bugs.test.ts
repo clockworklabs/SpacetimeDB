@@ -108,6 +108,20 @@ test('repair feedback includes actionable runtime evidence without private artif
   }
 });
 
+test('repair feedback refuses internal evaluation language', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-disclosure-'));
+  try {
+    const app = join(root, 'app');
+    writeGrade(app, 'failed', 'the Stack Bench test failed');
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(reported.status, 2);
+    assert.match(reported.stderr, /contains internal language/);
+    assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('dependency repair feedback contains only checks selected for that feature', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-check-selection-'));
   try {

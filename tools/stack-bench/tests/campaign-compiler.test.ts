@@ -80,7 +80,7 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
     ],
     agents: [{ adapter: 'deterministic', adapterVersion: '1.3.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
-      guidanceProfile: 'prescribed@1.1.0', repairPolicy: 'scored-only@1.0.0' }],
+      guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.0.0' }],
     repetitions: 3,
     ordering: { method: 'balanced-rotation', seed: 'published-seed-1' },
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
