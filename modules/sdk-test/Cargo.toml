@@ -10,7 +10,6 @@ license-file = "LICENSE"
 crate-type = ["cdylib"]
 
 [dependencies]
-log.workspace = true
 anyhow.workspace = true
 paste.workspace = true
 
