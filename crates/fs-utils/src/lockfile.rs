@@ -218,7 +218,7 @@ pub mod advisory {
                     existing_contents
                 );
                 antithesis_sdk::assert_reachable!(
-                    "apai: failed to acquire an exclusive file lock (e.g. db.lock contended)",
+                    "db.lock: failed to acquire an exclusive file lock (e.g. db.lock contended)",
                     &antithesis_sdk::serde_json::json!({
                         "path": path.display().to_string(),
                         "would_block": source.kind() == io::ErrorKind::WouldBlock,
