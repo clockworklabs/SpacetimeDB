@@ -1,145 +1,119 @@
 # Stack Bench grader
 
-Executes versioned scenario specs against a running generated app and scores each
-check from structured browser, transport, lifecycle, and database evidence.
+The grader runs versioned scenarios against a generated app. It collects
+browser, transport, lifecycle, and database evidence for each check.
+
+Each scenario actor receives a separate browser context. A live-update check
+passes only when the page that was already open changes. The grader does not
+reload a failed assertion and try again.
+
+## Outcomes and scoring
+
+Every check produces one outcome:
+
+- `passed`;
+- `failed`;
+- `inconclusive` when required evidence is unavailable;
+- `harness_failure` when Stack Bench could not perform the measurement.
+
+Only a passed check adds its declared points. Other outcomes add zero and never
+change the declared denominator. Console errors remain diagnostics and do not
+change unrelated scores.
+
+Authorization and replay checks pass only when the requested call ran and
+produced verifiable evidence. Visible UI behavior cannot replace missing server
+evidence.
+
+## Scenario ownership
+
+Scenario JSON contains actors, setup steps, actions, and scored checks. The
+action contracts are compiled and registered in `src/actions/`. Scenario prose
+is not executable behavior.
+
+Actions run through capability-scoped executors. Browser, transport,
+concurrency, lifecycle, and database actions use the same typed result contract.
+
+When authoring assertions:
+
+- scope repeated elements to their owning row, room, message, or user;
+- assert visible values, not the presence of an empty container;
+- require the original open page for live-update behavior;
+- use separate actors for identity boundaries.
+
+Example:
+
+```json
+{
+  "do": "expect",
+  "actor": "bob",
+  "testid": "unread-badge",
+  "in": { "testid": "room-item", "contains": "{room:unread-main}" },
+  "within": 5000
+}
+```
+
+## Run the grader
+
+Use `dist/commands/run-suite.js` for normal grading. It owns database reset,
+provenance checks, contract linting, scenario execution, logs, and bundle
+creation.
+
+Direct `dist/grader/grade.js` execution is for focused scenario authoring only:
 
 ```bash
-node dist/grader/grade.js --url http://localhost:6173 --level 1 \
+node dist/grader/grade.js --url http://localhost:6173 \
   --spec tracks/ecommerce/scenarios/01-account-create-2.4.0.json \
   --label spacetime-l1 --out report.json
 ```
 
-Each actor in a scenario gets its own browser context, so identities are genuinely
-separate. The grader does not reload a failed assertion and retry it; a live-update
-check therefore passes only when the already-open page updates.
+If the grader exits before writing JSON, inspect the retained
+`grader-<suite>.stdout.log` and `grader-<suite>.stderr.log` files.
 
-## Scoring rules (enforced in code)
+## Validate checks
 
-Each passing check contributes exactly its declared points. A failed check contributes
-zero. An unavailable measurement is recorded separately and never changes the denominator.
-Setup failures are copied onto every affected check, while browser console errors remain
-diagnostic evidence rather than silently changing unrelated scores.
-
-Server-side authorization and replay checks earn points only when the requested call was
-actually issued and produced verifiable evidence. If the harness cannot perform the call,
-the check is inconclusive and scores zero; visible interface behavior cannot substitute for
-the missing server proof.
-
-## Scenario format
-
-Scenario files contain features with isolated `actors`, unscored `setup` steps,
-and explicitly normalized criterion points. The action language is defined in
-`definition-compiler.ts` and registered in `action-catalog.ts`; scenario prose
-is not the runtime contract.
-
-Executors are split by responsibility: ordinary browser actions, actor and
-transport actions, and concurrency/lifecycle/database actions. Each executor
-receives only the capabilities declared by its plugin. `dist/grader/grade.js`
-orchestrates actors and scoring but contains no action switch or backend-specific
-database/process implementation.
-
-`expect` supports `contains`, `notContains`, `absent`, `within` (ms), and `in` to scope
-the search inside a container:
-
-```json
-{ "do": "expect", "actor": "bob", "testid": "unread-badge",
-  "in": { "testid": "room-item", "contains": "{room:unread-main}" }, "within": 5000 }
-```
-
-`{room:NAME}` expands to that scenario run's unique room name.
-
-## Assertion rules
-
-Guard against these false positives:
-
-- **Scope anything that repeats.** An unscoped `unread-badge` matched a *different room's*
-  leftover badge and passed a feature that was entirely broken. Use `in` whenever the
-  element appears once per room/message/user.
-- **Assert on text, not element presence.** Apps commonly render a persistent empty
-  container (e.g. `typing-indicator`) that is always visible. Presence checks on those pass
-  and absence checks fail, regardless of behavior — both wrong. Use `contains`.
-
-Use `dist/commands/run-suite.js` for normal grading. It owns database reset,
-provenance verification, contract linting, scenario execution, and bundle
-creation. Direct `dist/grader/grade.js` invocation is useful only for focused authoring and
-does not replace those run-level preconditions.
-
-Each suite retains credential-redacted `grader-<suite>.stdout.log` and
-`grader-<suite>.stderr.log` beside its report. If a grader process exits before
-writing JSON, those files are the authoritative failure diagnostics.
-
-Validate new scored scenarios with both null controls and source-bound defects:
+Reference apps prove that intended behavior passes. Null controls prove that a
+blank app cannot earn points. Mutations prove that each scored check detects its
+assigned defect.
 
 ```bash
 npm run test:null
 npm run check:mutations -- --app <reference-app> --mutations <manifest>
 ```
 
-## Validating the grader itself
+During development, run only mutations affected by the change. A full mutation
+qualification is a release-candidate gate.
 
-Mutation checks prove that each scored check detects its assigned defect.
-`dist/grader/mutation-test.js` injects known defects into a known-good app and checks that the
-expected criterion fails without unrelated failures:
+The mutation runner requires:
 
-```bash
-node dist/grader/mutation-test.js --app <app-dir> --url <url> \
-  --mutations grader/mutations/spacetime-ecommerce-2.0.1.json \
-  --level <N> --recipe <id@version>
-```
+- a fully passing clean baseline;
+- one exact source anchor for every edit;
+- a conclusive failure at the intended check;
+- no unrelated failures;
+- successful source restoration and app reset.
 
-Backend, track, and scenario come from the mutation manifest. Level and recipe
-select the scoring release. The runner
-fails closed if the baseline is not fully passing, an anchor is dead or
-ambiguous, reset/redeploy/readiness fails, setup breaks, evidence is
-inconclusive, the wrong criterion fails, or the intended kill has collateral.
-It writes an atomic criterion-level artifact for both completed controls and
-harness failures. A surviving mutation means the expected check did not detect
-the defect. An equivalent mutation can also survive, so confirm that the edit
-changes observable behavior before changing the grader.
+Setup, infrastructure, and inconclusive failures do not count as defect
+detection. A surviving mutation can be equivalent, so confirm that its source
+edit changes observable behavior before changing the check.
 
-One check can have more than one mutation when it asserts independent behavior.
-The same source edit can also qualify separate scenario checks. Each scenario is
-still graded against a clean database.
+## Media evidence
 
-A defect may edit one file with the manifest-level `file`, or several files by
-putting `file` on each entry in `edits`. Multi-file defects are applied and
-restored as one control; every file is backed up before any edit is written,
-and a failed restore stops the run from reusing that source tree.
-
-## Clean state is a precondition
-
-Residual rows can change list, uniqueness, and aggregate assertions. The normal
-runner resets the selected run-owned database before each suite, verifies the
-configured database identity, and records reset or provenance failures as
-harness failures rather than application scores.
-
-## Watching a run
-
-`--media <dir>` records one video per actor plus a full-page screenshot at the exact
-moment any assertion fails. `--trace` additionally writes a Playwright trace per actor,
-steppable with DOM snapshots and network:
+`--media <dir>` records videos and failure screenshots. `--trace` adds a
+Playwright trace with DOM and network snapshots.
 
 ```bash
-node dist/grader/grade.js --url http://localhost:6273 --level 1 --feature 4 \
-  --spec tracks/ecommerce/scenarios/01-cart-2.4.0.json \
-  --label postgres --media ../media
-npx playwright show-trace ../media/postgres-f4-quantity.trace.zip
+npx playwright show-trace <trace.zip>
 ```
 
-Videos are `<label>-f<feature>-<actor>.webm`, screenshots `<label>-f<feature>-<criterion>.png`.
-Inspect the failing actor's video before reporting the verdict. Recordings are also
-published with the result evidence.
-`media/` is gitignored — recordings belong with the run output, not the repo.
+Inspect the failing actor's evidence before attributing a failure. Media belongs
+with run output and is not tracked in the repository.
 
-## Verify the execution target
+## Execution target
 
-Do not infer a backend from an ID shape or a conventional port. Preflight binds
-the selected stack adapter, database/module name, allocated ports, container
-identity, and run lease. `dist/commands/run-suite.js` then verifies database provenance before
-grading. A mismatch is a harness failure and must not produce an application
+Preflight binds the stack adapter, database or module name, ports, container
+identity, and run lease. The suite runner verifies that exact target before
+grading. A mismatch is a harness failure and cannot produce an application
 score.
 
-When several stacks fail the same check, inspect the structured evidence and
-recorded media before attributing the result to an application. Cross-stack
-agreement is useful diagnostic evidence, but it is not itself proof that either
-the apps or the oracle are wrong.
+When several stacks fail the same check, inspect the structured evidence. A
+shared failure is useful diagnostic information, but it does not prove whether
+the apps or the check are wrong.

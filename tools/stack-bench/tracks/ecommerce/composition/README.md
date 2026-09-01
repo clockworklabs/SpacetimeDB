@@ -1,100 +1,72 @@
-# Ecommerce benchmark composition
+# Ecommerce composition
 
-This directory is the versioned, composable source model for the ecommerce
-benchmark. Packs define independently selectable features and specifications;
-recipes bind exact pack, fixture, prompt, execution, and scoring versions.
+This directory defines the versioned ecommerce work that Stack Bench can ask
+for and grade.
 
-- `packs/` contains feature and specification modules. Packs explicitly identify
-  either a visible product feature or an optional
-  specification. Feature dependencies may add prerequisite features;
-  specifications never add features and instead declare which selected feature
-  surface makes each check applicable.
-- `fixtures/` records exact starting products, stock, accounts, and empty state.
-- `recipes/` selects exact pack and fixture versions, supplies only global task
-  framing, and defines execution order and scoring.
-- `promotions.json` maps public aliases such as L1 and L2 to exact releases and
-  records their promotion state.
-- `candidates.json` contains exact draft releases that may be selected for
-  qualification without changing a public alias.
-- `calibrations/` binds one exact recipe to canonical reference apps, mutation
-  manifests, null expectations, repetition policy, stack status, and promotion
-  state. Calibration applies to the whole combination, not to packs separately.
+## Ownership
 
-Recipes use explicit weights attached to permanent check keys.
+- `packs/` contains selectable product features and specifications.
+- `fixtures/` contains exact starting data.
+- `recipes/` selects pack, fixture, prompt, execution, and scoring versions.
+- `promotions.json` maps public sequential aliases to exact recipes.
+- `candidates.json` lists draft recipes that can be qualified directly.
+- `calibrations/` binds a recipe to reference apps, mutations, null controls,
+  repetition policy, and qualification state.
 
-At runtime, pack selection is requested-task selection. Its transitive declared
-dependencies are included in both prompt composition and grading. A check
-selection is only a measurement filter inside that task: without an explicit
-pack selection the full recipe prompt remains, and with one, an out-of-scope
-check is rejected rather than grading behavior the agent was never asked to
-build. Campaign identities retain explicit packs, resolved task packs, selected
-checks, and the exact composed-task hashes.
+These files are the source of truth. Do not copy current versions, counts, or
+qualification status into documentation.
 
-Run the source checks without Docker:
+## Selection rules
 
-```text
+A pack selection changes the requested product work. Its declared dependencies
+join both the prompt and grading scope.
+
+A check selection narrows measurement inside that requested work. It does not
+change the product request. A check outside the selected packs is rejected.
+
+Prompt selection and scoring selection remain independent. Specifications have
+three treatments:
+
+- **requested:** included in the initial request and scored;
+- **expected:** omitted from the initial request, but scored and eligible for
+  repair feedback after a failure;
+- **observed:** measured after the first build without affecting the main score
+  or repair loop.
+
+## Identity
+
+Recipes use normalized JSON. Object keys are sorted. Arrays keep their order when
+order changes meaning or execution.
+
+- `meaningSha256` covers task text, contracts, checks, roles, and points.
+- `executionSha256` covers fixtures, actions, timing, capabilities, and budgets.
+- `contentSha256` binds meaning and execution.
+- `sourceManifestSha256` binds source paths and raw bytes.
+
+Human versions are labels. Hashes identify the exact content.
+
+## Authoring commands
+
+Run these commands from `tools/stack-bench`:
+
+```bash
 npm run check:composition
 npm run check:calibration
+npm run pack -- validate <pack.json> --track ecommerce
+npm run recipe -- validate <recipe.json> --track ecommerce
+npm run recipe -- show <recipe.json> --track ecommerce
+npm run recipe -- diff <old-recipe.json> <new-recipe.json> --track ecommerce
 ```
 
-The live runner resolves the requested release before launching a browser and
-records its exact identity in every grade and bundle. Scenario actions execute
-through the versioned, capability-scoped action registry.
+Use `recipe show --pack <pack-id>` or `--check <check-id>` to inspect a selected
+scope and its hash.
 
-Normal runs resolve the current alias. A single-level run may select a
-catalogued recipe exactly with `--recipe <id>@<version>`. Exact selection is
-also accepted by preflight and the reference, mutation, null, budget, and
-qualification commands, all of which use the normal runtime path.
+Use the compiler-owned command for current qualification status:
 
-Task fragments are source slices identified by permanent IDs, a numeric order,
-an exact contained path, optional unique start/end markers, and the task modes
-in which they apply. Compilation sorts by order then ID, deduplicates an
-explicitly shared ID only when its full definition and selected bytes match,
-and includes the resulting text in recipe meaning. L1 session durability is an
-independent pack.
-
-Recipe identity uses canonical JSON: object keys are sorted, while arrays whose
-order affects tasks or execution retain their order. Human versions are labels;
-the hashes are the proof:
-
-- `meaningSha256` covers task/contract text, permanent check keys, requirements,
-  assertions, roles, and recipe points;
-- `executionSha256` covers fixtures, selectors, timing, actions, runtime probes,
-  capabilities, evidence modes, and budgets;
-- `contentSha256` binds those two fingerprints into one exact recipe identity;
-- `sourceManifestSha256` separately binds track-relative source names and raw
-  bytes, so formatting-only source changes remain visible without changing the
-  semantic identity.
-
-Saved releases include source digests and the compact check catalog. They do not
-copy fixture passwords, prompt contents, or the full executable grader plan.
-
-## Current release status
-
-| Alias | Exact release | Catalog state | Current qualification status |
-|---|---|---|---|
-| L1 | `ecommerce.sequential-l1@2.5.0` | candidate | 46/46 scored checks have exact defect definitions; no qualification result is accepted |
-| L2 | `ecommerce.sequential-l2@1.6.0` | candidate | 74/74 scored checks have exact defect definitions; no qualification result is accepted |
-| L3 | `ecommerce.sequential-l3@1.0.0` | candidate | not qualified or promoted |
-| Dependency depth 3 | `ecommerce.progression-depth3@2.0.1` | promoted for L1-L3 | qualified on MongoDB, PostgreSQL, and SpacetimeDB for 97 checks and 162 points |
-| Dependency progression | `ecommerce.progression-catalog@2.0.1` | candidate | draft L1-L6 catalog; not qualified or promoted |
-
-The L2 1.6 calibration requires one reference run and one mutation run for each
-supported stack, plus one null-control run. Check the compiler-owned status:
-
-```text
-node dist/commands/qualification-cli.js status --track ecommerce --level 1 --recipe ecommerce.sequential-l1@2.5.0
-node dist/commands/qualification-cli.js status --track ecommerce --level 2 --recipe ecommerce.sequential-l2@1.6.0
+```bash
+node dist/commands/qualification-cli.js status --track ecommerce --level <N>
 ```
 
-Specification treatment is independent from feature selection:
-
-- **requested** specifications appear in the initial prompt and are scored;
-- **expected** specifications are not prescribed initially, but are scored and
-  may enter a correction report after a failure;
-- **observed** specifications are evaluated separately after the first build
-  and do not alter the requested-feature score or correction loop.
-
-Exact candidate selection cannot change the promotion-catalog hash bound into
-qualified calibration evidence. Campaign conditions and single-run requests
-resolve through the same content-bound task and grading entrypoints.
+Do not infer launch or promotion status from this README. Qualification evidence
+must match the exact recipe, fixture, calibration, engine, image, stack, and
+runner identities.

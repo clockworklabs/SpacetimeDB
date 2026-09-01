@@ -9,9 +9,28 @@ Stack Bench uses two deliberately different release states.
   covering `release.json`, and registry signatures for every image. Verification
   must use a public key obtained outside the release bundle.
 
-Schema v2 is the only accepted format. Pre-release schema v1 required candidate
-bundles to contain placeholder signature files and could not verify a qualified
-release. It has no compatibility reader because no v1 bundle was published.
+Schema v2 is the only accepted release format.
+
+## Build the controller image
+
+Build the Linux/amd64 controller from a clean checkout. The source identity
+command refuses changed or untracked release inputs.
+
+```powershell
+$source = npm --prefix tools/stack-bench run release:source --silent | ConvertFrom-Json
+docker build --platform linux/amd64 `
+  -f tools/stack-bench/appliance/Controller.Dockerfile `
+  --build-arg SOURCE_REVISION=$($source.revision) `
+  --build-arg SOURCE_SHA256=$($source.sha256) `
+  --build-arg BINARY_SOURCE_SHA256=$($source.binarySourceSha256) `
+  -t stack-bench-controller:development .
+```
+
+The build accepts only Linux SpacetimeDB binaries recorded in
+`container/spacetimedb-binaries.json`. Rebuild them with
+`bash tools/stack-bench/container/build-linux-cli.sh` after a recorded binary
+source changes. Review and commit the updated provenance file. The binary files
+remain ignored.
 
 ## Build a candidate
 

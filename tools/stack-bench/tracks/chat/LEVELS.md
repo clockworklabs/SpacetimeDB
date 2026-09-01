@@ -1,67 +1,35 @@
-# Chat track — level sequence
+# Chat progression
 
-The chat track is retained as a collaboration workload built around rooms,
-messages, presence, and per-user state. Its definitions remain supported, but
-its current reference fixtures are blocked and must be rebuilt before chat is
-presented as a newly qualified cross-stack comparison.
+The chat track covers rooms, messages, presence, and per-user state. Its L1 and
+L2 definitions are available, but it has no active reference fixtures. Do not
+present chat results as a qualified cross-stack comparison.
 
-Levels are cumulative and ordered by the property they make measurable.
+`track.json` is the source of truth for available suites and the validation
+boundary.
 
-## Status
-
-| Level | Product scope | Status |
-|---|---|---|
-| L1 | accounts, rooms, messages, presence, typing, and read state | definitions available; reference rebuild required |
-| L2 | private rooms, membership, invitations, removal, profiles, and friends | definitions available; reference rebuild required |
-| L3 | contended counters, capacity, and transfers | planned |
-| L4 | deferred and expiring work | planned |
-| L5 | correctness and efficiency under load | planned |
-
-`track.json` declares the available suites and the current validation boundary.
-The reference registry records why each chat reference is blocked. A blocked
-reference cannot be used as qualification evidence.
-
-## L1 — Basic chat with accounts
-
-L1 establishes stable identity, durable shared state, ephemeral room-scoped
-state, and per-user derived state:
+## L1: Chat and accounts
 
 - account creation and sessions;
-- room creation and messaging;
-- presence and typing indicators;
+- room creation and messages;
+- presence and typing state;
 - read receipts and unread counts;
-- delivery, ordering, reconnect, and system invariants declared by the track.
+- ordering, reconnect, and system invariants.
 
-Each browser actor runs in an isolated context, so identity and per-user state
-are measured independently.
+Each actor uses a separate browser context so identity and per-user state are
+measured independently.
 
-## L2 — Authorization and people
+## L2: Authorization and people
 
-L2 adds resource ownership, private rooms, membership, invitations, removal,
-profiles, friend requests, and presence. Its checks cover both visible behavior
-and direct authorization or privacy evidence where the transport can be
-exercised conclusively.
+- room ownership and private rooms;
+- membership, invitations, and removal;
+- profiles and friend requests;
+- presence privacy and authorization.
 
-## L3 — Contended state
+## Planned work
 
-The L3 target introduces reaction or vote counters, bounded capacity, unique
-claims, and balance transfers. Exact arithmetic and winner counts are the
-intended observable outcomes. No current L3 release is qualified.
+- L3 adds contended counters, bounded capacity, unique claims, and transfers.
+- L4 adds scheduled and expiring work.
+- L5 adds correctness and efficiency under load.
 
-## L4 — Deferred and expiring work
-
-The L4 target covers scheduled messages, expiry, and reminders across process
-restart. No current L4 release is qualified.
-
-## L5 — Volume
-
-The L5 target measures correctness, propagation latency, throughput, and query
-growth with many rooms, a large message history, and concurrent clients. No
-current L5 workload is qualified.
-
-## Running and extending the track
-
-Use the package entrypoints documented in the primary `README.md`: `bench` runs
-the build, grade, and repair loop. `dist/commands/run-suite.js` grades a prepared
-app. The bug report command produces structured repair input. New scored checks
-require reference, null-control, and defect-detection evidence before promotion.
+Planned work is not launchable or qualified. New scored checks require matching
+reference, null-control, and defect-detection evidence before promotion.

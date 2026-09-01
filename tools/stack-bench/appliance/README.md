@@ -1,107 +1,88 @@
 # Stack Bench appliance
 
-This directory is the dedicated-runner packaging for Stack Bench. It is not a
-general workstation install. The supported v1 runner is a disposable
-Linux/amd64 machine with a local Docker Engine and the fixed persistent path
-`/var/lib/stack-bench`.
+The appliance is the supported v1 deployment for paid and subscription-backed
+Stack Bench campaigns. Run it on a dedicated, disposable Linux/amd64 machine
+with a local Docker Engine and the persistent path `/var/lib/stack-bench`.
 
-The controller has the Docker socket, which is root-equivalent access to the
-runner. Use a machine that contains no unrelated workloads or credentials and
-destroy it after copying verified results elsewhere.
+The controller has root-equivalent access through the Docker socket. Do not run
+it beside unrelated workloads or credentials. Copy verified results off the
+runner before destroying it.
 
-## What is packaged
+See [appliance design](DESIGN.md) for the security model and
+[release guidance](RELEASE.md) for bundle assembly and signature verification.
 
-- `Controller.Dockerfile` builds the grader/controller with Playwright, a
-  digest-pinned Docker CLI, and checksum-pinned Cosign 3.1.3 for qualified
-  release verification.
-- The dependency-volume command copies the release's exact SDK, CLI, and standalone
-  runtime into one checksummed named volume. It refuses unmarked, changed, or
-  wrong-release content.
-- `docker-compose.yaml` starts the controller, one-shot dependency initializer,
-  and digest-pinned PostgreSQL and MongoDB services.
-- `operator.env.example` documents the required operator values. It never
-  contains a real secret or a usable mutable image tag.
+## Package contents
 
-The coding container receives the selected app, its own transcript directory,
-and only the dependency paths declared by its stack adapter. It never receives
-the controller image filesystem, scenarios, grader, results, or release
-manifest. It also never receives the provider API key, subscription token, or
-login file. A controller-owned session broker adds the selected provider
-credential to model requests and stops when that coding session ends.
+- `Controller.Dockerfile` builds the controller and grader.
+- `docker-compose.yaml` starts the controller, dependency initializer,
+  PostgreSQL, MongoDB, and optional dashboard.
+- `operator.env.example` lists operator configuration without secret values.
+- the dependency initializer copies the release SDK, CLI, and runtime into a
+  checksummed read-only volume.
 
-## Build a development candidate
+The coding container receives one app workspace, its transcript directory, and
+only the dependencies declared by its stack adapter. It cannot read the
+controller, grader, scenarios, results, or provider credential.
 
-From a clean repository checkout, compute the exact tracked release-source
-identity and build Linux/amd64:
+## Prepare the runner
 
-```powershell
-$source = npm --prefix tools/stack-bench run release:source --silent | ConvertFrom-Json
-docker build --platform linux/amd64 `
-  -f tools/stack-bench/appliance/Controller.Dockerfile `
-  --build-arg SOURCE_REVISION=$($source.revision) `
-  --build-arg SOURCE_SHA256=$($source.sha256) `
-  --build-arg BINARY_SOURCE_SHA256=$($source.binarySourceSha256) `
-  -t stack-bench-controller:development .
-```
+1. Create these operator-only directories:
 
-The controller build accepts only Linux CLI and standalone binaries recorded in
-`container/spacetimedb-binaries.json`. From a clean checkout, run
-`bash tools/stack-bench/container/build-linux-cli.sh`, review the updated
-provenance file, and commit it. The binary files stay ignored. Build them again
-after a recorded binary source input changes.
+   ```text
+   /var/lib/stack-bench/work
+   /var/lib/stack-bench/results
+   /var/lib/stack-bench/secrets
+   /var/lib/stack-bench/controller-home
+   ```
 
-This creates a local development candidate only. A distributable release still
-requires registry digests, generated SBOMs, signatures/attestations, and a
-verified release manifest.
+2. Configure one provider credential mode:
 
-The identity command refuses changed or untracked release inputs. The
-Dockerfile-specific ignore file excludes local notes, dependencies, generated
-results, transcripts, runtime state, and archived applications so those bytes
-cannot leak into the image or make otherwise identical builds diverge.
+   - For subscription billing, run `claude setup-token` and write only the
+     returned token to `secrets/claude_subscription_token`.
+   - For API billing, write the provider key to a file under `secrets/`.
 
-Candidate assembly and qualified Cosign verification are documented in
-[`RELEASE.md`](RELEASE.md). Candidate integrity is not a release signature, and
-a qualified verification requires a trusted public key supplied from outside
-the downloaded bundle.
+   Set secret-file permissions to `0600`. Do not configure both modes.
 
-## Run on the dedicated runner
+3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`. Replace
+   example image values with the exact digest references from the release
+   manifest.
 
-1. Create `/var/lib/stack-bench/{work,results,secrets,controller-home}` with
-   access limited to the appliance operator. `controller-home` holds only
-   controller CLI state and the CLI's live transcript cache; it is outside the
-   read-only image. Completed runs archive transcripts and the generated
-   SpacetimeDB friction log under `results/` for durable artifact collection.
-2. For subscription billing, run `claude setup-token` once for the dedicated
-   runner, write only the returned token to
-   `/var/lib/stack-bench/secrets/claude_subscription_token`, and set the file to
-   mode `0600`. Select `subscription-token` in the operator environment. For
-   API billing, write the provider API key as the only line in a mode-`0600` file
-   below `/var/lib/stack-bench/secrets` and select `api-key`. Never configure
-   more than one mode for a run.
-3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`, select the
-   intended credential mode, replace the two
-   example image values with exact `@sha256:` references from the release
-   manifest, and copy that manifest to the configured path below
-   `/var/lib/stack-bench`.
-   If you use the dashboard, write at least 32 random characters to
-   `/var/lib/stack-bench/secrets/dashboard_control_secret` and set the file to
-   mode `0600`. The browser asks for this secret when you start or resume a run.
-4. Pull and verify every manifest image before starting any service.
-5. Render the Compose file and run the exact requested preflight.
+4. Copy the release manifest to the configured path. Pull and verify every
+   manifest image before starting services.
+
+5. If you use the dashboard, write at least 32 random characters to
+   `secrets/dashboard_control_secret` and set its mode to `0600`.
+
+## Validate the appliance
+
+Run commands from `tools/stack-bench` on the runner.
+
+Check the Compose configuration:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml config --quiet
+```
 
+Run preflight for the exact planned scope:
+
+```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
   preflight --backend spacetime,postgres,mongodb \
   --track ecommerce --levels 1-2 --run-index 0 --smoke
 ```
 
-After preflight is green, run only the scope the operator decided to test:
+Preflight verifies the runner, credentials, images, dependencies, ports,
+network paths, storage, stack access, and required qualification evidence. The
+smoke check uses the real build image and does not call a model.
 
-Compile and inspect a campaign without starting model work:
+## Inspect a campaign
+
+The campaign file is the run authority. Store it below
+`/var/lib/stack-bench/results/plans`.
+
+Compile and inspect it without model work:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
@@ -109,300 +90,118 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
   campaign show /var/lib/stack-bench/results/plans/campaign.json
 ```
 
-The campaign file is caller-owned under `/var/lib/stack-bench`. A draft can be
-inspected while definitions are still candidates. A frozen campaign requires
-qualified/promoted definitions plus exact controller and build image identities;
-the compiler refuses to fill those in from ambient state. An internal campaign
-may leave `releaseManifestSha256` null so distribution packaging does not block
-measurement. When a distributed release manifest is named, execution hashes and
-validates it and checks its controller/build-sandbox image references. In either
-case, the running Compose controller must match the campaign. This runtime binding
-does not replace separate release-bundle signature/integrity verification.
-`campaign.example.json` is a zero-cost deterministic draft showing the complete
-shape; copy it outside the image and replace its study inputs before use.
+A frozen campaign binds the model, stacks, work, checks, budgets, repetitions,
+parallelism, pricing, controller image, and build image. The runner must match
+those identities.
 
-The feature catalog and run mode are separate choices. A campaign can bind the
-same versioned feature graph in either mode:
+`campaign.example.json` is a zero-cost deterministic example. Copy it outside
+the image before changing it.
 
-- `sequential` runs each selected level in order. Each level gets its own
-  features. Earlier checks run again as regression checks.
-- `dependency` opens only features whose parents passed. Each branch has its
-  own strike budget and can stop without stopping unrelated branches.
+## Run a campaign
 
-Dependency campaigns use `"repairSelection": "feature"` by default. The first
-build receives all open features. Each later repair receives one failed feature,
-while grading still checks passed prerequisites for regressions. Only the failed
-feature in the repair request spends a strike. Set `"repairSelection": "batch"`
-to send all currently failed features in one repair. Sequential mode does not
-use this setting.
-
-Both modes use the same prompt modules, checks, points, and feature ownership.
-A sequential campaign can select a contiguous prefix such as levels 1 through
-3 without copying or redefining the graph.
-
-`campaign.product-brief-reference.json` is the model-free draft gate for the
-primary sequential L1 condition. The prompt requests the six product features and
-uses neutral stack guidance. Its evaluation scope also covers access control,
-state continuity, live updates, concurrency safety, transactional integrity,
-and synchronization after direct database writes. Those checks count in the
-ordinary 58-point score without adding the quality specifications to the build
-prompt. The exact registered reference fixture runs twice on each stack: six
-planned attempts. This gate is qualification input, not comparative model data.
-Null and exact-mutation controls must pass separately before the condition can
-be frozen.
-
-Run a draft through the complete campaign path only when it uses registered
-non-billable adapters and declares zero pricing for every selected model:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  campaign trial /opt/stack-bench/appliance/campaign.product-brief-reference.json \
-  --out /var/lib/stack-bench/results/campaigns/product-brief-reference-trial
-```
-
-`campaign trial` refuses paid adapters and frozen plans. It exists to validate
-draft orchestration and evidence without model spend; its output is not
-comparative benchmark data. `campaign run` remains restricted to frozen plans.
-After a dependency reference campaign completes, the command also replays its
-progression evidence. It reports graph coverage separately from the full recipe
-catalog. The catalog status remains `not-run` until a separate full-catalog
-audit exists. Repeat the evidence replay without rerunning the campaign:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  campaign audit /var/lib/stack-bench/results/campaigns/product-brief-reference-trial
-```
-
-Run counts and concurrency are explicit campaign inputs. `repetitions` is the
-default for every selected stack; a stack can override it independently.
-`parallelism` is the maximum number of attempts allowed to run at once:
-
-```json
-{
-  "stacks": [
-    { "id": "spacetime", "adapterVersion": "1.1.0", "repetitions": 5 },
-    { "id": "postgres", "adapterVersion": "1.4.0", "repetitions": 8 },
-    { "id": "mongodb", "adapterVersion": "1.3.0", "repetitions": 3 }
-  ],
-  "repetitions": 1,
-  "parallelism": 8
-}
-```
-
-This plan contains 16 attempts and may run any eight simultaneously, including
-multiple attempts of the same stack. The scheduler assigns each live attempt a
-different run slot, which isolates its app ports, database/module name, work
-directory, resource locks, and evidence directory. SpacetimeDB slots also get
-separate benchmark-owned host ports. A campaign can request at most 21-way
-parallelism because slots 0 through 20 are the collision-tested local port
-range. Set a smaller value when CPU, memory, provider limits, or database
-capacity are the practical constraint. Both the counts and the concurrency
-limit are included in the frozen campaign identity.
-
-Prepare durable state without launching an attempt, then run that exact frozen
-plan (or resume its remaining attempts) from the same persistent directory:
+Prepare durable state without starting an attempt:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
   campaign prepare /var/lib/stack-bench/results/plans/campaign.json \
   --out /var/lib/stack-bench/results/campaigns/campaign-001
+```
 
+Start the exact frozen plan:
+
+```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \
   campaign run /var/lib/stack-bench/results/plans/campaign.json \
   --out /var/lib/stack-bench/results/campaigns/campaign-001
 ```
 
-`campaign status /var/lib/stack-bench/results/campaigns/campaign-001` prints a compact
-summary. Add `--full` only when you need the complete durable state. Two controllers
-cannot own the directory at once. Failed harness or
-inconclusive measurement attempts remain visible and retries append new
-execution records. Multiple running attempts are checkpointed independently.
-All controller processes also share persistent resource locks, so another
-campaign or qualification command cannot claim a live run slot. After an
-interrupted controller, reconciliation proves cleanup for every live
-slot before changing any of their records. A comparison attempt is completed
-only when every selected check produced pass-or-fail evidence on both the first and final build and each
-score denominator equals the campaign's declared points. An inconclusive check
-never shrinks the denominator or contributes comparison metrics. If a
-controller ends while an attempt is still marked running, automatic resume
-refuses. Run `campaign reconcile <campaign.json> --out <campaign-directory>`;
-it advances the record only if the private supervisor evidence proves exact-
-owned cleanup. It never invents a result or silently starts a duplicate.
+The campaign controls attempt counts and concurrency. `repetitions` sets the
+default attempt count per stack. A stack can override it. `parallelism` limits
+simultaneous attempts. Each live attempt receives isolated ports, database
+names, locks, workspaces, and evidence paths.
 
-The same plans and durable state are available through the optional local
-dashboard. It is a client of these commands, not a second scheduler:
+The remaining `campaign` snippets are controller subcommands. Run them after
+the same Docker Compose `run --rm controller` prefix used above.
+
+Use durable state for normal control:
+
+```sh
+campaign status <campaign-directory>
+campaign inspect <campaign-directory>
+campaign report <campaign-directory>
+```
+
+- `status` is the compact normal view.
+- `inspect` adds score, cost, duration, cleanup, evidence, and feature progress.
+- `report` rebuilds `report/report.json` and `report/report.html` from retained
+  evidence.
+
+Do not infer state from logs. Use logs only to diagnose a reported phase or
+failure. The controller never retries, extends, or grants paid work
+automatically.
+
+## Resume and repair
+
+If the controller stopped while an attempt remained live, reconcile ownership
+before any resume:
+
+```sh
+campaign reconcile <campaign.json> --out <campaign-directory>
+```
+
+Reconciliation changes state only when private supervisor evidence proves that
+the exact owned resources are clean.
+
+Dependency campaigns can grant more strikes to selected exhausted features:
+
+```sh
+campaign grant-strikes <campaign-directory> \
+  --attempt <attempt-id> --grant-id <unique-id> --level <N> \
+  --feature <feature-id> --strikes <N>
+```
+
+The grant creates a linked continuation. It does not rewrite the completed
+execution. Use `campaign resume <campaign.json> --out <campaign-directory>` to
+run scheduled dependency work.
+
+## Model-free trials and qualification
+
+`campaign trial` accepts only registered non-billable adapters and zero pricing.
+It validates orchestration but does not produce comparative model data.
+
+Check qualification requirements without starting work:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  qualification status --track ecommerce --level <N>
+```
+
+Run only evidence required by that exact status. Do not repeat reference,
+mutation, or null work when its bound inputs have not changed. See the
+[reference app guide](../reference-apps/README.md) and
+[grader guide](../grader/README.md) for qualification rules.
+
+## Dashboard
+
+Start the optional dashboard:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml --profile dashboard up -d dashboard
 ```
 
-Open `http://127.0.0.1:7331`. CLI-started campaigns appear there, and a
-dashboard-started campaign remains an ordinary directory for `campaign status`,
-`campaign report`, and reconciliation. See `../dashboard/README.md` for the exact
-boundary and stop command.
+Open `http://127.0.0.1:7331`. The dashboard reads and controls the same campaign
+state as the CLI. See [dashboard/README.md](../dashboard/README.md).
 
-After any completed or stopped campaign, regenerate the report only from its
-stored evidence:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  campaign report /var/lib/stack-bench/results/campaigns/campaign-001
-```
-
-This writes `report/report.json` and self-contained `report/report.html`. The
-report states the exact scope and campaign status, keeps invalid executions and
-retries visible, links raw run and admission artifacts, includes exact recipe,
-fixture, calibration, runtime-image, release, and pricing identities, applies
-the declared dispersion, and does not impute missing metrics. When a condition
-selects observed-only first-build checks, the report gives them a separate
-diagnostic section, denominator, coverage value, and raw-evidence link. Those
-observations never alter the scored result or correction metrics. Expected
-specifications are different: they are absent from the initial prompt but do
-count toward first-build/final scores and may enter repair rounds. Deleting
-only the `report` directory and running the command again produces the same
-report identity and bytes.
-
-Qualification is also an explicit appliance operation. Select one validated
-track/level and backend. A full mutation command retains its verified clean
-baseline as a separate sibling reference artifact, so the same clean grade is
-not repeated. The null gate is stack-independent:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  preflight --agent-adapter reference-fixture \
-  --backend mongodb,postgres,spacetime --track ecommerce --levels 2 \
-  --run-index 0 --smoke
-
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  qualification status --track ecommerce --level 2
-```
-
-The `reference-fixture` adapter makes this qualification preflight model-free;
-it does not call a provider or spend model tokens. Paid campaign preflight must
-instead select the campaign's real agent adapter and have the credential mode
-used by that campaign ready.
-
-Each scoped qualification artifact binds the executable calibration identity.
-Evidence from another recipe, fixture, mutation set, control policy, or declared
-repetition plan cannot be substituted during promotion.
-Reference qualification also retains each complete underlying benchmark run in
-a sibling `<artifact-name>.runs/` directory. Keep that directory with the JSON;
-the run paths recorded in the artifact are relative to the artifact itself.
-New reference and null-control artifacts record the controller mode, operating
-system, CPU architecture, Docker Engine version, Docker-reported kernel,
-Docker architecture, CPU allocation, and memory allocation. A calibration may
-bind a supported class of runner; ecommerce L2 requires the Linux/amd64
-appliance for reference, mutation, null, and budget evidence. Every artifact in
-one qualification or budget-measurement set must also report the same complete
-runner snapshot, so timings from materially different environments cannot be
-silently combined.
-Local-controller runs remain useful diagnostics but cannot promote that recipe.
-Artifacts created before runner identity or the complete runner observation was
-recorded remain readable, but are not accepted where the selected calibration
-requires that evidence.
-
-Mutation qualification is serial by default. Use `--mutation-workers N` with
-`--mutations` to distribute individual defects across 1 to 8 isolated workers.
-The complete mutation set is a release-candidate gate and requires
-`--release-candidate`. During development, run only the definitions affected
-by the change. Add one `--mutation-id <id>` option for each affected defect.
-Targeted output is diagnostic evidence and cannot satisfy a promotion gate.
-Defects from one scenario may run on different workers. The parent grades the
-clean fixture once. Each worker then receives a separate run slot, source tree,
-backend lease, ports, logs, and artifact directory. The parent accepts the
-result only when all workers use the same recipe, calibration, fixture, engine,
-image, and harness, and their results cover the exact mutation selection once.
-
-A mutation batch runs for at most 60 minutes by default. At the deadline it
-stops the active grade, restores the fixture, saves completed results atomically,
-and reports the remaining count without qualifying the fixture. Use the same
-checkpoint directory in a later command to continue. A changed engine, recipe,
-fixture, image, track, or worker assignment rejects the checkpoint. A changed
-scenario or mutation reruns that scenario group. Use a new `--out` file for
-each command so prior run evidence is not replaced.
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  qualify-reference --backend postgres --track ecommerce --level 2 \
-  --recipe ecommerce.sequential-l2@1.6.0 --mutations --release-candidate \
-  --mutation-workers 4 --run-index 8 --repetitions 1 \
-  --mutation-checkpoint-dir /var/lib/stack-bench/results/postgres-l2-checkpoints \
-  --out /var/lib/stack-bench/results/postgres-l2-mutations.json
-```
-
-If the first batch is incomplete, run the same command again with the same
-checkpoint directory and a new output file. Set
-`--mutation-max-runtime-minutes N` from 1 through 120 to change the batch limit.
-`--timeout-minutes` must be at least 20 minutes longer than the batch limit.
-It caps the complete clean-plus-mutation repetition and cannot exceed 180
-minutes for mutation qualification.
-
-The worker count reserves consecutive run slots starting at `--run-index`.
-The command fails before launch if those slots exceed the supported range or
-if the worker count exceeds the number of selected mutations. Keep top-level
-qualifications on non-overlapping slot ranges when several stacks run at once.
-
-Before the first qualification of a recipe whose packs still have unmeasured
-runtime budgets, run each `budgetPreparation.commands` entry printed by
-`qualification status` through the same Compose prefix shown above. Those
-commands collect pristine references for every supported stack and then run
-`pack-budget recommend`. The recommendation command verifies the exact recipe,
-calibration, fixture, engine, stack coverage, repetitions, controller
-environment, retained raw runs, and component arithmetic. Its policy takes the
-largest observed pack runtime, doubles it, and rounds upward to the next second.
-It writes a review artifact and never edits pack definitions.
-
-Review the recommendation, apply the accepted bounds to the pack definitions,
-commit them, and build a new exact controller image. The budget-measurement
-artifacts are inputs to that source change; they are not the final qualification
-evidence because the executable identity changes when the bounds are added.
-On the new image, require a green preflight and run every command in the
-`commands` array through the Compose prefix. Only those post-budget reference,
-mutation, and null artifacts can be bound to promotion.
-
-Before launching the official repetitions, inspect the exact go/no-go record:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  qualification status --track ecommerce --level 2
-```
-
-It is read-only. The JSON separates launch blockers, required evidence and
-commands, promotion blockers, and the governance states promotion would change.
-It never supplies a missing runtime budget or treats an absent artifact as a
-pass.
-
-To run one already-decided attempt directly:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  run --backend postgres --track ecommerce --levels 1-2 --run-index 0
-```
-
-The report records the exact levels, packs, checks, stack adapter, agent
-adapter, model, image content identity, and preflight evidence. It does not
-infer a special label from a partial selection; it states what was run.
-
-## Cleanup and recovery boundary
+## Results and cleanup
 
 Results remain under `/var/lib/stack-bench/results` after the controller exits.
-This includes archived model transcripts and the SpacetimeDB friction log; they
-must not depend on the CLI's 30-day live-cache retention.
-Do not delete that directory until its artifact manifest has been verified and
-copied off the runner. Every run writes a public recovery status and keeps
-private authenticated recovery authority until exact-owned cleanup succeeds.
-Follow [`RECOVERY.md`](RECOVERY.md) for interruption, quarantine, safe retry, and
-intentional retention. Dependency and database volume destruction remains an
-operator action after verified result export; no run recursively deletes the
-shared state root.
+Verify and copy the complete campaign package before deleting the runner.
+
+A run removes only resources whose private ownership evidence still matches.
+If cleanup cannot be proved, it preserves the evidence and quarantines the run.
+Follow [RECOVERY.md](RECOVERY.md). Do not delete same-name resources or clear the
+shared state root by guesswork.

@@ -1,73 +1,68 @@
-# Canonical reference applications
+# Reference applications
 
-These applications validate Stack Bench's grader. They are deliberately boring,
-auditable test fixtures—not product examples and not evidence that their code is
-the best way to build the application.
+Reference applications validate the grader. They are simple, auditable fixtures,
+not product examples or recommended application designs.
 
-`registry.json` is the source of truth. A fixture moves through three states:
+`registry.json` is the source of truth for fixture identity and status:
 
-- `blocked`: no defensible source and oracle set exists.
-- `candidate`: exact source bytes are checked in, but current qualification is
-  not complete.
-- `active`: the checked-in app passes every criterion in its declared baseline,
-  every mutation anchor is unique, and every mutant is cleanly caught at its
-  declared criterion without setup failure, inconclusive evidence, or collateral.
+- `blocked`: no acceptable source and check set exists;
+- `candidate`: exact source is present, but qualification is incomplete;
+- `active`: the exact source passed its required reference and mutation gates.
 
-Provenance is explicit and does not imply product quality. `authored` identifies
-a maintained benchmark oracle whose authority comes from its checked-in source
-hash and current qualification evidence. Every registry entry is an authored
-source in the current checkout.
+One cumulative source tree can serve several recipes when each registry entry
+binds the same source hash. Qualification evidence remains separate for each
+recipe and calibration.
 
-Logical track/level entries may reuse one source directory when they bind the
-same exact hash. Qualification and mutation evidence remain separate per level;
-the registry does not require duplicate source trees merely to create a new
-selection.
+## Promotion requirements
 
-A recipe-bound full fixture can declare `actionLevels` when the same source is
-used for several dependency-progression actions. The list must include its
-declared level, cannot extend above it, and is never valid for an unscoped
-fixture. A fresh action seeds that exact source. Later actions only accept the
-same source hash.
+An active fixture must satisfy all of these conditions:
 
-Promotion is fail-closed. An application is not active because an old score was
-full, because a source tree happens to compile, or because a feature score drops
-after mutation. The following must all be true:
+1. Dependencies install from committed lockfiles in the benchmark build image.
+2. The app starts in Docker with run-specific ports and database or module names.
+3. Every required scored and supporting check passes for the exact recipe.
+4. The source contains no secrets, generated bindings, build output,
+   transcripts, grader output, or mutation backups.
+5. Each mutation has an exact source anchor and produces the intended conclusive
+   failure without unrelated failures.
+6. The registry records the qualified source hash.
 
-1. Dependencies install from committed lockfiles inside the same pinned build
-   image used by benchmark runs.
-2. The app starts in Docker with run-specific ports and database/module names;
-   no host execution mode or workstation path is allowed.
-3. The required baseline grades pass every scored and zero-point criterion in
-   the exact bound recipe, with identical criterion identities and outcomes.
-4. Source contains no `.env`, credentials, generated bindings, build output,
-   transcripts, grader artifacts, or mutation backups.
-5. Mutation manifests are regenerated against the checked-in bytes and pass the
-   hardened criterion-level mutation runner.
-6. The registry records the promoted source hash.
+Compile success or an old full score does not promote a fixture.
 
-The fixtures contain deterministic test accounts and may use deliberately
-fixture-specific authentication constraints. They must never be presented as
-production-ready application templates.
+## Compile fixtures
 
-Run `npm run test:references` from `tools/stack-bench` for the model-free Docker
-compile matrix. It copies each fixture to a temporary workspace and leaves the
-canonical source untouched. The resulting artifact records exactly which
-reference hashes compiled. Compile success is not live grading or promotion
-evidence. Use `-- --fixture <fixture-id>` to compile one changed fixture.
+Run the model-free Docker compile check from `tools/stack-bench`:
 
-Run `npm run qualify:reference -- --backend <mongodb|postgres|spacetime>` for
-the live gate. It runs the repetition count declared by the exact calibration,
-audits scored and zero-point criteria, binds every check identity and definition,
-requires one immutable image, verifies lease/container/lock teardown, and writes
-an atomic summary under `results/reference-live/`.
+```bash
+npm run test:references
+```
 
-Add `--mutations` to run the exact manifest inside the same authenticated
-Docker lifecycle. The qualifier first binds the pristine directory hash to the
-manifest, then requires a fully passing baseline and a conclusive, declared,
-collateral-free kill for every mutant. Candidate manifests may run this gate;
-only a passing retained artifact permits changing both fixture and manifest to
-`active`.
+Compile one changed fixture with:
 
-SpacetimeDB qualification uses dedicated loopback port `3310` by default so it
-does not contend with the benchmark's normal `3210` host. Override it with
-`--spacetime-port N`; an occupied port is refused and never adopted or killed.
+```bash
+npm run test:references -- --fixture <fixture-id>
+```
+
+The command copies source into a temporary workspace. It does not edit the
+registered fixture. Compile success is not live grading evidence.
+
+## Live qualification
+
+Run the repetition plan declared by the selected calibration:
+
+```bash
+npm run qualify:reference -- --backend <mongodb|postgres|spacetime>
+```
+
+The qualifier binds the exact recipe, fixture, source, engine, image, stack,
+runner, and check identities. It also verifies lease and resource cleanup.
+
+Add `--mutations` only when mutation evidence is required. The qualifier first
+checks the clean baseline, then applies each selected defect through the same
+isolated Docker lifecycle.
+
+During development, select only affected defects with `--mutation-id <id>`.
+Targeted output is diagnostic evidence. The complete set requires
+`--release-candidate` and is used only for release qualification.
+
+Do not edit a registered reference during qualification. A changed source hash
+requires new evidence.
