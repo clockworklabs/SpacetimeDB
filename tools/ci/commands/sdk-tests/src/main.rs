@@ -74,6 +74,7 @@ fn main() -> Result<()> {
     ci_common::ensure_repo_root()?;
     match Args::parse().command {
         Some(SdkTestCommand::PrepareModules { output_dir }) => {
+            build_typescript_sdk()?;
             let count = build_precompiled_modules(&output_dir)?;
             ensure!(count > 0, "No SDK test modules were found");
             eprintln!("Built {count} precompiled SDK test modules.");
@@ -118,7 +119,7 @@ fn ensure_runtime() -> Result<()> {
 
 fn run_local() -> Result<()> {
     ensure_runtime()?;
-    pnpm(["build"]).dir("crates/bindings-typescript").run()?;
+    build_typescript_sdk()?;
     for mode in [Mode::Native, Mode::Browser] {
         let status = Command::new("cargo")
             .args([
@@ -135,6 +136,11 @@ fn run_local() -> Result<()> {
             .status()?;
         ensure!(status.success(), "SDK tests failed");
     }
+    Ok(())
+}
+
+fn build_typescript_sdk() -> Result<()> {
+    pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     Ok(())
 }
 
