@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.js';
 import { fetchStatus } from '../runtime/readiness.js';
@@ -34,7 +35,7 @@ export interface ReferenceSourceRequest {
   track: string;
   level: number;
   mode?: string;
-  [flag: string]: string | number | undefined;
+  recipe?: string;
 }
 
 export interface ReferenceAgentArgs extends ReferenceSourceRequest {
@@ -73,22 +74,22 @@ function installProcessHandlers(): void {
 }
 
 export function parseReferenceAgentArgs(argv: readonly string[]): ReferenceAgentArgs {
-  const args: Record<string, string | number | undefined> = {};
-  for (let i = 2; i < argv.length; i += 2) {
-    const flag = argv[i];
-    if (flag === undefined) break;
-    args[flag.replace(/^--/, '')] = argv[i + 1];
-  }
-  const backend = args.backend;
-  const app = args.app;
-  const track = args.track;
-  const mode = args.mode;
+  const { values } = parseArgs({ args: [...argv.slice(2)], options: {
+    mode: { type: 'string' }, backend: { type: 'string' }, level: { type: 'string' },
+    app: { type: 'string' }, track: { type: 'string' }, 'run-index': { type: 'string' },
+    model: { type: 'string' }, guidance: { type: 'string' }, recipe: { type: 'string' },
+    'guidance-document-json': { type: 'string' }, 'credential-aliases-json': { type: 'string' },
+    'skill-identity-json': { type: 'string' }, 'skills-json': { type: 'string' },
+    'recipe-task-json': { type: 'string' }, 'pricing-json': { type: 'string' },
+    'max-budget-usd': { type: 'string' },
+  } });
+  const { backend, app, track, mode } = values;
   if (typeof backend !== 'string' || typeof app !== 'string' || typeof track !== 'string'
-    || args.level === undefined || args['run-index'] === undefined) {
+    || values.level === undefined || values['run-index'] === undefined) {
     throw new Error('reference-agent requires backend, app, track, level and run-index');
   }
-  const level = Number(args.level);
-  const runIndex = Number(args['run-index']);
+  const level = Number(values.level);
+  const runIndex = Number(values['run-index']);
   if (typeof mode !== 'string' || !['build', 'upgrade', 'fix'].includes(mode)) {
     throw new Error(`reference-agent supports only build, upgrade and fix modes, got ${mode}`);
   }
@@ -98,7 +99,8 @@ export function parseReferenceAgentArgs(argv: readonly string[]): ReferenceAgent
   if (!Number.isSafeInteger(runIndex) || runIndex < 0) {
     throw new Error(`reference-agent requires a non-negative integer run-index, got ${runIndex}`);
   }
-  return { ...args, backend, app, track, mode, level, runIndex };
+  return { backend, app, track, mode, level, runIndex,
+    ...(values.recipe === undefined ? {} : { recipe: values.recipe }) };
 }
 
 function runSync(label: string, command: string, args: readonly string[],

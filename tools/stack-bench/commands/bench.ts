@@ -20,7 +20,7 @@ import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   writeBackendLease } from '../src/runtime/backend-lease.js';
-import { captureApplicationDiagnostics, controlAppServer } from '../src/runtime/backend-control.js';
+import { captureApplicationDiagnostics } from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
@@ -33,16 +33,21 @@ import { agentRecipeIdentity, agentRequestArgv } from '../src/agents/agent-adapt
 import { agentSessionFailure, validateAgentResult }
   from '../src/agents/agent-result-contract.js';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.js';
+import { archiveTranscripts } from '../src/agents/transcript-archive.js';
 import { runPreflight } from '../src/runtime/preflight.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { applyAgentCredential } from '../src/agents/agent-credentials.js';
 import { hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
-import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
+import { preserveFinalPackageEvidence, preserveLevelCheckpoint,
+  sourceBoundFirstBuildOutcome } from '../src/runtime/source-checkpoint.js';
+import { materializationAppFailure, materializeAcceptedSource }
+  from '../src/runtime/source-materialization.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { contractControlIds } from '../src/composition/agent-visible-contract.js';
-import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
+import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
+  repairHistoryEntry, repairProgressState } from '../src/evidence/repair-evidence.js';
 import { mutationControlArgv, mutationControlTimeoutMs, pristineMutationBaselinePath }
   from '../src/evidence/mutation-control.js';
 import type { MutationControlArgs } from '../src/evidence/mutation-control.js';
@@ -50,7 +55,8 @@ import { progressionEngine } from '../src/progression/progression-engine.js';
 import { dependencyRepairBudget, dependencyStrikeRecords }
   from '../src/progression/dependency-mode.js';
 import { DEPENDENCY_MODE_VERSION } from '../src/progression/dependency-definition.js';
-import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection }
+import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
+  validateProgressionCampaignLevelScope }
   from '../src/progression/progression-recipe-selection.js';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.js';
@@ -60,10 +66,8 @@ import { gradingRunTimeoutMs, selectedGradingSourceCount }
 import { claudeRatesForModel } from '../src/evidence/claude-usage-cost.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
-import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import type { BoundRecipeTaskRequestResult } from '../src/composition/recipe-selection.js';
 import type { RecipeBinding } from '../src/composition/recipe-release.js';
-import type { ProgressionInput } from '../src/progression/progression-definition.js';
 import type { RepairGrantResolution, RepairOutcome } from '../src/runtime/repair-grant.js';
 import type { AgentAdapter, AgentMode, AgentRequest }
   from '../src/agents/agent-adapter-contract.js';
@@ -76,7 +80,7 @@ import { addCostUsd, finalizeRunTotals, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { ProgressionAction } from '../src/progression/progression-engine.js';
-import type { ProgressionAttempt, ProgressionState } from '../src/progression/progression-state.js';
+import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionRecipeAction, ProgressionRecipeSelections }
   from '../src/progression/progression-recipe-selection.js';
 import type { BackendLease, BackendLeaseContainer } from '../src/runtime/backend-lease.js';
@@ -85,7 +89,6 @@ import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-roo
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 type UnknownRecord = Record<string, unknown>;
-type RepairProgress = { score: number | null; fingerprint: string; stalledRounds: number };
 type ContaminationAudit = { kind: 'contaminated' | 'harness_failure'; evidence: string[];
   verdict: string };
 type LeakAuditEntry = { hits: Array<{ kind: string; path: string }> };
@@ -104,7 +107,6 @@ type BenchArgs = BenchArguments & {
   mutationImageId?: string;
   spentBudgetUsd?: number;
 };
-type StudyCondition = NonNullable<BenchArguments['condition']>;
 type StackRuntimeConfig = {
   environment: Record<string, string>;
   lease: { serverUri: string | null };
@@ -349,201 +351,8 @@ function recipeRequestIdentity(value: unknown): { recipeSha256: string; selectio
     taskPacks: value.selection.taskPacks, taskSha256: value.task.sha256 };
 }
 
-// Repairs receive the bug report, not private grading evidence.
-export function clearPrivateGradingEvidence(appDir: string): void {
-  rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
-}
-
-export function repairProgressState(
-  previous: RepairProgress | null,
-  bundle: GradeBundlePayload | null,
-): RepairProgress {
-  const outcome = classifyBundle(bundle);
-  const score = bundle?.totals?.score ?? null;
-  const fingerprint = canonicalDefinitionJson({
-    kind: outcome.kind,
-    phase: outcome.phase ?? null,
-    appFailures: [...(outcome.appFailures ?? [])].sort(),
-    inconclusive: [...(outcome.inconclusive ?? [])].sort(),
-    harnessFailures: [...(outcome.harnessFailures ?? [])].sort(),
-    contractFailures: (bundle?.suites?.lint?.results ?? [])
-      .filter(result => result.status === 'FAIL')
-      .map(result => ({ id: result.id, detail: result.detail ?? null })),
-  });
-  const stalledRounds = previous && score !== null && previous.score !== null
-    && score <= previous.score && fingerprint === previous.fingerprint
-    ? previous.stalledRounds + 1 : 0;
-  return { score, fingerprint, stalledRounds };
-}
-
-export function repairHistoryEntry(
-  round: number,
-  before: GradeBundlePayload | null,
-  after: GradeBundlePayload | null,
-  result: string,
-) {
-  const failureKeys = (bundle: GradeBundlePayload | null): string[] => {
-    const outcome = classifyBundle(bundle);
-    const contract = (bundle?.suites?.lint?.results ?? [])
-      .filter(item => item.status === 'FAIL').map(item => `testing-interface/${item.id}`);
-    return [...new Set([...(outcome.appFailures ?? []).filter(key => key !== 'contract-lint'),
-      ...contract])].sort();
-  };
-  return {
-    round,
-    beforeScore: before?.totals?.score ?? null,
-    beforeMax: before?.totals?.max ?? null,
-    afterScore: after?.totals?.score ?? null,
-    afterMax: after?.totals?.max ?? null,
-    result,
-    remainingFailures: failureKeys(after),
-  };
-}
-
-export function levelGradeIsUsable(
-  bundleOutcome: RunOutcome,
-  progressionAttempt: Pick<ProgressionAttempt, 'outcome'> | null = null,
-): boolean {
-  if (progressionAttempt) return progressionAttempt.outcome === 'conclusive';
-  return !['provider_failure', 'ungraded', 'harness_failure'].includes(bundleOutcome.kind);
-}
-
 function snapshotSource(appDir: string, to: string): void {
   snapshotAppSource(appDir, to);
-}
-
-export function preserveFinalPackageEvidence(
-  { appDir, outputDir }: { appDir: string; outputDir: string },
-): {
-  source: { directory: string; sha256: string; files: number };
-  grading: { directory: string; artifact: string; sourceSha256: string };
-} {
-  const failures: string[] = [];
-  let source: { directory: string; sha256: string; files: number } | null = null;
-  let grading: { directory: string; artifact: string; sourceSha256: string } | null = null;
-
-  try {
-    const live = hashAppSource(appDir);
-    const destination = join(outputDir, 'source');
-    snapshotSource(appDir, destination);
-    const saved = hashDirectory(destination);
-    if (saved.sha256 !== live.sha256 || saved.files.length !== live.files.length) {
-      throw new Error('preserved final source differs from the live application source');
-    }
-    source = { directory: 'source', sha256: saved.sha256, files: saved.files.length };
-  } catch (error) {
-    failures.push(`source: ${errorMessage(error).split(/\r?\n/)[0]}`);
-  }
-
-  try {
-    const from = join(appDir, 'stack-bench');
-    const destination = join(outputDir, 'grading');
-    if (!existsSync(join(from, 'bundle.json'))) {
-      throw new Error('final grader produced no bundle.json');
-    }
-    rmSync(destination, { recursive: true, force: true });
-    cpSync(from, destination, {
-      recursive: true,
-      filter: path => !/[\\/]media([\\/]|$)/.test(path),
-    });
-    const bundle = readArtifactPayload<GradeBundlePayload>(join(destination, 'bundle.json'), {
-      expectedKind: 'grade_bundle',
-    });
-    if (!source || bundle.source?.sha256 !== source.sha256) {
-      throw new Error('final grading bundle does not match the preserved application source');
-    }
-    grading = { directory: 'grading', artifact: 'grading/bundle.json',
-      sourceSha256: bundle.source.sha256 };
-  } catch (error) {
-    failures.push(`grading: ${errorMessage(error).split(/\r?\n/)[0]}`);
-  }
-
-  if (failures.length) {
-    throw new Error(`could not preserve mandatory result package evidence: ${failures.join('; ')}`);
-  }
-  if (!source || !grading) {
-    throw new Error('could not preserve mandatory result package evidence');
-  }
-  return { source, grading };
-}
-
-export function sourceBoundFirstBuildOutcome(
-  bundle: GradeBundlePayload | null,
-  source: object | null,
-): RunOutcome {
-  if (source) return classifyBundle(bundle);
-  const reason = 'the first-build source could not be preserved and verified';
-  return { kind: 'harness_failure', phase: 'first-build-source', reason,
-    appFailures: [], inconclusive: [], harnessFailures: [reason] };
-}
-
-export async function materializeAcceptedSource(
-  sourcePath: string,
-  appDir: string,
-  application: RuntimeControlSpec,
-  lifecycle: typeof controlAppServer = controlAppServer,
-): Promise<void> {
-  const accepted = hashDirectory(sourcePath);
-  await lifecycle(application, 'stop');
-  resetAppToSource(sourcePath, appDir);
-  if (!existsSync(join(appDir, 'start.sh'))) {
-    throw Object.assign(new Error('accepted application source has no /app/start.sh'),
-      { code: 'generated_app_start_contract_missing' });
-  }
-  let startFailure: unknown = null;
-  try {
-    await lifecycle(application, 'start');
-  } catch (error) {
-    startFailure = error;
-  }
-  const restoreAcceptedSource = async (): Promise<void> => {
-    let cleanupFailure: unknown = null;
-    try {
-      await lifecycle(application, 'stop');
-    } catch (error) {
-      cleanupFailure = error;
-    }
-    try {
-      resetAppToSource(sourcePath, appDir);
-    } catch (error) {
-      cleanupFailure ??= error;
-    }
-    if (cleanupFailure) {
-      throw new Error('could not stop and restore an application after startup',
-        { cause: cleanupFailure });
-    }
-  };
-  const materialized = hashAppSource(appDir);
-  if (materialized.sha256 !== accepted.sha256
-    || materialized.files.length !== accepted.files.length) {
-    await restoreAcceptedSource();
-    throw Object.assign(
-      new Error('materialized application source differs from its accepted snapshot'),
-      { code: 'generated_app_source_changed' });
-  }
-  if (startFailure) {
-    await restoreAcceptedSource();
-    throw startFailure;
-  }
-}
-
-export function materializationAppFailure(
-  error: unknown,
-): RunOutcome {
-  const code = error && typeof error === 'object' && 'code' in error ? error.code : null;
-  if (code === 'generated_app_source_changed'
-    || code === 'generated_app_start_contract_missing'
-    || code === 'generated_app_not_restartable') {
-    const reason = code === 'generated_app_source_changed'
-      ? 'application startup changed the accepted source'
-      : code === 'generated_app_not_restartable'
-      ? `application did not start from clean source: ${redactCredentials(errorMessage(error))
-          .replace(/\s+/g, ' ').slice(0, 600)}`
-      : 'accepted application source has no /app/start.sh';
-    return { kind: 'app_failure', phase: 'application-restart', reason,
-      appFailures: ['application-restart'], inconclusive: [], harnessFailures: [] };
-  }
-  throw error;
 }
 
 // Check contamination after every coding session. File-tool permissions do not
@@ -835,22 +644,6 @@ function validateMutationInput(args: BenchArgs): void {
   if (fixture.sha256 !== manifest.fixtureSha256) {
     throw new Error(`mutation manifest targets fixture ${manifest.fixtureSha256}, not ${fixture.sha256}`);
   }
-}
-
-export function validateProgressionCampaignLevelScope(
-  binding: RecipeBinding,
-  progression: ProgressionInput,
-  declared: StudyCondition['requested']['levels'][number] | null | undefined,
-  level: number,
-) {
-  if (!declared) throw new Error(`study condition does not bind requested L${level}`);
-  const derived = resolveProgressionRecipeLevelSelection(binding, progression, level);
-  if (declared.recipe.contentSha256 !== derived.grader.request.recipe.contentSha256
-    || declared.selection.sha256 !== derived.grader.selection.sha256
-    || declared.task.sha256 !== derived.grader.task.sha256) {
-    throw new Error(`dependency campaign graph-derived scope changed before L${level}`);
-  }
-  return derived;
 }
 
 async function main() {
@@ -1347,7 +1140,7 @@ async function main() {
     run.progressionResume = {
       priorRunId: prior.id,
       priorRunSha256: sha256(canonicalDefinitionJson(prior)),
-      stateSnapshotSha256: progressionStart.snapshotSha256,
+      stateSha256: progressionStart.stateSha256,
       action: progressionStart.action.type === 'terminal'
         ? { type: 'terminal' }
         : { type: progressionStart.action.type, level: progressionStart.action.level },
@@ -1447,7 +1240,7 @@ async function main() {
       console.log('     The audit did not establish a usable result.');
     }
     try { writeRunJson(join(outputDir, 'run.json'), run); } catch { /* best effort */ }
-    try { sh('node', [join(ROOT, 'dist', 'commands', 'archive-transcripts.js'), '--app', appDir, '--label', artifactLabel], { stdio: 'pipe' }); } catch { /* best effort */ }
+    try { archiveTranscripts(appDir, artifactLabel); } catch { /* best effort */ }
     teardown();
     process.exit(4);
   };
@@ -2190,10 +1983,8 @@ async function main() {
   }
 
   // Keep the transcript evidence outside the provider CLI's prunable store.
-  try {
-    sh('node', [join(ROOT, 'dist', 'commands', 'archive-transcripts.js'), '--app', appDir, '--label', artifactLabel],
-      { stdio: 'pipe' });
-  } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
+  try { archiveTranscripts(appDir, artifactLabel); }
+  catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
   run.outcome = finalAuditFailure ?? (args.referenceMutationOnly && run.mutationControl?.ok
     ? { kind: 'passed', phase: 'mutation-control', reason: null,

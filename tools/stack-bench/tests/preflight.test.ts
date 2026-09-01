@@ -456,7 +456,7 @@ test('preflight argument parsing rejects ambiguous ranges and missing backends',
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'stub',
     '--levels', '3-1']), /--levels/);
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'stub',
-    '--mystery']), /unknown argument/);
+    '--mystery']), /Unknown option/);
   assert.equal(parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',
     '--guidance', 'neutral']).guidance, 'neutral');
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',

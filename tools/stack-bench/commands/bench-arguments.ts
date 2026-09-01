@@ -84,26 +84,14 @@ function normalizeGuidance(value: string): 'neutral' | 'prescribed' {
   throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
 }
 
-const stringListJson = (value: string): string[] => {
-  const parsed: unknown = JSON.parse(value);
-  if (!Array.isArray(parsed) || !parsed.every(item => typeof item === 'string')) {
-    throw new Error('--skills-json must be an array of strings');
-  }
-  return parsed;
-};
-
 interface BenchCliOptions extends Partial<BenchArguments> {
   pack?: string[];
   check?: string[];
   pricingJson?: unknown;
-  guidanceDocumentJson?: unknown;
-  conditionJson?: StudyCondition;
-  selectionJson?: CampaignSelection;
   featureModule?: string[];
   requestSpec?: string[];
   expectSpec?: string[];
   observeSpec?: string[];
-  skillsJson?: string[];
   expectedMutationCalibrationJson?: unknown;
 }
 
@@ -111,8 +99,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
   const strings = ['backend', 'track', 'levels', 'campaign-file', 'campaign-attempt-id',
     'campaign-admission-id', 'progression-resume-from', 'recipe', 'model', 'pricing-json',
     'fix-rounds', 'max-stalled-repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
-    'agent-adapter', 'guidance', 'guidance-document-json', 'condition-json', 'selection-json',
-    'task-mode', 'skills', 'skills-json', 'api-key', 'api-key-file', 'mutations',
+    'agent-adapter', 'guidance', 'task-mode', 'skills', 'mutations',
     'mutation-shard-index', 'mutation-shard-count', 'mutation-resume-from',
     'mutation-checkpoint-out', 'mutation-baseline-bundle',
     'expected-mutation-calibration-json', 'mutation-max-runtime-minutes', 'seed-from',
@@ -141,20 +128,15 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
   }
   if (typeof parsed.runIndex === 'string') parsed.runIndex = Number(parsed.runIndex);
-  for (const key of ['campaignFile', 'progressionResumeFrom', 'apiKeyFile', 'mutations',
+  for (const key of ['campaignFile', 'progressionResumeFrom', 'mutations',
     'mutationResumeFrom', 'mutationCheckpointOut', 'mutationBaselineBundle', 'repairFrom']) {
     if (typeof parsed[key] === 'string') parsed[key] = resolve(parsed[key]);
   }
-  for (const key of ['pricingJson', 'guidanceDocumentJson', 'conditionJson', 'selectionJson',
-    'expectedMutationCalibrationJson']) {
+  for (const key of ['pricingJson', 'expectedMutationCalibrationJson']) {
     if (typeof parsed[key] === 'string') parsed[key] = JSON.parse(parsed[key]);
   }
   if (typeof parsed.guidance === 'string') parsed.guidance = normalizeGuidance(parsed.guidance);
-  if (parsed.skills !== undefined && parsed.skillsJson !== undefined) {
-    throw new Error('--skills and --skills-json cannot be used together');
-  }
   if (typeof parsed.skills === 'string') parsed.skills = parsed.skills.split(',').filter(Boolean);
-  if (typeof parsed.skillsJson === 'string') parsed.skillsJson = stringListJson(parsed.skillsJson);
   if (parsed.noMedia === true) parsed.media = false;
   delete parsed.noMedia;
   return parsed as BenchCliOptions;
@@ -167,8 +149,7 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     packIds: [], checkKeys: [], featureIds: [], requestedSpecifications: [],
     expectedSpecifications: [], observedSpecifications: [],
     mutationMaxRuntimeMinutes: 60 };
-  const { pack, check, pricingJson, guidanceDocumentJson, conditionJson, selectionJson,
-    featureModule, requestSpec, expectSpec, observeSpec, skillsJson,
+  const { pack, check, pricingJson, featureModule, requestSpec, expectSpec, observeSpec,
     expectedMutationCalibrationJson, ...options } = parseCli(argv);
   Object.assign(args, options);
   if (pack) args.packIds = pack;
@@ -176,14 +157,10 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   if (pricingJson !== undefined) {
     args.pricing = validatePricingAuthority(pricingJson, { at: '--pricing-json' });
   }
-  if (guidanceDocumentJson !== undefined) args.guidanceDocument = guidanceDocumentJson;
-  if (conditionJson !== undefined) args.condition = conditionJson;
-  if (selectionJson !== undefined) args.selectionRequest = selectionJson;
   if (featureModule) args.featureIds = featureModule;
   if (requestSpec) args.requestedSpecifications = requestSpec;
   if (expectSpec) args.expectedSpecifications = expectSpec;
   if (observeSpec) args.observedSpecifications = observeSpec;
-  if (skillsJson !== undefined) args.skills = skillsJson;
   args.levelsProvided = options.levels !== undefined;
   if (expectedMutationCalibrationJson !== undefined) {
     args.expectedMutationCalibration = expectedMutationCalibrationJson;

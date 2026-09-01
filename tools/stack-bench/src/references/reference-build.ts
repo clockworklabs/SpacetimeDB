@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { writeRunJson } from '../evidence/artifacts.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
 import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
@@ -73,14 +74,11 @@ const errorDetail = (error: unknown): string =>
 function parseArgs(argv: readonly string[]): {
   backend: string | null; fixture: string | null; out: string | null;
 } {
-  const args: { backend: string | null; fixture: string | null; out: string | null } =
-    { backend: null, fixture: null, out: null };
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === '--backend') args.backend = argv[++i] ?? null;
-    else if (argv[i] === '--fixture') args.fixture = argv[++i] ?? null;
-    else if (argv[i] === '--out') args.out = resolve(argv[++i] ?? '');
-    else throw new Error(`unknown argument ${argv[i]}`);
-  }
+  const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
+    backend: { type: 'string' }, fixture: { type: 'string' }, out: { type: 'string' },
+  } });
+  const args = { backend: values.backend ?? null, fixture: values.fixture ?? null,
+    out: values.out === undefined ? null : resolve(values.out) };
   if (args.backend && !STACK_ADAPTER_REGISTRY.ids.includes(args.backend)) {
     throw new Error(`unknown backend ${args.backend}`);
   }

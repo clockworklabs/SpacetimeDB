@@ -7,6 +7,7 @@ import type { Browser, BrowserContext, Page } from 'playwright';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { harnessBrowserFailure, harnessProcessFailure,
   runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
@@ -154,40 +155,30 @@ function keepReason(detail: unknown, limit = 600): string {
 }
 
 function parseArgs(argv: readonly string[]): GradeArgs {
-  const args: GradeArgs = { level: 1, headed: false, selectedCheckKeys: [] };
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--url': args.url = argv[++i]; break;
-      case '--level': args.level = parseInt(argv[++i] as string, 10); break;
-      case '--out': args.out = argv[++i]; break;
-      case '--label': args.label = argv[++i]; break;
-      case '--feature': args.feature = parseInt(argv[++i] as string, 10); break;
-      case '--spec': args.spec = argv[++i]; break;
-      case '--restart-spec':
-        args.restartSpec = parseRuntimeControlSpec(JSON.parse(argv[++i] as string)); break;
-      // Needed to issue the spec's named actions: which stack to talk to, and
-      // which track declares the action names.
-      case '--backend': args.backend = argv[++i]; break;
-      case '--track': args.track = argv[++i]; break;
-      case '--recipe': args.recipe = argv[++i]; break;
-      case '--expected-recipe-sha256': args.expectedRecipeSha256 = argv[++i]; break;
-      case '--selected-check': args.selectedCheckKeys.push(argv[++i] as string); break;
-      case '--credential-aliases-json': args.credentialAliases = JSON.parse(argv[++i] as string); break;
-      case '--selection-sha256': args.selectionSha256 = argv[++i]; break;
-      case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
-      // Which database to write to directly for out-of-band writes.
-      case '--db-name': args.dbName = argv[++i]; break;
-      case '--app': args.app = argv[++i]; break;
-      case '--media': args.media = argv[++i]; break;
-      // Lightweight evidence for otherwise media-free qualification runs.
-      // Unlike --media this records no video or trace; it only captures every
-      // actor when a setup or criterion fails.
-      case '--failure-media': args.failureMedia = argv[++i]; break;
-      case '--trace': args.trace = true; break;
-      case '--headed': args.headed = true; break;
-      default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
-    }
-  }
+  const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
+    url: { type: 'string' }, level: { type: 'string' }, out: { type: 'string' },
+    label: { type: 'string' }, feature: { type: 'string' }, spec: { type: 'string' },
+    'restart-spec': { type: 'string' }, backend: { type: 'string' }, track: { type: 'string' },
+    recipe: { type: 'string' }, 'expected-recipe-sha256': { type: 'string' },
+    'selected-check': { type: 'string', multiple: true },
+    'credential-aliases-json': { type: 'string' }, 'selection-sha256': { type: 'string' },
+    'parent-attempt-id': { type: 'string' }, 'db-name': { type: 'string' },
+    app: { type: 'string' }, media: { type: 'string' }, 'failure-media': { type: 'string' },
+    trace: { type: 'boolean' }, headed: { type: 'boolean' },
+  } });
+  const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
+    out: values.out, label: values.label,
+    feature: values.feature === undefined ? undefined : Number(values.feature), spec: values.spec,
+    restartSpec: values['restart-spec'] === undefined ? undefined
+      : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
+    backend: values.backend, track: values.track, recipe: values.recipe,
+    expectedRecipeSha256: values['expected-recipe-sha256'],
+    selectedCheckKeys: values['selected-check'] ?? [],
+    credentialAliases: values['credential-aliases-json'] === undefined
+      ? undefined : JSON.parse(values['credential-aliases-json']),
+    selectionSha256: values['selection-sha256'], parentAttemptId: values['parent-attempt-id'],
+    dbName: values['db-name'], app: values.app, media: values.media,
+    failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false };
   if (!args.url) {
     console.error('Usage: node dist/grader/grade.js --url <app-url> --level <N> [--out <file>] [--label <s>] [--feature <N>]');
     process.exit(2);

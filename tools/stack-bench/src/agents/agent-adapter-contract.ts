@@ -1,4 +1,5 @@
 import { validatePricingAuthority } from '../evidence/pricing-authority.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
 
 export const AGENT_ADAPTER_SCHEMA_VERSION = 5;
 
@@ -7,7 +8,6 @@ const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes',
   'credentialFiles', 'outboundDestinations', 'requiredExecutables', 'credentialStatusCommand',
   'usesStackSkills', 'costLimit']);
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
-const VERSION = /^\d+\.\d+\.\d+$/;
 const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
 type UnknownRecord = Record<string, unknown>;
@@ -65,7 +65,7 @@ export function defineAgentAdapter(value: unknown): AgentAdapter {
   for (const key of Object.keys(value)) if (!FIELDS.has(key)) throw new Error(`agent adapter.${key} is unknown`);
   if (value.schemaVersion !== AGENT_ADAPTER_SCHEMA_VERSION) throw new Error('agent adapter schema is unsupported');
   if (typeof value.id !== 'string' || !ID.test(value.id)) throw new Error('agent adapter.id is invalid');
-  if (typeof value.version !== 'string' || !VERSION.test(value.version)) {
+  if (!isExactSemanticVersion(value.version)) {
     throw new Error(`agent adapter ${value.id}.version is invalid`);
   }
   if (typeof value.entrypoint !== 'string' || !value.entrypoint) {

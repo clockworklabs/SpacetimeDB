@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
+import { mkdirSync, mkdtempSync, readFileSync, rmSync,
   writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { archiveTranscripts } from '../commands/archive-transcripts.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { archiveTranscripts } from '../src/agents/transcript-archive.js';
 import { operationalOutputRoot } from '../src/runtime/operational-paths.js';
 
 test('operational output stays beside the module outside appliance mode', t => {
@@ -39,29 +37,6 @@ test('configured operational output must be an exact absolute path', () => {
   );
 });
 
-test('transcript archiving creates its default directory under durable results', t => {
-  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-results-'));
-  const isolatedHome = mkdtempSync(join(tmpdir(), 'stack-bench-home-'));
-  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  t.after(() => rmSync(isolatedHome, { recursive: true, force: true }));
-
-  execFileSync(process.execPath, [
-    join(STACK_BENCH_ROOT, 'dist', 'commands', 'archive-transcripts.js'),
-    '--app', join(resultsRoot, 'no-transcript-app'),
-    '--label', 'path-test',
-  ], {
-    env: {
-      ...process.env,
-      HOME: isolatedHome,
-      USERPROFILE: isolatedHome,
-      STACK_BENCH_RESULTS_DIR: resultsRoot,
-    },
-    stdio: 'pipe',
-  });
-
-  assert.equal(existsSync(join(resultsRoot, 'transcripts')), true);
-});
-
 test('transcript archiving includes nested agent sessions without replacing a longer archive', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-archive-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -73,15 +48,13 @@ test('transcript archiving includes nested agent sessions without replacing a lo
   mkdirSync(nested, { recursive: true });
   writeFileSync(join(nested, 'agent-1.jsonl'), 'first\n');
 
-  const first = archiveTranscripts({ results: join(root, 'unused'), out: output,
-    app, label: 'attempt-1' }, storeRoot);
+  const first = archiveTranscripts(app, 'attempt-1', output, storeRoot);
   const archived = join(output, 'attempt-1', 'session__subagents__agent-1.jsonl');
   assert.deepEqual(first, { copied: 1, missing: 0, outputDirectory: output });
   assert.equal(readFileSync(archived, 'utf8'), 'first\n');
 
   writeFileSync(archived, 'longer preserved archive\n');
-  const second = archiveTranscripts({ results: join(root, 'unused'), out: output,
-    app, label: 'attempt-1' }, storeRoot);
+  const second = archiveTranscripts(app, 'attempt-1', output, storeRoot);
   assert.equal(second.copied, 0);
   assert.equal(readFileSync(archived, 'utf8'), 'longer preserved archive\n');
 });

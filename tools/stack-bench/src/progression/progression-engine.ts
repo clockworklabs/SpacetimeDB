@@ -48,7 +48,7 @@ export interface ProgressionPolicy<
   gradingSelection(state: TState): TGradingSelection;
   recordResult(state: TState, result: unknown): TState;
   grantStrikes(state: TState, grant: unknown): TState;
-  resume(state: unknown): TState;
+  replay(definition: unknown, events: unknown[]): TState;
   nextAction(state: TState): TAction;
   score(state: TState): TScore;
 }
@@ -64,7 +64,7 @@ export type ProgressionEngine<
 
 const POLICY_METHODS = Object.freeze([
   'compile', 'initialize', 'activeNodes', 'promptSelection', 'gradingSelection',
-  'recordResult', 'grantStrikes', 'resume', 'nextAction', 'score',
+  'recordResult', 'grantStrikes', 'replay', 'nextAction', 'score',
 ] as const satisfies ReadonlyArray<keyof Omit<ProgressionPolicy, 'id'>>);
 
 function hasProperties(value: unknown): value is Record<string, unknown> {
@@ -120,7 +120,8 @@ export function createProgressionEngine(policies: unknown): Readonly<Progression
       statePolicy(state).recordResult(state, result),
     grantStrikes: (state: unknown, grant: unknown) =>
       statePolicy(state).grantStrikes(state, grant),
-    resume: (state: unknown) => statePolicy(state).resume(state),
+    replay: (definition: unknown, events: unknown[]) =>
+      definitionPolicy(definition).replay(definition, events),
     nextAction: (state: unknown) => statePolicy(state).nextAction(state),
     score: (state: unknown) => statePolicy(state).score(state),
   });

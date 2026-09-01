@@ -440,12 +440,11 @@ export function validateFeatureCatalogInput(input: unknown): ProgressionInput {
   return compiled;
 }
 
-function selectedCatalogDefinition(featureCatalog: unknown, selectedLevels: unknown): {
+function selectedCatalogDefinition(catalog: ProgressionInput, selectedLevels: unknown): {
   catalog: ProgressionInput;
   levels: number[];
   definition: CompiledProgressionDefinition;
 } {
-  const catalog = validateFeatureCatalogInput(featureCatalog);
   const availableLevels = progressionLevels(catalog);
   if (!Array.isArray(selectedLevels) || selectedLevels.length === 0
     || selectedLevels.some(level => !Number.isSafeInteger(level) || level < 1)
@@ -469,17 +468,17 @@ function selectedCatalogDefinition(featureCatalog: unknown, selectedLevels: unkn
 
 export function selectFeatureCatalogLevels(featureCatalog: unknown,
   selectedLevels: unknown): ProgressionInput {
+  const catalog = validateFeatureCatalogInput(featureCatalog);
   return compileFeatureCatalogInput(
-    selectedCatalogDefinition(featureCatalog, selectedLevels).definition,
+    selectedCatalogDefinition(catalog, selectedLevels).definition,
   );
 }
 
-export function compileDependencyPolicyInput(strikes: unknown, featureCatalog: unknown,
-  selectedLevels: number[] = progressionLevels(featureCatalog),
+function compileDependencyPolicyForCatalog(strikes: unknown, catalog: ProgressionInput,
+  selectedLevels: number[],
   unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT,
   repairSelection: DependencyRepairSelection = DEFAULT_DEPENDENCY_REPAIR_SELECTION,
 ): ProgressionInput<CompiledDependencyPolicyDefinition> {
-  const catalog = validateFeatureCatalogInput(featureCatalog);
   const selected = selectedCatalogDefinition(catalog, selectedLevels);
   const runtimeDefinition = compileDependencyMode({
     ...selected.definition,
@@ -507,8 +506,19 @@ export function compileDependencyPolicyInput(strikes: unknown, featureCatalog: u
   }) as unknown as ProgressionInput<CompiledDependencyPolicyDefinition>;
 }
 
-export function validateDependencyPolicyInput(input: unknown,
-  featureCatalog: unknown): ProgressionInput<CompiledDependencyPolicyDefinition> {
+export function compileDependencyPolicyInput(strikes: unknown, featureCatalog: unknown,
+  selectedLevels?: number[], unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT,
+  repairSelection: DependencyRepairSelection = DEFAULT_DEPENDENCY_REPAIR_SELECTION,
+): ProgressionInput<CompiledDependencyPolicyDefinition> {
+  const catalog = validateFeatureCatalogInput(featureCatalog);
+  const levels = selectedLevels
+    ?? [...new Set(catalog.definition.nodes.map(node => node.level))].sort((left, right) => left - right);
+  return compileDependencyPolicyForCatalog(strikes, catalog, levels, unchangedFailureLimit,
+    repairSelection);
+}
+
+function validateDependencyPolicyForCatalog(input: unknown,
+  catalog: ProgressionInput): ProgressionInput<CompiledDependencyPolicyDefinition> {
   if (!object(input)) throw new Error('dependency policy input must be an object');
   const fields = new Set(['definition', 'identity']);
   for (const key of Object.keys(input)) {
@@ -525,9 +535,9 @@ export function validateDependencyPolicyInput(input: unknown,
   if (!isDependencyRepairSelection(input.definition.repairSelection)) {
     throw new Error('dependency policy input repairSelection is invalid');
   }
-  const compiled = compileDependencyPolicyInput({
+  const compiled = compileDependencyPolicyForCatalog({
     levels: input.definition.strikes.levels ?? {},
-  }, featureCatalog, levels,
+  }, catalog, levels,
   input.definition.unchangedFailureLimit as number | undefined,
   input.definition.repairSelection);
   if (canonicalDefinitionJson(input) !== canonicalDefinitionJson(compiled)) {
@@ -536,10 +546,15 @@ export function validateDependencyPolicyInput(input: unknown,
   return compiled;
 }
 
+export function validateDependencyPolicyInput(input: unknown,
+  featureCatalog: unknown): ProgressionInput<CompiledDependencyPolicyDefinition> {
+  return validateDependencyPolicyForCatalog(input, validateFeatureCatalogInput(featureCatalog));
+}
+
 export function dependencyRuntimeDefinition(featureCatalog: unknown,
   dependencyPolicy: unknown): CompiledProgressionDefinition {
   const catalog = validateFeatureCatalogInput(featureCatalog);
-  const policy = validateDependencyPolicyInput(dependencyPolicy, catalog);
+  const policy = validateDependencyPolicyForCatalog(dependencyPolicy, catalog);
   const selected = selectedCatalogDefinition(catalog, policy.definition.levels);
   return compileDependencyMode({
     ...selected.definition,

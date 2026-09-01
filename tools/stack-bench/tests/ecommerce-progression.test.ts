@@ -292,13 +292,13 @@ test('one progression catalog binds every node and selects only current work', (
         .map(check => ({ id: check.id, outcome: nodeId === 'accounts' ? 'fail' : 'pass' })),
     })),
   });
-  const next = resolveProgressionRecipeAction(bindings[2]!.binding, state);
-  if (next.action.type === 'terminal') throw new Error('the L2 result must leave available work');
-  assert('agent' in next, 'the next work must have an agent selection');
-  assert.equal(next.action.type, 'build');
-  assert.equal(next.action.level, 3);
+  const next = resolveProgressionRecipeAction(firstBinding.binding, state);
+  if (next.action.type === 'terminal') throw new Error('the regression must produce repair work');
+  assert('agent' in next, 'the repair must have an agent selection');
+  assert.equal(next.action.type, 'repair');
+  assert.equal(next.action.level, 1);
+  assert.deepEqual(actionPromptNodeIds(next.action), ['accounts']);
   assert.equal(next.agent.request.task.mode, 'upgrade');
-  assert(!next.agent.request.selection.requested.features.includes('ecommerce.feature.accounts'));
   assert.deepEqual(next.agent.request.selection.requested.features,
     definition.nodes.filter(node => actionPromptNodeIds(next.action).includes(node.id))
       .flatMap(node => node.featureRefs)

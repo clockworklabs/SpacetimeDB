@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { parseArgs } from 'node:util';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.js';
 import { resolveContainerImage } from '../src/runtime/container-image.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
@@ -72,20 +73,22 @@ function buildContainerPlan(value: unknown): BuildContainerPlan | null {
     ...(typeof value.readyDescription === 'string' ? { readyDescription: value.readyDescription } : {}) };
 }
 
-const argv = process.argv.slice(2);
-const opt = (k: string, d: string | null = null): string | null => {
-  const i = argv.indexOf(k);
-  return i === -1 ? d : argv[i + 1] ?? null;
-};
+const { values } = parseArgs({ args: process.argv.slice(2), options: {
+  app: { type: 'string' }, backend: { type: 'string' }, 'prepare-only': { type: 'boolean' },
+  image: { type: 'string' }, effort: { type: 'string' }, model: { type: 'string' },
+  'max-budget-usd': { type: 'string' }, 'pricing-json': { type: 'string' },
+  'resume-session': { type: 'string' }, 'recover-stopped-container': { type: 'boolean' },
+  'completion-marker': { type: 'string' }, ports: { type: 'string' },
+} });
 
-const appDir = opt('--app');
+const appDir = values.app;
 if (!appDir) { console.error('run-build.js: --app is required'); process.exit(2); }
-const backend = opt('--backend');
+const backend = values.backend;
 if (!backend) { console.error('run-build.js: --backend is required'); process.exit(2); }
 let adapter;
 try { adapter = STACK_ADAPTER_REGISTRY.get(backend); }
 catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
-const prepareOnly = argv.includes('--prepare-only');
+const prepareOnly = values['prepare-only'] ?? false;
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
 const { uid: AGENT_UID, gid: AGENT_GID, home: AGENT_HOME } = CODING_CONTAINER_AGENT;
@@ -103,7 +106,7 @@ const REQUIRED_TMPFS = Object.freeze({
 });
 
 const REPO = REPOSITORY_ROOT;
-const imageReference = opt('--image', DEFAULT_BUILD_IMAGE) as string;
+const imageReference = values.image ?? DEFAULT_BUILD_IMAGE;
 let imageIdentity;
 try { imageIdentity = resolveContainerImage(imageReference); }
 catch (error) {
@@ -111,16 +114,16 @@ catch (error) {
   process.exit(2);
 }
 const image = imageIdentity.id;
-const effort = opt('--effort', 'high') as string;
-const model = opt('--model', 'claude-sonnet-5') as string;
-const maxBudgetUsd = opt('--max-budget-usd');
+const effort = values.effort ?? 'high';
+const model = values.model ?? 'claude-sonnet-5';
+const maxBudgetUsd = values['max-budget-usd'] ?? null;
 if (maxBudgetUsd !== null && (!Number.isFinite(Number(maxBudgetUsd)) || Number(maxBudgetUsd) <= 0)) {
   console.error('run-build.js: --max-budget-usd must be a positive number');
   process.exit(2);
 }
 let pricing = null;
 try {
-  const supplied = opt('--pricing-json');
+  const supplied = values['pricing-json'] ?? null;
   if (supplied !== null) {
     pricing = validatePricingAuthority(JSON.parse(supplied), { at: '--pricing-json' });
   } else if (maxBudgetUsd !== null) {
@@ -133,19 +136,19 @@ try {
   console.error(`run-build.js: ${errorMessage(error)}`);
   process.exit(2);
 }
-const resumeSession = opt('--resume-session');
+const resumeSession = values['resume-session'] ?? null;
 if (resumeSession !== null
   && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(resumeSession)) {
   console.error('run-build.js: --resume-session must be a UUID');
   process.exit(2);
 }
-const recoverStoppedContainer = argv.includes('--recover-stopped-container');
-const completionMarker = opt('--completion-marker');
+const recoverStoppedContainer = values['recover-stopped-container'] ?? false;
+const completionMarker = values['completion-marker'] ?? null;
 if (!prepareOnly && !/^[A-Z][A-Z0-9_]*$/.test(completionMarker ?? '')) {
   console.error('run-build.js: --completion-marker must be an uppercase marker');
   process.exit(2);
 }
-const ports = (opt('--ports', '') ?? '').split(',').filter(Boolean);
+const ports = (values.ports ?? '').split(',').filter(Boolean);
 
 const containerPlan = buildContainerPlan(executeStackCapability(adapter, 'build-container', 'plan', {
   repo: REPO, appDir, env: process.env,

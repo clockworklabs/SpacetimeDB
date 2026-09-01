@@ -7,6 +7,7 @@ import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { sha256 } from '../evidence/provenance.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 2;
 export type ReleaseState = 'candidate' | 'qualified';
@@ -83,7 +84,6 @@ const FILE_ROLES = new Set<ReleaseFileRole>(['compose', 'dependency', 'operator-
 const REQUIRED_FILE_ROLES = Object.freeze(['compose', 'dependency', 'operator-guide',
   'secrets-template', 'support-policy']);
 const HASH = /^[a-f0-9]{64}$/;
-const VERSION = /^\d+\.\d+\.\d+$/;
 const ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const IMAGE_REFERENCE = /^[a-z0-9](?:[a-z0-9._:/-]*[a-z0-9])?@sha256:([a-f0-9]{64})$/;
 const object = (value: unknown): value is UnknownRecord => value !== null
@@ -123,7 +123,7 @@ export function validateReleaseManifest(value: unknown,
     'signing']), source);
   if (value.schemaVersion !== RELEASE_MANIFEST_SCHEMA_VERSION) throw new Error(`${source}.schemaVersion is unsupported`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) throw new Error(`${source}.id is invalid`);
-  if (typeof value.version !== 'string' || !VERSION.test(value.version)) throw new Error(`${source}.version is invalid`);
+  if (!isExactSemanticVersion(value.version)) throw new Error(`${source}.version is invalid`);
   if (typeof value.state !== 'string' || !STATE.has(value.state as ReleaseState)) {
     throw new Error(`${source}.state must be candidate or qualified`);
   }

@@ -32,7 +32,7 @@ export interface CampaignContinuation {
   level: number;
   nodeIds: string[];
   strikes: number;
-  snapshotSha256: string;
+  stateSha256: string;
   resumeFrom: string;
   scheduledAt: string;
 }
@@ -265,7 +265,7 @@ export function validateCampaignState(input: unknown): CampaignState {
           fail(`${continuationAt} requires a completed dependency execution`);
         }
         const continuationFields = new Set([
-          'grantId', 'level', 'nodeIds', 'strikes', 'snapshotSha256', 'resumeFrom',
+          'grantId', 'level', 'nodeIds', 'strikes', 'stateSha256', 'resumeFrom',
           'scheduledAt',
         ]);
         for (const key of Object.keys(continuation)) {
@@ -287,8 +287,8 @@ export function validateCampaignState(input: unknown): CampaignState {
         }
         if (!Number.isSafeInteger(continuation.strikes)
           || continuation.strikes < 1) fail(`${continuationAt}.strikes is invalid`);
-        if (!HASH.test(continuation.snapshotSha256 ?? '')) {
-          fail(`${continuationAt}.snapshotSha256 is invalid`);
+        if (!HASH.test(continuation.stateSha256 ?? '')) {
+          fail(`${continuationAt}.stateSha256 is invalid`);
         }
         const expectedResume = `continuations/${attempt.plan.id}/${continuation.grantId}`;
         if (continuation.resumeFrom !== expectedResume) {

@@ -28,6 +28,8 @@ import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindin
 import type { ProgressionRecipeSelections as ProgressionLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
+import { parseVersionedProgressionId } from '../progression/progression-identifiers.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { StackAdapter } from '../stacks/stack-adapter-contract.js';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.js';
@@ -311,7 +313,6 @@ export const CAMPAIGN_SCHEMA_VERSION = 5;
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
-const VERSION = /^\d+\.\d+\.\d+$/;
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
   'track', 'mode', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
   'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'featureCatalog']);
@@ -339,7 +340,6 @@ const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'total
   'invalidAttemptRate']);
 const DISPERSION = new Set(['median-iqr', 'mean-sd']);
 const IMAGE_DIGEST = /^[^\s@]+@sha256:[a-f0-9]{64}$/;
-const EXACT_REF = /^([a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 const object = (value: unknown): value is UnknownRecord =>
@@ -376,7 +376,7 @@ function identifier(value: unknown, at: string): string {
 }
 
 function version(value: unknown, at: string): string {
-  if (typeof value !== 'string' || !VERSION.test(value)) {
+  if (!isExactSemanticVersion(value)) {
     throw new Error(`invalid campaign at ${at}: must be a semantic version`);
   }
   return value;
@@ -428,7 +428,7 @@ export function validateCampaignDefinition(input: unknown,
   }
   if (value.featureCatalog !== undefined) {
     if (typeof value.featureCatalog === 'string') {
-      if (!EXACT_REF.test(value.featureCatalog)) {
+      if (!parseVersionedProgressionId(value.featureCatalog)) {
         fail(`${source}.featureCatalog`, 'must be an exact id@version reference');
       }
       value.levels = exactArray(value.levels, `${source}.levels`,

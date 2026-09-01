@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from 'node:fs';
+import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { mutationFileEdits, resolveMutationFile, validateMutationDefinitions }
   from '../src/evidence/mutation-analysis.js';
@@ -18,19 +19,8 @@ interface MutationSpec {
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  let app: string | undefined;
-  let mutations: string | undefined;
-  let quiet = false;
-  for (let index = 2; index < argv.length; index += 1) {
-    const value = argv[index];
-    if (value === '--app') app = argv[++index];
-    else if (value === '--mutations') mutations = argv[++index];
-    else if (value === '--quiet') quiet = true;
-    else {
-      console.error(`Unknown arg ${String(value)}`);
-      process.exit(2);
-    }
-  }
+  const { values: { app, mutations, quiet = false } } = parseNodeArgs({ args: argv.slice(2),
+    options: { app: { type: 'string' }, mutations: { type: 'string' }, quiet: { type: 'boolean' } } });
   if (!app || !mutations) {
     console.error('Usage: node dist/commands/check-mutations.js --app <dir> --mutations <file.json>');
     process.exit(2);

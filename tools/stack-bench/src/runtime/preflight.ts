@@ -20,6 +20,7 @@ import { resolveProgressionRecipeLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import { databaseContainer, isDatabaseContainerBackend } from '../stacks/database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.js';
 import { pidsOnPort } from './platform.js';
@@ -472,10 +473,10 @@ export function runPreflight(
     'Run the same command with --smoke before a paid campaign.');
 
   const composeText = exists(COMPOSE) ? String(dependencies.readCompose?.() ?? readFileSync(COMPOSE, 'utf8')) : '';
-  for (const backend of (track ? request.backends : []).filter(item => ['postgres', 'mongodb'].includes(item))) {
+  for (const backend of (track ? request.backends : []).filter(isDatabaseContainerBackend)) {
     if (!track) continue;
-    const service = backend === 'postgres' ? 'postgres' : 'mongodb';
-    const containerName = `stack-bench-${backend}`;
+    const service = backend;
+    const container = databaseContainer(backend, env);
     const reference = composeImageReference(service, composeText);
     if (!reference || !/@sha256:[a-f0-9]{64}$/.test(reference)) {
       add(`image.${backend}`, 'fail', `${service} Compose image is not digest-pinned`,
@@ -485,32 +486,32 @@ export function runPreflight(
     try {
       const expectedId = parseImageId(run('docker', ['image', 'inspect', '--format', '{{.Id}}', reference]));
       const inspections: DockerContainerInspection[] = JSON.parse(
-        run('docker', ['container', 'inspect', containerName]),
+        run('docker', ['container', 'inspect', container.name]),
       );
       const inspected = inspections[0];
-      if (!inspected) throw new Error(`${containerName} inspection returned no container`);
+      if (!inspected) throw new Error(`${container.name} inspection returned no container`);
       const allocated = portsFor(track, backend, request.runIndex);
       const hostPort = String(allocated.dbPort);
-      const mapping = inspected.NetworkSettings?.Ports?.[`${backend === 'postgres' ? 5432 : 27017}/tcp`] ?? [];
+      const mapping = inspected.NetworkSettings?.Ports?.[`${container.internalPort}/tcp`] ?? [];
       const healthy = !inspected.State?.Health || inspected.State.Health.Status === 'healthy';
       const ready = inspected.State?.Running === true && healthy && inspected.Image === expectedId
         && mapping.some((item: { HostPort?: string }) => item.HostPort === hostPort);
       add(`service.${backend}`, ready ? 'pass' : 'fail', ready
-        ? `${containerName} is running exact image ${expectedId}`
-        : `${containerName} is absent, stopped/unhealthy, on the wrong image, or mapped to the wrong port`,
+        ? `${container.name} is running exact image ${expectedId}`
+        : `${container.name} is absent, stopped/unhealthy, on the wrong image, or mapped to the wrong port`,
       ready ? null : `Run docker compose -f ${COMPOSE} up -d ${service}.`);
       if (backend === 'postgres' && ready) {
         try {
-          const identity = verifyPostgresServiceIdentity(containerName, { execute: run });
+          const identity = verifyPostgresServiceIdentity(container.name, { execute: run });
           add('service.postgres.identity', 'pass', `Authenticated as ${identity}`);
         } catch (error) {
           add('service.postgres.identity', 'fail',
             `PostgreSQL application identity is unavailable: ${errorMessage(error)}`,
-            `Recreate or migrate the Stack Bench PostgreSQL volume, then restart ${containerName}.`);
+            `Recreate or migrate the Stack Bench PostgreSQL volume, then restart ${container.name}.`);
         }
       }
     } catch {
-      add(`service.${backend}`, 'fail', `${containerName} is not ready`,
+      add(`service.${backend}`, 'fail', `${container.name} is not ready`,
         `Run docker compose -f ${COMPOSE} up -d ${service}.`);
     }
   }

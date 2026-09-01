@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { redactCredentials, sanitiseConsoleError,
   sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.js';
@@ -97,28 +98,15 @@ function repairValue(value: unknown, fallback: string): string {
 }
 
 export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
-  const args: ParsedArgs = {};
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === '--app') args.app = argv[++i];
-    else if (argv[i] === '--out') args.out = argv[++i];
-    else if (argv[i] === '--archive') args.archive = argv[++i];
-    else if (argv[i] === '--history-json') {
-      const value = argv[++i];
-      if (value === undefined) throw new Error('--history-json requires a value');
-      args.history = JSON.parse(value);
-    }
-    else if (argv[i] === '--checks-json') {
-      const value = argv[++i];
-      if (value === undefined) throw new Error('--checks-json requires a value');
-      args.checks = JSON.parse(value);
-    }
-    else if (argv[i] === '--controls-json') {
-      const value = argv[++i];
-      if (value === undefined) throw new Error('--controls-json requires a value');
-      args.controls = JSON.parse(value);
-    }
-    else throw new Error(`Unknown argument: ${argv[i]}`);
-  }
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    app: { type: 'string' }, out: { type: 'string' }, archive: { type: 'string' },
+    'history-json': { type: 'string' }, 'checks-json': { type: 'string' },
+    'controls-json': { type: 'string' },
+  } });
+  const args: ParsedArgs = { app: values.app, out: values.out, archive: values.archive,
+    history: values['history-json'] === undefined ? undefined : JSON.parse(values['history-json']),
+    checks: values['checks-json'] === undefined ? undefined : JSON.parse(values['checks-json']),
+    controls: values['controls-json'] === undefined ? undefined : JSON.parse(values['controls-json']) };
   if (!args.app) {
     throw new Error('Usage: report-bugs --app <dir> [--out <file>]');
   }

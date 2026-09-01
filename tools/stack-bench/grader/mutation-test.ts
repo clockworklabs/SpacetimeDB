@@ -15,6 +15,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { parseArgs as parseNodeArgs } from "node:util";
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
   writeRunJson } from "../src/evidence/artifacts.js";
 import { controlBackendRuntime, parseRuntimeControlSpec } from "../src/runtime/backend-control.js";
@@ -84,51 +85,43 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const GRADER = join(HERE, "grade.js");
 
 function parseArgs(argv: readonly string[]): MutationArgs {
-  const a: MutationArgs = {};
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === "--app") a.app = argv[++i];
-    else if (argv[i] === "--url") a.url = argv[++i];
-    else if (argv[i] === "--mutations") a.mutations = argv[++i];
-    else if (argv[i] === "--level") a.level = argv[++i];
-    else if (argv[i] === "--spec") a.spec = argv[++i];
-    else if (argv[i] === "--backend") a.backend = argv[++i];
-    else if (argv[i] === "--track") a.track = argv[++i];
-    else if (argv[i] === "--recipe") a.recipe = argv[++i];
-    else if (argv[i] === "--selected-check") {
-      a.selectedCheckKeys ??= [];
-      a.selectedCheckKeys.push(argv[++i] as string);
-    }
-    else if (argv[i] === "--db-name") a.dbName = argv[++i];
-    else if (argv[i] === "--run-index") a.runIndex = argv[++i];
-    else if (argv[i] === "--track-slug") a.slug = argv[++i];
-    else if (argv[i] === "--probe") a.probe = argv[++i];
-    else if (argv[i] === "--restart-spec") {
-      a.restartSpec = parseRuntimeControlSpec(JSON.parse(argv[++i] as string));
-    }
-    else if (argv[i] === "--out") a.out = argv[++i];
-    else if (argv[i] === "--parent-attempt-id") a.parentAttemptId = argv[++i];
-    else if (argv[i] === "--mutation-shard-index") a.mutationShardIndex = Number(argv[++i]);
-    else if (argv[i] === "--mutation-shard-count") a.mutationShardCount = Number(argv[++i]);
-    else if (argv[i] === "--resume-from") a.resumeFrom = resolve(argv[++i] as string);
-    else if (argv[i] === "--checkpoint-out") a.checkpointOut = resolve(argv[++i] as string);
-    else if (argv[i] === "--baseline-bundle") a.baselineBundle = resolve(argv[++i] as string);
-    else if (argv[i] === "--expected-calibration-json") {
-      a.expectedCalibrationIdentity = JSON.parse(argv[++i] as string) as JsonRecord;
-    }
-    else if (argv[i] === "--max-runtime-minutes") a.maxRuntimeMinutes = Number(argv[++i]);
-    else if (argv[i] === "--image-id") a.imageId = argv[++i];
-    else {
-      console.error(`Unknown arg ${argv[i]}`);
-      process.exit(2);
-    }
-  }
+  const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
+    app: { type: 'string' }, url: { type: 'string' }, mutations: { type: 'string' },
+    level: { type: 'string' }, spec: { type: 'string' }, backend: { type: 'string' },
+    track: { type: 'string' }, recipe: { type: 'string' },
+    'selected-check': { type: 'string', multiple: true }, 'db-name': { type: 'string' },
+    'run-index': { type: 'string' }, 'track-slug': { type: 'string' }, probe: { type: 'string' },
+    'restart-spec': { type: 'string' }, out: { type: 'string' }, 'parent-attempt-id': { type: 'string' },
+    'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
+    'resume-from': { type: 'string' }, 'checkpoint-out': { type: 'string' },
+    'baseline-bundle': { type: 'string' }, 'expected-calibration-json': { type: 'string' },
+    'max-runtime-minutes': { type: 'string' }, 'image-id': { type: 'string' },
+  } });
+  const a: MutationArgs = { app: values.app, url: values.url, mutations: values.mutations,
+    level: values.level, spec: values.spec, backend: values.backend, track: values.track,
+    recipe: values.recipe, selectedCheckKeys: values['selected-check'], dbName: values['db-name'],
+    runIndex: values['run-index'] ?? '0', slug: values['track-slug'], probe: values.probe,
+    restartSpec: values['restart-spec'] === undefined ? undefined
+      : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
+    out: values.out, parentAttemptId: values['parent-attempt-id'],
+    mutationShardIndex: values['mutation-shard-index'] === undefined
+      ? undefined : Number(values['mutation-shard-index']),
+    mutationShardCount: values['mutation-shard-count'] === undefined
+      ? undefined : Number(values['mutation-shard-count']),
+    resumeFrom: values['resume-from'] && resolve(values['resume-from']),
+    checkpointOut: values['checkpoint-out'] && resolve(values['checkpoint-out']),
+    baselineBundle: values['baseline-bundle'] && resolve(values['baseline-bundle']),
+    expectedCalibrationIdentity: values['expected-calibration-json'] === undefined
+      ? undefined : JSON.parse(values['expected-calibration-json']) as JsonRecord,
+    maxRuntimeMinutes: values['max-runtime-minutes'] === undefined
+      ? 60 : Number(values['max-runtime-minutes']),
+    imageId: values['image-id'] };
   if (!a.app || !a.url || !a.mutations) {
     console.error(
       "Usage: node dist/grader/mutation-test.js --app <dir> --url <url> --mutations <file>",
     );
     process.exit(2);
   }
-  a.runIndex ??= "0";
   const shardFields = [a.mutationShardIndex, a.mutationShardCount]
     .filter(value => value !== undefined);
   if (shardFields.length === 1) {

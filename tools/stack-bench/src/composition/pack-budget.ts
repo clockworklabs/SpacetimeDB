@@ -1,33 +1,18 @@
-#!/usr/bin/env node
-
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
-import { artifactPayload, currentEngineIdentity, readArtifact, recipeArtifactIdentities,
-  writeArtifact } from '../evidence/artifacts.js';
+import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.js';
+import { calibrationQualificationIdentity } from './calibration-compiler.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { PACK_RUNTIME_METRIC } from './pack-runtime.js';
 import { sha256 } from '../evidence/provenance.js';
-import { resolveRecipeRelease } from './recipe-release.js';
 import type { RecipeBinding } from './recipe-release.js';
 import { missingRunnerObservation } from '../runtime/runner-environment.js';
-import { isDeclaredLevel, listTracks, loadTrack } from './tracks.js';
 
 type UnknownRecord = Record<string, unknown>;
-
-interface PackBudgetArgs {
-  command: 'recommend';
-  track: string;
-  level: number;
-  evidence: string[];
-  out: string;
-  recipe?: string;
-}
 
 export interface PackRuntimeEntry {
   id: string;
@@ -129,37 +114,6 @@ function requireSupportedBudgetRunner(runner: RunnerObservation | undefined,
   if (missing.length) {
     throw new Error(`${path} is not supported appliance timing evidence: runner observation is missing ${missing.join(', ')}`);
   }
-}
-
-export function parsePackBudgetArgs(argv: string[]): PackBudgetArgs {
-  const args: {
-    command?: string; track?: string; level?: number; recipe?: string;
-    evidence: string[]; out?: string;
-  } = { command: argv[2], evidence: [] };
-  for (let index = 3; index < argv.length; index += 1) {
-    if (argv[index] === '--track') args.track = argv[++index];
-    else if (argv[index] === '--level') args.level = Number(argv[++index]);
-    else if (argv[index] === '--recipe') args.recipe = argv[++index];
-    else if (argv[index] === '--evidence') {
-      const path = argv[++index];
-      if (path !== undefined) args.evidence.push(resolve(path));
-    } else if (argv[index] === '--out') {
-      const path = argv[++index];
-      if (path !== undefined) args.out = resolve(path);
-    }
-    else throw new Error(`unknown pack-budget option ${argv[index]}`);
-  }
-  if (args.command !== 'recommend' || typeof args.track !== 'string' || !args.track
-    || typeof args.level !== 'number' || !Number.isInteger(args.level) || args.level < 1
-    || !args.evidence.length || !args.out) {
-    throw new Error('usage: pack-budget.js recommend --track <name> --level <n> '
-      + '[--recipe <id>@<version>] --evidence <reference.json> [--evidence ...] '
-      + '--out <measurement.json>');
-  }
-  if (new Set(args.evidence).size !== args.evidence.length) throw new Error('--evidence paths must be unique');
-  return { command: 'recommend', track: args.track, level: args.level,
-    evidence: args.evidence, out: args.out,
-    ...(args.recipe === undefined ? {} : { recipe: args.recipe }) };
 }
 
 function identityField(value: unknown, field: string): unknown {
@@ -362,41 +316,4 @@ export function loadPackBudgetEvidence(paths: string[]): PackBudgetEvidence[] {
     }
     return { path, sha256: sha256(readFileSync(path)), artifact, runtimeCalibration };
   });
-}
-
-function main(): void {
-  const args = parsePackBudgetArgs(process.argv);
-  if (!listTracks().includes(args.track)) throw new Error(`unknown track ${args.track}`);
-  const track = loadTrack(args.track);
-  if (!isDeclaredLevel(track, args.level)) throw new Error(`L${args.level} is not declared for ${args.track}`);
-  const binding = resolveRecipeRelease(track, args.level, args.recipe);
-  if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
-  const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
-  if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);
-  const loaded = loadPackBudgetEvidence(args.evidence);
-  const result = recommendPackBudgets({ binding, calibration, evidence: loaded });
-  if (existsSync(args.out)) throw new Error(`refusing to replace existing budget measurement: ${args.out}`);
-  const id = `pack-budget-${args.track}-l${args.level}-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;
-  const artifact = writeArtifact(args.out, { kind: 'pack_budget_measurement', id,
-    identities: recipeArtifactIdentities(binding.release, {
-      calibration: { ...calibrationQualificationIdentity(calibration), state: calibration.state },
-    }),
-    payload: { schemaVersion: 1, track: args.track, level: args.level, policy: PACK_BUDGET_POLICY,
-      runner: result.measuredRunner,
-      evidence: loaded.map(item => {
-        const stackAdapter = item.artifact.identities.stackAdapter;
-        if (!stackAdapter) throw new Error(`${item.path} has no stack adapter identity`);
-        return { path: relative(dirname(args.out), item.path).replaceAll('\\', '/'),
-          sha256: item.sha256, stack: stackAdapter.id };
-      }),
-      samples: result.samples, recommendations: result.recommendations } });
-  console.log(JSON.stringify(artifactPayload(artifact), null, 2));
-}
-
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  try { main(); }
-  catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 2;
-  }
 }

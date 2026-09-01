@@ -15,6 +15,7 @@ import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-relea
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -158,7 +159,6 @@ export const CALIBRATION_SCHEMA_VERSION = 1;
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const STATES = new Set(['draft', 'qualified', 'retired']);
 const STACK_STATES = new Set(['candidate', 'qualified', 'unsupported']);
 const CONTROL_POLICIES = new Map([
@@ -198,7 +198,7 @@ function exactId(value: unknown, at: string): string {
 
 function exactVersion(value: unknown, at: string): string {
   const text = string(value, at);
-  if (!VERSION.test(text)) fail(at, 'must be an exact semantic version');
+  if (!isExactSemanticVersion(text)) fail(at, 'must be an exact semantic version');
   return text;
 }
 
@@ -402,7 +402,7 @@ export function compileCalibrationDefinition(input: unknown,
     const at = `${source}.qualification.featureCatalog`;
     strictObject(featureCatalog, at, FEATURE_CATALOG_FIELDS);
     string(featureCatalog.id, `${at}.id`);
-    if (!VERSION.test(String(featureCatalog.version))) {
+    if (!isExactSemanticVersion(featureCatalog.version)) {
       fail(`${at}.version`, 'must be an exact semantic version');
     }
     exactHash(featureCatalog.sha256, `${at}.sha256`);

@@ -256,6 +256,15 @@ test('dependency campaigns bind separate catalog and policy identities in every 
     /levels.*feature catalog/);
 });
 
+test('dependency catalog references use the shared semantic-version parser', () => {
+  const value = dependencyDefinition();
+  value.levels = [1];
+  value.featureCatalog = 'ecommerce.questlines@1.0.0-rc.1+build.7';
+  assert.equal(validateCampaignDefinition(value).featureCatalog, value.featureCatalog);
+  value.featureCatalog = 'ecommerce:questlines@1.0.0';
+  assert.throws(() => validateCampaignDefinition(value), /exact id@version reference/);
+});
+
 test('dependency campaign plans bind only the selected feature catalog levels', () => {
   const value = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
     'campaign.ecommerce-progression-reference.json'), 'utf8'));

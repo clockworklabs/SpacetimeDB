@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { campaignDetail, discoverPlans, readCampaignArtifactBody, readDashboardOverview,
   readJsonLines, resolveCampaignArtifact,
@@ -127,25 +128,17 @@ function controlAuthorized(request: IncomingMessage, host: string | undefined,
     && sameSecret(request.headers['x-stack-bench-control-secret'], controlSecret);
 }
 
-function requiredOption(argv: string[], index: number, option: string): string {
-  const value = argv[index];
-  if (value === undefined) throw new Error(`${option} requires a value`);
-  return value;
-}
-
 export function parseDashboardArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): DashboardArgs {
-  const args: DashboardArgs = { host: '127.0.0.1', port: 7331,
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    host: { type: 'string' }, port: { type: 'string' }, results: { type: 'string' },
+    plans: { type: 'string' }, 'allow-container-bind': { type: 'boolean' },
+  } });
+  const args: DashboardArgs = { host: values.host ?? '127.0.0.1',
+    port: values.port === undefined ? 7331 : Number(values.port),
     resultsRoot: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(STACK_BENCH_ROOT, 'results')),
-    plansRoot: '', allowContainerBind: false };
-  for (let index = 2; index < argv.length; index += 1) {
-    const value = argv[index];
-    if (value === '--host') args.host = requiredOption(argv, ++index, value);
-    else if (value === '--port') args.port = Number(requiredOption(argv, ++index, value));
-    else if (value === '--results') args.resultsRoot = resolve(requiredOption(argv, ++index, value));
-    else if (value === '--plans') args.plansRoot = resolve(requiredOption(argv, ++index, value));
-    else if (value === '--allow-container-bind') args.allowContainerBind = true;
-    else throw new Error(`unknown dashboard option ${JSON.stringify(value)}`);
-  }
+    plansRoot: '', allowContainerBind: values['allow-container-bind'] ?? false };
+  if (values.results) args.resultsRoot = resolve(values.results);
+  if (values.plans) args.plansRoot = resolve(values.plans);
   args.plansRoot ||= join(args.resultsRoot, 'plans');
   const applianceContainerBind = args.allowContainerBind
     && env.STACK_BENCH_APPLIANCE === '1' && args.host === '0.0.0.0';

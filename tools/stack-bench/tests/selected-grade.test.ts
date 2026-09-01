@@ -109,6 +109,7 @@ test('the live grader executes account setup through the registered actor execut
   const out = join(root, 'grade.json');
   const spec = join(root, 'scenario.json');
   writeFileSync(spec, JSON.stringify({
+    schemaVersion: 1,
     level: 1,
     features: [{
       id: 1,
@@ -156,6 +157,7 @@ test('setup can wait for app readiness without relaxing scored checks', async ()
   const out = join(root, 'grade.json');
   const spec = join(root, 'scenario.json');
   writeFileSync(spec, JSON.stringify({
+    schemaVersion: 1,
     level: 1,
     features: [{
       id: 1,
@@ -224,6 +226,7 @@ test('an inconclusive check keeps the recipe denominator fixed', async () => {
   const spec = join(root, 'scenario.json');
   mkdirSync(app, { recursive: true });
   writeFileSync(spec, JSON.stringify({
+    schemaVersion: 1,
     level: 1,
     features: [{
       id: 1,

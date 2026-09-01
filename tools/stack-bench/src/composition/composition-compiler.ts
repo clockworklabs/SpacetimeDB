@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 
 import { compileScenarioDefinition } from './definition-compiler.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -199,7 +200,6 @@ export type CompiledRecipeRelease = CompiledRecipePlan;
 export const COMPOSITION_SCHEMA_VERSION = 1;
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const STATES = new Set(['draft', 'qualified', 'retired']);
 const ROLES = new Set(['feature', 'guarantee', 'control']);
 const MODULE_TYPES = new Set(['feature', 'specification']);
@@ -242,7 +242,7 @@ function id(value: unknown, at: string): string {
 
 function version(value: unknown, at: string): string {
   const text = string(value, at);
-  if (!VERSION.test(text)) fail(at, 'must be an exact semantic version');
+  if (!isExactSemanticVersion(text)) fail(at, 'must be an exact semantic version');
   return text;
 }
 

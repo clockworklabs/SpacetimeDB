@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
@@ -27,15 +28,13 @@ interface QualificationBlocker {
 }
 
 export function parseQualificationArgs(argv: string[]): QualificationArgs {
-  const args: QualificationArgs = { command: argv[2], track: null, level: null };
-  for (let index = 3; index < argv.length; index += 1) {
-    if (argv[index] === '--track') args.track = argv[++index] ?? '';
-    else if (argv[index] === '--level') args.level = Number(argv[++index] ?? '');
-    else if (argv[index] === '--recipe') args.recipe = argv[++index] ?? '';
-    else throw new Error(`unknown qualification option ${argv[index]}`);
-  }
+  const { positionals, values } = parseNodeArgs({ args: argv.slice(2), allowPositionals: true,
+    options: { track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' } } });
+  const args: QualificationArgs = { command: positionals[0], track: values.track ?? null,
+    level: values.level === undefined ? null : Number(values.level),
+    ...(values.recipe === undefined ? {} : { recipe: values.recipe }) };
   if (args.command !== 'status' || typeof args.track !== 'string' || !args.track
-    || args.level === null || !Number.isInteger(args.level) || args.level < 1) {
+    || positionals.length !== 1 || args.level === null || !Number.isInteger(args.level) || args.level < 1) {
     throw new Error('usage: node dist/commands/qualification-cli.js status --track <name> --level <positive integer> '
       + '[--recipe <id>@<version>]');
   }

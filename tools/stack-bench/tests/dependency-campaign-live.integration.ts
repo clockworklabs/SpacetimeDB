@@ -14,7 +14,8 @@ import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { readArtifact } from '../src/evidence/artifacts.js';
 import type { BenchmarkRunRecord, GradeBundlePayload }
   from '../src/evidence/benchmark-run.js';
-import { validateProgressionCampaignLevelScope } from '../commands/bench.js';
+import { validateProgressionCampaignLevelScope }
+  from '../src/progression/progression-recipe-selection.js';
 import { replayDependencyMode } from '../src/progression/dependency-mode.js';
 import { dependencyRuntimeDefinition } from '../src/progression/progression-definition.js';
 import type { ProgressionStatePayload } from '../src/progression/progression-state.js';
@@ -153,21 +154,20 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
       'attempt-recorded',
       'attempt-recorded',
     ]);
-    assert.equal(progression.payload.snapshot.phase, 'terminal');
-    assert.equal(progression.payload.snapshot.attempts.length, 5);
-    const accounts = progression.payload.snapshot.nodes.accounts;
-    assert(accounts);
-    assert.equal(accounts.strikes.used, 3);
-    assert.equal(accounts.exhaustionReason,
-      'strikes-exhausted');
-    const catalog = progression.payload.snapshot.nodes.catalog;
-    assert(catalog);
-    assert.equal(catalog.strikes.used, 3);
-    assert.equal(catalog.exhaustionReason, 'strikes-exhausted');
     const runtimeDefinition = dependencyRuntimeDefinition(
       plan.featureCatalog, plan.dependencyPolicy);
     const replayed = replayDependencyMode(runtimeDefinition,
       progression.payload.events);
+    assert.equal(replayed.phase, 'terminal');
+    assert.equal(replayed.attempts.length, 5);
+    const accounts = replayed.nodes.accounts;
+    assert(accounts);
+    assert.equal(accounts.strikes.used, 3);
+    assert.equal(accounts.exhaustionReason, 'strikes-exhausted');
+    const catalog = replayed.nodes.catalog;
+    assert(catalog);
+    assert.equal(catalog.strikes.used, 3);
+    assert.equal(catalog.exhaustionReason, 'strikes-exhausted');
     assert.deepEqual(replayed.attempts.map(attempt => attempt.attemptId),
       Array.from({ length: 5 }, (_, index) => `${run.id}-progression-${index + 1}`));
     assert(replayed.attempts.every(attempt => attempt.evidence?.kind === 'grade_bundle'));

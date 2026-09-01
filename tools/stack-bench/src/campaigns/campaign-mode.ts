@@ -3,11 +3,11 @@ import {
   DEPENDENCY_MODE_VERSION,
   isDependencyRepairSelection,
 } from '../progression/dependency-definition.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
 
 export const CAMPAIGN_MODE_SCHEMA_VERSION = 1;
 
 const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const VERSION = /^\d+\.\d+\.\d+$/;
 type UnknownRecord = Record<string, unknown>;
 
 export interface CampaignModeInput extends UnknownRecord {
@@ -40,7 +40,7 @@ function fail(message: string): never {
 function validateIdentity(value: unknown, at: string): asserts value is CampaignModeInput {
   if (!object(value)) fail(`${at} must be an object`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id is invalid`);
-  if (typeof value.version !== 'string' || !VERSION.test(value.version)) {
+  if (!isExactSemanticVersion(value.version)) {
     fail(`${at}.version must be an exact semantic version`);
   }
 }

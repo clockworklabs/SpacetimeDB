@@ -15,7 +15,7 @@ import { emptyArtifactIdentities } from '../src/evidence/artifacts.js';
 interface TestState extends Record<string, unknown> {
   phase: string;
   events: Array<{ type: string; result: { attemptId: string } }>;
-  nodes: Record<string, { strikes: { granted: number } }>;
+  nodes: Record<string, { status: string; strikes: { granted: number } }>;
 }
 
 interface TestProgressionEngine {
@@ -56,7 +56,7 @@ const grade = (attemptId: string, outcome: string, sourceSha256?: string) =>
   ...(sourceSha256 ? { sourceSha256 } : {}),
   nodes: [{ id: 'account', checks: [{ id: 'check.account', outcome }] }] });
 
-test('progression state stores one ordered event log and a replay-verified compact snapshot', () => {
+test('progression state stores one replay-verified event log', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-progression-state-'));
   const path = join(root, 'state.json');
   try {
@@ -67,8 +67,8 @@ test('progression state stores one ordered event log and a replay-verified compa
     const written = writeProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope, state });
     assert.equal(written.artifact.payload.events.length, 1);
-    assert.equal(written.artifact.payload.snapshot.definition, undefined);
-    assert.equal(written.artifact.payload.snapshot.events, undefined);
+    assert.equal(written.artifact.payload.snapshot, undefined);
+    assert.match(written.stateSha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope }).state, state);
     const wrongOwner = owner();
@@ -77,18 +77,23 @@ test('progression state stores one ordered event log and a replay-verified compa
       owner: wrongOwner }),
       /wrong campaign attempt owner/);
 
+    const contradictory = structuredClone(state);
+    contradictory.nodes.account!.status = 'active';
+    assert.throws(() => writeProgressionState(path, { progression: input, ...stateIdentities,
+      owner: scope, state: contradictory }), /contradicts its event history/);
+
     const changed = JSON.parse(readFileSync(path, 'utf8'));
-    changed.payload.snapshot.phase = 'active';
+    changed.payload.events[0].sequence = 2;
     writeFileSync(path, JSON.stringify(changed));
     assert.throws(() => readProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope }),
-      /snapshot identity does not match/);
+      /state identity does not match/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('continuation grants require the exact terminal snapshot and dispatch through the mode engine', t => {
+test('continuation grants require the exact terminal state and dispatch through the mode engine', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-progression-grant-'));
   const path = join(root, 'state.json');
   try {
@@ -120,18 +125,18 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
       owner: scope, state });
     assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,
-      expectedSnapshotSha256: terminal.snapshotSha256,
+      expectedStateSha256: terminal.stateSha256,
       checkpoint: { artifact: '../outside.json' },
       grant: { grantId: 'wrong-source', level: 1, nodeIds: ['account'], strikes: 2 } }),
     /escapes the progression workspace/);
     assert.equal(readProgressionState(path, { progression: input, ...stateIdentities,
-      owner: scope }).snapshotSha256,
-      terminal.snapshotSha256);
+      owner: scope }).stateSha256,
+      terminal.stateSha256);
     try {
       symlinkSync(join(output, checkpoint.artifact), join(root, 'checkpoint-link.json'), 'file');
       assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
         owner: scope,
-        expectedSnapshotSha256: terminal.snapshotSha256,
+        expectedStateSha256: terminal.stateSha256,
         checkpoint: { artifact: 'checkpoint-link.json' },
         grant: { grantId: 'linked-source', level: 1, nodeIds: ['account'], strikes: 2 } }),
       /symbolic link/);
@@ -144,7 +149,7 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
     }
     assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,
-      expectedSnapshotSha256: terminal.snapshotSha256,
+      expectedStateSha256: terminal.stateSha256,
       checkpoint: { artifact: join('result', checkpoint.artifact) },
       grant: { grantId: 'restore-failure', level: 1, nodeIds: ['account'], strikes: 2 } }),
     /cannot restore source file over preserved directory/);
@@ -152,12 +157,12 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
     assert.equal(readFileSync(join(app, 'z-conflict', 'node_modules', 'keep'), 'utf8'),
       'runtime dependency\n');
     assert.equal(readProgressionState(path, { progression: input, ...stateIdentities,
-      owner: scope }).snapshotSha256, terminal.snapshotSha256);
+      owner: scope }).stateSha256, terminal.stateSha256);
     rmSync(join(app, 'z-conflict'), { recursive: true, force: true });
     writeFileSync(join(app, 'z-conflict'), 'live source\n');
     const granted = grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,
-      expectedSnapshotSha256: terminal.snapshotSha256,
+      expectedStateSha256: terminal.stateSha256,
       checkpoint: { artifact: join('result', checkpoint.artifact) },
       grant: { grantId: 'grant-1', level: 1, nodeIds: ['account'], strikes: 2 } });
     assert.equal(granted.state.phase, 'active');
@@ -175,7 +180,7 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
     assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const version = 1;\n');
     assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,
-      expectedSnapshotSha256: terminal.snapshotSha256,
+      expectedStateSha256: terminal.stateSha256,
       checkpoint: { artifact: join('result', checkpoint.artifact) },
       grant: { grantId: 'grant-2', level: 1, nodeIds: ['account'], strikes: 1 } }),
     /state changed/);

@@ -64,10 +64,12 @@
     "test:null": "node dist/commands/null-control.js"
   },
   "dependencies": {
-    "playwright": "1.62.1"
+    "playwright": "1.62.1",
+    "semver": "7.7.4"
   },
   "devDependencies": {
     "@types/node": "22.15.30",
+    "@types/semver": "7.8.0",
     "typescript": "5.6.3"
   }
 }

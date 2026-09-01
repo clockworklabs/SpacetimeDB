@@ -14,7 +14,7 @@ interface TestContinuation {
   level: number;
   nodeIds: string[];
   strikes: number;
-  snapshotSha256: string;
+  stateSha256: string;
   resumeFrom: string;
   scheduledAt: string;
 }
@@ -113,21 +113,21 @@ test('campaign strike grant derives exact state, owner, checkpoint, and continua
       assert.equal(options.owner.attempt.id, input.attemptId);
       assert.equal(options.owner.attempt.conditionSha256, 'c'.repeat(64));
       assert.equal(options.requireCurrentEngine, true);
-      return { snapshotSha256: 'b'.repeat(64), state: { phase: 'terminal', grants: [] } };
+      return { stateSha256: 'b'.repeat(64), state: { phase: 'terminal', grants: [] } };
     },
     grantState: (_path, options) => {
       assert.deepEqual(options.grant, {
         grantId: input.grantId, level: 1, nodeIds: ['accounts'], strikes: 2,
       });
       assert.deepEqual(options.checkpoint, { artifact: 'level-l1-checkpoint.json' });
-      assert.equal(options.expectedSnapshotSha256, 'b'.repeat(64));
-      return { snapshotSha256: 'd'.repeat(64) };
+      assert.equal(options.expectedStateSha256, 'b'.repeat(64));
+      return { stateSha256: 'd'.repeat(64) };
     },
     schedule: (state, attemptId, marker, options) => {
       assert.equal(state.status, 'completed');
       assert.equal(attemptId, input.attemptId);
       assert.deepEqual(marker, { grantId: input.grantId, level: 1,
-        nodeIds: ['accounts'], strikes: 2, snapshotSha256: 'd'.repeat(64),
+        nodeIds: ['accounts'], strikes: 2, stateSha256: 'd'.repeat(64),
         resumeFrom: 'continuations/campaign-r1-c1-a1-postgres/operator-grant-1' });
       assert.equal(options.now, '2026-08-28T12:00:00.000Z');
       return { status: 'prepared' };
@@ -139,13 +139,13 @@ test('campaign strike grant derives exact state, owner, checkpoint, and continua
   assert.equal(calls.released, true);
   assert.ok(calls.written);
   assert.equal(calls.written.path, 'campaign-state.json');
-  assert.equal(result.snapshotSha256, 'd'.repeat(64));
+  assert.equal(result.stateSha256, 'd'.repeat(64));
   assert.equal(result.scheduled, true);
 });
 
 test('campaign strike grant is idempotent only for the exact recorded marker', () => {
   const marker = { grantId: input.grantId, level: 1, nodeIds: ['accounts'], strikes: 2,
-    snapshotSha256: 'd'.repeat(64),
+    stateSha256: 'd'.repeat(64),
     resumeFrom: 'continuations/campaign-r1-c1-a1-postgres/operator-grant-1',
     scheduledAt: '2026-08-28T12:00:00.000Z' };
   const campaign = campaignFixture({ marker, campaignStatus: 'prepared' });
@@ -153,13 +153,13 @@ test('campaign strike grant is idempotent only for the exact recorded marker', (
   const result = grantCampaignDependencyStrikes('campaign-output', input, {
     inspect: () => structuredClone(campaign),
     acquire: () => 'lock', release: () => {},
-    readState: () => ({ snapshotSha256: marker.snapshotSha256,
+    readState: () => ({ stateSha256: marker.stateSha256,
       state: { grants: [{ grantId: input.grantId, level: 1,
         nodeIds: ['accounts'], strikes: 2 }] } }),
-    grantState: () => { touched = true; return { snapshotSha256: 'e'.repeat(64) }; },
+    grantState: () => { touched = true; return { stateSha256: 'e'.repeat(64) }; },
     schedule: () => { touched = true; }, writeState: () => { touched = true; },
   });
-  assert.equal(result.snapshotSha256, marker.snapshotSha256);
+  assert.equal(result.stateSha256, marker.stateSha256);
   assert.equal(touched, false);
   assert.throws(() => grantCampaignDependencyStrikes('campaign-output', {
     ...input, strikes: 3,

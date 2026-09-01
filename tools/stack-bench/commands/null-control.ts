@@ -10,6 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.js';
 import { calibrationQualificationIdentity, calibrationQualificationRelease,
   resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
@@ -35,16 +36,15 @@ interface NullControlArgs {
 }
 
 export function parseNullControlArgs(argv: string[]): NullControlArgs {
-  const args: NullControlArgs = { tracks: listTracks(), level: null, audit: false };
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === '--track') args.tracks = (argv[++i] ?? '').split(',').filter(Boolean);
-    else if (argv[i] === '--level') args.level = Number(argv[++i] ?? '');
-    else if (argv[i] === '--recipe') args.recipe = argv[++i] ?? '';
-    else if (argv[i] === '--out') args.out = argv[++i] ?? '';
-    else if (argv[i] === '--audit') args.audit = true;
-    else if (argv[i] === '--parent-attempt-id') args.parentAttemptId = argv[++i] ?? '';
-    else { console.error(`Unknown argument: ${argv[i]}`); process.exit(2); }
-  }
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    track: { type: 'string' }, level: { type: 'string' }, recipe: { type: 'string' },
+    out: { type: 'string' }, audit: { type: 'boolean' }, 'parent-attempt-id': { type: 'string' },
+  } });
+  const args: NullControlArgs = {
+    tracks: values.track?.split(',').filter(Boolean) ?? listTracks(),
+    level: values.level === undefined ? null : Number(values.level), audit: values.audit ?? false,
+    recipe: values.recipe, out: values.out, parentAttemptId: values['parent-attempt-id'],
+  };
   if (args.level !== null && (!Number.isInteger(args.level) || args.level < 1)) {
     throw new Error('--level must be a positive integer');
   }

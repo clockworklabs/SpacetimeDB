@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
@@ -8,41 +9,47 @@ function splitList(value: unknown): string[] {
   return String(value).split(',').map(item => item.trim()).filter(Boolean);
 }
 
-function nextArgument(argv: string[], index: number): string {
-  const value = argv[index];
-  if (value === undefined) throw new Error(`missing value after ${argv[index - 1] ?? 'argument'}`);
-  return value;
-}
-
 export function parsePreflightArgs(
   argv: string[],
   { env = process.env }: { env?: NodeJS.ProcessEnv } = {},
 ): PreflightRequest {
+  const { values } = parseArgs({ args: argv.slice(2), options: {
+    backend: { type: 'string', multiple: true },
+    track: { type: 'string' },
+    levels: { type: 'string' },
+    recipe: { type: 'string' },
+    'run-index': { type: 'string' },
+    parallelism: { type: 'string' },
+    'agent-adapter': { type: 'string' },
+    guidance: { type: 'string' },
+    pack: { type: 'string', multiple: true },
+    check: { type: 'string', multiple: true },
+    image: { type: 'string' },
+    'results-dir': { type: 'string' },
+    report: { type: 'string' },
+    smoke: { type: 'boolean' },
+    json: { type: 'boolean' },
+  } });
   const request: PreflightRequest = { backends: [], track: 'ecommerce', levels: '1', levelList: [],
     runIndex: 0, parallelism: 1,
     agentAdapter: 'claude-code', guidance: 'prescribed', packIds: [], checkKeys: [], smoke: false,
     image: env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
     resultsDir: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(STACK_BENCH_ROOT, 'results')) };
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--backend': request.backends.push(...splitList(nextArgument(argv, ++i))); break;
-      case '--track': request.track = nextArgument(argv, ++i); break;
-      case '--levels': request.levels = nextArgument(argv, ++i); break;
-      case '--recipe': request.recipe = nextArgument(argv, ++i); break;
-      case '--run-index': request.runIndex = Number(nextArgument(argv, ++i)); break;
-      case '--parallelism': request.parallelism = Number(nextArgument(argv, ++i)); break;
-      case '--agent-adapter': request.agentAdapter = nextArgument(argv, ++i); break;
-      case '--guidance': request.guidance = nextArgument(argv, ++i); break;
-      case '--pack': request.packIds.push(...splitList(nextArgument(argv, ++i))); break;
-      case '--check': request.checkKeys.push(...splitList(nextArgument(argv, ++i))); break;
-      case '--image': request.image = nextArgument(argv, ++i); break;
-      case '--results-dir': request.resultsDir = resolve(nextArgument(argv, ++i)); break;
-      case '--report': request.report = resolve(nextArgument(argv, ++i)); break;
-      case '--smoke': request.smoke = true; break;
-      case '--json': request.json = true; break;
-      default: throw new Error(`unknown argument: ${argv[i]}`);
-    }
-  }
+  request.backends = (values.backend ?? []).flatMap(splitList);
+  if (values.track) request.track = values.track;
+  if (values.levels) request.levels = values.levels;
+  if (values.recipe) request.recipe = values.recipe;
+  if (values['run-index']) request.runIndex = Number(values['run-index']);
+  if (values.parallelism) request.parallelism = Number(values.parallelism);
+  if (values['agent-adapter']) request.agentAdapter = values['agent-adapter'];
+  if (values.guidance) request.guidance = values.guidance;
+  request.packIds = (values.pack ?? []).flatMap(splitList);
+  request.checkKeys = (values.check ?? []).flatMap(splitList);
+  if (values.image) request.image = values.image;
+  if (values['results-dir']) request.resultsDir = resolve(values['results-dir']);
+  if (values.report) request.report = resolve(values.report);
+  request.smoke = values.smoke ?? false;
+  request.json = values.json;
   if (!request.backends.length) throw new Error('--backend is required (comma-separated values are accepted)');
   if (request.guidance !== 'neutral' && request.guidance !== 'prescribed') {
     throw new Error('--guidance must be neutral or prescribed');

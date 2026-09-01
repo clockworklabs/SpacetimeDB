@@ -3,6 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseArgs as parseNodeArgs } from 'node:util';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js';
@@ -44,18 +45,14 @@ interface ActionResult {
 }
 
 function parseArgs(argv: string[]): CheckActionsArgs {
-  const a: CheckActionsArgs = {};
-  for (let i = 2; i < argv.length; i++) {
-    const k = argv[i];
-    if (k === '--backend') a.backend = argv[++i] ?? '';
-    else if (k === '--url') a.url = argv[++i] ?? '';
-    else if (k === '--app') a.app = argv[++i] ?? '';
-    else if (k === '--out') a.out = argv[++i] ?? '';
-    else if (k === '--track') a.track = argv[++i] ?? '';
-    else if (k === '--quiet') a.quiet = true;
-    else if (k === '--parent-attempt-id') a.parentAttemptId = argv[++i] ?? '';
-    else { console.error(`Unknown arg ${k}`); process.exit(2); }
-  }
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    backend: { type: 'string' }, url: { type: 'string' }, app: { type: 'string' },
+    out: { type: 'string' }, track: { type: 'string' }, quiet: { type: 'boolean' },
+    'parent-attempt-id': { type: 'string' },
+  } });
+  const a: CheckActionsArgs = { backend: values.backend, url: values.url, app: values.app,
+    out: values.out, track: values.track, quiet: values.quiet,
+    parentAttemptId: values['parent-attempt-id'] };
   if (!a.backend) { console.error('--backend is required'); process.exit(2); }
   return a;
 }

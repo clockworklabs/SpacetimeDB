@@ -12,6 +12,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 
@@ -1005,9 +1006,9 @@ export async function stopCredentialBroker(broker: CredentialBrokerHandle | null
 }
 
 function parseArgs(argv: string[]): string {
-  const index = argv.indexOf('--config');
-  const configPath = index === -1 ? undefined : argv[index + 1];
-  if (!configPath || argv.length !== 2) fail('use --config <private-file>');
+  const { values } = parseNodeArgs({ args: argv, options: { config: { type: 'string' } } });
+  const configPath = values.config;
+  if (!configPath) fail('use --config <private-file>');
   return resolve(configPath);
 }
 

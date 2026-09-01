@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
 
 import type {
   CompiledProgressionNode,
@@ -305,9 +304,6 @@ function selectedPromptNodeIds(state: DependencyState): string[] {
   const nodeIds = currentPromptNodeIds(state);
   const failed = nodeIds.filter(nodeId =>
     Object.values(getNodeState(state, nodeId).checks).includes('fail'));
-  if (state.attempts.at(-1)?.applicationFailure !== undefined && failed.length > 0) {
-    return failed;
-  }
   if (failed.length > 0 && hasConclusiveAttempt(state)) {
     return state.definition.repairSelection === 'batch' ? failed : [failed[0]!];
   }
@@ -387,13 +383,11 @@ function selectedGradingWork(state: DependencyState): DependencyGradingSelection
 
 export function promptSelection(state: ProgressionState): DependencyPromptSelection {
   const dependencyState = asDependencyState(state);
-  assertReplayConsistent(dependencyState);
   return selectedPromptWork(dependencyState);
 }
 
 export function gradingSelection(state: ProgressionState): DependencyGradingSelection {
   const dependencyState = asDependencyState(state);
-  assertReplayConsistent(dependencyState);
   return selectedGradingWork(dependencyState);
 }
 
@@ -533,13 +527,14 @@ export function initializeDependencyMode(input: unknown): DependencyState {
   return initialDependencyState(compileDependencyMode(input));
 }
 
-function assertState(input: unknown): CompiledDependencyDefinition {
+function assertState(input: unknown,
+  compiledDefinition?: CompiledDependencyDefinition): CompiledDependencyDefinition {
   if (!object(input) || input.schemaVersion !== DEPENDENCY_MODE_SCHEMA_VERSION
     || input.policy !== DEPENDENCY_MODE_POLICY) {
     throw new Error('invalid dependency mode state');
   }
   const state = input as unknown as DependencyState;
-  const definition = compileDependencyMode(state.definition);
+  const definition = compiledDefinition ?? compileDependencyMode(state.definition);
   if (!['active', 'terminal'].includes(state.phase)) throw new Error('invalid dependency mode state phase');
   if (state.phase === 'active' && state.terminalOutcome !== null) {
     throw new Error('active dependency mode state cannot have a terminal outcome');
@@ -626,8 +621,10 @@ function assertState(input: unknown): CompiledDependencyDefinition {
   return definition;
 }
 
-function asDependencyState(input: unknown): DependencyState {
-  assertState(input);
+function asDependencyState(input: ProgressionState): DependencyState {
+  if (input.policy !== DEPENDENCY_MODE_POLICY) {
+    throw new Error(`invalid dependency mode state policy ${JSON.stringify(input.policy)}`);
+  }
   return input as DependencyState;
 }
 
@@ -927,46 +924,32 @@ export function replayDependencyMode(inputDefinition: unknown,
       : applyStrikeGrant(state, event.grant);
     state.events.push(event);
   });
-  assertState(state);
+  assertState(state, definition);
   return state;
-}
-
-function assertReplayConsistent(state: DependencyState): CompiledDependencyDefinition {
-  assertState(state);
-  const replayed = replayDependencyMode(state.definition, state.events);
-  if (!isDeepStrictEqual(replayed, state)) {
-    throw new Error('dependency mode snapshot contradicts its event history');
-  }
-  return state.definition;
-}
-
-export function resumeDependencyMode(snapshot: ProgressionState): DependencyState {
-  const state = asDependencyState(snapshot);
-  assertReplayConsistent(state);
-  return replayDependencyMode(state.definition, state.events);
 }
 
 export function recordDependencyResult(inputState: ProgressionState,
   inputResult: unknown): DependencyState {
   const state = asDependencyState(inputState);
-  assertReplayConsistent(state);
   const event: DependencyEvent = { sequence: state.events.length + 1,
     type: 'attempt-recorded', result: structuredClone(inputResult) as DependencyResult };
-  return replayDependencyMode(state.definition, [...state.events, event]);
+  const next = applyDependencyResult(state, event.result);
+  next.events.push(event);
+  return next;
 }
 
 export function grantDependencyStrikes(inputState: ProgressionState,
   inputGrant: unknown): DependencyState {
   const state = asDependencyState(inputState);
-  assertReplayConsistent(state);
   const event: DependencyEvent = { sequence: state.events.length + 1,
     type: 'strikes-granted', grant: structuredClone(inputGrant) as DependencyStrikeGrant };
-  return replayDependencyMode(state.definition, [...state.events, event]);
+  const next = applyStrikeGrant(state, event.grant);
+  next.events.push(event);
+  return next;
 }
 
 export function nextDependencyAction(inputState: ProgressionState): ProgressionAction {
   const state = asDependencyState(inputState);
-  assertReplayConsistent(state);
   if (state.phase === 'terminal') {
     if (!state.terminalOutcome) throw new Error('terminal dependency state is missing its outcome');
     return { type: 'terminal', outcome: { ...state.terminalOutcome } };
@@ -994,13 +977,11 @@ export function nextDependencyAction(inputState: ProgressionState): ProgressionA
 
 export function activeDependencyNodes(inputState: ProgressionState): string[] {
   const state = asDependencyState(inputState);
-  assertReplayConsistent(state);
   return currentPromptNodeIds(state);
 }
 
 export function scoreDependencyMode(inputState: ProgressionState): DependencyScore {
   const state = asDependencyState(inputState);
-  assertReplayConsistent(state);
   return scoreDependencyState(state);
 }
 
@@ -1019,7 +1000,7 @@ export const dependencyModePolicy: Readonly<ProgressionPolicy<
   gradingSelection,
   recordResult: recordDependencyResult,
   grantStrikes: grantDependencyStrikes,
-  resume: resumeDependencyMode,
+  replay: replayDependencyMode,
   nextAction: nextDependencyAction,
   score: scoreDependencyMode,
 });

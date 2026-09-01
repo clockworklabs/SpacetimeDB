@@ -202,7 +202,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
         sourceSha256: item.sourceSha256 ?? null,
         selectionSha256: item.selectionSha256 ?? null,
       })),
-      snapshotSha256: stored.snapshotSha256,
+      stateSha256: stored.stateSha256,
     };
   } catch (error) {
     return { unreadable: error instanceof Error ? error.message : String(error), phase: 'unreadable',

@@ -6,6 +6,7 @@ import type { Page } from 'playwright';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
@@ -54,24 +55,19 @@ export interface LintWalkContext {
 }
 
 function parseArgs(argv: string[]): LintArgs {
-  const args: LintArgs = { level: 1, json: false, headed: false, track: DEFAULT_TRACK, hooks: [] };
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--url': args.url = argv[++i] ?? ''; break;
-      case '--track': args.track = argv[++i] ?? ''; break;
-      case '--level': args.level = parseInt(argv[++i] ?? '', 10); break;
-      case '--json': args.json = true; break;
-      case '--out': args.out = argv[++i] ?? ''; break;
-      case '--label': args.label = argv[++i] ?? ''; break;
-      case '--parent-attempt-id': args.parentAttemptId = argv[++i] ?? ''; break;
-      case '--credential-aliases-json': args.credentialAliases = JSON.parse(argv[++i] ?? ''); break;
-      case '--hook': args.hooks.push(argv[++i] ?? ''); break;
-      case '--headed': args.headed = true; break;
-      default:
-        console.error(`Unknown argument: ${argv[i]}`);
-        process.exit(2);
-    }
-  }
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    url: { type: 'string' }, track: { type: 'string' }, level: { type: 'string' },
+    json: { type: 'boolean' }, out: { type: 'string' }, label: { type: 'string' },
+    'parent-attempt-id': { type: 'string' }, 'credential-aliases-json': { type: 'string' },
+    hook: { type: 'string', multiple: true }, headed: { type: 'boolean' },
+  } });
+  const args: LintArgs = { url: values.url, track: values.track ?? DEFAULT_TRACK,
+    level: values.level === undefined ? 1 : Number(values.level), json: values.json ?? false,
+    headed: values.headed ?? false, out: values.out, label: values.label,
+    parentAttemptId: values['parent-attempt-id'],
+    credentialAliases: values['credential-aliases-json'] === undefined
+      ? undefined : JSON.parse(values['credential-aliases-json']),
+    hooks: values.hook ?? [] };
   if (!args.url || !Number.isInteger(args.level) || args.level < 1) {
     console.error('Usage: node dist/linter/lint.js --url <app-url> --level <N> [--json] [--headed]');
     process.exit(2);

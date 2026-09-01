@@ -1,8 +1,72 @@
+import { rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import type { ProgressionAttempt } from '../progression/progression-state.js';
+import type { GradeBundlePayload } from './benchmark-run.js';
+import { classifyBundle } from './outcomes.js';
+import type { RunOutcome } from './outcomes.js';
 import {
   compareCriterionEvidence,
   type CriterionEvidenceComparison,
   type EvidenceBundle,
 } from './scoring.js';
+
+export interface RepairProgress {
+  score: number | null;
+  fingerprint: string;
+  stalledRounds: number;
+}
+
+export function clearPrivateGradingEvidence(appDir: string): void {
+  rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
+}
+
+export function repairProgressState(previous: RepairProgress | null,
+  bundle: GradeBundlePayload | null): RepairProgress {
+  const outcome = classifyBundle(bundle);
+  const score = bundle?.totals?.score ?? null;
+  const fingerprint = canonicalDefinitionJson({
+    kind: outcome.kind,
+    phase: outcome.phase ?? null,
+    appFailures: [...(outcome.appFailures ?? [])].sort(),
+    inconclusive: [...(outcome.inconclusive ?? [])].sort(),
+    harnessFailures: [...(outcome.harnessFailures ?? [])].sort(),
+    contractFailures: (bundle?.suites?.lint?.results ?? [])
+      .filter(result => result.status === 'FAIL')
+      .map(result => ({ id: result.id, detail: result.detail ?? null })),
+  });
+  const stalledRounds = previous && score !== null && previous.score !== null
+    && score <= previous.score && fingerprint === previous.fingerprint
+    ? previous.stalledRounds + 1 : 0;
+  return { score, fingerprint, stalledRounds };
+}
+
+export function repairHistoryEntry(round: number, before: GradeBundlePayload | null,
+  after: GradeBundlePayload | null, result: string) {
+  const failureKeys = (bundle: GradeBundlePayload | null): string[] => {
+    const outcome = classifyBundle(bundle);
+    const contract = (bundle?.suites?.lint?.results ?? [])
+      .filter(item => item.status === 'FAIL').map(item => `testing-interface/${item.id}`);
+    return [...new Set([...(outcome.appFailures ?? []).filter(key => key !== 'contract-lint'),
+      ...contract])].sort();
+  };
+  return {
+    round,
+    beforeScore: before?.totals?.score ?? null,
+    beforeMax: before?.totals?.max ?? null,
+    afterScore: after?.totals?.score ?? null,
+    afterMax: after?.totals?.max ?? null,
+    result,
+    remainingFailures: failureKeys(after),
+  };
+}
+
+export function levelGradeIsUsable(bundleOutcome: RunOutcome,
+  progressionAttempt: Pick<ProgressionAttempt, 'outcome'> | null = null): boolean {
+  if (progressionAttempt) return progressionAttempt.outcome === 'conclusive';
+  return !['provider_failure', 'ungraded', 'harness_failure'].includes(bundleOutcome.kind);
+}
 
 const APPLICATION_SETUP_PHASES = new Set([
   'database-provenance', 'application-layout', 'application-restart', 'application-readiness',

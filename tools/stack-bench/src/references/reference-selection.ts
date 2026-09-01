@@ -9,7 +9,6 @@ export interface ReferenceSelectionArgs {
   track: string;
   level: number;
   recipe?: string | { id: string; version: string; contentSha256?: string } | null;
-  [key: string]: unknown;
 }
 
 export interface ReferenceSelection {

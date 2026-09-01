@@ -343,7 +343,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
           throw new Error(`grade bundle repeats check ${criterion.stableKey}`);
         }
         if (criterion.points !== selectedById.get(criterion.stableKey)?.points) {
-          throw new Error(`grade bundle criterion points for ${criterion.stableKey} do not match selection`);
+          throw new Error(`grade bundle criterion points for ${criterion.stableKey} are ${JSON.stringify(criterion.points)}, expected ${JSON.stringify(
+            selectedById.get(criterion.stableKey)?.points)}`);
         }
         const checkedEvidence = validateCheckEvidence(criterion.evidence,
           { at: `${at}.evidence` });

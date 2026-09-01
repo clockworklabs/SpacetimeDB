@@ -250,16 +250,19 @@ test('typed grade evidence is required and obsolete projection fields are reject
     summary: 'not observed', startedAtMs: 1, completedAtMs: 2 });
   const setupEvidence = createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
     startedAtMs: 1, completedAtMs: 2 });
-  const criterion = { id: 'works', points: 1, evidence };
+  const criterion = { id: 'works', desc: 'works', points: 1, evidence };
   assert.doesNotThrow(() => createArtifact({ kind: 'grade', id: 'typed-grade',
     payload: { total: 0, max: 1,
-      features: [{ id: 1, max: 1, setupEvidence, criteria: [criterion] }] } }));
+      features: [{ id: 1, name: 'feature', score: 0, max: 1,
+        setupEvidence, criteria: [criterion] }] } }));
   assert.throws(() => createArtifact({ kind: 'grade', id: 'obsolete-grade',
-    payload: { total: 0, max: 1, features: [{ id: 1, max: 1, setupEvidence,
+    payload: { total: 0, max: 1, features: [{ id: 1, name: 'feature', score: 0,
+      max: 1, setupEvidence,
       criteria: [{ ...criterion, passed: false }] }] } }), /passed is obsolete/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'missing-evidence',
     payload: { total: 0, max: 1,
-      features: [{ id: 1, max: 1, setupEvidence, criteria: [{ id: 'works' }] }] } }),
+      features: [{ id: 1, name: 'feature', score: 0, max: 1,
+        setupEvidence, criteria: [{ id: 'works' }] }] } }),
   /evidence is required/);
 });
 

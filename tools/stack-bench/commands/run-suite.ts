@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { controlBackendRuntime, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
@@ -252,35 +253,38 @@ export function databaseNameForGrading(track: Pick<Track, 'slug'>, runIndex: num
 }
 
 function parseArgs(argv: string[]): RunArguments {
-  const a: RunArguments = { app: '', url: '', backend: '', label: '', out: '', level: '1', reset: true,
-    media: true, runIndex: 0, track: DEFAULT_TRACK, packIds: [], checkKeys: [], observation: 'scored',
-    regressionChecks: [], bundleArtifactId: '' };
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--app': a.app = argv[++i] ?? ''; break;
-      case '--url': a.url = argv[++i] ?? ''; break;
-      case '--backend': a.backend = argv[++i] ?? ''; break;
-      case '--label': a.label = argv[++i] ?? ''; break;
-      case '--out': a.out = argv[++i] ?? ''; break;
-      case '--level': a.level = argv[++i] ?? ''; break;
-      case '--recipe': a.recipe = argv[++i] ?? ''; break;
-      case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i] ?? ''); break;
-      case '--credential-aliases-json': a.credentialAliases = JSON.parse(argv[++i] ?? ''); break;
-      case '--regression-checks-json': a.regressionChecks = JSON.parse(argv[++i] ?? ''); break;
-      case '--observation': a.observation = parseObservation(argv[++i] ?? ''); break;
-      case '--source-sha256': a.sourceSha256 = argv[++i] ?? ''; break;
-      case '--no-media': a.media = false; break;
-      case '--track': a.track = argv[++i] ?? ''; break;
-      case '--pack': a.packIds.push(...(argv[++i] ?? '').split(',').filter(Boolean)); break;
-      case '--check': a.checkKeys.push(...(argv[++i] ?? '').split(',').filter(Boolean)); break;
-      case '--restart-spec': a.restartSpec = parseRuntimeControlSpec(JSON.parse(argv[++i] ?? '')); break;
-      case '--application-failure-json': a.applicationFailure = JSON.parse(argv[++i] ?? ''); break;
-      case '--run-index': a.runIndex = parseInt(argv[++i] ?? '', 10); break;
-      case '--no-reset': a.reset = false; break;
-      case '--parent-attempt-id': a.parentAttemptId = argv[++i]; break;
-      default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
-    }
-  }
+  const { values } = parseNodeArgs({ args: argv.slice(2), options: {
+    app: { type: 'string' }, url: { type: 'string' }, backend: { type: 'string' },
+    label: { type: 'string' }, out: { type: 'string' }, level: { type: 'string' },
+    recipe: { type: 'string' }, 'recipe-task-json': { type: 'string' },
+    'credential-aliases-json': { type: 'string' }, 'regression-checks-json': { type: 'string' },
+    observation: { type: 'string' }, 'source-sha256': { type: 'string' },
+    'no-media': { type: 'boolean' }, track: { type: 'string' },
+    pack: { type: 'string', multiple: true }, check: { type: 'string', multiple: true },
+    'restart-spec': { type: 'string' }, 'application-failure-json': { type: 'string' },
+    'run-index': { type: 'string' }, 'no-reset': { type: 'boolean' },
+    'parent-attempt-id': { type: 'string' },
+  } });
+  const a: RunArguments = { app: values.app ?? '', url: values.url ?? '',
+    backend: values.backend ?? '', label: values.label ?? '', out: values.out ?? '',
+    level: values.level ?? '1', reset: !(values['no-reset'] ?? false),
+    media: !(values['no-media'] ?? false), runIndex: Number(values['run-index'] ?? 0),
+    track: values.track ?? DEFAULT_TRACK,
+    packIds: (values.pack ?? []).flatMap(value => value.split(',').filter(Boolean)),
+    checkKeys: (values.check ?? []).flatMap(value => value.split(',').filter(Boolean)),
+    observation: parseObservation(values.observation ?? 'scored'),
+    recipe: values.recipe,
+    recipeTask: values['recipe-task-json'] === undefined ? undefined : JSON.parse(values['recipe-task-json']),
+    credentialAliases: values['credential-aliases-json'] === undefined
+      ? undefined : JSON.parse(values['credential-aliases-json']),
+    regressionChecks: values['regression-checks-json'] === undefined
+      ? [] : JSON.parse(values['regression-checks-json']),
+    sourceSha256: values['source-sha256'],
+    restartSpec: values['restart-spec'] === undefined
+      ? undefined : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
+    applicationFailure: values['application-failure-json'] === undefined
+      ? undefined : JSON.parse(values['application-failure-json']),
+    parentAttemptId: values['parent-attempt-id'], bundleArtifactId: '' };
   if (!a.app || !a.url || !a.backend || !a.label) {
     console.error('Usage: node dist/commands/run-suite.js --app <dir> --url <url> --backend <stack> --label <id> [--out <dir>] [--media] [--no-reset]');
     process.exit(2);

@@ -5,11 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { auditFailureSummary, gradeArgv,
-  clearPrivateGradingEvidence,
-  levelGradeIsUsable, materializationAppFailure, materializeAcceptedSource, preserveFinalPackageEvidence,
-  repairHistoryEntry, repairProgressState,
-  sourceBoundFirstBuildOutcome }
+import { auditFailureSummary, gradeArgv }
   from '../commands/bench.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
@@ -17,7 +13,12 @@ import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
-import { repairEvidenceDecision } from '../src/evidence/repair-evidence.js';
+import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
+  repairHistoryEntry, repairProgressState } from '../src/evidence/repair-evidence.js';
+import { preserveFinalPackageEvidence, sourceBoundFirstBuildOutcome }
+  from '../src/runtime/source-checkpoint.js';
+import { materializationAppFailure, materializeAcceptedSource }
+  from '../src/runtime/source-materialization.js';
 import { dependencyRepairBudget, dependencyStrikeRecords }
   from '../src/progression/dependency-mode.js';
 import { loadTrack } from '../src/composition/tracks.js';

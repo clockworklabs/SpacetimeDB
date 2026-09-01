@@ -124,7 +124,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'cpuSecondsPer1kDelivered']),
   preflight: new Set(['schemaVersion', 'generatedAt', 'request', 'ok', 'summary', 'checks']),
   progression_state: new Set(['schemaVersion', 'owner', 'featureCatalog', 'dependencyPolicy',
-    'events', 'snapshot', 'resume', 'snapshotSha256']),
+    'events', 'resume', 'stateSha256']),
   repair_continuation: new Set([...BENCHMARK_RUN_PAYLOAD_FIELDS, 'continuation']),
   repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'roundsGranted',
     'exitCode', 'signal', 'timedOut', 'streams']),
@@ -275,7 +275,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
   if (kind === 'benchmark_run' && payload.progressionResume !== undefined) {
     const progressionResume = asObject(payload.progressionResume,
       'benchmark_run payload.progressionResume must be an object');
-    const fields = new Set(['priorRunId', 'priorRunSha256', 'stateSnapshotSha256',
+    const fields = new Set(['priorRunId', 'priorRunSha256', 'stateSha256',
       'action', 'inheritedLevels', 'priorTotals']);
     for (const key of Object.keys(progressionResume)) {
       if (!fields.has(key)) fail(`benchmark_run payload.progressionResume.${key} is unknown`);
@@ -283,7 +283,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     if (typeof progressionResume.priorRunId !== 'string' || !progressionResume.priorRunId) {
       fail('benchmark_run payload.progressionResume.priorRunId is invalid');
     }
-    for (const field of ['priorRunSha256', 'stateSnapshotSha256']) {
+    for (const field of ['priorRunSha256', 'stateSha256']) {
       if (!isHash(progressionResume[field])) {
         fail(`benchmark_run payload.progressionResume.${field} is invalid`);
       }
@@ -302,14 +302,13 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
   }
   if (kind === 'progression_state') {
-    if (payload.schemaVersion !== 2) fail('progression_state payload.schemaVersion must be 2');
+    if (payload.schemaVersion !== 3) fail('progression_state payload.schemaVersion must be 3');
     objectWhenPresent('owner');
     objectWhenPresent('featureCatalog');
     objectWhenPresent('dependencyPolicy');
-    objectWhenPresent('snapshot');
     arrayWhenPresent('events');
-    if (!isHash(payload.snapshotSha256)) {
-      fail('progression_state payload.snapshotSha256 is invalid');
+    if (!isHash(payload.stateSha256)) {
+      fail('progression_state payload.stateSha256 is invalid');
     }
     if (payload.resume !== undefined) {
       const resume = asObject(payload.resume, 'progression_state payload.resume must be an object');
@@ -883,11 +882,18 @@ export function validateArtifact(
 }
 
 export interface GradeArtifactCriterion {
+  id: string;
+  desc: string;
+  points: number;
   stableKey: string | null;
   evidence: CheckEvidence;
+  serverCheck?: string;
 }
 
 export interface GradeArtifactFeature {
+  id: number;
+  name: string;
+  score: number;
   setupEvidence: CheckEvidence;
   criteria: GradeArtifactCriterion[];
   max: number;
@@ -895,7 +901,7 @@ export interface GradeArtifactFeature {
 
 export interface GradeArtifactSelection {
   sha256: string;
-  checks: Array<{ stableKey: string }>;
+  checks: Array<{ stableKey: string; points: number }>;
 }
 
 export interface GradeArtifactPayload extends UnknownRecord {
@@ -917,12 +923,13 @@ export function validateGradePayload(payload: UnknownRecord): GradeArtifactPaylo
     if (typeof value.sha256 !== 'string' || !value.sha256 || !Array.isArray(value.checks)) {
       fail('grade payload.selection is invalid');
     }
-    return { sha256: value.sha256, checks: value.checks.map((check, index) => {
+    return { ...value, sha256: value.sha256, checks: value.checks.map((check, index) => {
       const entry = asObject(check, `grade payload.selection.checks[${index}] must be an object`);
       if (typeof entry.stableKey !== 'string' || !entry.stableKey) {
         fail(`grade payload.selection.checks[${index}].stableKey is invalid`);
       }
-      return { stableKey: entry.stableKey };
+      return { ...entry, stableKey: entry.stableKey,
+        points: number(entry.points, `grade payload.selection.checks[${index}].points`) };
     }) };
   })();
   if (!Array.isArray(payload.features)) fail('grade payload.features must be an array');
@@ -934,7 +941,12 @@ export function validateGradePayload(payload: UnknownRecord): GradeArtifactPaylo
     if (setupEvidence.phase !== 'setup') {
       fail(`grade payload.features[${featureIndex}].setupEvidence must use setup phase`);
     }
-    return { setupEvidence,
+    if (!Number.isSafeInteger(value.id) || Number(value.id) < 1
+      || typeof value.name !== 'string' || !value.name) {
+      fail(`grade payload.features[${featureIndex}] identity is invalid`);
+    }
+    return { ...value, id: Number(value.id), name: value.name,
+    score: number(value.score, `grade payload.features[${featureIndex}].score`), setupEvidence,
     criteria: value.criteria.map((criterion, criterionIndex) => {
       const entry = asObject(criterion,
         `grade payload.features[${featureIndex}].criteria[${criterionIndex}] must be an object`);
@@ -946,12 +958,21 @@ export function validateGradePayload(payload: UnknownRecord): GradeArtifactPaylo
       if (entry.evidence === undefined) {
         fail(`grade payload.features[${featureIndex}].criteria[${criterionIndex}].evidence is required`);
       }
-      if (entry.stableKey !== undefined
+      if (entry.stableKey !== undefined && entry.stableKey !== null
         && (typeof entry.stableKey !== 'string' || !entry.stableKey)) {
         fail(`grade payload.features[${featureIndex}].criteria[${criterionIndex}].stableKey is invalid`);
       }
-      return { stableKey: entry.stableKey ?? null, evidence: validateCheckEvidence(entry.evidence,
-        { at: `grade payload.features[${featureIndex}].criteria[${criterionIndex}].evidence` }) };
+      if (typeof entry.id !== 'string' || !entry.id
+        || typeof entry.desc !== 'string' || !entry.desc
+        || (entry.serverCheck !== undefined && typeof entry.serverCheck !== 'string')) {
+        fail(`grade payload.features[${featureIndex}].criteria[${criterionIndex}] identity is invalid`);
+      }
+      return { ...entry, id: entry.id, desc: entry.desc,
+        points: number(entry.points,
+          `grade payload.features[${featureIndex}].criteria[${criterionIndex}].points`),
+        stableKey: entry.stableKey ?? null, evidence: validateCheckEvidence(entry.evidence,
+          { at: `grade payload.features[${featureIndex}].criteria[${criterionIndex}].evidence` }),
+        ...(entry.serverCheck === undefined ? {} : { serverCheck: entry.serverCheck }) };
     }), max: number(value.max, `grade payload.features[${featureIndex}].max`) };
   });
   const inconclusive = payload.inconclusive === undefined ? [] : (() => {

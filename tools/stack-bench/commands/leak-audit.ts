@@ -5,11 +5,8 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 
-const arg = (name: string, fallback: string | null = null): string | null => {
-  const index = process.argv.indexOf(name);
-  return index === -1 ? fallback : process.argv[index + 1] ?? fallback;
-};
 // --dir is exclusive. --app resolves its matching CLI transcript directory.
 function transcriptsFor(appDir: string): string[] {
   const base = join(homedir(), '.claude', 'projects');
@@ -162,8 +159,12 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
 }
 
 function main(): void {
-  const requestedApp = arg('--app');
-  const requestedDirectory = arg('--dir');
+  const { values } = parseArgs({ args: process.argv.slice(2), options: {
+    app: { type: 'string' }, dir: { type: 'string' }, json: { type: 'boolean' },
+  } });
+  const requestedApp = values.app;
+  const requestedDirectory = values.dir;
+  if (requestedApp && requestedDirectory) throw new Error('--app and --dir cannot be used together');
   const roots = requestedApp ? transcriptsFor(requestedApp)
     : requestedDirectory ? [resolve(requestedDirectory)]
     : [join(homedir(), '.claude', 'projects')];
@@ -189,7 +190,7 @@ for (const root of roots) {
   }
 }
 
-if (process.argv.includes('--json')) {
+if (values.json) {
   console.log(JSON.stringify(results, null, 2));
   return;
 }

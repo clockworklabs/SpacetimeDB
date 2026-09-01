@@ -102,7 +102,7 @@ export interface LiveProgressionExecution {
     resumed: boolean;
     action: ProgressionAction;
     status: LiveProgressionStatus;
-    snapshotSha256: string | null;
+    stateSha256: string | null;
     priorRun: Artifact<BenchmarkRunPayload> | null;
   };
   bind(): ProgressionRecipeAction;
@@ -194,7 +194,7 @@ export function createLiveProgressionExecution(
   let initialized = false;
   let resumed = false;
   let priorRun: Artifact<BenchmarkRunPayload> | null = null;
-  let resumedSnapshotSha256: string | null = null;
+  let resumedStateSha256: string | null = null;
 
   const currentState = (): ProgressionState => {
     if (!state) throw new Error('live dependency progression is not initialized');
@@ -332,7 +332,7 @@ export function createLiveProgressionExecution(
       const stored = readProgressionState(statePath, { progression, featureCatalogIdentity,
         dependencyPolicyIdentity, owner, requireCurrentEngine: true });
       state = stored.state;
-      resumedSnapshotSha256 = stored.snapshotSha256;
+      resumedStateSha256 = stored.stateSha256;
       const saved = validateSavedSource(stored, stateRoot);
       priorRun = validatePriorRun(stateRoot, stored);
       mkdirSync(appDir, { recursive: true });
@@ -355,7 +355,7 @@ export function createLiveProgressionExecution(
       });
       const saved = validateSavedSource(stored, previousRoot);
       state = stored.state;
-      resumedSnapshotSha256 = stored.snapshotSha256;
+      resumedStateSha256 = stored.stateSha256;
       priorRun = validatePriorRun(previousRoot, stored);
       snapshotAppSource(saved.path, sourceDirectory);
       restoreAppSource(sourceDirectory, appDir);
@@ -373,7 +373,7 @@ export function createLiveProgressionExecution(
     }
     initialized = true;
     return { resumed, action: structuredClone(progressionEngine.nextAction(currentState())),
-      status: status(), snapshotSha256: resumedSnapshotSha256,
+      status: status(), stateSha256: resumedStateSha256,
       priorRun: priorRun === null ? null : structuredClone(priorRun) };
   };
   const bind = (): ProgressionRecipeAction => {

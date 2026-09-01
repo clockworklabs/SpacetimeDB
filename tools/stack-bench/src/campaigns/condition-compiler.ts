@@ -5,14 +5,16 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.js';
 import { sha256 } from '../evidence/provenance.js';
 import { validateCredentialAliases } from '../composition/credential-aliases.js';
+import { isExactSemanticVersion, parseVersionedReference } from '../semantic-version.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
-const VERSION = /^\d+\.\d+\.\d+$/;
 const HASH = /^[a-f0-9]{64}$/;
-const REF = /^([a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 type UnknownRecord = Record<string, unknown>;
+
+const parseConditionReference = (value: unknown): { id: string; version: string } | null =>
+  parseVersionedReference(value, identifier => ID.test(identifier));
 
 interface IdentityProfile extends UnknownRecord {
   schemaVersion: number;
@@ -157,7 +159,7 @@ function validateIdentityFields(value: UnknownRecord, at: string, kind: string,
   }
   if (value.kind !== kind) fail(`${at}.kind`, `must be ${kind}`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
-  if (typeof value.version !== 'string' || !VERSION.test(value.version)) {
+  if (!isExactSemanticVersion(value.version)) {
     fail(`${at}.version`, 'must be a semantic version');
   }
   if (typeof value.state !== 'string' || !['draft', 'qualified'].includes(value.state)) {
@@ -176,7 +178,7 @@ function loadCatalog(path: string = CATALOG): Catalog {
     const section = value[field];
     if (!object(section)) fail(`catalog.${field}`, 'must be an object');
     for (const [key, pathValue] of Object.entries(section)) {
-      if (!REF.test(key) || typeof pathValue !== 'string' || !pathValue) {
+      if (!parseConditionReference(key) || typeof pathValue !== 'string' || !pathValue) {
         fail(`catalog.${field}.${key}`, 'must map an id@version to a path');
       }
     }
@@ -185,24 +187,24 @@ function loadCatalog(path: string = CATALOG): Catalog {
 }
 
 function readProfile(catalog: Catalog, section: keyof Catalog['value'], reference: string): {
-  match: RegExpExecArray; path: string; profile: unknown } {
-  const match = REF.exec(reference ?? '');
-  if (!match) fail(reference ?? '<missing>', 'must use id@version');
+  referenceIdentity: { id: string; version: string }; path: string; profile: unknown } {
+  const referenceIdentity = parseConditionReference(reference);
+  if (!referenceIdentity) fail(reference ?? '<missing>', 'must use id@version');
   const rel = catalog.value[section][reference];
   if (!rel) fail(reference, `is not in catalog.${section}`);
   const path = contained(catalog.root, rel, reference);
   const profile = json(path, reference);
-  return { match: match!, path, profile };
+  return { referenceIdentity: referenceIdentity!, path, profile };
 }
 
 function loadProfile<T extends IdentityProfile>(catalog: Catalog,
   section: keyof Catalog['value'], reference: string, kind: string, fields: Set<string>,
   optional: Set<string> = new Set()): { profile: T; path: string } {
-  const { match, path, profile } = readProfile(catalog, section, reference);
+  const { referenceIdentity, path, profile } = readProfile(catalog, section, reference);
   strict(profile, reference, fields, optional);
   validateIdentityFields(profile, reference, kind);
   const typed = profile as T;
-  if (typed.id !== match[1] || typed.version !== match[2]) {
+  if (typed.id !== referenceIdentity.id || typed.version !== referenceIdentity.version) {
     fail(reference, 'does not match the loaded profile identity');
   }
   return { profile: typed, path };
@@ -311,12 +313,12 @@ export function validateConditionReference(input: unknown, at = 'condition'): Co
     if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
   }
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
-  if (typeof value.version !== 'string' || !VERSION.test(value.version)) {
+  if (!isExactSemanticVersion(value.version)) {
     fail(`${at}.version`, 'must be a semantic version');
   }
   for (const field of ['guidanceProfile', 'repairPolicy'] as const) {
     const reference = value[field];
-    if (typeof reference !== 'string' || !REF.test(reference)) {
+    if (!parseConditionReference(reference)) {
       fail(`${at}.${field}`, 'must use id@version');
     }
   }
@@ -336,7 +338,7 @@ export function validateConditionReference(input: unknown, at = 'condition'): Co
       seen.add(entry.level);
       for (const field of ['requested', 'expected', 'observed'] as const) {
         if (!Array.isArray(entry[field]) || new Set(entry[field]).size !== entry[field].length
-          || entry[field].some(reference => !REF.test(reference))) {
+          || entry[field].some(reference => !parseConditionReference(reference))) {
           fail(`${levelAt}.${field}`, 'must contain unique exact id@version references');
         }
         entry[field] = [...entry[field]].sort();
@@ -371,7 +373,7 @@ function validateRequestedScope(input: unknown): RequestedScope {
     if (!Number.isSafeInteger(entry.level) || entry.level < 1) fail(`${at}.level`, 'must be positive');
     strict(entry.recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
       'meaningSha256', 'executionSha256', 'state']));
-    if (!ID.test(entry.recipe.id) || !VERSION.test(entry.recipe.version)
+    if (!ID.test(entry.recipe.id) || !isExactSemanticVersion(entry.recipe.version)
       || !['draft', 'qualified'].includes(entry.recipe.state)
       || (['contentSha256', 'meaningSha256', 'executionSha256'] as const)
         .some(field => !HASH.test(entry.recipe[field]))) {
@@ -453,7 +455,7 @@ function validateRequestedScope(input: unknown): RequestedScope {
           if (!Array.isArray(specifications[field])
             || new Set(specifications[field]).size !== specifications[field].length
             || specifications[field].some(reference => typeof reference !== 'string'
-              || !REF.test(reference))) {
+              || !parseConditionReference(reference))) {
             fail(`${at}.selection.specifications.${field}`,
               'must contain unique exact id@version references');
           }

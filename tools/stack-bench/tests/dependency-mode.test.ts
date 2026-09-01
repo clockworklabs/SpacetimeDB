@@ -215,7 +215,7 @@ test('the engine dispatches modes through registered policies without mode condi
     gradingSelection: () => ({ fake: 'grade' }),
     recordResult: (state: Record<string, unknown>) => state,
     grantStrikes: (state: Record<string, unknown>) => state,
-    resume: (state: Record<string, unknown>) => state,
+    replay: (definition: Record<string, unknown>) => ({ policy: definition.policy }),
     nextAction: () => ({ type: 'complete' }),
     score: () => ({ score: 1 }),
   };
@@ -372,6 +372,19 @@ test('an application startup failure spends strikes only on current work', () =>
   assert.equal(state.nodes.ownership!.strikes.used, 0);
   assert.equal(dependencyAction(state).type, 'repair');
   assert.deepEqual(dependencyPrompt(state).nodeIds, ['catalog']);
+});
+
+test('feature repair selection isolates work after an application startup failure', () => {
+  const value = fixture();
+  value.strikes.default = 3;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, {
+    ...conclusive(state, 'startup-failure', { accounts: 'fail', catalog: 'fail' }),
+    applicationFailure: { phase: 'application-start', reason: 'server did not start' },
+  });
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
+  assert.equal(state.nodes.accounts!.strikes.used, 1);
+  assert.equal(state.nodes.catalog!.strikes.used, 1);
 });
 
 test('one failed branch stops while passed branches continue through any number of levels', () => {
@@ -575,18 +588,16 @@ test('an earlier grant does not reopen a later exhausted level or retain its evi
   assert.deepEqual(dependencyPrompt(state).nodeIds, ['ownership']);
 });
 
-test('state resumes by replay and rejects contradictory snapshots or event sequences', () => {
+test('state replay rebuilds the event history and rejects invalid sequences', () => {
   let state = progressionEngine.initialize(fixture());
   state = progressionEngine.recordResult(state, conclusive(state, 'first', {
     accounts: 'pass', catalog: 'fail',
   }));
-  assert.deepEqual(progressionEngine.resume(state), state);
-  const contradictory = structuredClone(state);
-  contradictory.nodes.accounts!.status = 'active';
-  assert.throws(() => progressionEngine.resume(contradictory), /contradicts its event history/);
+  assert.deepEqual(progressionEngine.replay(state.definition, state.events), state);
   const missingEvent = structuredClone(state);
   missingEvent.events[0]!.sequence = 2;
-  assert.throws(() => progressionEngine.resume(missingEvent), /event sequence 2 must be 1/);
+  assert.throws(() => progressionEngine.replay(missingEvent.definition, missingEvent.events),
+    /event sequence 2 must be 1/);
 });
 
 test('a child with multiple parents opens only when every parent passes', () => {

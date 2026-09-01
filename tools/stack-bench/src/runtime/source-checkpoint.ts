@@ -1,6 +1,10 @@
+import { cpSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { writeArtifact } from '../evidence/artifacts.js';
+import { readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
+import type { GradeBundlePayload } from '../evidence/benchmark-run.js';
+import { classifyBundle } from '../evidence/outcomes.js';
+import type { RunOutcome } from '../evidence/outcomes.js';
 import { hashDirectory } from '../evidence/provenance.js';
 import { hashAppSource, snapshotAppSource } from './source-snapshot.js';
 
@@ -24,6 +28,67 @@ export interface PreserveLevelCheckpointOptions {
   repair: unknown;
   outcome: unknown;
   selectionSha256?: string | null;
+}
+
+export function preserveFinalPackageEvidence(
+  { appDir, outputDir }: { appDir: string; outputDir: string },
+): {
+  source: { directory: string; sha256: string; files: number };
+  grading: { directory: string; artifact: string; sourceSha256: string };
+} {
+  const failures: string[] = [];
+  let source: { directory: string; sha256: string; files: number } | null = null;
+  let grading: { directory: string; artifact: string; sourceSha256: string } | null = null;
+  const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+  try {
+    const live = hashAppSource(appDir);
+    const sourceDirectory = join(outputDir, 'source');
+    snapshotAppSource(appDir, sourceDirectory);
+    const saved = hashDirectory(sourceDirectory);
+    if (saved.sha256 !== live.sha256 || saved.files.length !== live.files.length) {
+      throw new Error('preserved final source differs from the live application source');
+    }
+    source = { directory: 'source', sha256: saved.sha256, files: saved.files.length };
+  } catch (error) {
+    failures.push(`source: ${message(error).split(/\r?\n/)[0]}`);
+  }
+
+  try {
+    const from = join(appDir, 'stack-bench');
+    const gradingDirectory = join(outputDir, 'grading');
+    if (!existsSync(join(from, 'bundle.json'))) {
+      throw new Error('final grader produced no bundle.json');
+    }
+    rmSync(gradingDirectory, { recursive: true, force: true });
+    cpSync(from, gradingDirectory, {
+      recursive: true,
+      filter: path => !/[\\/]media([\\/]|$)/.test(path),
+    });
+    const bundle = readArtifactPayload<GradeBundlePayload>(join(gradingDirectory, 'bundle.json'), {
+      expectedKind: 'grade_bundle',
+    });
+    if (!source || bundle.source?.sha256 !== source.sha256) {
+      throw new Error('final grading bundle does not match the preserved application source');
+    }
+    grading = { directory: 'grading', artifact: 'grading/bundle.json',
+      sourceSha256: bundle.source.sha256 };
+  } catch (error) {
+    failures.push(`grading: ${message(error).split(/\r?\n/)[0]}`);
+  }
+  if (failures.length) {
+    throw new Error(`could not preserve mandatory result package evidence: ${failures.join('; ')}`);
+  }
+  if (!source || !grading) throw new Error('could not preserve mandatory result package evidence');
+  return { source, grading };
+}
+
+export function sourceBoundFirstBuildOutcome(bundle: GradeBundlePayload | null,
+  source: object | null): RunOutcome {
+  if (source) return classifyBundle(bundle);
+  const reason = 'the first-build source could not be preserved and verified';
+  return { kind: 'harness_failure', phase: 'first-build-source', reason,
+    appFailures: [], inconclusive: [], harnessFailures: [reason] };
 }
 
 export function preserveLevelCheckpoint({ appDir, outputDir, runId, identities,

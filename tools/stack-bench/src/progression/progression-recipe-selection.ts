@@ -360,6 +360,25 @@ export function resolveProgressionRecipeLevelSelection(binding: RecipeBinding, i
     level === 1 ? 'fresh' : 'upgrade');
 }
 
+interface DeclaredProgressionLevelScope {
+  recipe: { contentSha256: string };
+  selection: { sha256: string };
+  task: { sha256: string };
+}
+
+export function validateProgressionCampaignLevelScope(binding: RecipeBinding,
+  progression: ProgressionInput, declared: DeclaredProgressionLevelScope | null | undefined,
+  level: number): ProgressionRecipeSelections {
+  if (!declared) throw new Error(`study condition does not bind requested L${level}`);
+  const derived = resolveProgressionRecipeLevelSelection(binding, progression, level);
+  if (declared.recipe.contentSha256 !== derived.grader.request.recipe.contentSha256
+    || declared.selection.sha256 !== derived.grader.selection.sha256
+    || declared.task.sha256 !== derived.grader.task.sha256) {
+    throw new Error(`dependency campaign graph-derived scope changed before L${level}`);
+  }
+  return derived;
+}
+
 export function validateProgressionRecipeBindings<T>(input: T,
   bindings: Array<RecipeBindingAtLevel | LeveledRecipeBinding>,
   { levels = null }: { levels?: number[] | null } = {}): T {

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from '../evidence/artifacts.js';
@@ -172,45 +173,39 @@ function qualificationInputs(): { sha256: string; files: string[] } {
 
 export function parseReferenceQualificationArgs(argv: readonly string[]):
   ReferenceQualificationArgs {
-  const args: ReferenceQualificationArgs = { track: 'ecommerce', level: 1, repetitions: 2,
-    runIndex: 0, spacetimePort: null, timeoutMinutes: null, mutations: false,
-    mutationWorkers: 1, mutationShardIndex: null, mutationShardCount: null,
-    mutationMaxRuntimeMinutes: 60, mutationIds: [] };
-  // Every flag that takes a value reads the argument after it.
-  const next = (index: number): string => {
-    const value = argv[index];
-    if (value === undefined) throw new Error(`missing value after ${argv[index - 1] ?? 'argument'}`);
-    return value;
+  const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
+    backend: { type: 'string' }, track: { type: 'string' }, level: { type: 'string' },
+    recipe: { type: 'string' }, 'feature-catalog': { type: 'string' },
+    repetitions: { type: 'string' }, 'run-index': { type: 'string' },
+    'spacetime-port': { type: 'string' }, 'timeout-minutes': { type: 'string' },
+    mutations: { type: 'boolean' }, 'release-candidate': { type: 'boolean' },
+    'mutation-id': { type: 'string', multiple: true }, 'mutation-workers': { type: 'string' },
+    'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
+    'mutation-checkpoint-dir': { type: 'string' }, 'mutation-checkpoint': { type: 'string' },
+    'mutation-baseline-bundle': { type: 'string' }, 'mutation-max-runtime-minutes': { type: 'string' },
+    'reference-mutation-only': { type: 'boolean' }, out: { type: 'string' },
+  } });
+  const number = (value: string | undefined, fallback: number | null): number | null =>
+    value === undefined ? fallback : Number(value);
+  const args: ReferenceQualificationArgs = {
+    backend: values.backend, track: values.track ?? 'ecommerce',
+    level: number(values.level, 1) as number, recipe: values.recipe,
+    featureCatalog: values['feature-catalog'], repetitions: number(values.repetitions, 2) as number,
+    runIndex: number(values['run-index'], 0) as number,
+    spacetimePort: number(values['spacetime-port'], null),
+    spacetimePortExplicit: values['spacetime-port'] !== undefined,
+    timeoutMinutes: number(values['timeout-minutes'], null),
+    mutations: values.mutations ?? false, releaseCandidate: values['release-candidate'],
+    mutationIds: values['mutation-id'] ?? [], mutationWorkers: number(values['mutation-workers'], 1) as number,
+    mutationShardIndex: number(values['mutation-shard-index'], null),
+    mutationShardCount: number(values['mutation-shard-count'], null),
+    mutationCheckpointDir: values['mutation-checkpoint-dir'] && resolve(values['mutation-checkpoint-dir']),
+    mutationCheckpoint: values['mutation-checkpoint'] && resolve(values['mutation-checkpoint']),
+    mutationBaselineBundle: values['mutation-baseline-bundle'] && resolve(values['mutation-baseline-bundle']),
+    mutationMaxRuntimeMinutes: number(values['mutation-max-runtime-minutes'], 60) as number,
+    referenceMutationOnly: values['reference-mutation-only'],
+    out: values.out && resolve(values.out),
   };
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === '--backend') args.backend = next(++i);
-    else if (argv[i] === '--track') args.track = next(++i);
-    else if (argv[i] === '--level') args.level = Number(next(++i));
-    else if (argv[i] === '--recipe') args.recipe = next(++i);
-    else if (argv[i] === '--feature-catalog') args.featureCatalog = next(++i);
-    else if (argv[i] === '--repetitions') args.repetitions = Number(next(++i));
-    else if (argv[i] === '--run-index') args.runIndex = Number(next(++i));
-    else if (argv[i] === '--spacetime-port') {
-      args.spacetimePort = Number(next(++i));
-      args.spacetimePortExplicit = true;
-    }
-    else if (argv[i] === '--timeout-minutes') args.timeoutMinutes = Number(next(++i));
-    else if (argv[i] === '--mutations') args.mutations = true;
-    else if (argv[i] === '--release-candidate') args.releaseCandidate = true;
-    else if (argv[i] === '--mutation-id') args.mutationIds.push(next(++i));
-    else if (argv[i] === '--mutation-workers') args.mutationWorkers = Number(next(++i));
-    else if (argv[i] === '--mutation-shard-index') args.mutationShardIndex = Number(next(++i));
-    else if (argv[i] === '--mutation-shard-count') args.mutationShardCount = Number(next(++i));
-    else if (argv[i] === '--mutation-checkpoint-dir') args.mutationCheckpointDir = resolve(next(++i));
-    else if (argv[i] === '--mutation-checkpoint') args.mutationCheckpoint = resolve(next(++i));
-    else if (argv[i] === '--mutation-baseline-bundle') args.mutationBaselineBundle = resolve(next(++i));
-    else if (argv[i] === '--mutation-max-runtime-minutes') {
-      args.mutationMaxRuntimeMinutes = Number(next(++i));
-    }
-    else if (argv[i] === '--reference-mutation-only') args.referenceMutationOnly = true;
-    else if (argv[i] === '--out') args.out = resolve(next(++i));
-    else throw new Error(`unknown argument ${argv[i]}`);
-  }
   if (args.backend === undefined || !STACK_ADAPTER_REGISTRY.ids.includes(args.backend)) {
     throw new Error(`--backend must be one of ${STACK_ADAPTER_REGISTRY.ids.join(', ')}`);
   }

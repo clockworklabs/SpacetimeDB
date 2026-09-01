@@ -7,6 +7,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const MARKER = '.stack-bench-release-deps.json';
 
@@ -125,21 +126,20 @@ export function initializeDependencyVolume({ source, target, manifest }:
   }
 }
 
-function option(argv: string[], name: string): string | undefined {
-  const index = argv.indexOf(name);
-  if (index === -1) return undefined;
-  const value = argv[index + 1];
-  if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
-  return value;
-}
-
 function main(argv: string[]): void {
-  const command = argv[2];
-  const source = option(argv, '--source') ?? '/opt/stack-bench-embedded-deps';
-  const target = option(argv, '--target') ?? '/opt/stack-bench-release-deps';
-  const manifestPath = option(argv, '--manifest') ?? '/opt/stack-bench/dependency-manifest.json';
+  const { values, positionals } = parseArgs({ args: argv.slice(2), allowPositionals: true,
+    options: {
+      source: { type: 'string', default: '/opt/stack-bench-embedded-deps' },
+      target: { type: 'string', default: '/opt/stack-bench-release-deps' },
+      manifest: { type: 'string', default: '/opt/stack-bench/dependency-manifest.json' },
+      out: { type: 'string' },
+    } });
+  const [command] = positionals;
+  const source = values.source;
+  const target = values.target;
+  const manifestPath = values.manifest;
   if (command === 'manifest') {
-    const output = option(argv, '--out');
+    const output = values.out;
     if (!output) throw new Error('manifest requires --out');
     writeFileSync(resolve(output), `${JSON.stringify(createDependencyManifest(source), null, 2)}\n`, { flag: 'wx' });
     return;

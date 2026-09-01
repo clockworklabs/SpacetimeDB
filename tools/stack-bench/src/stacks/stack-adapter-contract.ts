@@ -1,4 +1,5 @@
 import type { BackendLease } from '../runtime/backend-lease.js';
+import { isExactSemanticVersion } from '../semantic-version.js';
 
 export const STACK_ADAPTER_SCHEMA_VERSION = 1;
 export const STACK_CAPABILITY_SCHEMA_VERSION = 1;
@@ -21,7 +22,6 @@ const STACK_ENGINE_REQUIREMENTS: Readonly<Record<string, readonly string[]>> = O
 const ADAPTER_FIELDS = new Set(['schemaVersion', 'id', 'version', 'lifecycle', 'capabilities']);
 const CAPABILITY_FIELDS = new Set(['schemaVersion', 'id', 'version', 'operations', 'execute']);
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
-const VERSION = /^\d+\.\d+\.\d+$/;
 
 export class StackCapabilityUnsupportedError extends Error {
   constructor(message: string) {
@@ -124,7 +124,7 @@ function identifier(value: unknown, at: string): string {
 }
 
 function version(value: unknown, at: string): string {
-  if (!nonEmpty(value) || !VERSION.test(value)) throw new Error(`${at} is invalid`);
+  if (!nonEmpty(value) || !isExactSemanticVersion(value)) throw new Error(`${at} is invalid`);
   return value;
 }
 

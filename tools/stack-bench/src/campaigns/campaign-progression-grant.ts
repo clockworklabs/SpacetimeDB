@@ -31,7 +31,7 @@ export interface GrantWorkspace {
 }
 
 interface GrantContinuation extends Omit<CampaignDependencyStrikeGrant, 'attemptId'> {
-  snapshotSha256: string;
+  stateSha256: string;
   resumeFrom: string;
   scheduledAt?: string;
 }
@@ -76,7 +76,7 @@ interface StoredProgressionState {
     phase?: string;
     grants: Array<Omit<CampaignDependencyStrikeGrant, 'attemptId'>>;
   };
-  snapshotSha256: string;
+  stateSha256: string;
 }
 
 interface ProgressionContextOptions extends Record<string, unknown> {
@@ -86,11 +86,11 @@ interface ProgressionContextOptions extends Record<string, unknown> {
 interface ProgressionGrantOptions extends ProgressionContextOptions {
   grant: Omit<CampaignDependencyStrikeGrant, 'attemptId'>;
   checkpoint: { artifact: string };
-  expectedSnapshotSha256: string;
+  expectedStateSha256: string;
 }
 
 interface ProgressionGrantResult {
-  snapshotSha256: string;
+  stateSha256: string;
 }
 
 interface GrantOptions {
@@ -230,7 +230,7 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
     execution: string;
     grant: Omit<CampaignDependencyStrikeGrant, 'attemptId'>;
     grantWorkspace: string;
-    snapshotSha256: string;
+    stateSha256: string;
     scheduled: true;
   } {
   const root = resolve(directory);
@@ -288,12 +288,12 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
     const priorGrant = stored.state.grants.find(item => item.grantId === desired.grantId);
     if (marker !== undefined) {
       if (!priorGrant || !sameGrant(priorGrant, grant)
-        || stored.snapshotSha256 !== marker.snapshotSha256) {
+        || stored.stateSha256 !== marker.stateSha256) {
         throw new Error('campaign continuation marker does not match progression state');
       }
       return { attemptId: desired.attemptId, execution: execution.output,
         grant, grantWorkspace: workspace.relativePath,
-        snapshotSha256: marker.snapshotSha256, scheduled: true };
+        stateSha256: marker.stateSha256, scheduled: true };
     }
     let granted;
     if (stored.state.phase === 'terminal') {
@@ -305,7 +305,7 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
         owner,
         grant,
         checkpoint: { artifact: `level-l${desired.level}-checkpoint.json` },
-        expectedSnapshotSha256: stored.snapshotSha256,
+        expectedStateSha256: stored.stateSha256,
       });
     } else {
       if (!priorGrant || !sameGrant(priorGrant, grant)) {
@@ -315,13 +315,13 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
     }
 
     const next = schedule(campaign.state, desired.attemptId, {
-      ...grant, snapshotSha256: granted.snapshotSha256,
+      ...grant, stateSha256: granted.stateSha256,
       resumeFrom: workspace.relativePath,
     }, { now });
     writeState(campaign.paths.state, campaign.plan, next);
     return { attemptId: desired.attemptId, execution: execution.output,
       grant, grantWorkspace: workspace.relativePath,
-      snapshotSha256: granted.snapshotSha256, scheduled: true };
+      stateSha256: granted.stateSha256, scheduled: true };
   } finally {
     release(lock);
   }

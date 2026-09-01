@@ -49,7 +49,7 @@ test('the model-free reference builder rejects unsupported modes and malformed s
     /only build, upgrade and fix modes/);
   assert.throws(() => parseReferenceAgentArgs(argv({ level: '0' })), /positive integer level/);
   assert.throws(() => parseReferenceAgentArgs(argv({ level: '1.5' })), /positive integer level/);
-  assert.throws(() => parseReferenceAgentArgs(argv({ runIndex: '-1' })), /non-negative integer run-index/);
+  assert.throws(() => parseReferenceAgentArgs(argv({ runIndex: '-1' })), /run-index/);
 });
 
 test('dependency progression seeds once and verifies the same full fixture on later levels', () => {

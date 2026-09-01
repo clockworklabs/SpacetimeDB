@@ -170,7 +170,7 @@ export interface RunTotals {
 export interface RunProgressionResume {
   priorRunId: string;
   priorRunSha256: string;
-  stateSnapshotSha256: string | null;
+  stateSha256: string | null;
   action: { type: string; level?: number };
   inheritedLevels: number[];
   priorTotals: RunTotals | null;

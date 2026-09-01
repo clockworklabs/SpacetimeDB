@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 
 import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
@@ -263,24 +264,16 @@ interface CliArgs extends ParsedArgs {
   trackRoot: string;
 }
 
-function nextArgument(argv: string[], index: number, option: string): string {
-  const value = argv[index + 1];
-  if (value === undefined) throw new Error(`${option} requires a value`);
-  return value;
-}
-
 function parse(argv: string[]): CliArgs {
-  const args: ParsedArgs = { json: false, positional: [], packIds: [], checkKeys: [] };
-  for (let index = 2; index < argv.length; index += 1) {
-    const argument = argv[index];
-    if (argument === undefined) continue;
-    if (argument === '--track') args.track = nextArgument(argv, index++, argument);
-    else if (argument === '--track-root') args.trackRoot = resolve(nextArgument(argv, index++, argument));
-    else if (argument === '--pack') args.packIds.push(...nextArgument(argv, index++, argument).split(',').filter(Boolean));
-    else if (argument === '--check') args.checkKeys.push(...nextArgument(argv, index++, argument).split(',').filter(Boolean));
-    else if (argument === '--json') args.json = true;
-    else args.positional.push(argument);
-  }
+  const { positionals, values } = parseArgs({ args: argv.slice(2), allowPositionals: true,
+    options: { track: { type: 'string' }, 'track-root': { type: 'string' },
+      pack: { type: 'string', multiple: true }, check: { type: 'string', multiple: true },
+      json: { type: 'boolean' } } });
+  const args: ParsedArgs = { json: values.json ?? false, positional: positionals,
+    packIds: (values.pack ?? []).flatMap(value => value.split(',').filter(Boolean)),
+    checkKeys: (values.check ?? []).flatMap(value => value.split(',').filter(Boolean)),
+    track: values.track,
+    trackRoot: values['track-root'] === undefined ? undefined : resolve(values['track-root']) };
   const [subject, command, ...paths] = args.positional;
   if (subject !== 'pack' && subject !== 'recipe') {
     throw new Error('usage: npm run pack -- validate <file> --track <name> | npm run recipe -- validate|show <file> --track <name> | npm run recipe -- diff <from> <to> --track <name>');
