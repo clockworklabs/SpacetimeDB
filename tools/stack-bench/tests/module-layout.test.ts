@@ -179,13 +179,9 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.doesNotMatch(source, /'\/root':\s*'rw/);
 });
 
-test('local coding session transcripts are readable after handoff', () => {
+test('coding session transcripts are readable by the controller after handoff', () => {
   const source = readFileSync(join(ROOT, 'container', 'run-build.ts'), 'utf8');
-  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.ts'), 'utf8');
-  assert.match(source, /codingContainerTranscriptHandoffCommand\(\)/);
-  assert.match(source, /STACK_BENCH_APPLIANCE !== '1'/);
-  assert.match(policy, /\['chmod', '-R', 'a\+rX', `\$\{CODING_CONTAINER_AGENT\.home\}\/\.claude\/projects\/-app`\]/);
-  assert.doesNotMatch(policy, /codingContainerTranscriptHandoffCommand[\s\S]*?a\+rwX/);
+  assert.match(source, /codingContainerTranscriptHandoffCommands\(CONTROLLER_GID\)/);
 });
 
 test('coding workspaces do not contain harness control files', () => {

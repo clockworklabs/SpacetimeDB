@@ -37,9 +37,13 @@ export function codingContainerAgentCommand(command: string, args: readonly stri
   return ['sh', '-c', 'umask 022; exec "$@"', 'application-command', command, ...args];
 }
 
-// Give the controller read-only access to session transcripts after handoff.
-export function codingContainerTranscriptHandoffCommand(): string[] {
-  return ['chmod', '-R', 'a+rX', `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`];
+// Give only the agent and controller access to session transcripts after handoff.
+export function codingContainerTranscriptHandoffCommands(controllerGid: number): string[][] {
+  const transcripts = `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`;
+  return [
+    ['chown', '-R', `${CODING_CONTAINER_AGENT.uid}:${controllerGid}`, transcripts],
+    ['chmod', '-R', 'u+rwX,g+rX,o-rwx', transcripts],
+  ];
 }
 
 export function codingContainerWorkspaceHandoffCommands(controllerGid: number): string[][] {

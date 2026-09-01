@@ -27,7 +27,7 @@ import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
   CODING_CONTAINER_PROCESS_IDENTITY,
-  codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommand,
+  codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommands,
   codingContainerWorkspaceHandoffCommands }
   from '../src/runtime/coding-container-policy.js';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
@@ -585,8 +585,8 @@ try {
 } finally {
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
-  if (process.env.STACK_BENCH_APPLIANCE !== '1') {
-    runCleanupCommand('transcript handoff', codingContainerTranscriptHandoffCommand());
+  for (const command of codingContainerTranscriptHandoffCommands(CONTROLLER_GID)) {
+    runCleanupCommand('transcript handoff', command);
   }
   const handoff = process.env.STACK_BENCH_APPLIANCE === '1'
     ? codingContainerWorkspaceHandoffCommands(CONTROLLER_GID)

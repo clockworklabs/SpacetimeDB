@@ -8,7 +8,8 @@ import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,
-  codingContainerAgentExecOptions, codingContainerWorkspaceHandoffCommands }
+  codingContainerAgentExecOptions, codingContainerTranscriptHandoffCommands,
+  codingContainerWorkspaceHandoffCommands }
   from '../src/runtime/coding-container-policy.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
   from '../src/stacks/stack-adapters.js';
@@ -22,6 +23,13 @@ test('workspace handoff keeps the agent owner and gives the controller group acc
   assert.deepEqual(codingContainerWorkspaceHandoffCommands(42), [
     ['chown', '-R', '10001:42', '/app'],
     ['chmod', '-R', 'u+rwX,g+rwX,o-rwx', '/app'],
+  ]);
+});
+
+test('transcript handoff gives only the controller group read access', () => {
+  assert.deepEqual(codingContainerTranscriptHandoffCommands(42), [
+    ['chown', '-R', '10001:42', '/home/developer/.claude/projects/-app'],
+    ['chmod', '-R', 'u+rwX,g+rX,o-rwx', '/home/developer/.claude/projects/-app'],
   ]);
 });
 

@@ -319,7 +319,9 @@ function auditContamination(appDir: string): ContaminationAudit | null {
 export function auditFailureSummary(error: unknown): string {
   const failure = object(error) ? error : {};
   const message = errorMessage(error).split(/\r?\n/)[0] ?? '';
-  const stderr = String(failure.stderr ?? '').trim().split(/\r?\n/)[0];
+  const stderrLines = String(failure.stderr ?? '').trim().split(/\r?\n/).filter(Boolean);
+  const stderr = stderrLines.find(line => /(?:error|eacces|permission denied|failed)/i.test(line))
+    ?? stderrLines[0];
   const details = [
     Number.isInteger(failure.status) ? `exit ${String(failure.status)}` : null,
     failure.signal ? `signal ${String(failure.signal)}` : null,

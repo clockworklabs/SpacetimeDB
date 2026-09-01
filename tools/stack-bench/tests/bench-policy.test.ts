@@ -241,10 +241,10 @@ test('ungraded level summaries contain useful failure values', () => {
 test('audit failures retain the exit code and stderr needed for diagnosis', () => {
   const error = Object.assign(new Error('Command failed: leak audit'), {
     status: 7,
-    stderr: 'permission denied\nsecond line',
+    stderr: "node:fs:441\nError: EACCES: permission denied, open '/run/transcript.jsonl'",
   });
   assert.equal(auditFailureSummary(error),
-    'Command failed: leak audit (exit 7; stderr: permission denied)');
+    "Command failed: leak audit (exit 7; stderr: Error: EACCES: permission denied, open '/run/transcript.jsonl')");
 });
 
 test('repair preparation removes raw grading evidence but keeps the app and bug report', () => {
