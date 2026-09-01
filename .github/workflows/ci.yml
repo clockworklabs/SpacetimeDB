@@ -589,8 +589,219 @@ jobs:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
 
+  sdk_test_build:
+    needs: [upload-build-artifacts-linux]
+    name: Build SDK tests
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+      - *set-native-cache-keys
+
+      - name: Restore rusty_v8 (debug)
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
+      - name: Restore jemalloc
+        id: cache-jemalloc
+        uses: actions/cache/restore@v4
+        with: *jemalloc-cache
+      - *configure-cached-jemalloc
+      - name: Restore Zstd
+        id: cache-zstd
+        uses: actions/cache/restore@v4
+        with: *zstd-cache
+      - *configure-cached-zstd
+      - *restore-openssl
+      - *configure-cached-openssl
+
+      - *download-build-artifacts
+      - *extract-build-artifacts
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Install cmake and emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Override NuGet packages
+        shell: bash
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+          cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+
+      - name: Build SDK test modules and archives
+        shell: bash
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo run --timings -p ci-sdk-tests -- prepare-modules --output-dir sdk-test-modules
+          cargo run --timings -p ci-sdk-tests -- prepare-clients --mode native --module-dir sdk-test-modules --output-dir sdk-test-clients/native
+          cargo run --timings -p ci-sdk-tests -- archive --mode native --archive-file sdk-tests-native-nextest.tar.zst
+          cargo run --timings -p ci-sdk-tests -- prepare-clients --mode browser --module-dir sdk-test-modules --output-dir sdk-test-clients/browser
+          cargo run --timings -p ci-sdk-tests -- archive --mode browser --archive-file sdk-tests-browser-nextest.tar.zst
+          tar -czf sdk-test-support.tar.gz \
+            target/debug/ci-sdk-tests \
+            sdk-test-modules \
+            sdk-test-clients
+
+      - name: Upload SDK test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-build-linux
+          path: |
+            sdk-tests-native-nextest.tar.zst
+            sdk-tests-browser-nextest.tar.zst
+            sdk-test-support.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-build-cargo-timings
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
+
+  sdk_tests_native:
+    needs: [sdk_test_build]
+    name: SDK Tests (native ${{ matrix.partition }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      PARTITION_COUNT: 4
+      SDK_TEST_ARCHIVE: sdk-tests-native-nextest.tar.zst
+      SDK_TEST_CLIENT_DIR: sdk-test-clients/native
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
+    steps: &sdk-test-partition-steps
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - *download-build-artifacts
+      - *extract-build-artifacts
+
+      - name: Download SDK test build
+        uses: actions/download-artifact@v4
+        with:
+          name: sdk-test-build-linux
+
+      - name: Extract SDK test support files
+        run: tar -xzf sdk-test-support.tar.gz
+
+      - name: Run SDK test partition
+        run: |
+          ./target/debug/ci-sdk-tests run-archive \
+            --archive-file "${SDK_TEST_ARCHIVE}" \
+            --module-dir sdk-test-modules \
+            --client-dir "${SDK_TEST_CLIENT_DIR}" \
+            -- \
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
+            -E 'not test(/unreal/)'
+
+  sdk_tests_browser:
+    needs: [sdk_test_build]
+    name: SDK Tests (browser ${{ matrix.partition }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      PARTITION_COUNT: 4
+      SDK_TEST_ARCHIVE: sdk-tests-browser-nextest.tar.zst
+      SDK_TEST_CLIENT_DIR: sdk-test-clients/browser
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
+    steps: *sdk-test-partition-steps
+
+  sdk_tests_noop:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    name: SDK Tests (${{ matrix.mode }} ${{ matrix.partition }}/4)
+    strategy:
+      matrix:
+        mode: [native, browser]
+        partition: [1, 2, 3, 4]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip duplicate merge queue SDK test
+        run: echo "Merge queue commit has the same tree as the PR head; SDK tests already ran for the PR."
+
   test:
-    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
+    needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
     runs-on: spacetimedb-new-runner-2
@@ -598,8 +809,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      ARTIFACT_SUFFIX: linux
-      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
       - name: Find Git ref
         env:
@@ -649,9 +858,6 @@ jobs:
       - *restore-openssl
       - *configure-cached-openssl
 
-      - *download-build-artifacts
-      - *extract-build-artifacts
-
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
@@ -674,30 +880,6 @@ jobs:
           cd ~/emsdk
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
-
-      - name: Install wasm-bindgen CLI
-        run: |
-          REQUIRED_WASM_BINDGEN_VERSION="$(
-            awk '
-              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
-              in_pkg && $1 == "version" {
-                gsub(/"/, "", $3);
-                print $3;
-                exit;
-              }
-            ' Cargo.lock
-          )"
-          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
-            echo "Failed to determine wasm-bindgen version from Cargo.lock"
-            exit 1
-          fi
-
-          INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
-          if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
-            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
-          fi
-
-          wasm-bindgen --version
 
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
