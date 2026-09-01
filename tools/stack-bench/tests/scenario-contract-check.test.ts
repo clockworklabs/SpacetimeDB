@@ -18,11 +18,12 @@ test('the progression scenarios use only their selected testing interfaces', () 
 });
 
 for (const recipe of [
+  'progression-depth3-2.0.1.json',
   'sequential-l1-2.5.0.json',
   'sequential-l2-1.6.0.json',
   'sequential-l3-1.0.0.json',
 ]) {
-  test(`${recipe} scenarios use the testing interface sent by the whole recipe`, () => {
+  test(`${recipe} scenarios match the product request and application interface`, () => {
     checkScenarioArgs(['--track', 'ecommerce', '--recipe', recipe]);
   });
 }

@@ -33,9 +33,9 @@ const EXPECTED = {
     spacetime: ['f0f6bf0eccb00d7210f8bd00f736e1dcb9d13534213cc8bf0d83d6b97fe7aa4f', 9981],
   },
   3: {
-    mongodb: ['506f12e147976f27cbc5c4bd73d194fe9765cd365664d9eafacbee2b55b89425', 9487],
-    postgres: ['20aaa1893d426934bc8a47050712f024b6d2a5993fc389b121cae00eccdf3058', 9529],
-    spacetime: ['ed109fc3897250e5cade15124eb9ad5ace04254fe2aa26c951076e37c0cc51b9', 12740],
+    mongodb: ['99985c31ede49d87b45c402a2f7028978b6486e7439f465b2f7cc30cba02ed37', 9487],
+    postgres: ['ab4893755f02adc74339758defee1c0ffa91d66c67b3ee53295d99a6493e5ffd', 9529],
+    spacetime: ['3b4d99cc159fa59a16c3925c60081e5d5820dc4ecdfb16540c7eb336752ed1f8', 12740],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
