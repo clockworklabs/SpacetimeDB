@@ -1,4 +1,5 @@
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { accessSync, chmodSync, constants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync,
+  rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { hashDirectory } from '../evidence/provenance.js';
@@ -47,10 +48,15 @@ function directoryDisposition(rel: string): DirectoryDisposition {
   return 'source';
 }
 
+function ensureWritable(path: string): void {
+  try { accessSync(path, constants.W_OK); }
+  catch { chmodSync(path, lstatSync(path).mode | 0o222); }
+}
+
 function copySourceTree(from: string, to: string, rel = '', writable = false): void {
   if (!existsSync(from)) return;
   mkdirSync(to, { recursive: true });
-  if (writable) chmodSync(to, lstatSync(to).mode | 0o222);
+  if (writable) ensureWritable(to);
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const childRel = rel ? join(rel, entry.name) : entry.name;
     if (directoryDisposition(childRel) !== 'source') continue;
@@ -61,7 +67,7 @@ function copySourceTree(from: string, to: string, rel = '', writable = false): v
     else if (entry.isFile()) {
       cpSync(source, target, { force: true, dereference: false });
       // Materialized source runs as an unprivileged UID in its own workspace.
-      if (writable) chmodSync(target, lstatSync(target).mode | 0o222);
+      if (writable) ensureWritable(target);
     } else throw new Error(`application source contains unsupported filesystem entry ${childRel}`);
   }
 }
@@ -87,7 +93,7 @@ function removeAbsent(path: string, rel: string): void {
 
 function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
   mkdirSync(appDir, { recursive: true });
-  chmodSync(appDir, lstatSync(appDir).mode | 0o222);
+  ensureWritable(appDir);
   const snapshotNames = new Set(readdirSync(snapshot));
 
   for (const entry of readdirSync(appDir, { withFileTypes: true })) {
@@ -123,7 +129,7 @@ function syncSourceTree(snapshot: string, appDir: string, rel = ''): void {
       } else rmSync(target, { force: true });
     }
     cpSync(source, target, { force: true, dereference: false });
-    chmodSync(target, lstatSync(target).mode | 0o222);
+    ensureWritable(target);
   }
 }
 
