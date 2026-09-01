@@ -181,7 +181,7 @@
       </details>
       <details><summary>Interfaces</summary>
         <div class="card"><h3>Operator interfaces</h3><ul class="file-list">
-          <li><span class="path">commands/campaign-cli.ts</span><span>CLI access to compile, inspect, run, resume, and report operations.</span></li>
+          <li><span class="path">commands/campaign-cli.ts</span><span>CLI access to prepare, run, resume, reconcile, inspect, audit, and report operations.</span></li>
           <li><span class="path">dashboard/</span><span>Reads the same campaign state and artifacts. It does not define a second execution model.</span></li>
           <li><span class="path">src/campaigns/campaign-report.ts</span><span>Builds JSON and HTML reports from frozen plan and state artifacts.</span></li>
         </ul></div>
@@ -243,36 +243,41 @@ const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></deta
   ]
 }</code></pre></details>
       <details><summary>Real code: prompt work and grading work are selected separately</summary><pre><code>function selectedPromptWork(state) {
-  const nodeIds = currentPromptNodeIds(state);
+  const nodeIds = selectedPromptNodeIds(state);
   return {
     nodeIds,
-    featureRefs: selectionFor(state, nodeIds, 'featureRefs'),
-    promptModules: selectionFor(state, nodeIds, 'promptModules'),
+    featureRefs: [...new Set(selectionFor(state, nodeIds, 'featureRefs'))].sort(),
+    promptModules: [...new Set(selectionFor(state, nodeIds, 'promptModules'))].sort(),
   };
 }
 
 function selectedGradingWork(state) {
   const nodeIds = gradingNodeIds(state);
   const selected = new Set(nodeIds);
+  const promptNodeIds = new Set(selectedPromptNodeIds(state));
   return {
     nodeIds,
     checks: state.definition.nodes.filter(node =&gt; selected.has(node.id)).flatMap(node =&gt;
-      node.gradingChecks.map(check =&gt; ({ ...check, nodeId: node.id })))
+      node.gradingChecks.filter(check =&gt;
+        checkRequirementsAvailable(state, check, promptNodeIds))
+        .map(check =&gt; ({ ...check, nodeId: node.id })))
   };
 }</code></pre></details>
-      <details><summary>Real code: state is rebuilt from its event history</summary><pre><code>export function recordDependencyResult(inputState, inputResult) {
-  assertReplayConsistent(inputState);
+      <details><summary>Real code: state changes append one event</summary><pre><code>export function recordDependencyResult(inputState, inputResult) {
+  const state = asDependencyState(inputState);
   const event = {
-    sequence: inputState.events.length + 1,
+    sequence: state.events.length + 1,
     type: 'attempt-recorded',
     result: structuredClone(inputResult)
   };
-  return replayDependencyMode(inputState.definition, [...inputState.events, event]);
+  const next = applyDependencyResult(state, event.result);
+  next.events.push(event);
+  return next;
 }</code></pre></details>
       <div class="audit">
         <div><span>✓</span><p>Every scored group can have only one owner. Duplicate ownership fails compilation.</p></div>
         <div><span>✓</span><p>Feature pack dependencies must exist in the node or one of its ancestors.</p></div>
-        <div><span>✓</span><p>Snapshots are checked against replayed events. A corrupted state cannot resume silently.</p></div>
+        <div><span>✓</span><p>The persisted event history is hash-checked and replayed. A contradictory or corrupted state cannot resume silently.</p></div>
         <div><span class="risk-mark">!</span><p>The full catalog is draft. Reference, mutation, and null-control qualification covers dependency depths 1 through 3. Deeper nodes still need qualification.</p></div>
       </div>
     </section>
@@ -314,16 +319,18 @@ function selectedGradingWork(state) {
         <div class="card"><h3>Agent receives</h3><ul><li>Product brief and current feature work</li><li>Selected stack access details</li><li>Selected SDK or skill material</li><li>Required testing interface</li><li>On repair, failed checks and expected results</li></ul></div>
         <div class="card"><h3>Controller retains</h3><ul><li>Checks selected only for grading</li><li>Expected and observed specification sets</li><li>Reference and mutation evidence</li><li>Campaign state and prior artifacts</li><li>Docker control authority</li></ul></div>
       </div>
-      <details open><summary>Real code: strict adapter contract</summary><pre><code>export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
+      <details open><summary>Adapter contract excerpt</summary><pre><code>export const AGENT_ADAPTER_SCHEMA_VERSION = 5;
 
 const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 
 export function defineAgentAdapter(value) {
+  if (!object(value)) throw new Error('agent adapter must be an object');
   if (value.schemaVersion !== AGENT_ADAPTER_SCHEMA_VERSION)
     throw new Error('agent adapter schema is unsupported');
   if (!Array.isArray(value.modes) || value.modes.some(mode =&gt; !MODES.has(mode)))
     throw new Error(`agent adapter ${value.id}.modes is invalid`);
-  return Object.freeze(value);
+  // Remaining identity, limit, credential, network, and executable fields
+  // are also validated before the adapter is frozen.
 }</code></pre></details>
       <details><summary>Real code: remove grader-only selections from the agent request</summary><pre><code>const requested = resolved.selection.requested;
 const visible = createBoundRecipeTaskRequest(binding, {
@@ -352,9 +359,13 @@ if (visible.task.sha256 !== resolved.task.sha256) {
       <p class="section-intro">Stack adapters provide setup, access, reset, grading, lifecycle, and cleanup operations.</p>
       <details open><summary>Real code: one capability call instead of stack conditionals</summary><pre><code>export function executeStackCapability(adapter, capabilityName, operation, input = {}) {
   const provider = adapter.capabilities[capabilityName];
-  if (!provider || !provider.operations.includes(operation)) {
+  if (!provider) {
     throw new StackCapabilityUnsupportedError(
-      `stack adapter ${adapter.id} does not support ${capabilityName}.${operation}`);
+      `stack adapter ${adapter.id} does not support capability ${capabilityName}`);
+  }
+  if (!provider.operations.includes(operation)) {
+    throw new StackCapabilityUnsupportedError(
+      `stack adapter ${adapter.id} capability ${capabilityName} does not support operation ${operation}`);
   }
   return provider.execute(operation, input);
 }</code></pre></details>
@@ -363,16 +374,22 @@ if (visible.task.sha256 !== resolved.task.sha256) {
         <div class="card"><div class="label">Container</div><h3>Isolation</h3><p>The coding process does not receive the controller, grader, scenarios, old results, or Docker socket in appliance mode.</p></div>
         <div class="card"><div class="label">Recovery</div><h3>Cleanup proof</h3><p>A stopped controller must prove owned resources are released before a campaign attempt can be retried.</p></div>
       </div>
-      <details><summary>Real code: run IDs and ownership-bound leases</summary><pre><code>export function newRunId({ track, backend, runIndex, now, nonce }) {
+      <details><summary>Real code: run IDs and ownership-bound leases</summary><pre><code>export function newRunId({ track, backend, runIndex,
+  now = new Date(), nonce = randomUUID() }) {
   const stamp = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-  return `${track}-${backend}-run${runIndex}-${stamp}-${nonce.slice(0, 8)}`;
+  const safe = value =&gt; String(value).toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+  return `${safe(track)}-${safe(backend)}-run${Number(runIndex)}-${stamp}-${safe(nonce).slice(0, 8)}`;
 }
 
 return {
+  version: LEASE_VERSION,
   runId,
   backend,
+  track,
   runIndex,
+  ownerPid,
   ownershipToken: randomUUID(),
+  createdAt: new Date().toISOString(),
   state: 'created',
   resources
 };</code></pre></details>
@@ -391,11 +408,15 @@ return {
         <div class="card"><h3>Measured results</h3><table><tr><th>Status</th><th>Meaning</th><th>Repair</th></tr><tr><td>passed</td><td>The app met the assertion.</td><td>No</td></tr><tr><td>failed</td><td>The app did not meet the assertion.</td><td>Yes</td></tr></table></div>
         <div class="card"><h3>Invalid evidence</h3><table><tr><th>Status</th><th>Meaning</th><th>Score</th></tr><tr><td>inconclusive</td><td>The result cannot prove pass or fail.</td><td>Excluded</td></tr><tr><td>harness_failure</td><td>The test system failed.</td><td>Excluded</td></tr></table></div>
       </div>
-      <details open><summary>Real code: the central status interpretation</summary><pre><code>export const CHECK_EVIDENCE_DISPOSITIONS = Object.freeze({
-  passed: { passed: true, measured: true, applicationFailure: false, repairable: false },
-  failed: { passed: false, measured: true, applicationFailure: true, repairable: true },
-  inconclusive: { passed: false, measured: false, applicationFailure: false, repairable: false },
-  harness_failure: { passed: false, measured: false, applicationFailure: false, repairable: false },
+      <details open><summary>Core status policy</summary><pre><code>export const CHECK_EVIDENCE_DISPOSITIONS = Object.freeze({
+  passed: { outcomeKind: 'passed', passed: true, measured: true,
+    applicationFailure: false, repairable: false },
+  failed: { outcomeKind: 'app_failure', passed: false, measured: true,
+    applicationFailure: true, repairable: true },
+  inconclusive: { outcomeKind: 'inconclusive', passed: false, measured: false,
+    applicationFailure: false, repairable: false },
+  harness_failure: { outcomeKind: 'harness_failure', passed: false, measured: false,
+    applicationFailure: false, repairable: false },
 });</code></pre></details>
       <div class="callout"><strong>Status control.</strong> The status table alone controls scoring and repair eligibility.</div>
       <div class="audit">
@@ -417,15 +438,16 @@ return {
       </div>
       <details><summary>Real code: source snapshots exclude runtime and harness files</summary><pre><code>const PRESERVED_DIRS = new Set(['node_modules']);
 const ROOT_PRESERVED_DIRS = new Set(['.git', 'stack-bench']);
-const TRANSIENT_DIRS = new Set(['dist', '.vite', 'coverage', '.cache', '.npm-cache']);
+const TRANSIENT_DIRS = new Set([
+  'dist', '.vite', 'coverage',
+  '.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache'
+]);
+const TRANSIENT_PATHS = new Set(['client/src/module_bindings']);
 const ROOT_RUNTIME_FILES = new Set(['BUG_REPORT.md', 'client.log', 'server.log', 'vite.log']);
 
 export function hashAppSource(appDir) {
-  return hashDirectory(appDir, {
-    exclude: (rel, entry) =&gt; entry.isDirectory()
-      ? directoryDisposition(rel) !== 'source'
-      : preservedRuntimeFile(rel) || transientRuntimeFile(rel)
-  });
+  return hashDirectory(appDir, { exclude: rel =&gt; directoryDisposition(rel) !== 'source'
+    || preservedRuntimeFile(rel) || transientRuntimeFile(rel) });
 }</code></pre></details>
       <div class="audit">
         <div><span>✓</span><p>Source identity excludes dependencies, build output, logs, and harness-owned files.</p></div>
@@ -478,7 +500,7 @@ export function hashAppSource(appDir) {
         <tr><td>state.json</td><td>Campaign attempt state</td><td>validateCampaignState</td></tr>
         <tr><td>run.json</td><td>One complete attempt</td><td>artifact schema and campaign run validator</td></tr>
         <tr><td>bundle.json</td><td>One grading bundle</td><td>grade bundle artifact validator</td></tr>
-        <tr><td>progression-state.json</td><td>Dependency event history and snapshot</td><td>readProgressionState and replay check</td></tr>
+        <tr><td>progression-state.json</td><td>Dependency event history and bound identities</td><td>hash validation and event replay</td></tr>
         <tr><td>recovery.json</td><td>Proof that exact-owned resources were cleaned</td><td>recovery artifact validator</td></tr>
       </table>
     </section>

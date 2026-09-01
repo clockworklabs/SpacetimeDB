@@ -280,10 +280,15 @@ Tracks are isolated by a port offset and a name slug, so two can run at the same
 ## Levels
 
 The current ecommerce sequential definitions cover L1 through L3. All three are
-candidates. No current qualification result is accepted. L1 contains 46 scored
-checks. L2 contains 74 scored checks. Each scored L1 and L2 check has an exact
-known-defect definition for all three supported stacks. Chat definitions remain
-available through L2.
+candidates, and no sequential qualification result is accepted. L1 contains 46
+scored checks. L2 contains 74 scored checks. Each scored L1 and L2 check has an
+exact known-defect definition for all three supported stacks.
+
+Dependency depth 3 uses the promoted
+`ecommerce.progression-depth3@2.0.1` release. Its qualification covers MongoDB,
+PostgreSQL, and SpacetimeDB for 97 checks and 162 points. The full L1-L6
+`ecommerce.progression-catalog@2.0.1` release remains a draft candidate. Chat
+definitions remain available through L2.
 
 Every artifact records the exact levels and recipe that ran. A level without a
 launchable catalog release fails instead of falling back to another level.
@@ -358,12 +363,13 @@ Evidence emitted into the result directory and `<app>/stack-bench/` includes:
 | `media/*.webm` | one video per actor per feature — what each user saw |
 | `media/*.png` | full-page screenshot at the exact moment an assertion failed |
 | `media/*.trace.zip` | Playwright trace: steppable, with DOM snapshots and network |
-| `records/bug-report-l<N>-round<M>.md` | what the agent was told each repair round |
+| `repair-reports/bug-report-l<N>-round<M>.md` | what the agent was told each repair round |
 | `run.json` | exact stack, model, recipe, test pack, prompt identity, image, repair budget, outcome, usage, and timing for the run |
+| `progression-state.json` | dependency event history, bound catalog and policy identities, and the hash used to verify replay |
 | `level-l<N>-checkpoint.json` | strict parent-linked identity for the source accepted at the end of a level |
 | `level-l<N>-source/` | source-only level checkpoint; dependencies, build output, and grading evidence are excluded |
-| `continuations/grant-<id>/run.json` | immutable child result for one finite post-run correction grant, including reproduced baseline and cumulative effort |
-| `continuations/grant-<id>/process.json` | bounded continuation-process outcome plus retained stdout/stderr identities |
+| `continuations/<attempt-id>/<grant-id>/run.json` | immutable child result for one finite post-run correction grant, including reproduced baseline and cumulative effort |
+| `continuations/<attempt-id>/<grant-id>/process.json` | bounded continuation-process outcome plus retained stdout/stderr identities |
 
 Recording is on by default; `--no-media` turns it off for a quick check. Watching
 the failing actor's video is the fastest way to confirm a verdict is real before

@@ -26,9 +26,9 @@ the missing server proof.
 ## Scenario format
 
 Scenario files contain features with isolated `actors`, unscored `setup` steps,
-and explicitly normalized criterion points. The full 51-action language is
-defined in `definition-compiler.ts` and registered in `action-catalog.ts`;
-scenario prose is not the runtime contract.
+and explicitly normalized criterion points. The action language is defined in
+`definition-compiler.ts` and registered in `action-catalog.ts`; scenario prose
+is not the runtime contract.
 
 Executors are split by responsibility: ordinary browser actions, actor and
 transport actions, and concurrency/lifecycle/database actions. Each executor
