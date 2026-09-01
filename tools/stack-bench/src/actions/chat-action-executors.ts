@@ -46,9 +46,11 @@ async function signUp({ input, capabilities, signal }: ChatArguments<AccountInpu
   const username = actor.page.locator(browser.testId('signup-username')).first();
   if (!(await username.isVisible())) {
     const toggle = actor.loc('signin-toggle');
-    await toggle.waitFor({ state: 'visible', timeout: browser.defaultWithin });
-    await toggle.click({ timeout: browser.defaultWithin });
-    await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    await username.or(toggle).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    if (!(await username.isVisible())) {
+      await toggle.click({ timeout: browser.defaultWithin });
+      await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    }
   }
   await username.fill(user);
   await actor.page.locator(browser.testId('signup-password')).first().fill(password);
@@ -70,9 +72,11 @@ async function signIn({ input, capabilities, signal }: ChatArguments<AccountInpu
   const username = actor.page.locator(browser.testId('signin-username')).first();
   const toggle = actor.loc('signin-toggle');
   if (!(await username.isVisible())) {
-    await toggle.waitFor({ state: 'visible', timeout: browser.defaultWithin });
-    await toggle.click({ timeout: browser.defaultWithin });
-    await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    await username.or(toggle).first().waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    if (!(await username.isVisible())) {
+      await toggle.click({ timeout: browser.defaultWithin });
+      await username.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+    }
   }
   await username.fill(user);
   await actor.page.locator(browser.testId('signin-password')).first().fill(password);

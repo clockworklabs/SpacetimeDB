@@ -251,6 +251,7 @@ test('account setup preserves scoped credentials and classifies browser failures
   let signUpVisible = false;
   const locator = (purpose: string) => ({
     first() { return this; },
+    or() { return locator(`${purpose}-or-toggle`); },
     isVisible: async () => purpose !== '[data-testid="signup-username"]' || signUpVisible,
     fill: async (value: string) => { calls.push([purpose, 'fill', value]); },
     click: async () => { calls.push([purpose, 'click']); },
@@ -271,7 +272,7 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(passed.status, 'passed');
   assert.equal(record(passed.observation).user, 'Alicescope');
   assert.deepEqual(calls.slice(0, 2), [
-    ['signin-toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
+    ['[data-testid="signup-username"]-or-toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
     ['signin-toggle', 'click', { timeout: 5000 }],
   ]);
   assert(calls.some(call => call[2] === 'pw-Alicescope'));
@@ -299,6 +300,8 @@ test('sign in waits for a rendered toggle instead of silently missing the form',
   let formVisible = false;
   const username = {
     first() { return this; },
+    or() { return { first() { return this; },
+      waitFor: async (options: unknown) => { calls.push(['form-or-toggle', 'waitFor', options]); } }; },
     isVisible: async () => formVisible,
     waitFor: async (options: unknown) => {
       calls.push(['username', 'waitFor', options]);
@@ -335,7 +338,7 @@ test('sign in waits for a rendered toggle instead of silently missing the form',
 
   assert.equal(result.status, 'passed');
   assert.deepEqual(calls.slice(0, 3), [
-    ['toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
+    ['form-or-toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
     ['toggle', 'click', { timeout: 5000 }],
     ['username', 'waitFor', { state: 'visible', timeout: 5000 }],
   ]);

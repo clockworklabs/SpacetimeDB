@@ -11,6 +11,7 @@ export interface Locator {
   getAttribute(name: string): Promise<string | null>;
   innerText(): Promise<string>;
   isVisible(): Promise<boolean>;
+  or(locator: Locator): Locator;
   press(key: string): Promise<void>;
   waitFor(options?: unknown): Promise<void>;
 }
