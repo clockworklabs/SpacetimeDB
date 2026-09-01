@@ -179,14 +179,14 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
   if (declaredOutcome && ['provider_failure', 'harness_failure'].includes(declaredOutcome.kind)) {
     return { ...declaredOutcome, appFailures: [], inconclusive: [], harnessFailures: [] };
   }
-  if (bundle.outcome?.kind === 'app_failure') {
-    return { ...bundle.outcome, appFailures: bundle.outcome.appFailures ?? [], inconclusive: [],
-      harnessFailures: [] };
-  }
   const selectedScopeComplete = Array.isArray(bundle.selection?.checks)
     && bundle.selection.checks.length > 0
     && bundle.selection.notRun?.length === 0
     && bundle.selection.reportedChecks?.length === bundle.selection.checks.length;
+  if (bundle.outcome?.kind === 'app_failure' && !selectedScopeComplete) {
+    return { ...bundle.outcome, appFailures: bundle.outcome.appFailures ?? [], inconclusive: [],
+      harnessFailures: [] };
+  }
   const hasSelectedScope = bundle.selection !== null && bundle.selection !== undefined;
   if ((hasSelectedScope && !selectedScopeComplete)
       || (!((bundle.totals?.max ?? 0) > 0) && !selectedScopeComplete)) {

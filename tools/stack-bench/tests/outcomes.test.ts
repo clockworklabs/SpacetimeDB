@@ -131,6 +131,21 @@ test('typed harness failures outrank prose and application failures', () => {
   assert.deepEqual(outcome.appFailures, ['feature/f/app']);
 });
 
+test('completed check evidence outranks a declared application failure', () => {
+  const criterion = { ...typed('check', 'harness_failure',
+    'grader could not observe the result'), stableKey: 'feature.check' };
+  const scoped = {
+    ...bundle([criterion]),
+    totals: { score: 0, max: 1 },
+    selection: { checks: [{ stableKey: 'feature.check', points: 1 }],
+      attemptedChecks: ['feature.check'], reportedChecks: ['feature.check'], notRun: [] },
+    outcome: { kind: 'app_failure', phase: 'grading', appFailures: ['declared-failure'] },
+  };
+  const outcome = classifyBundle(scoped);
+  assert.equal(outcome.kind, 'harness_failure');
+  assert.deepEqual(outcome.harnessFailures, ['feature/f/check']);
+});
+
 test('grader cleanup failures invalidate the bundle', () => {
   const scoped = bundle([typed('works', 'passed', null)]);
   const feature = scoped.suites.feature.features[0];
