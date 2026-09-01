@@ -10,6 +10,8 @@ import { stackLeaseOperations } from '../stack-lease-capabilities.js';
 import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './spacetime-operations.js';
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
+import { requireLeasedSpacetime } from '../backend-reset-guard.js';
+import { containerReachableSpacetimeUri } from '../../runtime/spacetime-target.js';
 
 export const spacetimeAdapter = defineStackAdapter('spacetime', {
   activate: activateSpacetime,
@@ -18,6 +20,16 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
       throw new Error(`unsupported SpacetimeDB control mode ${input.mode}`);
     }
     return controlSpacetime({ lease: input.lease, signal: input.signal });
+  },
+  applicationEnvironment: lease => {
+    const { resources } = requireLeasedSpacetime(lease);
+    return {
+      VITE_MODULE_NAME: resources.module,
+      VITE_SPACETIMEDB_URI: containerReachableSpacetimeUri({ resources: {
+        serverUri: resources.serverUri,
+        buildContainer: lease.resources.buildContainer,
+      } }),
+    };
   },
 }, {
   lease: stackLeaseOperations('spacetime'),

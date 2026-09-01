@@ -70,6 +70,7 @@ export async function controlAppServer(
       database: lease.resources.database,
       networkMode: lease.resources.buildContainer?.networkMode,
     }),
+    ...adapter.lifecycle.applicationEnvironment?.(lease),
     VITE_PORT: String(spec.port),
   };
   await controlHostedAppServer({

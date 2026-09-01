@@ -192,6 +192,20 @@ test('application control rejects unsupported modes before touching a container'
   }), /unsupported SpacetimeDB control mode stop/);
 });
 
+test('SpacetimeDB application restart uses its leased module and server', () => {
+  const environment = STACK_ADAPTER_REGISTRY.get('spacetime').lifecycle.applicationEnvironment!({
+    resources: {
+      module: 'shop-run-1',
+      serverUri: 'http://127.0.0.1:3310',
+      buildContainer: { networkMode: 'bridge' },
+    },
+  } as never);
+  assert.deepEqual(environment, {
+    VITE_MODULE_NAME: 'shop-run-1',
+    VITE_SPACETIMEDB_URI: 'http://host.docker.internal:3310',
+  });
+});
+
 test('SpacetimeDB application start uses the root contract independently of its database host', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-hosted-failure-'));
   const id = 'a'.repeat(64);

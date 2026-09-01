@@ -379,14 +379,14 @@ test('partial parallel mutation accounting preserves completed shard results', (
 
 test('reference qualification resolves the exact executable calibration identity', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
-    imported: { sourceSha256: '6e50b6421dcd2e5f195be2f6922abdae7760d8f740e48aa545bcbbc0930aa67b' } });
+    imported: { sourceSha256: 'b38c9ccd5bcdbb092f44b2f5f42674273c6f22d4b148be55fdf2c999df3475cf' } });
   assert.equal(record(context.identity, 'qualification identity').id, 'ecommerce.sequential-l1-calibration');
   assert.equal(record(context.identity, 'qualification identity').sha256, context.calibration.qualificationSha256);
 });
 
 test('reference qualification resolves the current calibration', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
-    imported: { sourceSha256: '6e50b6421dcd2e5f195be2f6922abdae7760d8f740e48aa545bcbbc0930aa67b' } },
+    imported: { sourceSha256: 'b38c9ccd5bcdbb092f44b2f5f42674273c6f22d4b148be55fdf2c999df3475cf' } },
   'ecommerce.sequential-l1@2.5.0');
   assert.equal(context.binding.release.version, '2.5.0');
   assert.equal(context.calibration.version, '2.5.0');
@@ -441,7 +441,7 @@ test('depth-3 qualification compares the scoped graph identity', () => {
   const context = referenceQualificationContext({
     backend: 'mongodb', track: 'ecommerce', level: 6, id: 'ecommerce-reference-mongodb',
     status: 'qualified',
-    imported: { sourceSha256: '6e50b6421dcd2e5f195be2f6922abdae7760d8f740e48aa545bcbbc0930aa67b' },
+    imported: { sourceSha256: 'b38c9ccd5bcdbb092f44b2f5f42674273c6f22d4b148be55fdf2c999df3475cf' },
   }, 'ecommerce.progression-depth3@2.0.1', {
     level: 3, featureCatalog: 'ecommerce.questlines@2.0.1',
   });

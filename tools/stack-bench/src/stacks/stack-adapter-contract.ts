@@ -35,6 +35,7 @@ interface StackActivationInput {
 export interface StackLifecycle {
   activate(input: StackActivationInput): void;
   control?(input: StackLifecycleInput): Promise<void>;
+  applicationEnvironment?(lease: BackendLease): Record<string, string>;
 }
 
 export interface StackAdapterIdentity {

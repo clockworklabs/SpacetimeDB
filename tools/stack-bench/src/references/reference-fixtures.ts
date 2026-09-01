@@ -234,6 +234,7 @@ export function inspectImportedReference(fixture: ReferenceFixture,
   }
   const sourceHash = hashEffectiveFiles(source.files);
   if (sourceHash.sha256 !== fixture.imported?.sourceSha256) failures.push('imported fixture hash does not match registry');
+  if (!source.files.has('start.sh')) failures.push('start.sh is missing');
   let metadata: unknown;
   const metadataBytes = source.files.get(REFERENCE_METADATA_FILE);
   if (!metadataBytes) failures.push('reference.json is missing');
