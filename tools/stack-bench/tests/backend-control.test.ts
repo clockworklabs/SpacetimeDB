@@ -202,7 +202,7 @@ test('SpacetimeDB application restart uses its leased module and server', () => 
   } as never);
   assert.deepEqual(environment, {
     VITE_MODULE_NAME: 'shop-run-1',
-    VITE_SPACETIMEDB_URI: 'http://host.docker.internal:3310',
+    VITE_SPACETIMEDB_URI: 'http://127.0.0.1:3310',
   });
 });
 

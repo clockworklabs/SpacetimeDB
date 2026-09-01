@@ -1,393 +1,161 @@
 # Stack Bench
 
-A machine-verified benchmark for coding agents that build real-time
-applications. Each run uses versioned product work, stack guidance, grading,
-and budget inputs. The harness drives real clients, returns failed checks for
-repair, and records score, cost, tokens, repair rounds, and wall time.
+Stack Bench compares how coding agents build the same application with different
+technology stacks. It builds each app in an isolated container, tests real user
+behavior, gives failed checks back to the agent for bounded repairs, and keeps
+the evidence needed to explain every result.
 
-## Progression terms
+A campaign records the exact:
 
-- A **level** groups features at the same depth in the feature graph.
-- A **repair round** is one coding session after a conclusive failed grade.
-- A **strike** is spent when a conclusive grade fails a feature included in that
-  coding request. Inconclusive grades and harness failures do not spend strikes.
+- product request and features;
+- model and agent adapter;
+- stack and stack guidance;
+- checks and scoring rules;
+- repair budget, repetitions, and parallelism;
+- source, image, and dependency identities.
 
-Sequential mode requires the current level to pass before the next level can
-start. Dependency mode treats each feature as a branch. A feature opens only
-after its parent features pass. An exhausted feature blocks its children, but
-other open branches continue. Earlier passed features are graded again so that
-regressions remain visible.
+This records the inputs needed to compare compatible attempts by score, cost,
+duration, and repair effort.
 
-Dependency campaigns default to `"repairSelection": "feature"`. Each repair
-request then contains one failed feature. Use `"batch"` to repair all currently
-failed features together. Initial builds still contain all features open at that
-level. Both policies grade passed prerequisites again. Only failed features in
-the repair request spend a strike. Sequential mode is unchanged and does not use
-this setting.
+## How it works
 
-Direct runs default to ten repair rounds. Campaign manifests set an explicit
-budget. After a dependency run stops, the operator can grant additional
-strikes to selected exhausted features. Stack Bench resumes from the saved
-source checkpoint. It keeps the completed execution unchanged and records the
-new work as a linked continuation. Campaign `retry` still means a fresh
-execution.
+1. **Define.** A versioned campaign file selects the work, model, stacks, checks,
+   budgets, and attempt count.
+2. **Validate.** Stack Bench compiles the file and shows the exact plan without
+   calling a model.
+3. **Preflight.** It checks credentials, images, ports, resources, dependencies,
+   and persistent storage before model work starts.
+4. **Build.** The coding agent receives the product request, current features,
+   and selected stack material in an isolated container.
+5. **Grade.** The grader drives separate browser sessions and stack operations.
+   Each check produces a pass, failure, inconclusive result, or harness failure.
+6. **Repair.** Conclusive app failures can be returned to the coding agent within
+   the campaign budget.
+7. **Report.** Stack Bench builds a comparison from the retained run evidence.
 
-```text
-node dist/commands/campaign-cli.js grant-strikes <campaign-output> \
-  --attempt <attempt-id> --grant-id <unique-id> --level <number> \
-  --feature <feature-id> --strikes <number>
-```
+The coding agent does not receive the grader, checks, future work, scores, or
+comparison data.
 
-Stack adapters are interchangeable. The model and requested work can remain
-fixed while the stack changes.
+## Run modes
 
-The optional local dashboard is another client of the same controller, not a
-replacement for the CLI. It reads the same durable campaign artifacts and
-submits the same bounded commands, so CLI-started work appears in the browser
-and dashboard-started work remains fully operable from the CLI. See
-`dashboard/README.md` for the Docker service.
+Stack Bench supports two ways to order product work:
 
-## Documentation
+- **Sequential:** complete each selected level before starting the next. Earlier
+  checks run again to catch regressions.
+- **Dependency:** each feature opens after its required parent features pass. A
+  failed branch can stop while unrelated branches continue.
 
-- `SYSTEM-DESIGN.md` — system ownership, data flow, and operator loop
-- `SETUP.md` — local prerequisites and first-run setup
-- `APPLIANCE-DESIGN.md` — appliance boundaries and execution model
-- `appliance/README.md` — Docker appliance operation
-- `dashboard/README.md` — optional web dashboard
-- `grader/README.md` — grader architecture and evidence model
-- `tracks/ecommerce/composition/README.md` — packs, recipes, and release composition
-- `docs/dependency-graph.html` — generated ecommerce feature dependency graph
-- `docs/technical-guide.html` — technical walkthrough of the current run path
-- `docs/stack-bench.html` - Stack Bench presentation
+In dependency mode, a strike is spent only when a conclusive grade fails the
+feature in the current coding request. Provider, harness, and inconclusive
+results do not spend strikes. Repairs target one failed feature by default.
 
-Working notes, generated reports, and run artifacts are local operator material
-and are intentionally not tracked in the repository. Reviewable project
-presentations belong in `docs/`.
+## What a run produces
 
-## Project layout
+Each attempt keeps:
 
-| Path | Purpose |
-|---|---|
-| `backends/` | stack-specific text sent to the coding agent; runtime adapters live in `src/stacks/` |
-| `conditions/` | versioned guidance and repair-policy selections |
-| `tracks/` | product briefs, feature definitions, checks, and scenarios |
-| `commands/` | command-line entry points |
-| `src/` | reusable benchmark logic |
-| `grader/` | grader and mutation-test entry points and manifests |
-| `linter/` | generated-app contract linter and its fixtures |
-| `container/` | isolated coding environment |
-| `appliance/` | deployable controller and operator bundle |
-| `dashboard/` | optional web interface |
-| `reference-apps/` | known-good applications used to qualify checks |
-| `qualification-evidence/` | committed evidence for promoted definitions |
-| `tests/` | focused automated tests |
-| `docs/` | maintained product visuals |
+- `run.json` with the exact inputs, outcome, usage, cost, and timing;
+- grading artifacts with every suite and check result;
+- contract and preflight evidence;
+- source checkpoints and dependency progress;
+- screenshots, videos, and traces when media recording is enabled;
+- the repair reports sent to the coding agent.
 
-### Shared source
+A campaign report summarizes only compatible, verified attempts. Invalid and
+incomplete attempts stay visible and do not become comparison data.
 
-| Path | Purpose |
-|---|---|
-| `commands/` | executable operator and harness commands |
-| `src/actions/` | scenario action contracts and executors |
-| `src/agents/` | coding-agent adapters and credentials |
-| `src/campaigns/` | campaign compilation, scheduling, locking, and reports |
-| `src/composition/` | tracks, packs, recipes, definitions, and calibration |
-| `src/evidence/` | artifacts, scoring, provenance, and evidence states |
-| `src/progression/` | feature graphs, dependency state, strikes, and progression scoring |
-| `src/references/` | reference fixture selection and qualification |
-| `src/releases/` | release source, bundle, and signature verification |
-| `src/runtime/` | leases, containers, snapshots, recovery, and platform control |
-| `src/stacks/` | typed stack adapters and stack-specific operations |
+## Supported deployment
 
-Use the `npm run` commands documented below instead of depending on internal
-module locations. `src/package-root.ts` is the single source of truth for the
-repository and Stack Bench roots.
+The supported v1 deployment is the Docker appliance on a dedicated Linux/amd64
+runner. The controller has access to the Docker socket, so use a machine with no
+unrelated workloads or credentials.
 
-During development, run the smallest test or validator that covers the change.
-After a shared runtime, composition, grading, campaign, or release change is
-stable, run this integrated source gate once:
+Start here:
+
+1. Follow [SETUP.md](SETUP.md) for prerequisites and credentials.
+2. Follow [appliance/README.md](appliance/README.md) to build, configure, and run
+   the appliance.
+3. Read [SYSTEM-DESIGN.md](SYSTEM-DESIGN.md) for the control flow and ownership
+   rules.
+
+Paid and subscription-backed model work runs only through the appliance. Local
+source commands accept non-billable adapters for development and qualification.
+
+## Campaign control
+
+From `tools/stack-bench`, these commands inspect and prepare a campaign without
+starting model work:
 
 ```bash
-npm run lint
-npm run typecheck
-npm test
+npm run campaign -- validate <campaign.json>
+npm run campaign -- show <campaign.json>
+npm run campaign -- prepare <campaign.json> --out <campaign-directory>
+npm run campaign -- status <campaign-directory>
+npm run campaign -- inspect <campaign-directory>
+npm run campaign -- report <campaign-directory>
 ```
 
-Documentation-only changes do not require the integrated gate. Run Docker
-qualification only when a changed file affects its recorded scope. Run the
-complete mutation set only for a release candidate.
+The CLI and optional dashboard use the same campaign plan, scheduler, and durable
+state. See [dashboard/README.md](dashboard/README.md) for the web interface.
 
-## Run it
+## Local development
 
-The supported v1 deployment is the Docker appliance on a dedicated Linux
-runner. Follow `appliance/README.md` to build or verify the controller image,
-configure credentials, run preflight, and start a campaign.
-
-Use one campaign file as the run authority. Compile and inspect it before model
-work. During execution, read campaign state first and open logs only for
-diagnosis. Generate reports only from the retained campaign package. See
-`SYSTEM-DESIGN.md` for the complete control model.
-
-### Local harness development
-
-The commands in this section run from a source checkout. Use them to develop
-and qualify the harness. They are not the distributable appliance workflow.
-
-Install the locked harness dependencies and browser once per checkout:
+Requirements: Node.js 22 or newer, Docker with Compose v2, and Chromium installed
+through Playwright.
 
 ```bash
 cd tools/stack-bench
 npm ci
 npm run bootstrap:browsers
+npm run typecheck
 npm test
-npm run check:prompts
-npm run preflight -- --backend spacetime,postgres,mongodb --track ecommerce --levels 1-2 --smoke
-npm run test:null
-npm run test:container
 ```
 
-`check:prompts` is model-free and Docker-free. It renders the actual L1-L3
-dependency-mode requests for every packaged stack. It verifies their exact
-bytes, confirms that the product request is the same across stacks, and rejects
-language that tells the agent about grading or testing.
+Use the smallest check that covers a change:
 
-`preflight` says whether the exact requested run can start and gives a concrete
-fix for each failure. It checks Docker/Compose, resource floors, image and
-database identities, credential presence, selected agent materials, ports,
-clock, storage, and inherited run state. `--smoke` uses no model: it starts the real build image, checks declared
-outbound destinations, and proves its result-volume write survives on the host.
-Every real benchmark runs that full smoke automatically before any model call
-and stores the result as `preflight.json`; the explicit command is for fixing
-the machine before launching a campaign.
-
-`test:null` drives the selected grader against a reachable blank app and fails
-if any point-bearing criterion passes or becomes inconclusive. It takes several
-minutes because it uses the real browser suites, not fixture reports. Every
-public track is included by default and the complete criterion evidence is
-written under `results/`. A passing null control is only one input to release
-qualification. It is not benchmark data.
-
-Local runs accept only non-billable agent adapters. Paid or subscription-backed
-coding sessions require the Docker appliance. See `appliance/README.md` for
-single attempts, campaigns, repair grants, and result paths.
-
-Public result JSON uses artifact schema v2. Each file records what kind of
-evidence it contains, the attempt and parent attempt that produced it, start and
-completion times, and every applicable engine, recipe, pack, fixture,
-calibration, experiment, agent-adapter, and stack-adapter identity. Evidence
-payload fields are checked by kind and files are replaced atomically. Active
-readers accept only schema v2 and reject unknown fields, kinds, versions,
-malformed hashes, and secret-bearing keys. Files outside the current artifact
-schema are not interpreted as benchmark evidence. Operators may retain them
-separately as local archival material.
-
-### Cost evidence
-
-`costUsd` is the normalized benchmark cost. The credential broker records the
-provider usage and applies the pricing rates frozen in the campaign. This value
-controls the benchmark budget. `calculatedCostUsd` is the receipt calculation
-from the same recorded usage and rates. It must match the broker ledger.
-
-`cliCostUsd` preserves the coding CLI's own cost value for comparison. It can
-differ from the normalized benchmark cost and does not control the benchmark
-budget. `costComplete: true` means that every recorded billable session has a
-complete, reconciled receipt. Do not use a cost result when this field is false.
-
-Every check records exactly one typed state: `passed`, `failed`, `inconclusive`,
-or `harness_failure`. One shared status table drives scoring, run outcomes,
-mutation/null controls, comparisons, repair eligibility, and console labels.
-Diagnostic wording is only rendered or redacted for people; changing that prose
-cannot turn missing evidence into a product failure or send a harness defect to
-the repair agent.
-
-The scenario action language is also startup-validated. Every registered action
-declares a versioned input compiler, required capabilities, hard
-deadline, evidence type, redaction tags, renderer metadata, and a narrow
-executor boundary. Actions run through independent registered executors with
-capability-scoped access; concurrency, browser lifecycle, backend/app control,
-and direct database writes use the same typed contract as browser observations.
-
-For local harness development, bring up the database services first. The
-SpacetimeDB adapter starts its own dedicated run host:
-
-```bash
-docker compose -f tools/stack-bench/docker-compose.yaml up -d
-```
-
-Local model-free development requires Node and Docker. The services
-use their own ports (6532 Postgres, 6537 MongoDB), container names, and volumes.
-A run does not share their state with other services on the machine.
-
-A run owns only what it starts, and stops it again when finished or interrupted.
-A SpacetimeDB host that was already running belongs to whoever started it, so the
-benchmark refuses to reuse or restart it. Use a dedicated `STACK_BENCH_STDB_URI`
-whose explicit loopback port is free; the benchmark starts that host and stops it
-at the end, or retains it for debugging with `--retain-backend`.
-
-Coding sessions are selected through a statically registered agent adapter.
-`claude-code` is the default; deterministic, fault-injection, and model-free
-reference adapters exercise the same versioned request/result contract in
-harness qualification. Select one with `--agent-adapter <id>`. Arbitrary
-executable paths are not accepted as production adapters.
-
-## Tracks
-
-A track is one application the benchmark can build and grade. Everything
-application-specific, including level prompts, the UI contract, scenario suites,
-and the core flow the linter walks, lives under `tracks/<name>/`, declared by a
-`track.json`. Adding an application is a matter of dropping in a directory; the
-harness needs no change. Pick one with `--track` (default `chat`).
-
-Tracks whose fixture must be recreated after a database reset set
-`reseedOnReset`. Stack Bench restarts the application and verifies its public URL
-before grading. The scored feature checks then verify the required data and behavior.
-
-Composition authoring is read-only and does not require Docker:
-
-```bash
-npm run pack -- validate tracks/ecommerce/composition/packs/feature-accounts-1.1.0.json --track ecommerce
-npm run recipe -- validate tracks/ecommerce/composition/recipes/sequential-l1-2.5.0.json --track ecommerce
-npm run recipe -- show tracks/ecommerce/composition/recipes/sequential-l1-2.5.0.json --track ecommerce --pack ecommerce.feature.accounts
-npm run recipe -- diff <old-recipe.json> <new-recipe.json> --track ecommerce
-npm run graph
-```
-
-`npm run graph` rebuilds `docs/dependency-graph.html` from the versioned
-ecommerce progression definition.
-
-`recipe diff` reports meaning, scoring, fixture, execution, and metadata changes
-separately, names requirement/contract fragments added or removed, then names the calibration bindings and evidence repetitions that
-must be redone. `recipe show --pack` and `--check` produce a selected scope with
-its own deterministic selection hash, bound to the source recipe hash. Appliance
-single-run requests use the same selection fields. Packs and individual checks
-are combined as a union. Run, bundle, and grade artifacts record the request, the exact checks
-it resolved to, which checks were attempted, and any checks not run with their
-reason. A subset can be an intentional benchmark run. Compare only results with
-the same recipe and selection identities. Working notes and superseded local
-artifacts are not part of the public source tree and must not be presented as
-benchmark results.
-
-Packs own ordered public requirement fragments, testing-hook fragments, and
-their checks; recipes retain global framing and choose exact pack versions.
-Removing a pack therefore removes its unique instructions and checks together.
-Explicitly shared fragments are deduplicated only when their source slice,
-order, modes, and bytes match exactly. A `--check` filter intentionally narrows
-measurement without changing the task the app was built to satisfy. `recipe
-show` displays that exact composed task and its independent hash.
-
-| Track | Application | Why it exists |
-|---|---|---|
-| `chat` | rooms, messages, presence | baseline real-time collaboration workload |
-| `ecommerce` | storefront, cart, warehouses | numeric shared state and contention workload |
-
-Tracks are isolated by a port offset and a name slug, so two can run at the same
-`--run-index` without colliding on ports, databases or result directories.
-
-## Levels
-
-The current ecommerce sequential definitions cover L1 through L3. All three are
-candidates, and no sequential qualification result is accepted. L1 contains 46
-scored checks. L2 contains 74 scored checks. Each scored L1 and L2 check has an
-exact known-defect definition for all three supported stacks.
-
-Dependency depth 3 uses the promoted
-`ecommerce.progression-depth3@2.0.1` release. Its qualification covers MongoDB,
-PostgreSQL, and SpacetimeDB for 97 checks and 162 points. The full L1-L6
-`ecommerce.progression-catalog@2.0.1` release remains a draft candidate. Chat
-definitions remain available through L2.
-
-Every artifact records the exact levels and recipe that ran. A level without a
-launchable catalog release fails instead of falling back to another level.
-
-Ordered by the property each makes verifiable, not by feature novelty — see each
-track's `LEVELS.md`.
-
-| Level | Chat adds | Ecommerce adds | Makes verifiable |
-|---|---|---|---|
-| 1 | accounts + basic chat | storefront, cart, warehouses | identity, durable state, real-time |
-| 2 | private rooms, membership | fulfilment, transfers, returns, pricing | authorization / multi-view consistency |
-| 3 | reactions, polls, capacity | reservations and scheduled work | atomicity, isolation, deferred-work durability |
-| 4 | scheduling, expiry | per-customer ranking and catalogue search | per-viewer derivation at catalogue scale |
-| 5 | volume | volume | throughput, latency, efficiency |
-
-Levels are cumulative: an app at L3 is still checked against L1 and L2, so a
-regression is caught rather than scored around.
-
-## How verification works
-
-Apps differ in structure, so the harness locates elements only through a
-contract of stable element IDs that the prompt requires (`tracks/<t>/contracts/`).
-Scenarios (`tracks/<t>/scenarios/`) then drive real browser clients — one isolated
-context per actor, so identities are genuinely separate — and assert on what a
-user would observe.
-
-Scoring groups are track-defined because the applications expose different
-failure modes. Ecommerce uses features, invariants, contention, and systems
-coverage; chat uses features, invariants, delivery, and systems coverage. The
-compiled recipe—not a hard-coded universal axis list—is the source of truth for
-which checks and points apply to a run.
-
-The separation matters: a feature score cannot detect cross-cutting failures
-such as broken ownership, durability, transaction boundaries, or reconnect
-recovery.
-
-Scoring is the exact sum of passed checks. Console errors remain visible diagnostics,
-but do not silently change unrelated check scores. Failed or unavailable checks earn
-zero without changing the declared denominator. The grader does not reload a failed
-live-update assertion and retry it, so "real-time" means real-time.
-
-## Validation safeguards
-
-- **Reference qualification.** Every scored recipe must pass against its exact,
-  source-bound reference implementation before promotion.
-- **Mutation testing.** `dist/grader/mutation-test.js` injects declared defects and
-  requires the intended criterion to fail conclusively without unrelated
-  regressions. Setup and infrastructure failures do not count as detections.
-  `npm run check:mutations -- --app <reference-app> --mutations <manifest>`
-  verifies every source edit is present exactly once before a Docker run.
-  During development, validate only the mutation definitions affected by the
-  change. The complete mutation set is a release-candidate gate. Live full-set
-  qualification requires the explicit `--release-candidate` option. A targeted
-  live check uses `--mutation-id <id>` and cannot become promotion evidence.
-- **Null controls.** A blank application must not earn points or produce
-  inconclusive scored evidence.
-- **State isolation.** The database is reset before each suite, and each run
-  receives distinct ports, database names, leases, and result paths.
-- **Fail-closed evidence.** Missing, malformed, mismatched, or inconclusive
-  evidence cannot become a passing score.
-
-## What a run records
-
-Evidence emitted into the result directory and `<app>/stack-bench/` includes:
-
-| Artifact | What it is |
+| Change | Check |
 |---|---|
-| `preflight.json` | exact environment admission checks completed before model spend |
-| `bundle.json` | scores per suite, code metrics, environment checks |
-| `grading-<suite>.json` | every criterion's typed verdict and structured evidence |
-| `contract-lint.json` | which test ids resolved |
-| `media/*.webm` | one video per actor per feature — what each user saw |
-| `media/*.png` | full-page screenshot at the exact moment an assertion failed |
-| `media/*.trace.zip` | Playwright trace: steppable, with DOM snapshots and network |
-| `repair-reports/bug-report-l<N>-round<M>.md` | what the agent was told each repair round |
-| `run.json` | exact stack, model, recipe, test pack, prompt identity, image, repair budget, outcome, usage, and timing for the run |
-| `progression-state.json` | dependency event history, bound catalog and policy identities, and the hash used to verify replay |
-| `level-l<N>-checkpoint.json` | strict parent-linked identity for the source accepted at the end of a level |
-| `level-l<N>-source/` | source-only level checkpoint; dependencies, build output, and grading evidence are excluded |
-| `continuations/<attempt-id>/<grant-id>/run.json` | immutable child result for one finite post-run correction grant, including reproduced baseline and cumulative effort |
-| `continuations/<attempt-id>/<grant-id>/process.json` | bounded continuation-process outcome plus retained stdout/stderr identities |
+| Prompt composition | `npm run check:prompts` |
+| Track scenarios | `npm run check:scenarios` |
+| Composition files | `npm run check:composition` |
+| Dependency graph | `npm run graph` |
+| Shared TypeScript | `npm run lint && npm run typecheck && npm test` |
 
-Recording is on by default; `--no-media` turns it off for a quick check. Watching
-the failing actor's video is the fastest way to confirm a verdict is real before
-reporting it, and the recordings are the evidence published alongside results.
+Run Docker qualification only when the changed code affects the evidence it
+proves. Run targeted mutations while developing checks. The complete mutation
+set is a release-candidate gate.
 
-## Watching a run
+## Project map
 
-Recorded videos carry an annotation banner showing which actor is being driven,
-the feature and criterion under test, and the step in progress — so a recording
-explains itself rather than needing the log beside it. The banner turns green on
-a passing criterion and red on a failure, with the failure message, immediately
-before the screenshot is captured.
+| Path | Owner |
+|---|---|
+| `tracks/` | product requests, feature definitions, checks, and scenarios |
+| `conditions/` | prompt guidance and repair policy |
+| `backends/` | stack-specific material sent to the coding agent |
+| `commands/` | command-line entry points |
+| `src/` | campaign, runtime, progression, evidence, and stack logic |
+| `grader/` | grading and mutation execution |
+| `linter/` | generated-app contract checks |
+| `reference-apps/` | known-good applications used to qualify checks |
+| `qualification-evidence/` | evidence bound to promoted definitions |
+| `appliance/` | dedicated-runner packaging and operation |
+| `dashboard/` | optional campaign interface |
+| `docs/` | maintained diagrams and presentations |
 
-It is injected outside the app's root and carries no test id, so scoped
-assertions cannot see it and it cannot affect a score.
+Application-specific work belongs in a track. Runtime integration belongs in a
+stack adapter. Prompt selection and scoring selection remain separate, so a
+behavior can be measured without being named in the product request.
+
+## More documentation
+
+- [APPLIANCE-DESIGN.md](APPLIANCE-DESIGN.md): security and execution boundaries
+- [appliance/README.md](appliance/README.md): appliance commands and recovery
+- [grader/README.md](grader/README.md): checks, evidence, and grading
+- [reference-apps/README.md](reference-apps/README.md): reference qualification
+- [tracks/ecommerce/composition/README.md](tracks/ecommerce/composition/README.md):
+  packs and recipes
+- [docs/dependency-graph.html](docs/dependency-graph.html): generated ecommerce
+  feature graph
+- [docs/technical-guide.html](docs/technical-guide.html): current run path
+
+Working notes, generated findings, transcripts, and run artifacts are local
+operator data. They are not tracked as product documentation.

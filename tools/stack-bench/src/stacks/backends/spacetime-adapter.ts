@@ -11,7 +11,6 @@ import { prepareSpacetimeDatabase, resetSpacetime, setSpacetimeStock } from './s
 import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
 import { requireLeasedSpacetime } from '../backend-reset-guard.js';
-import { containerReachableSpacetimeUri } from '../../runtime/spacetime-target.js';
 
 export const spacetimeAdapter = defineStackAdapter('spacetime', {
   activate: activateSpacetime,
@@ -25,10 +24,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
     const { resources } = requireLeasedSpacetime(lease);
     return {
       VITE_MODULE_NAME: resources.module,
-      VITE_SPACETIMEDB_URI: containerReachableSpacetimeUri({ resources: {
-        serverUri: resources.serverUri,
-        buildContainer: lease.resources.buildContainer,
-      } }),
+      VITE_SPACETIMEDB_URI: resources.serverUri,
     };
   },
 }, {
