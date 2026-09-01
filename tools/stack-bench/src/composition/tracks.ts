@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -78,8 +78,9 @@ export function loadTrack(name: string = DEFAULT_TRACK): Track {
   const dir = join(TRACKS_DIR, name);
   const manifest = join(dir, 'track.json');
   if (!existsSync(manifest)) {
-    console.error(`Unknown track "${name}". Available: ${listTracks({ includeInternal: true }).join(', ') || 'none'}`);
-    process.exit(2);
+    throw new Error(
+      `Unknown track "${name}". Available: ${listTracks({ includeInternal: true }).join(', ') || 'none'}`,
+    );
   }
   const m = compileTrackManifest(JSON.parse(readFileSync(manifest, 'utf8')) as unknown,
     { source: manifest });
@@ -121,8 +122,8 @@ export const PORT_BASES = Object.freeze(stackPortAllocations());
 export const RUN_INDEX_CAP = 20;
 
 export function portsFor(track: TrackDefinition, backend: string, runIndex: number): StackRunPorts {
-  if (runIndex > RUN_INDEX_CAP) {
-    throw new Error(`--run-index ${runIndex} exceeds ${RUN_INDEX_CAP}; the port grid is only proven collision-free below that`);
+  if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
+    throw new Error(`--run-index must be an integer from 0 through ${RUN_INDEX_CAP}`);
   }
   const adapter = STACK_ADAPTER_REGISTRY.get(backend);
   return executeStackCapability(adapter, 'ports', 'for-run', {
@@ -169,22 +170,6 @@ export function workRoot(): string {
 export const workDirFor = (track: TrackDefinition, backend: string, runIndex: number,
   stamp?: string): string =>
   join(workRoot(), resultsName(track, backend, runIndex) + (stamp ? `-${stamp}` : ''));
-
-// Remove expired work best-effort and report locked paths.
-export function sweepWorkRoot(maxAgeHours: number = 12): string[] {
-  const root = workRoot();
-  const stuck: string[] = [];
-  if (!existsSync(root)) return stuck;
-  const cutoff = Date.now() - maxAgeHours * 3600_000;
-  for (const name of readdirSync(root)) {
-    const dir = join(root, name);
-    try {
-      if (statSync(dir).mtimeMs > cutoff) continue;
-      rmSync(dir, { recursive: true, force: true });
-    } catch { stuck.push(dir); }
-  }
-  return stuck;
-}
 
 // Each run gets a separate application database and module. Result names remain
 // operator-facing and include the selected stack.
