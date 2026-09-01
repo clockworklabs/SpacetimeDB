@@ -242,7 +242,7 @@ namespace SpacetimeDB
         /// <param name="wasInserted">Will be populated with inserted KVPs.</param>
         /// <param name="wasUpdated">Will be populated with updated KVPs.</param>
         /// <param name="wasRemoved">Will be populated with removed KVPs.</param>
-        public void Apply(MultiDictionaryDelta<TKey, TValue> delta, List<KeyValuePair<TKey, TValue>> wasInserted, List<(TKey Key, TValue OldValue, TValue NewValue)> wasUpdated, List<KeyValuePair<TKey, TValue>> wasRemoved)
+        public readonly void Apply(MultiDictionaryDelta<TKey, TValue> delta, List<KeyValuePair<TKey, TValue>> wasInserted, List<(TKey Key, TValue OldValue, TValue NewValue)> wasUpdated, List<KeyValuePair<TKey, TValue>> wasRemoved)
         {
             foreach (var (key, their) in delta.Entries)
             {
