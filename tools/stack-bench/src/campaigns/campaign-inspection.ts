@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { readCampaignState } from './campaign-scheduler.js';
 import type { CampaignAttemptState } from './campaign-scheduler.js';
@@ -98,7 +98,7 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
   if (!existsSync(path)) return null;
   try {
     const run = readArtifactPayload<BenchmarkRunPayload>(path, { expectedKind: 'benchmark_run' });
-    validateCampaignRun(plan, attempt, run);
+    validateCampaignRun(plan, attempt, run, { resultDir: dirname(path) });
     return {
       outcome: run.outcome?.kind ?? 'ungraded',
       outcomePhase: run.outcome?.phase ?? null,

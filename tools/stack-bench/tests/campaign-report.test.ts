@@ -14,6 +14,7 @@ import { buildCampaignReport, generateCampaignReport,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
 import type { BenchmarkRun, RunSelection } from '../src/campaigns/campaign-report.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
@@ -47,11 +48,20 @@ function writeFakePackageEvidence(output: string, level: NonNullable<BenchmarkRu
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, 'app.js'), 'export const ready = true;\n');
   const sourceHash = hashDirectory(source).sha256;
+  const checks = level.selection?.scoredChecks ?? [];
+  const checkKeys = checks.map(check => check.stableKey);
   writeArtifact(join(output, 'grading', 'bundle.json'), {
     kind: 'grade_bundle', id: `fake-grade-${level.level}`, payload: {
-      observation: 'scored', source: { sha256: sourceHash }, suites: {},
+      observation: 'scored', source: { sha256: sourceHash }, suites: { fake: { features: [{
+        id: 'fake', setupEvidence: createCheckEvidence({ status: 'passed', code: 'completed',
+          phase: 'setup', startedAtMs: 1, completedAtMs: 2 }),
+        criteria: checks.map(check => ({ id: check.stableKey, stableKey: check.stableKey,
+          points: check.points, evidence: createCheckEvidence({ status: 'passed', code: 'completed',
+            phase: 'assertion', startedAtMs: 1, completedAtMs: 2 }) })),
+      }] } },
       totals: { score: level.score, max: level.max },
-      selection: { sha256: level.selection?.sha256 },
+      selection: { sha256: level.selection?.sha256, checks,
+        attemptedChecks: checkKeys, reportedChecks: checkKeys, notRun: [] },
     },
   });
 }

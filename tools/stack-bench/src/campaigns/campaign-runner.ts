@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeArtifact } from '../evidence/artifacts.js';
+import { durableCostLedger } from '../evidence/cost-proof.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
 import { compileCampaignFile } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
@@ -237,11 +238,11 @@ export function remainingAttemptCostBudget(
       throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
     }
     const run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' }) as BenchmarkRun;
-    const cost = run.totals?.costUsd;
-    if (run.totals?.costComplete !== true || !finite(cost) || cost < 0) {
+    const ledger = durableCostLedger(run as Parameters<typeof durableCostLedger>[0]);
+    if (!ledger.complete) {
       throw new Error(`cannot retry ${claim.attempt.id}: prior provider spend is unknown`);
     }
-    spent += cost;
+    spent += ledger.reportedCostUsd;
   }
   const remaining = Number((cap - spent).toFixed(6));
   if (remaining <= 0) {

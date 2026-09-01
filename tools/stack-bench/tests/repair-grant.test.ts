@@ -81,8 +81,8 @@ test('a finite grant is derived only from the exact exhausted parent checkpoint'
     assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1@2.5.0');
     assert.equal(resolved.configuration.runIndex, 0);
     assert.equal(resolved.configuration.url, 'http://localhost:1234');
-    assert.equal(resolved.grant.cumulativeCostBeforeUsd, 2.5);
-    assert.equal(resolved.grant.cumulativeDurationBeforeSec, 60);
+    assert.equal(resolved.grant.cumulativeCostBeforeUsd, 101.5);
+    assert.equal(resolved.grant.cumulativeDurationBeforeSec, 160);
     assert.deepEqual(resolved.grant.downstreamLevelsToRerun, [2]);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

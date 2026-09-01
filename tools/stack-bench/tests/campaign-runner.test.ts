@@ -18,6 +18,7 @@ import { attemptArgv, campaignRetryAuthority,
   processFailureDetail, remainingAttemptCostBudget } from '../src/campaigns/campaign-runner.js';
 import { expectedDependencyRunOutcomeKind, validateCampaignRun }
   from '../src/campaigns/campaign-run-validation.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { hashDirectory } from '../src/evidence/provenance.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.js';
@@ -110,17 +111,28 @@ const plannedSelection = (attempt: CampaignAttemptPlan, level: number): MutableS
 const experimentIdentity = (plan: CompiledCampaignPlan) => ({ id: plan.id, version: plan.version,
   sha256: plan.contentSha256, state: plan.state });
 
-function writeFakePackageEvidence(output: string,
-  level: MutableLevel & { selection: MutableSelection }): void {
+function writeFakePackageEvidence(output: string, level: MutableLevel,
+  status: 'passed' | 'failed' = 'passed'): void {
+  if (!level.selection) throw new Error('fake package evidence requires a selection');
   const source = join(output, 'source');
   mkdirSync(source, { recursive: true });
   writeFileSync(join(source, 'app.js'), 'export const ready = true;\n');
   const sourceHash = hashDirectory(source).sha256;
+  const checks = level.selection.scoredChecks ?? [];
+  const checkKeys = checks.map(check => check.stableKey);
   writeArtifact(join(output, 'grading', 'bundle.json'), {
     kind: 'grade_bundle', id: `fake-grade-${level.level}`, payload: {
-      observation: 'scored', source: { sha256: sourceHash }, suites: {},
+      observation: 'scored', source: { sha256: sourceHash }, suites: { fake: { features: [{
+        id: 'fake', setupEvidence: createCheckEvidence({ status: 'passed', code: 'completed',
+          phase: 'setup', startedAtMs: 1, completedAtMs: 2 }),
+        criteria: checks.map(check => ({ id: check.stableKey, stableKey: check.stableKey,
+          points: check.points, evidence: createCheckEvidence({ status,
+            code: status === 'passed' ? 'completed' : 'test_result', phase: 'assertion',
+            startedAtMs: 1, completedAtMs: 2 }) })),
+      }] } },
       totals: { score: level.score, max: level.max },
-      selection: { sha256: level.selection.sha256 },
+      selection: { sha256: level.selection.sha256, checks,
+        attemptedChecks: checkKeys, reportedChecks: checkKeys, notRun: [] },
     },
   });
 }
@@ -187,8 +199,11 @@ test('campaign retry budget subtracts every prior execution cost', () => {
   try {
     const output = join(root, 'attempts', 'one', 'execution-1');
     mkdirSync(output, { recursive: true });
+    const receipt = { complete: true, reconciled: true, error: null, costUsd: 3.25 };
     writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: 'prior-run',
-      payload: { totals: { costUsd: 3.25, costComplete: true } } });
+      payload: { totals: { costUsd: 3.25, costComplete: true },
+        levels: [{ level: 1, buildSession: { costUsd: 3.25, costComplete: true,
+          costReceipts: [{ invocation: 1, receipt }] } }] } });
     const campaign = { definition: { budgets: { maxCostUsdPerAttempt: 10 } } };
     const claim = { attempt: { id: 'one' }, priorOutputs: ['attempts/one/execution-1'] };
     assert.equal(remainingAttemptCostBudget(campaign, claim, root), 6.75);
@@ -196,6 +211,11 @@ test('campaign retry budget subtracts every prior execution cost', () => {
     const artifact = readArtifact<{ totals: { costUsd: number; costComplete: boolean } }>(
       join(output, 'run.json'));
     artifact.payload.totals.costComplete = false;
+    writeFileSync(join(output, 'run.json'), `${JSON.stringify(artifact)}\n`);
+    assert.throws(() => remainingAttemptCostBudget(campaign, claim, root),
+      /prior provider spend is unknown/);
+
+    artifact.payload.totals = { costUsd: 1, costComplete: true };
     writeFileSync(join(output, 'run.json'), `${JSON.stringify(artifact)}\n`);
     assert.throws(() => remainingAttemptCostBudget(campaign, claim, root),
       /prior provider spend is unknown/);
@@ -555,6 +575,14 @@ test('campaign validation requires complete first-build and final measurement co
       buildImage: 'test-build-image', resultDir: missingPackage,
     }), /packageEvidence\.source.*packageEvidence\.grading/);
   } finally { rmSync(missingPackage, { recursive: true, force: true }); }
+
+  const contradictoryPackage = mkdtempSync(join(tmpdir(), 'stack-bench-contradictory-package-'));
+  try {
+    writeFakePackageEvidence(contradictoryPackage, run.levels[0]!, 'failed');
+    assert.throws(() => validateCampaignRun(plan, attempt, run, {
+      buildImage: 'test-build-image', resultDir: contradictoryPackage,
+    }), /packageEvidence\.grading\.outcome/);
+  } finally { rmSync(contradictoryPackage, { recursive: true, force: true }); }
 
   const missingFirstBuildPoint = structuredClone(run);
   missingFirstBuildPoint.levels[0]!.firstBuild!.score = 57;

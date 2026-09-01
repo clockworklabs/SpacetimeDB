@@ -4,8 +4,8 @@ import { join, resolve } from 'node:path';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { ARTIFACT_FILE, readArtifactPayload } from '../evidence/artifacts.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';
-import { aggregateRunOutcome } from '../evidence/outcomes.js';
-import type { RunOutcome as EvidenceRunOutcome } from '../evidence/outcomes.js';
+import { aggregateRunOutcome, classifyBundle } from '../evidence/outcomes.js';
+import type { OutcomeBundle, RunOutcome as EvidenceRunOutcome } from '../evidence/outcomes.js';
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord }
   from '../evidence/benchmark-run.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
@@ -211,6 +211,15 @@ function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
     'packageEvidence.grading.selectionSha256');
   mismatch(grading.totals?.score !== finalGradedLevel.score
     || grading.totals?.max !== finalGradedLevel.max, 'packageEvidence.grading.score');
+  const gradingOutcome = classifyBundle(grading as OutcomeBundle);
+  mismatch(gradingOutcome.kind !== finalGradedLevel.outcome?.kind
+    || canonicalDefinitionJson(gradingOutcome.appFailures)
+      !== canonicalDefinitionJson(finalGradedLevel.outcome?.appFailures ?? [])
+    || canonicalDefinitionJson(gradingOutcome.inconclusive)
+      !== canonicalDefinitionJson(finalGradedLevel.outcome?.inconclusive ?? [])
+    || canonicalDefinitionJson(gradingOutcome.harnessFailures)
+      !== canonicalDefinitionJson(finalGradedLevel.outcome?.harnessFailures ?? []),
+  'packageEvidence.grading.outcome');
 }
 
 function validateDependencyEvidence(plan: CampaignValidationPlan,

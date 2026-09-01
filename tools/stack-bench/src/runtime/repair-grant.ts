@@ -70,6 +70,7 @@ interface RepairParentPayload extends Record<string, unknown> {
   skills?: unknown[];
   runtime?: { buildImage?: string | null; url?: string | null };
   backendLease?: { runIndex?: number };
+  totals?: { costUsd?: number; durationSec?: number };
 }
 
 export interface RepairParent extends RepairParentPayload {
@@ -289,14 +290,12 @@ export function inspectRepairParent(parentDirectory: string,
   const downstreamLevelsToRerun = continuation
     ? continuation.downstreamLevelsToRerun
     : parent.levels.map(item => item.level).filter(item => item > levelNumber).sort((a, b) => a - b);
-  const prerequisiteLevels = parent.levels.filter(item => item.level <= levelNumber);
   const cumulativeCostBeforeUsd = continuation
     ? continuation.cumulativeCostAfterUsd
-    : prerequisiteLevels.reduce((total, item) => total
-      + (item.buildCostUsd ?? item.resumeCostUsd ?? 0) + (item.fixCostUsd ?? 0), 0);
+    : parent.totals?.costUsd ?? Number.NaN;
   const cumulativeDurationBeforeSec = continuation
     ? continuation.cumulativeDurationAfterSec
-    : prerequisiteLevels.reduce((total, item) => total + (item.durationSec ?? Number.NaN), 0);
+    : parent.totals?.durationSec ?? Number.NaN;
   if (!Number.isFinite(cumulativeCostBeforeUsd) || cumulativeCostBeforeUsd < 0
     || !Number.isFinite(cumulativeDurationBeforeSec) || cumulativeDurationBeforeSec < 0) {
     throw new Error('parent run does not contain cumulative cost and duration');
