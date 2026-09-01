@@ -8,6 +8,7 @@ import { createBackendLease, writeBackendLease } from '../src/runtime/backend-le
 import { resetBackend } from '../src/stacks/backend-reset.js';
 import { proveMongoDbUse } from '../src/stacks/backends/mongodb-operations.js';
 import { provePostgresUse, resetPostgres } from '../src/stacks/backends/postgres-operations.js';
+import { proveSpacetimeUse } from '../src/stacks/backends/spacetime-operations.js';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout }
   from '../src/runtime/spacetime-layout.js';
@@ -170,6 +171,53 @@ test('MongoDB runtime provenance finds an application marker in the exact leased
     /invalid count/);
   assert.throws(() => proveMongoDbUse({ lease, marker: '', exec: execWith('0\n') }),
     /requires a non-empty application marker/);
+});
+
+test('SpacetimeDB runtime provenance finds an application marker in the exact leased module', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-spacetime-provenance-'));
+  const leasePath = join(root, 'lease.json');
+  const lease = createBackendLease({ runId: 'spacetime-proof', backend: 'spacetime',
+    track: 'ecommerce', runIndex: 0, module: 'app_ecom_run0',
+    serverUri: 'http://127.0.0.1:3210', dataDir: root });
+  lease.state = 'active';
+  lease.resources.buildContainer = { name: 'build', id: 'c'.repeat(64), image: 'stack-bench:test',
+    owned: true, running: true, networkMode: 'host',
+    resourceLimits: { cpuCount: 1, memoryBytes: 1, memorySwapBytes: 1, pids: 1 } };
+  writeBackendLease(leasePath, lease);
+  const previousPath = process.env.STACK_BENCH_LEASE;
+  const previousToken = process.env.STACK_BENCH_LEASE_TOKEN;
+  process.env.STACK_BENCH_LEASE = leasePath;
+  process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  const schema = { sections: [
+    { Typespace: { types: [{ Product: { elements: [
+      { name: { some: 'username' }, algebraic_type: { String: {} } },
+      { name: { some: 'id' }, algebraic_type: { U64: {} } },
+    ] } }] } },
+    { Tables: [{ source_name: 'account', product_type_ref: 0 }] },
+  ] };
+  const exec = (_command: string, args: readonly string[]): string => {
+    if (args[0] === 'inspect') return `${lease.resources.buildContainer?.id}\n`;
+    if (args.includes('describe')) return JSON.stringify(schema);
+    return args.at(-1)?.includes("'proof'") ? ' username\n----------\n "proof"\n' : '';
+  };
+  const proofLease = { resources: { module: 'app_ecom_run0', serverUri: 'http://127.0.0.1:3210' } };
+  try {
+    assert.deepEqual(proveSpacetimeUse({ lease: proofLease, marker: 'proof', exec }), {
+      ok: true,
+      verified: true,
+      matches: 1,
+      reason: 'the application marker exists in the leased SpacetimeDB module',
+    });
+    assert.equal(proveSpacetimeUse({ lease: proofLease, marker: 'missing', exec }).ok, false);
+    assert.throws(() => proveSpacetimeUse({ lease: proofLease, marker: '', exec }),
+      /requires a non-empty application marker/);
+  } finally {
+    if (previousPath === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = previousPath;
+    if (previousToken === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('runtime database provenance works against the Docker services', {

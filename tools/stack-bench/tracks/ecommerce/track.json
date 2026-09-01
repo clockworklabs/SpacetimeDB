@@ -114,6 +114,16 @@
       "args": [
         "",
         ""
+      ],
+      "params": [
+        {
+          "name": "username",
+          "in": "body"
+        },
+        {
+          "name": "password",
+          "in": "body"
+        }
       ]
     },
     {

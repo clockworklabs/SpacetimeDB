@@ -433,8 +433,8 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
         // partially opened context must still be closed with the feature.
         ctx.extraContexts?.push({ context, name, page: fresh });
         fresh.setDefaultTimeout(defaultWithin);
-        await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         const observer = new Actor(`${actor.name}-fresh`, fresh, context);
+        await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         observer.annotate = actor.annotate;
         actors.set(name, observer);
         return name;
@@ -670,6 +670,9 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       const page = await runBrowserInfrastructureOperation('page creation', () => context.newPage());
       contexts[contexts.length - 1]!.page = page;
       page.setDefaultTimeout(SETUP_WITHIN);
+      const actor = new Actor(name, page, context);
+      actor.annotate = Boolean(args.media);
+      actors.set(name, actor);
       try {
         await page.goto(args.url!, { waitUntil: 'domcontentloaded', timeout: 20000 });
       } catch (cause) {
@@ -678,9 +681,6 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
           observation: errorMessage(cause), expected: 'a reachable application page',
         });
       }
-      const actor = new Actor(name, page, context);
-      actor.annotate = Boolean(args.media);
-      actors.set(name, actor);
     }
   } catch (error) {
     const classified = classifyCheckFailure(error);

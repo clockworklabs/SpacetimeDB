@@ -20,7 +20,7 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
-import { requireLeasedDatabase } from '../src/stacks/backend-reset-guard.js';
+import { requireLeasedDatabase, requireLeasedSpacetime } from '../src/stacks/backend-reset-guard.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
@@ -224,7 +224,7 @@ export function runGraderChild(argv: string[], output: string, suiteId: string, 
 
 function gradeLeaseInput(backend: string, env: NodeJS.ProcessEnv): { path: string;
   expected: BackendLeaseExpectation } | null {
-  if (!['mongodb', 'postgres'].includes(backend)) return null;
+  if (!['mongodb', 'postgres', 'spacetime'].includes(backend)) return null;
   const path = String(env.STACK_BENCH_LEASE ?? '').trim();
   const token = String(env.STACK_BENCH_LEASE_TOKEN ?? '').trim();
   if (!path && !token) return null;
@@ -238,6 +238,12 @@ export function databaseLeaseForGrading(backend: string, env = process.env, {
   const input = gradeLeaseInput(backend, env);
   if (!input) return null;
   const lease = readLease(input.path, input.expected);
+  if (backend === 'spacetime') {
+    if (!lease.resources.module || !lease.resources.serverUri) {
+      throw new Error('active spacetime lease has no complete module target');
+    }
+    return lease;
+  }
   const container = String(lease.resources?.container?.name ?? '').trim();
   const containerId = String(lease.resources?.container?.id ?? '').trim();
   if (!container || !containerId) {
@@ -457,8 +463,11 @@ export async function writeApplicationDatabaseMarker(
   if (!action) throw new Error(`database provenance action is not declared: ${definition.action}`);
   const marker = `sb${randomUUID().replaceAll('-', '').slice(0, 16)}`;
   const body = { ...definition.body, [definition.markerParameter]: marker };
-  const request = STACK_ADAPTER_REGISTRY.get(args.backend).namedAction.request(
-    { action, input: { body }, url: args.url });
+  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  const request = adapter.namedAction.request({ action,
+    input: { values: body },
+    url: args.url,
+    spacetime: args.backend === 'spacetime' ? adapter.grading.context() : null });
   if (!request.url) throw new Error('database provenance action has no URL');
   try {
     const response = await fetchImpl(request.url, {
@@ -483,7 +492,8 @@ export function databaseProvenanceFailure(error: unknown): { kind: string; phase
 
 export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend' | 'databaseLease'>,
   marker: string | null = null): RuntimeProvenance {
-  if (!['mongodb', 'postgres'].includes(args.backend)) {
+  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  if (!('proveUse' in adapter.database)) {
     return { ok: null, verified: false,
       reason: 'exact runtime database marker proof is not implemented for this stack' };
   }
@@ -495,11 +505,14 @@ export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend
     return { ok: null, verified: false,
       reason: 'the application action did not produce a database marker' };
   }
-  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
-  if (!('proveUse' in adapter.database)) {
-    throw new Error(`runtime database proof is not implemented for ${args.backend}`);
+  if (args.backend === 'spacetime') {
+    return STACK_ADAPTER_REGISTRY.get('spacetime').database.proveUse(
+      { lease: requireLeasedSpacetime(args.databaseLease), marker });
   }
-  return adapter.database.proveUse({ lease: requireLeasedDatabase(args.databaseLease), marker });
+  const lease = requireLeasedDatabase(args.databaseLease);
+  return args.backend === 'mongodb'
+    ? STACK_ADAPTER_REGISTRY.get('mongodb').database.proveUse({ lease, marker })
+    : STACK_ADAPTER_REGISTRY.get('postgres').database.proveUse({ lease, marker });
 }
 
 function isGradePayload(value: GradePayload | LintPayload | null | undefined): value is GradePayload {
@@ -671,7 +684,8 @@ function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
   argv.push('--parent-attempt-id', bundleArtifactId);
   // The out-of-band write goes straight to this run's database, with no
   // app code in the loop; only the harness knows which one that is.
-  argv.push('--db-name', databaseNameForGrading(track, args.runIndex ?? 0, args.databaseLease));
+  argv.push('--db-name', databaseNameForGrading(track, args.runIndex ?? 0,
+    args.databaseLease?.resources.database ? args.databaseLease : null));
   if (args.restartSpec) argv.push('--restart-spec', JSON.stringify(args.restartSpec));
   // The systems criteria run scripts the app itself ships (back-office writes),
   // so the grader has to know where the app lives.
@@ -947,8 +961,8 @@ async function main() {
     let proofError = null;
     let actionFailure: string | null = null;
     const proof = track.databaseProvenance;
-    const requiresRuntimeProof = ['mongodb', 'postgres'].includes(args.backend)
-      && args.databaseLease && args.reset;
+    const supportsRuntimeProof = 'proveUse' in STACK_ADAPTER_REGISTRY.get(args.backend).database;
+    const requiresRuntimeProof = supportsRuntimeProof && args.databaseLease && args.reset;
     if (requiresRuntimeProof && !proof) {
       proofError = new Error(`${args.track} does not define a runtime database provenance check`);
     } else if (requiresRuntimeProof && proof) {
@@ -971,7 +985,7 @@ async function main() {
         console.log(`\nABORTED: ${bundle.error}`);
         process.exit(1);
       }
-    } else if (['mongodb', 'postgres'].includes(args.backend) && !args.reset) {
+    } else if (supportsRuntimeProof && !args.reset) {
       runtime = { ok: null, verified: false,
         reason: 'runtime marker proof requires database reset to isolate its write' };
     }

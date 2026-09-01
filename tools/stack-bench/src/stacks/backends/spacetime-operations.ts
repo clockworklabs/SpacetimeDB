@@ -9,6 +9,13 @@ import type { TextCommandExecutor } from '../../runtime/command-executor.js';
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
 const sqlString = (value: unknown): string => `'${String(value).replaceAll("'", "''")}'`;
+const sqlIdentifier = (value: unknown): string => {
+  const name = String(value);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`SpacetimeDB schema contains an unsupported identifier: ${name}`);
+  }
+  return name;
+};
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object';
@@ -19,6 +26,60 @@ const streams = (error: unknown, ...keys: readonly string[]): string =>
 
 type SpacetimeLease = { resources: { module: string; serverUri: string } };
 const agentExec = () => ['exec', ...codingContainerAgentExecOptions()];
+
+function stringColumns(schema: unknown): Array<{ table: string; column: string }> {
+  if (!record(schema) || !Array.isArray(schema.sections)) {
+    throw new Error('SpacetimeDB describe returned an invalid schema');
+  }
+  const typespace = schema.sections.find(section => record(section) && record(section.Typespace));
+  const tablesSection = schema.sections.find(section => record(section) && Array.isArray(section.Tables));
+  const types = record(typespace) && record(typespace.Typespace) && Array.isArray(typespace.Typespace.types)
+    ? typespace.Typespace.types : null;
+  const tables = record(tablesSection) && Array.isArray(tablesSection.Tables) ? tablesSection.Tables : null;
+  if (!types || !tables) throw new Error('SpacetimeDB describe omitted tables or types');
+  const columns: Array<{ table: string; column: string }> = [];
+  for (const table of tables) {
+    if (!record(table) || typeof table.source_name !== 'string'
+      || !Number.isInteger(table.product_type_ref)) continue;
+    const type = types[Number(table.product_type_ref)];
+    const elements = record(type) && record(type.Product) && Array.isArray(type.Product.elements)
+      ? type.Product.elements : [];
+    for (const element of elements) {
+      if (!record(element) || !record(element.name) || typeof element.name.some !== 'string'
+        || !record(element.algebraic_type) || !('String' in element.algebraic_type)) continue;
+      columns.push({ table: sqlIdentifier(table.source_name), column: sqlIdentifier(element.name.some) });
+    }
+  }
+  return columns;
+}
+
+export function proveSpacetimeUse({ lease, marker, exec = execFileSync }:
+  { lease: SpacetimeLease; marker: unknown; exec?: TextCommandExecutor }):
+  { ok: boolean; verified: boolean; matches: number; reason: string } {
+  if (typeof marker !== 'string' || !marker) {
+    throw new Error('SpacetimeDB provenance requires a non-empty application marker');
+  }
+  const target = leasedSpacetimeTarget({ requireBuildContainer: true, exec });
+  const container = target.buildContainer;
+  if (!container) throw new Error('leased build container is not active');
+  if (target.mod !== lease.resources.module || target.uri !== lease.resources.serverUri) {
+    throw new Error('SpacetimeDB provenance target does not match the authenticated lease');
+  }
+  const run = (args: string[]): string => exec('docker', [...agentExec(), container.id,
+    ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI, args)],
+  { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
+  const schema = JSON.parse(run(['describe', '--json', target.mod, '-s', target.containerUri]));
+  let matches = 0;
+  for (const { table, column } of stringColumns(schema)) {
+    const output = run(['sql', target.mod, '-s', target.containerUri,
+      `select ${column} from ${table} where ${column} = ${sqlString(marker)}`]);
+    if (output.includes(`"${marker}"`)) matches += 1;
+  }
+  return { ok: matches > 0, verified: true, matches,
+    reason: matches
+      ? 'the application marker exists in the leased SpacetimeDB module'
+      : 'the application marker is absent from the leased SpacetimeDB module' };
+}
 
 export function resetSpacetime({ lease, app, exec = execFileSync }:
   { lease: SpacetimeLease; app: string; exec?: TextCommandExecutor }): string {

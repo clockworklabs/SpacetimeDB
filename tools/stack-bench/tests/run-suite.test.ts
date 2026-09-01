@@ -205,6 +205,19 @@ test('database grading uses the exact database from the authenticated run lease'
     /active database lease has no database name/);
 });
 
+test('SpacetimeDB grading uses the authenticated module lease', () => {
+  const lease = databaseLeaseForGrading('spacetime', {
+    STACK_BENCH_LEASE: 'private/lease.json',
+    STACK_BENCH_LEASE_TOKEN: 'secret-token',
+  }, {
+    readLease: () => createBackendLease({ runId: 'grading-test', backend: 'spacetime',
+      track: 'ecommerce', runIndex: 0, module: 'app_ecommerce_run0',
+      serverUri: 'http://127.0.0.1:3210', dataDir: join(tmpdir(), 'stack-bench-spacetime-test') }),
+  });
+  assert.equal(lease?.resources.module, 'app_ecommerce_run0');
+  assert.equal(lease?.resources.serverUri, 'http://127.0.0.1:3210');
+});
+
 test('database provenance parses the port instead of accepting a matching substring', () => {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-database-provenance-'));
   try {
@@ -251,11 +264,11 @@ test('runtime database proof reports command failures as harness failures', () =
   });
 });
 
-test('SpacetimeDB runtime database proof stays explicitly unverified', () => {
+test('runtime database proof requires an authenticated lease', () => {
   assert.deepEqual(checkRuntimeDatabaseProvenance({ backend: 'spacetime' }), {
     ok: null,
     verified: false,
-    reason: 'exact runtime database marker proof is not implemented for this stack',
+    reason: 'standalone grading has no authenticated database lease',
   });
 });
 
