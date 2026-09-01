@@ -1379,9 +1379,9 @@ impl ModuleSubscriptions {
     /// [`ws_v2::SubscribeBatch`] message.
     ///
     /// Every set is registered under a single subscription-manager lock and
-    /// evaluated at a single transaction snapshot, so no transaction update
+    /// evaluated at a single transaction offset, so no transaction update
     /// for any of the new sets can precede the [`ws_v2::SubscribeBatchApplied`]
-    /// response, and updates resume after it, all relative to the same snapshot.
+    /// response, and updates resume after it, all relative to that same offset.
     ///
     /// A set which fails to compile or evaluate reports a per-set error in the
     /// response while the remaining sets still apply.
@@ -1614,8 +1614,7 @@ impl ModuleSubscriptions {
         // We always get the db lock before the subscription lock to avoid deadlocks.
         //
         // A single transaction spans the compilation, registration and evaluation
-        // of every set, so no schema change can invalidate a compiled set before
-        // it is registered, at the cost of holding the db lock across all compilations.
+        // of every set.
         let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
 
         // Compile every set. A set which fails to compile does not fail the others.
@@ -1635,10 +1634,6 @@ impl ModuleSubscriptions {
             }
         }
 
-        // Register every compiled set under a single write lock, so that no
-        // transaction committed between two registrations can be observed by
-        // some sets but not others.
-        //
         // We minimize locking so that other clients can add subscriptions concurrently.
         // We are protected from race conditions with broadcasts, because we have the db lock,
         // and `commit_and_broadcast_event` grabs a read lock on `subscriptions` while it still
@@ -1671,7 +1666,7 @@ impl ModuleSubscriptions {
 
         if registered.is_empty() {
             // No set was registered, so there is nothing to evaluate,
-            // and no snapshot to evaluate it at.
+            // and no transaction offset to evaluate it at.
             // No update can concern a set which is not registered,
             // so the caller's response needs no transaction to order it.
             // The mutable transaction is committed when `mut_tx` is dropped.
@@ -1688,7 +1683,7 @@ impl ModuleSubscriptions {
         let (mut tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &registered_queries, auth.caller())?;
 
-        // Evaluate every registered set against the single snapshot above.
+        // Evaluate every registered set at the single transaction offset above.
         // A set which fails has its registration removed,
         // so that it never receives transaction updates.
         let mut total_metrics = ExecutionMetrics::default();

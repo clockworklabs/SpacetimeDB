@@ -97,7 +97,7 @@ pub enum UnsubscribeFlags {
 /// Sent by client to register multiple subscriptions in one atomic step.
 ///
 /// The server registers every subscription set under a single subscription-manager
-/// lock and evaluates all of them at a single transaction snapshot,
+/// lock and evaluates all of them at a single transaction offset,
 /// then responds with one [`SubscribeBatchApplied`] message carrying a result per set.
 /// No [`TransactionUpdate`] is delivered between the registration of the first set
 /// and the [`SubscribeBatchApplied`] response,
@@ -335,7 +335,7 @@ pub struct SubscriptionError {
 /// This message's `request_id` matches the one the client provided in the [`SubscribeBatch`] message,
 /// and `results` contains exactly one entry per received [`SubscribeSet`], in the same order.
 ///
-/// Every applied set's rows are evaluated at a single transaction snapshot.
+/// Every applied set's rows are evaluated at the same transaction offset.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct SubscribeBatchApplied {
