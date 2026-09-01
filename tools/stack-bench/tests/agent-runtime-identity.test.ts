@@ -8,7 +8,8 @@ import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { CODING_CONTAINER_CONTROL_DIR, CODING_CONTAINER_PROCESS_IDENTITY,
   codingContainerAgentCommand, codingContainerAgentEnvironment,
-  codingContainerAgentExecOptions } from '../src/runtime/coding-container-policy.js';
+  codingContainerAgentExecOptions, codingContainerWorkspaceHandoffCommands }
+  from '../src/runtime/coding-container-policy.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY }
   from '../src/stacks/stack-adapters.js';
 import { POSTGRES_APPLICATION_IDENTITY }
@@ -16,6 +17,13 @@ import { POSTGRES_APPLICATION_IDENTITY }
 import { spacetimeBuildContainerPlan } from '../src/stacks/stack-agent-operations.js';
 
 const FORBIDDEN_IDENTITY = /stackbench|stack[-_ ]bench|benchmark|harness|test|grader/i;
+
+test('workspace handoff keeps the agent owner and gives the controller group access', () => {
+  assert.deepEqual(codingContainerWorkspaceHandoffCommands(42), [
+    ['chown', '-R', '10001:42', '/app'],
+    ['chmod', '-R', 'u+rwX,g+rwX,o-rwx', '/app'],
+  ]);
+});
 
 test('the materialized agent runtime uses neutral application identities', () => {
   const track = { ...loadTrack('ecommerce'), slug: 'ecom' };

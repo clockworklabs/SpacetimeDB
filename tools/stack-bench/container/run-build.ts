@@ -23,7 +23,8 @@ import { BUILD_CONTAINER_CREATION_LABEL, containerIdFromDockerOutput,
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
   CODING_CONTAINER_PROCESS_IDENTITY,
-  codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommand }
+  codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommand,
+  codingContainerWorkspaceHandoffCommands }
   from '../src/runtime/coding-container-policy.js';
 import { runTranscriptAwareProcess, snapshotClaudeTranscripts }
   from '../src/agents/claude-terminal-recovery.js';
@@ -635,8 +636,10 @@ try {
       stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
     });
   }
-  const appMode = process.env.STACK_BENCH_APPLIANCE === '1' ? 'u+rwX,g+rwX,o-rwx' : 'a+rwX';
-  spawnSync('docker', ['exec', containerName, 'chmod', '-R', appMode, CODING_CONTAINER_APP_ROOT], {
+  const handoff = process.env.STACK_BENCH_APPLIANCE === '1'
+    ? codingContainerWorkspaceHandoffCommands(CONTROLLER_GID)
+    : [['chmod', '-R', 'a+rwX', CODING_CONTAINER_APP_ROOT]];
+  for (const command of handoff) spawnSync('docker', ['exec', containerName, ...command], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
   spawnSync('docker', ['exec', containerName, 'rm', '-f', processRecord], {

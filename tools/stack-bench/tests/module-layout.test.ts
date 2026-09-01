@@ -173,6 +173,7 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(source, /const CONTROLLER_GID = process\.getgid\?\.\(\) \?\? 0/);
   assert.match(source, /\['chown', \['-R', `\$\{AGENT_UID\}:\$\{CONTROLLER_GID\}`/);
   assert.match(source, /'u\+rwX,g\+rwX,o-rwx'/);
+  assert.match(source, /codingContainerWorkspaceHandoffCommands\(CONTROLLER_GID\)/);
   assert.match(source, /'--bare'/);
   assert.match(source, /'--settings', JSON\.stringify\(\{ permissions: \{ allow: \['Bash'\] \} \}\)/);
   assert.doesNotMatch(source, /'\/root':\s*'rw/);

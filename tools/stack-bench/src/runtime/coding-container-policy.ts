@@ -41,3 +41,10 @@ export function codingContainerAgentCommand(command: string, args: readonly stri
 export function codingContainerTranscriptHandoffCommand(): string[] {
   return ['chmod', '-R', 'a+rX', `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`];
 }
+
+export function codingContainerWorkspaceHandoffCommands(controllerGid: number): string[][] {
+  return [
+    ['chown', '-R', `${CODING_CONTAINER_AGENT.uid}:${controllerGid}`, CODING_CONTAINER_APP_ROOT],
+    ['chmod', '-R', 'u+rwX,g+rwX,o-rwx', CODING_CONTAINER_APP_ROOT],
+  ];
+}

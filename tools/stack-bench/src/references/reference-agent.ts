@@ -10,7 +10,8 @@ import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.js';
 import { fetchStatus } from '../runtime/readiness.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_CONTROL_DIR,
-  codingContainerAgentCommand, codingContainerAgentExecOptions }
+  codingContainerAgentCommand, codingContainerAgentExecOptions,
+  codingContainerWorkspaceHandoffCommands }
   from '../runtime/coding-container-policy.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { requireLeasedDatabase, requireLeasedSpacetime } from '../stacks/backend-reset-guard.js';
@@ -293,7 +294,13 @@ async function main(): Promise<void> {
       });
     }
     throw new Error('unsupported reference adapter');
-  }, () => restoreReferenceSourceIdentity(source.fixture, args.app));
+  }, () => {
+    for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
+      runSync('sharing reference workspace', 'docker', ['exec', containerName, ...command],
+        { encoding: 'utf8', stdio: 'pipe' });
+    }
+    return restoreReferenceSourceIdentity(source.fixture, args.app);
+  });
 
   phase('deployment complete');
   console.log(JSON.stringify({ appDir: args.app, mode: args.mode, level: args.level,
