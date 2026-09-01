@@ -321,6 +321,7 @@ jobs:
         run: |
           cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
+          archive_path="${PWD}/smoketest-support.tar.gz"
           cd "${CARGO_TARGET_DIR}"
           shopt -s nullglob
           precompiled_modules=(wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -329,7 +330,7 @@ jobs:
             exit 1
           fi
 
-          tar -czf "${GITHUB_WORKSPACE}/smoketest-support.tar.gz" \
+          tar -czf "${archive_path}" \
             "debug/ci-smoketests${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
 
