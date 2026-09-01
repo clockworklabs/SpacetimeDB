@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-example",
   "version": "2.0.0",

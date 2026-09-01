@@ -74,7 +74,7 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 ```
 
 Preflight verifies the runner, credentials, images, dependencies, ports,
-network paths, storage, stack access, and required qualification evidence. The
+network paths, storage, and stack access. The
 smoke check uses the real build image and does not call a model.
 
 ## Inspect a campaign

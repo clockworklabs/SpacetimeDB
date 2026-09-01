@@ -414,11 +414,12 @@ export function compileProgressionDefinitionFile(path: string,
 }
 
 function identity(definition: CompiledProgressionDefinition): DefinitionIdentity {
+  const { state: _state, title: _title, ...executable } = definition;
   return canonicalizeDefinition({
     id: definition.id,
     version: definition.version,
     ...(definition.policy ? { policy: definition.policy } : {}),
-    sha256: sha256(canonicalDefinitionJson(definition)),
+    sha256: sha256(canonicalDefinitionJson(executable)),
   }) as unknown as DefinitionIdentity;
 }
 

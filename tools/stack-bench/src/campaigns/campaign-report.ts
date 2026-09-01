@@ -8,14 +8,16 @@ import { inspectCampaign } from './campaign-runner.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
-import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
+import { campaignGradingQualification } from './campaign-compiler.js';
+import type { CampaignAttemptPlan, CampaignGradingQualification,
+  CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExecution, CampaignState } from './campaign-scheduler.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
 import { CAMPAIGN_FILE } from './campaign-path.js';
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
 
-export const CAMPAIGN_REPORT_SCHEMA_VERSION = 4;
+export const CAMPAIGN_REPORT_SCHEMA_VERSION = 5;
 
 interface RunCheck {
   executionId: string;
@@ -168,9 +170,8 @@ export interface CampaignReport {
     track: string;
     levels: number[];
     selection: unknown;
-    bindings: Array<{ level: number; qualification: {
-      status: 'qualified' | 'pending'; reasons: string[];
-    }; [key: string]: unknown }>;
+    bindings: Array<{ level: number; [key: string]: unknown }>;
+    grading: CampaignGradingQualification;
     stacks: Array<{ id: string; [key: string]: unknown }>;
     agents: unknown[];
     conditions: CampaignReportCondition['condition'][];
@@ -503,7 +504,7 @@ export function validateCampaignReport(input: unknown): CampaignReport {
   const report = input as unknown as CampaignReport;
   exactFields(report.campaign, new Set(['id', 'version', 'state', 'sha256', 'title']),
     'campaign report.campaign');
-  exactFields(report.scope, new Set(['track', 'levels', 'selection', 'bindings', 'stacks',
+  exactFields(report.scope, new Set(['track', 'levels', 'selection', 'bindings', 'grading', 'stacks',
     'agents', 'conditions', 'repetitions', 'repetitionsByStack', 'parallelism',
     'runtime', 'pricing']), 'campaign report.scope');
   exactFields(report.policy, new Set(['primaryMetric', 'secondaryMetrics', 'dispersion',
@@ -515,6 +516,8 @@ export function validateCampaignReport(input: unknown): CampaignReport {
     || typeof report.campaign.title !== 'string' || !report.campaign.title
     || typeof report.scope.track !== 'string' || !report.scope.track
     || !Array.isArray(report.scope.levels) || !Array.isArray(report.scope.bindings)
+    || report.scope.bindings.some(binding => !isRecord(binding))
+    || !isRecord(report.scope.grading) || !Array.isArray(report.scope.grading.levels)
     || !Array.isArray(report.scope.stacks) || !Array.isArray(report.scope.agents)
     || !Array.isArray(report.scope.conditions)
     || !Number.isInteger(report.scope.repetitions) || report.scope.repetitions < 1
@@ -526,7 +529,19 @@ export function validateCampaignReport(input: unknown): CampaignReport {
     || !report.scope.pricing || typeof report.scope.pricing !== 'object') {
     throw new Error('campaign report exact scope is invalid');
   }
+  exactFields(report.scope.grading, new Set(['status', 'levels']),
+    'campaign report.scope.grading');
+  if (report.scope.levels.some(level => !Number.isSafeInteger(level) || level < 1)
+    || new Set(report.scope.levels).size !== report.scope.levels.length) {
+    throw new Error('campaign report.scope.levels must contain unique positive integers');
+  }
   const expectedStackIds = report.scope.stacks.map(stack => stack.id).sort();
+  const boundLevels = report.scope.bindings.map(binding => binding.level);
+  const gradingLevels = report.scope.grading.levels.map(level => level.level);
+  if (canonicalDefinitionJson(boundLevels) !== canonicalDefinitionJson(report.scope.levels)
+    || canonicalDefinitionJson(gradingLevels) !== canonicalDefinitionJson(report.scope.levels)) {
+    throw new Error('campaign report scope levels do not match bindings and grading');
+  }
   if (canonicalDefinitionJson(Object.keys(report.scope.repetitionsByStack).sort())
       !== canonicalDefinitionJson(expectedStackIds)
     || Object.values(report.scope.repetitionsByStack)
@@ -571,18 +586,28 @@ export function validateCampaignReport(input: unknown): CampaignReport {
       }
     }
   }
-  for (const [index, binding] of report.scope.bindings.entries()) {
-    const at = `campaign report.scope.bindings[${index}].qualification`;
-    if (!Number.isSafeInteger(binding.level) || !isRecord(binding.qualification)
-      || !['qualified', 'pending'].includes(String(binding.qualification.status))
-      || !Array.isArray(binding.qualification.reasons)
-      || binding.qualification.reasons.some(reason => typeof reason !== 'string' || !reason)
-      || (binding.qualification.status === 'qualified'
-        && binding.qualification.reasons.length > 0)
-      || (binding.qualification.status === 'pending'
-        && binding.qualification.reasons.length === 0)) {
+  if (!['qualified', 'pending'].includes(report.scope.grading.status)
+    || !Array.isArray(report.scope.grading.levels)
+    || report.scope.grading.levels.length !== report.scope.levels.length) {
+    throw new Error('campaign report.scope.grading is invalid');
+  }
+  for (const [index, level] of report.scope.grading.levels.entries()) {
+    const at = `campaign report.scope.grading.levels[${index}]`;
+    exactFields(level, new Set(['level', 'status', 'reasons', 'evidenceSha256']), at);
+    if (!Number.isSafeInteger(level.level)
+      || !['qualified', 'pending'].includes(level.status)
+      || !Array.isArray(level.reasons)
+      || level.reasons.some(reason => typeof reason !== 'string' || !reason)
+      || (level.evidenceSha256 !== null && !/^[a-f0-9]{64}$/.test(level.evidenceSha256))
+      || (level.status === 'qualified' && level.reasons.length > 0)
+      || (level.status === 'pending' && level.reasons.length === 0)) {
       throw new Error(`${at} is invalid`);
     }
+  }
+  const expectedGradingStatus = report.scope.grading.levels.some(level => level.status === 'pending')
+    ? 'pending' : 'qualified';
+  if (report.scope.grading.status !== expectedGradingStatus) {
+    throw new Error('campaign report.scope.grading status does not match its levels');
   }
   for (const [index, attempt] of report.attempts.entries()) {
     if (!isRecord(attempt) || typeof attempt.id !== 'string' || !attempt.id
@@ -651,14 +676,13 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
         ? latest.firstBuildObservations : null });
   }
   const conditions = reportConditions(rows, plan.definition.analysis);
-  const qualificationPending = plan.bindings.some(binding =>
-    binding.qualification.status === 'pending');
+  const grading = campaignGradingQualification(plan);
   const body = canonicalizeDefinition({
     reportSchemaVersion: CAMPAIGN_REPORT_SCHEMA_VERSION,
     campaign: { id: plan.id, version: plan.version, state: plan.state,
       sha256: plan.contentSha256, title: plan.title },
     scope: { track: plan.definition.track, levels: plan.definition.levels,
-      selection: plan.definition.selection, bindings: plan.bindings, stacks: plan.stacks,
+      selection: plan.definition.selection, bindings: plan.bindings, grading, stacks: plan.stacks,
       conditions: plan.conditions,
       agents: plan.agents, repetitions: plan.definition.repetitions,
       repetitionsByStack: plan.summary.repetitionsByStack,
@@ -669,7 +693,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     conditions,
     summary: reportSummary(rows, state.status),
     limitations: [
-      ...(qualificationPending
+      ...(grading.status === 'pending'
         ? ['Grading qualification is pending. Treat these scores as provisional.'] : []),
       'Statistics describe only the exact scope and conditions recorded above.',
       'Score rates use measurable points; read them with coverage and the typed execution outcome.',
@@ -733,8 +757,7 @@ export function renderCampaignHtml(report: CampaignReport,
       + `<br><small>${escape(formatRate(condition.firstBuildObservations.metrics.coverageRate.center))} coverage</small></td></tr>`)
     .join('');
   const observationSection = observationRows ? `<h2>Additional first-build measurements</h2><p>These checks record selected behavior in the original build. They are shown separately, add no points to the score, and do not enter repair feedback.</p><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Run setup</th><th>Measured</th><th>Pass rate</th></tr></thead><tbody>${observationRows}</tbody></table>` : '';
-  const qualificationWarning = report.scope.bindings.some(binding =>
-    binding.qualification.status === 'pending')
+  const qualificationWarning = report.scope.grading.status === 'pending'
     ? '<div class="warn"><strong>Provisional scores.</strong> Grading qualification is pending.</div>'
     : '';
   return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p>${qualificationWarning}<p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -ARTIFACT_FILE.run.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;

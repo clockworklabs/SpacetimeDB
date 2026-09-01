@@ -10,7 +10,7 @@ import { sha256 } from '../evidence/provenance.js';
 import { PRICING_RATE_FIELDS, PRICING_UNIT, validatePricingRates }
   from '../evidence/pricing-authority.js';
 import type { PricingRates } from '../evidence/pricing-authority.js';
-import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.js';
+import { resolveRecipeRelease } from '../composition/recipe-release.js';
 import type { RecipeRelease } from '../composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest,
   isModularRecipeTaskRequest } from '../composition/recipe-selection.js';
@@ -137,7 +137,6 @@ interface Identity {
 interface RecipeIdentity extends UnknownRecord {
   id: string;
   version: string;
-  state: string;
   contentSha256: string;
   meaningSha256: string;
   executionSha256: string;
@@ -145,13 +144,12 @@ interface RecipeIdentity extends UnknownRecord {
 
 interface PublicBinding extends UnknownRecord {
   level: number;
-  qualification: { status: 'qualified' | 'pending'; reasons: string[] };
-  promotion: { alias: string; status: string; catalog?: unknown };
+  alias: string;
   recipe: RecipeIdentity;
-  fixture: UnknownRecord & { state: string };
-  calibration: (Identity & { state: string; buildImage: string | null }) | null;
-  qualifiedStacks: Array<{ id: string; status: string }>;
+  fixture: { id: string; version: string };
+  calibration: Identity | null;
   selection: {
+    schemaVersion: number;
     sha256: string;
     completeness: string;
     scoredPoints: number;
@@ -181,6 +179,7 @@ interface ResolvedCalibration {
   version: string;
   state: string;
   contentSha256: string;
+  qualificationSha256: string;
   qualification: {
     buildImage?: string;
     stacks: Array<{ id: string; status: string }>;
@@ -204,11 +203,22 @@ interface ResolvedAgent extends CampaignAgentSelection, UnknownRecord {
 
 interface CampaignResolvedInputs {
   bindings: PublicBinding[];
+  grading: CampaignGradingQualification;
   stacks: ResolvedStackIdentity[];
   agents: ResolvedAgent[];
   conditions: ResolvedStudyCondition[];
   featureCatalog: FeatureCatalogInput | null;
   dependencyPolicy: DependencyPolicyInput | null;
+}
+
+export interface CampaignGradingQualification {
+  status: 'qualified' | 'pending';
+  levels: Array<{
+    level: number;
+    status: 'qualified' | 'pending';
+    reasons: string[];
+    evidenceSha256: string | null;
+  }>;
 }
 
 export interface CampaignAttemptPlan extends UnknownRecord {
@@ -311,7 +321,7 @@ interface ValidationOptions {
   recipeResolver?: RecipeResolver;
 }
 
-export const CAMPAIGN_SCHEMA_VERSION = 5;
+export const CAMPAIGN_SCHEMA_VERSION = 6;
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
@@ -647,8 +657,7 @@ function identityForStack(adapter: StackAdapterIdentity): ResolvedStackIdentity 
 }
 
 function calibrationIdentity(value: ResolvedCalibration | null): PublicBinding['calibration'] {
-  return value ? { id: value.id, version: value.version, sha256: value.contentSha256,
-    state: value.state, buildImage: value.qualification?.buildImage ?? null } : null;
+  return value ? { id: value.id, version: value.version, sha256: value.qualificationSha256 } : null;
 }
 
 function imageContentDigest(value: string | null): string | null {
@@ -660,9 +669,58 @@ function campaignIdentityDocument(definition: CampaignDefinition, engine: Identi
   bindings: PublicBinding[], stacks: ResolvedStackIdentity[], agents: CompiledCampaignPlan['agents'],
   conditions: ResolvedStudyCondition[]): unknown {
   return canonicalizeDefinition({ campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
-    definition, engine, ...(featureCatalog ? { featureCatalog } : {}),
+    definition, engine, ...(featureCatalog ? { featureCatalog: featureCatalog.identity } : {}),
     ...(dependencyPolicy ? { dependencyPolicy } : {}),
     bindings, stacks, agents, conditions });
+}
+
+function validatePublicBinding(input: unknown, expectedLevel: number, index: number): void {
+  const at = `compiled campaign bindings[${index}]`;
+  strict(input, at, new Set(['level', 'alias', 'recipe', 'fixture', 'calibration',
+    'selection', 'task']));
+  if (input.level !== expectedLevel || typeof input.alias !== 'string' || !input.alias) {
+    throw new Error(`${at} has an invalid level or alias`);
+  }
+  const recipe = input.recipe;
+  strict(recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
+    'meaningSha256', 'executionSha256']));
+  if (!ID.test(String(recipe.id)) || !isExactSemanticVersion(recipe.version)
+    || ['contentSha256', 'meaningSha256', 'executionSha256']
+      .some(field => !HASH.test(String(recipe[field])))) {
+    throw new Error(`${at}.recipe is invalid`);
+  }
+  strict(input.fixture, `${at}.fixture`, new Set(['id', 'version']));
+  if (!ID.test(String(input.fixture.id)) || !isExactSemanticVersion(input.fixture.version)) {
+    throw new Error(`${at}.fixture is invalid`);
+  }
+  if (input.calibration !== null) {
+    strict(input.calibration, `${at}.calibration`, new Set(['id', 'version', 'sha256']));
+    if (!ID.test(String(input.calibration.id))
+      || !isExactSemanticVersion(input.calibration.version)
+      || !HASH.test(String(input.calibration.sha256))) {
+      throw new Error(`${at}.calibration is invalid`);
+    }
+  }
+  if (input.selection !== null) {
+    strict(input.selection, `${at}.selection`, new Set(['schemaVersion', 'sha256', 'completeness',
+      'scoredPoints', 'taskPacks', 'requested']));
+    if (!Number.isSafeInteger(input.selection.schemaVersion)
+      || !HASH.test(String(input.selection.sha256))
+      || !Number.isSafeInteger(input.selection.scoredPoints)
+      || !Array.isArray(input.selection.taskPacks)) {
+      throw new Error(`${at}.selection is invalid`);
+    }
+  }
+  const task = input.task;
+  if (task !== null) {
+    strict(task, `${at}.task`, new Set(['sha256', 'requirementSha256', 'contractSha256',
+      'requirementIds', 'contractIds']));
+    if (['sha256', 'requirementSha256', 'contractSha256']
+      .some(field => !HASH.test(String(task[field])))
+      || !Array.isArray(task.requirementIds) || !Array.isArray(task.contractIds)) {
+      throw new Error(`${at}.task is invalid`);
+    }
+  }
 }
 
 function expandAttempts(definition: CampaignDefinition, requestedLevels: number[],
@@ -751,13 +809,25 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     });
     const publicBinding: PublicBinding = {
       level,
-      qualification: { status: 'pending', reasons: [] },
-      promotion: { alias: binding.alias, status: binding.status, catalog: binding.catalog },
-      recipe: recipeReleaseIdentity(binding.release),
-      fixture: binding.release.components.fixture,
+      alias: binding.alias,
+      recipe: {
+        id: binding.release.id,
+        version: binding.release.version,
+        contentSha256: binding.release.contentSha256,
+        meaningSha256: binding.release.meaningSha256,
+        executionSha256: binding.release.executionSha256,
+      },
+      fixture: { id: binding.release.components.fixture.id,
+        version: binding.release.components.fixture.version },
       calibration: calibrationIdentity(calibration),
-      qualifiedStacks: calibration?.qualification.stacks ?? [],
-      selection: selectedTask?.selection ?? null,
+      selection: selectedTask ? {
+        schemaVersion: selectedTask.selection.schemaVersion,
+        sha256: selectedTask.selection.sha256,
+        completeness: selectedTask.selection.completeness,
+        scoredPoints: selectedTask.selection.scoredPoints,
+        taskPacks: selectedTask.selection.taskPacks,
+        requested: selectedTask.selection.requested,
+      } : null,
       task: selectedTask ? {
         sha256: selectedTask.task.sha256,
         requirementSha256: selectedTask.task.requirementSha256,
@@ -788,34 +858,40 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
       [record.level, resolveProgressionRecipeLevelSelection(record.binding,
         featureCatalog, record.level, { cumulative: definition.mode.id === 'dependency' })]));
   }
-  for (const record of bindingRecords) {
-    const binding = record.publicBinding;
+  const gradingLevels: CampaignGradingQualification['levels'] = bindingRecords.map(record => {
     const reasons: string[] = [];
     const selected = progressionSelections?.get(record.level)?.grader.checkKeys ?? [];
     const qualifiedChecks = new Set(record.calibration?.qualification.checks
       ?? record.binding.release.checkCatalog.map(check => check.stableKey));
     const missingChecks = selected.filter(check => !qualifiedChecks.has(check));
     if (missingChecks.length > 0) reasons.push(`calibration does not cover ${missingChecks.length} selected checks`);
-    if (binding.recipe.state !== 'qualified') reasons.push('recipe is not qualified');
-    if (binding.promotion.status !== 'promoted') reasons.push('recipe is not promoted');
-    if (binding.fixture.state !== 'qualified') reasons.push('fixture is not qualified');
-    if (binding.calibration?.state !== 'qualified') reasons.push('calibration is not qualified');
-    const supported = new Map(binding.qualifiedStacks.map(stack => [stack.id, stack.status]));
+    if (record.binding.release.state !== 'qualified') reasons.push('recipe is not qualified');
+    if (record.binding.status !== 'promoted') reasons.push('recipe is not promoted');
+    if (record.binding.release.components.fixture.state !== 'qualified') reasons.push('fixture is not qualified');
+    if (record.calibration?.state !== 'qualified') reasons.push('calibration is not qualified');
+    const supported = new Map((record.calibration?.qualification.stacks ?? [])
+      .map(stack => [stack.id, stack.status]));
     for (const stack of definition.stacks) {
       if (supported.get(stack.id) !== 'qualified') reasons.push(`${stack.id} is not qualified`);
     }
-    const qualifiedImage = binding.calibration?.buildImage;
+    const qualifiedImage = record.calibration?.qualification.buildImage;
     if (!qualifiedImage || imageContentDigest(definition.runtime.buildImage) !== qualifiedImage) {
       reasons.push('build image does not match qualification evidence');
     }
     if (record.qualificationStaleness.length > 0) {
       reasons.push(`${record.qualificationStaleness.length} qualification artifacts are stale`);
     }
-    binding.qualification = {
+    return {
+      level: record.level,
       status: reasons.length === 0 ? 'qualified' : 'pending',
       reasons,
+      evidenceSha256: record.calibration?.contentSha256 ?? null,
     };
-  }
+  });
+  const grading: CampaignGradingQualification = {
+    status: gradingLevels.some(level => level.status === 'pending') ? 'pending' : 'qualified',
+    levels: gradingLevels,
+  };
 
   const stacks = definition.stacks.map(selection => {
     const adapter = STACK_ADAPTER_REGISTRY.get(selection.id);
@@ -834,14 +910,8 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
   }
   const packRequested = modularLevels.size ? null : { track: definition.track, levels: bindings.map(binding => ({
     level: binding.level,
-    recipe: {
-      id: binding.recipe.id, version: binding.recipe.version,
-      contentSha256: binding.recipe.contentSha256,
-      meaningSha256: binding.recipe.meaningSha256,
-      executionSha256: binding.recipe.executionSha256,
-      state: binding.recipe.state,
-    },
-      selection: {
+    recipe: binding.recipe,
+    selection: {
       sha256: binding.selection!.sha256,
       completeness: binding.selection!.completeness,
       scoredPoints: binding.selection!.scoredPoints,
@@ -890,13 +960,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
       const taskMode = requestedTaskMode(modular.request);
       return {
         level: record.level,
-        recipe: {
-          id: record.publicBinding.recipe.id, version: record.publicBinding.recipe.version,
-          contentSha256: record.publicBinding.recipe.contentSha256,
-          meaningSha256: record.publicBinding.recipe.meaningSha256,
-          executionSha256: record.publicBinding.recipe.executionSha256,
-          state: record.publicBinding.recipe.state,
-        },
+        recipe: record.publicBinding.recipe,
         selection: {
           schemaVersion: 3,
           sha256: modular.selection.sha256,
@@ -932,7 +996,30 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
   const dependencyPolicy = definition.mode.id === 'dependency'
     ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog!,
       definition.levels, undefined, definition.mode.repairSelection) : null;
-  return { bindings, stacks, agents, conditions, featureCatalog, dependencyPolicy };
+  return { bindings, grading, stacks, agents, conditions, featureCatalog, dependencyPolicy };
+}
+
+export function campaignGradingQualification(plan: CompiledCampaignPlan,
+  options: CompilerOptions = {}): CampaignGradingQualification {
+  try {
+    const definition = validateCampaignDefinition({ ...plan.definition,
+      ...(plan.featureCatalog ? { featureCatalog: plan.featureCatalog.definition } : {}) },
+    { source: 'compiled campaign definition' });
+    const current = resolveCampaignInputs(definition, options);
+    if (canonicalDefinitionJson(plan.bindings) !== canonicalDefinitionJson(current.bindings)
+      || canonicalDefinitionJson(plan.featureCatalog?.identity ?? null)
+        !== canonicalDefinitionJson(current.featureCatalog?.identity ?? null)
+      || canonicalDefinitionJson(plan.dependencyPolicy?.identity ?? null)
+        !== canonicalDefinitionJson(current.dependencyPolicy?.identity ?? null)) {
+      throw new Error('grading inputs differ from the campaign');
+    }
+    return current.grading;
+  } catch (error) {
+    const reason = `qualification unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    return { status: 'pending', levels: plan.definition.levels.map(level => ({
+      level, status: 'pending', reasons: [reason], evidenceSha256: null,
+    })) };
+  }
 }
 
 export function compileCampaignFile(path: string, {
@@ -1029,17 +1116,23 @@ export function validateCompiledCampaignPlan(input: unknown, {
     || !Array.isArray(plan.conditions) || plan.conditions.length !== definition.conditions.length) {
     throw new Error('compiled campaign resolved inputs are incomplete');
   }
+  plan.bindings.forEach((binding, index) => validatePublicBinding(binding,
+    definition.levels[index]!, index));
   if (requireCurrentInputs) {
     const currentEngine = currentEngineIdentity();
     if (canonicalDefinitionJson(plan.identities.engine) !== canonicalDefinitionJson(currentEngine)) {
       throw new Error('compiled campaign engine identity does not match this executable');
     }
     const resolved = resolveCampaignInputs(definition, { calibrationResolver, recipeResolver });
-    for (const field of ['bindings', 'stacks', 'agents', 'conditions', 'featureCatalog',
+    for (const field of ['bindings', 'stacks', 'agents', 'conditions',
       'dependencyPolicy'] as const) {
       if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
         throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
       }
+    }
+    if (canonicalDefinitionJson(featureCatalog?.identity ?? null)
+      !== canonicalDefinitionJson(resolved.featureCatalog?.identity ?? null)) {
+      throw new Error('compiled campaign featureCatalog does not match current resolved inputs');
     }
   }
   const expectedSha256 = sha256(canonicalDefinitionJson(campaignIdentityDocument(

@@ -14,6 +14,8 @@ import { claimNextAttempt, classifyCampaignExecution, createCampaignState, finis
 import type { CampaignClaim, CampaignState } from '../src/campaigns/campaign-scheduler.js';
 
 const example = join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json');
+const dependencyExample = join(STACK_BENCH_ROOT, 'appliance',
+  'campaign.ecommerce-progression-reference.json');
 const plan = () => compileCampaignFile(example);
 const prepared = () => createCampaignState(plan(), { now: '2026-08-12T00:00:00.000Z' });
 
@@ -294,6 +296,21 @@ test('campaign directory initialization is identity-bound and resumes exact stat
     assert.equal(initializeCampaignDirectory(campaign, root).state.summary.running, 1);
     assert.throws(() => initializeCampaignDirectory({ ...campaign, contentSha256: 'a'.repeat(64) }, root),
       /content identity/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('campaign resume ignores feature catalog root governance text', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-catalog-governance-'));
+  try {
+    const campaign = compileCampaignFile(dependencyExample);
+    initializeCampaignDirectory(campaign, root);
+    const renamed = structuredClone(campaign);
+    assert(renamed.featureCatalog);
+    renamed.featureCatalog.definition.state = 'qualified';
+    renamed.featureCatalog.definition.title += ' renamed';
+
+    assert.equal(initializeCampaignDirectory(renamed, root).plan.contentSha256,
+      campaign.contentSha256);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

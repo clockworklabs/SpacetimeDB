@@ -47,15 +47,16 @@ An operator, human or agent, uses one loop:
    command flags.
 2. **Validate.** Compile it and inspect the exact attempts, stacks, model,
    prompt policy, checks, points, budgets, images, and parallelism.
-3. **Admit.** Prove credentials, images, ports, resource capacity, stack access,
-   and required qualification evidence before model work starts.
+3. **Admit.** Prove credentials, images, ports, resource capacity, and stack
+   access before model work starts.
 4. **Run.** Start or resume the exact stored plan. A paid action is always
    explicit.
 5. **Observe.** Read durable campaign state first. Open logs only to diagnose a
    live phase or failure.
 6. **Decide.** Continue only through a legal state transition. Never hide an
    invalid attempt or retry it automatically.
-7. **Report.** Generate the comparison only from verified retained evidence.
+7. **Report.** Generate the result from retained run evidence. Publish it as
+   verified comparison data only when grading qualification is complete.
 8. **Clean.** Remove temporary owned resources. Keep the campaign package.
 
 The CLI and dashboard use the same compiler, scheduler, state reader, and run

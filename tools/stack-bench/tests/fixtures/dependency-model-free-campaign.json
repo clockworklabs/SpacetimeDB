@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "kind": "campaign-manifest",
   "id": "dependency-model-free-proof",
   "version": "1.0.0",

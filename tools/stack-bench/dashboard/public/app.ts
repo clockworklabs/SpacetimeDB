@@ -418,6 +418,8 @@ function nowCard(campaign: Campaign): string {
         · <span class="mono">${money(burn)}${ceiling ? ` / ${money(ceiling)}` : ''}</span>
         · ${escapeHtml(elapsedTime(campaign.createdAt))}</div>
     </header>
+    ${campaign.facts?.grading?.status === 'pending'
+    ? '<p class="grading-note">Provisional scores. Grading qualification is pending.</p>' : ''}
     <div class="lanes">${attempts.map(nowLane).join('')}</div>
     ${nowEvents(campaign)}
   </article>`;
@@ -470,6 +472,7 @@ function renderVerdict(): void {
   if (!overview) return;
   const latest = overview.campaigns.filter(readableCampaign)
     .filter(campaign => campaign.status === 'completed')
+    .filter(campaign => campaign.facts?.grading?.status === 'qualified')
     .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')))
     .find(campaign => compareCampaign(campaign).usable.length);
   const zone = $('#verdict-zone');
@@ -595,6 +598,8 @@ function attemptRows(campaign: Campaign): string {
     </tr>`;
   }).join('');
   return `<td colspan="3"><table class="attempt-grid">
+    ${campaign.facts?.grading?.status === 'pending'
+    ? '<caption class="grading-note">Provisional scores. Grading qualification is pending.</caption>' : ''}
     <thead><tr><th scope="col">Attempt</th><th scope="col">State</th>
       ${dependency ? '' : '<th class="num" scope="col">Level</th>'}<th class="num" scope="col">Initial result</th>
       <th class="num" scope="col">Final score</th><th class="num" scope="col">Repairs</th>

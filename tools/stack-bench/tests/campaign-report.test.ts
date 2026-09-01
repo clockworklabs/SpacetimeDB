@@ -100,6 +100,9 @@ test('report read model keeps invalid evidence separate and computes declared di
   assert.equal(condition.metrics.totalCostUsd?.center, 2);
   assert.equal(condition.sample.invalidExecutionRate, 0.5);
   assert.deepEqual(report.scope.bindings, plan.bindings);
+  assert.equal(report.scope.grading.status, 'pending');
+  assert.match(report.scope.grading.levels[0]!.evidenceSha256 ?? '', /^[a-f0-9]{64}$/);
+  assert.equal(Object.hasOwn(report.scope.bindings[0]!, 'qualification'), false);
   assert(report.limitations.some(item => /qualification is pending/.test(item)));
   assert.deepEqual(report.scope.runtime, plan.definition.runtime);
   assert.deepEqual(report.scope.pricing, plan.definition.pricing);

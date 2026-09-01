@@ -9,7 +9,7 @@ import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
-import { campaignProgressionOwner } from './campaign-compiler.js';
+import { campaignGradingQualification, campaignProgressionOwner } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
 import { validateCampaignRun } from './campaign-run-validation.js';
@@ -132,13 +132,9 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
 
 export function campaignFacts(plan: CompiledCampaignPlan) {
   const requested = plan.attempts[0]?.condition.requested.levels;
-  const gradingPending = plan.bindings.some(binding =>
-    binding.qualification.status === 'pending');
   return {
     mode: plan.definition.mode?.id ?? 'sequential',
-    grading: {
-      status: gradingPending ? 'pending' : 'qualified',
-    },
+    grading: campaignGradingQualification(plan),
     agents: plan.agents.map(agent => ({
       adapter: agent.adapter,
       version: agent.adapterVersion,

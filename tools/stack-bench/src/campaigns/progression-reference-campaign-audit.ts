@@ -1,7 +1,6 @@
 import { relative, resolve, sep } from 'node:path';
 
-import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { recipeReleaseIdentity, resolveRecipeRelease }
+import { resolveRecipeRelease }
   from '../composition/recipe-release.js';
 import type { RecipeBinding, RecipeRelease } from '../composition/recipe-release.js';
 import { loadTrack } from '../composition/tracks.js';
@@ -118,8 +117,7 @@ function exactRecipeBindings(plan: CompiledCampaignPlan,
   for (const planned of plan.bindings) {
     const reference = `${planned.recipe.id}@${planned.recipe.version}`;
     const binding = resolveRelease(track, planned.level, reference);
-    if (!binding || canonicalDefinitionJson(recipeReleaseIdentity(binding.release))
-      !== canonicalDefinitionJson(planned.recipe)) {
+    if (!binding || binding.release.contentSha256 !== planned.recipe.contentSha256) {
       throw new Error(`reference audit recipe binding for L${planned.level} changed after planning`);
     }
     if (release !== null && (binding.release.id !== release.id

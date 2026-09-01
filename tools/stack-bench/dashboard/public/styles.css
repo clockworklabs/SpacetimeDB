@@ -226,6 +226,8 @@ main > .zone-label:first-child { margin-top: 0; }
 .now-card > header button:hover { color: var(--green); }
 .now-card > header i.mono { margin-left: 10px; color: var(--muted); font: 11.5px var(--font-source); font-style: normal; }
 .now-figs { color: var(--copy); font: 12.5px var(--font-source); white-space: nowrap; }
+.grading-note { margin: 10px 0 0; color: var(--yellow); font: 11.7px var(--font-source); text-align: left; }
+caption.grading-note { padding: 4px var(--row-x); }
 
 .lanes { display: grid; gap: 9px; margin-top: 12px; }
 .lane { display: grid; grid-template-columns: 118px minmax(0, 1fr) 128px; gap: 12px; align-items: center; }

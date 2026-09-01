@@ -124,6 +124,7 @@ test('campaign facts surface the identity an operator otherwise reads plan.json 
     buildImage: plan.definition.runtime.buildImage,
   });
   assert.equal(facts.grading.status, 'pending');
+  assert.equal(Object.hasOwn(plan.bindings[0]!, 'qualification'), false);
 });
 
 test('dashboard reports dependency work from the validated persisted state', t => {

@@ -105,7 +105,7 @@ interface RequestedSelection extends UnknownRecord {
 
 interface RequestedLevel extends UnknownRecord {
   level: number;
-  recipe: { id: string; version: string; state: 'draft' | 'qualified'; contentSha256: string;
+  recipe: { id: string; version: string; contentSha256: string;
     meaningSha256: string; executionSha256: string };
   selection: RequestedSelection;
   task: UnknownRecord & { mode?: 'fresh' | 'upgrade'; sha256: string;
@@ -380,9 +380,8 @@ function validateRequestedScope(input: unknown): RequestedScope {
     strict(entry, at, new Set(['level', 'recipe', 'selection', 'task']));
     if (!Number.isSafeInteger(entry.level) || entry.level < 1) fail(`${at}.level`, 'must be positive');
     strict(entry.recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
-      'meaningSha256', 'executionSha256', 'state']));
+      'meaningSha256', 'executionSha256']));
     if (!ID.test(entry.recipe.id) || !isExactSemanticVersion(entry.recipe.version)
-      || !['draft', 'qualified'].includes(entry.recipe.state)
       || (['contentSha256', 'meaningSha256', 'executionSha256'] as const)
         .some(field => !HASH.test(entry.recipe[field]))) {
       fail(`${at}.recipe`, 'has an invalid identity');

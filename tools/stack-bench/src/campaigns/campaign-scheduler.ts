@@ -542,7 +542,7 @@ export function initializeCampaignDirectory(input: unknown, directory: string,
   if (existsSync(target.plan)) {
     const existingPlan = validateCompiledCampaignPlan(
       readArtifact(target.plan, { expectedKind: 'campaign_plan' }).payload);
-    if (canonicalDefinitionJson(existingPlan) !== canonicalDefinitionJson(plan)) {
+    if (existingPlan.contentSha256 !== plan.contentSha256) {
       throw new Error('campaign directory belongs to a different campaign identity');
     }
     if (!existsSync(target.state)) {

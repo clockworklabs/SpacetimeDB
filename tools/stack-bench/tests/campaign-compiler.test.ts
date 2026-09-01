@@ -5,8 +5,9 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
-  validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
+import { CAMPAIGN_SCHEMA_VERSION, campaignGradingQualification, campaignIdentity,
+  compileCampaignFile, validateCampaignDefinition, validateCompiledCampaignPlan }
+  from '../src/campaigns/campaign-compiler.js';
 import type { CalibrationResolver, CompilerOptions, RecipeResolver }
   from '../src/campaigns/campaign-compiler.js';
 import { runCampaignAdmission } from '../src/campaigns/campaign-admission.js';
@@ -63,7 +64,7 @@ interface TestCampaignDefinition {
 
 function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampaignDefinition {
   return {
-    schemaVersion: 5,
+    schemaVersion: CAMPAIGN_SCHEMA_VERSION,
     kind: 'campaign-manifest',
     id: 'ecommerce-l1-comparison',
     version: '1.0.0',
@@ -119,6 +120,10 @@ const resolvedQualification: CalibrationResolver = release => {
     state: 'qualified',
     contentSha256: sha256(canonicalDefinitionJson({
       kind: 'resolved-test-calibration',
+      recipe: { id: release.id, version: release.version, sha256: release.contentSha256 },
+    })),
+    qualificationSha256: sha256(canonicalDefinitionJson({
+      kind: 'resolved-test-qualification',
       recipe: { id: release.id, version: release.version, sha256: release.contentSha256 },
     })),
     qualification: {
@@ -280,11 +285,25 @@ test('dependency campaign plans bind only the selected feature catalog levels', 
     plan.featureCatalog!.definition.nodes.some(node => node.id === nodeId))));
   assert.equal(plan.featureCatalog.definition.state, 'draft');
   assert.deepEqual(plan.dependencyPolicy.definition.levels, [1, 2, 3]);
-  assert.equal(plan.featureCatalog.identity.sha256,
-    sha256(canonicalDefinitionJson(plan.featureCatalog.definition)));
   assert(plan.attempts.every(attempt => canonicalDefinitionJson(attempt.featureCatalog)
     === canonicalDefinitionJson(plan.featureCatalog!.identity)));
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
+});
+
+test('campaign identity ignores feature catalog root governance text', () => {
+  const value = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
+    'campaign.ecommerce-progression-reference.json'), 'utf8'));
+  value.levels = [1, 2, 3];
+  value.selection.levels = value.selection.levels.filter((entry: { level: number }) => entry.level <= 3);
+  const plan = compile(value);
+  assert(plan.featureCatalog);
+  const renamed = structuredClone(plan);
+  assert(renamed.featureCatalog);
+  renamed.featureCatalog.definition.state = 'qualified';
+  renamed.featureCatalog.definition.title += ' renamed';
+
+  assert.deepEqual(campaignIdentity(renamed), campaignIdentity(plan));
+  assert.deepEqual(validateCompiledCampaignPlan(renamed), renamed);
 });
 
 test('campaign graph version must match its recipe calibration', () => {
@@ -640,14 +659,9 @@ test('frozen campaigns require exact runtime images', () => {
 });
 
 test('frozen campaigns accept a resolved qualification result for every selected level', () => {
-  const qualifiedBuildImages = new Set(compile(multiLevelDefinition([1, 2]),
-    qualifiedCompilerOptions).bindings
-    .map(binding => binding.calibration!.buildImage));
-  assert.equal(qualifiedBuildImages.size, 1);
-  const [qualifiedBuildImage] = qualifiedBuildImages;
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
-    buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
+    buildImage: `registry.example/stack-bench-build@${QUALIFIED_BUILD_IMAGE}`,
     platform: 'linux/amd64' };
   const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.17.2',
     model: 'claude-sonnet-5' }];
@@ -673,9 +687,51 @@ test('frozen campaigns record a build image that has not been qualified', () => 
   const frozen = definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
   const compiled = compile(frozen, qualifiedCompilerOptions);
-  assert.equal(compiled.bindings[0]!.qualification.status, 'pending');
-  assert(compiled.bindings[0]!.qualification.reasons
+  const grading = campaignGradingQualification(compiled, qualifiedCompilerOptions);
+  assert.equal(grading.levels[0]!.status, 'pending');
+  assert(grading.levels[0]!.reasons
     .includes('build image does not match qualification evidence'));
+});
+
+test('campaign identity ignores grading qualification state', () => {
+  const value = modularDefinition();
+  value.runtime.buildImage = `registry.example/stack-bench-build@${QUALIFIED_BUILD_IMAGE}`;
+  const pendingCalibration: CalibrationResolver = (release, options) => {
+    const calibration = resolvedQualification(release, options);
+    assert(calibration);
+    return { ...calibration, state: 'draft', contentSha256: 'e'.repeat(64),
+      qualification: { ...calibration.qualification,
+        stacks: calibration.qualification.stacks.map(stack => ({ ...stack, status: 'candidate' })) } };
+  };
+  const candidateRecipe: RecipeResolver = (track, level, reference) => {
+    const binding = resolveRecipeRelease(track, level, reference);
+    return binding ? { ...binding, status: 'candidate',
+      release: { ...binding.release, state: 'draft' } } : null;
+  };
+  const pendingOptions = { calibrationResolver: pendingCalibration, recipeResolver: candidateRecipe };
+  const pending = compile(value, pendingOptions);
+  const qualified = compile(value, qualifiedCompilerOptions);
+
+  assert.equal(pending.contentSha256, qualified.contentSha256);
+  assert.deepEqual(pending.bindings, qualified.bindings);
+  assert.deepEqual(pending.conditions, qualified.conditions);
+  assert.equal(campaignGradingQualification(pending, pendingOptions).status, 'pending');
+  assert.equal(campaignGradingQualification(qualified, qualifiedCompilerOptions).status, 'qualified');
+  assert.deepEqual(validateCompiledCampaignPlan(pending, qualifiedCompilerOptions), pending);
+
+  const changedScope: CalibrationResolver = (release, options) => {
+    const calibration = resolvedQualification(release, options);
+    assert(calibration);
+    return { ...calibration, qualificationSha256: 'f'.repeat(64) };
+  };
+  assert.throws(() => validateCompiledCampaignPlan(pending, {
+    calibrationResolver: changedScope, recipeResolver: qualifiedCompilerOptions.recipeResolver,
+  }), /bindings.*current resolved inputs/);
+  const unavailable = campaignGradingQualification(pending, {
+    calibrationResolver: () => null, recipeResolver: candidateRecipe,
+  });
+  assert.equal(unavailable.status, 'pending');
+  assert.match(unavailable.levels[0]!.reasons[0]!, /qualification unavailable/);
 });
 
 test('frozen dependency campaigns record incomplete calibration coverage', () => {
@@ -696,8 +752,10 @@ test('frozen dependency campaigns record incomplete calibration coverage', () =>
   };
   const incomplete = compile(value, { calibrationResolver,
     recipeResolver: promotedRecipe });
-  assert.equal(incomplete.bindings[0]!.qualification.status, 'pending');
-  assert(incomplete.bindings[0]!.qualification.reasons
+  const incompleteGrading = campaignGradingQualification(incomplete, { calibrationResolver,
+    recipeResolver: promotedRecipe });
+  assert.equal(incompleteGrading.levels[0]!.status, 'pending');
+  assert(incompleteGrading.levels[0]!.reasons
     .includes('calibration does not cover 1 selected checks'));
 
   const coveredResolver: CalibrationResolver = (release, options) => {
@@ -709,15 +767,14 @@ test('frozen dependency campaigns record incomplete calibration coverage', () =>
   const covered = compile(value, { calibrationResolver: coveredResolver,
     recipeResolver: promotedRecipe });
   assert.equal(covered.state, 'frozen');
-  assert.equal(covered.bindings[0]!.qualification.status, 'qualified');
+  assert.equal(campaignGradingQualification(covered, { calibrationResolver: coveredResolver,
+    recipeResolver: promotedRecipe }).levels[0]!.status, 'qualified');
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {
-  const qualifiedBuildImage = compile(definition(), qualifiedCompilerOptions)
-    .bindings[0]!.calibration!.buildImage;
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
-    buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
+    buildImage: `registry.example/stack-bench-build@${QUALIFIED_BUILD_IMAGE}`,
     platform: 'linux/amd64' };
   const validated = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
@@ -767,11 +824,14 @@ test('compiled campaign validation rejects a rewritten identity, schedule, or su
   schedule.attempts[0].stack = schedule.attempts[0].stack === 'postgres' ? 'mongodb' : 'postgres';
   assert.throws(() => validateCompiledCampaignPlan(schedule), /attempt schedule/);
   const resolved = structuredClone(plan);
-  resolved.bindings[0]!.promotion.status = plan.bindings[0]!.promotion.status === 'candidate'
-    ? 'promoted' : 'candidate';
+  resolved.bindings[0]!.recipe.contentSha256 = 'b'.repeat(64);
   assert.throws(() => validateCompiledCampaignPlan(resolved), /bindings.*current resolved inputs/);
   assert.throws(() => validateCompiledCampaignPlan({ ...plan,
     summary: { ...plan.summary, attempts: 99 } }), /summary/);
+  const malformed = structuredClone(plan) as unknown as { bindings: unknown[] };
+  malformed.bindings[0] = { level: 1 };
+  assert.throws(() => validateCompiledCampaignPlan(malformed,
+    { requireCurrentInputs: false }), /bindings\[0\]/);
 });
 
 test('frozen plans remain inspectable after an engine upgrade but cannot execute there', () => {
