@@ -108,7 +108,9 @@ jobs:
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
             cargo_target_dir="${HOME}/actions-runner/_work/target"
           else
-            cargo_target_dir="${GITHUB_WORKSPACE}/target"
+            # Forward slashes keep the Windows path compatible with Cargo,
+            # PowerShell, GitHub Actions, and Git Bash filesystem commands.
+            cargo_target_dir="${GITHUB_WORKSPACE//\\//}/target"
           fi
           echo "CARGO_TARGET_DIR=${cargo_target_dir}" >>"${GITHUB_ENV}"
 
@@ -218,19 +220,23 @@ jobs:
         if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          openssl_cache_dir="${PWD}/.ci-cache/openssl"
+          cd "${CARGO_TARGET_DIR}"
           shopt -s nullglob
-          openssl_installs=("${CARGO_TARGET_DIR}"/release/build/openssl-sys-*/out/openssl-build/install)
+          openssl_installs=(release/build/openssl-sys-*/out/openssl-build/install)
           if (( ${#openssl_installs[@]} != 1 )); then
             echo "Expected one vendored OpenSSL installation, found ${#openssl_installs[@]}."
             exit 1
           fi
-          mkdir -p .ci-cache/openssl
-          cp -R "${openssl_installs[0]}/." .ci-cache/openssl/
+          mkdir -p "${openssl_cache_dir}"
+          cp -R "${openssl_installs[0]}/." "${openssl_cache_dir}/"
 
       - name: Package build artifacts
         shell: bash
         run: |
-          tar -C "${CARGO_TARGET_DIR}" -czf build-support.tar.gz \
+          archive_path="${PWD}/build-support.tar.gz"
+          cd "${CARGO_TARGET_DIR}"
+          tar -czf "${archive_path}" \
             "release/spacetimedb-cli${EXE_SUFFIX}" \
             "release/spacetimedb-standalone${EXE_SUFFIX}"
 
@@ -473,14 +479,16 @@ jobs:
         name: Extract build artifacts
         shell: bash
         run: |
+          archive_path="${PWD}/build-artifacts/build-support.tar.gz"
           exe_suffix=""
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             exe_suffix=".exe"
           fi
           mkdir -p "${CARGO_TARGET_DIR}"
-          tar -C "${CARGO_TARGET_DIR}" -xzf build-artifacts/build-support.tar.gz
-          test -f "${CARGO_TARGET_DIR}/release/spacetimedb-cli${exe_suffix}"
-          test -f "${CARGO_TARGET_DIR}/release/spacetimedb-standalone${exe_suffix}"
+          cd "${CARGO_TARGET_DIR}"
+          tar -xzf "${archive_path}"
+          test -f "release/spacetimedb-cli${exe_suffix}"
+          test -f "release/spacetimedb-standalone${exe_suffix}"
 
       - name: Download smoketest build
         uses: actions/download-artifact@v4
@@ -490,8 +498,10 @@ jobs:
       - name: Extract smoketest support files
         shell: bash
         run: |
+          archive_path="${PWD}/smoketest-support.tar.gz"
           mkdir -p "${CARGO_TARGET_DIR}"
-          tar -C "${CARGO_TARGET_DIR}" -xzf smoketest-support.tar.gz
+          cd "${CARGO_TARGET_DIR}"
+          tar -xzf "${archive_path}"
 
       # Serial execution avoids contention between the C# tests over generated bindings.
       - name: Run smoketest partition (Linux)
