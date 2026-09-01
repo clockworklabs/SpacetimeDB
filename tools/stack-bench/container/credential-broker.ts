@@ -654,9 +654,9 @@ export function createCredentialBroker(configInput: unknown, {
       const body = Buffer.concat(chunks);
       let payload: JsonRecord;
       try { payload = parseProviderRequest(body, path, config); }
-      catch (error) {
+      catch {
         writeHead(400, { 'content-type': 'text/plain' });
-        endResponse(errorMessage(error));
+        endResponse('invalid provider request');
         return;
       }
       const billable = path === '/v1/messages' && config.maxBudgetUsd != null;

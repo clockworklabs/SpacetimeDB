@@ -438,6 +438,11 @@ function signToken(userId: string) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: "30d" });
 }
 
+function objectId(value: unknown): Types.ObjectId | null {
+  return typeof value === "string" && Types.ObjectId.isValid(value)
+    ? new Types.ObjectId(value) : null;
+}
+
 async function userFromToken(token: string | undefined) {
   if (!token) return null;
   try {
@@ -795,7 +800,8 @@ async function restoreAllocations(allocations: Array<{ warehouseId: any; quantit
 
 app.post("/api/orders/:id/cancel", requireAuth, async (req, res) => {
   const user = (req as any).user;
-  const order = await Order.findOne({ _id: req.params.id, userId: user._id });
+  const orderId = objectId(req.params.id);
+  const order = orderId ? await Order.findOne({ _id: orderId, userId: user._id }) : null;
   if (!order) return res.status(404).json({ error: "Order not found" });
   if (order.status !== "pending") {
     return res.status(400).json({ error: "Order has already shipped and cannot be cancelled" });
@@ -820,7 +826,8 @@ app.post("/api/orders/:id/cancel", requireAuth, async (req, res) => {
 
 app.post("/api/orders/:id/items/:itemId/return", requireAuth, async (req, res) => {
   const user = (req as any).user;
-  const order = await Order.findOne({ _id: req.params.id, userId: user._id });
+  const orderId = objectId(req.params.id);
+  const order = orderId ? await Order.findOne({ _id: orderId, userId: user._id }) : null;
   if (!order) return res.status(404).json({ error: "Order not found" });
   if (order.status !== "shipped") {
     return res.status(400).json({ error: "Only items from a shipped order can be returned" });
@@ -848,27 +855,28 @@ app.post("/api/orders/:id/items/:itemId/return", requireAuth, async (req, res) =
 // ---------------------------------------------------------------------------
 
 app.post("/api/items/:id/reviews", requireAuth, async (req, res) => {
-  const itemId = req.params.id;
-  if (!Types.ObjectId.isValid(itemId)) return res.status(404).json({ error: "Item not found" });
+  const itemId = objectId(req.params.id);
+  if (!itemId) return res.status(404).json({ error: "Item not found" });
   const { rating, comment } = req.body || {};
   const ratingNum = Number(rating);
   if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
     return res.status(400).json({ error: "Rating must be between 1 and 5" });
   }
   const user = (req as any).user;
-  const hasPurchased = await Order.exists({ userId: user._id, "items.itemId": new Types.ObjectId(itemId) });
+  const hasPurchased = await Order.exists({ userId: user._id, "items.itemId": itemId });
   if (!hasPurchased) {
     return res.status(403).json({ error: "You can only review items you have purchased" });
   }
 
   await Review.findOneAndUpdate(
     { itemId, userId: user._id },
-    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: comment || "" },
+    { itemId, userId: user._id, username: user.username, rating: ratingNum,
+      comment: typeof comment === "string" ? comment : "" },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  await broadcastReviews(itemId);
-  const detail = await getItemDetail(itemId);
+  await broadcastReviews(String(itemId));
+  const detail = await getItemDetail(String(itemId));
   res.json({ item: detail });
 });
 
@@ -964,7 +972,8 @@ app.get("/api/fulfilment/queue", requireAuth, requireStaff, async (_req, res) =>
 });
 
 app.post("/api/fulfilment/ship", requireAuth, requireStaff, async (req, res) => {
-  const order = await Order.findById(req.body?.orderId);
+  const orderId = objectId(req.body?.orderId);
+  const order = orderId ? await Order.findById(orderId) : null;
   if (!order) return res.status(404).json({ error: "Order not found" });
   if (order.status !== "pending") {
     return res.status(400).json({ error: "Order is not waiting to be shipped" });

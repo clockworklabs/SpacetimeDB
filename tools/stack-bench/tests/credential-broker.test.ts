@@ -309,8 +309,9 @@ test('credential broker enforces model, output token, and session cost limits', 
   await withBroker('api-key', async ({ brokerPort, sessionToken, seen, stats }) => {
     const headers = { authorization: `Bearer ${sessionToken}`,
       'content-type': 'application/json' };
-    assert.equal((await send(brokerPort, { headers,
-      body: '{"model":"other-model","max_tokens":1}' })).status, 400);
+    assert.deepEqual(await send(brokerPort, { headers,
+      body: '{"model":"other-model","max_tokens":1}' }),
+    { status: 400, body: 'invalid provider request' });
     assert.equal((await send(brokerPort, { headers,
       body: '{"model":"test-model","max_tokens":4097}' })).status, 400);
     assert.equal((await send(brokerPort, { headers,

@@ -155,6 +155,7 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(source, /'--cap-drop', 'ALL'/);
   assert.match(source, /'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'/);
   assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
+  assert.match(source, /`127\.0\.0\.1:\$\{p\}:\$\{p\}`/);
   assert.match(source, /'--pids-limit', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.pids\)/);
   assert.match(source, /'--cpus', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.cpuCount\)/);
   assert.match(source, /'--memory', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.memoryBytes\)/);

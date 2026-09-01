@@ -461,6 +461,10 @@ test('preflight argument parsing rejects ambiguous ranges and missing backends',
     '--guidance', 'neutral']).guidance, 'neutral');
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',
     '--guidance', 'unknown']), /--guidance/);
+  assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',
+    '--guidance', '']), /--guidance/);
+  assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',
+    '--parallelism', '']), /--parallelism/);
   assert.equal(parsePreflightArgs(['node', 'preflight.js', '--backend', 'postgres',
     '--track', 'ecommerce', '--levels', '1', '--recipe', 'ecommerce.sequential-l1@2.5.0'])
     .recipe, 'ecommerce.sequential-l1@2.5.0');

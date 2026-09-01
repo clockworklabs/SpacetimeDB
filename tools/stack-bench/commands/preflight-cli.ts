@@ -36,18 +36,18 @@ export function parsePreflightArgs(
     image: env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
     resultsDir: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(STACK_BENCH_ROOT, 'results')) };
   request.backends = (values.backend ?? []).flatMap(splitList);
-  if (values.track) request.track = values.track;
-  if (values.levels) request.levels = values.levels;
-  if (values.recipe) request.recipe = values.recipe;
-  if (values['run-index']) request.runIndex = Number(values['run-index']);
-  if (values.parallelism) request.parallelism = Number(values.parallelism);
-  if (values['agent-adapter']) request.agentAdapter = values['agent-adapter'];
-  if (values.guidance) request.guidance = values.guidance;
+  if (values.track !== undefined) request.track = values.track;
+  if (values.levels !== undefined) request.levels = values.levels;
+  if (values.recipe !== undefined) request.recipe = values.recipe;
+  if (values['run-index'] !== undefined) request.runIndex = Number(values['run-index']);
+  if (values.parallelism !== undefined) request.parallelism = Number(values.parallelism);
+  if (values['agent-adapter'] !== undefined) request.agentAdapter = values['agent-adapter'];
+  if (values.guidance !== undefined) request.guidance = values.guidance;
   request.packIds = (values.pack ?? []).flatMap(splitList);
   request.checkKeys = (values.check ?? []).flatMap(splitList);
-  if (values.image) request.image = values.image;
-  if (values['results-dir']) request.resultsDir = resolve(values['results-dir']);
-  if (values.report) request.report = resolve(values.report);
+  if (values.image !== undefined) request.image = values.image;
+  if (values['results-dir'] !== undefined) request.resultsDir = resolve(values['results-dir']);
+  if (values.report !== undefined) request.report = resolve(values.report);
   request.smoke = values.smoke ?? false;
   request.json = values.json;
   if (!request.backends.length) throw new Error('--backend is required (comma-separated values are accepted)');

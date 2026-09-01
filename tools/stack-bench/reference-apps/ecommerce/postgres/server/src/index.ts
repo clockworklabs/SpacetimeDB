@@ -30,6 +30,11 @@ const PORT = Number(process.env.PORT) || 6301;
 
 const app = express();
 app.use(express.json());
+app.use((req, res, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method) || !req.headers.origin) return next();
+  return URL.parse(req.headers.origin)?.host === req.headers.host
+    ? next() : res.status(403).json({ error: "cross-origin request refused" });
+});
 app.use(cookieParser());
 
 type AccountInfo = { id: number; username: string; isAdmin: boolean; isStaff: boolean };

@@ -22,6 +22,11 @@ function number(value: unknown) {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
+function objectId(value: unknown): Types.ObjectId | null {
+  return typeof value === "string" && Types.ObjectId.isValid(value)
+    ? new Types.ObjectId(value) : null;
+}
+
 function publicUser(user: any) {
   return { id: String(user._id), username: user.username, isAdmin: user.isAdmin,
     isStaff: user.isStaff, roles: user.roles || [] };
@@ -79,7 +84,9 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   }
 
   async function ownedTicket(req: Request, id: string) {
-    const ticket = await SupportTicket.findById(id);
+    const ticketId = objectId(id);
+    if (!ticketId) return null;
+    const ticket = await SupportTicket.findById(ticketId);
     if (!ticket) return null;
     const user = req.progressionUser;
     if (user?.isStaff || user?.isAdmin || (ticket.userId && String(ticket.userId) === String(user?._id))) {
@@ -196,7 +203,9 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
       const value = cleanText(req.body?.[key]);
       if (value) update[key] = value;
     }
-    const ticket = await SupportTicket.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
+    const ticketId = objectId(req.params.id);
+    const ticket = ticketId
+      ? await SupportTicket.findByIdAndUpdate(ticketId, { $set: update }, { new: true }) : null;
     if (!ticket) return res.status(404).json({ error: "Case not found" });
     changed(ticket.userId ? String(ticket.userId) : undefined);
     res.json({ ticket });
@@ -215,10 +224,12 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   supportRouter.post("/cases/:caseId/order", auth, async (req: Request, res) => {
-    const ticket = await SupportTicket.findOne({ _id: req.params.caseId,
+    const ticketId = objectId(req.params.caseId);
+    const ticket = ticketId && await SupportTicket.findOne({ _id: ticketId,
       userId: req.progressionUser._id });
     if (!ticket) return res.status(404).json({ error: "Case not found" });
-    const orderId = cleanText(req.body?.orderId);
+    const orderId = objectId(req.body?.orderId);
+    if (!orderId) return res.status(403).json({ error: "Order does not belong to this account" });
     const order = await Order.findOne({ _id: orderId, userId: req.progressionUser._id });
     if (!order) return res.status(403).json({ error: "Order does not belong to this account" });
     ticket.orderId = order._id;
@@ -228,7 +239,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   supportRouter.post("/cases/:caseId/refund", auth, staff, async (req: Request, res) => {
-    const ticket = await SupportTicket.findById(req.params.caseId);
+    const ticketId = objectId(req.params.caseId);
+    const ticket = ticketId ? await SupportTicket.findById(ticketId) : null;
     if (!ticket?.orderId) return res.status(404).json({ error: "Order-linked case not found" });
     if (ticket.refundTotal > 0) {
       return res.status(409).json({ error: "Order has already been refunded" });
@@ -298,7 +310,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   router.post("/stock-alerts", auth, async (req: Request, res) => {
-    const item = await Item.findById(req.body?.itemId);
+    const itemId = objectId(req.body?.itemId);
+    const item = itemId ? await Item.findById(itemId) : null;
     if (!item) return res.status(404).json({ error: "Item not found" });
     const alert = await StockAlert.findOneAndUpdate({ userId: req.progressionUser._id,
       itemId: item._id }, { $setOnInsert: { userId: req.progressionUser._id, itemId: item._id,
@@ -307,8 +320,10 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   const scheduleRestock = async (req: Request, res: express.Response) => {
-    const item = await Item.findById(req.body?.itemId);
-    const warehouse = await Warehouse.findById(req.body?.warehouseId);
+    const itemId = objectId(req.body?.itemId);
+    const warehouseId = objectId(req.body?.warehouseId);
+    const item = itemId ? await Item.findById(itemId) : null;
+    const warehouse = warehouseId ? await Warehouse.findById(warehouseId) : null;
     const quantity = number(req.body?.quantity);
     const delaySeconds = number(req.body?.delaySeconds);
     if (!item || !warehouse || !(quantity >= 1) || !(delaySeconds >= 1)) {
@@ -321,7 +336,9 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   };
 
   const cancelScheduledRestock = async (req: Request, res: express.Response) => {
-    const restock = await ScheduledRestock.findOneAndUpdate({ _id: req.params.id, status: "pending" },
+    const restockId = objectId(req.params.id);
+    const restock = restockId && await ScheduledRestock.findOneAndUpdate(
+      { _id: restockId, status: "pending" },
       { $set: { status: "cancelled" } }, { new: true });
     if (!restock) return res.status(404).json({ error: "Pending restock not found" });
     changed();
@@ -333,7 +350,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   adminRouter.delete("/scheduled-restocks/:id", auth, staff, cancelScheduledRestock);
 
   router.post("/reorder-rules", auth, staff, async (req: Request, res) => {
-    const item = await Item.findById(req.body?.itemId);
+    const itemId = objectId(req.body?.itemId);
+    const item = itemId ? await Item.findById(itemId) : null;
     const threshold = number(req.body?.threshold);
     const quantity = number(req.body?.quantity);
     if (!item || !(threshold >= 0) || !(quantity >= 1)) {

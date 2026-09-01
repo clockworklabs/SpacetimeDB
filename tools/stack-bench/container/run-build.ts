@@ -379,7 +379,7 @@ if (!existing) {
   }
 
   // Publish the track's ports for the host grader.
-  if (expectedNetworkMode === 'bridge') for (const p of ports) create.push('-p', `${p}:${p}`);
+  if (expectedNetworkMode === 'bridge') for (const p of ports) create.push('-p', `127.0.0.1:${p}:${p}`);
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
   // build leaves behind are reparented to `sleep`, which never reaps them.
