@@ -102,6 +102,7 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.equal(args.track, 'ecommerce');
   assert.equal(args.level, 2);
   assert.equal(args.mutations, false);
+  assert.deepEqual(args.selectedCheckKeys, []);
   assert.equal(args.timeoutMinutes, 60);
   const mutationArgs = parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
     '--mutations', '--release-candidate']);
@@ -116,6 +117,12 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--backend', 'postgres', '--mutations', '--mutation-id', 'one-defect']);
   assert.deepEqual(targeted.mutationIds, ['one-defect']);
   assert.equal(targeted.releaseCandidate, undefined);
+  const selected = parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
+    '--selected-check', 'check.one', '--selected-check', 'check.two']);
+  assert.deepEqual(selected.selectedCheckKeys, ['check.one', 'check.two']);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
+    '--backend', 'postgres', '--mutations', '--mutation-id', 'one-defect',
+    '--selected-check', 'check.one']), /cannot be combined/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--mutation-id', 'one-defect']), /requires --mutations/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',

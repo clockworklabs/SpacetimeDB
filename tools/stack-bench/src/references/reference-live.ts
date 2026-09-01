@@ -63,6 +63,7 @@ export interface ReferenceQualificationArgs {
   mutationShardCount: number | null;
   mutationMaxRuntimeMinutes: number;
   mutationIds: string[];
+  selectedCheckKeys: string[];
   recipe?: string;
   featureCatalog?: string;
   out?: string;
@@ -179,6 +180,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     repetitions: { type: 'string' }, 'run-index': { type: 'string' },
     'spacetime-port': { type: 'string' }, 'timeout-minutes': { type: 'string' },
     mutations: { type: 'boolean' }, 'release-candidate': { type: 'boolean' },
+    'selected-check': { type: 'string', multiple: true },
     'mutation-id': { type: 'string', multiple: true }, 'mutation-workers': { type: 'string' },
     'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
     'mutation-checkpoint-dir': { type: 'string' }, 'mutation-checkpoint': { type: 'string' },
@@ -196,6 +198,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     spacetimePortExplicit: values['spacetime-port'] !== undefined,
     timeoutMinutes: number(values['timeout-minutes'], null),
     mutations: values.mutations ?? false, releaseCandidate: values['release-candidate'],
+    selectedCheckKeys: values['selected-check'] ?? [],
     mutationIds: values['mutation-id'] ?? [], mutationWorkers: number(values['mutation-workers'], 1) as number,
     mutationShardIndex: number(values['mutation-shard-index'], null),
     mutationShardCount: number(values['mutation-shard-count'], null),
@@ -249,6 +252,9 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   }
   if (args.releaseCandidate && args.mutationIds.length) {
     throw new Error('--release-candidate cannot select individual mutations');
+  }
+  if (args.selectedCheckKeys.length && args.mutations) {
+    throw new Error('--selected-check cannot be combined with mutations');
   }
   if (args.mutations && !args.referenceMutationOnly && !args.releaseCandidate
       && args.mutationIds.length === 0) {
@@ -933,7 +939,8 @@ async function main(): Promise<void> {
     ? qualificationMutationManifest(fixture, context, args.mutationIds) : null;
   const runContext = args.mutationIds.length && selectedManifest
     ? { ...context, selectedCheckKeys: targetedMutationCheckKeys(context, selectedManifest) }
-    : context;
+    : args.selectedCheckKeys.length ? { ...context, selectedCheckKeys: args.selectedCheckKeys }
+      : context;
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;
@@ -991,7 +998,7 @@ async function main(): Promise<void> {
     fixtureSha256: fixture.imported?.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
     runner: controllerRunner(), qualificationScope, mutationControl: args.mutations,
-    diagnostic: args.mutationIds.length > 0,
+    diagnostic: args.mutationIds.length > 0 || args.selectedCheckKeys.length > 0,
     qualifiedCheckKeys: [...(runContext.selectedCheckKeys ?? [])].sort(),
     ...(runContext.featureCatalog ? { featureCatalog: runContext.featureCatalog } : {}), runs: [] };
   const companion: QualificationArtifact | null = companionPath ? {
