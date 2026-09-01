@@ -1,8 +1,10 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { chmodSync, existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, constants, copyFileSync, existsSync, readFileSync, writeFileSync, renameSync,
+  mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.js';
+import { processIdentity } from './platform.js';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set<string>(['created', 'starting', 'active', 'restarting',
@@ -357,7 +359,10 @@ export function existingResourceLockKeys(
   });
 }
 
-function processAlive(pid: number): boolean {
+function processAlive(pid: number, startMarker: unknown): boolean {
+  if (typeof startMarker === 'string' && startMarker) {
+    return processIdentity(pid)?.startMarker === startMarker;
+  }
   try { process.kill(pid, 0); return true; }
   catch (error) { return errorCode(error) === 'EPERM'; }
 }
@@ -379,6 +384,7 @@ export function acquireResourceLock({ root, key, lease, reclaimStale = true }: {
     key,
     runId: lease.runId,
     ownerPid: lease.ownerPid,
+    ownerStartMarker: processIdentity(lease.ownerPid)?.startMarker ?? null,
     ownershipMarkerSha256: tokenHash(lease.ownershipToken),
     acquiredAt: new Date().toISOString(),
   };
@@ -394,11 +400,12 @@ export function acquireResourceLock({ root, key, lease, reclaimStale = true }: {
       if (!isRecord(existing) || !Number.isInteger(existing.ownerPid)
         || typeof existing.ownerPid !== 'number'
         || typeof existing.runId !== 'string' || !existing.runId
+        || (existing.ownerStartMarker !== null && typeof existing.ownerStartMarker !== 'string')
         || typeof existing.ownershipMarkerSha256 !== 'string'
         || !existing.ownershipMarkerSha256) {
         fail(`resource lock ${path} is malformed; refusing to steal it`);
       }
-      if (processAlive(existing.ownerPid)) {
+      if (processAlive(existing.ownerPid, existing.ownerStartMarker)) {
         fail(`resource ${key} is already leased by ${existing.runId} (pid ${existing.ownerPid})`);
       }
       if (!reclaimStale) {
@@ -448,19 +455,32 @@ export function acquireResourceLocks({ root, keys, lease, reclaimStale = true }:
 export function releaseResourceLocks(lease: BackendLease): void {
   validateBackendLease(lease);
   for (const lock of lease.resources.locks ?? []) {
-    let existing: unknown;
-    try { existing = JSON.parse(readFileSync(lock.path, 'utf8')); }
+    const releasing = `${lock.path}.release-${randomUUID()}`;
+    try { renameSync(lock.path, releasing); }
     catch (error) {
       if (errorCode(error) === 'ENOENT') continue;
-      fail(`cannot read resource lock ${lock.path}: ${errorMessage(error)}`);
+      fail(`cannot claim resource lock ${lock.path} for release: ${errorMessage(error)}`);
+    }
+    let existing: unknown;
+    try { existing = JSON.parse(readFileSync(releasing, 'utf8')); }
+    catch (error) {
+      try {
+        copyFileSync(releasing, lock.path, constants.COPYFILE_EXCL);
+        rmSync(releasing, { force: true });
+      } catch { /* preserve both records for authenticated recovery */ }
+      fail(`cannot read claimed resource lock ${releasing}: ${errorMessage(error)}`);
     }
     if (!isRecord(existing)
       || existing.runId !== lease.runId
       || existing.ownerPid !== lease.ownerPid
       || existing.ownershipMarkerSha256 !== tokenHash(lease.ownershipToken)) {
+      try {
+        copyFileSync(releasing, lock.path, constants.COPYFILE_EXCL);
+        rmSync(releasing, { force: true });
+      } catch { /* preserve both records for authenticated recovery */ }
       fail(`resource lock ${lock.path} no longer belongs to lease ${lease.runId}`);
     }
-    rmSync(lock.path, { force: true });
+    rmSync(releasing, { force: true });
   }
 }
 

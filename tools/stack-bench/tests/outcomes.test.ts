@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
-  mutationControlEligible, runExitCode, type OutcomeCriterion } from '../src/evidence/outcomes.js';
+  mutationControlEligible, runExitCode, runOutcomeKind,
+  type OutcomeCriterion } from '../src/evidence/outcomes.js';
 import { createCheckEvidence, type CheckEvidence,
   type CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
 
@@ -206,4 +207,26 @@ test('run aggregation preserves every level and prioritizes harness failure', ()
   ]);
   assert.equal(outcome.kind, 'harness_failure');
   assert.equal(outcome.levels['1']?.kind, 'app_failure');
+});
+
+test('an incomplete selected scope is never accepted through a positive denominator', () => {
+  const scoped = {
+    totals: { score: 1, max: 2 },
+    selection: {
+      checks: [{ stableKey: 'pack.feature.a', points: 1 },
+        { stableKey: 'pack.feature.b', points: 1 }],
+      reportedChecks: ['pack.feature.a'],
+      notRun: [{ stableKey: 'pack.feature.b' }],
+    },
+    suites: { feature: { features: [{ id: 'f', criteria: [
+      { ...typed('a', 'passed', null), stableKey: 'pack.feature.a' },
+    ] }] }, lint: { pass: true } },
+  };
+  assert.equal(classifyBundle(scoped).kind, 'ungraded');
+});
+
+test('unknown outcome names fail closed', () => {
+  assert.equal(runExitCode({ kind: 'typo' }), 1);
+  assert.equal(ladderMayContinue({ kind: 'typo' }), false);
+  assert.throws(() => runOutcomeKind('typo'), /invalid run outcome kind/);
 });

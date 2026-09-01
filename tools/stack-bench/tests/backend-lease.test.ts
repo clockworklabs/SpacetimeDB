@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -298,6 +299,21 @@ test('resource locks exclude a concurrent run and release only for their owner',
     releaseResourceLocks(first);
     second.resources.locks.push(acquireResourceLock({ root, key: 'slot:loop:stub:run0', lease: second }));
     releaseResourceLocks(second);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('resource lock release preserves a replacement owner record', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-release-'));
+  try {
+    const first = createBackendLease({ runId: 'first', backend: 'stub', track: 'loop', runIndex: 0 });
+    const lock = acquireResourceLock({ root, key: 'shared', lease: first });
+    first.resources.locks.push(lock);
+    writeFileSync(lock.path, JSON.stringify({ runId: 'replacement', ownerPid: process.pid,
+      ownerStartMarker: processIdentity(process.pid)?.startMarker ?? null,
+      ownershipMarkerSha256: 'replacement' }));
+    assert.throws(() => releaseResourceLocks(first), /no longer belongs/);
+    assert.equal(existsSync(lock.path), true);
+    assert.equal(JSON.parse(readFileSync(lock.path, 'utf8')).runId, 'replacement');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

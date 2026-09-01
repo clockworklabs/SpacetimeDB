@@ -200,8 +200,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
   const budgetEvidence = stacks.map(stack =>
     `${output}/budget-input/${trackName}-l${qualificationLevel}-${stack}.json`);
   const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
-  const recipeOption = recipe
-    ? ` --recipe ${binding.release.id}@${binding.release.version}` : '';
+  const recipeOption = ` --recipe ${binding.release.id}@${binding.release.version}`;
   const featureCatalog = calibration.qualification.featureCatalog;
   const featureCatalogOption = featureCatalog
     ? ` --feature-catalog ${featureCatalog.id}@${featureCatalog.version}` : '';

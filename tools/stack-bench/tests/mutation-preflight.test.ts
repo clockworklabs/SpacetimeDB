@@ -53,12 +53,9 @@ test('mutation grading receives the exact scored checks selected for the run', (
 });
 
 test('mutation control timeout follows its explicit runtime budget', () => {
-  assert.equal(mutationControlTimeoutMs({ mutations: [] }), 80 * 60_000);
-  assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 35 }, () => ({})) }),
-    80 * 60_000);
-  assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 1_000 }, () => ({})) }),
-    80 * 60_000);
-  assert.equal(mutationControlTimeoutMs({ mutations: [] }, 15), 35 * 60_000);
+  assert.equal(mutationControlTimeoutMs(), 80 * 60_000);
+  assert.equal(mutationControlTimeoutMs(15), 35 * 60_000);
+  assert.throws(() => mutationControlTimeoutMs(0), /positive number/);
 });
 
 test('each mutation grade uses only the remaining batch time', () => {

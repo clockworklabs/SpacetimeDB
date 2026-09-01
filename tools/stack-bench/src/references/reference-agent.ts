@@ -15,7 +15,7 @@ import { executeStackCapability } from '../stacks/stack-adapter-contract.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
-  validateReferenceRegistry } from './reference-fixtures.js';
+  referenceMetadataIssues, validateReferenceRegistry } from './reference-fixtures.js';
 import { resolveReferenceSelection } from './reference-selection.js';
 import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.js';
 
@@ -243,6 +243,8 @@ async function main(): Promise<void> {
   const metadataPath = join(args.app, 'reference.json');
   if (!existsSync(metadataPath)) throw new Error(`missing ${metadataPath}`);
   const metadata: unknown = JSON.parse(readFileSync(metadataPath, 'utf8'));
+  const metadataIssues = referenceMetadataIssues(metadata);
+  if (metadataIssues.length) throw new Error(metadataIssues.join('; '));
   writeFileSync(resolve(args.app, '..', '.stack-bench-isolation'), 'container');
   writeFileSync(resolve(args.app, '..', '.stack-bench-backend'), args.backend);
 

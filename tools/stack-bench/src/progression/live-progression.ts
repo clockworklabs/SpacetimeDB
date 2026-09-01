@@ -1,11 +1,12 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import type { RecipeBinding } from '../composition/recipe-release.js';
-import { currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
+import { artifactPayload, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
-import type { RunLevelRecord, RunTotals } from '../evidence/benchmark-run.js';
+import type { GradeBundlePayload, RunLevelRecord, RunTotals }
+  from '../evidence/benchmark-run.js';
 import { classifyBundle } from '../evidence/outcomes.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
@@ -48,11 +49,6 @@ interface BenchmarkRunPayload extends Record<string, unknown> {
   progressionStatus?: { phase?: string; level?: number; attempts?: number };
   levels?: RunLevelRecord[];
   totals?: RunTotals;
-}
-
-interface GradeBundlePayload extends Record<string, unknown> {
-  source?: { sha256?: string };
-  selection?: { sha256?: string };
 }
 
 interface CodingFailureResult {
@@ -303,10 +299,12 @@ export function createLiveProgressionExecution(
     const target = join(targetRoot, 'progression',
       `attempt-${String(index + 1).padStart(3, '0')}`);
     if (resolve(from) !== resolve(target)) {
+      rmSync(target, { recursive: true, force: true });
       cpSync(from, target, { recursive: true,
         filter: source => !/[\\/]media([\\/]|$)/.test(source) });
     }
     const gradingDirectory = join(appDir, 'stack-bench');
+    rmSync(gradingDirectory, { recursive: true, force: true });
     cpSync(target, gradingDirectory, { recursive: true,
       filter: source => !/[\\/]media([\\/]|$)/.test(source) });
   };
@@ -422,8 +420,10 @@ export function createLiveProgressionExecution(
     } else {
       const source = hashAppSource(appDir);
       const recipe = selected.grader.request.recipe;
+      const persistedBundle = readArtifact<GradeBundlePayload>(
+        join(evidenceDirectory, 'bundle.json'), { expectedKind: 'grade_bundle' });
       result = gradeBundleToProgressionResult(
-        readArtifact(join(evidenceDirectory, 'bundle.json'), { expectedKind: 'grade_bundle' }),
+        persistedBundle,
         selected.action,
         {
           owner,
@@ -450,7 +450,7 @@ export function createLiveProgressionExecution(
           backend,
           level,
           repair,
-          outcome: classifyBundle(bundle),
+          outcome: classifyBundle(artifactPayload(persistedBundle)),
           selectionSha256: selected.grader.selectionSha256,
         });
       }

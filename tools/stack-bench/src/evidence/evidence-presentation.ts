@@ -4,6 +4,7 @@ import {
   type CheckEvidence,
 } from './check-evidence.js';
 import { humaniseDiagnostic, sanitiseDiagnostic } from './diagnostic-sanitizer.js';
+import type { RunLevelRecord } from './benchmark-run.js';
 
 export function evidenceStatusLabel(evidence: CheckEvidence): string {
   return evidenceDisposition(evidence).label;
@@ -20,7 +21,7 @@ export function renderEvidenceConsoleLine(
 ): string {
   const label = evidenceStatusLabel(evidence);
   const summary = includeSummary ? sanitiseDiagnostic(evidence.summary, 600) : '';
-  return `${label} ${subject}${summary ? ` — ${summary}` : ''}`;
+  return `${label} ${subject}${summary ? `: ${summary}` : ''}`;
 }
 
 export function renderRepairDiagnostic(evidence: CheckEvidence): string {
@@ -28,4 +29,38 @@ export function renderRepairDiagnostic(evidence: CheckEvidence): string {
     throw new Error(`cannot render a repair diagnostic for ${evidenceStatusLabel(evidence)} evidence`);
   }
   return humaniseDiagnostic(evidence.summary);
+}
+
+interface LevelSummaryInput {
+  level: number;
+  graded: boolean;
+  score?: number | null;
+  max?: number | null;
+  firstBuild?: RunLevelRecord['firstBuild'];
+  baseline?: RunLevelRecord['baseline'];
+  fixRounds?: number;
+  buildCostUsd?: number;
+  resumeCostUsd?: number;
+  fixCostUsd?: number;
+  durationSec?: number;
+  durationMs?: number;
+  error?: string;
+  repair?: RunLevelRecord['repair'];
+}
+
+export function formatLevelSummary(level: LevelSummaryInput): string {
+  const starting = level.firstBuild?.score != null
+    ? `${level.firstBuild.score}/${level.firstBuild.max} unaided -> `
+    : level.baseline?.score != null ? `${level.baseline.score}/${level.baseline.max} resumed -> ` : '';
+  const score = level.graded ? `${starting}${level.score}/${level.max}` : 'NOT GRADED';
+  const repairs = Number.isInteger(level.fixRounds) ? level.fixRounds : 0;
+  const repairLabel = `${repairs} ${repairs === 1 ? 'repair' : 'repairs'}`;
+  const totalCost = (level.buildCostUsd ?? level.resumeCostUsd ?? 0) + (level.fixCostUsd ?? 0);
+  const durationSec = Number.isFinite(level.durationSec)
+    ? level.durationSec : Math.round((level.durationMs ?? 0) / 1000);
+  const status = level.error
+    ? `stopped: ${level.error.replaceAll('-', ' ')}`
+    : level.repair?.status?.replaceAll('-', ' ') ?? 'complete';
+  return `L${level.level}: ${score} | ${repairLabel} | $${totalCost.toFixed(2)} total`
+    + ` ($${(level.fixCostUsd ?? 0).toFixed(2)} repairs) | ${status} | ${durationSec}s`;
 }

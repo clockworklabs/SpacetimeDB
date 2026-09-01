@@ -123,7 +123,9 @@ test('a valid graph compiles in deterministic level and id order', () => {
   const input = fixture();
   input.nodes.reverse();
   input.questlines.reverse();
+  input.version = '1.0.0-rc.1+build.7';
   const compiled = compileDependencyMode(input);
+  assert.equal(compiled.version, input.version);
   assert.deepEqual(compiled.nodes.map(item => item.id), [
     'accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery',
   ]);
@@ -180,6 +182,16 @@ test('invalid graphs, questlines, and strike budgets fail before execution', asy
     ['zero-point gate check', value => {
       value.nodes[0]!.gradingChecks[0]!.points = 0;
     }, /positive integer/],
+    ['missing feature check', value => {
+      value.nodes[0]!.gradingChecks.forEach(check => { check.role = 'guarantee'; });
+    }, /at least one feature check/],
+    ['duplicate feature owner', value => {
+      value.nodes[1]!.featureRefs = ['features.accounts@2.0.0'];
+    }, /features\.accounts is already owned by accounts/],
+    ['empty feature requirements', value => {
+      value.nodes[0]!.gradingChecks[0]!.requiresFeatures = [];
+    }, /non-empty array/],
+    ['invalid semantic version', value => { value.version = '1.0.0-01'; }, /exact semantic version/],
     ['missing budget', value => { value.strikes = { levels: { 1: 1 } }; }, /is required/],
     ['unknown questline', value => { value.nodes[0]!.questline = 'missing'; }, /unknown questline/],
     ['empty questline', value => { value.nodes.forEach(item => { item.questline = 'identity'; }); }, /owns no nodes/],

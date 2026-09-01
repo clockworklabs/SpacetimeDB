@@ -22,6 +22,7 @@ import { compileDependencyPolicyInput, compileFeatureCatalogInput, progressionLe
   from '../progression/progression-definition.js';
 import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
   ProgressionInput } from '../progression/progression-definition.js';
+import type { ProgressionOwner } from '../progression/progression-state.js';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.js';
 import type { ProgressionRecipeSelections as ProgressionLevelSelection }
@@ -222,6 +223,35 @@ export interface CampaignAttemptPlan extends UnknownRecord {
   featureCatalog?: FeatureCatalogInput['identity'];
   dependencyPolicy?: DependencyPolicyInput['identity'];
   parentAttemptId: string;
+}
+
+type ProgressionCampaign = Pick<CompiledCampaignPlan, 'id' | 'version' | 'contentSha256'> & {
+  definition: Pick<CampaignDefinition, 'track'>;
+};
+
+interface ProgressionAttempt {
+  id: string;
+  stack: string;
+  agentAdapter: string;
+  model: string;
+  condition: { sha256: string };
+}
+
+export function campaignProgressionOwner(plan: ProgressionCampaign, attempt: ProgressionAttempt,
+  { workspace = false }: { workspace?: boolean } = {}): ProgressionOwner {
+  return {
+    schemaVersion: 1,
+    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+    attempt: {
+      id: attempt.id,
+      track: plan.definition.track,
+      stack: attempt.stack,
+      agentAdapter: attempt.agentAdapter,
+      model: attempt.model,
+      conditionSha256: attempt.condition.sha256,
+    },
+    ...(workspace ? { workspace: { appDirectory: 'source' } } : {}),
+  };
 }
 
 export interface CompiledCampaignPlan {

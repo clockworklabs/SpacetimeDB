@@ -123,3 +123,10 @@ test('typed scoring never reparses a misleading summary', () => {
   assert.equal(result.after, 0);
   assert.deepEqual(result.lostEvidence, []);
 });
+
+test('repair comparison rejects invalid rubric points', () => {
+  assert.throws(() => compareCriterionEvidence(
+    bundle([criterion('a', true, { points: -1 })]),
+    bundle([criterion('a', true)]),
+  ), /points must be a non-negative integer/);
+});

@@ -60,10 +60,22 @@ export function analyseNullReports(suites: readonly NullReportSuite[]) {
   const criteria: NullCriterionResult[] = [];
   const unscored: UnscoredResult[] = [];
 
-  for (const suite of suites) {
-    for (const feature of suite.report?.features ?? []) {
-      for (const criterion of feature.criteria ?? []) {
-        const points = Number(criterion.points ?? 1);
+  for (const [suiteIndex, suite] of suites.entries()) {
+    const suiteAt = `suites[${suiteIndex}]`;
+    if (!suite.track || !suite.id || !Number.isSafeInteger(suite.level) || suite.level < 1) {
+      throw new Error(`${suiteAt} has an invalid track, level, or id`);
+    }
+    for (const [featureIndex, feature] of (suite.report?.features ?? []).entries()) {
+      const featureAt = `${suiteAt}.features[${featureIndex}]`;
+      if ((typeof feature.id !== 'string' || !feature.id)
+          && !Number.isSafeInteger(feature.id)) {
+        throw new Error(`${featureAt}.id is invalid`);
+      }
+      for (const [criterionIndex, criterion] of (feature.criteria ?? []).entries()) {
+        const points = criterion.points ?? 1;
+        if (typeof points !== 'number' || !Number.isSafeInteger(points) || points < 0) {
+          throw new Error(`${featureAt}.criteria[${criterionIndex}].points must be a non-negative integer`);
+        }
         const evidence = criterionEvidence(criterion);
         const disposition = evidenceDisposition(evidence);
         if (points <= 0) {

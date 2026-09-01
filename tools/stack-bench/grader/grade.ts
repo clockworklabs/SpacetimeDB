@@ -17,7 +17,7 @@ import { resolveCalibrationForRelease } from '../src/composition/calibration-com
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
+import { executeAction } from '../src/actions/action-contract.js';
 import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.js';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
@@ -26,20 +26,14 @@ import { executeStackCapability } from '../src/stacks/stack-adapter-contract.js'
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import {
-  BROWSER_ACTION_IDS,
-  BROWSER_ACTION_IMPLEMENTATIONS,
-} from '../src/actions/browser-action-executors.js';
-import {
-  ACTOR_TRANSPORT_ACTION_IDS,
-  ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   createNamedActionsCapability,
 } from '../src/actions/actor-transport-action-executors.js';
+import type { ConcurrentCallResult }
+  from '../src/actions/actor-transport-action-executors.js';
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
-  LIFECYCLE_CONCURRENCY_ACTION_IDS,
-  LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-} from '../src/actions/lifecycle-concurrency-action-executors.js';
+} from '../src/actions/runtime-action-executors.js';
 import { controlAppServer, controlBackendRuntime, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
@@ -53,6 +47,7 @@ import type { CompletedGradeFeatureResult, CompletedGradeReport, GradeCleanupFai
 import type { CompiledFeature, CompiledScenarioDefinition,
   CompiledStep } from '../src/composition/definition-compiler.js';
 import type { RecipeCheck, RecipeGradeRelease, RecipeRelease } from '../src/composition/recipe-release.js';
+import type { TrackAction } from '../src/composition/tracks.js';
 
 type JsonRecord = Record<string, unknown>;
 type ActorWrite = {
@@ -107,7 +102,7 @@ type GradeRunContext = {
   restartSpec?: RuntimeControlSpec;
   url: string;
   backend?: string;
-  actions: unknown[];
+  actions: TrackAction[];
   spacetime: unknown;
   dbName?: string;
   databaseContainer?: string;
@@ -118,9 +113,8 @@ type GradeRunContext = {
   unverified?: string[];
   verified?: string[];
   actionEvidence?: Array<{ actor: string | null; evidence: ActionEvidence }>;
-  actionSequence?: number;
   serverCheck?: string | null;
-  lastCalls?: unknown;
+  lastCalls?: ConcurrentCallResult | null;
   defaultWithin?: number;
 };
 type ActionFailure = Error & { actionEvidence?: ActionEvidence; actionActor?: string | null };
@@ -143,21 +137,6 @@ function actionFailure(error: unknown): ActionFailure | null {
 }
 const DEFAULT_WITHIN = 5000;
 const SETUP_WITHIN = 20000;
-const REGISTERED_ACTIONS = new Set([
-  ...BROWSER_ACTION_IDS,
-  ...ACTOR_TRANSPORT_ACTION_IDS,
-  ...LIFECYCLE_CONCURRENCY_ACTION_IDS,
-]);
-const REGISTERED_ACTION_IMPLEMENTATIONS = Object.freeze({
-  ...BROWSER_ACTION_IMPLEMENTATIONS,
-  ...ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
-  ...LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-});
-if (REGISTERED_ACTIONS.size !== ACTION_REGISTRY.ids.length
-  || ACTION_REGISTRY.ids.some(id => !REGISTERED_ACTIONS.has(id))) {
-  throw new Error('registered action implementations do not cover the action catalog exactly');
-}
-
 // Keep the cause when Playwright prefixes it with locator retry details.
 function keepReason(detail: unknown, limit = 600): string {
   const s = String(detail ?? '');
@@ -376,7 +355,6 @@ function describeStep(step: CompiledStep): string {
   switch (step.do) {
     case 'signUp': return `sign up as ${step.name}${step.expectFailure ? ' (expected to fail)' : ''}`;
     case 'signIn': return `sign in as ${step.name}${step.expectFailure ? ' (expected to fail)' : ''}`;
-    case 'register': return `register as ${step.name}`;
     case 'createRoom': return `create room "${step.room}"`;
     case 'enterRoom': return `enter room "${step.room}"`;
     case 'send': return `send "${step.text}"`;
@@ -392,8 +370,6 @@ function describeStep(step: CompiledStep): string {
     case 'openClient': return 'reopen the browser';
     case 'setOffline': return step.offline === false ? 'reconnect' : 'go offline';
     case 'restartBackend': return 'restart the backend';
-    case 'ensureRegistered': return 'sign back in if needed';
-    case 'scheduleMessage': return `schedule "${step.text}" for ${step.secondsAhead}s ahead`;
     case 'wait': return `wait ${step.ms}ms`;
     case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.nonEmpty ? 'non-empty ' : ''}`
       + `${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
@@ -515,13 +491,13 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
     }),
   });
   const namedActions = createNamedActionsCapability({
-    actions: ctx.actions as never,
+    actions: ctx.actions,
     backend: ctx.backend!,
     url: ctx.url,
     spacetime: ctx.spacetime,
     lastCalls: Object.freeze({
-      get: () => ctx.lastCalls as never,
-      set: (value: unknown) => { ctx.lastCalls = value; },
+      get: () => ctx.lastCalls ?? null,
+      set: value => { ctx.lastCalls = value; },
     }),
     sleep: abortableSleep,
   });
@@ -569,17 +545,11 @@ function browserActionCapabilities(actors: Map<string, Actor>, ctx: GradeRunCont
 
 async function runRegisteredAction(step: CompiledStep, actors: Map<string, Actor>, ctx: GradeRunContext,
   signal: AbortSignal | null = null): Promise<unknown> {
-  ctx.actionSequence = (ctx.actionSequence ?? 0) + 1;
   const actionEvidence = await executeAction(ACTION_REGISTRY, step.do, step,
-    createActionRunContext({
+    {
       capabilities: browserActionCapabilities(actors, ctx),
-      implementations: REGISTERED_ACTION_IMPLEMENTATIONS,
       signal,
-      attempt: {
-        id: `${ctx.runId}:action:${ctx.actionSequence}`,
-        parentId: ctx.runId,
-      },
-    }));
+    });
   ctx.actionEvidence?.push({ actor: step.actor ?? null, evidence: actionEvidence });
   if (actionEvidence.status === 'passed') return actionEvidence.observation;
   const error = new Error(actionEvidence.summary ?? `${step.do} did not complete`);
@@ -898,7 +868,7 @@ async function main(): Promise<void> {
   // Where the named actions live. The track declares their names; the
   // authenticated backend lease—not generated application config—selects the
   // SpacetimeDB host, module and exact build container used for direct SQL.
-  let actions: unknown[] = [], spacetime: unknown = null, recipeRelease: RecipeGradeRelease | null = null,
+  let actions: TrackAction[] = [], spacetime: unknown = null, recipeRelease: RecipeGradeRelease | null = null,
     recipeIdentityRelease: RecipeRelease | null = null,
     calibration: ReturnType<typeof resolveCalibrationForRelease> | null = null;
   if (args.track) {

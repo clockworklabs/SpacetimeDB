@@ -34,8 +34,14 @@ export interface SessionMetricsSummary {
   thinking: { blocks: number; signatureBytes: number; sessions: number } | null;
 }
 
-const finiteNumber = (value: unknown): number =>
-  typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function nonNegative(value: unknown, at: string, { integer = false } = {}): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0
+      || (integer && !Number.isSafeInteger(value))) {
+    throw new Error(`${at} must be a non-negative ${integer ? 'integer' : 'number'}`);
+  }
+  return value;
+}
 
 export function summarizeSessions(
   sessions: readonly (SessionMetricsInput | null | undefined | false)[],
@@ -54,39 +60,54 @@ export function summarizeSessions(
   let providerWaits = 0;
   let providerWaitMs = 0;
 
-  for (const session of present) {
-    for (const key of USAGE_KEYS) usage[key] += finiteNumber(session.usage?.[key]);
+  for (const [index, session] of present.entries()) {
+    const at = `sessions[${index}]`;
+    for (const key of USAGE_KEYS) {
+      usage[key] += nonNegative(session.usage?.[key], `${at}.usage.${key}`, { integer: true });
+    }
     if (session.thinking) {
-      thinking.blocks += finiteNumber(session.thinking.blocks);
-      thinking.signatureBytes += finiteNumber(session.thinking.signatureBytes);
+      thinking.blocks += nonNegative(session.thinking.blocks, `${at}.thinking.blocks`, { integer: true });
+      thinking.signatureBytes += nonNegative(session.thinking.signatureBytes,
+        `${at}.thinking.signatureBytes`, { integer: true });
       thinkingSessions += 1;
     }
-    providerWaits += finiteNumber(session.providerThrottle?.waits);
-    providerWaitMs += finiteNumber(session.providerThrottle?.waitedMs);
+    providerWaits += nonNegative(session.providerThrottle?.waits,
+      `${at}.providerThrottle.waits`, { integer: true });
+    providerWaitMs += nonNegative(session.providerThrottle?.waitedMs,
+      `${at}.providerThrottle.waitedMs`, { integer: true });
   }
 
   const durationMs = present.reduce(
-    (total, session) => total + finiteNumber(session.durationMs),
+    (total, session, index) => total + nonNegative(session.durationMs,
+      `sessions[${index}].durationMs`, { integer: true }),
     0,
   );
+  if (providerWaitMs > durationMs) {
+    throw new Error('provider throttle wait time exceeds total session duration');
+  }
 
   return {
     sessions: present.length,
     costUsd: Number(present.reduce(
-      (total, session) => total + finiteNumber(session.costUsd),
+      (total, session, index) => total + nonNegative(session.costUsd,
+        `sessions[${index}].costUsd`),
       0,
     ).toFixed(6)),
-    tokens: present.reduce((total, session) => total + finiteNumber(session.tokens), 0),
+    tokens: present.reduce((total, session, index) => total + nonNegative(session.tokens,
+      `sessions[${index}].tokens`, { integer: true }), 0),
     outputTokens: present.reduce(
-      (total, session) => total + finiteNumber(session.outputTokens),
+      (total, session, index) => total + nonNegative(session.outputTokens,
+        `sessions[${index}].outputTokens`, { integer: true }),
       0,
     ),
-    turns: present.reduce((total, session) => total + finiteNumber(session.turns), 0),
+    turns: present.reduce((total, session, index) => total + nonNegative(session.turns,
+      `sessions[${index}].turns`, { integer: true }), 0),
     durationMs,
     activeDurationMs: Math.max(0, durationMs - providerWaitMs),
     providerThrottle: { waits: providerWaits, waitedMs: providerWaitMs },
     promptBytes: present.reduce(
-      (total, session) => total + finiteNumber(session.promptBytes),
+      (total, session, index) => total + nonNegative(session.promptBytes,
+        `sessions[${index}].promptBytes`, { integer: true }),
       0,
     ),
     usage,

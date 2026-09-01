@@ -37,3 +37,11 @@ test('empty session totals are explicit zeroes', () => {
     thinking: null,
   });
 });
+
+test('session totals reject impossible metrics', () => {
+  assert.throws(() => summarizeSessions([{ costUsd: -1 }]), /costUsd/);
+  assert.throws(() => summarizeSessions([{ tokens: 1.5 }]), /tokens/);
+  assert.throws(() => summarizeSessions([{
+    durationMs: 10, providerThrottle: { waitedMs: 11 },
+  }]), /exceeds total session duration/);
+});

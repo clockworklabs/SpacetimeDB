@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
@@ -12,6 +10,8 @@ import { sha256 } from '../evidence/provenance.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExecution, CampaignState } from './campaign-scheduler.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
+import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord, RunTotals }
+  from '../evidence/benchmark-run.js';
 
 export const CAMPAIGN_REPORT_SCHEMA_VERSION = 4;
 
@@ -23,7 +23,8 @@ interface RunCheck {
   [key: string]: unknown;
 }
 
-export interface RunSelection {
+export interface RunSelection extends Omit<GradeBundleSelection,
+'checks' | 'observedChecks'> {
   sha256?: string;
   checks?: RunCheck[];
   observedChecks?: Array<{ points?: number; [key: string]: unknown }>;
@@ -48,8 +49,8 @@ interface RunObservation {
   repairVisible?: boolean;
 }
 
-interface RunLevel {
-  level?: number;
+interface RunLevel extends Omit<Partial<RunLevelRecord>,
+'selection' | 'firstBuild' | 'repair'> {
   firstBuild?: {
     score?: number;
     max?: number;
@@ -67,14 +68,12 @@ interface RunLevel {
   selection?: RunSelection;
 }
 
-export interface BenchmarkRun {
-  id?: string;
-  parentAttemptId?: string;
+export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
+'id' | 'parentAttemptId' | 'outcome'>> {
   levels?: RunLevel[];
   condition?: { requested?: { levels?: Array<{ level: number; selection?: RunSelection }> } };
   outcome?: RunOutcome;
-  totals?: { score?: number; max?: number; costUsd?: number; costComplete?: boolean; durationSec?: number;
-    fixRounds?: number };
+  totals?: Partial<RunTotals>;
   progressionStatus?: {
     phase?: string;
     score?: { questlineAveragePercentage?: number | null; uniqueChecks?: {
@@ -403,6 +402,76 @@ function conditionKey(attempt: CampaignAttemptPlan): string {
     model: attempt.model, condition: attempt.condition?.sha256 }).trim();
 }
 
+function reportMetricNames(policy: CampaignReport['policy']): string[] {
+  return [...new Set([policy.primaryMetric, ...policy.secondaryMetrics,
+    'firstBuildCoverageRate', 'finalCoverageRate'])]
+    .filter(metric => metric !== 'invalidAttemptRate');
+}
+
+function reportConditions(rows: CampaignReportAttempt[], policy: CampaignReport['policy']):
+CampaignReportCondition[] {
+  const groups = new Map<string, CampaignReportAttempt[]>();
+  for (const row of rows) {
+    const key = conditionKey(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+  const metricNames = reportMetricNames(policy);
+  return [...groups.entries()].map(([key, attempts]) => {
+    const completed = attempts.filter(attempt => attempt.status === 'completed');
+    const executions = attempts.flatMap(attempt => attempt.executions);
+    const invalidExecutions = executions.filter(execution => execution.status === 'invalid').length;
+    const observedAttempts = completed.filter((attempt): attempt is CampaignReportAttempt & {
+      firstBuildObservations: CampaignRunObservationSummary;
+    } => attempt.firstBuildObservations !== null);
+    const measuredObservedAttempts = observedAttempts.filter(attempt =>
+      Number.isFinite(attempt.firstBuildObservations.passRate));
+    return {
+      key: sha256(key),
+      stack: attempts[0]!.stack,
+      agent: { adapter: attempts[0]!.agentAdapter, model: attempts[0]!.model },
+      condition: attempts[0]!.condition,
+      sample: { plannedAttempts: attempts.length, completedAttempts: completed.length,
+        invalidAttempts: attempts.filter(attempt => attempt.status === 'invalid').length,
+        pendingAttempts: attempts.filter(attempt => attempt.status === 'pending').length,
+        executions: executions.length, invalidExecutions,
+        invalidExecutionRate: executions.length
+          ? Number((invalidExecutions / executions.length).toFixed(6)) : 0 },
+      metrics: { ...Object.fromEntries(metricNames.map(metric => [metric,
+        summarize(completed.map(attempt => attempt.metrics?.[metric]), policy.dispersion)])),
+      invalidAttemptRate: { n: attempts.length,
+        center: Number((attempts.filter(attempt => attempt.status === 'invalid').length
+          / attempts.length).toFixed(6)), spread: null, min: null, max: null } },
+      firstBuildObservations: observedAttempts.length ? {
+        sample: { selectedAttempts: observedAttempts.length,
+          measuredAttempts: measuredObservedAttempts.length },
+        metrics: {
+          passRate: summarize(observedAttempts.map(attempt =>
+            attempt.firstBuildObservations.passRate), policy.dispersion),
+          coverageRate: summarize(observedAttempts.map(attempt =>
+            attempt.firstBuildObservations.coverageRate), policy.dispersion),
+        },
+      } : null,
+    };
+  }).sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function reportSummary(rows: CampaignReportAttempt[], campaignStatus: string):
+CampaignReport['summary'] {
+  const executions = rows.flatMap(attempt => attempt.executions);
+  const invalidAttempts = rows.filter(attempt => attempt.status === 'invalid').length;
+  const invalidExecutions = executions.filter(execution => execution.status === 'invalid').length;
+  return { campaignStatus, plannedAttempts: rows.length,
+    completedAttempts: rows.filter(attempt => attempt.status === 'completed').length,
+    invalidAttempts,
+    invalidAttemptRate: rows.length ? Number((invalidAttempts / rows.length).toFixed(6)) : 0,
+    pendingAttempts: rows.filter(attempt => attempt.status === 'pending').length,
+    runningAttempts: rows.filter(attempt => attempt.status === 'running').length,
+    executions: executions.length, invalidExecutions,
+    invalidExecutionRate: executions.length
+      ? Number((invalidExecutions / executions.length).toFixed(6)) : 0 };
+}
+
 function exactFields(value: unknown, fields: Set<string>, at: string): asserts value is Record<string, unknown> {
   if (!isRecord(value)) {
     throw new Error(`${at} must be an object`);
@@ -435,6 +504,9 @@ export function validateCampaignReport(input: unknown): CampaignReport {
     'runtime', 'pricing']), 'campaign report.scope');
   exactFields(report.policy, new Set(['primaryMetric', 'secondaryMetrics', 'dispersion',
     'invalidAttempts', 'missingData', 'comparisonUnit']), 'campaign report.policy');
+  exactFields(report.summary, new Set(['campaignStatus', 'plannedAttempts', 'completedAttempts',
+    'invalidAttempts', 'invalidAttemptRate', 'pendingAttempts', 'runningAttempts', 'executions',
+    'invalidExecutions', 'invalidExecutionRate']), 'campaign report.summary');
   if (typeof report.campaign.id !== 'string' || !report.campaign.id
     || typeof report.campaign.title !== 'string' || !report.campaign.title
     || typeof report.scope.track !== 'string' || !report.scope.track
@@ -495,6 +567,31 @@ export function validateCampaignReport(input: unknown): CampaignReport {
       }
     }
   }
+  for (const [index, attempt] of report.attempts.entries()) {
+    if (!isRecord(attempt) || typeof attempt.id !== 'string' || !attempt.id
+      || typeof attempt.status !== 'string' || !Array.isArray(attempt.executions)
+      || (attempt.metrics !== null && !isRecord(attempt.metrics))) {
+      throw new Error(`campaign report.attempts[${index}] is invalid`);
+    }
+    for (const [executionIndex, execution] of attempt.executions.entries()) {
+      if (!isRecord(execution) || typeof execution.id !== 'string' || !execution.id
+        || typeof execution.status !== 'string') {
+        throw new Error(`campaign report.attempts[${index}].executions[${executionIndex}] is invalid`);
+      }
+    }
+  }
+  if (typeof report.summary.campaignStatus !== 'string'
+    || canonicalDefinitionJson(report.summary)
+      !== canonicalDefinitionJson(reportSummary(report.attempts, report.summary.campaignStatus))) {
+    throw new Error('campaign report summary does not match its attempts');
+  }
+  if (canonicalDefinitionJson(report.conditions)
+    !== canonicalDefinitionJson(reportConditions(report.attempts, report.policy))) {
+    throw new Error('campaign report conditions do not match its attempts');
+  }
+  if (report.limitations.some(item => typeof item !== 'string' || !item)) {
+    throw new Error('campaign report limitations are invalid');
+  }
   const canonical = canonicalizeDefinition(report) as unknown as CampaignReport;
   const { contentSha256, ...body } = canonical;
   if (typeof contentSha256 !== 'string'
@@ -535,57 +632,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
       firstBuildObservations: latest?.status === 'completed'
         ? latest.firstBuildObservations : null });
   }
-  const metricNames = [...new Set([plan.definition.analysis.primaryMetric,
-    ...plan.definition.analysis.secondaryMetrics,
-    'firstBuildCoverageRate', 'finalCoverageRate'])]
-    .filter(metric => metric !== 'invalidAttemptRate');
-  const groups = new Map<string, CampaignReportAttempt[]>();
-  for (const row of rows) {
-    const key = conditionKey(row);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(row);
-  }
-  const conditions = [...groups.entries()].map(([key, attempts]) => {
-    const completed = attempts.filter(attempt => attempt.status === 'completed');
-    const executions = attempts.flatMap(attempt => attempt.executions);
-    const invalidExecutions = executions.filter(execution => execution.status === 'invalid').length;
-    const observedAttempts = completed.filter((attempt): attempt is CampaignReportAttempt & {
-      firstBuildObservations: CampaignRunObservationSummary;
-    } => attempt.firstBuildObservations !== null);
-    const measuredObservedAttempts = observedAttempts.filter(attempt =>
-      Number.isFinite(attempt.firstBuildObservations.passRate));
-    return {
-      key: sha256(key),
-      stack: attempts[0]!.stack,
-      agent: { adapter: attempts[0]!.agentAdapter, model: attempts[0]!.model },
-      condition: attempts[0]!.condition,
-      sample: { plannedAttempts: attempts.length, completedAttempts: completed.length,
-        invalidAttempts: attempts.filter(attempt => attempt.status === 'invalid').length,
-        pendingAttempts: attempts.filter(attempt => attempt.status === 'pending').length,
-        executions: executions.length, invalidExecutions,
-        invalidExecutionRate: executions.length
-          ? Number((invalidExecutions / executions.length).toFixed(6)) : 0 },
-      metrics: { ...Object.fromEntries(metricNames.map(metric => [metric,
-        summarize(completed.map(attempt => attempt.metrics?.[metric]),
-          plan.definition.analysis.dispersion)])),
-      invalidAttemptRate: { n: attempts.length,
-        center: Number((attempts.filter(attempt => attempt.status === 'invalid').length
-          / attempts.length).toFixed(6)), spread: null, min: null, max: null } },
-      firstBuildObservations: observedAttempts.length ? {
-        sample: { selectedAttempts: observedAttempts.length,
-          measuredAttempts: measuredObservedAttempts.length },
-        metrics: {
-          passRate: summarize(observedAttempts.map(attempt =>
-            attempt.firstBuildObservations.passRate),
-            plan.definition.analysis.dispersion),
-          coverageRate: summarize(observedAttempts.map(attempt =>
-            attempt.firstBuildObservations.coverageRate), plan.definition.analysis.dispersion),
-        },
-      } : null,
-    };
-  }).sort((left, right) => left.key.localeCompare(right.key));
-  const executions = rows.flatMap(attempt => attempt.executions);
-  const invalidExecutions = executions.filter(execution => execution.status === 'invalid').length;
+  const conditions = reportConditions(rows, plan.definition.analysis);
   const body = canonicalizeDefinition({
     reportSchemaVersion: CAMPAIGN_REPORT_SCHEMA_VERSION,
     campaign: { id: plan.id, version: plan.version, state: plan.state,
@@ -600,16 +647,7 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
     policy: plan.definition.analysis,
     attempts: rows,
     conditions,
-    summary: { campaignStatus: state.status, plannedAttempts: rows.length,
-      completedAttempts: rows.filter(attempt => attempt.status === 'completed').length,
-      invalidAttempts: rows.filter(attempt => attempt.status === 'invalid').length,
-      invalidAttemptRate: rows.length
-        ? Number((rows.filter(attempt => attempt.status === 'invalid').length / rows.length).toFixed(6)) : 0,
-      pendingAttempts: rows.filter(attempt => attempt.status === 'pending').length,
-      runningAttempts: rows.filter(attempt => attempt.status === 'running').length,
-      executions: executions.length, invalidExecutions,
-      invalidExecutionRate: executions.length
-        ? Number((invalidExecutions / executions.length).toFixed(6)) : 0 },
+    summary: reportSummary(rows, state.status),
     limitations: [
       'Statistics describe only the exact scope and conditions recorded above.',
       'Score rates use measurable points; read them with coverage and the typed execution outcome.',

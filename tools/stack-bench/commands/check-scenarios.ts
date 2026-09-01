@@ -3,6 +3,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { compileRecipeFile, type CompiledOwnedTaskFragment, type CompiledRecipeRelease }
@@ -33,16 +34,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown;
-}
-
-function optionValue(args: readonly string[], option: string): string | null {
-  const index = args.indexOf(option);
-  if (index === -1) return null;
-  const value = args[index + 1];
-  if (value === undefined || value.startsWith('--')) {
-    throw new Error(`${option} requires a value`);
-  }
-  return value;
 }
 
 function readRecipeSource(path: string): RecipeSource {
@@ -199,8 +190,12 @@ function referencedTestIds(step: CompiledStep): string[] {
 }
 
 function main(args: readonly string[]): number {
-  const trackArg = optionValue(args, '--track');
-  const recipeArg = optionValue(args, '--recipe');
+  const { values } = parseArgs({ args: [...args], options: {
+    track: { type: 'string' },
+    recipe: { type: 'string' },
+  }, strict: true, allowPositionals: false });
+  const trackArg = values.track ?? null;
+  const recipeArg = values.recipe ?? null;
   const availableTracks = listTracks();
   const trackNames = trackArg === null
     ? (availableTracks.length > 0 ? availableTracks : [DEFAULT_TRACK])

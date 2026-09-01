@@ -28,8 +28,8 @@ import type {
   ProgressionState,
   ProgressionTerminalOutcome,
 } from './progression-state.js';
+import { isProgressionIdentifier } from './progression-identifiers.js';
 
-const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
 const NODE_STATUSES = new Set(['locked', 'active', 'working', 'passed', 'failed', 'blocked'] as const);
 const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed'] as const);
@@ -206,7 +206,9 @@ function nonEmptyString(value: unknown, at: string): string {
 
 function identifier(value: unknown, at: string): string {
   const result = nonEmptyString(value, at);
-  if (!ID.test(result)) return fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
+  if (!isProgressionIdentifier(result)) {
+    return fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
+  }
   return result;
 }
 

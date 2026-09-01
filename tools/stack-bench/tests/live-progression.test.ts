@@ -236,7 +236,9 @@ test('live progression binds, records, checkpoints, and persists one exact actio
     mkdirSync(join(outputDir, 'grading'), { recursive: true });
     writeArtifact(join(outputDir, 'grading', 'bundle.json'), gradeArtifact);
 
-    const next = execution.record({ selected, bundle: grade, level: 1,
+    const next = execution.record({ selected,
+      bundle: { ...grade, totals: { score: 0, max: 1, regression: null },
+        outcome: { kind: 'app_failure' } }, level: 1,
       repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
         stopReason: 'not-needed', strikeScope: 'feature', nodeStrikes: [
           { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
@@ -250,6 +252,11 @@ test('live progression binds, records, checkpoints, and persists one exact actio
     assert(existsSync(join(outputDir, 'progression', 'attempt-001', 'bundle.json')));
     assert(existsSync(join(outputDir, 'level-l1-checkpoint.json')));
     assert(existsSync(join(outputDir, 'source', 'index.js')));
+    const checkpoint = JSON.parse(readFileSync(
+      join(outputDir, 'level-l1-checkpoint.json'), 'utf8')) as {
+        payload: { outcome: { kind: string } };
+      };
+    assert.equal(checkpoint.payload.outcome.kind, 'passed');
     assert.doesNotThrow(() => createArtifact({
       ...runArtifact,
       attempt: { id: 'run-1', parentId: owner.attempt.id },
@@ -592,6 +599,8 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
       backend: owner.attempt.stack, identities, resumeFrom: firstOutput,
       recipeBindings: new Map([[1, binding]]),
       getRunArtifact: () => { throw new Error('grading is not part of this resume check'); } });
+    mkdirSync(join(secondApp, 'stack-bench'), { recursive: true });
+    writeFileSync(join(secondApp, 'stack-bench', 'stale.json'), '{}\n');
     const restored = resumed.initialize();
     assert.equal(restored.action.type, 'repair');
     assert.equal(restored.action.level, 1);
@@ -599,6 +608,7 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
     assert.equal(readFileSync(join(secondApp, 'index.js'), 'utf8'),
       'export const broken = true;\n');
     assert(existsSync(join(secondApp, 'stack-bench', 'bundle.json')));
+    assert.equal(existsSync(join(secondApp, 'stack-bench', 'stale.json')), false);
     assert(existsSync(join(secondOutput, 'progression', 'attempt-001', 'bundle.json')));
     assert(restored.priorRun);
     const totals = restored.priorRun.payload.totals;

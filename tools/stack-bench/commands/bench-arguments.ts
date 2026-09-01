@@ -2,7 +2,7 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readArtifact } from '../src/evidence/artifacts.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
-import { DEFAULT_TRACK } from '../src/composition/tracks.js';
+import { DEFAULT_TRACK, RUN_INDEX_CAP } from '../src/composition/tracks.js';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAttemptPlan, CampaignSelection }
   from '../src/campaigns/campaign-compiler.js';
@@ -140,7 +140,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel']) {
     if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
   }
-  if (typeof parsed.runIndex === 'string') parsed.runIndex = parseInt(parsed.runIndex, 10);
+  if (typeof parsed.runIndex === 'string') parsed.runIndex = Number(parsed.runIndex);
   for (const key of ['campaignFile', 'progressionResumeFrom', 'apiKeyFile', 'mutations',
     'mutationResumeFrom', 'mutationCheckpointOut', 'mutationBaselineBundle', 'repairFrom']) {
     if (typeof parsed[key] === 'string') parsed[key] = resolve(parsed[key]);
@@ -258,6 +258,9 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   if (args.maxBudgetUsd !== undefined
     && (!Number.isFinite(args.maxBudgetUsd) || args.maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
+  }
+  if (!Number.isSafeInteger(args.runIndex) || args.runIndex < 0 || args.runIndex > RUN_INDEX_CAP) {
+    throw new Error(`--run-index must be an integer from 0 through ${RUN_INDEX_CAP}`);
   }
   if ((args.mutationShardIndex === undefined) !== (args.mutationShardCount === undefined)) {
     throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');

@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 import { compileCalibrationDefinition, compileCalibrationFile } from '../src/composition/calibration-compiler.js';
 import { buildRecipeRelease } from '../src/composition/recipe-release.js';
@@ -24,7 +25,11 @@ export interface CalibrationCheckResult {
 export function checkCalibrations(
   { trackName = null }: { trackName?: string | null } = {},
 ): CalibrationCheckResult[] {
-  const tracks = trackName ? [trackName] : listTracks({ includeInternal: true });
+  const availableTracks = listTracks({ includeInternal: true });
+  if (trackName && !availableTracks.includes(trackName)) {
+    throw new Error(`unknown calibration track ${trackName}`);
+  }
+  const tracks = trackName ? [trackName] : availableTracks;
   const results: CalibrationCheckResult[] = [];
   for (const name of tracks) {
     const trackRoot = join(TRACKS_DIR, name);
@@ -46,15 +51,11 @@ export function checkCalibrations(
   return results;
 }
 
-async function main() {
-  const trackIndex = process.argv.indexOf('--track');
-  const trackName = trackIndex >= 0 ? process.argv[trackIndex + 1] ?? null : null;
-  const unknown = process.argv.slice(2).filter((value, index, args) =>
-    value !== '--track' && args[index - 1] !== '--track');
-  if (unknown.length || (trackIndex >= 0 && !trackName)) {
-    throw new Error('usage: node dist/commands/check-calibration.js [--track <name>]');
-  }
-  const results = checkCalibrations({ trackName });
+function main() {
+  const { values } = parseArgs({ args: process.argv.slice(2), options: {
+    track: { type: 'string' },
+  }, strict: true, allowPositionals: false });
+  const results = checkCalibrations({ trackName: values.track ?? null });
   for (const result of results) {
     console.log(`${result.track}: ${result.id}@${result.version} ${result.state}; ` +
       `${result.controls} controls, ${result.stacks} stacks, ${result.contentSha256.slice(0, 12)}`);
@@ -62,8 +63,9 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error: unknown) => {
+  try { main(); }
+  catch (error: unknown) {
     console.error(error instanceof Error ? error.stack ?? error.message : String(error));
     process.exitCode = 1;
-  });
+  }
 }

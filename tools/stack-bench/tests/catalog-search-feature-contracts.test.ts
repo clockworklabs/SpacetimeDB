@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, type CompiledPackDefinition }
+import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledFeature }
   from '../src/composition/definition-compiler.js';
@@ -17,7 +17,7 @@ const readPack = (name: string) => compilePackDefinition(
 function fragmentText(fragment: CompiledPackDefinition['task']['requirements'][number]): string {
   assert.equal(fragment.from, undefined, `${fragment.id} must use a whole file`);
   assert.equal(fragment.until, undefined, `${fragment.id} must use a whole file`);
-  return readFileSync(join(trackRoot, fragment.path), 'utf8');
+  return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
 function selectedCriteria(pack: CompiledPackDefinition): Array<{
@@ -104,14 +104,12 @@ test('catalog and faceted search graph nodes bind to the expected packs', () => 
   const definition = readJson(join(trackRoot, 'progression', 'ecommerce-2.0.1.json'));
   const catalog = progressionNode(definition, 'catalog');
   const search = progressionNode(definition, 'faceted-search');
-  assert.deepEqual(catalog.featureRefs, ['ecommerce.feature.catalog@1.2.0']);
+  assert.deepEqual(catalog.featureRefs, ['ecommerce.feature.catalog-items@1.0.0']);
   assert.deepEqual(catalog.gradingGroups, [
-    'ecommerce.feature.catalog@1.2.0#values',
-    'ecommerce.feature.catalog@1.2.0#ranking',
-    'ecommerce.feature.catalog@1.2.0#search',
+    'ecommerce.feature.catalog-items@1.0.0#values',
   ]);
-  assert.deepEqual(search.featureRefs, ['ecommerce.progression.faceted-search@1.0.0']);
-  assert.deepEqual(search.dependencies.map(dependency => dependency.id), ['catalog']);
+  assert.deepEqual(search.featureRefs, ['ecommerce.progression.faceted-search@1.0.1']);
+  assert.deepEqual(search.dependencies.map(dependency => dependency.id), ['catalog-discovery']);
 });
 
 interface ProgressionNode {

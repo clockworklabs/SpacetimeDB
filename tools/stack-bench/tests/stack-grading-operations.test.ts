@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   httpNamedActionRequest,
   spacetimeNamedActionRequest,
-} from '../src/actions/stack-action-operations.js';
+} from '../src/stacks/stack-grading-operations.js';
 
 test('SpacetimeDB requests preserve full unsigned 64-bit values', () => {
   const request = spacetimeNamedActionRequest({

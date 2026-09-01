@@ -186,12 +186,12 @@ test('L3 feature requests and production specifications do not claim the same wo
     'a production check must not duplicate a product check byte for byte');
 });
 
-test('the legacy L3 brief agrees with cumulative L2 shipping behavior', () => {
-  const legacy = readFileSync(join(trackRoot, 'prompts', '03-scheduled.md'), 'utf8');
-  assert.match(legacy, /Shipping remains the immediate staff action introduced at level 2/);
-  assert.match(legacy, /shipped order moves to `delivered` \*\*60 seconds\*\* after shipping/);
-  assert.doesNotMatch(legacy, /pending.*moves to.*shipped/is);
-  assert.doesNotMatch(legacy, /time it actually ran/);
+test('the sequential L3 brief agrees with cumulative L2 shipping behavior', () => {
+  const sequentialBrief = readFileSync(join(trackRoot, 'prompts', '03-scheduled.md'), 'utf8');
+  assert.match(sequentialBrief, /Shipping remains the immediate staff action introduced at level 2/);
+  assert.match(sequentialBrief, /shipped order moves to `delivered` \*\*60 seconds\*\* after shipping/);
+  assert.doesNotMatch(sequentialBrief, /pending.*moves to.*shipped/is);
+  assert.doesNotMatch(sequentialBrief, /time it actually ran/);
 });
 
 test('L3 capability and evidence declarations match the selected actions', () => {

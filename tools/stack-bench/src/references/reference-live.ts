@@ -286,6 +286,9 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   if (!Number.isInteger(args.spacetimePort) || args.spacetimePort < 1024 || args.spacetimePort > 65535) {
     throw new Error('--spacetime-port must be an integer from 1024 through 65535');
   }
+  if (args.mutations && args.spacetimePort + args.mutationWorkers - 1 > 65535) {
+    throw new Error('--spacetime-port plus mutation worker offsets must not exceed 65535');
+  }
   args.timeoutMinutes ??= args.mutations ? 120 : 60;
   const maximumTimeoutMinutes = args.mutations ? 180 : 240;
   if (!Number.isFinite(args.timeoutMinutes) || args.timeoutMinutes < 10
@@ -488,7 +491,6 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   process.once('SIGINT', cancel);
   process.once('SIGTERM', cancel);
   let processError = null;
-  let cleanupPending = false;
   try {
     prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
@@ -539,12 +541,6 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
         ? `benchmark exceeded ${args.timeoutMinutes} minute repetition deadline`
         : child.cancelled ? 'benchmark was interrupted'
         : child.error?.message ?? `benchmark exited ${child.code ?? child.signal ?? 'without status'}`;
-      try { rescueSupervisedLease(supervisorState, output); }
-      catch (cleanupError) {
-        cleanupPending = true;
-        throw new Error(`${reason}; lease cleanup failed: ${errorMessage(cleanupError)}; `
-          + `recovery authority retained at ${supervisorState}`);
-      }
       throw new Error(reason);
     }
   } catch (error) {
@@ -552,30 +548,33 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
   } finally {
     process.removeListener('SIGINT', cancel);
     process.removeListener('SIGTERM', cancel);
-    // This wrapper created exactly this temporary directory. The benchmark runner owns and
-    // removes its leased container before returning; deleting the caller-owned
-    // source copy here cannot target another run.
-    try {
-      if (!cleanupPending) {
-        rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-      }
-    } catch (error) {
-      // Cleanup evidence must not replace the benchmark failure that caused it.
-      // Retain the exact owned path for diagnosis; a later run has a distinct
-      // mkdtemp root and cannot accidentally adopt it.
+  }
+  let audit: UnknownRecord & { ok: boolean; failures: string[] };
+  try {
+    audit = args.referenceMutationOnly
+      ? auditMutationWorkerRun(output, fixture)
+      : auditReferenceRun(output, fixture, {
+        requireMutationControl: args.mutations,
+        release: context.binding.release,
+        level: args.level,
+        selectedCheckKeys: context.selectedCheckKeys,
+      });
+  } catch (error) {
+    audit = { ok: false, failures: [`qualification evidence is invalid: ${errorMessage(error)}`] };
+  }
+  let cleanupPending = false;
+  try { rescueSupervisedLease(supervisorState, output); }
+  catch (error) {
+    cleanupPending = true;
+    audit.failures.push(`lease cleanup failed: ${errorMessage(error)}; recovery authority retained at ${supervisorState}`);
+  }
+  if (!cleanupPending) {
+    try { rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); }
+    catch (error) {
       const code = record(error) ? error.code : undefined;
-      const cleanup = `owned temp cleanup failed (${String(code ?? 'unknown')}): ${work}`;
-      processError = processError ? `${processError}; ${cleanup}` : cleanup;
+      audit.failures.push(`owned temp cleanup failed (${String(code ?? 'unknown')}): ${work}`);
     }
   }
-  const audit = args.referenceMutationOnly
-    ? auditMutationWorkerRun(output, fixture)
-    : auditReferenceRun(output, fixture, {
-      requireMutationControl: args.mutations,
-      release: context.binding.release,
-      level: args.level,
-      selectedCheckKeys: context.selectedCheckKeys,
-    });
   const harnessAfter = qualificationInputs();
   if (harnessAfter.sha256 !== harnessBefore.sha256) {
     audit.failures.unshift('qualification harness changed while this repetition was running');
@@ -681,7 +680,7 @@ export function readParallelMutationWorker(path: string, processResult: {
   }
   const run = payload?.runs?.[0] ?? null;
   if (payload?.ok !== true || run?.ok !== true) failures.push('worker qualification did not pass');
-  let control = null;
+  let control: MutationShardControl | null = null;
   if (run?.output) {
     const childRoot = resolve(dirname(path));
     const outputRoot = resolve(childRoot, run.output);
@@ -695,17 +694,21 @@ export function readParallelMutationWorker(path: string, processResult: {
       }
     }
   } else failures.push('worker run output is missing');
-  const shardVerified = control?.shard?.index === expected.workerIndex
+  const shardMatches = control?.shard?.index === expected.workerIndex
     && control.shard.count === expected.workerCount
     && JSON.stringify(control.shard.mutationIds) === JSON.stringify(assigned);
-  if (control?.shard && !shardVerified) {
-    failures.push('worker mutation shard does not match its assignment');
-  }
-  if (control?.results && !control.shard) {
-    failures.push('worker mutation results do not bind their shard assignment');
-  }
+  if (!control?.shard) failures.push('worker mutation shard is missing');
+  else if (!shardMatches) failures.push('worker mutation shard does not match its assignment');
+  const resultIds = Array.isArray(control?.results)
+    ? control.results.map((result: UnknownRecord) => String(result.id ?? '')).sort() : null;
+  const assignedIds = [...assigned].sort();
+  const resultsMatch = resultIds !== null && resultIds.length === assignedIds.length
+    && JSON.stringify(resultIds) === JSON.stringify(assignedIds);
+  if (!Array.isArray(control?.results)) failures.push('worker mutation results are missing');
+  else if (!resultsMatch) failures.push('worker mutation results do not match their shard assignment');
   if (control?.ok !== true) failures.push('worker mutation control did not pass');
-  return { artifact, payload, run, control, assigned, shardVerified, failures };
+  return { artifact, payload, run, control, assigned,
+    shardVerified: shardMatches && resultsMatch, failures };
 }
 
 export function parallelMutationResults(manifest: MutationManifest,
@@ -824,7 +827,9 @@ async function runParallelMutationRepetition(fixture: ReferenceFixture,
   } catch (error) { failures.push(errorMessage(error)); }
   const representative = clean;
   const caught = results.filter(result => result.status === 'CAUGHT').length;
-  if (results.length && caught !== results.length) failures.push('one or more mutations were not cleanly caught');
+  if (results.length !== manifest.mutations.length) {
+    failures.push(`mutation results are incomplete: ${results.length}/${manifest.mutations.length}`);
+  } else if (caught !== results.length) failures.push('one or more mutations were not cleanly caught');
   const fingerprints = new Set([clean.fingerprint].filter(Boolean));
   const images = new Set([clean.imageId, ...inspected.map(worker => worker.run?.imageId)]
     .filter(Boolean));

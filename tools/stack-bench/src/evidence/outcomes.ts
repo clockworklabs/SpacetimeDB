@@ -42,6 +42,18 @@ interface ScoreTotals {
   readonly score?: number | null;
 }
 
+export const RUN_OUTCOME_KINDS = Object.freeze([
+  'provider_failure',
+  'harness_failure',
+  'ungraded',
+  'app_failure',
+  'inconclusive',
+  'passed',
+  'incomplete',
+] as const);
+
+export type RunOutcomeKind = typeof RUN_OUTCOME_KINDS[number];
+
 export interface RunOutcome {
   readonly kind: string;
   readonly phase?: string;
@@ -75,6 +87,13 @@ interface LevelResult {
 
 interface AggregateOutcome extends RunOutcome {
   readonly levels: Readonly<Record<string, RunOutcome>>;
+}
+
+export function runOutcomeKind(value: unknown): RunOutcomeKind {
+  if (typeof value !== 'string' || !(RUN_OUTCOME_KINDS as readonly string[]).includes(value)) {
+    throw new Error(`invalid run outcome kind: ${String(value)}`);
+  }
+  return value as RunOutcomeKind;
 }
 
 function criteria(bundle: OutcomeBundle): KeyedCriterion[] {
@@ -168,7 +187,9 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
     && bundle.selection.checks.length > 0
     && bundle.selection.notRun?.length === 0
     && bundle.selection.reportedChecks?.length === bundle.selection.checks.length;
-  if (!((bundle.totals?.max ?? 0) > 0) && !selectedScopeComplete) {
+  const hasSelectedScope = bundle.selection !== null && bundle.selection !== undefined;
+  if ((hasSelectedScope && !selectedScopeComplete)
+      || (!((bundle.totals?.max ?? 0) > 0) && !selectedScopeComplete)) {
     return { kind: 'ungraded', phase: 'grading', reason: bundle.error ?? 'bundle has no scored denominator',
       appFailures: [], inconclusive: [], harnessFailures: [] };
   }
@@ -198,8 +219,8 @@ export function classifyBundle(bundle: OutcomeBundle | null | undefined): Classi
 }
 
 export function aggregateRunOutcome(levels: readonly LevelResult[]): AggregateOutcome {
-  const priority = ['harness_failure', 'provider_failure', 'ungraded', 'app_failure',
-    'inconclusive', 'passed'];
+  const priority: readonly RunOutcomeKind[] = ['harness_failure', 'provider_failure', 'ungraded',
+    'incomplete', 'app_failure', 'inconclusive', 'passed'];
   const kinds = levels.map(level => level.outcome?.kind ?? 'ungraded');
   const kind = priority.find(candidate => kinds.includes(candidate)) ?? 'ungraded';
   const selected = levels.find(level => (level.outcome?.kind ?? 'ungraded') === kind)?.outcome
@@ -214,13 +235,14 @@ export function aggregateRunOutcome(levels: readonly LevelResult[]): AggregateOu
 }
 
 export function runExitCode(outcome: RunOutcome | null | undefined): 0 | 1 {
-  return ['provider_failure', 'harness_failure', 'ungraded', 'incomplete']
-    .includes(outcome?.kind ?? '') ? 1 : 0;
+  return outcome?.kind === 'app_failure' || outcome?.kind === 'inconclusive'
+    || outcome?.kind === 'passed' ? 0 : 1;
 }
 
 // Continue only from a measured baseline.
 export function ladderMayContinue(outcome: RunOutcome | null | undefined): boolean {
-  return !['provider_failure', 'harness_failure', 'ungraded'].includes(outcome?.kind ?? '');
+  return outcome?.kind === 'app_failure' || outcome?.kind === 'inconclusive'
+    || outcome?.kind === 'passed';
 }
 
 // Advance only after the current level passes.

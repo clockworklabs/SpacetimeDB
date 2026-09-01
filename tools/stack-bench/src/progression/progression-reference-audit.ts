@@ -90,7 +90,7 @@ export interface ProgressionReferenceAuditReport {
   };
   finalCatalogAudit: {
     required: true;
-    status: 'not-run';
+    status: 'passed' | 'not-run';
     checks: number;
     points: number;
     zeroPointChecks: number;
@@ -325,6 +325,7 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
   return {
     ok: terminal.type === 'terminal' && terminal.outcome.kind === 'passed'
       && coverage.graphOwned.complete && grants.length === 0
+      && coverage.finalCatalogAudit.status === 'passed'
       && actions.every(action => action.type === 'build' && action.passed),
     progression: validatedProgression.identity,
     recipe: recipeIdentity,

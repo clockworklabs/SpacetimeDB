@@ -30,8 +30,10 @@ interface NamedAction {
 
 interface NamedActionRequest {
   url?: string;
+  method?: string;
   body?: BodyInit | null;
   missingNote: string;
+  applicationRejectionStatuses?: number[];
 }
 
 interface ActionResult {
@@ -92,12 +94,17 @@ async function probe(action: NamedAction): Promise<Omit<ActionResult, 'id'>> {
       { action, input: { args: action.args }, spacetime, url: args.url }) as NamedActionRequest;
     if (!request.url) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
     const r = await fetch(request.url, {
-      method: 'POST',
+      method: request.method ?? 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: request.body,
     });
-    return { ok: r.status !== 404, status: r.status,
-      note: r.status === 404 ? request.missingNote : '' };
+    const rejectedByApplication = request.applicationRejectionStatuses?.includes(r.status) ?? false;
+    const recognizedWithoutRunning = r.status >= 400 && r.status < 500
+      && ![404, 405, 429].includes(r.status);
+    const ok = r.ok || rejectedByApplication || recognizedWithoutRunning;
+    return { ok, status: r.status,
+      note: r.status === 404 ? request.missingNote
+        : ok ? '' : `action probe returned HTTP ${r.status}` };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, status: 0, note: (message.split('\n')[0] ?? '').slice(0, 90) };
@@ -112,11 +119,11 @@ const results: ActionResult[] = await Promise.all(ACTIONS.map(async action => ({
 const missing = results.filter(r => !r.ok);
 if (!args.quiet) {
   for (const r of results) {
-    console.log(`  ${r.ok ? 'present' : 'MISSING'}  ${r.id.padEnd(11)} ${r.status ? `HTTP ${r.status}` : ''} ${r.note}`);
+    console.log(`  ${r.ok ? 'ready' : 'UNUSABLE'}  ${r.id.padEnd(11)} ${r.status ? `HTTP ${r.status}` : ''} ${r.note}`);
   }
   console.log(missing.length
-    ? `\n${missing.length} named action(s) missing — contention and volume tests cannot be issued against this app.`
-    : '\nall named actions answer.');
+    ? `\n${missing.length} named action(s) unusable — contention and volume tests cannot be issued against this app.`
+    : '\nall named actions are ready.');
 }
 if (args.out) {
   const id = `${args.parentAttemptId ?? 'actions'}-action-check`;

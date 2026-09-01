@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
+import { executeAction } from '../src/actions/action-contract.js';
 import {
-  BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,
   parseRenderedNumber,
 } from '../src/actions/browser-action-executors.js';
@@ -47,20 +46,16 @@ async function run(
   input: UnknownRecord & { readonly do: string },
   provided: ProvidedServices,
 ) {
-  return executeAction(ACTION_REGISTRY, input.do, input, createActionRunContext({
+  return executeAction(ACTION_REGISTRY, input.do, input, {
     capabilities: provided.capabilities,
-    implementations: BROWSER_ACTION_IMPLEMENTATIONS,
-    attempt: { id: `test-${input.do}` },
-  }));
+  });
 }
 
 test('the extracted executor registry is exact and every migrated action has bounded metadata', () => {
-  assert.deepEqual(Object.keys(BROWSER_ACTION_IMPLEMENTATIONS).sort(), BROWSER_ACTION_IDS);
-  for (const id of BROWSER_ACTION_IDS) {
+  for (const id of Object.keys(BROWSER_ACTION_IMPLEMENTATIONS)) {
     const plugin = ACTION_REGISTRY.get(id);
-    assert(plugin.deadline.timeoutMs > 0, id);
+    assert(plugin.timeoutMs > 0, id);
     assert(plugin.capabilities.includes('actors'), id);
-    assert.match(plugin.evidence.type, /-evidence$/, id);
   }
 });
 
@@ -73,9 +68,9 @@ test('timing executes through the contract and still rejects an unknown actor', 
   assert.deepEqual(slept, [17]);
 
   const missing = await run({ do: 'wait', actor: 'missing', ms: 1 }, provided);
-  assert.equal(missing.status, 'failed');
-  assert.equal(missing.code, 'application_failure');
-  assert.equal(missing.summary, 'unknown actor "missing"');
+  assert.equal(missing.status, 'harness_failure');
+  assert.equal(missing.code, 'unclassified_exception');
+  assert.equal(missing.summary, 'harness did not create actor "missing"');
 });
 
 test('interaction actions receive scoped values and preserve click options', async () => {
@@ -201,6 +196,44 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
   assert.equal(populated.status, 'passed');
 });
 
+test('absence checks do not pass before a late element appears', async () => {
+  let checks = 0;
+  const actor = { loc: () => ({ isVisible: async () => ++checks > 1 }) };
+  const result = await run({ do: 'expect', actor: 'a', testid: 'private-row',
+    absent: true, within: 100 }, services(actor));
+  assert.equal(result.status, 'failed');
+  assert.match(result.summary ?? '', /became visible/);
+});
+
+test('unavailable checks do not pass before a control becomes enabled', async () => {
+  let checks = 0;
+  const locator = {
+    filter() { return this; },
+    first() { return this; },
+    isVisible: async () => true,
+    isDisabled: async () => ++checks === 1,
+    getAttribute: async () => null,
+  };
+  const actor = { page: { locator: () => locator } };
+  const result = await run({ do: 'expectUnavailable', actor: 'a', testid: 'admin',
+    within: 100 }, services(actor));
+  assert.equal(result.status, 'failed');
+  assert.match(result.summary ?? '', /became available/);
+});
+
+test('missing values do not satisfy agreement across actors', async () => {
+  const actor = { loc: () => ({ isVisible: async () => false, innerText: async () => '' }) };
+  const provided = services(actor, { browser: {
+    sleep: async () => new Promise(resolve => setTimeout(resolve, 2)),
+  } });
+  provided.capabilities.actors = { get: (name: string) =>
+    name === 'a' || name === 'b' ? actor : undefined };
+  const result = await run({ do: 'expectAgreement', actors: ['a', 'b'],
+    testid: 'total', within: 1 }, provided);
+  assert.equal(result.status, 'failed');
+  assert.match(result.summary ?? '', /missing or unreadable/);
+});
+
 test('expect can verify a persisted form value', async () => {
   const locator = {
     waitFor: async () => {},
@@ -245,7 +278,8 @@ test('ordered text and unavailable controls are explicit implementation-neutral 
     ['Coffee Grinder', 'Air Purifier'],
   );
 
-  const unavailable = await run({ do: 'expectUnavailable', actor: 'a', testid: 'buy-now' }, provided);
+  const unavailable = await run({ do: 'expectUnavailable', actor: 'a', testid: 'buy-now',
+    within: 1 }, provided);
   assert.equal(unavailable.status, 'passed');
   assert.deepEqual(unavailable.observation, { unavailable: true, reason: 'disabled' });
 });

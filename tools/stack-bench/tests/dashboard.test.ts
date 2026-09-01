@@ -238,32 +238,32 @@ test('dashboard marks a current-schema campaign as interrupted when its controll
   assert.equal(interruptedAttempt.progress.phase, 'Controller stopped before completion');
 });
 
-test('dashboard keeps a current-schema campaign readable after the controller is upgraded', t => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-historical-'));
+test('dashboard keeps frozen campaign evidence readable after the controller is upgraded', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-frozen-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const currentPlan = compileCampaignFile(EXAMPLE_CAMPAIGN);
   const state = createCampaignState(currentPlan, { now: '2026-08-18T12:00:00.000Z' });
-  const historicalPlan = structuredClone(currentPlan);
-  historicalPlan.identities.engine.sha256 = 'f'.repeat(64);
-  historicalPlan.contentSha256 = sha256(canonicalDefinitionJson({
-    campaignSchemaVersion: historicalPlan.campaignSchemaVersion,
-    definition: historicalPlan.definition,
-    engine: historicalPlan.identities.engine,
-    bindings: historicalPlan.bindings,
-    stacks: historicalPlan.stacks,
-    agents: historicalPlan.agents,
-    conditions: historicalPlan.conditions,
+  const frozenPlan = structuredClone(currentPlan);
+  frozenPlan.identities.engine.sha256 = 'f'.repeat(64);
+  frozenPlan.contentSha256 = sha256(canonicalDefinitionJson({
+    campaignSchemaVersion: frozenPlan.campaignSchemaVersion,
+    definition: frozenPlan.definition,
+    engine: frozenPlan.identities.engine,
+    bindings: frozenPlan.bindings,
+    stacks: frozenPlan.stacks,
+    agents: frozenPlan.agents,
+    conditions: frozenPlan.conditions,
   }));
-  state.campaignSha256 = historicalPlan.contentSha256;
-  writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${historicalPlan.id}-plan`,
-    identities: emptyArtifactIdentities(), payload: historicalPlan });
-  writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${historicalPlan.id}-state`,
+  state.campaignSha256 = frozenPlan.contentSha256;
+  writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${frozenPlan.id}-plan`,
+    identities: emptyArtifactIdentities(), payload: frozenPlan });
+  writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${frozenPlan.id}-state`,
     identities: emptyArtifactIdentities(), payload: state });
 
   const summary = summarizeCampaign(root);
-  assert.equal(summary.id, historicalPlan.id);
+  assert.equal(summary.id, frozenPlan.id);
   assert.equal(summary.status, 'prepared');
-  assert.equal(summary.attempts.length, historicalPlan.attempts.length);
+  assert.equal(summary.attempts.length, frozenPlan.attempts.length);
 });
 
 test('dashboard rejects a run artifact that does not belong to its frozen attempt', t => {

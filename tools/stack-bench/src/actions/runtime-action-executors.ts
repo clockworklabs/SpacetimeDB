@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 
-import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
+import { actionImplementation, ActionApplicationFailure,
+  ActionInconclusive } from './action-contract.js';
 import type {
   ActionImplementation,
-  ActionImplementationArguments,
 } from './action-contract.js';
 import { evidenceDisposition } from '../evidence/check-evidence.js';
 import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
@@ -14,10 +14,11 @@ import { executeStackCapability, StackCapabilityUnsupportedError } from '../stac
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainerName } from '../stacks/database-containers.js';
 import type { RuntimeControlMode, RuntimeControlSpec } from '../runtime/backend-control.js';
+import type { TextCommandExecutor } from '../runtime/command-executor.js';
 
 type UnknownRecord = Record<string, unknown>;
 type Sleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
-type Exec = (file: string, args: readonly string[], options?: UnknownRecord) => unknown;
+type Exec = TextCommandExecutor;
 
 declare const navigator: { readonly onLine: boolean };
 
@@ -165,21 +166,6 @@ const errorEvidence = (error: unknown): NestedActionEvidence | null => {
   return evidence !== null && typeof evidence === 'object' ? evidence as NestedActionEvidence : null;
 };
 
-export const LIFECYCLE_CONCURRENCY_ACTION_IDS = Object.freeze([
-  'clickConcurrently',
-  'closeClient',
-  'dbSetStock',
-  'freshClient',
-  'openClient',
-  'race',
-  'replayConcurrently',
-  'restartBackend',
-  'sendConcurrently',
-  'setOffline',
-  'startAppServer',
-  'stopAppServer',
-].sort());
-
 const fail = (message: string): never => { throw new ActionApplicationFailure(message); };
 const inconclusive = (message: string): never => { throw new ActionInconclusive(message); };
 
@@ -215,7 +201,7 @@ async function dispatchNested(
 
 function actorFor(capabilities: LifecycleConcurrencyCapabilities, name: string): Actor {
   const actor = capabilities.actors.get(name);
-  if (!actor) return fail(`unknown actor "${name}"`);
+  if (!actor) throw new Error(`harness did not create actor "${name}"`);
   return actor;
 }
 
@@ -280,8 +266,7 @@ async function clickConcurrently(
     }
   }))).filter(Boolean);
   if (notReady.length) {
-    inconclusive(`${concurrency.testId(input.testid)} never became clickable for ${notReady.join(', ')} `
-      + '— the page was not ready, so nothing could be contended');
+    fail(`${concurrency.testId(input.testid)} never became clickable for ${notReady.join(', ')}`);
   }
   const outcomes = await Promise.all(resolved.map(({ target, locator }) =>
     locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
@@ -289,8 +274,8 @@ async function clickConcurrently(
         `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
   const failed = outcomes.filter(Boolean);
   if (failed.length) {
-    inconclusive(`${failed.length} of ${targets.length} concurrent clicks on `
-      + `${concurrency.testId(input.testid)} never dispatched, so nothing was actually contended — `
+    fail(`${failed.length} of ${targets.length} concurrent clicks on `
+      + `${concurrency.testId(input.testid)} failed to dispatch — `
       + failed.join(' | '));
   }
   await concurrency.sleep(input.settleMs ?? 3000, signal);
@@ -435,7 +420,7 @@ interface DatabaseWriteCapabilityOptions {
 }
 
 export function createDatabaseWriteCapability({ backend, spacetime, dbName, expand,
-  exec = execFileSync as unknown as Exec, mongoContainer = databaseContainerName('mongodb'),
+  exec = execFileSync, mongoContainer = databaseContainerName('mongodb'),
   postgresContainer = databaseContainerName('postgres') }: DatabaseWriteCapabilityOptions) {
   return Object.freeze({
     setStock(input: SetStockInput): unknown {
@@ -466,11 +451,7 @@ export function createDatabaseWriteCapability({ backend, spacetime, dbName, expa
 function contractLifecycleAction<Input, Result>(
   implementation: (arguments_: ActionArguments<Input>) => Result | Promise<Result>,
 ): ActionImplementation {
-  return (arguments_: ActionImplementationArguments) => implementation({
-    input: arguments_.input as Input,
-    capabilities: arguments_.capabilities as unknown as LifecycleConcurrencyCapabilities,
-    signal: arguments_.signal,
-  });
+  return actionImplementation(implementation);
 }
 
 function contractBrowserLifecycleAction<Input, Result>(
@@ -479,7 +460,7 @@ function contractBrowserLifecycleAction<Input, Result>(
   return contractLifecycleAction(browserApplicationBoundary(implementation));
 }
 
-export const LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS = Object.freeze({
+export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
   clickConcurrently: contractLifecycleAction(clickConcurrently),
   closeClient: contractBrowserLifecycleAction(closeClient),
   dbSetStock: contractLifecycleAction(dbSetStock),
@@ -493,8 +474,3 @@ export const LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS = Object.freeze({
   startAppServer: contractLifecycleAction(startAppServer),
   stopAppServer: contractLifecycleAction(stopAppServer),
 });
-
-if (Object.keys(LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS).sort().join('\0')
-  !== LIFECYCLE_CONCURRENCY_ACTION_IDS.join('\0')) {
-  throw new Error('lifecycle/concurrency registry does not match its declared action ids');
-}

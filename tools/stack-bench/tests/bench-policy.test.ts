@@ -11,8 +11,9 @@ import { auditFailureSummary, gradeArgv,
   repairHistoryEntry, repairProgressState,
   sourceBoundFirstBuildOutcome }
   from '../commands/bench.js';
-import { finalizeRunTotals, formatLevelSummary }
+import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
+import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
@@ -159,6 +160,13 @@ test('direct runs default to ten repair rounds while an explicit budget still wi
   assert.equal(parseBenchArguments(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);
   assert.equal(parseBenchArguments(['node', 'bench', '--backend', 'postgres',
     '--fix-rounds', '4']).fixRounds, 4);
+});
+
+test('bench arguments reject partial and out-of-range run indexes', () => {
+  assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
+    '--run-index', '1junk']), /--run-index must be an integer/);
+  assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
+    '--run-index', '21']), /--run-index must be an integer from 0 through 20/);
 });
 
 test('bench arguments validate pricing at the CLI boundary', () => {

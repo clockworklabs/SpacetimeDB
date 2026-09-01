@@ -133,12 +133,15 @@ test('partial and invalid attempts are representable without invented scores', (
 
 test('unknown kinds, fields, malformed payloads, and backward timestamps fail closed', () => {
   assert.throws(() => createArtifact({ kind: 'mystery', id: 'x' }), /unknown kind/);
+  assert.throws(() => createArtifact({ kind: 'benchmark_run', id: 'x',
+    payload: { outcome: { kind: 'typo' } } }), /outcome\.kind is invalid/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x', payload: { features: {} } }),
     /payload\.features must be an array/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x',
     timestamps: { startedAt: '2026-08-12T12:00:01.000Z', completedAt: '2026-08-12T12:00:00.000Z' } }),
   /precedes/);
-  const valid = createArtifact({ kind: 'grade', id: 'x' });
+  const valid = createArtifact({ kind: 'grade', id: 'x',
+    payload: { total: 0, max: 0, features: [] } });
   assert.throws(() => writeArtifact('unused.json', { ...valid, surprise: true }), /surprise is unknown/);
   const missingIdentities: Partial<typeof valid> = structuredClone(valid);
   delete missingIdentities.identities;
@@ -153,6 +156,12 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   } = structuredClone(valid);
   delete missingIdentitySlot.identities.experiment;
   assert.throws(() => writeArtifact('unused.json', missingIdentitySlot), /identities\.experiment is required/);
+  const incompleteEngineIdentity = structuredClone(valid);
+  const engine = incompleteEngineIdentity.identities.engine;
+  assert(engine);
+  delete (engine as Partial<typeof engine>).version;
+  assert.throws(() => writeArtifact('unused.json', incompleteEngineIdentity),
+    /identities\.engine\.version is required/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x', identities: { engine: null } }),
     /identities\.engine is required/);
   const observedPayload = { observation: 'observed', source: { sha256: 'a'.repeat(64) },
@@ -168,11 +177,15 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   } }), /contribute zero score/);
   assert.doesNotThrow(() => createArtifact({ kind: 'grade_bundle', id: 'source-bound-scored',
     payload: { observation: 'scored', source: { sha256: 'b'.repeat(64) }, suites: {}, totals: {} } }));
-  assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'legacy-reference' }));
+  assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'incomplete-reference' }),
+    /payload\.fixture is required/);
+  const referencePayload = { fixture: 'standard', requiredRepetitions: 1, runs: [] };
   assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'bad-runner', payload: {
+    ...referencePayload,
     runner: { schemaVersion: 1, mode: 'desktop', platform: 'win32', architecture: 'x64' },
   } }), /runner\.mode is invalid/);
   assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'future-runner', payload: {
+    ...referencePayload,
     runner: { schemaVersion: 2, mode: 'appliance', platform: 'linux', architecture: 'x64' },
   } }), /runner\.schemaVersion must be 1/);
   assert.doesNotThrow(() => createArtifact({ kind: 'null_control', id: 'typed-runner', payload: {
@@ -180,10 +193,12 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
       dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
       kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 },
   } }));
-  assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'legacy-base-runner', payload: {
+  assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'base-runner', payload: {
+    ...referencePayload,
     runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64' },
   } }));
   assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'partial-runner', payload: {
+    ...referencePayload,
     runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
       dockerEngineVersion: '29.1.2' },
   } }), /runner\.dockerOs must be a non-empty string/);
@@ -224,6 +239,8 @@ test('public artifacts reject secret-bearing fields before touching disk', () =>
     const path = join(root, 'run.json');
     assert.throws(() => writeArtifact(path, { kind: 'benchmark_run', id: 'secret-run',
       payload: { backendLease: { leaseToken: 'do-not-persist' } } }), /secret-bearing/);
+    assert.throws(() => writeArtifact(path, { kind: 'benchmark_run', id: 'secret-run',
+      payload: { backendLease: { api_key: 'do-not-persist' } } }), /secret-bearing/);
     assert.equal(existsSync(path), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -235,12 +252,14 @@ test('typed grade evidence is required and obsolete projection fields are reject
     startedAtMs: 1, completedAtMs: 2 });
   const criterion = { id: 'works', points: 1, evidence };
   assert.doesNotThrow(() => createArtifact({ kind: 'grade', id: 'typed-grade',
-    payload: { features: [{ id: 1, setupEvidence, criteria: [criterion] }] } }));
+    payload: { total: 0, max: 1,
+      features: [{ id: 1, max: 1, setupEvidence, criteria: [criterion] }] } }));
   assert.throws(() => createArtifact({ kind: 'grade', id: 'obsolete-grade',
-    payload: { features: [{ id: 1, setupEvidence,
+    payload: { total: 0, max: 1, features: [{ id: 1, max: 1, setupEvidence,
       criteria: [{ ...criterion, passed: false }] }] } }), /passed is obsolete/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'missing-evidence',
-    payload: { features: [{ id: 1, setupEvidence, criteria: [{ id: 'works' }] }] } }),
+    payload: { total: 0, max: 1,
+      features: [{ id: 1, max: 1, setupEvidence, criteria: [{ id: 'works' }] }] } }),
   /evidence is required/);
 });
 

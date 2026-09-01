@@ -59,6 +59,10 @@ function criterionIndex(bundle: EvidenceBundle | null | undefined): Map<string, 
       for (const criterion of feature.criteria ?? []) {
         const key = `${suiteId}/${featureId}/${criterion.id}`;
         if (index.has(key)) throw new Error(`duplicate criterion identity: ${key}`);
+        const points = criterion.points ?? 1;
+        if (!Number.isSafeInteger(points) || points < 0) {
+          throw new Error(`criterion ${key} points must be a non-negative integer`);
+        }
         const evidence = criterionEvidence(criterion);
         const disposition = evidenceDisposition(evidence);
         index.set(key, {
@@ -66,7 +70,7 @@ function criterionIndex(bundle: EvidenceBundle | null | undefined): Map<string, 
           passed: disposition.passed,
           measured: disposition.measured,
           status: evidence.status,
-          points: criterion.points ?? 1,
+          points,
         });
       }
     }

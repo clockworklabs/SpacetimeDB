@@ -57,3 +57,16 @@ test('mutation checkpoints fail closed when a global identity changes', () => {
   assert.throws(() => reusableMutationEvidence(evidence(), current),
     /checkpoint shard does not match/);
 });
+
+test('checkpoint identity comparison ignores object property order', () => {
+  const current = identity();
+  current.shard = { mutationIds: ['m1', 'm2'], count: 1, index: 0 };
+  assert.deepEqual(reusableMutationEvidence(evidence(), current).results.map(result => result.id),
+    ['m1', 'm2']);
+});
+
+test('mutation checkpoints reject duplicate scenario groups', () => {
+  const current = identity();
+  current.groups.push({ ...current.groups[0]! });
+  assert.throws(() => reusableMutationEvidence(evidence(), current), /duplicates scenario first\.json/);
+});

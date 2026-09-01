@@ -99,6 +99,20 @@ test('report read model keeps invalid evidence separate and computes declared di
   assert.match(report.contentSha256, /^[a-f0-9]{64}$/);
   assert.throws(() => validateCampaignReport({ ...report,
     summary: { ...report.summary, completedAttempts: 99 } }), /content identity/);
+  const inconsistent = structuredClone(report);
+  inconsistent.summary.completedAttempts = 99;
+  const { contentSha256: _oldIdentity, ...inconsistentBody } = inconsistent;
+  assert.throws(() => validateCampaignReport({ ...inconsistentBody,
+    contentSha256: sha256(canonicalDefinitionJson(inconsistentBody)) }),
+  /summary does not match its attempts/);
+  const unknownSummaryField = structuredClone(report) as typeof report & {
+    summary: typeof report.summary & { nonsense: boolean };
+  };
+  unknownSummaryField.summary.nonsense = true;
+  const { contentSha256: _oldUnknownIdentity, ...unknownSummaryBody } = unknownSummaryField;
+  assert.throws(() => validateCampaignReport({ ...unknownSummaryBody,
+    contentSha256: sha256(canonicalDefinitionJson(unknownSummaryBody)) }),
+  /summary\.nonsense is unknown/);
 });
 
 test('correction metrics separate successful cost from unresolved spend', () => {

@@ -57,7 +57,6 @@ export interface CheckEvidence {
   actions: CheckEvidenceActionEntry[];
   attachments: CheckEvidenceAttachment[];
   sensitivity: string[];
-  [key: string]: unknown;
 }
 
 export interface CreateCheckEvidenceInput {
@@ -249,7 +248,7 @@ export function validateCheckEvidence(
     }
   });
   validateStringList(value.sensitivity, `${at}.sensitivity`);
-  return value as CheckEvidence;
+  return value as unknown as CheckEvidence;
 }
 
 export function createCheckEvidence({

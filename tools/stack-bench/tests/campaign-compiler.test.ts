@@ -759,26 +759,26 @@ test('compiled campaign validation rejects a rewritten identity, schedule, or su
     summary: { ...plan.summary, attempts: 99 } }), /summary/);
 });
 
-test('stored plans remain readable across engine upgrades but cannot execute there', () => {
+test('frozen plans remain inspectable after an engine upgrade but cannot execute there', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-history-'));
   try {
     const path = join(root, 'campaign.json');
     writeFileSync(path, `${JSON.stringify(definition(), null, 2)}\n`);
-    const historical = structuredClone(compileCampaignFile(path));
-    historical.identities.engine.sha256 = 'f'.repeat(64);
-    historical.contentSha256 = sha256(canonicalDefinitionJson({
-      campaignSchemaVersion: historical.campaignSchemaVersion,
-      definition: historical.definition,
-      engine: historical.identities.engine,
-      bindings: historical.bindings,
-      stacks: historical.stacks,
-      agents: historical.agents,
-      conditions: historical.conditions,
+    const frozen = structuredClone(compileCampaignFile(path));
+    frozen.identities.engine.sha256 = 'f'.repeat(64);
+    frozen.contentSha256 = sha256(canonicalDefinitionJson({
+      campaignSchemaVersion: frozen.campaignSchemaVersion,
+      definition: frozen.definition,
+      engine: frozen.identities.engine,
+      bindings: frozen.bindings,
+      stacks: frozen.stacks,
+      agents: frozen.agents,
+      conditions: frozen.conditions,
     }));
-    assert.throws(() => validateCompiledCampaignPlan(historical), /engine identity/);
-    assert.equal(validateCompiledCampaignPlan(historical,
-      { requireCurrentInputs: false }).contentSha256, historical.contentSha256);
-    const tampered = structuredClone(historical);
+    assert.throws(() => validateCompiledCampaignPlan(frozen), /engine identity/);
+    assert.equal(validateCompiledCampaignPlan(frozen,
+      { requireCurrentInputs: false }).contentSha256, frozen.contentSha256);
+    const tampered = structuredClone(frozen);
     tampered.attempts[0].model = 'rewritten-model';
     assert.throws(() => validateCompiledCampaignPlan(tampered,
       { requireCurrentInputs: false }), /attempt schedule/);

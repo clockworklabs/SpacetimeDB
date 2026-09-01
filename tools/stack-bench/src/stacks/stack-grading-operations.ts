@@ -1,19 +1,5 @@
 import { leasedSpacetimeTarget } from '../runtime/spacetime-target.js';
-
-interface NamedActionParameter {
-  readonly name: string;
-  readonly wireType?: string;
-  readonly in?: string;
-  readonly placeholder?: string;
-}
-
-interface NamedAction {
-  readonly reducer?: string;
-  readonly path: string;
-  readonly method?: string;
-  readonly args?: readonly unknown[];
-  readonly params?: readonly NamedActionParameter[];
-}
+import type { NamedAction } from '../composition/tracks.js';
 
 interface NamedActionInput {
   readonly args?: readonly unknown[];
@@ -69,6 +55,7 @@ export function spacetimeNamedActionRequest({
   input?: NamedActionInput;
   spacetime?: SpacetimeTarget | null;
 }) {
+  if (!action.reducer) throw new TypeError('SpacetimeDB named action requires a reducer');
   const args = input.values === undefined
     ? (input.args ?? action.args ?? [])
     : (action.params ?? []).map(param => input.values?.[param.name]);
@@ -78,8 +65,7 @@ export function spacetimeNamedActionRequest({
     body: spacetimeReducerBody(action, args),
     missingNote: `no reducer named "${action.reducer}"`,
     // The reducer-call HTTP endpoint maps a reducer's deliberate application
-    // failure to 530. This is not a generic server-error allowance: only this
-    // adapter may classify that exact status as an application rejection.
+    // failure to 530. Only this adapter classifies that status as a refusal.
     applicationRejectionStatuses: [530],
   };
 }
@@ -94,6 +80,7 @@ export function httpNamedActionRequest({
   url?: string | null;
 }) {
   const base = String(url ?? '').replace(/\/$/, '');
+  if (!action.path) throw new TypeError('HTTP named action requires a path');
   let path = action.path;
   let body = input.body ?? {};
   if (input.values !== undefined) {

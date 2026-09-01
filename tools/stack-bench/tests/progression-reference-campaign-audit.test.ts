@@ -25,7 +25,7 @@ function completedCampaign() {
 }
 
 const passingAudit = {
-  ok: true,
+  ok: false,
   graphOwned: {
     nodes: 43,
     checks: 146,
@@ -79,7 +79,7 @@ test('completed reference campaigns audit exact owners and recipe bindings', () 
 
   assert(report);
   assert.equal(calls.length, 3);
-  assert.equal(report.ok, true);
+  assert.equal(report.ok, false);
   assert.deepEqual(report.attempts.map(attempt => attempt.stack).sort(),
     ['mongodb', 'postgres', 'spacetime']);
   const first = report.attempts[0];
@@ -87,6 +87,8 @@ test('completed reference campaigns audit exact owners and recipe bindings', () 
   assert.deepEqual(first.progressionGraph.checks, { covered: 146, total: 146 });
   assert.equal(first.fullRecipeCatalog.status, 'not-run');
   assert.equal(first.fullRecipeCatalog.outsideGraph.length, 2);
+  assert.match(formatProgressionReferenceCampaignAudit(report),
+    /Reference progression audit: INCOMPLETE/);
   assert.match(formatProgressionReferenceCampaignAudit(report),
     /graph 43\/43 nodes, 146\/146 checks, 281 points; full recipe catalog not-run, 148 checks, 281 points, 2 outside the graph/);
 });

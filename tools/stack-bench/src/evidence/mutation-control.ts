@@ -125,11 +125,10 @@ export function mutationControlArgv(
 }
 
 export function mutationControlTimeoutMs(
-  manifest: { mutations?: unknown } | null | undefined,
   maxRuntimeMinutes: number = 60,
 ): number {
-  if (!Array.isArray(manifest?.mutations)) {
-    throw new Error('mutation control timeout requires a mutation manifest');
+  if (!Number.isFinite(maxRuntimeMinutes) || maxRuntimeMinutes <= 0) {
+    throw new Error('mutation control runtime limit must be a positive number');
   }
   const boundedBatch = (Number(maxRuntimeMinutes) + 20) * 60_000;
   return Math.max(COMMAND_TIMEOUT_MS, boundedBatch);

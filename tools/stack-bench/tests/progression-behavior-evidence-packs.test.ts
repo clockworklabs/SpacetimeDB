@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, type CompiledPackDefinition }
+import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledCriterion, type CompiledFeature }
   from '../src/composition/definition-compiler.js';
@@ -25,7 +25,7 @@ const packNames = [
 function fragmentText(
   fragment: CompiledPackDefinition['task']['requirements'][number],
 ): string {
-  return readFileSync(join(trackRoot, fragment.path), 'utf8');
+  return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
 function featureFor(pack: CompiledPackDefinition): CompiledFeature {
@@ -105,7 +105,7 @@ test('automatic reorder proves staff access and rejects a customer replay', () =
   const pack = readPack(requiredPackName(0));
   const feature = featureFor(pack);
   assert.equal(feature.setup.filter(step => step.do === 'dbSetStock'
-    && step.item === 'Mirrorless Camera').reduce((total, step) =>
+    && step.item === 'Desk Lamp').reduce((total, step) =>
     total + (typeof step.quantity === 'number' ? step.quantity : 0), 0), 3);
   assert(feature.setup.some(step => step.do === 'signIn' && step.actor === 'staff'));
   assert(feature.setup.some(step => step.do === 'click' && step.actor === 'staff'
@@ -131,13 +131,13 @@ test('cart recovery proves complete and partial restoration', () => {
 
   const partial = criterion(feature, '503b').steps;
   assert.equal(partial.filter(step => step.do === 'dbSetStock'
-    && step.item === 'Mirrorless Camera' && step.quantity === 0).length, 2);
+    && step.item === 'Desk Lamp' && step.quantity === 0).length, 2);
   assert(partial.some(step => step.do === 'expect' && step.testid === 'cart-item'
-    && step.contains === 'Webcam'));
+    && step.contains === 'Gaming Mouse'));
   assert(partial.some(step => step.do === 'expect' && step.testid === 'cart-item'
-    && step.contains === 'Mirrorless Camera' && step.absent === true));
+    && step.contains === 'Desk Lamp' && step.absent === true));
   assert(partial.some(step => step.do === 'expect' && step.testid === 'cart-restore-warning'
-    && step.contains === 'Mirrorless Camera'));
+    && step.contains === 'Desk Lamp'));
 });
 
 test('personalized recommendations prove sales ordering, name ties, and isolation', () => {

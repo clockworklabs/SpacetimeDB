@@ -92,7 +92,11 @@ const nonEmptyString = (value: unknown): value is string =>
   string(value) && value.trim().length > 0;
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+const positiveNumber = (value: unknown): value is number => number(value) && value > 0;
+const nonNegativeNumber = (value: unknown): value is number => number(value) && value >= 0;
 const integer = (value: unknown): value is number => Number.isInteger(value);
+const positiveInteger = (value: unknown): value is number => integer(value) && value > 0;
+const nonNegativeInteger = (value: unknown): value is number => integer(value) && value >= 0;
 const boolean = (value: unknown): value is boolean => typeof value === 'boolean';
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -129,75 +133,76 @@ function fields(required: Record<string, FieldPredicate>,
 
 const actor = { actor: nonEmptyString };
 const actors = { actors: stringArray };
-const settle = { settleMs: number };
-const within = { within: number };
+const settle = { settleMs: nonNegativeNumber };
+const within = { within: positiveNumber };
 const locator = { in: object };
 
-export const ACTION_DEFINITIONS: Readonly<Record<string, ActionDefinition>> = Object.freeze({
+export const ACTION_DEFINITIONS = Object.freeze({
   callAction: fields({ ...actor, action: nonEmptyString, input: object },
     { from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
-  callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: number },
+  callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: nonNegativeNumber },
     { args: anyArray, body: object }),
   clearInput: fields(actor),
   click: fields({ ...actor, testid: nonEmptyString },
-    { contains: string, ...locator, ...settle }),
-  clickConcurrently: fields({ ...actors, testid: nonEmptyString, settleMs: number },
-    { ...locator, targets: anyArray, readyWithin: number, within: number }),
+    { contains: string, ...locator, ...settle, ...within }),
+  clickConcurrently: fields({ ...actors, testid: nonEmptyString, settleMs: nonNegativeNumber },
+    { ...locator, targets: anyArray, readyWithin: positiveNumber, ...within }),
   closeClient: fields(actor),
   createRoom: fields({ ...actor, room: nonEmptyString }, { private: boolean }),
   dbSetStock: fields({ item: nonEmptyString, warehouse: nonEmptyString,
-    quantity: integer, settleMs: number }),
+    quantity: integer, settleMs: nonNegativeNumber }),
   ensureSignedIn: fields({ ...actor, name: nonEmptyString },
-    { password: string, exact: boolean, readyTestid: nonEmptyString, ...settle }),
-  ensureRegistered: fields({ ...actor, name: nonEmptyString },
     { password: string, exact: boolean, readyTestid: nonEmptyString, ...settle }),
   enterRoom: fields({ ...actor, room: nonEmptyString }),
   expect: fields({ ...actor, testid: nonEmptyString },
-    { contains: string, notContains: string, value: string, nonEmpty: boolean, count: integer,
+    { contains: string, notContains: string, value: string, nonEmpty: boolean,
+      count: nonNegativeInteger,
       absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
-    equals: integer, maxEach: integer }),
+    equals: nonNegativeInteger, maxEach: nonNegativeInteger }),
   expectActionOutcome: fields({ ...actor, outcome: nonEmptyString }, { routeProvenBy: nonEmptyString }),
   expectAgreement: fields({ ...actors, testid: nonEmptyString },
     { numeric: boolean, ...locator, ...within }),
-  expectAllPresent: fields({ ...actor, prefix: string, count: integer, within: number }),
-  expectCallOutcomes: fields({ accepted: integer }),
-  expectElementCount: fields({ ...actor, testid: nonEmptyString, equals: integer },
-    { contains: string, ...locator, within: number }),
+  expectAllPresent: fields({ ...actor, prefix: string, count: nonNegativeInteger,
+    within: positiveNumber }),
+  expectCallOutcomes: fields({ accepted: nonNegativeInteger }),
+  expectElementCount: fields({ ...actor, testid: nonEmptyString, equals: nonNegativeInteger },
+    { contains: string, ...locator, ...within }),
   expectForgeryRejected: fields(actor),
-  expectNotReceived: fields({ ...actor, contains: string }),
+  expectNotReceived: fields({ ...actor, contains: string }, within),
   expectNumber: fields({ ...actor, testid: nonEmptyString },
     { equals: number, atLeast: number, atMost: number, relativeTo: nonEmptyString, plus: number,
       ...locator, ...within }),
   expectOrderMatches: fields({ ...actors, prefix: string }),
   expectSequence: fields({ ...actor, testid: nonEmptyString, equals: stringArray },
     { ...locator, ...within }),
-  expectReceived: fields({ ...actor, contains: string, within: number }),
+  expectReceived: fields({ ...actor, contains: string, within: positiveNumber }),
   expectReplayRejected: fields(actor),
-  expectStable: fields({ ...actor, testid: nonEmptyString, samples: integer, intervalMs: number }),
+  expectStable: fields({ ...actor, testid: nonEmptyString },
+    { samples: positiveInteger, intervalMs: positiveNumber, ...within }),
   expectUnavailable: fields({ ...actor, testid: nonEmptyString },
     { contains: string, ...locator, ...within }),
   fill: fields({ ...actor, testid: nonEmptyString, text: string },
-    { enter: boolean, ...locator, ...settle }),
-  forgeWrite: fields({ ...actor, fromActor: nonEmptyString, settleMs: number },
-    { field: nonEmptyString, text: string, value: scalar }),
+    { enter: boolean, ...locator, ...settle, ...within }),
+  forgeWrite: fields({ ...actor, fromActor: nonEmptyString, settleMs: nonNegativeNumber },
+    { field: value => oneOf(value, ['room', 'identity']), text: string, value: scalar }),
   freshClient: fields(actor),
   openClient: fields(actor, settle),
   pressKey: fields({ ...actor, key: nonEmptyString }, settle),
-  race: fields({ branches: anyArray, settleMs: number }),
-  register: fields({ ...actor, name: nonEmptyString }),
-  recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString }, locator),
+  race: fields({ branches: anyArray, settleMs: nonNegativeNumber }),
+  recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString },
+    { ...locator, ...within }),
   reload: fields({ ...actor, settleMs: number }),
   replayAs: fields({ ...actor, from: nonEmptyString, match: string },
     { swap: object, namedAction: object, namedTarget: object, ...settle }),
-  replayConcurrently: fields({ ...actors, settleMs: number },
+  replayConcurrently: fields({ ...actors, settleMs: nonNegativeNumber },
     { match: string, method: nonEmptyString }),
-  restartBackend: fields({ settleMs: number }),
+  restartBackend: fields({ settleMs: nonNegativeNumber }),
   runScript: fields({ script: relativePath, args: anyArray }, { ...settle, timeoutMs: processTimeout }),
-  scheduleMessage: fields({ ...actor, text: string, secondsAhead: number }),
   send: fields({ ...actor, text: string }),
-  sendConcurrently: fields({ senders: anyArray, delayMs: number }),
-  sendMany: fields({ ...actor, prefix: string, count: integer, delayMs: number }),
+  sendConcurrently: fields({ senders: anyArray, delayMs: nonNegativeNumber }),
+  sendMany: fields({ ...actor, prefix: string, count: positiveInteger,
+    delayMs: nonNegativeNumber }),
   setOffline: fields(actor, { offline: boolean, ...settle }),
   signIn: fields({ ...actor, name: nonEmptyString },
     { password: string, exact: boolean, expectFailure: boolean }),
@@ -206,10 +211,14 @@ export const ACTION_DEFINITIONS: Readonly<Record<string, ActionDefinition>> = Ob
   startAppServer: fields({}, settle),
   stopAppServer: fields({}, settle),
   typeInto: fields({ ...actor, text: string }),
-  wait: fields({ ...actor, ms: number }),
-});
+  wait: fields({ ...actor, ms: nonNegativeNumber }),
+} satisfies Record<string, ActionDefinition>);
 
-export const ACTION_IDS = Object.freeze(Object.keys(ACTION_DEFINITIONS).sort());
+export type ActionId = keyof typeof ACTION_DEFINITIONS;
+
+export const ACTION_IDS: readonly ActionId[] = Object.freeze(
+  Object.keys(ACTION_DEFINITIONS).sort() as ActionId[],
+);
 
 function fail(at: string, message: string): never {
   throw new Error(`invalid benchmark definition at ${at}: ${message}`);
@@ -307,16 +316,21 @@ function validateInlineNamedAction(value: unknown,
 
 function validateSenders(value: unknown, at: string): void {
   if (!array(value) || value.length === 0) fail(at, 'must be a non-empty array');
+  const actors = new Set<string>();
   value.forEach((sender, index) => {
     const where = `${at}[${index}]`;
     strictObject(sender, where, new Set(['actor', 'prefix', 'count', 'delayMs']));
     if (!nonEmptyString(sender.actor)) fail(`${where}.actor`, 'must be a non-empty string');
+    actors.add(sender.actor);
     if (!string(sender.prefix)) fail(`${where}.prefix`, 'must be a string');
-    if (!integer(sender.count) || sender.count < 1) fail(`${where}.count`, 'must be a positive integer');
-    if (sender.delayMs !== undefined && !number(sender.delayMs)) {
-      fail(`${where}.delayMs`, 'must be a number');
+    if (!positiveInteger(sender.count)) fail(`${where}.count`, 'must be a positive integer');
+    if (sender.delayMs !== undefined && !nonNegativeNumber(sender.delayMs)) {
+      fail(`${where}.delayMs`, 'must be a non-negative number');
     }
   });
+  if (actors.size < 2) {
+    fail(at, 'must contain at least two distinct actors');
+  }
 }
 
 function validateTargets(value: unknown, actors: readonly string[], at: string): void {
@@ -334,8 +348,10 @@ function validateTargets(value: unknown, actors: readonly string[], at: string):
 function validateStep(step: unknown, at: string): asserts step is CompiledStep {
   if (!object(step)) fail(at, 'must be an object');
   if (!nonEmptyString(step.do)) fail(`${at}.do`, 'must be a non-empty string');
-  const definition = ACTION_DEFINITIONS[step.do];
-  if (!definition) fail(`${at}.do`, `unknown action ${JSON.stringify(step.do)}`);
+  if (!Object.hasOwn(ACTION_DEFINITIONS, step.do)) {
+    fail(`${at}.do`, `unknown action ${JSON.stringify(step.do)}`);
+  }
+  const definition: ActionDefinition = ACTION_DEFINITIONS[step.do as ActionId];
   strictObject(step, at, new Set(Object.keys(definition.fields)));
   for (const [name, validator] of Object.entries(definition.required)) {
     if (step[name] === undefined) fail(`${at}.${name}`, 'is required');
@@ -371,10 +387,26 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
     fail(at, 'replayAs namedAction and namedTarget must be supplied together');
   }
   if (step.do === 'sendConcurrently') validateSenders(step.senders, `${at}.senders`);
-  if (step.do === 'clickConcurrently' && step.targets) {
+  if (step.do === 'clickConcurrently' || step.do === 'replayConcurrently') {
     const population = step.actors;
-    if (!stringArray(population)) fail(`${at}.actors`, 'must be an array of strings');
-    validateTargets(step.targets, population, `${at}.targets`);
+    if (!stringArray(population) || new Set(population).size < 2) {
+      fail(`${at}.actors`, 'must contain at least two distinct actors');
+    }
+    if (step.do === 'clickConcurrently' && step.targets) {
+      validateTargets(step.targets, population, `${at}.targets`);
+    }
+  }
+  if (step.do === 'callConcurrently') {
+    const population = step.actors;
+    if (!stringArray(population) || new Set(population).size < 2) {
+      fail(`${at}.actors`, 'must contain at least two distinct actors');
+    }
+  }
+  if (step.do === 'expectAgreement' || step.do === 'expectOrderMatches') {
+    const population = step.actors;
+    if (!stringArray(population) || new Set(population).size < 2) {
+      fail(`${at}.actors`, 'must contain at least two distinct actors');
+    }
   }
   if (step.do === 'race') {
     const branches = step.branches;

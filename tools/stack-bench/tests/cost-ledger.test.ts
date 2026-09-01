@@ -42,3 +42,13 @@ test('cost ledger accepts a complete non-billable session without receipts', () 
   assert.equal(ledger.receiptCostUsd, 0);
   assert.equal(ledger.complete, true);
 });
+
+test('cost evidence rejects negative and malformed money values', () => {
+  assert.throws(() => durableCostLedger({ levels: [{ level: 1, buildSession: {
+    costUsd: -1,
+  } }] }), /costUsd/);
+  assert.throws(() => durableCostLedger({ totals: { costUsd: -1 } }), /totals\.costUsd/);
+  assert.throws(() => durableCostLedger({ levels: [{ level: 1, buildSession: {
+    costUsd: 1, costReceipts: [{ receipt: { complete: true, reconciled: true, error: null } }],
+  } }] }), /receipt\[0\]\.costUsd/);
+});

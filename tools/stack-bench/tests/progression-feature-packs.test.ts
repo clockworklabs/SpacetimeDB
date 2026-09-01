@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, type CompiledPackDefinition }
+import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { compileProgressionDefinitionFile }
@@ -38,11 +38,7 @@ test('the current graph keeps reservation product ownership separate from stable
 function fragmentText(
   fragment: CompiledPackDefinition['task']['requirements'][number],
 ): string {
-  const source = readFileSync(join(trackRoot, fragment.path), 'utf8');
-  const start = fragment.from ? source.indexOf(fragment.from) : 0;
-  const end = fragment.until ? source.indexOf(fragment.until, start + 1) : source.length;
-  assert(start >= 0 && end > start, `${fragment.id} must resolve to text`);
-  return source.slice(start, end);
+  return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
 test('each feature pack owns only its prompt and exact dependencies', () => {

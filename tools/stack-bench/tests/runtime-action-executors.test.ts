@@ -2,14 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
+import { executeAction } from '../src/actions/action-contract.js';
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
   databaseWriteFailureDetail,
-  LIFECYCLE_CONCURRENCY_ACTION_IDS,
-  LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-} from '../src/actions/lifecycle-concurrency-action-executors.js';
+  RUNTIME_ACTION_IMPLEMENTATIONS,
+} from '../src/actions/runtime-action-executors.js';
 
 type UnknownRecord = Record<string, unknown>;
 type Event = string | readonly [string, boolean, number];
@@ -54,11 +53,9 @@ function services(
 
 async function run(input: UnknownRecord, capabilities: Record<string, unknown>) {
   const action = String(input.do);
-  return executeAction(ACTION_REGISTRY, action, input, createActionRunContext({
+  return executeAction(ACTION_REGISTRY, action, input, {
     capabilities,
-    implementations: LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-    attempt: { id: `test-${action}` },
-  }));
+  });
 }
 
 function observation(result: { readonly observation: unknown }): UnknownRecord {
@@ -66,11 +63,9 @@ function observation(result: { readonly observation: unknown }): UnknownRecord {
   return result.observation as UnknownRecord;
 }
 
-test('the final executor registry covers exactly the lifecycle/concurrency action ids', () => {
-  assert.deepEqual(Object.keys(LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS).sort(),
-    LIFECYCLE_CONCURRENCY_ACTION_IDS);
-  for (const id of LIFECYCLE_CONCURRENCY_ACTION_IDS) {
-    assert(ACTION_REGISTRY.get(id).deadline.timeoutMs > 0, id);
+test('the runtime executor registry contains only registered actions', () => {
+  for (const id of Object.keys(RUNTIME_ACTION_IMPLEMENTATIONS)) {
+    assert(ACTION_REGISTRY.get(id).timeoutMs > 0, id);
   }
 });
 

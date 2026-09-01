@@ -37,10 +37,6 @@ export interface ReferenceFixtureSelector {
 }
 
 type ReferenceFixtureSource = Pick<ReferenceFixture, 'imported' | 'targetPath'>;
-
-
-
-
 interface EffectiveSource {
   basePath: string;
   files: Map<string, Buffer>;
@@ -113,14 +109,19 @@ export function validateReferenceRegistry(registry: unknown,
   const issues: string[] = [];
   const candidate = record(registry) ? registry : {};
   if (candidate.schemaVersion !== 4) issues.push('schemaVersion must be 4');
-  const fixtures: ReferenceFixture[] = Array.isArray(candidate.fixtures) ? candidate.fixtures : [];
+  const fixtures: unknown[] = Array.isArray(candidate.fixtures) ? candidate.fixtures : [];
   if (fixtures.length === 0) {
     return { ok: false, issues: [...issues, 'fixtures must be a non-empty array'] };
   }
   const ids = new Set();
   const tuples = new Set();
   const referencedManifests = new Map();
-  for (const fixture of fixtures) {
+  for (const value of fixtures) {
+    if (!record(value)) {
+      issues.push('fixture must be an object');
+      continue;
+    }
+    const fixture = value as unknown as ReferenceFixture;
     const label = fixture.id ?? '<unnamed>';
     if (typeof fixture.id !== 'string' || !fixture.id || ids.has(fixture.id)) issues.push(`${label}: id is missing or duplicated`);
     ids.add(fixture.id);
@@ -164,12 +165,24 @@ export function validateReferenceRegistry(registry: unknown,
       ? fixture.mutationManifests : [];
     if (!Array.isArray(fixture.mutationManifests)) issues.push(`${label}: mutationManifests must be an array`);
     for (const manifestPath of manifests) {
+      if (!isSafeRelativePath(manifestPath)) {
+        issues.push(`${label}: unsafe mutation manifest path ${String(manifestPath)}`);
+        continue;
+      }
       if (referencedManifests.has(manifestPath)) issues.push(`${label}: ${manifestPath} is already owned by ${referencedManifests.get(manifestPath)}`);
       referencedManifests.set(manifestPath, label);
       const full = join(root, manifestPath);
       if (!existsSync(full)) issues.push(`${label}: missing mutation manifest ${manifestPath}`);
       else {
-        const manifest: Record<string, unknown> = JSON.parse(readFileSync(full, 'utf8'));
+        let manifest: Record<string, unknown> | null = null;
+        try {
+          const parsed: unknown = JSON.parse(readFileSync(full, 'utf8'));
+          if (record(parsed)) manifest = parsed;
+          else issues.push(`${label}: ${manifestPath} must contain an object`);
+        } catch (error) {
+          issues.push(`${label}: ${manifestPath} is not valid JSON: ${errorMessage(error)}`);
+        }
+        if (!manifest) continue;
         if (fixture.status === 'active' || fixture.status === 'candidate') {
           if (manifest.schemaVersion !== 2) {
             issues.push(`${label}: ${manifestPath} must use mutation schema 2`);
@@ -243,11 +256,8 @@ export function inspectImportedReference(fixture: ReferenceFixture,
     try { metadata = JSON.parse(metadataBytes.toString('utf8')); }
     catch { failures.push('reference.json is not valid JSON'); }
   }
+  failures.push(...referenceMetadataIssues(metadata));
   if (record(metadata)) {
-    if (metadata.schemaVersion !== 1) failures.push('reference.json schemaVersion must be 1');
-    if (typeof metadata.kind !== 'string' || !FIXTURE_KINDS.has(metadata.kind)) {
-      failures.push('reference.json kind is invalid');
-    }
     if (!Array.isArray(metadata.installDirectories) || metadata.installDirectories.length === 0) {
       failures.push('reference.json installDirectories must be non-empty');
     } else {
@@ -288,9 +298,43 @@ export function inspectImportedReference(fixture: ReferenceFixture,
 
 export function prepareReferenceFixtureSource(fixture: ReferenceFixtureSource, destination: string,
   { root = ROOT }: { root?: string } = {}): HashFilesResult {
-  const source = effectiveReferenceSource(fixture, { root });
-  seedAppSource(source.basePath, destination);
+  seedAppSource(referenceSourcePath(fixture, root), destination);
   return hashAppSource(destination);
+}
+
+export function referenceMetadataIssues(metadata: unknown): string[] {
+  if (!record(metadata)) return ['reference.json must contain an object'];
+  const failures: string[] = [];
+  if (metadata.schemaVersion !== 1) failures.push('reference.json schemaVersion must be 1');
+  if (typeof metadata.kind !== 'string' || !FIXTURE_KINDS.has(metadata.kind)) {
+    failures.push('reference.json kind is invalid');
+  }
+  const installDirectories = Array.isArray(metadata.installDirectories)
+    ? metadata.installDirectories : [];
+  const paths: Array<[string, unknown, boolean]> = [];
+  if (installDirectories.length) {
+    paths.push(...installDirectories.map((path, index) =>
+      [`installDirectories[${index}]`, path, false] as [string, unknown, boolean]));
+    if (new Set(installDirectories).size !== installDirectories.length) {
+      failures.push('reference.json installDirectories must be unique');
+    }
+  }
+  const client = record(metadata.client) ? metadata.client : null;
+  paths.push(['client.directory', client?.directory, true]);
+  if (metadata.kind === 'node-api') {
+    const server = record(metadata.server) ? metadata.server : null;
+    paths.push(['server.directory', server?.directory, true]);
+  } else if (metadata.kind === 'spacetime') {
+    paths.push(['moduleDirectory', metadata.moduleDirectory, true],
+      ['bindingsDirectory', metadata.bindingsDirectory, false]);
+  }
+  for (const [label, path, mustInstall] of paths) {
+    if (!isSafeRelativePath(path)) failures.push(`reference.json ${label} is unsafe or missing`);
+    else if (mustInstall && !installDirectories.includes(path)) {
+      failures.push(`reference.json ${label} must be listed in installDirectories`);
+    }
+  }
+  return failures;
 }
 
 export function assertPlainReferenceSourceTree(source: string): void {
@@ -310,15 +354,20 @@ export function assertPlainReferenceSourceTree(source: string): void {
 
 function effectiveReferenceSource(fixture: ReferenceFixtureSource,
   { root }: { root: string }): EffectiveSource {
-  const baseRelative = fixture.imported?.path ?? fixture.targetPath;
-  if (!safeReferencePath(baseRelative)) throw new Error('imported fixture path is unsafe');
-  const basePath = join(root, baseRelative ?? '');
-  if (!existsSync(basePath)) throw new Error('imported fixture directory is missing');
-  assertContainedPlainTree(root, basePath);
+  const basePath = referenceSourcePath(fixture, root);
   const baseHash = hashDirectory(basePath);
   const files = new Map(baseHash.files.map(name => [name,
     readFileSync(join(basePath, ...name.split('/')))]));
   return { basePath, files };
+}
+
+function referenceSourcePath(fixture: ReferenceFixtureSource, root: string): string {
+  const baseRelative = fixture.imported?.path ?? fixture.targetPath;
+  if (!safeReferencePath(baseRelative)) throw new Error('imported fixture path is unsafe');
+  const basePath = join(root, baseRelative);
+  if (!existsSync(basePath)) throw new Error('imported fixture directory is missing');
+  assertContainedPlainTree(root, basePath);
+  return basePath;
 }
 
 function hashEffectiveFiles(files: Map<string, Buffer>): { sha256: string; files: string[] } {

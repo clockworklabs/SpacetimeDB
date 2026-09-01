@@ -235,10 +235,12 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
   const validatedNodeIds = nodeIds as string[];
   const selectedNodes = new Set(validatedNodeIds);
   const expectedIds = exactKeys(expected.map(check => check.id), 'progression checks');
+  const missingNodeOwner = validatedNodeIds.some(nodeId =>
+    !expected.some(check => check.nodeId === nodeId));
   if (expected.some(check => typeof check.nodeId !== 'string' || !check.nodeId
     || !selectedNodes.has(check.nodeId)
     || !Number.isSafeInteger(check.points) || check.points < 1)
-    || validatedNodeIds.some(nodeId => !expected.some(item => item.nodeId === nodeId))) {
+    || missingNodeOwner) {
     throw new Error('progression checks require node ownership and positive points');
   }
   if (!object(bundle.selection)) throw new Error('grade bundle selection is required');

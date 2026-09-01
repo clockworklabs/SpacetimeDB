@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
+import { compileScenarioDefinition } from '../composition/definition-compiler.js';
+
 export interface HashFilesResult {
   sha256: string;
   files: string[];
@@ -21,21 +23,6 @@ export interface SessionProvenanceInput {
   scenarioPaths: readonly string[];
   trackDir: string;
   trackManifestPath: string;
-}
-
-interface RubricCriterion {
-  id?: unknown;
-  points?: unknown;
-}
-
-interface RubricFeature {
-  id?: unknown;
-  name?: unknown;
-  criteria?: readonly RubricCriterion[];
-}
-
-interface RubricSpec {
-  features?: readonly RubricFeature[];
 }
 
 interface RubricRow {
@@ -95,14 +82,14 @@ export function hashRubric(
 ): RubricHash {
   const rows: RubricRow[] = [];
   for (const path of [...new Set(paths.map(item => resolve(item)))].sort()) {
-    const spec = JSON.parse(readFileSync(path, 'utf8')) as RubricSpec;
-    for (const feature of spec.features ?? []) {
-      for (const criterion of feature.criteria ?? []) {
+    const spec = compileScenarioDefinition(JSON.parse(readFileSync(path, 'utf8')), { source: path });
+    for (const feature of spec.features) {
+      for (const criterion of feature.criteria) {
         rows.push({
           file: relative(resolve(base), path).replaceAll('\\', '/'),
-          feature: String(feature.id ?? feature.name ?? ''),
+          feature: String(feature.id),
           criterion: String(criterion.id),
-          points: Number(criterion.points ?? 0),
+          points: criterion.points,
         });
       }
     }

@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, realpathSync,
 import { join, dirname, resolve, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import type { Track, TrackDefinition } from '../src/composition/tracks.js';
 import type { BackendLease } from '../src/runtime/backend-lease.js';
@@ -59,8 +60,10 @@ type RecipeTaskRequest = Parameters<typeof resolveBoundRecipeTaskRequest>[1] & {
   recipe?: Exclude<ExactRecipeRequest, string>;
 };
 
+type AgentMode = 'build' | 'upgrade' | 'fix' | 'resume';
+
 interface AgentArgs {
-  mode: string;
+  mode: AgentMode;
   backend: string;
   app: string;
   level: number;
@@ -98,6 +101,14 @@ const isRecord = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const stringValue = (value: unknown): string | null => typeof value === 'string' ? value : null;
+
+function stringArray(value: string, option: string): string[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || parsed.some(item => typeof item !== 'string')) {
+    throw new Error(`${option} must be an array of strings`);
+  }
+  return parsed;
+}
 
 function sessionUsage(value: unknown): SessionUsage {
   return isRecord(value) ? {
@@ -262,63 +273,76 @@ function normalizeGuidance(value: string): 'neutral' | 'prescribed' {
   throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
 }
 
-function parseArgs(argv: readonly string[]): AgentArgs {
-  const a: Partial<AgentArgs> & Pick<AgentArgs, 'level' | 'runIndex' | 'model' | 'guidance' | 'track'> = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed',
-    track: DEFAULT_TRACK };
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--mode': a.mode = argv[++i] ?? ''; break;
-      case '--track': a.track = argv[++i] ?? ''; break;
-      case '--backend': a.backend = argv[++i] ?? ''; break;
-      case '--level': a.level = parseInt(argv[++i] ?? '', 10); break;
-      case '--app': a.app = argv[++i] ?? ''; break;
-      case '--run-index': a.runIndex = parseInt(argv[++i] ?? '', 10); break;
-      case '--model': a.model = argv[++i] ?? ''; break;
-      case '--pricing-json': a.pricing = JSON.parse(argv[++i] ?? ''); break;
-      case '--guidance': a.guidance = normalizeGuidance(argv[++i] ?? ''); break;
-      case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i] ?? ''); break;
-      case '--credential-aliases-json': a.credentialAliases = JSON.parse(argv[++i] ?? ''); break;
-      case '--recipe': a.recipe = argv[++i] ?? ''; break;
-      case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i] ?? ''); break;
-      case '--thinking': a.thinking = argv[++i] ?? ''; break;
-      case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
-      case '--skills': a.skills = (argv[++i] ?? '').split(',').map((skill: string) => skill.trim()).filter(Boolean); break;
-      case '--skills-json': a.skills = JSON.parse(argv[++i] ?? ''); break;
-      case '--skill-identity-json': a.skillIdentity = validateSkillIdentity(
-        JSON.parse(argv[++i] ?? '')); break;
-      case '--api-key': a.apiKey = argv[++i] ?? ''; break;
-      case '--print-prompt': a.printPrompt = true; break;
-      default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
-    }
+export function parseAgentArgs(argv: readonly string[]): AgentArgs {
+  const strings = ['mode', 'track', 'backend', 'level', 'app', 'run-index', 'model',
+    'pricing-json', 'guidance', 'guidance-document-json', 'credential-aliases-json',
+    'recipe', 'recipe-task-json', 'thinking', 'max-budget-usd', 'skills', 'skills-json',
+    'skill-identity-json', 'api-key'] as const;
+  const { values: rawValues } = parseNodeArgs({ args: [...argv.slice(2)], options: Object.fromEntries([
+    ...strings.map(name => [name, { type: 'string' as const }]),
+    ['print-prompt', { type: 'boolean' as const }],
+  ]), strict: true, allowPositionals: false });
+  const values = rawValues as Partial<Record<(typeof strings)[number], string>>
+    & { 'print-prompt'?: boolean };
+  const mode = values.mode;
+  if (mode !== 'build' && mode !== 'upgrade' && mode !== 'fix' && mode !== 'resume') {
+    throw new Error('--mode must be build, upgrade, fix, or resume');
   }
-  if (!a.mode || !a.backend || !a.app) {
-    console.error('Usage: node dist/commands/agent.js --mode build|upgrade|fix --backend <b> --app <dir> [--level N]');
-    process.exit(2);
+  const backend = values.backend;
+  const app = values.app;
+  if (!backend || !app) {
+    throw new Error('usage: node dist/commands/agent.js --mode build|upgrade|fix|resume '
+      + '--backend <backend> --app <directory> [--level <positive integer>]');
   }
-  if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
+  const level = values.level === undefined ? 1 : Number(values.level);
+  if (!Number.isSafeInteger(level) || level < 1) {
+    throw new Error('--level must be a positive integer');
+  }
+  const runIndex = values['run-index'] === undefined ? 0 : Number(values['run-index']);
+  if (!Number.isSafeInteger(runIndex) || runIndex < 0) {
+    throw new Error('--run-index must be a non-negative integer');
+  }
+  const model = values.model ?? 'claude-sonnet-5';
+  const maxBudgetUsd = values['max-budget-usd'] === undefined
+    ? undefined : Number(values['max-budget-usd']);
+  if (maxBudgetUsd !== undefined && (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
   }
-  if (a.pricing !== undefined) {
-    a.pricing = validatePricingAuthority(a.pricing, { at: '--pricing-json' });
-  } else if (a.maxBudgetUsd !== undefined) {
-    const rates = claudeRatesForModel(a.model);
-    if (!rates) throw new Error(`no default pricing is recorded for model ${a.model}`);
-    a.pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
-      { at: 'default pricing' });
-  } else {
-    a.pricing = null;
+  if (values.skills !== undefined && values['skills-json'] !== undefined) {
+    throw new Error('--skills and --skills-json cannot be used together');
   }
-  return { mode: a.mode, backend: a.backend, app: a.app, level: a.level,
-    runIndex: a.runIndex, model: a.model, guidance: a.guidance, track: a.track,
-    pricing: a.pricing ?? null, ...(a.guidanceDocument ? { guidanceDocument: a.guidanceDocument } : {}),
-    ...(a.credentialAliases ? { credentialAliases: a.credentialAliases } : {}),
-    ...(a.recipe ? { recipe: a.recipe } : {}), ...(a.recipeTask ? { recipeTask: a.recipeTask } : {}),
-    ...(a.thinking ? { thinking: a.thinking } : {}),
-    ...(a.maxBudgetUsd !== undefined ? { maxBudgetUsd: a.maxBudgetUsd } : {}),
-    ...(a.skills ? { skills: a.skills } : {}),
-    ...(a.skillIdentity ? { skillIdentity: a.skillIdentity } : {}),
-    ...(a.apiKey ? { apiKey: a.apiKey } : {}),
-    ...(a.printPrompt ? { printPrompt: true } : {}) };
+  const skills = values.skills?.split(',').map(skill => skill.trim()).filter(Boolean)
+    ?? (values['skills-json'] === undefined ? undefined
+      : stringArray(values['skills-json'], '--skills-json'));
+  let pricing = values['pricing-json'] === undefined
+    ? undefined : validatePricingAuthority(JSON.parse(values['pricing-json']), { at: '--pricing-json' });
+  if (pricing === undefined && maxBudgetUsd !== undefined) {
+    const rates = claudeRatesForModel(model);
+    if (!rates) throw new Error(`no default pricing is recorded for model ${model}`);
+    pricing = validatePricingAuthority({ unit: PRICING_UNIT, rates },
+      { at: 'default pricing' });
+  }
+  return { mode, backend, app, level, runIndex, model,
+    guidance: normalizeGuidance(values.guidance ?? 'prescribed'),
+    track: values.track ?? DEFAULT_TRACK, pricing: pricing ?? null,
+    ...(values['guidance-document-json'] ? {
+      guidanceDocument: JSON.parse(values['guidance-document-json']) as GuidanceDocument,
+    } : {}),
+    ...(values['credential-aliases-json'] ? {
+      credentialAliases: JSON.parse(values['credential-aliases-json']) as Record<string, string>,
+    } : {}),
+    ...(values.recipe ? { recipe: values.recipe } : {}),
+    ...(values['recipe-task-json'] ? {
+      recipeTask: JSON.parse(values['recipe-task-json']) as RecipeTaskRequest,
+    } : {}),
+    ...(values.thinking ? { thinking: values.thinking } : {}),
+    ...(maxBudgetUsd !== undefined ? { maxBudgetUsd } : {}),
+    ...(skills ? { skills } : {}),
+    ...(values['skill-identity-json'] ? {
+      skillIdentity: validateSkillIdentity(JSON.parse(values['skill-identity-json'])),
+    } : {}),
+    ...(values['api-key'] ? { apiKey: values['api-key'] } : {}),
+    ...(values['print-prompt'] ? { printPrompt: true } : {}) };
 }
 
 const dbUrl = (backend: string, runIndex: number, dbPort: number | null, track: Track): string | null => {
@@ -620,7 +644,7 @@ export function agentRecipeRequest(explicitRecipe: string | null = null,
 // The coding container must not contain the controller or grading inputs.
 
 async function main() {
-  const args = parseArgs(process.argv);
+  const args = parseAgentArgs(process.argv);
   const track = loadTrack(args.track);
   const p = portsFor(track, args.backend, args.runIndex);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);

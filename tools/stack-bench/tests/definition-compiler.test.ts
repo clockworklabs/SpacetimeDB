@@ -11,11 +11,7 @@ import {
   compileTrackManifest,
   type CompiledStep,
 } from '../src/composition/definition-compiler.js';
-import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { BROWSER_ACTION_IDS } from '../src/actions/browser-action-executors.js';
-import { ACTOR_TRANSPORT_ACTION_IDS } from '../src/actions/actor-transport-action-executors.js';
-import { LIFECYCLE_CONCURRENCY_ACTION_IDS }
-  from '../src/actions/lifecycle-concurrency-action-executors.js';
+import { ACTION_IMPLEMENTATIONS, ACTION_REGISTRY } from '../src/actions/action-catalog.js';
 import { TRACKS_DIR } from '../src/composition/tracks.js';
 
 interface CurrentDefinition {
@@ -62,7 +58,7 @@ test('authored waits and observation windows fit inside their action deadlines',
   const visit = (step: CompiledStep, source: string): void => {
     const action = ACTION_REGISTRY.get(step.do);
     assert(action, `${source}: ${step.do} must be registered`);
-    const deadline = action.deadline.timeoutMs;
+    const deadline = action.timeoutMs;
     if (step.do === 'wait') {
       assert(typeof step.ms === 'number', `${source}: wait must have a duration`);
       assert(deadline > step.ms, `${source}: ${step.do} ${step.ms}ms exceeds its deadline`);
@@ -104,29 +100,15 @@ test('definitions require schema v1 and explicit suite inheritance', () => {
     /schemaVersion: unsupported version undefined/);
 });
 
-test('the scenario language is an explicit 51-action registry', () => {
-  assert.equal(ACTION_IDS.length, 51);
+test('the scenario language is an explicit 48-action registry', () => {
+  assert.equal(ACTION_IDS.length, 48);
   assert.deepEqual(ACTION_REGISTRY.ids, ACTION_IDS);
   assert(ACTION_IDS.includes('clickConcurrently'));
   assert(ACTION_IDS.includes('restartBackend'));
 });
 
-test('the extracted executor modules cover every action exactly once', () => {
-  const grader = readFileSync(join(TRACKS_DIR, '..', 'dist', 'grader', 'grade.js'), 'utf8');
-  const runtime = grader.slice(grader.indexOf('async function runStep('),
-    grader.indexOf('// ─── Feature grading'));
-  const legacyOccurrences = [
-    ...[...runtime.matchAll(/case '([a-zA-Z]+)':/g)].map(match => match[1]),
-    ...[...runtime.matchAll(/step\.do === '([a-zA-Z]+)'/g)].map(match => match[1]),
-  ];
-  const legacy = new Set(legacyOccurrences);
-  const extracted = [...BROWSER_ACTION_IDS, ...ACTOR_TRANSPORT_ACTION_IDS,
-    ...LIFECYCLE_CONCURRENCY_ACTION_IDS];
-  assert.deepEqual([...new Set([...legacy, ...extracted])].sort(), ACTION_IDS);
-  assert.deepEqual(extracted.filter(id => legacy.has(id)), []);
-  const occurrences = [...legacyOccurrences, ...extracted].reduce((counts, id) =>
-    counts.set(id, (counts.get(id) ?? 0) + 1), new Map());
-  assert.deepEqual(ACTION_IDS.filter(id => occurrences.get(id) !== 1), []);
+test('the action implementation registry covers every action exactly once', () => {
+  assert.deepEqual(Object.keys(ACTION_IMPLEMENTATIONS).sort(), ACTION_IDS);
 });
 
 function scenario(step: unknown = { do: 'wait', actor: 'a', ms: 1 }): unknown {
@@ -163,6 +145,22 @@ test('extracted action inputs expose their runtime options without allowing scri
     'the compiler must materialize the default before scoring');
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'callConcurrently',
     actors: ['a', 'b'], action: 'checkout', settleMs: 1, args: [], body: {} })));
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'callConcurrently',
+    actors: ['a', 'a'], action: 'checkout', settleMs: 1 })), /at least two distinct actors/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'clickConcurrently',
+    actors: ['a', 'a'], testid: 'checkout', settleMs: 1 })), /at least two distinct actors/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'replayConcurrently',
+    actors: ['a', 'a'], settleMs: 1 })), /at least two distinct actors/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'sendConcurrently',
+    senders: [{ actor: 'a', prefix: 'one', count: 1 },
+      { actor: 'a', prefix: 'two', count: 1 }], delayMs: 1 })),
+  /at least two distinct actors/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'expectAgreement',
+    actors: ['a'], testid: 'total' })), /at least two distinct actors/);
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'wait', actor: 'a', ms: -1 })),
+    /wrong type or value/);
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'expectNotReceived',
+    actor: 'a', contains: 'secret', within: 1000 })));
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'signUp', actor: 'a',
     name: 'seeded', exact: true })));
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',

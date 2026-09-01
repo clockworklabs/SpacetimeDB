@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -7,7 +7,7 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
-import { hashAppSource, restoreAppSource } from '../runtime/source-snapshot.js';
+import { hashAppSource, restoreAppSource, snapshotAppSource } from '../runtime/source-snapshot.js';
 import {
   progressionEngine,
 } from './progression-engine.js';
@@ -462,9 +462,9 @@ function rejectTreeSymlinks(path: string, label: string): void {
   }
 }
 
-function restoreGrantSource(state: ProgressionState, owner: WorkspaceProgressionOwner,
+function grantSource(state: ProgressionState, owner: WorkspaceProgressionOwner,
   grant: ProgressionGrant, checkpoint: unknown, workspaceRoot: string,
-  engineSha256: string): void {
+  engineSha256: string): { appDir: string; sourcePath: string; sha256: string } {
   if (!object(checkpoint) || typeof checkpoint.artifact !== 'string'
     || !checkpoint.artifact) {
     throw new Error('continuation grant requires an exact source checkpoint artifact');
@@ -502,17 +502,14 @@ function restoreGrantSource(state: ProgressionState, owner: WorkspaceProgression
     || saved.files.length !== artifact.payload.source.files) {
     throw new Error('continuation checkpoint bytes do not match the graded level source');
   }
-  restoreAppSource(sourcePath, appDir);
-  if (hashAppSource(appDir).sha256 !== artifact.payload.source.sha256) {
-    throw new Error('continuation source restoration did not reproduce the graded level source');
-  }
+  return { appDir, sourcePath, sha256: artifact.payload.source.sha256 };
 }
 
 function grantResumeBinding(state: ProgressionState, owner: WorkspaceProgressionOwner,
   workspaceRoot: string): ResumeBinding {
   const sourcePath = ownedPath(workspaceRoot, owner.workspace.appDirectory,
     'progression application');
-  const source = directoryHash(sourcePath);
+  const source = hashAppSource(sourcePath);
   return {
     actionSha256: sha256(canonicalDefinitionJson(progressionEngine.nextAction(state))),
     source: {
@@ -539,13 +536,40 @@ export function grantProgressionState(path: string, { progression, featureCatalo
     }
     const validatedOwner = validateWorkspaceOwner(owner);
     const state = progressionEngine.grantStrikes(current.state, grant);
-    restoreGrantSource(current.state, validatedOwner, grant as ProgressionGrant,
-      checkpoint, dirname(resolve(path)),
+    const workspaceRoot = dirname(resolve(path));
+    const source = grantSource(current.state, validatedOwner, grant as ProgressionGrant,
+      checkpoint, workspaceRoot,
       current.artifact.identities.engine.sha256);
-    return writeProgressionState(path, { progression, featureCatalogIdentity,
-      dependencyPolicyIdentity, owner: validatedOwner, state,
-      resume: grantResumeBinding(state, validatedOwner, dirname(resolve(path))),
-      id: current.artifact.id });
+    const previous = hashAppSource(source.appDir);
+    const backupRoot = mkdtempSync(join(workspaceRoot, '.progression-grant-'));
+    const backupSource = join(backupRoot, 'source');
+    try {
+      snapshotAppSource(source.appDir, backupSource);
+      try {
+        restoreAppSource(source.sourcePath, source.appDir);
+        if (hashAppSource(source.appDir).sha256 !== source.sha256) {
+          throw new Error('continuation source restoration did not reproduce the graded level source');
+        }
+        return writeProgressionState(path, { progression, featureCatalogIdentity,
+          dependencyPolicyIdentity, owner: validatedOwner, state,
+          resume: grantResumeBinding(state, validatedOwner, workspaceRoot),
+          id: current.artifact.id });
+      } catch (error) {
+        try {
+          restoreAppSource(backupSource, source.appDir);
+          const restored = hashAppSource(source.appDir);
+          if (restored.sha256 !== previous.sha256 || restored.files.length !== previous.files.length) {
+            throw new Error('continuation grant rollback did not restore the prior application source');
+          }
+        } catch (rollbackError) {
+          throw new AggregateError([error, rollbackError],
+            'continuation grant failed and its source rollback also failed');
+        }
+        throw error;
+      }
+    } finally {
+      rmSync(backupRoot, { recursive: true, force: true });
+    }
   } finally {
     releaseCampaignLock(lock);
   }

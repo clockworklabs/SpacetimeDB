@@ -7,6 +7,7 @@ import { readProgressionState } from '../progression/progression-state.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { DependencyEvent, DependencyState } from '../progression/dependency-mode.js';
+import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import type { DependencyPromptSelection } from '../progression/dependency-mode.js';
 
@@ -122,22 +123,6 @@ function dependencyHistory(state: DependencyState): NonNullable<DependencyProgre
   };
 }
 
-function progressionOwner(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan) {
-  return {
-    schemaVersion: 1,
-    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-    attempt: {
-      id: attempt.id,
-      track: plan.definition.track,
-      stack: attempt.stack,
-      agentAdapter: attempt.agentAdapter,
-      model: attempt.model,
-      conditionSha256: attempt.condition.sha256,
-    },
-    workspace: { appDirectory: 'source' },
-  };
-}
-
 export function dependencyProgress(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
   executionDirectory: string | null): DependencyProgress | null {
   if (attempt.mode?.id !== 'dependency' || !plan.featureCatalog
@@ -150,7 +135,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
         plan.featureCatalog, plan.dependencyPolicy)),
       featureCatalogIdentity: plan.featureCatalog.identity,
       dependencyPolicyIdentity: plan.dependencyPolicy.identity,
-      owner: progressionOwner(plan, attempt),
+      owner: campaignProgressionOwner(plan, attempt, { workspace: true }),
     });
     const state = stored.state;
     const definitions = new Map(state.definition.nodes.map(node => [node.id, node]));

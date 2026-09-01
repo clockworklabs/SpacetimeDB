@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, type CompiledPackDefinition }
+import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition, type CompiledCriterion, type CompiledFeature }
   from '../src/composition/definition-compiler.js';
@@ -27,11 +27,7 @@ const packs = {
 function fragmentText(
   fragment: CompiledPackDefinition['task']['requirements'][number],
 ): string {
-  const text = readFileSync(join(trackRoot, fragment.path), 'utf8');
-  const start = fragment.from ? text.indexOf(fragment.from) : 0;
-  const end = fragment.until ? text.indexOf(fragment.until, start + 1) : text.length;
-  assert(start >= 0 && end > start, `${fragment.id} must select text`);
-  return text.slice(start, end);
+  return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
 function selectedCriteria(pack: CompiledPackDefinition): Array<{

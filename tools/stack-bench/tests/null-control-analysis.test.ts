@@ -71,3 +71,13 @@ test('typed null analysis gets failure phase from evidence, not detail wording',
   assert.equal(result.criteria[0]?.failureStage, 'setup');
   assert.equal(result.ok, true);
 });
+
+test('null analysis rejects invalid rubric points', () => {
+  const evidence = createCheckEvidence({ status: 'failed', code: 'test_result', phase: 'assertion',
+    summary: null, startedAtMs: 1, completedAtMs: 2 });
+  for (const points of [Number.NaN, -1, 1.5, '2']) {
+    assert.throws(() => analyseNullReports([{ track: 'shop', level: 1, id: 'features',
+      report: { features: [{ id: 1, criteria: [{ id: 'a', points, evidence }] }] } }]),
+    /points must be a non-negative integer/);
+  }
+});

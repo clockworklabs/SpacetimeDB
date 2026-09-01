@@ -68,11 +68,6 @@
             },
             {
               "actor": "a",
-              "do": "ensureRegistered",
-              "name": "alice"
-            },
-            {
-              "actor": "a",
               "do": "ensureSignedIn",
               "name": "alice"
             },
@@ -236,11 +231,6 @@
             },
             {
               "actor": "a",
-              "do": "register",
-              "name": "alice"
-            },
-            {
-              "actor": "a",
               "do": "reload",
               "settleMs": 1
             },
@@ -269,12 +259,6 @@
             },
             {
               "actor": "a",
-              "do": "scheduleMessage",
-              "secondsAhead": 1,
-              "text": "later"
-            },
-            {
-              "actor": "a",
               "do": "send",
               "text": "hello"
             },
@@ -285,7 +269,12 @@
                 {
                   "actor": "a",
                   "count": 1,
-                  "prefix": "message"
+                  "prefix": "message-a"
+                },
+                {
+                  "actor": "b",
+                  "count": 1,
+                  "prefix": "message-b"
                 }
               ]
             },

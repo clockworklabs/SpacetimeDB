@@ -5,6 +5,8 @@ import type {
   CompiledProgressionNode,
   CompiledProgressionQuestline,
 } from './progression-definition.js';
+import { isProgressionIdentifier, isProgressionVersion,
+  parseVersionedProgressionId } from './progression-identifiers.js';
 
 export const DEPENDENCY_MODE_SCHEMA_VERSION = 4;
 export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
@@ -53,8 +55,6 @@ export interface CompiledDependencyDefinition extends CompiledProgressionDefinit
   repairSelection: DependencyRepairSelection;
 }
 
-const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at: string, message: string): never => {
@@ -75,13 +75,15 @@ function nonEmptyString(value: unknown, at: string): string {
 
 function identifier(value: unknown, at: string): string {
   const result = nonEmptyString(value, at);
-  if (!ID.test(result)) return fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
+  if (!isProgressionIdentifier(result)) {
+    return fail(at, 'must contain lowercase letters, numbers, dots, dashes, or underscores');
+  }
   return result;
 }
 
-function semanticVersion(value: unknown, at: string): string {
+function progressionVersion(value: unknown, at: string): string {
   const result = nonEmptyString(value, at);
-  if (!VERSION.test(result)) return fail(at, 'must be an exact semantic version');
+  if (!isProgressionVersion(result)) return fail(at, 'must be an exact semantic version');
   return result;
 }
 
@@ -103,10 +105,9 @@ function uniqueStrings(value: unknown, at: string,
     if (seen.has(result)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(result)}`);
     seen.add(result);
     if (exactRefs) {
-      const split = result.lastIndexOf('@');
-      if (split < 1) fail(`${at}[${index}]`, 'must be an exact id@version reference');
-      identifier(result.slice(0, split), `${at}[${index}] id`);
-      semanticVersion(result.slice(split + 1), `${at}[${index}] version`);
+      if (!parseVersionedProgressionId(result)) {
+        fail(`${at}[${index}]`, 'must be an exact id@semantic-version reference');
+      }
     } else {
       identifier(result, `${at}[${index}]`);
     }
@@ -162,7 +163,7 @@ function compileGraphDefinition(input: unknown,
   }
   if (definition.kind !== expectedKind) fail(`${source}.kind`, `must be ${JSON.stringify(expectedKind)}`);
   identifier(definition.id, `${source}.id`);
-  semanticVersion(definition.version, `${source}.version`);
+  progressionVersion(definition.version, `${source}.version`);
   if (definition.state !== 'draft' && definition.state !== 'qualified') {
     fail(`${source}.state`, 'must be "draft" or "qualified"');
   }
@@ -219,9 +220,12 @@ function compileGraphDefinition(input: unknown,
       }
       if (check.requiresFeatures !== undefined) {
         check.requiresFeatures = uniqueStrings(check.requiresFeatures,
-          `${checkAt}.requiresFeatures`, { nonEmpty: false }).sort();
+          `${checkAt}.requiresFeatures`).sort();
       }
     });
+    if (!node.gradingChecks.some(check => check.role === 'feature')) {
+      fail(`${at}.gradingChecks`, 'must contain at least one feature check');
+    }
     node.gradingChecks.sort((left, right) => left.id.localeCompare(right.id));
     if (!Array.isArray(node.dependencies)) fail(`${at}.dependencies`, 'must be an array');
     const compiledNode = node.level !== undefined || node.dependencyReasons !== undefined;
@@ -271,8 +275,19 @@ function compileGraphDefinition(input: unknown,
   });
 
   const nodesById = new Map(definition.nodes.map(node => [node.id, node]));
-  const knownFeatureIds = new Set(definition.nodes.flatMap(node => node.featureRefs)
-    .map(reference => reference.slice(0, reference.lastIndexOf('@'))));
+  const featureOwners = new Map<string, string>();
+  for (const node of definition.nodes) {
+    for (const reference of node.featureRefs) {
+      const parsed = parseVersionedProgressionId(reference);
+      if (!parsed) return fail(`${source}.nodes.${node.id}.featureRefs`, `invalid reference ${reference}`);
+      const priorOwner = featureOwners.get(parsed.id);
+      if (priorOwner !== undefined) {
+        fail(`${source}.nodes.${node.id}.featureRefs`,
+          `${parsed.id} is already owned by ${priorOwner}`);
+      }
+      featureOwners.set(parsed.id, node.id);
+    }
+  }
   for (const node of definition.nodes) {
     const at = `${source}.nodes.${node.id}.dependencies`;
     for (const dependency of node.dependencies) {
@@ -280,7 +295,7 @@ function compileGraphDefinition(input: unknown,
     }
     for (const check of node.gradingChecks) {
       for (const featureId of check.requiresFeatures ?? []) {
-        if (!knownFeatureIds.has(featureId)) {
+        if (!featureOwners.has(featureId)) {
           fail(`${source}.nodes.${node.id}.gradingChecks.${check.id}.requiresFeatures`,
             `references unknown feature ${JSON.stringify(featureId)}`);
         }

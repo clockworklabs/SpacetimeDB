@@ -5,11 +5,15 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { readArtifactPayload } from '../evidence/artifacts.js';
 import { durableCostLedger } from '../evidence/cost-proof.js';
 import { aggregateRunOutcome } from '../evidence/outcomes.js';
+import type { RunOutcome as EvidenceRunOutcome } from '../evidence/outcomes.js';
+import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord }
+  from '../evidence/benchmark-run.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { liveProgressionStatus } from '../progression/live-progression.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import { readProgressionState } from '../progression/progression-state.js';
+import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -21,20 +25,16 @@ const safeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value);
 const finite = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+const record = (value: unknown): value is UnknownRecord =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 
-export interface RunOutcome extends UnknownRecord {
-  kind?: string;
-  phase?: string;
-  reason?: string;
-  inconclusive?: unknown[];
-  harnessFailures?: unknown[];
+export interface RunOutcome extends Partial<EvidenceRunOutcome>, UnknownRecord {
   provider?: { providerStatus?: number | null };
 }
 
 interface RunRegression { score?: number; max?: number }
-interface RunSelection extends UnknownRecord {
-  schemaVersion?: number;
-  sha256?: string;
+interface RunSelection extends Omit<Partial<GradeBundleSelection>,
+'scoredChecks' | 'observedChecks'>, UnknownRecord {
   specifications?: unknown;
   scoredChecks?: PlannedCheck[];
   observedChecks?: PlannedCheck[];
@@ -56,7 +56,8 @@ interface RunObservation extends UnknownRecord {
   artifact?: unknown;
 }
 
-interface RunLevel extends UnknownRecord {
+interface RunLevel extends Omit<Partial<RunLevelRecord>,
+'selection' | 'outcome' | 'firstBuild' | 'regression' | 'repair'>, UnknownRecord {
   level: number;
   score?: number;
   max?: number;
@@ -77,7 +78,10 @@ interface RunLevel extends UnknownRecord {
   };
 }
 
-export interface BenchmarkRun extends UnknownRecord {
+export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
+'parentAttemptId' | 'mode' | 'track' | 'backend' | 'model' | 'pricing' | 'guidance'
+| 'condition' | 'selectionRequest' | 'featureCatalog' | 'dependencyPolicy'
+>>, UnknownRecord {
   id?: string | null;
   artifactEnvelope?: {
     attempt?: { parentId?: string };
@@ -113,6 +117,8 @@ export interface BenchmarkRun extends UnknownRecord {
   runtime?: { buildImage?: string | null };
   totals?: { costUsd?: number | null; costComplete?: boolean };
   backendLease?: { runId?: string; backend?: string; state?: string };
+  contaminated?: boolean;
+  contamination?: { verdict?: string };
 }
 
 interface GradeBundle extends UnknownRecord {
@@ -172,10 +178,106 @@ export function expectedDependencyRunOutcomeKind(
   return expected;
 }
 
+type Mismatch = (condition: unknown, field: string) => void;
+
+function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
+  finalGradedLevel: RunLevel | null, mismatch: Mismatch): void {
+  if (resultDir === null || !finalGradedLevel
+    || !['passed', 'app_failure'].includes(run.outcome?.kind ?? '')) return;
+  if (!resultDir) {
+    mismatch(true, 'packageEvidence');
+    return;
+  }
+  let source = null;
+  let grading = null;
+  try {
+    const sourcePath = join(resolve(resultDir), 'source');
+    if (!existsSync(sourcePath)) throw new Error('missing source');
+    source = hashDirectory(sourcePath);
+  } catch {
+    mismatch(true, 'packageEvidence.source');
+  }
+  try {
+    const bundlePath = join(resolve(resultDir), 'grading', 'bundle.json');
+    if (!existsSync(bundlePath)) throw new Error('missing grading bundle');
+    grading = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' }) as GradeBundle;
+  } catch {
+    mismatch(true, 'packageEvidence.grading');
+  }
+  if (!source || !grading) return;
+  mismatch(grading.source?.sha256 !== source.sha256,
+    'packageEvidence.grading.sourceSha256');
+  mismatch(grading.selection?.sha256 !== finalGradedLevel.selection?.sha256,
+    'packageEvidence.grading.selectionSha256');
+  mismatch(grading.totals?.score !== finalGradedLevel.score
+    || grading.totals?.max !== finalGradedLevel.max, 'packageEvidence.grading.score');
+}
+
+function validateDependencyEvidence(plan: CampaignValidationPlan,
+  attempt: CampaignValidationAttempt, run: BenchmarkRun, resultDir: string | null,
+  expectedLevels: number[], interruptedPrefix: boolean, mismatch: Mismatch): void {
+  if (typeof resultDir !== 'string' || !resultDir) {
+    mismatch(true, 'progressionState');
+    return;
+  }
+  try {
+    const owner = campaignProgressionOwner(plan, attempt, { workspace: true });
+    const featureCatalog = plan.featureCatalog!;
+    const dependencyPolicy = plan.dependencyPolicy!;
+    const progression = compileProgressionInput(dependencyRuntimeDefinition(
+      featureCatalog, dependencyPolicy));
+    const stored = readProgressionState(join(resolve(resultDir), 'progression-state.json'), {
+      progression,
+      featureCatalogIdentity: featureCatalog.identity,
+      dependencyPolicyIdentity: dependencyPolicy.identity,
+      owner,
+    });
+    const storedStatus = liveProgressionStatus(stored.state);
+    mismatch(canonicalDefinitionJson(run.progressionStatus)
+      !== canonicalDefinitionJson(storedStatus), 'progressionStatus');
+    const ladder = run.validation?.ladder;
+    mismatch(canonicalDefinitionJson(ladder?.requestedLevels)
+      !== canonicalDefinitionJson(expectedLevels), 'validation.ladder.requestedLevels');
+    const conclusiveLevels = [...new Set(stored.state.attempts
+      .filter(item => item.outcome === 'conclusive').map(item => item.level))];
+    mismatch(canonicalDefinitionJson(ladder?.completedLevels)
+      !== canonicalDefinitionJson(conclusiveLevels), 'validation.ladder.completedLevels');
+    for (const level of run.levels ?? []) {
+      const last = [...stored.state.attempts].reverse().find(item => item.level === level.level);
+      mismatch(!last, `levels.L${level.level}.progressionAttempt`);
+      if (!last) continue;
+      mismatch(last.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
+        `levels.L${level.level}.selection.sha256`);
+      const validScore = safeInteger(level.score) && safeInteger(level.max)
+        && level.max > 0 && level.score >= 0 && level.score <= level.max;
+      mismatch(last.outcome === 'conclusive' && !validScore, `levels.L${level.level}.score`);
+      mismatch(last.outcome === 'inconclusive' && level.graded !== false,
+        `levels.L${level.level}.graded`);
+      const codingInterruption = last.outcome === 'inconclusive'
+        && level.outcome?.phase === 'coding-session';
+      mismatch(codingInterruption && last.category !== level.outcome?.kind,
+        `levels.L${level.level}.progressionAttempt.category`);
+      mismatch(codingInterruption && last.reason !== level.outcome?.reason,
+        `levels.L${level.level}.progressionAttempt.reason`);
+    }
+    if (stored.state.phase === 'terminal') {
+      const expectedOutcome = expectedDependencyRunOutcomeKind(
+        run.levels ?? [], stored.state.terminalOutcome);
+      mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
+    } else if (!interruptedPrefix) {
+      mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
+        'progressionState.phase');
+    }
+  } catch {
+    mismatch(true, 'progressionState');
+  }
+}
+
 export function validateCampaignRun(plan: CampaignValidationPlan, attempt: CampaignValidationAttempt,
   input: unknown, {
   buildImage = null, resultDir = null,
 }: { buildImage?: string | null; resultDir?: string | null } = {}): BenchmarkRun {
+  if (!record(input)) throw new Error('campaign run must be an object');
   const run = input as BenchmarkRun;
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
     && item.model === attempt.model);
@@ -217,38 +319,7 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   const finalGradedLevel = progressionLevel === null
     ? gradedLevels.at(-1) ?? null
     : gradedLevels.find(level => level.level === progressionLevel) ?? null;
-  if (resultDir !== null && finalGradedLevel
-    && ['passed', 'app_failure'].includes(run.outcome?.kind ?? '')) {
-    if (typeof resultDir !== 'string' || !resultDir) {
-      mismatch(true, 'packageEvidence');
-    } else {
-      let source = null;
-      let grading = null;
-      try {
-        const sourcePath = join(resolve(resultDir), 'source');
-        if (!existsSync(sourcePath)) throw new Error('missing source');
-        source = hashDirectory(sourcePath);
-      } catch {
-        mismatch(true, 'packageEvidence.source');
-      }
-      try {
-        const bundlePath = join(resolve(resultDir), 'grading', 'bundle.json');
-        if (!existsSync(bundlePath)) throw new Error('missing grading bundle');
-        grading = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' }) as GradeBundle;
-      } catch {
-        mismatch(true, 'packageEvidence.grading');
-      }
-      if (source && grading) {
-        mismatch(grading.source?.sha256 !== source.sha256,
-          'packageEvidence.grading.sourceSha256');
-        mismatch(grading.selection?.sha256 !== finalGradedLevel.selection?.sha256,
-          'packageEvidence.grading.selectionSha256');
-        mismatch(grading.totals?.score !== finalGradedLevel.score
-          || grading.totals?.max !== finalGradedLevel.max,
-        'packageEvidence.grading.score');
-      }
-    }
-  }
+  validatePackageEvidence(run, resultDir, finalGradedLevel, mismatch);
   mismatch(run.artifactEnvelope?.attempt?.parentId !== attempt.id, 'attempt.parentId');
   mismatch(canonicalDefinitionJson(run.mode ?? null)
     !== canonicalDefinitionJson(attempt.mode), 'mode');
@@ -266,11 +337,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
     !== canonicalDefinitionJson(attempt.featureCatalog ?? null), 'featureCatalog');
   mismatch(canonicalDefinitionJson(run.dependencyPolicy ?? null)
     !== canonicalDefinitionJson(attempt.dependencyPolicy ?? null), 'dependencyPolicy');
-  const expectedProgressionOwner = attempt.dependencyPolicy ? { schemaVersion: 1,
-    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-    attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
-      agentAdapter: attempt.agentAdapter, model: attempt.model,
-      conditionSha256: attempt.condition.sha256 } } : null;
+  const expectedProgressionOwner = attempt.dependencyPolicy
+    ? campaignProgressionOwner(plan, attempt) : null;
   mismatch(canonicalDefinitionJson(run.progressionOwner ?? null)
     !== canonicalDefinitionJson(expectedProgressionOwner), 'progressionOwner');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
@@ -477,64 +545,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
     }
   }
   if (dependencyMode) {
-    if (typeof resultDir !== 'string' || !resultDir) {
-      mismatch(true, 'progressionState');
-    } else {
-      try {
-        const owner = { ...expectedProgressionOwner,
-          workspace: { appDirectory: 'source' } };
-        const featureCatalog = plan.featureCatalog!;
-        const dependencyPolicy = plan.dependencyPolicy!;
-        const progression = compileProgressionInput(dependencyRuntimeDefinition(
-          featureCatalog, dependencyPolicy));
-        const stored = readProgressionState(join(resolve(resultDir), 'progression-state.json'), {
-          progression,
-          featureCatalogIdentity: featureCatalog.identity,
-          dependencyPolicyIdentity: dependencyPolicy.identity,
-          owner,
-        });
-        const storedStatus = liveProgressionStatus(stored.state);
-        mismatch(canonicalDefinitionJson(run.progressionStatus)
-          !== canonicalDefinitionJson(storedStatus), 'progressionStatus');
-        mismatch(canonicalDefinitionJson(ladder?.requestedLevels)
-          !== canonicalDefinitionJson(expectedLevels), 'validation.ladder.requestedLevels');
-        const conclusiveLevels = [...new Set(stored.state.attempts
-          .filter(item => item.outcome === 'conclusive').map(item => item.level))];
-        mismatch(canonicalDefinitionJson(ladder?.completedLevels)
-          !== canonicalDefinitionJson(conclusiveLevels), 'validation.ladder.completedLevels');
-        for (const level of run.levels ?? []) {
-          const last = [...stored.state.attempts].reverse()
-            .find(item => item.level === level.level);
-          mismatch(!last, `levels.L${level.level}.progressionAttempt`);
-          if (!last) continue;
-          mismatch(last?.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
-            `levels.L${level.level}.selection.sha256`);
-          const validScore = safeInteger(level.score) && safeInteger(level.max)
-            && level.max > 0 && level.score >= 0 && level.score <= level.max;
-          mismatch(last?.outcome === 'conclusive' && !validScore,
-            `levels.L${level.level}.score`);
-          mismatch(last?.outcome === 'inconclusive' && level.graded !== false,
-            `levels.L${level.level}.graded`);
-          const codingInterruption = last?.outcome === 'inconclusive'
-            && level.outcome?.phase === 'coding-session';
-          mismatch(codingInterruption && last.category !== level.outcome?.kind,
-            `levels.L${level.level}.progressionAttempt.category`);
-          mismatch(codingInterruption && last.reason !== level.outcome?.reason,
-            `levels.L${level.level}.progressionAttempt.reason`);
-        }
-        if (stored.state.phase === 'terminal') {
-          // Graph completion does not override whole-app contract or regression failures.
-          const expectedOutcome = expectedDependencyRunOutcomeKind(
-            run.levels ?? [], stored.state.terminalOutcome);
-          mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
-        } else if (!interruptedPrefix) {
-          mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
-            'progressionState.phase');
-        }
-      } catch {
-        mismatch(true, 'progressionState');
-      }
-    }
+    validateDependencyEvidence(plan, attempt, run, resultDir, expectedLevels,
+      interruptedPrefix, mismatch);
   }
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     const cost = run.totals?.costUsd;

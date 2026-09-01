@@ -9,7 +9,9 @@ import type { CompiledDependencyPolicyDefinition, CompiledProgressionDefinition,
   ProgressionInput } from '../progression/progression-definition.js';
 import { grantProgressionState, readProgressionState }
   from '../progression/progression-state.js';
+import type { ProgressionOwner } from '../progression/progression-state.js';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.js';
+import { campaignProgressionOwner } from './campaign-compiler.js';
 import { inspectCampaign } from './campaign-runner.js';
 import { scheduleDependencyContinuation, writeCampaignState }
   from './campaign-scheduler.js';
@@ -78,10 +80,7 @@ interface StoredProgressionState {
 }
 
 interface ProgressionContextOptions extends Record<string, unknown> {
-  owner: {
-    attempt: { id: string; conditionSha256: string };
-    [key: string]: unknown;
-  };
+  owner: ProgressionOwner;
 }
 
 interface ProgressionGrantOptions extends ProgressionContextOptions {
@@ -125,7 +124,9 @@ const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const FEATURE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
 function rejectSymlinks(path: string, label: string): void {
-  if (lstatSync(path).isSymbolicLink()) throw new Error(`${label} cannot be a symbolic link`);
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) throw new Error(`${label} cannot be a symbolic link`);
+  if (!stat.isDirectory()) return;
   for (const entry of readdirSync(path, { withFileTypes: true })) {
     const child = join(path, entry.name);
     if (entry.isSymbolicLink()) throw new Error(`${label} contains a symbolic link`);
@@ -134,11 +135,13 @@ function rejectSymlinks(path: string, label: string): void {
 }
 
 export function prepareGrantWorkspace(root: string, executionDirectory: string,
-  attemptId: string, grantId: string): GrantWorkspace {
+  attemptId: string, grantId: string, level: number): GrantWorkspace {
   if (!SAFE_ID.test(attemptId) || !SAFE_ID.test(grantId)) {
     throw new Error('grant workspace requires safe attempt and grant ids');
   }
-  rejectSymlinks(executionDirectory, 'completed campaign execution');
+  if (!Number.isSafeInteger(level) || level < 1) {
+    throw new Error('grant workspace requires a positive level');
+  }
   const relativePath = `continuations/${attemptId}/${grantId}`;
   const target = childPath(root, relativePath, 'grant workspace');
   if (existsSync(target)) {
@@ -147,30 +150,27 @@ export function prepareGrantWorkspace(root: string, executionDirectory: string,
   }
   mkdirSync(dirname(target), { recursive: true });
   const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
+  const required = new Set(['source', 'progression-state.json', 'run.json', 'progression',
+    `level-l${level}-checkpoint.json`, `level-l${level}-source`]);
+  for (const name of required) {
+    const source = join(executionDirectory, name);
+    if (!existsSync(source)) throw new Error(`completed campaign execution has no ${name}`);
+    rejectSymlinks(source, `completed campaign execution ${name}`);
+  }
   try {
-    cpSync(executionDirectory, temporary, { recursive: true, errorOnExist: true });
+    cpSync(executionDirectory, temporary, { recursive: true, errorOnExist: true,
+      filter: source => {
+        const rel = relative(executionDirectory, source);
+        if (!rel) return true;
+        const [top] = rel.split(/[\\/]/);
+        return required.has(top!) && !/[\\/]media([\\/]|$)/.test(rel);
+      } });
     renameSync(temporary, target);
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
   rejectSymlinks(target, 'grant workspace');
   return { directory: target, relativePath, created: true };
-}
-
-function progressionOwner(plan: GrantCampaignSnapshot['plan'], attempt: GrantAttemptPlan) {
-  return {
-    schemaVersion: 1,
-    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-    attempt: {
-      id: attempt.id,
-      track: plan.definition.track,
-      stack: attempt.stack,
-      agentAdapter: attempt.agentAdapter,
-      model: attempt.model,
-      conditionSha256: attempt.condition.sha256,
-    },
-    workspace: { appDirectory: 'source' },
-  };
 }
 
 function request(input: unknown): CampaignDependencyStrikeGrant {
@@ -261,7 +261,8 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
 
     const executionDirectory = childPath(root, execution.output, 'campaign execution');
     const workspace = marker === undefined
-      ? prepareWorkspace(root, executionDirectory, desired.attemptId, desired.grantId)
+      ? prepareWorkspace(root, executionDirectory, desired.attemptId, desired.grantId,
+        desired.level)
       : {
           directory: childPath(root, marker.resumeFrom, 'grant workspace'),
           relativePath: marker.resumeFrom,
@@ -269,7 +270,7 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
         };
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
       campaign.plan.featureCatalog, campaign.plan.dependencyPolicy));
-    const owner = progressionOwner(campaign.plan, attempt.plan);
+    const owner = campaignProgressionOwner(campaign.plan, attempt.plan, { workspace: true });
     const statePath = join(workspace.directory, 'progression-state.json');
     const stored = readState(statePath, {
       progression,

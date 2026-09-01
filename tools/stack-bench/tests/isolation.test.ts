@@ -4,6 +4,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { parseAgentArgs } from '../commands/agent.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 
 const AGENT = compiledEntrypoint('commands', 'agent.js');
@@ -46,6 +47,15 @@ test('host execution flags are rejected rather than opening a second runtime pat
       stdio: 'pipe',
     }), error => isCommandFailure(error)
       && error.status === 2
-      && /Unknown argument: --diagnostic-host/.test(String(error.stderr)));
+      && /Unknown option '--diagnostic-host'/.test(String(error.stderr)));
   } finally { rmSync(app, { recursive: true, force: true }); }
+});
+
+test('agent arguments reject invalid modes and partial numbers', () => {
+  const base = ['node', 'agent', '--backend', 'postgres', '--app', 'app'];
+  assert.throws(() => parseAgentArgs([...base, '--mode', 'typo']), /--mode must be/);
+  assert.throws(() => parseAgentArgs([...base, '--mode', 'build', '--level', '2junk']),
+    /--level must be a positive integer/);
+  assert.throws(() => parseAgentArgs([...base, '--mode', 'build', '--run-index', '1junk']),
+    /--run-index must be a non-negative integer/);
 });

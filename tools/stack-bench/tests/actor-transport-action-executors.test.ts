@@ -5,9 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.js';
-import { createActionRunContext, executeAction } from '../src/actions/action-contract.js';
+import { executeAction } from '../src/actions/action-contract.js';
 import {
-  ACTOR_TRANSPORT_ACTION_IDS,
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   createNamedActionsCapability,
 } from '../src/actions/actor-transport-action-executors.js';
@@ -22,6 +21,7 @@ interface ServiceOverrides {
   readonly appRoot?: string | null;
   readonly backend?: string;
   readonly fetchImpl?: NamedOptions['fetchImpl'];
+  readonly sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   readonly spacetime?: unknown;
 }
 
@@ -53,7 +53,8 @@ function services(
 ): ProvidedServices {
   const verification: Verification[] = [];
   let calls: Calls = null;
-  const sleep = async (_milliseconds: number, _signal: AbortSignal): Promise<void> => {};
+  const sleep = overrides.sleep
+    ?? (async (_milliseconds: number, _signal: AbortSignal): Promise<void> => {});
   const browser = {
     defaultWithin: 5000,
     expand: (value: string) => value === '{room:test}' ? 'test-scoped' : value,
@@ -98,19 +99,15 @@ function services(
 
 async function run(input: UnknownRecord, provided: ProvidedServices) {
   const action = String(input.do);
-  return executeAction(ACTION_REGISTRY, action, input, createActionRunContext({
+  return executeAction(ACTION_REGISTRY, action, input, {
     capabilities: provided.capabilities,
-    implementations: ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
-    attempt: { id: `test-${action}` },
-  }));
+  });
 }
 
 test('the actor/transport executor registry is exact and capability-scoped', () => {
-  assert.deepEqual(Object.keys(ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS).sort(),
-    ACTOR_TRANSPORT_ACTION_IDS);
-  for (const id of ACTOR_TRANSPORT_ACTION_IDS) {
+  for (const id of Object.keys(ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS)) {
     const plugin = ACTION_REGISTRY.get(id);
-    assert(plugin.deadline.timeoutMs > 0, id);
+    assert(plugin.timeoutMs > 0, id);
     assert(plugin.capabilities.length > 0, id);
     assert(plugin.capabilities.every(capability => [
       'actors', 'application-files', 'browser-interaction', 'named-actions', 'subprocess',
@@ -207,6 +204,20 @@ test('named action input is exact and a missing route is not mistaken for a refu
   const unrelatedProof = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
     routeProvenBy: 'route' }, missing);
   assert.equal(unrelatedProof.status, 'failed');
+});
+
+test('generic client errors do not prove a named action was refused for authorization', async () => {
+  for (const status of [400, 409, 422]) {
+    const actor = {
+      name: 'customer',
+      actionCall: { action: 'checkout', accepted: false, status },
+    };
+    const provided = services(new Map<string, unknown>([['customer', actor]]));
+    const checked = await run({ do: 'expectActionOutcome', actor: 'customer',
+      outcome: 'refused' }, provided);
+    assert.equal(checked.status, 'failed');
+    assert.match(checked.summary ?? '', /does not prove/);
+  }
 });
 
 test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
@@ -332,7 +343,23 @@ test('sign in waits for a rendered toggle instead of silently missing the form',
   assert(calls.some(call => call[0] === 'password' && call[2] === 'secret'));
 });
 
-test('an unreplayable WebSocket write records structural evidence, not a fabricated rejection', async () => {
+test('account restoration does not accept the wrong signed-in user', async () => {
+  const currentUser = {
+    first() { return this; },
+    isVisible: async () => true,
+    innerText: async () => 'signed in as another-user',
+  };
+  const actor = {
+    name: 'browser-a',
+    page: { locator: () => currentUser },
+  };
+  const result = await run({ do: 'ensureSignedIn', actor: 'a', name: 'alice' },
+    services(new Map<string, unknown>([['a', actor]])));
+  assert.equal(result.status, 'harness_failure');
+  assert.match(result.summary ?? '', /different account/);
+});
+
+test('an unreplayable WebSocket write cannot earn server-side forgery credit', async () => {
   const actor = {
     name: 'a',
     lastWrite: null,
@@ -341,12 +368,12 @@ test('an unreplayable WebSocket write records structural evidence, not a fabrica
   const provided = services(new Map<string, unknown>([['a', actor], ['victim', {}]]));
   const forged = await run({ do: 'forgeWrite', actor: 'a', fromActor: 'victim', settleMs: 0 }, provided);
   assert.equal(forged.status, 'passed');
-  assert.deepEqual(forged.observation, { attempted: false, classification: 'structural' });
+  assert.deepEqual(forged.observation, { attempted: false, classification: 'unverified' });
 
   const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
-  assert.equal(checked.status, 'passed');
-  assert.equal(record(checked.observation).classification, 'structural');
-  assert.deepEqual(provided.verification.map(([kind]) => kind), ['structural']);
+  assert.equal(checked.status, 'inconclusive');
+  assert.match(checked.summary ?? '', /could not verify the server-side forgery refusal/);
+  assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
 });
 
 test('missing transport evidence cannot earn server-side forgery credit', async () => {
@@ -360,6 +387,18 @@ test('missing transport evidence cannot earn server-side forgery credit', async 
   const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
   assert.equal(checked.status, 'inconclusive');
   assert.match(checked.summary ?? '', /could not verify the server-side forgery refusal/);
+});
+
+test('a negative delivery check observes its full window before passing', async () => {
+  const delays: number[] = [];
+  const actor = { name: 'outsider', wasSent: () => false };
+  const provided = services(new Map<string, unknown>([['outsider', actor]]), {
+    sleep: async milliseconds => { delays.push(milliseconds); },
+  });
+  const checked = await run({ do: 'expectNotReceived', actor: 'outsider', contains: 'secret',
+    within: 1234 }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.deepEqual(delays, [1234]);
 });
 
 test('replay retargeting maps nested entity ids by field and relationship depth', async () => {
@@ -451,7 +490,7 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
   const request = requests[0];
   assert(request);
   assert.deepEqual(JSON.parse(String(request.options.data)), { orderId: 52 });
-  assert.match(String(record(request.options.headers).Cookie), /sid=customer-session/);
+  assert.match(String(record(request.options.headers).cookie), /sid=customer-session/);
 
   const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
   assert.equal(rejected.status, 'passed');
@@ -477,7 +516,7 @@ test('replay uses an authenticated named action when the source write is an opaq
   const customer = {
     name: 'customer', writes: [], received: [],
     context: { cookies: async () => [] },
-    page: { evaluate: async () => 'eyJcustomer.token.value' },
+    page: { evaluate: async () => ['eyJcustomer.token.value'] },
   };
   const provided = services(new Map<string, unknown>([
     ['staff', source],
@@ -511,14 +550,28 @@ test('replay uses an authenticated named action when the source write is an opaq
   assert.equal(record(rejected.observation).classification, 'verified');
 });
 
-test('a redirect, transport failure, or undeclared server error is not authorization evidence', async () => {
-  for (const status of [0, 302, 503]) {
+test('only an explicit authorization response proves a replay refusal', async () => {
+  for (const status of [0, 302, 400, 404, 422, 503]) {
     const actor = {
       name: 'customer',
       replay: { accepted: false, status, method: 'POST', url: '/ship' },
     };
     const provided = services(new Map<string, unknown>([['customer', actor]]));
     const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+    assert.equal(checked.status, 'failed');
+    assert.match(checked.summary ?? '', /does not prove an authorization refusal/);
+    assert.equal(provided.verification.length, 0);
+  }
+});
+
+test('only an explicit authorization response proves a forged-write refusal', async () => {
+  for (const status of [400, 404, 422, 500]) {
+    const actor = {
+      name: 'attacker',
+      forge: { accepted: false, status, tamperedField: 'userId', reason: 'tampered request sent' },
+    };
+    const provided = services(new Map<string, unknown>([['attacker', actor]]));
+    const checked = await run({ do: 'expectForgeryRejected', actor: 'attacker' }, provided);
     assert.equal(checked.status, 'failed');
     assert.match(checked.summary ?? '', /does not prove an authorization refusal/);
     assert.equal(provided.verification.length, 0);
@@ -618,9 +671,9 @@ test('named calls accept opaque bearer tokens stored under an explicit token key
 test('missing named actions and application roots stay inconclusive', async () => {
   const actor = { context: { cookies: async () => [{ name: 'sid', value: 'a' }] },
     page: { evaluate: async () => null } };
-  const missingAction = await run({ do: 'callConcurrently', actors: ['a', 'a'],
+  const missingAction = await run({ do: 'callConcurrently', actors: ['a', 'b'],
     action: 'missing', settleMs: 0 },
-  services(new Map<string, unknown>([['a', actor]]), { actions: [] }));
+  services(new Map<string, unknown>([['a', actor], ['b', actor]]), { actions: [] }));
   assert.equal(missingAction.status, 'inconclusive');
   assert.match(missingAction.summary ?? '', /track names no action/);
 

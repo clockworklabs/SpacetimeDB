@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../evidence/artifacts.js';
@@ -75,6 +76,24 @@ interface RecoveryOptions {
   cleanupSucceeded?: boolean;
   retained?: boolean;
   reason?: string | null;
+}
+
+interface RecoveryRuntimeOptions {
+  runtimeRoot?: string;
+}
+
+function trustedRuntimeRoot(runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR
+  ?? join(tmpdir(), 'stack-bench-runtime')): string {
+  const root = resolve(runtimeRoot);
+  return existsSync(root) ? realpathSync(root) : root;
+}
+
+function authorizedRuntimeDirectory(runtimeDir: string, runtimeRoot?: string): string {
+  const directory = realpathSync(runtimeDir);
+  if (dirname(directory) !== trustedRuntimeRoot(runtimeRoot)) {
+    throw new Error('runtime directory is not a direct child of the configured Stack Bench runtime root');
+  }
+  return directory;
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -173,8 +192,13 @@ function errorMessage(error: unknown): string {
 
 function recoverAuthorizedLease(
   state: SupervisorState,
-  { statePath = null, removeState = true }: { statePath?: string | null; removeState?: boolean } = {},
+  { statePath = null, removeState = true, runtimeRoot }: {
+    statePath?: string | null;
+    removeState?: boolean;
+    runtimeRoot?: string;
+  } = {},
 ): RecoveryResult {
+  const runtimeDir = authorizedRuntimeDirectory(state.runtimeDir, runtimeRoot);
   let lease: BackendLease;
   let cleanupSucceeded = false;
   let reason = null;
@@ -198,11 +222,7 @@ function recoverAuthorizedLease(
   writeRecoveryArtifact(join(state.output, 'recovery.json'), lease,
     { cleanupSucceeded, reason: reason ?? (cleanupSucceeded ? null : 'authenticated cleanup refused') });
   if (cleanupSucceeded) {
-    if (existsSync(state.runtimeDir)) {
-      const runtimeDir = realpathSync(state.runtimeDir);
-      if (dirname(runtimeDir) === runtimeDir) {
-        throw new Error('refusing to remove a filesystem root as a runtime directory');
-      }
+    if (existsSync(runtimeDir)) {
       if (existsSync(state.leasePath) && dirname(realpathSync(state.leasePath)) !== runtimeDir) {
         throw new Error('refusing to remove an unexpected runtime directory');
       }
@@ -216,16 +236,17 @@ function recoverAuthorizedLease(
 
 export function recoverSupervisedRun(
   statePath: string,
-  { removeState = true }: { removeState?: boolean } = {},
+  { removeState = true, runtimeRoot }: { removeState?: boolean } & RecoveryRuntimeOptions = {},
 ): RecoveryResult {
   const absoluteState = realpathSync(statePath);
   if (!statSync(absoluteState).isFile()) throw new Error('supervisor state must be a regular file');
   const state = validateSupervisorState(JSON.parse(readFileSync(absoluteState, 'utf8')),
     { source: absoluteState });
-  return recoverAuthorizedLease(state, { statePath: absoluteState, removeState });
+  return recoverAuthorizedLease(state, { statePath: absoluteState, removeState, runtimeRoot });
 }
 
-export function recoverBackendLease(leasePath: string, output: string): RecoveryResult {
+export function recoverBackendLease(leasePath: string, output: string,
+  { runtimeRoot }: RecoveryRuntimeOptions = {}): RecoveryResult {
   const absoluteLease = realpathSync(leasePath);
   if (!statSync(absoluteLease).isFile()) throw new Error('backend lease must be a regular file');
   if (basename(absoluteLease) !== 'backend-lease.json') {
@@ -243,5 +264,5 @@ export function recoverBackendLease(leasePath: string, output: string): Recovery
   const state = validateSupervisorState({ version: SUPERVISOR_STATE_VERSION,
     runId: lease.runId, backend: lease.backend, runtimeDir, leasePath: absoluteLease,
     ownershipToken: lease.ownershipToken, output: absoluteOutput }, { source: absoluteLease });
-  return recoverAuthorizedLease(state);
+  return recoverAuthorizedLease(state, { runtimeRoot });
 }

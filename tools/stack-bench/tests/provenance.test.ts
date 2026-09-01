@@ -25,14 +25,28 @@ test('rubric hash changes with points but not scenario mechanics', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-provenance-'));
   const spec = join(root, 'spec.json');
   try {
-    const write = (points: number, within: number) => writeFileSync(spec, JSON.stringify({ features: [{ id: 1,
-      criteria: [{ id: '1a', points, steps: [{ do: 'expect', within }] }] }] }));
+    const write = (points: number, within: number) => writeFileSync(spec, JSON.stringify({
+      schemaVersion: 1, level: 1, features: [{ id: 1, name: 'Feature', setup: [],
+        criteria: [{ id: '1a', desc: 'works', points,
+          steps: [{ do: 'expect', actor: 'user', testid: 'result', within }] }] }],
+    }));
     write(2, 100);
     const initial = hashRubric([spec], { base: root });
     write(2, 500);
     assert.equal(initial.sha256, hashRubric([spec], { base: root }).sha256);
     write(3, 500);
     assert.notEqual(initial.sha256, hashRubric([spec], { base: root }).sha256);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('rubric hashes reject malformed criterion points', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-provenance-invalid-'));
+  const spec = join(root, 'scenario.json');
+  try {
+    writeFileSync(spec, JSON.stringify({ schemaVersion: 1, level: 1, features: [{ id: 1,
+      name: 'Feature', setup: [], criteria: [{ id: '1a', desc: 'works', points: -1,
+        steps: [{ do: 'expect', actor: 'user', testid: 'result' }] }] }] }));
+    assert.throws(() => hashRubric([spec], { base: root }), /points.*non-negative integer/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -58,7 +72,9 @@ test('session provenance identifies every comparison-defining input', () => {
     const manifest = join(root, 'track.json');
     const spec = join(root, 'scenario.json');
     writeFileSync(manifest, '{}');
-    writeFileSync(spec, JSON.stringify({ features: [] }));
+    writeFileSync(spec, JSON.stringify({ schemaVersion: 1, level: 1, features: [{ id: 1,
+      name: 'Feature', setup: [], criteria: [{ id: '1a', desc: 'works', points: 1,
+        steps: [{ do: 'expect', actor: 'user', testid: 'result' }] }] }] }));
     const result = sessionProvenance({ prompt: 'prompt', skillsText: 'skill',
       contractText: 'contract', scenarioPaths: [spec], trackDir: root,
       trackManifestPath: manifest });

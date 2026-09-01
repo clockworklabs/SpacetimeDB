@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, rmSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.js';
@@ -12,7 +13,7 @@ import type { RepairLevel, RepairOutcome } from '../src/runtime/repair-grant.js'
 import type { LevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
-const WORK = join(ROOT, '.loop-test');
+const WORK = mkdtempSync(join(tmpdir(), 'stack-bench-loop-'));
 const APP = join(WORK, 'app');
 // A cold Playwright start plus two grades can exceed three minutes on Windows
 // Docker hosts. The timeout is a deadlock guard, not a performance assertion.

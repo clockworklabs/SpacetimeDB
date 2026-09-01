@@ -14,7 +14,7 @@ import { killTree } from '../src/runtime/platform.js';
 import { formatRepairProgress } from '../src/evidence/scoring.js';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
-  mutationControlEligible, runExitCode } from '../src/evidence/outcomes.js';
+  mutationControlEligible, runExitCode, runOutcomeKind } from '../src/evidence/outcomes.js';
 import { summarizeSessions } from '../src/evidence/session-metrics.js';
 import { hashDirectory, sha256 } from '../src/evidence/provenance.js';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
@@ -72,8 +72,9 @@ import type { Track } from '../src/composition/tracks.js';
 import type { RunOutcome } from '../src/evidence/outcomes.js';
 import type { GradeBundlePayload, BenchmarkRunRecord, RunLevelRecord,
   RunContinuation, RunTotals } from '../src/evidence/benchmark-run.js';
-import { addCostUsd, finalizeRunTotals, formatLevelSummary, runSessionRecord }
+import { addCostUsd, finalizeRunTotals, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
+import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { ProgressionAction } from '../src/progression/progression-engine.js';
 import type { ProgressionAttempt, ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionRecipeAction, ProgressionRecipeSelections }
@@ -329,10 +330,11 @@ function mutationControlArgs(args: BenchArgs): MutationControlArgs {
 
 function mutationOutcome(value: unknown): RunOutcome | null {
   if (value === null || value === undefined) return null;
-  if (!object(value) || typeof value.kind !== 'string') {
+  if (!object(value)) {
     throw new Error('mutation control artifact outcome is invalid');
   }
-  return { kind: value.kind, ...(typeof value.phase === 'string' ? { phase: value.phase } : {}),
+  return { kind: runOutcomeKind(value.kind),
+    ...(typeof value.phase === 'string' ? { phase: value.phase } : {}),
     ...(typeof value.reason === 'string' ? { reason: value.reason } : {}) };
 }
 
@@ -805,12 +807,10 @@ function runMutationControl(
   }
   if (imageId) args.mutationImageId = imageId;
   else delete args.mutationImageId;
-  const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
   const argv = mutationControlArgv(mutationControlArgs(args), appDir, url, track);
   let processError = null;
   try { sh(process.execPath, argv, {
-    stdio: 'inherit', timeout: mutationControlTimeoutMs(manifest,
-      args.mutationMaxRuntimeMinutes),
+    stdio: 'inherit', timeout: mutationControlTimeoutMs(args.mutationMaxRuntimeMinutes),
   }); }
   catch (error) { processError = errorMessage(error).split('\n')[0] ?? null; }
   if (!existsSync(output)) {
@@ -2015,7 +2015,7 @@ async function main() {
       ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
       ...(nodeStrikes ? {
-        strikeScope: 'feature',
+        strikeScope: 'feature' as const,
         nodeStrikes,
       } : {}),
     };

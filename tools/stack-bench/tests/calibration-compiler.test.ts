@@ -254,6 +254,11 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   ]);
 });
 
+test('calibration checks reject an unknown explicit track', () => {
+  assert.throws(() => checkCalibrations({ trackName: 'not-a-track' }),
+    /unknown calibration track not-a-track/);
+});
+
 function qualificationReferenceArtifact(context: CalibrationContext,
   entry: CalibrationEvidence): QualificationArtifact {
   const reference = context.references.find(candidate => candidate.backend === entry.stack);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -62,20 +62,30 @@ const input = {
   strikes: 2,
 };
 
-test('a grant workspace copies completed evidence without changing its source', () => {
+test('a grant workspace copies only resumable evidence without changing its source', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-grant-'));
   try {
     const execution = join(root, 'attempts', input.attemptId, 'execution-1');
     mkdirSync(join(execution, 'source'), { recursive: true });
+    mkdirSync(join(execution, 'progression', 'attempt-001'), { recursive: true });
+    mkdirSync(join(execution, 'level-l1-source'), { recursive: true });
     writeFileSync(join(execution, 'run.json'), '{"status":"complete"}\n');
+    writeFileSync(join(execution, 'progression-state.json'), '{}\n');
+    writeFileSync(join(execution, 'level-l1-checkpoint.json'), '{}\n');
     writeFileSync(join(execution, 'source', 'app.js'), 'export const value = 1;\n');
-    const prepared = prepareGrantWorkspace(root, execution, input.attemptId, input.grantId);
+    writeFileSync(join(execution, 'level-l1-source', 'app.js'), 'export const value = 1;\n');
+    writeFileSync(join(execution, 'progression', 'attempt-001', 'bundle.json'), '{}\n');
+    writeFileSync(join(execution, 'process.stdout.log'), 'not resumable\n');
+    const prepared = prepareGrantWorkspace(root, execution, input.attemptId, input.grantId, 1);
     assert.equal(prepared.relativePath,
       `continuations/${input.attemptId}/${input.grantId}`);
     writeFileSync(join(prepared.directory, 'source', 'app.js'), 'export const value = 2;\n');
     assert.equal(readFileSync(join(execution, 'source', 'app.js'), 'utf8'),
       'export const value = 1;\n');
-    assert.equal(prepareGrantWorkspace(root, execution, input.attemptId, input.grantId).created,
+    assert.equal(readFileSync(join(prepared.directory, 'level-l1-source', 'app.js'), 'utf8'),
+      'export const value = 1;\n');
+    assert.equal(existsSync(join(prepared.directory, 'process.stdout.log')), false);
+    assert.equal(prepareGrantWorkspace(root, execution, input.attemptId, input.grantId, 1).created,
       false);
   } finally {
     rmSync(root, { recursive: true, force: true });

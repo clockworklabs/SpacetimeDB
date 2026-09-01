@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
-  mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
+  indexMutationReport, mutationFileEdits, validateMutationBaseline, isRetryableMutationBaseline,
   isRetryableMutationResult,
   releaseScenarioCheckKeys, resolveMutationFile, resolveMutationScenarioPath,
   reusableMutationBaseline,
@@ -212,6 +212,12 @@ test('a mutation baseline must pass every criterion and contain every declared t
   assert.equal(invalid.ok, false);
   assert.deepEqual(invalid.issues.map(issue => issue.kind),
     ['score_not_full', 'inconclusive', 'missing_target']);
+});
+
+test('mutation reports reject duplicate criterion identities', () => {
+  const duplicate = report({ a: true });
+  duplicate.features[0]!.criteria.push({ ...duplicate.features[0]!.criteria[0]! });
+  assert.throws(() => indexMutationReport(duplicate), /duplicate mutation criterion identity/);
 });
 
 test('only transient baseline failures are retried', () => {

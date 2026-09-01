@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, type CompiledPackDefinition }
+import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition }
   from '../src/composition/composition-compiler.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 
@@ -22,7 +22,7 @@ const packNames = [
 ];
 
 function fragmentText(fragment: CompiledPackDefinition['task']['requirements'][number]): string {
-  return readFileSync(join(trackRoot, fragment.path), 'utf8');
+  return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
 test('promotion and notification packs have isolated upgrade contracts', () => {

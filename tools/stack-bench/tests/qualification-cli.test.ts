@@ -112,7 +112,10 @@ test('qualification resolves the pending sequential L1 release exactly and by de
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'candidate' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.sequential-l1@2.5.0')));
-  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.5.0');
+  const defaultStatus = qualificationReadiness('ecommerce', 1);
+  assert.equal(defaultStatus.scope.recipe.version, '2.5.0');
+  assert(defaultStatus.commands.every(command =>
+    command.includes('--recipe ecommerce.sequential-l1@2.5.0')));
 });
 
 test('pending modular L2 resolves only the current exact recipe', () => {

@@ -19,6 +19,8 @@ import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
   isDependencyRepairSelection } from './dependency-definition.js';
 import type { DependencyRepairSelection } from './dependency-definition.js';
 import { progressionEngine } from './progression-engine.js';
+import { isProgressionIdentifier, parseVersionedProgressionId }
+  from './progression-identifiers.js';
 
 export interface CompiledProgressionCheck {
   id: string;
@@ -110,8 +112,6 @@ interface AuthoredProgressionDefinition {
 
 export const PROGRESSION_DEFINITION_SCHEMA_VERSION = 2;
 
-const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const EXACT_REF = /^[a-z0-9]+(?:[._-][a-z0-9]+)*@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at: string, message: string): never => {
@@ -133,11 +133,11 @@ function nonEmpty(value: unknown, at: string): string {
 
 function identifier(value: unknown, at: string): string {
   const result = nonEmpty(value, at);
-  if (!ID.test(result)) return fail(at, 'must be a lowercase identifier');
+  if (!isProgressionIdentifier(result)) return fail(at, 'must be a lowercase identifier');
   return result;
 }
 
-function uniqueStrings(value: unknown, at: string, pattern: RegExp | null = null,
+function uniqueStrings(value: unknown, at: string, valid: ((value: string) => boolean) | null = null,
   { nonEmpty: required = true }: { nonEmpty?: boolean } = {}): string[] {
   if (!Array.isArray(value)) {
     return fail(at, `must be ${required ? 'a non-empty' : 'an'} array`);
@@ -148,7 +148,7 @@ function uniqueStrings(value: unknown, at: string, pattern: RegExp | null = null
   const seen = new Set<string>();
   return value.map((item, index) => {
     const result = nonEmpty(item, `${at}[${index}]`);
-    if (pattern && !pattern.test(result)) fail(`${at}[${index}]`, 'has an invalid reference');
+    if (valid && !valid(result)) fail(`${at}[${index}]`, 'has an invalid reference');
     if (seen.has(result)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(result)}`);
     seen.add(result);
     return result;
@@ -248,7 +248,6 @@ export function compileProgressionDefinition(input: unknown,
   const featureOwners = new Map<string, string>();
   const promptOwners = new Map<string, string>();
   const checkOwners = new Map<string, string>();
-  const gradingRequirements = new Map<string, string[]>();
   const nodes = authored.nodes.map((node, index) => {
     const at = `${source}.nodes[${index}]`;
     strictObject(node, at, new Set([
@@ -257,7 +256,8 @@ export function compileProgressionDefinition(input: unknown,
     identifier(node.id, `${at}.id`);
     nonEmpty(node.title, `${at}.title`);
     identifier(node.questline, `${at}.questline`);
-    const featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`, EXACT_REF).sort();
+    const featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`,
+      reference => parseVersionedProgressionId(reference) !== null).sort();
     for (const reference of featureRefs) {
       const pack = packs.get(reference);
       if (!pack) return fail(`${at}.featureRefs`, `missing pack ${reference}`);
@@ -270,7 +270,7 @@ export function compileProgressionDefinition(input: unknown,
     const promptModules = uniqueStrings([
       ...featureRefs,
       ...(node.promptModules ?? []),
-    ], `${at}.promptModules`, EXACT_REF).sort();
+    ], `${at}.promptModules`, reference => parseVersionedProgressionId(reference) !== null).sort();
     for (const reference of promptModules) {
       const pack = packs.get(reference);
       if (!pack) return fail(`${at}.promptModules`, `missing pack ${reference}`);
@@ -286,13 +286,14 @@ export function compileProgressionDefinition(input: unknown,
       promptOwners.set(reference, node.id);
     }
     const gradingGroups = uniqueStrings(node.gradingGroups, `${at}.gradingGroups`).sort();
-    const checkRequirements = new Set<string>();
     const gradingChecks = gradingGroups.flatMap((reference, groupIndex) => {
       const split = reference.lastIndexOf('#');
       if (split < 1) fail(`${at}.gradingGroups[${groupIndex}]`, 'must be pack@version#group');
       const packRef = reference.slice(0, split);
       const groupId = reference.slice(split + 1);
-      if (!EXACT_REF.test(packRef)) fail(`${at}.gradingGroups[${groupIndex}]`, 'has an invalid pack reference');
+      if (!parseVersionedProgressionId(packRef)) {
+        fail(`${at}.gradingGroups[${groupIndex}]`, 'has an invalid pack reference');
+      }
       identifier(groupId, `${at}.gradingGroups[${groupIndex}] group`);
       const pack = packs.get(packRef);
       if (!pack) return fail(`${at}.gradingGroups[${groupIndex}]`, `missing pack ${packRef}`);
@@ -303,7 +304,6 @@ export function compileProgressionDefinition(input: unknown,
       if (!group) return fail(`${at}.gradingGroups[${groupIndex}]`, `missing group ${groupId}`);
       if (group.checks.length === 0) fail(`${at}.gradingGroups[${groupIndex}]`, 'has no scored criteria');
       groupOwners.set(reference, node.id);
-      group.requiresFeatures.forEach(featureId => checkRequirements.add(featureId));
       for (const check of group.checks) {
         if (checkOwners.has(check.id)) {
           fail(`${at}.gradingGroups[${groupIndex}]`,
@@ -313,10 +313,6 @@ export function compileProgressionDefinition(input: unknown,
       }
       return group.checks;
     });
-    if (!gradingChecks.some(check => check.role === 'feature')) {
-      fail(`${at}.gradingGroups`, 'must own at least one feature check');
-    }
-    gradingRequirements.set(node.id, [...checkRequirements].sort());
     const selectedGroups = new Set(gradingGroups);
     for (const featureRef of featureRefs) {
       const pack = packs.get(featureRef);
@@ -350,16 +346,6 @@ export function compileProgressionDefinition(input: unknown,
     questlines: structuredClone(authored.questlines),
   }, { source });
   const byId = new Map(compiled.nodes.map(node => [node.id, node]));
-  const featureIdOwners = new Map<string, string>();
-  for (const [reference, owner] of featureOwners) {
-    const featureId = reference.slice(0, reference.lastIndexOf('@'));
-    const priorOwner = featureIdOwners.get(featureId);
-    if (priorOwner && priorOwner !== owner) {
-      fail(`${source}.nodes.${owner}.featureRefs`,
-        `${featureId} is already owned by ${priorOwner}`);
-    }
-    featureIdOwners.set(featureId, owner);
-  }
   const requiredOwners = (node: CompiledProgressionNode): Set<string> => {
     const owners = new Set<string>();
     for (const reference of node.featureRefs) {
@@ -413,13 +399,6 @@ export function compileProgressionDefinition(input: unknown,
       (fragment.modes ?? []).includes(mode)))) {
       fail(`${source}.nodes.${node.id}.promptModules`,
         `compose no ${mode} testing interface at calculated level ${node.level}`);
-    }
-    for (const featureId of gradingRequirements.get(node.id) ?? []) {
-      const owner = featureIdOwners.get(featureId);
-      if (owner === undefined) {
-        fail(`${source}.nodes.${node.id}.gradingGroups`,
-          `requires feature ${featureId} with no graph owner`);
-      }
     }
   }
   return compiled as CompiledProgressionDefinition;

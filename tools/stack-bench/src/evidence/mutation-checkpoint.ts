@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 type UnknownRecord = Record<string, unknown>;
 
 export interface MutationCheckpointGroup extends UnknownRecord {
@@ -50,8 +52,16 @@ const IDENTITY_FIELDS = Object.freeze([
   'shard',
 ] as const);
 
-function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function groupsByScenario(
+  groups: readonly MutationCheckpointGroup[],
+  at: string,
+): Map<string, MutationCheckpointGroup> {
+  const result = new Map<string, MutationCheckpointGroup>();
+  for (const group of groups) {
+    if (result.has(group.scenario)) throw new Error(`${at} duplicates scenario ${group.scenario}`);
+    result.set(group.scenario, group);
+  }
+  return result;
 }
 
 export function reusableMutationEvidence(
@@ -63,11 +73,12 @@ export function reusableMutationEvidence(
     throw new Error('mutation checkpoint is not resumable');
   }
   for (const field of IDENTITY_FIELDS) {
-    if (!sameValue(checkpoint[field], identity[field])) {
+    if (!isDeepStrictEqual(checkpoint[field], identity[field])) {
       throw new Error(`mutation checkpoint ${field} does not match the current run`);
     }
   }
-  const currentGroups = new Map(identity.groups.map(group => [group.scenario, group]));
+  const currentGroups = groupsByScenario(identity.groups, 'current mutation groups');
+  groupsByScenario(checkpoint.groups ?? [], 'checkpoint mutation groups');
   const reusableScenarios = new Set((checkpoint.groups ?? [])
     .filter(group => currentGroups.get(group.scenario)?.identitySha256 === group.identitySha256)
     .map(group => group.scenario));

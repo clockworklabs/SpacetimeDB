@@ -98,6 +98,7 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
     const output = join(root, 'result');
     mkdirSync(app);
     writeFileSync(join(app, 'app.js'), 'export const version = 1;\n');
+    writeFileSync(join(app, 'z-conflict'), 'checkpoint source\n');
     const sourceSha256 = hashAppSource(app).sha256;
     const selectionSha256 = 'c'.repeat(64);
     const checkpoint = preserveLevelCheckpoint({ appDir: app, outputDir: output,
@@ -109,6 +110,9 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
         stallLimitRounds: 3, stopReason: 'budget-exhausted' },
       outcome: { kind: 'app_failure' }, selectionSha256 });
     writeFileSync(join(app, 'app.js'), 'export const version = 3;\n');
+    rmSync(join(app, 'z-conflict'));
+    mkdirSync(join(app, 'z-conflict', 'node_modules'), { recursive: true });
+    writeFileSync(join(app, 'z-conflict', 'node_modules', 'keep'), 'runtime dependency\n');
     let state = engine.initialize(input.definition);
     state = engine.recordResult(state, { ...grade('failed', 'fail', sourceSha256),
       runId: 'run-1', selectionSha256 });
@@ -138,6 +142,19 @@ test('continuation grants require the exact terminal snapshot and dispatch throu
       }
       t.diagnostic('symbolic-link assertion skipped because this host cannot create a file link');
     }
+    assert.throws(() => grantProgressionState(path, { progression: input, ...stateIdentities,
+      owner: scope,
+      expectedSnapshotSha256: terminal.snapshotSha256,
+      checkpoint: { artifact: join('result', checkpoint.artifact) },
+      grant: { grantId: 'restore-failure', level: 1, nodeIds: ['account'], strikes: 2 } }),
+    /cannot restore source file over preserved directory/);
+    assert.equal(readFileSync(join(app, 'app.js'), 'utf8'), 'export const version = 3;\n');
+    assert.equal(readFileSync(join(app, 'z-conflict', 'node_modules', 'keep'), 'utf8'),
+      'runtime dependency\n');
+    assert.equal(readProgressionState(path, { progression: input, ...stateIdentities,
+      owner: scope }).snapshotSha256, terminal.snapshotSha256);
+    rmSync(join(app, 'z-conflict'), { recursive: true, force: true });
+    writeFileSync(join(app, 'z-conflict'), 'live source\n');
     const granted = grantProgressionState(path, { progression: input, ...stateIdentities,
       owner: scope,
       expectedSnapshotSha256: terminal.snapshotSha256,

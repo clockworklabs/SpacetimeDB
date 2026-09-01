@@ -145,7 +145,7 @@ test('progression reference audit replays every action and separates catalog cov
   const input = writeReferenceRun(root);
   const report = audit(root, input);
 
-  assert.equal(report.ok, true);
+  assert.equal(report.ok, false);
   assert.deepEqual(report.actions.map(action => [action.level, action.checks]),
     [[1, 9], [2, 44], [3, 97], [4, 131], [5, 144], [6, 146]]);
   assert.deepEqual(report.graphOwned, {

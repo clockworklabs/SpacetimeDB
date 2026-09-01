@@ -10,7 +10,10 @@ type UnknownRecord = Record<string, unknown>;
 
 interface RunLevelResult {
   level: number;
-  score?: { earned?: number; possible?: number };
+  graded?: boolean;
+  contractPass?: boolean;
+  score?: number;
+  max?: number;
   criteria?: UnknownRecord[];
   [key: string]: unknown;
 }

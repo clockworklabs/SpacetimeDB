@@ -26,6 +26,7 @@ import {
   isRetryableMutationResult,
   mutationFileEdits,
   mutationTargetKeys,
+  readMutationManifest,
   releaseScenarioCheckKeys,
   resolveMutationScenarioPath,
   reusableMutationBaseline,
@@ -44,23 +45,13 @@ import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js
 import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
   from "../src/evidence/mutation-control.js";
 import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";
-import type { MutationDefinition, MutationManifest } from '../src/evidence/mutation-analysis.js';
+import type { LoadedMutationManifest, MutationDefinition } from '../src/evidence/mutation-analysis.js';
 import type { MutationCheckpointBaseline, MutationCheckpointIdentity,
   MutationCheckpointResult } from '../src/evidence/mutation-checkpoint.js';
 import type { RecipeRelease } from '../src/composition/recipe-release.js';
 
 type JsonRecord = Record<string, unknown>;
-type MutationSpec = MutationManifest & {
-  schemaVersion: number;
-  status: string;
-  fixtureSha256: string;
-  backend: string;
-  track: string;
-  scenario: string;
-  note?: unknown;
-  mutations: MutationDefinition[];
-  [key: string]: unknown;
-};
+type MutationSpec = LoadedMutationManifest;
 type MutationArgs = {
   app?: string; url?: string; mutations?: string; level?: string; spec?: string; backend?: string;
   track?: string; recipe?: string; selectedCheckKeys?: string[]; dbName?: string; runIndex?: string;
@@ -364,28 +355,7 @@ function recordHarnessFailure(error: unknown): void {
 }
 
 async function main(): Promise<void> {
-  spec = jsonObject(JSON.parse(readFileSync(args.mutations!, "utf8")), 'mutation manifest') as MutationSpec;
-  if (spec.schemaVersion !== 2) throw new Error(`unsupported mutation manifest schema ${spec.schemaVersion}`);
-  const allowedFields = new Set(["schemaVersion", "status", "fixtureSha256", "backend", "track",
-    "scenario", "note", "mutations"]);
-  const unknownFields = Object.keys(spec).filter(field => !allowedFields.has(field));
-  if (unknownFields.length) {
-    throw new Error(`mutation manifest has unknown fields: ${unknownFields.join(', ')}`);
-  }
-  if (!["candidate", "active"].includes(spec.status)) {
-    throw new Error(`mutation manifest is ${spec.status ?? "missing a status"}; only candidate or active manifests are executable`);
-  }
-  for (const field of ["backend", "track", "fixtureSha256"]) {
-    if (spec[field] == null) {
-      throw new Error(`mutation manifest requires ${field}`);
-    }
-  }
-  if (!/^[a-f0-9]{64}$/.test(spec.fixtureSha256)) {
-    throw new Error("mutation manifest fixtureSha256 must be 64 lowercase hex characters");
-  }
-  if (!Array.isArray(spec.mutations) || spec.mutations.length === 0) {
-    throw new Error('mutation manifest requires at least one mutation');
-  }
+  spec = readMutationManifest(args.mutations!);
   const fullMutations = spec.mutations;
   const shard = args.mutationShardCount === undefined
     ? { index: 0, count: 1, mutationIds: fullMutations.map(mutation => mutation.id as string),

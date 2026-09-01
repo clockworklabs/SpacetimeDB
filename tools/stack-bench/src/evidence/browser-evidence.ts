@@ -1,4 +1,4 @@
-// Optional-element timeouts are zero; other browser failures remain typed errors.
+// A missing optional element counts as zero. Other browser failures remain errors.
 
 interface CountableLocator {
   count(): Promise<number>;

@@ -23,13 +23,27 @@ export interface TrackDatabaseProvenance {
   body: Record<string, string>;
 }
 
-export interface TrackAction {
+export interface NamedActionParameter {
+  name: string;
+  in?: 'body' | 'path';
+  placeholder?: string;
+  wireType?: string;
+}
+
+export interface NamedAction {
+  id?: string;
+  path?: string;
+  method?: string;
+  reducer?: string;
+  args?: readonly unknown[];
+  params?: readonly NamedActionParameter[];
+}
+
+export interface TrackAction extends NamedAction {
   id: string;
   path: string;
-  method?: string;
   reducer: string;
   args: unknown[];
-  params?: Array<{ name: string; in: 'body' | 'path'; placeholder?: string; wireType?: string }>;
 }
 
 export interface Track {

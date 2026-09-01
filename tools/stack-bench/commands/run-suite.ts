@@ -751,7 +751,6 @@ async function main() {
       throw new Error('live application source differs from the source selected for grading');
     }
   }
-  args.selection = selection;
   const declaredSuites = recipeBinding
     ? suitesForRecipe(track, recipeBinding)
     : suitesFor(track, Number(args.level));
@@ -761,6 +760,7 @@ async function main() {
   } else if (args.regressionChecks.length) {
     throw new Error('observed grading cannot include regression checks');
   }
+  args.selection = selection;
   if (selection) {
     const suiteIds = new Set(declaredSuites.map(suite => suite.id));
     const unmapped = selection.checks.filter(check => !suiteIds.has(check.executionId));

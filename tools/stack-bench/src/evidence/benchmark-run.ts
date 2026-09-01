@@ -7,7 +7,7 @@ import type { ValidatedAgentResult } from '../agents/agent-result-contract.js';
 
 type UnknownRecord = Record<string, unknown>;
 
-export interface GradeBundleCheck extends UnknownRecord {
+export interface GradeBundleCheck {
   stableKey: string;
   points: number;
   executionId?: string;
@@ -37,7 +37,7 @@ export interface GradeBundleSuite {
   cleanupEvidence?: { status?: string };
 }
 
-export interface GradeBundleSelection extends UnknownRecord {
+export interface GradeBundleSelection {
   sha256?: string;
   checks?: GradeBundleCheck[];
   scoredChecks?: GradeBundleCheck[];
@@ -55,7 +55,7 @@ export interface GradeBundleTotals {
   regression?: { score?: number | null; max?: number | null } | null;
 }
 
-export interface GradeBundlePayload extends UnknownRecord, OutcomeBundle {
+export interface GradeBundlePayload extends OutcomeBundle {
   suites?: Record<string, GradeBundleSuite>;
   totals?: GradeBundleTotals;
   selection?: GradeBundleSelection | null;
@@ -84,14 +84,24 @@ export interface RunSessionRecord {
   providerMetadata: unknown;
 }
 
-export interface RunRepairRecord extends UnknownRecord {
+export interface RunRepairRecord {
   status: string;
   budgetRounds: number;
   roundsUsed: number;
   stopReason: string | null;
+  strikeScope?: 'feature';
+  nodeStrikes?: Array<{
+    nodeId: string;
+    initialBudget: number;
+    granted: number;
+    budget: number;
+    used: number;
+    remaining: number;
+    exhaustionReason: string | null;
+  }>;
 }
 
-export interface RunLevelRecord extends UnknownRecord {
+export interface RunLevelRecord {
   level: number;
   graded: boolean;
   score: number | null;
@@ -99,6 +109,7 @@ export interface RunLevelRecord extends UnknownRecord {
   selection: GradeBundleSelection | null;
   outcome: RunOutcome;
   error?: string;
+  code?: unknown;
   firstBuild?: UnknownRecord;
   baseline?: UnknownRecord;
   resumedRepair?: UnknownRecord;
@@ -115,8 +126,27 @@ export interface RunLevelRecord extends UnknownRecord {
   durationMs?: number;
   durationSec?: number;
   sessionTotals?: SessionMetricsSummary;
+  repairHistory?: Array<{
+    round: number;
+    beforeScore: number | null;
+    beforeMax: number | null;
+    afterScore: number | null;
+    afterMax: number | null;
+    result: string;
+    remainingFailures: string[];
+  }>;
+  tokens?: number;
+  usage?: SessionMetricsSummary['usage'];
+  turns?: number;
+  promptBytes?: number;
+  tokensPerTurn?: number | null;
+  thinking?: SessionMetricsSummary['thinking'];
+  priorRepairRounds?: number;
+  cumulativeFixRounds?: number;
   repair?: RunRepairRecord;
   checkpoint?: LevelCheckpoint | null;
+  stalled?: boolean;
+  regressed?: boolean;
 }
 
 export interface RunTotals {
@@ -154,7 +184,7 @@ export interface RunProgressionStatus {
   score: unknown;
 }
 
-export interface RunContinuation extends UnknownRecord {
+export interface RunContinuation {
   cumulativeRoundsBefore: number;
   cumulativeCostBeforeUsd: number;
   cumulativeDurationBeforeSec: number;
@@ -165,7 +195,7 @@ export interface RunContinuation extends UnknownRecord {
   baseline?: UnknownRecord | null;
 }
 
-export interface BenchmarkRunRecord extends UnknownRecord {
+export interface BenchmarkRunRecord {
   id: string;
   startedAt: string;
   completedAt?: string;
@@ -304,38 +334,4 @@ export function finalizeRunTotals(
     ungraded: run.levels.filter(level => !level.graded).map(level => level.level),
   };
   return run.totals;
-}
-
-interface LevelSummaryInput {
-  level: number;
-  graded: boolean;
-  score?: number | null;
-  max?: number | null;
-  firstBuild?: RunLevelRecord['firstBuild'];
-  baseline?: RunLevelRecord['baseline'];
-  fixRounds?: number;
-  buildCostUsd?: number;
-  resumeCostUsd?: number;
-  fixCostUsd?: number;
-  durationSec?: number;
-  durationMs?: number;
-  error?: string;
-  repair?: RunLevelRecord['repair'];
-}
-
-export function formatLevelSummary(level: LevelSummaryInput): string {
-  const starting = level.firstBuild?.score != null
-    ? `${level.firstBuild.score}/${level.firstBuild.max} unaided -> `
-    : level.baseline?.score != null ? `${level.baseline.score}/${level.baseline.max} resumed -> ` : '';
-  const score = level.graded ? `${starting}${level.score}/${level.max}` : 'NOT GRADED';
-  const repairs = Number.isInteger(level.fixRounds) ? level.fixRounds : 0;
-  const repairLabel = `${repairs} ${repairs === 1 ? 'repair' : 'repairs'}`;
-  const totalCost = (level.buildCostUsd ?? level.resumeCostUsd ?? 0) + (level.fixCostUsd ?? 0);
-  const durationSec = Number.isFinite(level.durationSec)
-    ? level.durationSec : Math.round((level.durationMs ?? 0) / 1000);
-  const status = level.error
-    ? `stopped: ${level.error.replaceAll('-', ' ')}`
-    : level.repair?.status?.replaceAll('-', ' ') ?? 'complete';
-  return `L${level.level}: ${score} | ${repairLabel} | $${totalCost.toFixed(2)} total`
-    + ` ($${(level.fixCostUsd ?? 0).toFixed(2)} repairs) | ${status} | ${durationSec}s`;
 }

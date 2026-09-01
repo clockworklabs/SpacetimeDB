@@ -1,7 +1,6 @@
-import { ActionApplicationFailure } from './action-contract.js';
+import { actionImplementation, ActionApplicationFailure } from './action-contract.js';
 import type {
   ActionImplementation,
-  ActionImplementationArguments,
 } from './action-contract.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
@@ -87,7 +86,6 @@ type InteractionInput = CommonInput & {
 type ExpectInput = CommonInput & {
   readonly absent?: boolean;
   readonly count?: number;
-  readonly maxCount?: number;
   readonly value?: string;
   readonly notContains?: string;
   readonly nonEmpty?: boolean;
@@ -124,33 +122,12 @@ type ActorsWithInput = Omit<CommonInput, 'actor'> & {
   readonly maxEach?: number;
 };
 
-export const BROWSER_ACTION_IDS = Object.freeze([
-  'clearInput',
-  'click',
-  'expect',
-  'expectActorsWith',
-  'expectAgreement',
-  'expectAllPresent',
-  'expectElementCount',
-  'expectNumber',
-  'expectOrderMatches',
-  'expectSequence',
-  'expectStable',
-  'expectUnavailable',
-  'fill',
-  'pressKey',
-  'recordNumber',
-  'reload',
-  'typeInto',
-  'wait',
-].sort());
-
 const fail = (message: string): never => { throw new ActionApplicationFailure(message); };
 const escapePattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function actorFor(capabilities: BrowserCapabilities, name: string): BrowserActor {
   const actor = capabilities.actors.get(name);
-  if (!actor) throw new ActionApplicationFailure(`unknown actor "${name}"`);
+  if (!actor) throw new Error(`harness did not create actor "${name}"`);
   return actor;
 }
 
@@ -178,11 +155,11 @@ function inputScope(browser: BrowserCapability, value: LocatorScope | undefined)
 }
 
 async function readValue(loc: Locator): Promise<string> {
-  const tag = await loc.evaluate(element => element.tagName).catch(() => '');
+  const tag = await loc.evaluate(element => element.tagName);
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-    return (await loc.inputValue().catch(() => '')) || '';
+    return (await loc.inputValue()) || '';
   }
-  return (await loc.innerText().catch(() => '')) || '';
+  return (await loc.innerText()) || '';
 }
 
 export function parseRenderedNumber(text: string | null | undefined): number | null {
@@ -216,11 +193,11 @@ async function fill({ input, capabilities, signal }: BrowserArguments<Interactio
   const loc = actor.loc(input.testid, { scope });
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   const text = browser.expand(input.text) ?? '';
-  const tag = await loc.evaluate(element => element.tagName).catch(() => '');
+  const tag = await loc.evaluate(element => element.tagName);
   if (tag === 'SELECT') {
     await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
   } else {
-    const type = tag === 'INPUT' ? await loc.getAttribute('type').catch(() => null) : null;
+    const type = tag === 'INPUT' ? await loc.getAttribute('type') : null;
     const value = type === 'datetime-local' && /^\d{4}-\d{2}-\d{2}$/.test(text)
       ? `${text}T00:00`
       : type === 'date' && /^\d{4}-\d{2}-\d{2}T/.test(text) ? text.slice(0, 10) : text;
@@ -278,23 +255,25 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
 
   if (input.absent) {
     const deadline = Date.now() + within;
-    for (;;) {
-      const visible = await loc.isVisible().catch(() => false);
-      if (!visible) return { absent: true };
-      if (Date.now() > deadline) {
-        fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''}${where} still visible after ${within}ms`);
+    while (Date.now() <= deadline) {
+      if (await loc.isVisible()) {
+        fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''}${where} became visible during the ${within}ms observation window`);
       }
       await browser.sleep(250, signal);
     }
+    return { absent: true };
   }
 
   const visible = await loc.waitFor({ state: 'visible', timeout: within })
-    .then(() => true).catch(() => false);
-  if (!visible && !(input.maxCount !== undefined && input.count === undefined)) {
+    .then(() => true).catch(error => {
+      if (harnessBrowserFailure(error)) throw error;
+      return false;
+    });
+  if (!visible) {
     fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''}${where} not visible within ${within}ms`);
   }
 
-  if (input.count !== undefined || input.maxCount !== undefined) {
+  if (input.count !== undefined) {
     const all = scope
       ? actor.page.locator(browser.testId(scope.testid), { hasText: scope.contains })
         .filter({ visible: true }).first().locator(browser.testId(input.testid))
@@ -304,10 +283,6 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     const count = visible ? await all.filter({ visible: true }).count() : 0;
     if (input.count !== undefined && count !== input.count) {
       fail(`expected exactly ${input.count} ${browser.testId(input.testid)}`
-        + `${contains ? ` containing "${contains}"` : ''}, found ${count}`);
-    }
-    if (input.maxCount !== undefined && count > input.maxCount) {
-      fail(`expected at most ${input.maxCount} ${browser.testId(input.testid)}`
         + `${contains ? ` containing "${contains}"` : ''}, found ${count}`);
     }
   }
@@ -325,7 +300,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     }
   }
   if (input.notContains) {
-    const text = (await loc.innerText().catch(() => '')) || '';
+    const text = (await loc.innerText()) || '';
     if (text.includes(input.notContains)) {
       fail(`${browser.testId(input.testid)} unexpectedly contains "${input.notContains}" `
         + `(text: "${text.trim().slice(0, 80)}")`);
@@ -397,16 +372,19 @@ async function expectUnavailable({ input, capabilities, signal }:
     : actor.page;
   const loc = scope.locator(browser.testId(input.testid),
     input.contains ? { hasText: browser.expand(input.contains) } : {}).filter({ visible: true }).first();
-  for (;;) {
-    if (!await loc.isVisible().catch(() => false)) return { unavailable: true, reason: 'absent' };
-    const disabled = await loc.isDisabled().catch(() => false);
-    const ariaDisabled = await loc.getAttribute('aria-disabled').catch(() => null);
-    if (disabled || ariaDisabled === 'true') return { unavailable: true, reason: 'disabled' };
-    if (Date.now() > deadline) {
-      fail(`${browser.testId(input.testid)} is available to ${input.actor} after ${within}ms`);
-    }
+  let reason = 'absent';
+  while (Date.now() <= deadline) {
+    if (await loc.isVisible()) {
+      const disabled = await loc.isDisabled();
+      const ariaDisabled = await loc.getAttribute('aria-disabled');
+      if (!disabled && ariaDisabled !== 'true') {
+        fail(`${browser.testId(input.testid)} became available to ${input.actor} during the ${within}ms observation window`);
+      }
+      reason = 'disabled';
+    } else reason = 'absent';
     await browser.sleep(250, signal);
   }
+  return { unavailable: true, reason };
 }
 
 async function expectAllPresent({ input, capabilities, signal }:
@@ -439,7 +417,7 @@ async function expectStable({ input, capabilities, signal }: BrowserArguments<St
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   const seen: string[] = [];
   for (let index = 0; index < (input.samples ?? 4); index++) {
-    seen.push(((await loc.innerText().catch(() => '')) || '').trim());
+    seen.push(((await loc.innerText()) || '').trim());
     await browser.sleep(input.intervalMs ?? 700, signal);
   }
   const distinct = [...new Set(seen)];
@@ -479,7 +457,8 @@ async function expectNumber({ input, capabilities, signal }:
     : undefined;
   const where = scope ? ` inside ${browser.testId(scope.testid)} "${scope.contains}"` : '';
   const loc = actor.loc(input.testid, { contains, scope });
-  await loc.waitFor({ state: 'visible', timeout: within }).catch(() => {
+  await loc.waitFor({ state: 'visible', timeout: within }).catch(error => {
+    if (harnessBrowserFailure(error)) throw error;
     fail(`${browser.testId(input.testid)}${where} not visible within ${within}ms`);
   });
 
@@ -560,13 +539,20 @@ async function expectAgreement({ input, capabilities, signal }:
     for (const name of input.actors) {
       const actor = actorFor(capabilities, name);
       const loc = actor.loc(input.testid, { contains, scope });
-      const text = (input.numeric
+      const visible = await loc.isVisible();
+      const text = !visible ? '<missing>' : (input.numeric
         ? await readValue(loc)
-        : ((await loc.innerText().catch(() => '<missing>')) || '<missing>')).trim() || '<missing>';
+        : ((await loc.innerText()) || '<missing>')).trim() || '<missing>';
       seen[name] = input.numeric ? String(parseRenderedNumber(text) ?? '<no number>') : text;
     }
-    if (new Set(Object.values(seen)).size === 1) return { seen };
+    const missing = Object.entries(seen)
+      .filter(([, value]) => value === '<missing>' || value === '<no number>')
+      .map(([name]) => name);
+    if (!missing.length && new Set(Object.values(seen)).size === 1) return { seen };
     if (Date.now() > deadline) {
+      if (missing.length) {
+        fail(`${browser.testId(input.testid)} is missing or unreadable for ${missing.join(', ')}`);
+      }
       fail(`clients disagree on ${browser.testId(input.testid)}: `
         + Object.entries(seen).map(([name, value]) =>
           `${name} sees ${JSON.stringify(value.slice(0, 40))}`).join(', '));
@@ -587,10 +573,10 @@ async function expectActorsWith({ input, capabilities }:
     const loc = actor.loc(input.testid, { contains, scope });
     const all = scope
       ? actor.page.locator(browser.testId(scope.testid), { hasText: scope.contains }).first()
-        .locator(browser.testId(input.testid))
+        .locator(browser.testId(input.testid)).filter({ visible: true })
       : (contains
-        ? actor.page.locator(browser.testId(input.testid), { hasText: contains })
-        : actor.page.locator(browser.testId(input.testid)));
+        ? actor.page.locator(browser.testId(input.testid), { hasText: contains }).filter({ visible: true })
+        : actor.page.locator(browser.testId(input.testid)).filter({ visible: true }));
     await settledLocatorCount(loc, input.within ?? browser.defaultWithin);
     return [name, await all.count()];
   }));
@@ -647,11 +633,7 @@ function contractBrowserAction<Input, Result>(
   implementation: (arguments_: BrowserArguments<Input>) => Result | Promise<Result>,
 ): ActionImplementation {
   const bounded = browserApplicationBoundary(implementation);
-  return (arguments_: ActionImplementationArguments) => bounded({
-    input: arguments_.input as Input,
-    capabilities: arguments_.capabilities as unknown as BrowserCapabilities,
-    signal: arguments_.signal,
-  });
+  return actionImplementation(bounded);
 }
 
 export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
@@ -674,7 +656,3 @@ export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
   typeInto: contractBrowserAction(typeInto),
   wait: contractBrowserAction(wait),
 });
-
-if (Object.keys(BROWSER_ACTION_IMPLEMENTATIONS).sort().join('\0') !== BROWSER_ACTION_IDS.join('\0')) {
-  throw new Error('browser action implementation registry does not match its declared action ids');
-}

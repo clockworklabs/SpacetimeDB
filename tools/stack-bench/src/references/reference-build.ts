@@ -20,7 +20,8 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
 import { loadTrack } from '../composition/tracks.js';
 import { inspectImportedReference, loadReferenceRegistry,
-  prepareReferenceFixtureSource, validateReferenceRegistry } from './reference-fixtures.js';
+  prepareReferenceFixtureSource, referenceMetadataIssues,
+  validateReferenceRegistry } from './reference-fixtures.js';
 import { referenceInstallSteps } from './reference-install.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../package-root.js';
@@ -203,6 +204,8 @@ function qualify(fixture: ReferenceFixture, imageIdentity: ImageIdentity): Fixtu
     const metadata: ReferenceMetadataForBuild = JSON.parse(
       execFileSync('docker', ['exec', identity.containerName,
         'cat', '/app/reference.json'], { encoding: 'utf8', stdio: 'pipe' }));
+    const metadataIssues = referenceMetadataIssues(metadata);
+    if (metadataIssues.length) throw new Error(metadataIssues.join('; '));
     buildCommands(metadata, identity.containerName, commands);
   } catch (caught) {
     error = errorDetail(caught);

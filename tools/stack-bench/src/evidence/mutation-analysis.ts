@@ -72,6 +72,11 @@ function object(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function exact(value: UnknownRecord, allowed: ReadonlySet<string>, at: string): void {
+  const unknown = Object.keys(value).filter(key => !allowed.has(key));
+  if (unknown.length) throw new Error(`${at} has unknown fields: ${unknown.join(', ')}`);
+}
+
 function requiredString(value: unknown, at: string): string {
   if (typeof value !== 'string' || !value) throw new Error(`${at} must be a non-empty string`);
   return value;
@@ -88,6 +93,7 @@ function stringList(value: unknown, at: string): string[] {
 
 function loadedMutationEdit(value: unknown, at: string): LoadedMutationEdit {
   if (!object(value)) throw new Error(`${at} must be an object`);
+  exact(value, new Set(['file', 'find', 'replace']), at);
   const file = optionalString(value.file, `${at}.file`);
   return { ...value, find: requiredString(value.find, `${at}.find`),
     replace: requiredString(value.replace, `${at}.replace`),
@@ -96,6 +102,8 @@ function loadedMutationEdit(value: unknown, at: string): LoadedMutationEdit {
 
 function loadedMutation(value: unknown, at: string): LoadedMutationDefinition {
   if (!object(value)) throw new Error(`${at} must be an object`);
+  exact(value, new Set(['id', 'file', 'find', 'replace', 'edits', 'targets', 'scenario', 'breaks',
+    'kills']), at);
   if (!Array.isArray(value.edits) || value.edits.length === 0) {
     throw new Error(`${at}.edits must be a non-empty array`);
   }
@@ -111,17 +119,34 @@ function loadedMutation(value: unknown, at: string): LoadedMutationDefinition {
 export function readMutationManifest(path: string): LoadedMutationManifest {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (!object(value)) throw new Error(`mutation manifest ${path} must be an object`);
+  exact(value, new Set(['schemaVersion', 'status', 'fixtureSha256', 'backend', 'track', 'scenario',
+    'note', 'mutations']), `mutation manifest ${path}`);
   if (value.schemaVersion !== 2) throw new Error(`mutation manifest ${path} must use schema version 2`);
   if (!Array.isArray(value.mutations) || value.mutations.length === 0) {
     throw new Error(`mutation manifest ${path}.mutations must be a non-empty array`);
   }
   const scenario = optionalString(value.scenario, `${path}.scenario`);
-  return { ...value, schemaVersion: 2, status: requiredString(value.status, `${path}.status`),
-    fixtureSha256: requiredString(value.fixtureSha256, `${path}.fixtureSha256`),
+  const status = requiredString(value.status, `${path}.status`);
+  if (!['candidate', 'active'].includes(status)) {
+    throw new Error(`mutation manifest ${path}.status must be candidate or active`);
+  }
+  const fixtureSha256 = requiredString(value.fixtureSha256, `${path}.fixtureSha256`);
+  if (!/^[a-f0-9]{64}$/.test(fixtureSha256)) {
+    throw new Error(`mutation manifest ${path}.fixtureSha256 must be 64 lowercase hexadecimal characters`);
+  }
+  const loaded = { ...value, schemaVersion: 2 as const, status,
+    fixtureSha256,
     backend: requiredString(value.backend, `${path}.backend`),
     track: requiredString(value.track, `${path}.track`),
     mutations: value.mutations.map((mutation, index) => loadedMutation(mutation, `${path}.mutations[${index}]`)),
     ...(scenario === undefined ? {} : { scenario }) };
+  const definitions = validateMutationDefinitions(loaded.mutations,
+    { defaultScenario: loaded.scenario, requireScenario: true });
+  if (!definitions.ok) {
+    throw new Error(`mutation manifest ${path} is invalid: ${definitions.issues.map(issue =>
+      `${String(issue.mutation ?? '<unnamed>')}:${issue.kind}`).join(', ')}`);
+  }
+  return loaded;
 }
 
 interface CriterionReport {
@@ -367,6 +392,7 @@ export function indexMutationReport(report: MutationReport | null | undefined): 
       }
       const key = typeof criterion.stableKey === 'string' && criterion.stableKey
         ? criterion.stableKey : criterionKey(feature.id, criterion.id);
+      if (criteria.has(key)) throw new Error(`duplicate mutation criterion identity: ${key}`);
       criteria.set(key, {
         feature: feature.id,
         criterion: criterion.id,

@@ -48,6 +48,8 @@
     "repair": "node dist/commands/repair-cli.js",
     "pretest": "npm run build --silent",
     "test": "node --test dist/tests/*.test.js",
+    "pretest:integration": "npm run build --silent",
+    "test:integration": "node --test dist/tests/*.integration.js",
     "pretest:container": "npm run build --silent",
     "test:container": "node dist/commands/container-smoke.js",
     "pretest:references": "npm run build --silent",

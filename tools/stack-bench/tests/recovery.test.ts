@@ -14,8 +14,9 @@ import { recoverBackendLease, recoveryPlan, recoverSupervisedRun, SUPERVISOR_STA
 function fixture({ state = 'active' }: { state?: BackendLease['state'] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-recovery-'));
   const output = join(root, 'results');
-  const leasePath = join(root, 'private', 'backend-lease.json');
-  const statePath = join(root, 'private', 'supervisor.json');
+  const runtimeRoot = join(root, 'runtime');
+  const leasePath = join(runtimeRoot, 'private', 'backend-lease.json');
+  const statePath = join(runtimeRoot, 'private', 'supervisor.json');
   const locks = join(root, 'locks');
   mkdirSync(output, { recursive: true });
   const lease = createBackendLease({ runId: 'recovery-postgres-run0', backend: 'postgres',
@@ -26,11 +27,11 @@ function fixture({ state = 'active' }: { state?: BackendLease['state'] } = {}) {
     key: 'slot:ecommerce:postgres:run0', lease }));
   writeBackendLease(leasePath, lease);
   const supervisor: SupervisorState = { version: SUPERVISOR_STATE_VERSION, runId: lease.runId,
-    backend: lease.backend, runtimeDir: resolve(join(root, 'private')),
+    backend: lease.backend, runtimeDir: resolve(join(runtimeRoot, 'private')),
     leasePath: resolve(leasePath), ownershipToken: lease.ownershipToken,
     output: resolve(output) };
   writeFileSync(statePath, `${JSON.stringify(supervisor)}\n`);
-  return { root, output, leasePath, statePath, lease, supervisor };
+  return { root, runtimeRoot, output, leasePath, statePath, lease, supervisor };
 }
 
 test('recovery plans are deterministic, public, and actionable', () => {
@@ -49,7 +50,7 @@ test('recovery plans are deterministic, public, and actionable', () => {
 test('authenticated recovery releases exact lease resources and removes private state', () => {
   const f = fixture();
   try {
-    const result = recoverSupervisedRun(f.statePath);
+    const result = recoverSupervisedRun(f.statePath, { runtimeRoot: f.runtimeRoot });
     assert.equal(result.ok, true);
     assert.equal(existsSync(f.statePath), false);
     assert.equal(existsSync(f.leasePath), false, 'private runtime lease must be removed after recovery');
@@ -66,7 +67,7 @@ test('authenticated lease recovery works when parent supervisor state is missing
   const output = join(f.root, 'lease-recovery');
   try {
     rmSync(f.statePath, { force: true });
-    const result = recoverBackendLease(f.leasePath, resolve(output));
+    const result = recoverBackendLease(f.leasePath, resolve(output), { runtimeRoot: f.runtimeRoot });
     assert.equal(result.ok, true);
     assert.equal(existsSync(f.leasePath), false);
     assert.equal(existsSync(firstLockPath(f.lease)), false);
@@ -74,6 +75,20 @@ test('authenticated lease recovery works when parent supervisor state is missing
       { expectedKind: 'recovery' });
     assert.equal(recovery.status, 'clean');
     assert.equal(JSON.stringify(recovery).includes(f.lease.ownershipToken), false);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('recovery refuses a lease outside the configured runtime root', () => {
+  const f = fixture();
+  const sentinel = join(f.runtimeRoot, 'private', 'keep.txt');
+  try {
+    writeFileSync(sentinel, 'keep\n');
+    assert.throws(() => recoverBackendLease(f.leasePath, resolve(join(f.root, 'rejected')), {
+      runtimeRoot: join(f.root, 'different-runtime-root'),
+    }), /not a direct child/);
+    assert.equal(existsSync(sentinel), true);
+    assert.equal(existsSync(f.leasePath), true);
+    assert.equal(existsSync(firstLockPath(f.lease)), true);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
@@ -94,8 +109,9 @@ test('wrong credentials and malformed supervisor state never clean resources', (
 test('an unleased live listener produces quarantine and remains untouched until safe retry', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-recovery-refusal-'));
   const output = join(root, 'results');
-  const leasePath = join(root, 'private', 'backend-lease.json');
-  const statePath = join(root, 'private', 'supervisor.json');
+  const runtimeRoot = join(root, 'runtime');
+  const leasePath = join(runtimeRoot, 'private', 'backend-lease.json');
+  const statePath = join(runtimeRoot, 'private', 'supervisor.json');
   mkdirSync(output, { recursive: true });
   const server = createServer((_request, response) => response.end('foreign'));
   await new Promise<void>((done, fail) => server.listen(0, '127.0.0.1', done).once('error', fail));
@@ -110,11 +126,11 @@ test('an unleased live listener produces quarantine and remains untouched until 
     lease.resources.listenerProcesses = [{ pid: process.pid + 100_000, startMarker: '1' }];
     writeBackendLease(leasePath, lease);
     writeFileSync(statePath, JSON.stringify({ version: SUPERVISOR_STATE_VERSION,
-      runId: lease.runId, backend: lease.backend, runtimeDir: resolve(join(root, 'private')),
+      runId: lease.runId, backend: lease.backend, runtimeDir: resolve(join(runtimeRoot, 'private')),
       leasePath: resolve(leasePath),
       ownershipToken: lease.ownershipToken, output: resolve(output) }));
 
-    const refused = recoverSupervisedRun(statePath);
+    const refused = recoverSupervisedRun(statePath, { runtimeRoot });
     assert.deepEqual(refused, { ok: false, state: 'quarantined', runId: lease.runId,
       recoveryPath: join(output, 'recovery.json') });
     assert.equal(existsSync(statePath), true, 'private recovery authority must survive refusal');
@@ -128,7 +144,7 @@ test('an unleased live listener produces quarantine and remains untouched until 
 
     server.closeAllConnections();
     await closeServer(server);
-    const cleaned = recoverSupervisedRun(statePath);
+    const cleaned = recoverSupervisedRun(statePath, { runtimeRoot });
     assert.equal(cleaned.ok, true);
     assert.equal(existsSync(statePath), false);
   } finally {

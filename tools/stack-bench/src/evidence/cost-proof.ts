@@ -63,11 +63,21 @@ interface SessionCostRow {
   receipts: CostReceiptEntry[];
 }
 
+function cost(value: unknown, at: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${at} must be a non-negative number`);
+  }
+  return value;
+}
+
 const roundUsd = (value: number): number => Number(value.toFixed(6));
 
 function sessionRows(run: CostRun): SessionCostRow[] {
   const rows: SessionCostRow[] = [];
-  for (const level of run.levels ?? []) {
+  for (const [levelIndex, level] of (run.levels ?? []).entries()) {
+    if (!Number.isSafeInteger(level.level) || level.level < 1) {
+      throw new Error(`levels[${levelIndex}].level must be a positive integer`);
+    }
     const groups: Array<[CostLedgerRow['kind'], CostSession[]]> = [
       ['build', level.buildSession ? [level.buildSession] : []],
       ['resume', level.resumeSession ? [level.resumeSession] : []],
@@ -79,7 +89,8 @@ function sessionRows(run: CostRun): SessionCostRow[] {
           level: level.level,
           kind,
           index: index + 1,
-          sessionCostUsd: session.costUsd,
+          sessionCostUsd: cost(session.costUsd,
+            `levels[${levelIndex}].${kind}[${index}].costUsd`),
           costComplete: session.costComplete === true,
           receipts: session.costReceipts ?? [],
         });
@@ -92,10 +103,8 @@ function sessionRows(run: CostRun): SessionCostRow[] {
 export function durableCostLedger(run: CostRun): CostLedger {
   const rows = sessionRows(run).map(row => {
     const receiptCostUsd = roundUsd(row.receipts.reduce(
-      (sum, entry) => {
-        const costUsd = entry?.receipt?.costUsd;
-        return sum + (typeof costUsd === 'number' && Number.isFinite(costUsd) ? costUsd : 0);
-      },
+      (sum, entry, index) => sum + cost(entry?.receipt?.costUsd,
+        `level ${row.level} ${row.kind} receipt[${index}].costUsd`),
       0,
     ));
     const receiptsComplete = (row.receipts.length === 0 && row.sessionCostUsd === 0)
@@ -109,7 +118,8 @@ export function durableCostLedger(run: CostRun): CostLedger {
       complete: row.costComplete && receiptsComplete && Math.abs(differenceUsd) <= 0.0001,
     };
   });
-  const reportedCostUsd = roundUsd(run.totals?.costUsd ?? 0);
+  const reportedCostUsd = roundUsd(run.totals?.costUsd === undefined
+    ? 0 : cost(run.totals.costUsd, 'totals.costUsd'));
   const receiptCostUsd = roundUsd(rows.reduce((sum, row) => sum + row.receiptCostUsd, 0));
   const differenceUsd = roundUsd(reportedCostUsd - receiptCostUsd);
   return {

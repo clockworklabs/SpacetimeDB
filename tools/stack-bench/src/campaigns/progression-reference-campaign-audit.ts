@@ -10,12 +10,13 @@ import { auditProgressionReferenceRun }
   from '../progression/progression-reference-audit.js';
 import type { ProgressionReferenceAuditReport }
   from '../progression/progression-reference-audit.js';
+import type { ProgressionOwner } from '../progression/progression-state.js';
 import { readCampaignState } from './campaign-scheduler.js';
+import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CampaignAttemptPlan, CompiledCampaignPlan } from './campaign-compiler.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import type { ProgressionInput } from '../progression/progression-definition.js';
-import type { ProgressionOwner } from '../progression/progression-state.js';
 
 interface CampaignExecutionView {
   id: string;
@@ -109,23 +110,6 @@ function childPath(root: string, path: string): string {
   return absolute;
 }
 
-function progressionOwner(plan: CompiledCampaignPlan,
-  attempt: CampaignAttemptPlan): ProgressionOwner {
-  return {
-    schemaVersion: 1,
-    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-    attempt: {
-      id: attempt.id,
-      track: plan.definition.track,
-      stack: attempt.stack,
-      agentAdapter: attempt.agentAdapter,
-      model: attempt.model,
-      conditionSha256: attempt.condition.sha256,
-    },
-    workspace: { appDirectory: 'source' },
-  };
-}
-
 function exactRecipeBindings(plan: CompiledCampaignPlan,
   resolveRelease: ResolveRelease): { bindings: Map<number, RecipeBinding>; release: RecipeRelease } {
   const track = loadTrack(plan.definition.track);
@@ -209,7 +193,7 @@ export function auditProgressionReferenceCampaign(directory: string, {
       progression,
       featureCatalogIdentity,
       dependencyPolicyIdentity,
-      owner: progressionOwner(plan, attempt.plan),
+      owner: campaignProgressionOwner(plan, attempt.plan, { workspace: true }),
       recipeBindings: bindings,
       release,
     });
@@ -234,7 +218,9 @@ export function formatProgressionReferenceCampaignAudit(
     throw new Error('reference campaign audit report has no attempts');
   }
   const attempts = report.attempts as ReferenceCampaignAttemptAudit[];
-  const lines = [`Reference progression audit: ${report.ok ? 'PASS' : 'FAIL'}`];
+  const incomplete = !report.ok && attempts.every(attempt =>
+    attempt.progressionGraph.complete && attempt.fullRecipeCatalog.status === 'not-run');
+  const lines = [`Reference progression audit: ${report.ok ? 'PASS' : incomplete ? 'INCOMPLETE' : 'FAIL'}`];
   for (const attempt of attempts) {
     const graph = attempt.progressionGraph;
     const catalog = attempt.fullRecipeCatalog;
