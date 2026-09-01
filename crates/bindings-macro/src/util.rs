@@ -30,7 +30,35 @@ pub(crate) fn ok_or_compile_error<Res: Into<StdTokenStream>>(f: impl FnOnce() ->
         Err(e) => e.into_compile_error().into(),
     }
 }
-
+/// Extracts the argument names for a reducer/procedure/view's typed parameters,
+/// as `Some(name)` for each argument, for embedding into `ARG_NAMES`.
+///
+/// Rejects arguments whose pattern is not a plain identifier (e.g. destructuring
+/// patterns like `SomeProduct { a, b }: SomeProduct`), since such a pattern can't
+/// be represented as a single, meaningful argument name in the schema sent to
+/// the SDK/client codegen. Callers should bind such arguments to a name and
+/// destructure in the function body instead.
+pub(crate) fn extract_arg_names(typed_args: &[&syn::PatType]) -> syn::Result<Vec<TokenStream>> {
+    typed_args
+        .iter()
+        .map(|arg| match &*arg.pat {
+            syn::Pat::Ident(i) => {
+                let name = i.ident.to_string();
+                Ok(quote::quote!(Some(#name)))
+            }
+            // A bare `_` intentionally means "no name for this argument" —
+            // that's fine, unlike a destructuring pattern which silently
+            // drops multiple named sub-fields into a single unnamed schema entry.
+            syn::Pat::Wild(_) => Ok(quote::quote!(None)),
+            other => Err(syn::Error::new_spanned(
+                other,
+                "arguments must be simple identifiers (e.g. `x: MyType`) or `_`, not \
+                 patterns like destructuring; bind to a name and destructure in the \
+                 function body instead",
+            )),
+        })
+        .collect()
+}
 pub(crate) fn ident_to_litstr(ident: &Ident) -> syn::LitStr {
     syn::LitStr::new(&ident.to_string(), ident.span())
 }

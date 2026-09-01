@@ -1,5 +1,5 @@
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, extract_arg_names, ident_to_litstr, match_meta};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
@@ -109,15 +109,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let generate_explicit_names = generate_explicit_names_impl(&reducer_name.value(), func_name, explicit_name);
 
     // Extract all function parameter names.
-    let opt_arg_names = typed_args.iter().map(|arg| {
-        if let syn::Pat::Ident(i) = &*arg.pat {
-            let name = i.ident.to_string();
-            quote!(Some(#name))
-        } else {
-            quote!(None)
-        }
-    });
-
+    let opt_arg_names = extract_arg_names(&typed_args)?;
     let arg_tys = typed_args.iter().map(|arg| arg.ty.as_ref()).collect::<Vec<_>>();
     let first_arg_ty = arg_tys.first().into_iter();
     let rest_arg_tys = arg_tys.iter().skip(1);

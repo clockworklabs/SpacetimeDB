@@ -3,9 +3,11 @@
 
 function injectInkeepFontOverride() {
   // Find all Inkeep shadow DOM containers
-  const inkeepElements = document.querySelectorAll('[id^="inkeep-shadowradix"]');
+  const inkeepElements = document.querySelectorAll(
+    '[id^="inkeep-shadowradix"]'
+  );
 
-  inkeepElements.forEach((element) => {
+  inkeepElements.forEach(element => {
     const shadowRoot = element.shadowRoot;
     if (!shadowRoot) return;
 
@@ -75,7 +77,7 @@ if (typeof window !== 'undefined') {
   }
 
   // Also observe for dynamically added Inkeep elements
-  const observer = new MutationObserver((mutations) => {
+  const observer = new MutationObserver(mutations => {
     for (const mutation of mutations) {
       if (mutation.type === 'childList') {
         injectInkeepFontOverride();

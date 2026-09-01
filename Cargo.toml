@@ -70,6 +70,8 @@ members = [
   "tools/ci",
   "tools/ci/commands/test",
   "tools/ci/commands/lint",
+  "tools/ci/commands/lint",
+  "tools/ci/commands/fmt",
   "tools/ci/commands/module-latest-deps",
   "tools/ci/commands/smoketests",
   "tools/ci/commands/smoketest-checks",

@@ -7,7 +7,7 @@ use syn::{FnArg, ItemFn, LitStr};
 
 use crate::reducer::generate_explicit_names_impl;
 use crate::sym;
-use crate::util::{check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate_msg, extract_arg_names, match_meta};
 
 pub(crate) struct ViewArgs {
     name: Option<LitStr>,
@@ -166,15 +166,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         .collect::<syn::Result<Vec<_>>>()?;
 
     // Extract parameter names
-    let opt_arg_names = typed_args.iter().map(|arg| {
-        if let syn::Pat::Ident(i) = &*arg.pat {
-            let name = i.ident.to_string();
-            quote!(Some(#name))
-        } else {
-            quote!(None)
-        }
-    });
-
+    let opt_arg_names = extract_arg_names(&typed_args)?;
     let arg_tys = typed_args.iter().map(|arg| arg.ty.as_ref()).collect::<Vec<_>>();
 
     // Extract the context type and the rest of the parameter types
