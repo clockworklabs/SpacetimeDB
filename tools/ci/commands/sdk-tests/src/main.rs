@@ -44,7 +44,7 @@ enum SdkTestCommand {
     /// Generate, compile, and export one artifact for each shared SDK test client.
     PrepareClients {
         #[arg(long)]
-        mode: Mode,
+        archive_file: PathBuf,
         #[arg(long)]
         module_dir: PathBuf,
         #[arg(long)]
@@ -82,10 +82,10 @@ fn main() -> Result<()> {
         }
         Some(SdkTestCommand::Archive { mode, archive_file }) => archive(mode, &archive_file),
         Some(SdkTestCommand::PrepareClients {
-            mode,
+            archive_file,
             module_dir,
             output_dir,
-        }) => prepare_clients(mode, &module_dir, &output_dir),
+        }) => prepare_clients(&archive_file, &module_dir, &output_dir),
         Some(SdkTestCommand::RunArchive {
             archive_file,
             module_dir,
@@ -162,10 +162,16 @@ fn archive(mode: Mode, archive_file: &Path) -> Result<()> {
     Ok(())
 }
 
-fn prepare_clients(mode: Mode, module_dir: &Path, output_dir: &Path) -> Result<()> {
+fn prepare_clients(archive_file: &Path, module_dir: &Path, output_dir: &Path) -> Result<()> {
     let workspace_root = env::current_dir()?;
+    let archive_file = absolute_from_workspace(archive_file)?;
     let module_dir = absolute_from_workspace(module_dir)?;
     let output_dir = absolute_from_workspace(output_dir)?;
+    ensure!(
+        archive_file.is_file(),
+        "SDK test archive does not exist: {}",
+        archive_file.display()
+    );
     ensure!(
         module_dir.is_dir(),
         "SDK module directory does not exist: {}",
@@ -174,20 +180,20 @@ fn prepare_clients(mode: Mode, module_dir: &Path, output_dir: &Path) -> Result<(
     std::fs::create_dir_all(&output_dir)?;
 
     let status = Command::new("cargo")
+        .args(["nextest", "run", "--archive-file"])
+        .arg(archive_file)
+        .arg("--workspace-remap")
+        .arg(&workspace_root)
         .args([
-            "test",
-            "--timings",
-            "-p",
-            "spacetimedb-sdk",
-            "--features",
-            mode.features(),
-            "--test",
-            "test",
-            "prepare_clients",
-            "--",
-            "--ignored",
-            "--exact",
-            "--test-threads=1",
+            "--run-ignored",
+            "only",
+            "-E",
+            "test(prepare_clients)",
+            "--no-fail-fast",
+            "--no-tests",
+            "fail",
+            "-j",
+            "1",
         ])
         .env(PRECOMPILED_MODULE_DIR_ENV_VAR, module_dir)
         .env(PREPARE_CLIENT_DIR_ENV_VAR, output_dir)

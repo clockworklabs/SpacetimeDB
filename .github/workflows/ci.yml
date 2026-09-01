@@ -684,23 +684,44 @@ jobs:
         run: |
           source ~/emsdk/emsdk_env.sh
           cargo run --timings -p ci-sdk-tests -- prepare-modules --output-dir sdk-test-modules
-          cargo run --timings -p ci-sdk-tests -- prepare-clients --mode native --module-dir sdk-test-modules --output-dir sdk-test-clients/native
-          cargo run --timings -p ci-sdk-tests -- archive --mode native --archive-file sdk-tests-native-nextest.tar.zst
-          cargo run --timings -p ci-sdk-tests -- prepare-clients --mode browser --module-dir sdk-test-modules --output-dir sdk-test-clients/browser
-          cargo run --timings -p ci-sdk-tests -- archive --mode browser --archive-file sdk-tests-browser-nextest.tar.zst
-          tar -czf sdk-test-support.tar.gz \
-            target/debug/ci-sdk-tests \
-            sdk-test-modules \
-            sdk-test-clients
+          ./target/debug/ci-sdk-tests archive --mode native --archive-file sdk-tests-native-nextest.tar.zst
+          ./target/debug/ci-sdk-tests archive --mode browser --archive-file sdk-tests-browser-nextest.tar.zst
+          ./target/debug/ci-sdk-tests prepare-clients --archive-file sdk-tests-native-nextest.tar.zst --module-dir sdk-test-modules --output-dir sdk-test-clients/native
+          ./target/debug/ci-sdk-tests prepare-clients --archive-file sdk-tests-browser-nextest.tar.zst --module-dir sdk-test-modules --output-dir sdk-test-clients/browser
+          tar -I 'zstd -T0 -3' -cf sdk-test-modules.tar.zst sdk-test-modules
+          tar -I 'zstd -T0 -3' -cf sdk-test-clients-native.tar.zst sdk-test-clients/native
+          tar -I 'zstd -T0 -3' -cf sdk-test-clients-browser.tar.zst sdk-test-clients/browser
 
-      - name: Upload SDK test build
+      - name: Upload common SDK test build
         uses: actions/upload-artifact@v4
         with:
-          name: sdk-test-build-linux
+          name: sdk-test-common-linux
+          path: sdk-test-modules.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload native SDK test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-native-linux
           path: |
             sdk-tests-native-nextest.tar.zst
+            sdk-test-clients-native.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload browser SDK test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-browser-linux
+          path: |
             sdk-tests-browser-nextest.tar.zst
-            sdk-test-support.tar.gz
+            sdk-test-clients-browser.tar.zst
+          compression-level: 0
           if-no-files-found: error
           overwrite: true
           retention-days: 14
@@ -729,7 +750,9 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 4
+      SDK_TEST_BUILD_ARTIFACT: sdk-test-native-linux
       SDK_TEST_ARCHIVE: sdk-tests-native-nextest.tar.zst
+      SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-native.tar.zst
       SDK_TEST_CLIENT_DIR: sdk-test-clients/native
       SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps: &sdk-test-partition-steps
@@ -750,17 +773,26 @@ jobs:
       - *download-build-artifacts
       - *extract-build-artifacts
 
-      - name: Download SDK test build
+      - name: Download common SDK test build
         uses: actions/download-artifact@v4
         with:
-          name: sdk-test-build-linux
+          name: sdk-test-common-linux
+
+      - name: Download mode-specific SDK test build
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SDK_TEST_BUILD_ARTIFACT }}
 
       - name: Extract SDK test support files
-        run: tar -xzf sdk-test-support.tar.gz
+        run: |
+          tar --zstd -xf sdk-test-modules.tar.zst
+          tar --zstd -xf "${SDK_TEST_CLIENT_ARCHIVE}"
 
       - name: Run SDK test partition
         run: |
-          ./target/debug/ci-sdk-tests run-archive \
+          # Use the checked-in wrapper instead of shipping the large ci-sdk-tests
+          # helper binary from the build job in every SDK test artifact.
+          bash tools/ci/run-sdk-test-archive.sh \
             --archive-file "${SDK_TEST_ARCHIVE}" \
             --module-dir sdk-test-modules \
             --client-dir "${SDK_TEST_CLIENT_DIR}" \
@@ -782,7 +814,9 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 4
+      SDK_TEST_BUILD_ARTIFACT: sdk-test-browser-linux
       SDK_TEST_ARCHIVE: sdk-tests-browser-nextest.tar.zst
+      SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-browser.tar.zst
       SDK_TEST_CLIENT_DIR: sdk-test-clients/browser
       SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps: *sdk-test-partition-steps
