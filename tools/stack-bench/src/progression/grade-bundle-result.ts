@@ -279,7 +279,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       'inconclusive_evidence', bundleOutcome?.reason
       ?? bundle.error ?? 'grader evidence was inconclusive');
   }
-  if (outcome === 'app_failure') {
+  if (bundleOutcome?.kind === 'app_failure'
+    && Array.isArray(selection.notRun) && selection.notRun.length > 0) {
     const promptNodeIds = gradingAction.prompt?.nodeIds ?? [];
     if (!Array.isArray(promptNodeIds) || promptNodeIds.length === 0
       || promptNodeIds.some(id => typeof id !== 'string' || !selectedNodes.has(id))
@@ -298,7 +299,7 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     const regression = bundle.totals?.regression ?? { score: 0, max: 0 };
     const regressionScore = regression.score;
     const regressionMax = regression.max;
-    if (typeof bundleOutcome?.phase !== 'string' || !bundleOutcome.phase
+    if (typeof bundleOutcome.phase !== 'string' || !bundleOutcome.phase
       || typeof bundleOutcome.reason !== 'string' || !bundleOutcome.reason
       || new Set(accounted).size !== accounted.length || !sameKeys(accounted, expectedIds)
       || reported.some(id => !attempted.includes(id))

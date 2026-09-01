@@ -179,6 +179,20 @@ test('typed grader failures do not consume a progression strike as a zero score'
     reason: 'browser worker stopped' });
 });
 
+test('completed progression evidence outranks a stale application failure', () => {
+  const completed = bundle();
+  completed.outcome = { kind: 'app_failure', phase: 'grading', reason: 'stale summary' };
+  const result = gradeBundleToProgressionResult(artifact(completed, 'completed'),
+    action(), conversion);
+  assert.equal(result.outcome, 'conclusive');
+  if (result.outcome !== 'conclusive') throw new Error('expected a conclusive result');
+  assert.equal(result.applicationFailure, undefined);
+  assert.deepEqual(result.nodes, [
+    { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'pass' }] },
+    { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
+  ]);
+});
+
 test('a typed application abort charges current work but not earlier regression guards', () => {
   const failed = bundle();
   failed.outcome = { kind: 'app_failure', phase: 'application-start',
