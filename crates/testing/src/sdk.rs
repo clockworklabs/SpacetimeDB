@@ -397,7 +397,7 @@ pub fn build_precompiled_modules(output_dir: &Path) -> anyhow::Result<usize> {
 
     create_dir_all(output_dir)?;
     for module_name in &module_names {
-        eprintln!("Building precompiled SDK test module {module_name}...");
+        log::info!("Building precompiled SDK test module {module_name}...");
         let module = CompiledModule::compile(module_name, CompilationMode::Debug);
         let extension = match module.host_type {
             HostType::Wasm => "wasm",
