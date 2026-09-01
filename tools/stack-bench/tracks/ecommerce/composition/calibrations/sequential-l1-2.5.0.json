@@ -11,8 +11,8 @@
     "id": "ecommerce.sequential-l1",
     "version": "2.5.0",
     "meaningSha256": "4fc40084ccd79e10b047c202cc6abc9518527b1d34c86750646ed3298c49205d",
-    "executionSha256": "9ae75b1e33e0b37a111d734a6a8ed281d49bc52475e3c1773cc27b0af7754a41",
-    "contentSha256": "b5272808423ac1f02bcb75b0cfe18a19e89375e3a0667d6b7f10927fff58960d"
+    "executionSha256": "1c27a30c606db5a6dbec30259dd3c77d68b1d3b656e9acc2a6755ce5c4490750",
+    "contentSha256": "7bb0f7c836121141ca72876787a95f62c3fe19205dd908f5e75f629e46564834"
   },
   "fixture": {
     "id": "ecommerce.storefront",

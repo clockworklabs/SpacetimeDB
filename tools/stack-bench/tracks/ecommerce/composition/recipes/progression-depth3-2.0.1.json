@@ -3,7 +3,7 @@
   "kind": "benchmark-recipe",
   "id": "ecommerce.progression-depth3",
   "version": "2.0.1",
-  "state": "qualified",
+  "state": "draft",
   "title": "Ecommerce progression through depth 3",
   "track": "ecommerce",
   "fixture": { "path": "../fixtures/operations-1.0.0.json", "id": "ecommerce.operations", "version": "1.0.0" },

@@ -1097,6 +1097,7 @@ async function main() {
 
   const runAgentForLevel = async (mode: AgentMode, level: number): Promise<ValidatedAgentResult> => {
     try {
+      clearPrivateGradingEvidence(appDir);
       const result = await runAgent(args, agentAdapter, mode, level, appDir);
       if (result.costComplete !== true) runCostComplete = false;
       return result;
@@ -1198,7 +1199,6 @@ async function main() {
         '--history-json', '[]', '--archive', join(args.out, 'repair-reports',
           `bug-report-l${level}-resume.md`), ...repairReportArgs(progressionSelection)],
       { stdio: 'pipe' });
-      clearPrivateGradingEvidence(appDir);
     }
 
     const firstMode = resumedRepair ? 'fix'
@@ -1552,7 +1552,6 @@ async function main() {
         rmSync(gradingSnapshot, { recursive: true, force: true });
       };
       try {
-      clearPrivateGradingEvidence(appDir);
       fixRounds += 1;
       const displayedRepairBudget = args.progression
         ? progressionRepairBudgetRounds

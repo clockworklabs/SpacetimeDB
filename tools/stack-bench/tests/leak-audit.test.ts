@@ -34,3 +34,25 @@ test('a completed external Bash read contaminates the transcript', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('private grading reads inside the app contaminate the transcript', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-private-leak-audit-'));
+  const transcript = join(root, 'session.jsonl');
+  try {
+    const events = [
+      { cwd: '/app', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Bash',
+        input: { command: 'cat stack-bench/bundle.json' } }] } },
+      { message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', is_error: false }] } },
+    ];
+    writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+
+    const result = auditTranscript(transcript, '/app');
+
+    assert.deepEqual(result.hits.map(hit => ({ path: hit.path, kind: hit.kind })), [{
+      path: '/app/stack-bench/bundle.json',
+      kind: 'GRADER / TEST SPECS',
+    }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

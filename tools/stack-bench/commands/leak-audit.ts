@@ -28,6 +28,7 @@ const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]
 const READER = /(?:^|[;&|]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|]+)/g;
 
 const CLASSES: Array<readonly [RegExp, string]> = [
+  [/[/\\]stack-bench(?:[/\\]|$)/, 'GRADER / TEST SPECS'],
   [/\.claude[/\\]projects.*memory|[/\\]memory[/\\].*\.md$/, 'BENCHMARK NOTES'],
   [/scenarios[/\\].*\.json|grade\.(?:js|ts)|mutation|check-scenarios/, 'GRADER / TEST SPECS'],
   [/contracts[/\\].*\.json|appendix-\d+\.md|walk\.(?:js|ts)|lint\.(?:js|ts)/, 'CONTRACT / LINTER'],
@@ -137,15 +138,18 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
       }
       const paths = [];
       for (const raw of cand) {
-        const n = norm(raw);
+        let n = norm(raw);
         if (!n || IGNORE.test(n)) continue;
         // The CLI keeps auto-memory for the session's OWN project dir. A build
         // A session may read its own memory, never another project's memory.
         if (cwd && /[/\\]projects[/\\][^/\\]+[/\\]memory[/\\]/.test(n)
           && n.includes(cwd.replace(/[\\/:]/g, '-'))) continue;
         const absolute = /^[a-z]:/.test(n) || n.startsWith('/');
-        if (!absolute) continue;              // relative paths resolve inside cwd
-        if (cwd && n.startsWith(cwd)) continue;
+        if (!absolute && cwd) n = `${cwd}/${n.replace(/^\.\//, '')}`;
+        const privateHarnessPath = cwd
+          && (n === `${cwd}/stack-bench` || n.startsWith(`${cwd}/stack-bench/`));
+        if (!privateHarnessPath && !absolute) continue;
+        if (!privateHarnessPath && cwd && (n === cwd || n.startsWith(`${cwd}/`))) continue;
         paths.push(n);
       }
       if (paths.length && p.id && p.name) pending.set(p.id, { paths, via: p.name });

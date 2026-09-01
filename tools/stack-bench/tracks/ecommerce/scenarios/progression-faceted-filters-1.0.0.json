@@ -24,8 +24,7 @@
           "points": 3,
           "statedBy": "Apply all selected filters together",
           "steps": [
-            { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "contains": "Coffee Grinder", "equals": 1, "within": 10000 },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Coffee Grinder" },
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Coffee Grinder", "equals": 1, "within": 10000 },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Gaming Mouse", "absent": true },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Desk Lamp", "absent": true },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Espresso Machine", "absent": true },

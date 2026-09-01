@@ -68,7 +68,7 @@ test('faceted search covers every filter and stable pagination without prompt le
   const prompt = fragmentText(requiredFragment(pack.task.requirements[0], 'the task prompt'));
   const contract = fragmentText(requiredFragment(pack.task.contracts[0], 'the task contract'));
   for (const text of ['category', 'minimum price', 'maximum price', 'availability',
-    'six results per page']) assert.match(prompt, new RegExp(text, 'i'));
+    'ten results per page']) assert.match(prompt, new RegExp(text, 'i'));
   for (const hook of ['category-filter', 'minimum-price', 'maximum-price', 'in-stock-filter',
     'search-results', 'item-card', 'search-next-page', 'search-previous-page']) {
     assert.match(contract, new RegExp(`\`${hook}\``));
@@ -89,8 +89,10 @@ test('faceted search covers every filter and stable pagination without prompt le
     ['category-filter', 'minimum-price', 'maximum-price', 'in-stock-filter']);
   const filterCriterion = filters.criteria[0];
   assert(filterCriterion, 'the filters feature must have a criterion');
+  const count = filterCriterion.steps.find(step => step.do === 'expectElementCount');
+  assert.equal(count?.in?.testid, 'search-results');
   const checks = filterCriterion.steps.filter(step => step.do === 'expect');
-  for (const item of ['Coffee Grinder', 'Gaming Mouse', 'Desk Lamp', 'Espresso Machine',
+  for (const item of ['Gaming Mouse', 'Desk Lamp', 'Espresso Machine',
     'Air Purifier']) assert(checks.some(step => step.contains === item));
   const paginationSelection = selected.find(item => item.check.id === 'pagination');
   assert(paginationSelection, 'the pagination check must be selected');

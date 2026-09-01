@@ -10,9 +10,9 @@
     "path": "../recipes/progression-depth3-2.0.1.json",
     "id": "ecommerce.progression-depth3",
     "version": "2.0.1",
-    "meaningSha256": "b1977c6bb1f9e2385570f3639819bc1183d51c10be16a8b85327b1bfa54f6811",
-    "executionSha256": "50179691fbf3eb4fe8cfc41dcd360bd5045533419a9c4200aed5759fd59d73a6",
-    "contentSha256": "2ac17985581abaf47f3dbaf34956c4eb39b54922a3265aae6f8a8f03ec5713bb"
+    "meaningSha256": "6507e6e2ae68075a9fbec8d5faed3cbae51de4664c346dc8a68fd07e864f980a",
+    "executionSha256": "c98ddb0a9e46afe9bc2ee4a9cfbfc940d97d0baa8852f5c9ba36269e03ee3acb",
+    "contentSha256": "fdc7b6917b65053e8cd87c3ab30f462d3b3e1e2837ed7b38c9033d670fa5ceda"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -50,9 +50,9 @@
     "featureCatalog": { "id": "ecommerce.questlines", "version": "2.0.1", "sha256": "b4b58d2b29712ea017499b98cd381ef5d135a31d80d0d58ff9b36ba1a7e1604e" },
     "runner": { "schemaVersion": 1, "mode": "appliance", "platform": "linux", "architecture": "x64" },
     "stacks": [
-      { "id": "mongodb", "status": "qualified" },
-      { "id": "postgres", "status": "qualified" },
-      { "id": "spacetime", "status": "qualified" }
+      { "id": "mongodb", "status": "candidate" },
+      { "id": "postgres", "status": "candidate" },
+      { "id": "spacetime", "status": "candidate" }
     ],
     "evidence": []
   },

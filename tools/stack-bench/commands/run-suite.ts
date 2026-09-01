@@ -195,7 +195,7 @@ export function clearPreviousGradeOutputs(output: string): void {
   const generated = existsSync(output) ? readdirSync(output).filter(name =>
     /^grading-.+\.json$/.test(name) || /^grader-.+\.(?:stdout|stderr)\.log$/.test(name)) : [];
   for (const name of [ARTIFACT_FILE.gradeBundle, ARTIFACT_FILE.contractLint,
-    ARTIFACT_FILE.actions, 'media', 'failure-media',
+    ARTIFACT_FILE.actions, 'bug-report-quality.json', 'media', 'failure-media',
     'database-provenance', ...generated]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }

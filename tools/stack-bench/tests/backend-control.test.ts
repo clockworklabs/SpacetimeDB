@@ -159,6 +159,7 @@ test('hosted application control inspects and stops listeners as the application
     port: 65534,
     probe: '/',
     mode: 'stop',
+    handoffWorkspace: true,
     exec,
   });
 
@@ -172,6 +173,7 @@ test('hosted application control inspects and stops listeners as the application
   ]);
   assert.equal(stop.args[7], id);
   assert.match(stop.args.at(-1) ?? '', /lsof -ti tcp:65534 -sTCP:LISTEN/);
+  assert(calls.some(call => call.args.slice(0, 3).join(' ') === `exec ${id} chown`));
 });
 
 test('application control rejects unsupported modes before touching a container', async () => {

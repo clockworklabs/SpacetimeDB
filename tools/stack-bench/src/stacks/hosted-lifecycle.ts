@@ -167,14 +167,14 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
     await waitFor(async () => !(await answers(url, { freshConnection: true })),
       30_000, `${stack} application to stop`, abort);
   }
-  if (mode === 'stop') return;
-  if (typeof app !== 'string') throw new Error('application control requires an app directory');
   if (handoffWorkspace) {
     for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
       exec('docker', ['exec', container.id, ...command],
         { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
     }
   }
+  if (mode === 'stop') return;
+  if (typeof app !== 'string') throw new Error('application control requires an app directory');
   exec('docker', ['exec', ...codingContainerAgentExecOptions(), container.id, 'sh', '-c',
     `pids=$(lsof -ti tcp:${Number(port)} -sTCP:LISTEN | sort -u); `
       + '[ -z "$pids" ] || { echo "hosted application port is still owned by $pids" >&2; exit 4; }'],
