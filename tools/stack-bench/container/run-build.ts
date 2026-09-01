@@ -75,6 +75,7 @@ const prepareOnly = values['prepare-only'] ?? false;
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
 const { uid: AGENT_UID, gid: AGENT_GID, home: AGENT_HOME } = CODING_CONTAINER_AGENT;
+const CONTROLLER_GID = process.getgid?.() ?? 0;
 const AGENT_ENVIRONMENT = codingContainerAgentEnvironment();
 const CONTROL_DIR = CODING_CONTAINER_CONTROL_DIR;
 const REQUIRED_CAPABILITIES = Object.freeze([
@@ -493,8 +494,8 @@ if (process.env.STACK_BENCH_APPLIANCE === '1') {
   const writableTargets = [AGENT_HOME,
     ...expectedMounts.filter(mount => !mount.readOnly).map(mount => mount.target)];
   for (const [command, commandArgs] of [
-    ['chown', ['-R', `${AGENT_UID}:${AGENT_GID}`, '--', ...writableTargets]],
-    ['chmod', ['-R', 'u+rwX,go-rwx', '--', ...writableTargets]],
+    ['chown', ['-R', `${AGENT_UID}:${CONTROLLER_GID}`, '--', ...writableTargets]],
+    ['chmod', ['-R', 'u+rwX,g+rwX,o-rwx', '--', ...writableTargets]],
   ] as const) {
     const permissions = spawnSync('docker', ['exec', containerName, command, ...commandArgs], {
       encoding: 'utf8', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
@@ -634,7 +635,7 @@ try {
       stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
     });
   }
-  const appMode = process.env.STACK_BENCH_APPLIANCE === '1' ? 'u+rwX,go-rwx' : 'a+rwX';
+  const appMode = process.env.STACK_BENCH_APPLIANCE === '1' ? 'u+rwX,g+rwX,o-rwx' : 'a+rwX';
   spawnSync('docker', ['exec', containerName, 'chmod', '-R', appMode, CODING_CONTAINER_APP_ROOT], {
     stdio: 'ignore', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
