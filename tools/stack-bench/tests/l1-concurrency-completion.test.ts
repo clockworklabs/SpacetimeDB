@@ -35,13 +35,13 @@ interface CandidateCase {
 const cases: CandidateCase[] = [
   {
     backend: 'mongodb',
-    sourceSha256: '24d445f18cdcb25b9ab06dd4f4582003b348edaf0be0b97c27ec9fbb06751b1e',
+    sourceSha256: '6e50b6421dcd2e5f195be2f6922abdae7760d8f740e48aa545bcbbc0930aa67b',
     manifest: 'mongodb-ecommerce-2.0.1.json',
     lastUnitMutation: 'last-unit-allows-negative-stock',
   },
   {
     backend: 'postgres',
-    sourceSha256: 'f8f6152cebd68acc2af46a3e4cbf208664db17a7db58e0276d8e10ea6750aaf5',
+    sourceSha256: 'a9b604a59cf9321212e79eeb664ac1e023a66b16d58c56d1b92da9ba109a3778',
     manifest: 'postgres-ecommerce-2.0.1.json',
     lastUnitMutation: 'oversell-no-row-lock',
   },

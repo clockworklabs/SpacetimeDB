@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "active",
-  "fixtureSha256": "24d445f18cdcb25b9ab06dd4f4582003b348edaf0be0b97c27ec9fbb06751b1e",
+  "fixtureSha256": "6e50b6421dcd2e5f195be2f6922abdae7760d8f740e48aa545bcbbc0930aa67b",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
@@ -181,8 +181,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: comment || \"\" },",
-          "replace": "    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: \"\" },"
+          "find": "    { itemId, userId: user._id, username: user.username, rating: ratingNum,\n      comment: typeof comment === \"string\" ? comment : \"\" },",
+          "replace": "    { itemId, userId: user._id, username: user.username, rating: ratingNum,\n      comment: \"\" },"
         }
       ]
     },
@@ -196,8 +196,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "    { itemId, userId: user._id },\n    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: comment || \"\" },",
-          "replace": "    { itemId, userId: new Types.ObjectId() },\n    { itemId, userId: new Types.ObjectId(), username: user.username, rating: ratingNum, comment: comment || \"\" },"
+          "find": "    { itemId, userId: user._id },\n    { itemId, userId: user._id, username: user.username, rating: ratingNum,\n      comment: typeof comment === \"string\" ? comment : \"\" },",
+          "replace": "    { itemId, userId: new Types.ObjectId() },\n    { itemId, userId: new Types.ObjectId(), username: user.username, rating: ratingNum,\n      comment: typeof comment === \"string\" ? comment : \"\" },"
         }
       ]
     },
@@ -350,8 +350,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": new Types.ObjectId(itemId) });",
-          "replace": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": new Types.ObjectId(itemId), total: -1 });"
+          "find": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": itemId });",
+          "replace": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": itemId, total: -1 });"
         }
       ]
     },
@@ -547,8 +547,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const order = await Order.findOne({ _id: req.params.id, userId: user._id });",
-          "replace": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const order = await Order.findOne({ _id: req.params.id });"
+          "find": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const orderId = objectId(req.params.id);\n  const order = orderId ? await Order.findOne({ _id: orderId, userId: user._id }) : null;",
+          "replace": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const orderId = objectId(req.params.id);\n  const order = orderId ? await Order.findOne({ _id: orderId }) : null;"
         }
       ]
     },
@@ -1485,8 +1485,8 @@
       "file": "server/src/progression.ts",
       "edits": [
         {
-          "find": "const ticket = await SupportTicket.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });",
-          "replace": "const ticket = await SupportTicket.findByIdAndUpdate(req.params.id, { $set: {} }, { new: true });"
+          "find": "const ticket = ticketId\n      ? await SupportTicket.findByIdAndUpdate(ticketId, { $set: update }, { new: true }) : null;",
+          "replace": "const ticket = ticketId\n      ? await SupportTicket.findByIdAndUpdate(ticketId, { $set: {} }, { new: true }) : null;"
         }
       ]
     },

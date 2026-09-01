@@ -38,17 +38,17 @@
     },
     {
       "alias": "L1",
-      "status": "promoted",
+      "status": "candidate",
       "recipe": { "path": "recipes/progression-depth3-2.0.1.json", "id": "ecommerce.progression-depth3", "version": "2.0.1" }
     },
     {
       "alias": "L2",
-      "status": "promoted",
+      "status": "candidate",
       "recipe": { "path": "recipes/progression-depth3-2.0.1.json", "id": "ecommerce.progression-depth3", "version": "2.0.1" }
     },
     {
       "alias": "L3",
-      "status": "promoted",
+      "status": "candidate",
       "recipe": { "path": "recipes/progression-depth3-2.0.1.json", "id": "ecommerce.progression-depth3", "version": "2.0.1" }
     }
   ]

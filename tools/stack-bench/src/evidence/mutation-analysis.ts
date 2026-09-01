@@ -15,6 +15,7 @@ export interface MutationEditDefinition {
 
 export interface MutationDefinition {
   id?: unknown;
+  desc?: unknown;
   file?: unknown;
   find?: unknown;
   replace?: unknown;
@@ -50,6 +51,7 @@ export interface LoadedMutationEdit extends MutationEditDefinition {
 
 export interface LoadedMutationDefinition extends MutationDefinition {
   id: string;
+  desc?: string;
   file?: string;
   scenario?: string;
   targets: string[];
@@ -102,16 +104,18 @@ function loadedMutationEdit(value: unknown, at: string): LoadedMutationEdit {
 
 function loadedMutation(value: unknown, at: string): LoadedMutationDefinition {
   if (!object(value)) throw new Error(`${at} must be an object`);
-  exact(value, new Set(['id', 'file', 'find', 'replace', 'edits', 'targets', 'scenario', 'breaks',
+  exact(value, new Set(['id', 'desc', 'file', 'find', 'replace', 'edits', 'targets', 'scenario', 'breaks',
     'kills']), at);
   if (!Array.isArray(value.edits) || value.edits.length === 0) {
     throw new Error(`${at}.edits must be a non-empty array`);
   }
   const file = optionalString(value.file, `${at}.file`);
+  const desc = optionalString(value.desc, `${at}.desc`);
   const scenario = optionalString(value.scenario, `${at}.scenario`);
   return { ...value, id: requiredString(value.id, `${at}.id`),
     targets: stringList(value.targets, `${at}.targets`),
     edits: value.edits.map((edit, index) => loadedMutationEdit(edit, `${at}.edits[${index}]`)),
+    ...(desc === undefined ? {} : { desc }),
     ...(file === undefined ? {} : { file }),
     ...(scenario === undefined ? {} : { scenario }) };
 }

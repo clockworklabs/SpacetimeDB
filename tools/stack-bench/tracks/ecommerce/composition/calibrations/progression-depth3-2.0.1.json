@@ -3,16 +3,16 @@
   "kind": "calibration-manifest",
   "id": "ecommerce.progression-depth3-calibration",
   "version": "2.0.1",
-  "state": "qualified",
+  "state": "draft",
   "title": "Ecommerce progression through depth 3 calibration",
   "track": "ecommerce",
   "recipe": {
     "path": "../recipes/progression-depth3-2.0.1.json",
     "id": "ecommerce.progression-depth3",
     "version": "2.0.1",
-    "meaningSha256": "4219b1db0fb0012537738d6ceb691ca2d9f66d4d5d13bec17bdcc8dbd6da6563",
+    "meaningSha256": "4931350c554371f7dcaaa8286f2147cc652332b60078459837b490b18cc25de9",
     "executionSha256": "84037559f97d49ee002c78d0ad2a564b02d62fa3686bdbea62c4fc92eb8f80c8",
-    "contentSha256": "5fb88832ed92ba85ffa7858be117c2ef8c73edde3865a8e44026400b1698152d"
+    "contentSha256": "e8fbcaff2e538959ff0b3e9c2f7cd3f98c9a89328c63bdff3f62083387b8173b"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -22,14 +22,14 @@
   "references": {
     "registryPath": "reference-apps/registry.json",
     "entries": [
-      { "backend": "mongodb", "id": "ecommerce-reference-mongodb", "sourceSha256": "24d445f18cdcb25b9ab06dd4f4582003b348edaf0be0b97c27ec9fbb06751b1e" },
-      { "backend": "postgres", "id": "ecommerce-reference-postgres", "sourceSha256": "f8f6152cebd68acc2af46a3e4cbf208664db17a7db58e0276d8e10ea6750aaf5" },
+      { "backend": "mongodb", "id": "ecommerce-reference-mongodb", "sourceSha256": "6e50b6421dcd2e5f195be2f6922abdae7760d8f740e48aa545bcbbc0930aa67b" },
+      { "backend": "postgres", "id": "ecommerce-reference-postgres", "sourceSha256": "a9b604a59cf9321212e79eeb664ac1e023a66b16d58c56d1b92da9ba109a3778" },
       { "backend": "spacetime", "id": "ecommerce-reference-spacetime", "sourceSha256": "8806e01bcd4d44fa7c7c491f722c2412d568605a9d666545dafcc0bdf2a2b4f5" }
     ]
   },
   "mutations": [
-    { "backend": "mongodb", "path": "grader/mutations/mongodb-ecommerce-2.0.1.json", "sha256": "b021f6148ec4db99ddc47de14edbe386e2c9f14a317add0a9b456aeafe520aab", "referenceId": "ecommerce-reference-mongodb" },
-    { "backend": "postgres", "path": "grader/mutations/postgres-ecommerce-2.0.1.json", "sha256": "4426b50b2d920b69835c2c5950e1a83ece419b7ba0900298574e90d945b82354", "referenceId": "ecommerce-reference-postgres" },
+    { "backend": "mongodb", "path": "grader/mutations/mongodb-ecommerce-2.0.1.json", "sha256": "4679eb94c52858855ebee0bf9aac742c53440abc91727c03e3542e7ccce6e627", "referenceId": "ecommerce-reference-mongodb" },
+    { "backend": "postgres", "path": "grader/mutations/postgres-ecommerce-2.0.1.json", "sha256": "a5d7a65ab19185b540e06a44eee5d911dd5b005985477438ad7023e511659eb3", "referenceId": "ecommerce-reference-postgres" },
     { "backend": "spacetime", "path": "grader/mutations/spacetime-ecommerce-2.0.1.json", "sha256": "d723be24c623bf38343189eaaa8b7748aebcf4950ba3bc39683b546e05d6b302", "referenceId": "ecommerce-reference-spacetime" }
   ],
   "nullControl": { "pointBearing": "must-fail-conclusively", "zeroPoint": "typed-policy", "repetitions": 1 },
@@ -54,85 +54,14 @@
       { "id": "postgres", "status": "qualified" },
       { "id": "spacetime", "status": "qualified" }
     ],
-    "evidence": [
-      { "kind": "reference", "stack": "mongodb", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/mongodb-reference.json", "sha256": "1b5f8980dfb96dae5d612c36c7dd28ca9e9dacbe39723bfe505a88e9526ba3d1" },
-      { "kind": "mutation", "stack": "mongodb", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/mongodb-mutation.json", "sha256": "d1f92824aab5ee695ed99ab3e008fa8d2edc3b33ae0da5c10cad6d22348a37de" },
-      { "kind": "reference", "stack": "postgres", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/postgres-reference.json", "sha256": "6e49834cb8c49ef524d6eecace7979f1d0406db70e799fff37e83e9164142987" },
-      { "kind": "mutation", "stack": "postgres", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/postgres-mutation.json", "sha256": "9ff4b7032369665490f9c4cdd8241c679f62d6bc621f099ec74922cd771e8088" },
-      { "kind": "reference", "stack": "spacetime", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/spacetime-reference.json", "sha256": "9f81c75797c2972967cedf4052228cd7c1d335a21a73b9f4f3d1030c7bba1045" },
-      { "kind": "mutation", "stack": "spacetime", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/spacetime-mutation.json", "sha256": "c10024ece387dfeacd55d3ecfb7bca0990f1d8df6ed1205ddac4b4a8d2b85656" },
-      { "kind": "null", "repetition": 1, "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/null.json", "sha256": "ead988244136c07c3e8985de924c70dde2b9e01b43e3aa22afda3f8846f8b811" }
-    ]
-  },
-  "qualificationReuse": {
-    "sourceRecipe": {
-      "id": "ecommerce.progression-depth3",
-      "version": "2.0.1",
-      "contentSha256": "4c808d5e5fb076ff0993937d7a9f940dad4191351c362518e1c667a34324bd49",
-      "executionSha256": "84037559f97d49ee002c78d0ad2a564b02d62fa3686bdbea62c4fc92eb8f80c8"
-    },
-    "sourceCalibration": {
-      "id": "ecommerce.progression-depth3-calibration",
-      "version": "2.0.1",
-      "sha256": "dd91493c5066018cbfd949d6e14d64dc029deb634e93d796752caee3da97682c"
-    },
-    "rationale": "Appliance admission, runtime input validation, source packaging, and dependency evidence accounting changed. Recipe checks, reference sources, mutation definitions, database operations, action probes, the standalone database runtime, and scoring logic did not change.",
-    "evidence": [
-      {
-        "path": "qualification-evidence/ecommerce-progression-depth3-2.0.1/prompt-material-reuse.json",
-        "sha256": "bf20fcebe6dfabd0a2cb445fe7f18f161c60d1109c977260d29c05e54c6c7bfa"
-      }
-    ],
-    "scopes": [
-      {
-        "kind": "reference",
-        "stack": "mongodb",
-        "fromExecutableSha256": "b806484f7bb42170561e17fa8605b9fd3646d7299d2f2138fa0990e672d26759",
-        "toExecutableSha256": "131c82428ca9d9cd836e2d4f032056c921bc96db4c103fd44ac49c978935a28a"
-      },
-      {
-        "kind": "mutation",
-        "stack": "mongodb",
-        "fromExecutableSha256": "68ad187165516dd353c091557caeca8b243fee27321deaf5e3a8468be0cb1bf9",
-        "toExecutableSha256": "c41eaa922f06f5a403b962599eb97835822d0820c0436fd4e1d6b87b259a3864"
-      },
-      {
-        "kind": "reference",
-        "stack": "postgres",
-        "fromExecutableSha256": "10f59cd1c82887afe4a34fe58383e2d195abf5e9850711f28d0e4ef3c7b2dec9",
-        "toExecutableSha256": "7ef14b7c69726a4a4b3b5b0d0ed0015190d0af5e98a17dea49defe497ee05c3b"
-      },
-      {
-        "kind": "mutation",
-        "stack": "postgres",
-        "fromExecutableSha256": "d8d3a75d12a7b2fedcffdfd11ab76b1918005335ca8f6fb56f101b691d4002ad",
-        "toExecutableSha256": "cc1fb7c4916f0b41c09ced49d8d6f2623f58e3c25e9fd5d13014739621cbd6cb"
-      },
-      {
-        "kind": "reference",
-        "stack": "spacetime",
-        "fromExecutableSha256": "9cdd1c8cccaf7ecd5e5d3039b0a0cf5c41a42c355ab085d9816b2d064706c2b9",
-        "toExecutableSha256": "a5269775fbaebb818e24a82f89e139acec67e955d07119ca970ae76592e1bdfc"
-      },
-      {
-        "kind": "mutation",
-        "stack": "spacetime",
-        "fromExecutableSha256": "3d512023e270c2b55c1c1eeeee70b1b6d70261814754e24b618f5c66bd086a0a",
-        "toExecutableSha256": "0fff05ea413bfd69d5bd605679a782bfad7bdaa6ad2b451bbbac7569192a170b"
-      },
-      {
-        "kind": "null",
-        "fromExecutableSha256": "58b6187b453a4229b1ff3f403e4d38765468eabc487e137d6f789ee125cbc91a",
-        "toExecutableSha256": "eda29aaa92c877301ebb916f1665779bc6a859d834a31bcc51cb18d582b7e9b7"
-      }
-    ]
+    "evidence": []
   },
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/candidates.json",
-    "catalogSha256": "ade80686950c4085b314aa85ecf3ee4887f12c599f374fbcd68c7c8f1a06e2eb",
+    "catalogSha256": "7449b9780e905a6bd442bfca3566fe38a24020f1f16b459f3856734f8cb937be",
     "alias": "L3",
     "coveredAliases": ["L1", "L2", "L3"],
-    "status": "promoted"
+    "status": "candidate"
   }
 }
