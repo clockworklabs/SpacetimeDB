@@ -143,14 +143,15 @@ if (!prepareOnly) {
 // Persist this run's transcript without exposing other local sessions.
 const projects = prepareOnly ? null : join(homedir(), '.claude', 'projects',
   resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
-function ensureAgentWritable(directory: string): void {
-  mkdirSync(directory, { recursive: true });
-  chmodSync(directory, process.env.STACK_BENCH_APPLIANCE === '1' ? 0o700 : 0o777);
+function ensureAgentDirectory(directory: string): void {
+  mkdirSync(directory, { recursive: true,
+    mode: process.env.STACK_BENCH_APPLIANCE === '1' ? 0o700 : 0o777 });
+  if (process.env.STACK_BENCH_APPLIANCE !== '1') chmodSync(directory, 0o777);
 }
 
-ensureAgentWritable(appDir);
-if (projects) ensureAgentWritable(projects);
-for (const directory of containerPlan.ensureDirectories) ensureAgentWritable(directory);
+ensureAgentDirectory(appDir);
+if (projects) ensureAgentDirectory(projects);
+for (const directory of containerPlan.ensureDirectories) ensureAgentDirectory(directory);
 
 // Grading and repair reuse this leased container.
 const containerName = `stack-bench-${basename(dirname(resolve(appDir)))}`;

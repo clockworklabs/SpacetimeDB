@@ -564,8 +564,10 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
       || cost > plan.definition.budgets.maxCostUsdPerAttempt), 'totals.costUsd');
   }
   if (agent?.costLimit === 'native') {
-    mismatch(run.totals?.costComplete !== true, 'totals.costComplete');
-    mismatch(!durableCostLedger(run as Parameters<typeof durableCostLedger>[0]).complete,
+    const agentFailed = ['provider_failure', 'harness_failure'].includes(run.outcome?.kind ?? '');
+    mismatch(!agentFailed && run.totals?.costComplete !== true, 'totals.costComplete');
+    mismatch(!agentFailed
+      && !durableCostLedger(run as Parameters<typeof durableCostLedger>[0]).complete,
       'costEvidence');
   }
   if (mismatches.length) {

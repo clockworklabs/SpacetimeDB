@@ -324,7 +324,7 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   /does not match.*backend/);
 });
 
-test('paid campaign validation requires complete receipt-backed cost evidence', () => {
+test('paid campaign validation requires cost evidence unless the agent failed', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts.find(item => item.levels.length > 1)
     ?? { ...plan.attempts[0], levels: [1, 2] };
@@ -349,16 +349,22 @@ test('paid campaign validation requires complete receipt-backed cost evidence', 
   };
 
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  assert.throws(() => validateCampaignRun(plan, attempt, {
+  assert.doesNotThrow(() => validateCampaignRun(plan, attempt, {
     ...run, totals: { ...run.totals, costComplete: false },
+  }, { buildImage: 'test-build-image' }));
+  assert.throws(() => validateCampaignRun(plan, attempt, {
+    ...run, outcome: { kind: 'app_failure', reason: 'app is incomplete' },
+    totals: { ...run.totals, costComplete: false },
   }, { buildImage: 'test-build-image' }), /totals\.costComplete.*costEvidence/);
   assert.throws(() => validateCampaignRun(plan, attempt, {
-    ...run, levels: [{ ...run.levels[0]!, buildSession: {
+    ...run, outcome: { kind: 'app_failure', reason: 'app is incomplete' },
+    levels: [{ ...run.levels[0]!, buildSession: {
       ...run.levels[0]!.buildSession, costReceipts: [],
     } }],
   }, { buildImage: 'test-build-image' }), /costEvidence/);
   assert.throws(() => validateCampaignRun(plan, attempt, {
-    ...run, levels: [{ ...run.levels[0]!, buildSession: {
+    ...run, outcome: { kind: 'app_failure', reason: 'app is incomplete' },
+    levels: [{ ...run.levels[0]!, buildSession: {
       ...run.levels[0]!.buildSession, costReceipts: [{ invocation: 1,
         receipt: { ...receipt, reconciled: false, error: 'not reconciled' } }],
     } }],

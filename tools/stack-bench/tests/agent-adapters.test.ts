@@ -158,9 +158,11 @@ test('provider failures stay separate from harness failures', () => {
   assert(missingSession);
   assert.equal(missingSession.reason, 'coding session did not run');
   const failedSession = agentSessionFailure({ ok: false, sessionId: null,
-    providerMetadata: { failureCode: 'coding-session-no-output' } });
+    providerMetadata: { failureCode: 'coding-session-no-output',
+      diagnostic: 'coding session failed: permission denied' } });
   assert(failedSession);
   assert.equal(failedSession.kind, 'harness_failure');
+  assert.equal(failedSession.reason, 'coding session failed: permission denied');
 });
 
 test('malformed and duplicate agent adapters fail at registry construction', () => {

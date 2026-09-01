@@ -267,10 +267,12 @@ export function agentSessionFailure(value: unknown): AgentSessionFailure | null 
   if (result.ok === true && result.sessionId) return null;
   const providerMetadata = object(result.providerMetadata) ? result.providerMetadata : null;
   const failureCode = providerMetadata?.failureCode;
+  const diagnostic = providerMetadata?.diagnostic;
   const kind = typeof failureCode === 'string' && failureCode.startsWith('provider-')
     ? 'provider_failure' : 'harness_failure';
   return { kind, phase: 'coding-session',
-    reason: typeof failureCode === 'string' && failureCode ? failureCode
+    reason: typeof diagnostic === 'string' && diagnostic ? diagnostic
+      : typeof failureCode === 'string' && failureCode ? failureCode
       : result.sessionId ? 'coding session reported failure' : 'coding session did not run',
     provider: providerMetadata?.failure ?? null,
     appFailures: [], inconclusive: [], harnessFailures: [] };

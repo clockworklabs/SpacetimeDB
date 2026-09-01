@@ -837,6 +837,7 @@ async function main() {
         ? 'provider-throttle-exhausted'
         : providerFailure?.code ?? (noOutput ? 'coding-session-no-output' : 'coding-session-failed')
       : result.is_error === true ? 'provider-session-error' : null,
+      diagnostic: spawnError,
       failure: failed ? {
         providerStatus: result.api_error_status ?? null,
         waitedMs: throttle?.waitedMs ?? 0,

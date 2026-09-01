@@ -170,6 +170,7 @@ test('coding containers cannot inspect host-network traffic or gain privileges',
   assert.match(policy, /home: '\/home\/developer'/);
   assert.match(source, /does not have the required isolation/);
   assert.match(source, /STACK_BENCH_APPLIANCE === '1' \? 0o700 : 0o777/);
+  assert.match(source, /if \(process\.env\.STACK_BENCH_APPLIANCE !== '1'\) chmodSync/);
   assert.match(source, /const CONTROLLER_GID = process\.getgid\?\.\(\) \?\? 0/);
   assert.match(source, /\['chown', \['-R', `\$\{AGENT_UID\}:\$\{CONTROLLER_GID\}`/);
   assert.match(source, /'u\+rwX,g\+rwX,o-rwx'/);
