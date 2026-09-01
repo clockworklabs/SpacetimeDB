@@ -372,7 +372,9 @@ test('credential broker prices repeated compressed streams instead of exhausting
   const rates = { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.3 };
   const stream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}',
+    '',
     'data: {"type":"message_delta","usage":{"output_tokens":100}}',
+    '',
     'data: {"type":"message_stop"}',
     '',
   ].join('\n');
@@ -454,6 +456,7 @@ test('credential broker rejects a cleanly ended provider error stream', async ()
   const ledgerPath = join(root, 'ledger.json');
   const stream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}',
+    '',
     'event: error',
     'data: {"type":"error","error":{"type":"api_error","message":"connection lost"}}',
     '',
@@ -483,7 +486,10 @@ test('streamed provider usage produces a reconciled campaign-priced receipt', as
   const ledgerPath = join(root, 'ledger.json');
   const stream = [
     'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":50,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":20,"ephemeral_1h_input_tokens":10}}}}',
-    'data: {"type":"message_delta","usage":{"output_tokens":100}}',
+    '',
+    'data: {"type":"message_delta",',
+    'data: "usage":{"output_tokens":100}}',
+    '',
     'data: {"type":"message_stop"}',
     '',
   ].join('\n');

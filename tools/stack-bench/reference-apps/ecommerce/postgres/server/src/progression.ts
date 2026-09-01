@@ -1,7 +1,33 @@
 import type { Request, RequestHandler, Response } from "express";
 import type { Express } from "express";
 import type { Pool, PoolClient } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
 import type { Server as SocketIOServer, Socket } from "socket.io";
+import { and, asc, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { db } from "./db.js";
+import {
+  account as accountTable,
+  cart,
+  cartItem,
+  cartReservationAllocation,
+  expiredCart,
+  item,
+  notification,
+  orderItem,
+  orders,
+  promotion,
+  recommendationDismissal,
+  refundEntry,
+  reorderRule,
+  scheduledRestock,
+  staffActivity,
+  stock,
+  stockAlertRequest,
+  stockLedger,
+  supportCase,
+  supportReply,
+  warehouse,
+} from "./schema.js";
 
 export type ProgressionAccount = {
   id: number;
@@ -30,174 +56,35 @@ let io: SocketIOServer | null = null;
 const asyncRoute = (fn: (req: AppRequest, res: Response) => Promise<void>): RequestHandler =>
   (req, res, next) => void fn(req as AppRequest, res).catch(next);
 
-export async function initializeProgressionSchema(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS promotion (
-      id serial PRIMARY KEY,
-      code text NOT NULL UNIQUE,
-      discount_percent numeric(5,2) NOT NULL,
-      start_at timestamptz NOT NULL,
-      end_at timestamptz NOT NULL,
-      redemption_limit integer NOT NULL,
-      redemptions integer NOT NULL DEFAULT 0,
-      revenue numeric(12,2) NOT NULL DEFAULT 0,
-      created_by integer REFERENCES account(id),
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-    ALTER TABLE account ADD COLUMN IF NOT EXISTS profile_name text NOT NULL DEFAULT '';
-    ALTER TABLE account ADD COLUMN IF NOT EXISTS profile_address text NOT NULL DEFAULT '';
-    ALTER TABLE account ADD COLUMN IF NOT EXISTS staff_role text NOT NULL DEFAULT '';
-    ALTER TABLE account ADD COLUMN IF NOT EXISTS notify_order boolean NOT NULL DEFAULT false;
-    ALTER TABLE account ADD COLUMN IF NOT EXISTS notify_stock boolean NOT NULL DEFAULT false;
-    ALTER TABLE item ADD COLUMN IF NOT EXISTS variants text[] NOT NULL DEFAULT '{}';
-    ALTER TABLE cart ADD COLUMN IF NOT EXISTS last_activity timestamptz NOT NULL DEFAULT now();
-    ALTER TABLE cart ADD COLUMN IF NOT EXISTS expired_at timestamptz;
-    ALTER TABLE cart ADD COLUMN IF NOT EXISTS promotion_id integer REFERENCES promotion(id);
-    ALTER TABLE cart_item ADD COLUMN IF NOT EXISTS reserved_until timestamptz;
-    ALTER TABLE cart_item ADD COLUMN IF NOT EXISTS expired boolean NOT NULL DEFAULT false;
-    CREATE TABLE IF NOT EXISTS cart_reservation_allocation (
-      cart_item_id integer NOT NULL REFERENCES cart_item(id) ON DELETE CASCADE,
-      warehouse_id integer NOT NULL REFERENCES warehouse(id),
-      quantity integer NOT NULL,
-      PRIMARY KEY (cart_item_id, warehouse_id)
-    );
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at timestamptz;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at timestamptz;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS promotion_id integer REFERENCES promotion(id);
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount numeric(12,2) NOT NULL DEFAULT 0;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'paid';
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_amount numeric(12,2) NOT NULL DEFAULT 0;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS refund_total numeric(12,2) NOT NULL DEFAULT 0;
-
-    CREATE TABLE IF NOT EXISTS support_case (
-      id serial PRIMARY KEY,
-      account_id integer REFERENCES account(id),
-      email text NOT NULL,
-      subject text NOT NULL,
-      message text NOT NULL,
-      reference text NOT NULL UNIQUE,
-      assignee text NOT NULL DEFAULT '',
-      priority text NOT NULL DEFAULT 'normal',
-      status text NOT NULL DEFAULT 'new',
-      order_id integer REFERENCES orders(id),
-      refund_total numeric(12,2) NOT NULL DEFAULT 0,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS support_reply (
-      id serial PRIMARY KEY,
-      case_id integer NOT NULL REFERENCES support_case(id) ON DELETE CASCADE,
-      account_id integer NOT NULL REFERENCES account(id),
-      message text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS notification (
-      id serial PRIMARY KEY,
-      account_id integer NOT NULL REFERENCES account(id) ON DELETE CASCADE,
-      kind text NOT NULL,
-      subject_key text NOT NULL,
-      message text NOT NULL,
-      read boolean NOT NULL DEFAULT false,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE (account_id, kind, subject_key)
-    );
-    CREATE TABLE IF NOT EXISTS stock_alert_request (
-      account_id integer NOT NULL REFERENCES account(id) ON DELETE CASCADE,
-      item_id integer NOT NULL REFERENCES item(id) ON DELETE CASCADE,
-      fulfilled boolean NOT NULL DEFAULT false,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (account_id, item_id)
-    );
-    CREATE TABLE IF NOT EXISTS scheduled_restock (
-      id serial PRIMARY KEY,
-      item_id integer NOT NULL REFERENCES item(id),
-      warehouse_id integer NOT NULL REFERENCES warehouse(id),
-      quantity integer NOT NULL,
-      due_at timestamptz NOT NULL,
-      cancelled boolean NOT NULL DEFAULT false,
-      applied boolean NOT NULL DEFAULT false,
-      automatic boolean NOT NULL DEFAULT false,
-      created_by integer REFERENCES account(id),
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS stock_ledger (
-      id serial PRIMARY KEY,
-      item_id integer NOT NULL REFERENCES item(id),
-      warehouse_id integer NOT NULL REFERENCES warehouse(id),
-      quantity integer NOT NULL,
-      source text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS staff_activity (
-      id serial PRIMARY KEY,
-      account_id integer NOT NULL REFERENCES account(id),
-      action text NOT NULL,
-      subject text NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS reorder_rule (
-      id serial PRIMARY KEY,
-      item_id integer NOT NULL UNIQUE REFERENCES item(id),
-      threshold integer NOT NULL,
-      quantity integer NOT NULL,
-      enabled boolean NOT NULL DEFAULT true,
-      created_by integer NOT NULL REFERENCES account(id),
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS expired_cart (
-      id serial PRIMARY KEY,
-      account_id integer NOT NULL REFERENCES account(id) ON DELETE CASCADE,
-      items jsonb NOT NULL,
-      restored boolean NOT NULL DEFAULT false,
-      expired_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS recommendation_dismissal (
-      account_id integer NOT NULL REFERENCES account(id) ON DELETE CASCADE,
-      item_id integer NOT NULL REFERENCES item(id) ON DELETE CASCADE,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (account_id, item_id)
-    );
-    CREATE TABLE IF NOT EXISTS refund_entry (
-      id serial PRIMARY KEY,
-      order_id integer NOT NULL REFERENCES orders(id),
-      support_case_id integer NOT NULL REFERENCES support_case(id),
-      amount numeric(12,2) NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE (order_id)
-    );
-  `);
-}
-
-async function one<T = any>(query: string, values: unknown[] = []): Promise<T | null> {
-  const result = await deps.pool.query(query, values);
-  return (result.rows[0] as T | undefined) ?? null;
-}
-
-async function recordActivity(client: PoolClient | Pool, accountId: number, action: string, subject: string) {
-  await client.query(
-    `INSERT INTO staff_activity (account_id, action, subject) VALUES ($1, $2, $3)`,
-    [accountId, action, subject],
-  );
-}
-
 async function visibleSupportCases(account: ProgressionAccount | null) {
   if (!account) return [];
-  const where = account.isAdmin || account.isStaff ? "TRUE" : "sc.account_id = $1";
-  const values = account.isAdmin || account.isStaff ? [] : [account.id];
-  const cases = await deps.pool.query(
-    `SELECT sc.*, o.total AS order_total
-     FROM support_case sc LEFT JOIN orders o ON o.id = sc.order_id
-     WHERE ${where} ORDER BY sc.created_at DESC`,
-    values,
-  );
-  const replies = cases.rows.length === 0 ? { rows: [] } : await deps.pool.query(
-    `SELECT sr.*, a.username FROM support_reply sr JOIN account a ON a.id = sr.account_id
-     WHERE sr.case_id = ANY($1::int[]) ORDER BY sr.created_at ASC`,
-    [cases.rows.map((entry) => entry.id)],
-  );
-  return cases.rows.map((entry) => ({
+  const cases = await db.select({
+    id: supportCase.id,
+    accountId: supportCase.accountId,
+    email: supportCase.email,
+    subject: supportCase.subject,
+    message: supportCase.message,
+    reference: supportCase.reference,
+    assignee: supportCase.assignee,
+    priority: supportCase.priority,
+    status: supportCase.status,
+    orderId: supportCase.orderId,
+    refundTotal: supportCase.refundTotal,
+  }).from(supportCase).leftJoin(orders, eq(orders.id, supportCase.orderId))
+    .where(account.isAdmin || account.isStaff ? undefined : eq(supportCase.accountId, account.id))
+    .orderBy(desc(supportCase.createdAt));
+  const replies = cases.length === 0 ? [] : await db.select({
+    id: supportReply.id,
+    caseId: supportReply.caseId,
+    username: accountTable.username,
+    message: supportReply.message,
+    createdAt: supportReply.createdAt,
+  }).from(supportReply).innerJoin(accountTable, eq(accountTable.id, supportReply.accountId))
+    .where(inArray(supportReply.caseId, cases.map((entry) => entry.id)))
+    .orderBy(asc(supportReply.createdAt));
+  return cases.map((entry) => ({
     id: entry.id,
-    accountId: entry.account_id,
+    accountId: entry.accountId,
     email: entry.email,
     subject: entry.subject,
     message: entry.message,
@@ -205,89 +92,90 @@ async function visibleSupportCases(account: ProgressionAccount | null) {
     assignee: entry.assignee,
     priority: entry.priority,
     status: entry.status,
-    orderId: entry.order_id,
-    refundTotal: Number(entry.refund_total),
-    replies: replies.rows.filter((reply) => reply.case_id === entry.id).map((reply) => ({
+    orderId: entry.orderId,
+    refundTotal: Number(entry.refundTotal),
+    replies: replies.filter((reply) => reply.caseId === entry.id).map((reply) => ({
       id: reply.id,
       username: reply.username,
       message: reply.message,
-      createdAt: reply.created_at,
+      createdAt: reply.createdAt,
     })),
   }));
 }
 
 export async function buildProgressionState(account: ProgressionAccount | null) {
   const isStaff = Boolean(account && (account.isAdmin || account.isStaff));
-  const [profile, roles, promotions, preferences, notifications, completed, restocks, ledger,
+  const [profiles, roles, promotions, preferences, notifications, completed, restocks, ledger,
     activity, reorders, expired, support, recommendations] = await Promise.all([
-    account ? one(`SELECT profile_name, profile_address FROM account WHERE id = $1`, [account.id]) : null,
-    isStaff ? deps.pool.query(`SELECT id, username, staff_role FROM account WHERE is_staff = true ORDER BY username`) : { rows: [] },
-    isStaff ? deps.pool.query(`SELECT * FROM promotion ORDER BY created_at DESC`) : { rows: [] },
-    account ? one(`SELECT notify_order, notify_stock FROM account WHERE id = $1`, [account.id]) : null,
-    account ? deps.pool.query(`SELECT * FROM notification WHERE account_id = $1 ORDER BY created_at DESC`, [account.id]) : { rows: [] },
-    isStaff ? deps.pool.query(
-      `SELECT o.id, o.status, o.delivered_at, string_agg(oi.item_name, ', ' ORDER BY oi.id) AS items
+    account ? db.select({ name: accountTable.profileName, address: accountTable.profileAddress })
+      .from(accountTable).where(eq(accountTable.id, account.id)).limit(1) : [],
+    isStaff ? db.select({ id: accountTable.id, username: accountTable.username,
+      role: accountTable.staffRole }).from(accountTable).where(eq(accountTable.isStaff, true))
+      .orderBy(asc(accountTable.username)) : [],
+    isStaff ? db.select().from(promotion).orderBy(desc(promotion.createdAt)) : [],
+    account ? db.select({ order: accountTable.notifyOrder, stock: accountTable.notifyStock })
+      .from(accountTable).where(eq(accountTable.id, account.id)).limit(1) : [],
+    account ? db.select().from(notification).where(eq(notification.accountId, account.id))
+      .orderBy(desc(notification.createdAt)) : [],
+    isStaff ? db.execute<{ id: number; status: string; delivered_at: Date; items: string }>(sql`
+      SELECT o.id, o.status, o.delivered_at, string_agg(oi.item_name, ', ' ORDER BY oi.id) AS items
        FROM orders o JOIN order_item oi ON oi.order_id = o.id
-       WHERE o.status IN ('shipped', 'delivered') GROUP BY o.id ORDER BY o.id DESC`,
+       WHERE o.status IN ('shipped', 'delivered') GROUP BY o.id ORDER BY o.id DESC`
     ) : { rows: [] },
-    isStaff ? deps.pool.query(
-      `SELECT sr.*, i.name AS item_name, w.name AS warehouse_name
-       FROM scheduled_restock sr JOIN item i ON i.id = sr.item_id JOIN warehouse w ON w.id = sr.warehouse_id
-       WHERE sr.cancelled = false AND sr.applied = false ORDER BY sr.due_at`,
-    ) : { rows: [] },
-    isStaff ? deps.pool.query(
-      `SELECT sl.*, i.name AS item_name, w.name AS warehouse_name
-       FROM stock_ledger sl JOIN item i ON i.id = sl.item_id JOIN warehouse w ON w.id = sl.warehouse_id
-       ORDER BY sl.created_at DESC LIMIT 30`,
-    ) : { rows: [] },
-    isStaff ? deps.pool.query(
-      `SELECT sa.*, a.username FROM staff_activity sa JOIN account a ON a.id = sa.account_id
-       ORDER BY sa.created_at DESC LIMIT 50`,
-    ) : { rows: [] },
-    isStaff ? deps.pool.query(
-      `SELECT rr.*, i.name AS item_name,
+    isStaff ? db.select({ id: scheduledRestock.id, item: item.name, warehouse: warehouse.name,
+      quantity: scheduledRestock.quantity, dueAt: scheduledRestock.dueAt,
+      automatic: scheduledRestock.automatic }).from(scheduledRestock)
+      .innerJoin(item, eq(item.id, scheduledRestock.itemId))
+      .innerJoin(warehouse, eq(warehouse.id, scheduledRestock.warehouseId))
+      .where(and(eq(scheduledRestock.cancelled, false), eq(scheduledRestock.applied, false)))
+      .orderBy(asc(scheduledRestock.dueAt)) : [],
+    isStaff ? db.select({ id: stockLedger.id, item: item.name, warehouse: warehouse.name,
+      quantity: stockLedger.quantity, source: stockLedger.source }).from(stockLedger)
+      .innerJoin(item, eq(item.id, stockLedger.itemId))
+      .innerJoin(warehouse, eq(warehouse.id, stockLedger.warehouseId))
+      .orderBy(desc(stockLedger.createdAt)).limit(30) : [],
+    isStaff ? db.select({ id: staffActivity.id, actor: accountTable.username,
+      action: staffActivity.action, subject: staffActivity.subject, time: staffActivity.createdAt })
+      .from(staffActivity).innerJoin(accountTable, eq(accountTable.id, staffActivity.accountId))
+      .orderBy(desc(staffActivity.createdAt)).limit(50) : [],
+    isStaff ? db.execute<{ id: number; item_name: string; threshold: number;
+      quantity: number; pending: boolean }>(sql`
+      SELECT rr.*, i.name AS item_name,
         EXISTS (SELECT 1 FROM scheduled_restock sr WHERE sr.item_id = rr.item_id AND sr.automatic = true
           AND sr.cancelled = false AND sr.applied = false) AS pending
-       FROM reorder_rule rr JOIN item i ON i.id = rr.item_id ORDER BY i.name`,
+       FROM reorder_rule rr JOIN item i ON i.id = rr.item_id ORDER BY i.name`
     ) : { rows: [] },
-    account ? deps.pool.query(`SELECT * FROM expired_cart WHERE account_id = $1 AND restored = false ORDER BY expired_at DESC`, [account.id]) : { rows: [] },
+    account ? db.select().from(expiredCart)
+      .where(and(eq(expiredCart.accountId, account.id), eq(expiredCart.restored, false)))
+      .orderBy(desc(expiredCart.expiredAt)) : [],
     visibleSupportCases(account),
     account && !isStaff ? deps.buildRecommended(account.id) : [],
   ]);
 
   return {
-    profile: profile ? { name: profile.profile_name, address: profile.profile_address } : null,
-    roles: roles.rows.map((row) => ({ id: row.id, username: row.username, role: row.staff_role })),
-    promotions: promotions.rows.map((row) => ({
-      id: row.id, code: row.code, discount: Number(row.discount_percent),
-      start: new Date(row.start_at).toISOString().slice(0, 10),
-      end: new Date(row.end_at).toISOString().slice(0, 10),
-      limit: row.redemption_limit, redemptions: row.redemptions, revenue: Number(row.revenue),
+    profile: profiles[0] ?? null,
+    roles,
+    promotions: promotions.map((row) => ({
+      id: row.id, code: row.code, discount: Number(row.discountPercent),
+      start: row.startAt.toISOString().slice(0, 10),
+      end: row.endAt.toISOString().slice(0, 10),
+      limit: row.redemptionLimit, redemptions: row.redemptions, revenue: Number(row.revenue),
     })),
-    preferences: preferences ? { order: preferences.notify_order, stock: preferences.notify_stock } : null,
-    notifications: notifications.rows.map((row) => ({
+    preferences: preferences[0] ?? null,
+    notifications: notifications.map((row) => ({
       id: row.id, kind: row.kind, message: row.message, read: row.read,
     })),
     completedOrders: completed.rows.map((row) => ({
       id: row.id, status: row.status, items: row.items, deliveredAt: row.delivered_at,
     })),
-    pendingRestocks: restocks.rows.map((row) => ({
-      id: row.id, item: row.item_name, warehouse: row.warehouse_name, quantity: row.quantity,
-      dueAt: row.due_at, automatic: row.automatic,
-    })),
-    stockLedger: ledger.rows.map((row) => ({
-      id: row.id, item: row.item_name, warehouse: row.warehouse_name,
-      quantity: row.quantity, source: row.source,
-    })),
-    activity: activity.rows.map((row) => ({
-      id: row.id, actor: row.username, action: row.action, subject: row.subject,
-      time: row.created_at,
-    })),
+    pendingRestocks: restocks,
+    stockLedger: ledger,
+    activity,
     reorders: reorders.rows.map((row) => ({
       id: row.id, item: row.item_name, threshold: row.threshold,
       quantity: row.quantity, pending: row.pending,
     })),
-    expiredCarts: expired.rows.map((row) => ({ id: row.id, items: row.items, expiredAt: row.expired_at })),
+    expiredCarts: expired.map((row) => ({ id: row.id, items: row.items, expiredAt: row.expiredAt })),
     support,
     recommendations: recommendations.map((row, index) => ({
       id: row.id, name: row.name, rank: index + 1,
@@ -309,72 +197,68 @@ export async function syncProgressionSocket(socket: Socket, account: Progression
 }
 
 async function findItemAndWarehouse(itemValue: unknown, warehouseValue: unknown) {
-  const itemResult = await deps.pool.query(
-    `SELECT id, name FROM item WHERE id = $1 OR lower(name) = lower($2) LIMIT 1`,
-    [Number(itemValue) || -1, String(itemValue ?? "")],
-  );
-  const warehouseResult = await deps.pool.query(
-    `SELECT id, name FROM warehouse WHERE id = $1 OR lower(name) = lower($2) LIMIT 1`,
-    [Number(warehouseValue) || -1, String(warehouseValue ?? "")],
-  );
-  return { item: itemResult.rows[0], warehouse: warehouseResult.rows[0] };
+  const itemName = String(itemValue ?? "");
+  const warehouseName = String(warehouseValue ?? "");
+  const [items, warehouses] = await Promise.all([
+    db.select({ id: item.id, name: item.name }).from(item)
+      .where(or(eq(item.id, Number(itemValue) || -1), ilike(item.name, itemName))).limit(1),
+    db.select({ id: warehouse.id, name: warehouse.name }).from(warehouse)
+      .where(or(eq(warehouse.id, Number(warehouseValue) || -1), ilike(warehouse.name, warehouseName)))
+      .limit(1),
+  ]);
+  return { item: items[0], warehouse: warehouses[0] };
 }
 
 async function processStockAlerts(client: PoolClient | Pool, itemId: number) {
-  const current = await client.query(`SELECT COALESCE(SUM(quantity), 0)::int AS total FROM stock WHERE item_id = $1`, [itemId]);
-  if (current.rows[0].total <= 0) return;
-  const requests = await client.query(
-    `UPDATE stock_alert_request SET fulfilled = true
-     WHERE item_id = $1 AND fulfilled = false RETURNING account_id`,
-    [itemId],
-  );
-  const itemRow = await client.query(`SELECT name FROM item WHERE id = $1`, [itemId]);
-  for (const request of requests.rows) {
-    await client.query(
-      `INSERT INTO notification (account_id, kind, subject_key, message)
-       VALUES ($1, 'stock', $2, $3) ON CONFLICT DO NOTHING`,
-      [request.account_id, String(itemId), `${itemRow.rows[0]?.name ?? "Item"} is back in stock`],
-    );
+  const database = drizzle(client);
+  const current = await database.select({
+    total: sql<number>`coalesce(sum(${stock.quantity}), 0)::int`,
+  }).from(stock).where(eq(stock.itemId, itemId));
+  if (current[0].total <= 0) return;
+  const requests = await database.update(stockAlertRequest).set({ fulfilled: true })
+    .where(and(eq(stockAlertRequest.itemId, itemId), eq(stockAlertRequest.fulfilled, false)))
+    .returning({ accountId: stockAlertRequest.accountId });
+  const itemRows = await database.select({ name: item.name }).from(item).where(eq(item.id, itemId))
+    .limit(1);
+  for (const request of requests) {
+    await database.insert(notification).values({ accountId: request.accountId, kind: "stock",
+      subjectKey: String(itemId), message: `${itemRows[0]?.name ?? "Item"} is back in stock` })
+      .onConflictDoNothing();
   }
 }
 
 async function releaseReservation(client: PoolClient, cartItemId: number) {
-  const allocations = await client.query(
-    `DELETE FROM cart_reservation_allocation WHERE cart_item_id = $1
-     RETURNING warehouse_id, quantity`,
-    [cartItemId],
-  );
-  const item = await client.query(`SELECT item_id FROM cart_item WHERE id = $1`, [cartItemId]);
-  for (const allocation of allocations.rows) {
-    await client.query(
-      `UPDATE stock SET quantity = quantity + $1 WHERE item_id = $2 AND warehouse_id = $3`,
-      [allocation.quantity, item.rows[0].item_id, allocation.warehouse_id],
-    );
+  const database = drizzle(client);
+  const allocations = await database.delete(cartReservationAllocation)
+    .where(eq(cartReservationAllocation.cartItemId, cartItemId))
+    .returning({ warehouseId: cartReservationAllocation.warehouseId,
+      quantity: cartReservationAllocation.quantity });
+  const lines = await database.select({ itemId: cartItem.itemId }).from(cartItem)
+    .where(eq(cartItem.id, cartItemId)).limit(1);
+  for (const allocation of allocations) {
+    await database.update(stock).set({ quantity: sql`${stock.quantity} + ${allocation.quantity}` })
+      .where(and(eq(stock.itemId, lines[0].itemId), eq(stock.warehouseId, allocation.warehouseId)));
   }
 }
 
 async function allocateReservation(client: PoolClient, cartItemId: number, itemId: number, quantity: number) {
-  const stockRows = await client.query(
-    `SELECT warehouse_id, quantity FROM stock WHERE item_id = $1 ORDER BY warehouse_id FOR UPDATE`,
-    [itemId],
-  );
-  const available = stockRows.rows.reduce((sum, row) => sum + row.quantity, 0);
+  const database = drizzle(client);
+  const stockRows = await database.select({ warehouseId: stock.warehouseId,
+    quantity: stock.quantity }).from(stock).where(eq(stock.itemId, itemId))
+    .orderBy(asc(stock.warehouseId)).for("update");
+  const available = stockRows.reduce((sum, row) => sum + row.quantity, 0);
   if (available < quantity) throw new Error("not enough stock");
   let remaining = quantity;
-  for (const row of stockRows.rows) {
+  for (const row of stockRows) {
     const take = Math.min(remaining, row.quantity);
     if (take <= 0) continue;
-    await client.query(
-      `UPDATE stock SET quantity = quantity - $1 WHERE item_id = $2 AND warehouse_id = $3`,
-      [take, itemId, row.warehouse_id],
-    );
-    await client.query(
-      `INSERT INTO cart_reservation_allocation (cart_item_id, warehouse_id, quantity)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (cart_item_id, warehouse_id)
-       DO UPDATE SET quantity = cart_reservation_allocation.quantity + excluded.quantity`,
-      [cartItemId, row.warehouse_id, take],
-    );
+    await database.update(stock).set({ quantity: sql`${stock.quantity} - ${take}` })
+      .where(and(eq(stock.itemId, itemId), eq(stock.warehouseId, row.warehouseId)));
+    await database.insert(cartReservationAllocation)
+      .values({ cartItemId, warehouseId: row.warehouseId, quantity: take })
+      .onConflictDoUpdate({ target: [cartReservationAllocation.cartItemId,
+        cartReservationAllocation.warehouseId],
+      set: { quantity: sql`${cartReservationAllocation.quantity} + ${take}` } });
     remaining -= take;
   }
 }
@@ -389,8 +273,8 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
   app.put("/api/profile", dependencies.requireAuth, asyncRoute(async (req, res) => {
     const name = String(req.body?.name ?? "").trim();
     const address = String(req.body?.address ?? "").trim();
-    await deps.pool.query(`UPDATE account SET profile_name = $1, profile_address = $2 WHERE id = $3`,
-      [name, address, req.account!.id]);
+    await db.update(accountTable).set({ profileName: name, profileAddress: address })
+      .where(eq(accountTable.id, req.account!.id));
     await emitProgression();
     res.json({ name, address });
   }));
@@ -398,12 +282,12 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
   app.put("/api/staff/:id/role", dependencies.requireAdmin, asyncRoute(async (req, res) => {
     const role = String(req.body?.role ?? "").trim();
     const targetId = Number(req.params.id);
-    const updated = await deps.pool.query(
-      `UPDATE account SET staff_role = $1 WHERE id = $2 AND is_staff = true RETURNING username`,
-      [role, targetId],
-    );
-    if (updated.rowCount === 0) { res.status(404).json({ error: "staff account not found" }); return; }
-    await recordActivity(deps.pool, req.account!.id, "assign role", updated.rows[0].username);
+    const updated = await db.update(accountTable).set({ staffRole: role })
+      .where(and(eq(accountTable.id, targetId), eq(accountTable.isStaff, true)))
+      .returning({ username: accountTable.username });
+    if (updated.length === 0) { res.status(404).json({ error: "staff account not found" }); return; }
+    await db.insert(staffActivity).values({ accountId: req.account!.id,
+      action: "assign role", subject: updated[0].username });
     await emitProgression();
     res.json({ ok: true });
   }));
@@ -418,21 +302,19 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
     if (!name || !category || !Number.isFinite(price) || price <= 0) {
       res.status(400).json({ error: "valid product values are required" }); return;
     }
-    const client = await deps.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const created = await client.query(
-        `INSERT INTO item (name, category, price, variants) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [name, category, price.toFixed(2), variants],
-      );
-      const warehouses = await client.query(`SELECT id FROM warehouse ORDER BY id`);
-      for (const warehouse of warehouses.rows) {
-        await client.query(`INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, 0)`,
-          [created.rows[0].id, warehouse.id]);
+    await db.transaction(async (tx) => {
+      const created = await tx.insert(item).values({ name, category, price: price.toFixed(2),
+        variants }).returning({ id: item.id });
+      const warehouses = await tx.select({ id: warehouse.id }).from(warehouse)
+        .orderBy(asc(warehouse.id));
+      if (warehouses.length) {
+        await tx.insert(stock).values(warehouses.map(({ id }) => ({
+          itemId: created[0].id, warehouseId: id, quantity: 0,
+        })));
       }
-      await recordActivity(client, req.account!.id, "create product", name);
-      await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+      await tx.insert(staffActivity).values({ accountId: req.account!.id,
+        action: "create product", subject: name });
+    });
     await deps.broadcastCatalog();
     await emitProgression();
     res.json({ ok: true });
@@ -445,13 +327,10 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
     const message = String(req.body?.message ?? "").trim();
     if (!email || !subject || !message) { res.status(400).json({ error: "all ticket fields are required" }); return; }
     const reference = `SB-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    const created = await deps.pool.query(
-      `INSERT INTO support_case (account_id, email, subject, message, reference)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [req.account?.id ?? null, email, subject, message, reference],
-    );
+    const created = await db.insert(supportCase).values({ accountId: req.account?.id ?? null,
+      email, subject, message, reference }).returning({ id: supportCase.id });
     await emitProgression();
-    res.json({ id: created.rows[0].id, reference });
+    res.json({ id: created[0].id, reference });
   }));
 
   app.put("/api/support/cases/:id", dependencies.requireStaff, asyncRoute(async (req, res) => {
@@ -459,61 +338,71 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
     const assignee = req.body?.assignee === undefined ? null : String(req.body.assignee);
     const priority = req.body?.priority === undefined ? null : String(req.body.priority);
     const status = req.body?.status === undefined ? null : String(req.body.status);
-    const updated = await deps.pool.query(
-      `UPDATE support_case SET assignee = COALESCE($1, assignee), priority = COALESCE($2, priority),
-       status = COALESCE($3, status), updated_at = now()
-       WHERE id = $4 RETURNING subject`, [assignee, priority, status, id]);
-    if (updated.rowCount === 0) { res.status(404).json({ error: "case not found" }); return; }
-    await recordActivity(deps.pool, req.account!.id, "update support", updated.rows[0].subject);
+    const updated = await db.update(supportCase).set({
+      ...(assignee === null ? {} : { assignee }),
+      ...(priority === null ? {} : { priority }),
+      ...(status === null ? {} : { status }),
+      updatedAt: new Date(),
+    }).where(eq(supportCase.id, id)).returning({ subject: supportCase.subject });
+    if (updated.length === 0) { res.status(404).json({ error: "case not found" }); return; }
+    await db.insert(staffActivity).values({ accountId: req.account!.id,
+      action: "update support", subject: updated[0].subject });
     await emitProgression(); res.json({ ok: true });
   }));
 
   app.post("/api/support/cases/:id/replies", dependencies.requireAuth, asyncRoute(async (req, res) => {
     const id = Number(req.params.id);
     const message = String(req.body?.message ?? "").trim();
-    const current = await one<any>(`SELECT account_id FROM support_case WHERE id = $1`, [id]);
-    if (!current || (!req.account!.isAdmin && !req.account!.isStaff && current.account_id !== req.account!.id)) {
+    const current = await db.select({ accountId: supportCase.accountId }).from(supportCase)
+      .where(eq(supportCase.id, id)).limit(1);
+    if (!current[0] || (!req.account!.isAdmin && !req.account!.isStaff
+      && current[0].accountId !== req.account!.id)) {
       res.status(404).json({ error: "case not found" }); return;
     }
     if (!message) { res.status(400).json({ error: "reply is required" }); return; }
-    await deps.pool.query(`INSERT INTO support_reply (case_id, account_id, message) VALUES ($1, $2, $3)`,
-      [id, req.account!.id, message]);
-    await deps.pool.query(`UPDATE support_case SET updated_at = now() WHERE id = $1`, [id]);
+    await db.insert(supportReply).values({ caseId: id, accountId: req.account!.id, message });
+    await db.update(supportCase).set({ updatedAt: new Date() }).where(eq(supportCase.id, id));
     await emitProgression(); res.json({ ok: true });
   }));
 
   app.post("/api/support/cases/:id/order", dependencies.requireAuth, asyncRoute(async (req, res) => {
     const caseId = Number(req.params.id);
     const orderId = Number(req.body?.orderId);
-    const support = await one<any>(`SELECT account_id FROM support_case WHERE id = $1`, [caseId]);
-    const order = await one<any>(`SELECT account_id FROM orders WHERE id = $1`, [orderId]);
-    if (!support || !order || support.account_id !== order.account_id
-      || (!req.account!.isAdmin && !req.account!.isStaff && order.account_id !== req.account!.id)) {
+    const [support, order] = await Promise.all([
+      db.select({ accountId: supportCase.accountId }).from(supportCase)
+        .where(eq(supportCase.id, caseId)).limit(1),
+      db.select({ accountId: orders.accountId }).from(orders).where(eq(orders.id, orderId)).limit(1),
+    ]);
+    if (!support[0] || !order[0] || support[0].accountId !== order[0].accountId
+      || (!req.account!.isAdmin && !req.account!.isStaff && order[0].accountId !== req.account!.id)) {
       res.status(403).json({ error: "order does not belong to this case" }); return;
     }
-    await deps.pool.query(`UPDATE support_case SET order_id = $1, updated_at = now() WHERE id = $2`, [orderId, caseId]);
+    await db.update(supportCase).set({ orderId, updatedAt: new Date() })
+      .where(eq(supportCase.id, caseId));
     await emitProgression(); res.json({ ok: true });
   }));
 
   app.post("/api/support/cases/:id/refund", dependencies.requireStaff, asyncRoute(async (req, res) => {
     const caseId = Number(req.params.id);
-    const client = await deps.pool.connect();
-    let accountId = 0;
-    try {
-      await client.query("BEGIN");
-      const support = await client.query(`SELECT * FROM support_case WHERE id = $1 FOR UPDATE`, [caseId]);
-      if (!support.rows[0]?.order_id) { await client.query("ROLLBACK"); res.status(409).json({ error: "case has no order" }); return; }
-      const order = await client.query(`SELECT * FROM orders WHERE id = $1 FOR UPDATE`, [support.rows[0].order_id]);
-      if (Number(order.rows[0].refund_total) > 0) { await client.query("ROLLBACK"); res.status(409).json({ error: "order already refunded" }); return; }
-      const amount = Number(order.rows[0].payment_amount || order.rows[0].total);
-      accountId = order.rows[0].account_id;
-      await client.query(`UPDATE orders SET refund_total = $1 WHERE id = $2`, [amount, order.rows[0].id]);
-      await client.query(`UPDATE support_case SET refund_total = $1, status = 'resolved', updated_at = now() WHERE id = $2`, [amount, caseId]);
-      await client.query(`INSERT INTO refund_entry (order_id, support_case_id, amount) VALUES ($1, $2, $3)`, [order.rows[0].id, caseId, amount]);
-      await recordActivity(client, req.account!.id, "refund order", String(order.rows[0].id));
-      await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
-    await deps.broadcastOrders(accountId); await deps.broadcastCatalog(); await emitProgression();
+    const result = await db.transaction(async (tx) => {
+      const support = await tx.select({ orderId: supportCase.orderId }).from(supportCase)
+        .where(eq(supportCase.id, caseId)).for("update");
+      if (!support[0]?.orderId) return { error: "case has no order" } as const;
+      const order = await tx.select().from(orders).where(eq(orders.id, support[0].orderId))
+        .for("update");
+      if (Number(order[0].refundTotal) > 0) return { error: "order already refunded" } as const;
+      const amount = Number(order[0].paymentAmount || order[0].total);
+      await tx.update(orders).set({ refundTotal: String(amount) }).where(eq(orders.id, order[0].id));
+      await tx.update(supportCase).set({ refundTotal: String(amount), status: "resolved",
+        updatedAt: new Date() }).where(eq(supportCase.id, caseId));
+      await tx.insert(refundEntry).values({ orderId: order[0].id, supportCaseId: caseId,
+        amount: String(amount) });
+      await tx.insert(staffActivity).values({ accountId: req.account!.id,
+        action: "refund order", subject: String(order[0].id) });
+      return { accountId: order[0].accountId } as const;
+    });
+    if ("error" in result) { res.status(409).json({ error: result.error }); return; }
+    await deps.broadcastOrders(result.accountId); await deps.broadcastCatalog(); await emitProgression();
     res.json({ ok: true });
   }));
 
@@ -527,48 +416,44 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
       || Number.isNaN(end.valueOf()) || !Number.isInteger(limit) || limit < 1 || start >= end) {
       res.status(400).json({ error: "invalid promotion" }); return;
     }
-    await deps.pool.query(
-      `INSERT INTO promotion (code, discount_percent, start_at, end_at, redemption_limit, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (code) DO UPDATE SET discount_percent = excluded.discount_percent,
-       start_at = excluded.start_at, end_at = excluded.end_at, redemption_limit = excluded.redemption_limit`,
-      [code, discount, start, end, limit, req.account!.id],
-    );
-    await recordActivity(deps.pool, req.account!.id, "create promotion", code);
+    await db.insert(promotion).values({ code, discountPercent: String(discount), startAt: start,
+      endAt: end, redemptionLimit: limit, createdBy: req.account!.id })
+      .onConflictDoUpdate({ target: promotion.code,
+        set: { discountPercent: String(discount), startAt: start, endAt: end,
+          redemptionLimit: limit } });
+    await db.insert(staffActivity).values({ accountId: req.account!.id,
+      action: "create promotion", subject: code });
     await emitProgression(); res.json({ ok: true });
   }));
 
   app.post("/api/cart/promotion", dependencies.requireAuth, asyncRoute(async (req, res) => {
     const code = String(req.body?.code ?? "").trim().toUpperCase();
-    const promotion = await one<any>(
-      `SELECT * FROM promotion WHERE code = $1 AND start_at <= now() AND end_at >= now()
-       AND redemptions < redemption_limit`, [code]);
-    if (!promotion) { res.status(409).json({ error: "promotion is expired or unavailable" }); return; }
-    await deps.pool.query(
-      `INSERT INTO cart (account_id, promotion_id, last_activity) VALUES ($1, $2, now())
-       ON CONFLICT (account_id) DO UPDATE SET promotion_id = excluded.promotion_id, last_activity = now()`,
-      [req.account!.id, promotion.id],
-    );
-    res.json({ ok: true, discount: Number(promotion.discount_percent) });
+    const available = await db.select().from(promotion).where(and(eq(promotion.code, code),
+      lte(promotion.startAt, new Date()), gte(promotion.endAt, new Date()),
+      lt(promotion.redemptions, promotion.redemptionLimit))).limit(1);
+    if (!available[0]) { res.status(409).json({ error: "promotion is expired or unavailable" }); return; }
+    await db.insert(cart).values({ accountId: req.account!.id, promotionId: available[0].id })
+      .onConflictDoUpdate({ target: cart.accountId,
+        set: { promotionId: available[0].id, lastActivity: new Date() } });
+    res.json({ ok: true, discount: Number(available[0].discountPercent) });
   }));
 
   app.put("/api/notifications/preferences", dependencies.requireAuth, asyncRoute(async (req, res) => {
     const order = Boolean(req.body?.order);
     const stock = Boolean(req.body?.stock);
-    await deps.pool.query(`UPDATE account SET notify_order = $1, notify_stock = $2 WHERE id = $3`,
-      [order, stock, req.account!.id]);
+    await db.update(accountTable).set({ notifyOrder: order, notifyStock: stock })
+      .where(eq(accountTable.id, req.account!.id));
     await emitProgression(); res.json({ order, stock });
   }));
 
   app.post("/api/items/:id/stock-alert", dependencies.requireAuth, asyncRoute(async (req, res) => {
     const itemId = Number(req.params.id);
-    const total = await one<any>(`SELECT COALESCE(SUM(quantity), 0)::int AS total FROM stock WHERE item_id = $1`, [itemId]);
-    if (!total || total.total > 0) { res.status(409).json({ error: "item is already available" }); return; }
-    await deps.pool.query(
-      `INSERT INTO stock_alert_request (account_id, item_id) VALUES ($1, $2)
-       ON CONFLICT (account_id, item_id) DO UPDATE SET fulfilled = false, created_at = now()`,
-      [req.account!.id, itemId],
-    );
+    const total = await db.select({ value: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` })
+      .from(stock).where(eq(stock.itemId, itemId));
+    if (total[0].value > 0) { res.status(409).json({ error: "item is already available" }); return; }
+    await db.insert(stockAlertRequest).values({ accountId: req.account!.id, itemId })
+      .onConflictDoUpdate({ target: [stockAlertRequest.accountId, stockAlertRequest.itemId],
+        set: { fulfilled: false, createdAt: new Date() } });
     res.json({ ok: true });
   }));
 
@@ -580,21 +465,20 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
       || !Number.isFinite(delaySeconds) || delaySeconds < 1) {
       res.status(400).json({ error: "invalid scheduled restock" }); return;
     }
-    const created = await deps.pool.query(
-      `INSERT INTO scheduled_restock (item_id, warehouse_id, quantity, due_at, created_by)
-       VALUES ($1, $2, $3, now() + ($4 * interval '1 second'), $5) RETURNING id`,
-      [found.item.id, found.warehouse.id, quantity, delaySeconds, req.account!.id],
-    );
-    await recordActivity(deps.pool, req.account!.id, "schedule restock", found.item.name);
-    await emitProgression(); res.json({ id: created.rows[0].id });
+    const created = await db.insert(scheduledRestock).values({ itemId: found.item.id,
+      warehouseId: found.warehouse.id, quantity,
+      dueAt: new Date(Date.now() + delaySeconds * 1000), createdBy: req.account!.id })
+      .returning({ id: scheduledRestock.id });
+    await db.insert(staffActivity).values({ accountId: req.account!.id,
+      action: "schedule restock", subject: found.item.name });
+    await emitProgression(); res.json({ id: created[0].id });
   }));
 
   app.delete("/api/admin/scheduled-restocks/:id", dependencies.requireStaff, asyncRoute(async (req, res) => {
-    const updated = await deps.pool.query(
-      `UPDATE scheduled_restock SET cancelled = true WHERE id = $1 AND applied = false RETURNING item_id`,
-      [Number(req.params.id)],
-    );
-    if (updated.rowCount === 0) { res.status(404).json({ error: "pending restock not found" }); return; }
+    const updated = await db.update(scheduledRestock).set({ cancelled: true })
+      .where(and(eq(scheduledRestock.id, Number(req.params.id)), eq(scheduledRestock.applied, false)))
+      .returning({ itemId: scheduledRestock.itemId });
+    if (updated.length === 0) { res.status(404).json({ error: "pending restock not found" }); return; }
     await emitProgression(); res.json({ ok: true });
   }));
 
@@ -606,11 +490,11 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
       || !Number.isInteger(quantity) || quantity < 1) {
       res.status(400).json({ error: "invalid reorder rule" }); return;
     }
-    await deps.pool.query(
-      `INSERT INTO reorder_rule (item_id, threshold, quantity, created_by) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (item_id) DO UPDATE SET threshold = excluded.threshold, quantity = excluded.quantity,
-       enabled = true, created_by = excluded.created_by`, [itemId, threshold, quantity, req.account!.id]);
-    await recordActivity(deps.pool, req.account!.id, "save reorder rule", String(itemId));
+    await db.insert(reorderRule).values({ itemId, threshold, quantity, createdBy: req.account!.id })
+      .onConflictDoUpdate({ target: reorderRule.itemId,
+        set: { threshold, quantity, enabled: true, createdBy: req.account!.id } });
+    await db.insert(staffActivity).values({ accountId: req.account!.id,
+      action: "save reorder rule", subject: String(itemId) });
     await emitProgression(); res.json({ ok: true });
   }));
 
@@ -620,32 +504,28 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
     const unavailable: string[] = [];
     try {
       await client.query("BEGIN");
-      const expired = await client.query(
-        `SELECT * FROM expired_cart WHERE id = $1 AND account_id = $2 AND restored = false FOR UPDATE`,
-        [id, req.account!.id],
-      );
-      if (!expired.rows[0]) { await client.query("ROLLBACK"); res.status(404).json({ error: "expired cart not found" }); return; }
-      const cartResult = await client.query(
-        `INSERT INTO cart (account_id, last_activity, expired_at) VALUES ($1, now(), null)
-         ON CONFLICT (account_id) DO UPDATE SET last_activity = now(), expired_at = null RETURNING id`,
-        [req.account!.id],
-      );
-      for (const saved of expired.rows[0].items as Array<{ itemId: number; name: string; quantity: number }>) {
-        const inserted = await client.query(
-          `INSERT INTO cart_item (cart_id, item_id, quantity, reserved_until, expired)
-           VALUES ($1, $2, $3, now() + interval '90 seconds', false)
-           ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = excluded.quantity,
-           reserved_until = excluded.reserved_until, expired = false RETURNING id`,
-          [cartResult.rows[0].id, saved.itemId, saved.quantity],
-        );
+      const database = drizzle(client);
+      const expired = await database.select().from(expiredCart).where(and(eq(expiredCart.id, id),
+        eq(expiredCart.accountId, req.account!.id), eq(expiredCart.restored, false))).for("update");
+      if (!expired[0]) { await client.query("ROLLBACK"); res.status(404).json({ error: "expired cart not found" }); return; }
+      const cartResult = await database.insert(cart).values({ accountId: req.account!.id,
+        expiredAt: null }).onConflictDoUpdate({ target: cart.accountId,
+        set: { lastActivity: new Date(), expiredAt: null } }).returning({ id: cart.id });
+      for (const saved of expired[0].items as Array<{ itemId: number; name: string; quantity: number }>) {
+        const reservedUntil = new Date(Date.now() + 90_000);
+        const inserted = await database.insert(cartItem).values({ cartId: cartResult[0].id,
+          itemId: saved.itemId, quantity: saved.quantity, reservedUntil, expired: false })
+          .onConflictDoUpdate({ target: [cartItem.cartId, cartItem.itemId],
+            set: { quantity: saved.quantity, reservedUntil, expired: false } })
+          .returning({ id: cartItem.id });
         try {
-          await allocateReservation(client, inserted.rows[0].id, saved.itemId, saved.quantity);
+          await allocateReservation(client, inserted[0].id, saved.itemId, saved.quantity);
         } catch {
-          await client.query(`DELETE FROM cart_item WHERE id = $1`, [inserted.rows[0].id]);
+          await database.delete(cartItem).where(eq(cartItem.id, inserted[0].id));
           unavailable.push(saved.name);
         }
       }
-      await client.query(`UPDATE expired_cart SET restored = true WHERE id = $1`, [id]);
+      await database.update(expiredCart).set({ restored: true }).where(eq(expiredCart.id, id));
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     await deps.broadcastCart(req.account!.id); await deps.broadcastCatalog(); await emitProgression();
@@ -653,10 +533,8 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
   }));
 
   app.post("/api/recommendations/:itemId/dismiss", dependencies.requireAuth, asyncRoute(async (req, res) => {
-    await deps.pool.query(
-      `INSERT INTO recommendation_dismissal (account_id, item_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [req.account!.id, Number(req.params.itemId)],
-    );
+    await db.insert(recommendationDismissal).values({ accountId: req.account!.id,
+      itemId: Number(req.params.itemId) }).onConflictDoNothing();
     await emitProgression(); res.json({ ok: true });
   }));
 }
@@ -677,87 +555,80 @@ export async function processProgressionTimers() {
       await client.query("ROLLBACK");
       return;
     }
+    const database = drizzle(client);
 
-    const expiredReservations = await client.query(
-      `SELECT ci.id, ci.item_id, c.account_id
-       FROM cart_item ci JOIN cart c ON c.id = ci.cart_id
-       WHERE ci.expired = false AND ci.reserved_until IS NOT NULL AND ci.reserved_until <= now()
-       FOR UPDATE OF ci`,
-    );
-    for (const line of expiredReservations.rows) {
+    const expiredReservations = await database.select({ id: cartItem.id, itemId: cartItem.itemId,
+      accountId: cart.accountId }).from(cartItem).innerJoin(cart, eq(cart.id, cartItem.cartId))
+      .where(and(eq(cartItem.expired, false), sql`${cartItem.reservedUntil} IS NOT NULL`,
+        lte(cartItem.reservedUntil, new Date()))).for("update");
+    for (const line of expiredReservations) {
       await releaseReservation(client, line.id);
-      await client.query(`UPDATE cart_item SET expired = true WHERE id = $1`, [line.id]);
-      changedAccounts.add(line.account_id); catalogChanged = true;
+      await database.update(cartItem).set({ expired: true }).where(eq(cartItem.id, line.id));
+      changedAccounts.add(line.accountId); catalogChanged = true;
     }
 
-    const expiredCarts = await client.query(
-      `SELECT c.id, c.account_id FROM cart c
-       WHERE c.expired_at IS NULL AND c.last_activity <= now() - interval '5 minutes'
-       AND EXISTS (SELECT 1 FROM cart_item ci WHERE ci.cart_id = c.id) FOR UPDATE OF c`,
-    );
-    for (const cart of expiredCarts.rows) {
-      const lines = await client.query(
-        `SELECT ci.id, ci.item_id, i.name, ci.quantity, ci.expired FROM cart_item ci JOIN item i ON i.id = ci.item_id
-         WHERE ci.cart_id = $1 FOR UPDATE OF ci`, [cart.id]);
-      for (const line of lines.rows.filter((entry) => !entry.expired)) {
+    const expiredCarts = await database.select({ id: cart.id, accountId: cart.accountId }).from(cart)
+      .where(and(sql`${cart.expiredAt} IS NULL`, lte(cart.lastActivity, new Date(Date.now() - 300_000)),
+        sql`EXISTS (SELECT 1 FROM ${cartItem} WHERE ${cartItem.cartId} = ${cart.id})`)).for("update");
+    for (const staleCart of expiredCarts) {
+      const lines = await database.select({ id: cartItem.id, itemId: cartItem.itemId,
+        name: item.name, quantity: cartItem.quantity, expired: cartItem.expired }).from(cartItem)
+        .innerJoin(item, eq(item.id, cartItem.itemId)).where(eq(cartItem.cartId, staleCart.id))
+        .for("update");
+      for (const line of lines.filter((entry) => !entry.expired)) {
         await releaseReservation(client, line.id);
       }
-      await client.query(`INSERT INTO expired_cart (account_id, items) VALUES ($1, $2)`,
-        [cart.account_id, JSON.stringify(lines.rows.map((line) => ({ itemId: line.item_id, name: line.name, quantity: line.quantity })))]);
-      await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cart.id]);
-      await client.query(`UPDATE cart SET expired_at = now() WHERE id = $1`, [cart.id]);
-      changedAccounts.add(cart.account_id); catalogChanged = true;
+      await database.insert(expiredCart).values({ accountId: staleCart.accountId,
+        items: lines.map((line) => ({ itemId: line.itemId, name: line.name, quantity: line.quantity })) });
+      await database.delete(cartItem).where(eq(cartItem.cartId, staleCart.id));
+      await database.update(cart).set({ expiredAt: new Date() }).where(eq(cart.id, staleCart.id));
+      changedAccounts.add(staleCart.accountId); catalogChanged = true;
     }
 
-    const delivered = await client.query(
-      `UPDATE orders SET status = 'delivered', delivered_at = now()
-       WHERE status = 'shipped' AND shipped_at <= now() - interval '60 seconds'
-       RETURNING id, account_id`,
-    );
-    for (const order of delivered.rows) {
-      changedAccounts.add(order.account_id);
-      const preference = await client.query(`SELECT notify_order FROM account WHERE id = $1`, [order.account_id]);
-      if (preference.rows[0]?.notify_order) {
-        const items = await client.query(`SELECT string_agg(item_name, ', ') AS names FROM order_item WHERE order_id = $1`, [order.id]);
-        await client.query(
-          `INSERT INTO notification (account_id, kind, subject_key, message)
-           VALUES ($1, 'delivery', $2, $3) ON CONFLICT DO NOTHING`,
-          [order.account_id, String(order.id), `${items.rows[0].names} delivered`],
-        );
+    const delivered = await database.update(orders).set({ status: "delivered", deliveredAt: new Date() })
+      .where(and(eq(orders.status, "shipped"), lte(orders.shippedAt, new Date(Date.now() - 60_000))))
+      .returning({ id: orders.id, accountId: orders.accountId });
+    for (const order of delivered) {
+      changedAccounts.add(order.accountId);
+      const preference = await database.select({ notifyOrder: accountTable.notifyOrder })
+        .from(accountTable).where(eq(accountTable.id, order.accountId)).limit(1);
+      if (preference[0]?.notifyOrder) {
+        const names = await database.select({ value: sql<string>`string_agg(${orderItem.itemName}, ', ')` })
+          .from(orderItem).where(eq(orderItem.orderId, order.id));
+        await database.insert(notification).values({ accountId: order.accountId, kind: "delivery",
+          subjectKey: String(order.id), message: `${names[0].value} delivered` }).onConflictDoNothing();
       }
     }
 
-    const due = await client.query(
-      `SELECT * FROM scheduled_restock WHERE due_at <= now() AND cancelled = false AND applied = false FOR UPDATE`,
-    );
-    for (const restock of due.rows) {
-      await client.query(
-        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)
-         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,
-        [restock.item_id, restock.warehouse_id, restock.quantity]);
-      await client.query(`UPDATE scheduled_restock SET applied = true WHERE id = $1`, [restock.id]);
-      await client.query(
-        `INSERT INTO stock_ledger (item_id, warehouse_id, quantity, source) VALUES ($1, $2, $3, $4)`,
-        [restock.item_id, restock.warehouse_id, restock.quantity, restock.automatic ? "automatic reorder" : "scheduled restock"]);
-      await processStockAlerts(client, restock.item_id); catalogChanged = true;
+    const due = await database.select().from(scheduledRestock)
+      .where(and(lte(scheduledRestock.dueAt, new Date()), eq(scheduledRestock.cancelled, false),
+        eq(scheduledRestock.applied, false))).for("update");
+    for (const restock of due) {
+      await database.insert(stock).values({ itemId: restock.itemId, warehouseId: restock.warehouseId,
+        quantity: restock.quantity }).onConflictDoUpdate({ target: [stock.itemId, stock.warehouseId],
+        set: { quantity: sql`${stock.quantity} + ${restock.quantity}` } });
+      await database.update(scheduledRestock).set({ applied: true }).where(eq(scheduledRestock.id, restock.id));
+      await database.insert(stockLedger).values({ itemId: restock.itemId, warehouseId: restock.warehouseId,
+        quantity: restock.quantity, source: restock.automatic ? "automatic reorder" : "scheduled restock" });
+      await processStockAlerts(client, restock.itemId); catalogChanged = true;
     }
 
-    const rules = await client.query(
-      `SELECT rr.*, COALESCE(SUM(s.quantity), 0)::int AS available
-       FROM reorder_rule rr LEFT JOIN stock s ON s.item_id = rr.item_id
-       WHERE rr.enabled = true GROUP BY rr.id`,
-    );
-    for (const rule of rules.rows) {
+    const rules = await database.select({ itemId: reorderRule.itemId, threshold: reorderRule.threshold,
+      quantity: reorderRule.quantity, createdBy: reorderRule.createdBy,
+      available: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` }).from(reorderRule)
+      .leftJoin(stock, eq(stock.itemId, reorderRule.itemId)).where(eq(reorderRule.enabled, true))
+      .groupBy(reorderRule.id);
+    for (const rule of rules) {
       if (rule.available > rule.threshold) continue;
-      const pending = await client.query(
-        `SELECT 1 FROM scheduled_restock WHERE item_id = $1 AND automatic = true
-         AND cancelled = false AND applied = false LIMIT 1`, [rule.item_id]);
-      if (pending.rowCount) continue;
-      const warehouse = await client.query(`SELECT id FROM warehouse ORDER BY id LIMIT 1`);
-      await client.query(
-        `INSERT INTO scheduled_restock (item_id, warehouse_id, quantity, due_at, automatic, created_by)
-         VALUES ($1, $2, $3, now() + interval '90 seconds', true, $4)`,
-        [rule.item_id, warehouse.rows[0].id, rule.quantity, rule.created_by]);
+      const pending = await database.select({ id: scheduledRestock.id }).from(scheduledRestock)
+        .where(and(eq(scheduledRestock.itemId, rule.itemId), eq(scheduledRestock.automatic, true),
+          eq(scheduledRestock.cancelled, false), eq(scheduledRestock.applied, false))).limit(1);
+      if (pending.length > 0) continue;
+      const firstWarehouse = await database.select({ id: warehouse.id }).from(warehouse)
+        .orderBy(asc(warehouse.id)).limit(1);
+      await database.insert(scheduledRestock).values({ itemId: rule.itemId,
+        warehouseId: firstWarehouse[0].id, quantity: rule.quantity,
+        dueAt: new Date(Date.now() + 90_000), automatic: true, createdBy: rule.createdBy });
     }
 
     await client.query("COMMIT");
@@ -776,19 +647,22 @@ export async function reserveCartItem(accountId: number, itemId: number, quantit
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
-    const cart = await client.query(
-      `INSERT INTO cart (account_id, last_activity, expired_at) VALUES ($1, now(), null)
-       ON CONFLICT (account_id) DO UPDATE SET last_activity = now(), expired_at = null RETURNING id`, [accountId]);
-    const cartId = cart.rows[0].id;
-    const existing = await client.query(
-      `SELECT id, quantity, expired FROM cart_item WHERE cart_id = $1 AND item_id = $2 FOR UPDATE`, [cartId, itemId]);
-    if (existing.rows[0]?.expired) await releaseReservation(client, existing.rows[0].id);
-    const inserted = await client.query(
-      `INSERT INTO cart_item (cart_id, item_id, quantity, reserved_until, expired)
-       VALUES ($1, $2, $3, now() + interval '90 seconds', false)
-       ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = CASE WHEN cart_item.expired THEN excluded.quantity ELSE cart_item.quantity + excluded.quantity END,
-       reserved_until = excluded.reserved_until, expired = false RETURNING id`, [cartId, itemId, quantity]);
-    await allocateReservation(client, inserted.rows[0].id, itemId, quantity);
+    const database = drizzle(client);
+    const carts = await database.insert(cart).values({ accountId, expiredAt: null })
+      .onConflictDoUpdate({ target: cart.accountId,
+        set: { lastActivity: new Date(), expiredAt: null } }).returning({ id: cart.id });
+    const existing = await database.select({ id: cartItem.id, expired: cartItem.expired })
+      .from(cartItem).where(and(eq(cartItem.cartId, carts[0].id), eq(cartItem.itemId, itemId)))
+      .for("update");
+    if (existing[0]?.expired) await releaseReservation(client, existing[0].id);
+    const reservedUntil = new Date(Date.now() + 90_000);
+    const inserted = await database.insert(cartItem).values({ cartId: carts[0].id, itemId,
+      quantity, reservedUntil, expired: false }).onConflictDoUpdate({
+        target: [cartItem.cartId, cartItem.itemId],
+        set: { quantity: sql`case when ${cartItem.expired} then ${quantity} else ${cartItem.quantity} + ${quantity} end`,
+          reservedUntil, expired: false },
+      }).returning({ id: cartItem.id });
+    await allocateReservation(client, inserted[0].id, itemId, quantity);
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
@@ -797,16 +671,17 @@ export async function setReservedCartQuantity(accountId: number, itemId: number,
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
-    const line = await client.query(
-      `SELECT ci.id, ci.quantity, ci.expired FROM cart c JOIN cart_item ci ON ci.cart_id = c.id
-       WHERE c.account_id = $1 AND ci.item_id = $2 FOR UPDATE OF ci`, [accountId, itemId]);
-    if (!line.rows[0]) throw new Error("item not in cart");
-    await releaseReservation(client, line.rows[0].id);
-    await allocateReservation(client, line.rows[0].id, itemId, quantity);
-    await client.query(
-      `UPDATE cart_item SET quantity = $1, reserved_until = now() + interval '90 seconds', expired = false
-       WHERE id = $2`, [quantity, line.rows[0].id]);
-    await client.query(`UPDATE cart SET last_activity = now(), expired_at = null WHERE account_id = $1`, [accountId]);
+    const database = drizzle(client);
+    const lines = await database.select({ id: cartItem.id }).from(cart)
+      .innerJoin(cartItem, eq(cartItem.cartId, cart.id))
+      .where(and(eq(cart.accountId, accountId), eq(cartItem.itemId, itemId))).for("update");
+    if (!lines[0]) throw new Error("item not in cart");
+    await releaseReservation(client, lines[0].id);
+    await allocateReservation(client, lines[0].id, itemId, quantity);
+    await database.update(cartItem).set({ quantity, reservedUntil: new Date(Date.now() + 90_000),
+      expired: false }).where(eq(cartItem.id, lines[0].id));
+    await database.update(cart).set({ lastActivity: new Date(), expiredAt: null })
+      .where(eq(cart.accountId, accountId));
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
@@ -815,14 +690,15 @@ export async function removeReservedCartItem(accountId: number, itemId: number) 
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
-    const line = await client.query(
-      `SELECT ci.id FROM cart c JOIN cart_item ci ON ci.cart_id = c.id
-       WHERE c.account_id = $1 AND ci.item_id = $2 FOR UPDATE OF ci`, [accountId, itemId]);
-    if (line.rows[0]) {
-      await releaseReservation(client, line.rows[0].id);
-      await client.query(`DELETE FROM cart_item WHERE id = $1`, [line.rows[0].id]);
+    const database = drizzle(client);
+    const lines = await database.select({ id: cartItem.id }).from(cart)
+      .innerJoin(cartItem, eq(cartItem.cartId, cart.id))
+      .where(and(eq(cart.accountId, accountId), eq(cartItem.itemId, itemId))).for("update");
+    if (lines[0]) {
+      await releaseReservation(client, lines[0].id);
+      await database.delete(cartItem).where(eq(cartItem.id, lines[0].id));
     }
-    await client.query(`UPDATE cart SET last_activity = now() WHERE account_id = $1`, [accountId]);
+    await database.update(cart).set({ lastActivity: new Date() }).where(eq(cart.accountId, accountId));
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
@@ -831,62 +707,58 @@ export async function checkoutReservedCart(accountId: number) {
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
-    const cart = await client.query(
-      `SELECT id, promotion_id FROM cart WHERE account_id = $1 FOR UPDATE`, [accountId]);
-    if (!cart.rows[0]) throw new Error("cart is empty");
-    const lines = await client.query(
-      `SELECT ci.id, ci.item_id, ci.quantity, ci.expired, ci.reserved_until, i.name, i.price
-       FROM cart_item ci JOIN item i ON i.id = ci.item_id
-       WHERE ci.cart_id = $1 ORDER BY ci.item_id FOR UPDATE OF ci`, [cart.rows[0].id]);
-    if (lines.rows.length === 0) throw new Error("cart is empty");
-    if (lines.rows.some((line) => line.expired || !line.reserved_until || new Date(line.reserved_until) <= new Date())) {
+    const database = drizzle(client);
+    const carts = await database.select({ id: cart.id, promotionId: cart.promotionId }).from(cart)
+      .where(eq(cart.accountId, accountId)).for("update");
+    if (!carts[0]) throw new Error("cart is empty");
+    const lines = await database.select({ id: cartItem.id, itemId: cartItem.itemId,
+      quantity: cartItem.quantity, expired: cartItem.expired,
+      reservedUntil: cartItem.reservedUntil, name: item.name, price: item.price })
+      .from(cartItem).innerJoin(item, eq(item.id, cartItem.itemId))
+      .where(eq(cartItem.cartId, carts[0].id)).orderBy(asc(cartItem.itemId)).for("update");
+    if (lines.length === 0) throw new Error("cart is empty");
+    if (lines.some((line) => line.expired || !line.reservedUntil || line.reservedUntil <= new Date())) {
       throw new Error("cart contains an expired reservation");
     }
-    const subtotal = lines.rows.reduce((sum, line) => sum + Number(line.price) * line.quantity, 0);
+    const subtotal = lines.reduce((sum, line) => sum + Number(line.price) * line.quantity, 0);
     let discount = 0;
     let promotionId: number | null = null;
-    if (cart.rows[0].promotion_id) {
-      const promotion = await client.query(
-        `SELECT * FROM promotion WHERE id = $1 FOR UPDATE`, [cart.rows[0].promotion_id]);
-      const current = promotion.rows[0];
-      if (!current || new Date(current.start_at) > new Date() || new Date(current.end_at) < new Date()
-        || current.redemptions >= current.redemption_limit) throw new Error("promotion is expired or unavailable");
+    if (carts[0].promotionId) {
+      const promotions = await database.select().from(promotion)
+        .where(eq(promotion.id, carts[0].promotionId)).for("update");
+      const current = promotions[0];
+      if (!current || current.startAt > new Date() || current.endAt < new Date()
+        || current.redemptions >= current.redemptionLimit) throw new Error("promotion is expired or unavailable");
       promotionId = current.id;
-      discount = Number((subtotal * Number(current.discount_percent) / 100).toFixed(2));
+      discount = Number((subtotal * Number(current.discountPercent) / 100).toFixed(2));
     }
     const total = Number((subtotal - discount).toFixed(2));
-    const created = await client.query(
-      `INSERT INTO orders
-       (account_id, total, status, promotion_id, discount, payment_status, payment_amount)
-       VALUES ($1, $2, 'pending', $3, $4, 'paid', $2) RETURNING id`,
-      [accountId, total, promotionId, discount],
-    );
-    for (const line of lines.rows) {
-      const allocations = await client.query(
-        `SELECT warehouse_id, quantity FROM cart_reservation_allocation WHERE cart_item_id = $1 ORDER BY warehouse_id`,
-        [line.id],
-      );
-      if (allocations.rows.reduce((sum, row) => sum + row.quantity, 0) !== line.quantity) {
+    const created = await database.insert(orders).values({ accountId, total: String(total),
+      promotionId, discount: String(discount), paymentAmount: String(total) })
+      .returning({ id: orders.id });
+    for (const line of lines) {
+      const allocations = await database.select({ warehouseId: cartReservationAllocation.warehouseId,
+        quantity: cartReservationAllocation.quantity }).from(cartReservationAllocation)
+        .where(eq(cartReservationAllocation.cartItemId, line.id))
+        .orderBy(asc(cartReservationAllocation.warehouseId));
+      if (allocations.reduce((sum, row) => sum + row.quantity, 0) !== line.quantity) {
         throw new Error("cart reservation is incomplete");
       }
-      for (const allocation of allocations.rows) {
-        await client.query(
-          `INSERT INTO order_item (order_id, item_id, item_name, quantity, price, warehouse_id)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [created.rows[0].id, line.item_id, line.name, allocation.quantity, line.price, allocation.warehouse_id],
-        );
+      for (const allocation of allocations) {
+        await database.insert(orderItem).values({ orderId: created[0].id, itemId: line.itemId,
+          itemName: line.name, quantity: allocation.quantity, price: line.price,
+          warehouseId: allocation.warehouseId });
       }
     }
     if (promotionId) {
-      await client.query(
-        `UPDATE promotion SET redemptions = redemptions + 1, revenue = revenue + $1 WHERE id = $2`,
-        [total, promotionId],
-      );
+      await database.update(promotion).set({ redemptions: sql`${promotion.redemptions} + 1`,
+        revenue: sql`${promotion.revenue} + ${total}` }).where(eq(promotion.id, promotionId));
     }
-    await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cart.rows[0].id]);
-    await client.query(`UPDATE cart SET promotion_id = null, last_activity = now() WHERE id = $1`, [cart.rows[0].id]);
+    await database.delete(cartItem).where(eq(cartItem.cartId, carts[0].id));
+    await database.update(cart).set({ promotionId: null, lastActivity: new Date() })
+      .where(eq(cart.id, carts[0].id));
     await client.query("COMMIT");
-    return created.rows[0].id as number;
+    return created[0].id;
   } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
 }
 

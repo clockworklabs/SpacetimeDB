@@ -15,6 +15,7 @@ import type {
 } from './actor-action-runtime.js';
 import { browserApplicationBoundary } from './browser-action-executors.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
+import { createParser } from 'eventsource-parser';
 import { RUN_SCRIPT_ACTION_IMPLEMENTATION } from './application-process-action-executors.js';
 import { CHAT_ACTION_IMPLEMENTATIONS } from './chat-action-executors.js';
 import { NAMED_ACTION_IMPLEMENTATIONS } from './named-action-executors.js';
@@ -94,8 +95,14 @@ function transportJson(chunk: string): unknown[] {
   const candidates = new Set([chunk]);
   for (const line of chunk.split(/\r?\n/)) {
     if (line.trim()) candidates.add(line.trim());
-    const sse = line.match(/^data:\s*(.+)$/);
-    if (sse?.[1]) candidates.add(sse[1]);
+  }
+  if (/^(?:data|event|id|retry):/m.test(chunk)) {
+    const parser = createParser({
+      maxBufferSize: 1024 * 1024,
+      onEvent: ({ data }) => { if (data) candidates.add(data); },
+    });
+    try { parser.feed(`${chunk}\n\n`); }
+    catch { /* Fall back to the other transport formats. */ }
   }
   const parsed: unknown[] = [];
   for (const candidate of candidates) {

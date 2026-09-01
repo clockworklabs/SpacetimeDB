@@ -7,7 +7,7 @@ import http from "node:http";
 import cookieParser from "cookie-parser";
 import { parse as parseCookie } from "cookie";
 import { Server as SocketIOServer } from "socket.io";
-import { sql, eq, and } from "drizzle-orm";
+import { sql, eq, and, asc, desc, inArray, ne } from "drizzle-orm";
 import { db, pool } from "./db.js";
 import { item, warehouse, stock, account, session, cart, cartItem, orders, orderItem, review } from "./schema.js";
 import { hashPassword, verifyPassword, newToken } from "./auth.js";
@@ -16,7 +16,6 @@ import {
   attachProgressionSocket,
   checkoutReservedCart,
   emitProgression,
-  initializeProgressionSchema,
   processImmediateRestock,
   processProgressionTimers,
   registerProgression,
@@ -92,55 +91,40 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<void>) {
 // ---------- shared query builders ----------
 
 async function buildCatalog() {
-  const result = await pool.query(`
-    SELECT i.id, i.name, i.price, i.category, i.variants, COALESCE(SUM(s.quantity), 0)::int AS stock,
-           COALESCE(p.cnt, 0)::int AS purchase_count
-    FROM item i
-    LEFT JOIN stock s ON s.item_id = i.id
-    LEFT JOIN (
-      SELECT oi.item_id, SUM(oi.quantity) AS cnt
-      FROM order_item oi
-      JOIN orders o ON o.id = oi.order_id
-      WHERE oi.returned = false AND o.status != 'cancelled'
-      GROUP BY oi.item_id
-    ) p ON p.item_id = i.id
-    GROUP BY i.id, p.cnt
-    ORDER BY purchase_count DESC, i.name ASC
-  `);
-  return result.rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    price: Number(r.price),
-    category: r.category,
-    variants: r.variants,
-    stock: r.stock,
-    purchaseCount: r.purchase_count,
+  const purchaseCounts = db.select({ itemId: orderItem.itemId,
+    count: sql<number>`sum(${orderItem.quantity})::int`.as("count") }).from(orderItem)
+    .innerJoin(orders, eq(orders.id, orderItem.orderId))
+    .where(and(eq(orderItem.returned, false), ne(orders.status, "cancelled")))
+    .groupBy(orderItem.itemId).as("purchase_counts");
+  const rows = await db.select({ id: item.id, name: item.name, price: item.price,
+    category: item.category, variants: item.variants,
+    stock: sql<number>`coalesce(sum(${stock.quantity}), 0)::int`,
+    purchaseCount: sql<number>`coalesce(${purchaseCounts.count}, 0)::int`,
+  }).from(item).leftJoin(stock, eq(stock.itemId, item.id))
+    .leftJoin(purchaseCounts, eq(purchaseCounts.itemId, item.id))
+    .groupBy(item.id, purchaseCounts.count)
+    .orderBy(desc(sql`coalesce(${purchaseCounts.count}, 0)`), asc(item.name));
+  return rows.map((row) => ({
+    ...row,
+    price: Number(row.price),
   }));
 }
 
 async function buildAdminState() {
-  const itemsResult = await pool.query(`
-    SELECT i.id, i.name, i.price, i.category, COALESCE(SUM(s.quantity), 0)::int AS stock
-    FROM item i
-    LEFT JOIN stock s ON s.item_id = i.id
-    GROUP BY i.id
-    ORDER BY i.name ASC
-  `);
-  const warehousesResult = await pool.query(`
-    SELECT w.id, w.name, COALESCE(SUM(s.quantity), 0)::int AS total
-    FROM warehouse w
-    LEFT JOIN stock s ON s.warehouse_id = w.id
-    GROUP BY w.id
-    ORDER BY w.id ASC
-  `);
-  const locationsResult = await pool.query(`
-    SELECT s.item_id, i.name AS item_name, s.warehouse_id, w.name AS warehouse_name, s.quantity
-    FROM stock s
-    JOIN item i ON i.id = s.item_id
-    JOIN warehouse w ON w.id = s.warehouse_id
-    ORDER BY i.name ASC, w.name ASC
-  `);
-  const revenueResult = await pool.query(`
+  const itemsResult = await db.select({ id: item.id, name: item.name, price: item.price,
+    category: item.category, stock: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` })
+    .from(item).leftJoin(stock, eq(stock.itemId, item.id)).groupBy(item.id)
+    .orderBy(asc(item.name));
+  const warehousesResult = await db.select({ id: warehouse.id, name: warehouse.name,
+    total: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` }).from(warehouse)
+    .leftJoin(stock, eq(stock.warehouseId, warehouse.id)).groupBy(warehouse.id)
+    .orderBy(asc(warehouse.id));
+  const locationsResult = await db.select({ itemId: stock.itemId, itemName: item.name,
+    warehouseId: stock.warehouseId, warehouseName: warehouse.name, quantity: stock.quantity })
+    .from(stock).innerJoin(item, eq(item.id, stock.itemId))
+    .innerJoin(warehouse, eq(warehouse.id, stock.warehouseId))
+    .orderBy(asc(item.name), asc(warehouse.name));
+  const revenueResult = await db.execute<{ revenue: string }>(sql`
     SELECT
       COALESCE((SELECT SUM(total - refund_total) FROM orders WHERE status != 'cancelled'), 0)
       - COALESCE((
@@ -149,7 +133,7 @@ async function buildAdminState() {
           WHERE oi.returned = true AND o.status != 'cancelled'
         ), 0) AS revenue
   `);
-  const categoryResult = await pool.query(`
+  const categoryResult = await db.execute<{ category: string; units: number; revenue: string }>(sql`
     SELECT i.category,
            COALESCE(SUM(CASE WHEN oi.returned = false AND o.status != 'cancelled' THEN oi.quantity ELSE 0 END), 0)::int AS units,
            COALESCE(SUM(CASE WHEN oi.returned = false AND o.status != 'cancelled' THEN oi.quantity * oi.price ELSE 0 END), 0) AS revenue
@@ -159,14 +143,12 @@ async function buildAdminState() {
     GROUP BY i.category
     ORDER BY i.category ASC
   `);
-  const queueDepthResult = await pool.query(`SELECT COUNT(*)::int AS n FROM orders WHERE status = 'pending'`);
+  const queueDepthResult = await db.select({ count: sql<number>`count(*)::int` }).from(orders)
+    .where(eq(orders.status, "pending"));
 
-  const items = itemsResult.rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    price: Number(r.price),
-    category: r.category,
-    stock: r.stock,
+  const items = itemsResult.map((row) => ({
+    ...row,
+    price: Number(row.price),
   }));
 
   const lowStock = items
@@ -177,14 +159,8 @@ async function buildAdminState() {
 
   return {
     items,
-    warehouses: warehousesResult.rows.map((r) => ({ id: r.id, name: r.name, total: r.total })),
-    locations: locationsResult.rows.map((r) => ({
-      itemId: r.item_id,
-      itemName: r.item_name,
-      warehouseId: r.warehouse_id,
-      warehouseName: r.warehouse_name,
-      quantity: r.quantity,
-    })),
+    warehouses: warehousesResult,
+    locations: locationsResult,
     revenue: Number(revenueResult.rows[0].revenue),
     lowStock,
     categoryTotals: categoryResult.rows.map((r) => ({
@@ -192,28 +168,26 @@ async function buildAdminState() {
       units: r.units,
       revenue: Number(r.revenue),
     })),
-    queueDepth: queueDepthResult.rows[0].n,
+    queueDepth: queueDepthResult[0].count,
   };
 }
 
 async function buildFulfilmentQueue() {
-  const ordersResult = await pool.query(
-    `SELECT id, created_at FROM orders WHERE status = 'pending' ORDER BY created_at ASC, id ASC`
-  );
-  const out = [];
-  for (const o of ordersResult.rows) {
-    const lines = await pool.query(
-      `SELECT oi.item_name, oi.quantity, w.name AS warehouse_name
-       FROM order_item oi JOIN warehouse w ON w.id = oi.warehouse_id
-       WHERE oi.order_id = $1
-       ORDER BY oi.id ASC`,
-      [o.id]
-    );
-    out.push({
-      id: o.id,
-      createdAt: o.created_at,
-      items: lines.rows.map((l) => ({ name: l.item_name, quantity: l.quantity, warehouse: l.warehouse_name })),
-    });
+  const rows = await db.select({ id: orders.id, createdAt: orders.createdAt,
+    name: orderItem.itemName, quantity: orderItem.quantity, warehouse: warehouse.name })
+    .from(orders).innerJoin(orderItem, eq(orderItem.orderId, orders.id))
+    .innerJoin(warehouse, eq(warehouse.id, orderItem.warehouseId))
+    .where(eq(orders.status, "pending"))
+    .orderBy(asc(orders.createdAt), asc(orders.id), asc(orderItem.id));
+  const out: Array<{ id: number; createdAt: Date;
+    items: Array<{ name: string; quantity: number; warehouse: string }> }> = [];
+  for (const row of rows) {
+    let order = out.at(-1);
+    if (order?.id !== row.id) {
+      order = { id: row.id, createdAt: row.createdAt, items: [] };
+      out.push(order);
+    }
+    order.items.push({ name: row.name, quantity: row.quantity, warehouse: row.warehouse });
   }
   return out;
 }
@@ -223,37 +197,27 @@ async function buildRecommended(accountId: number | null) {
   if (accountId == null) {
     return catalog.slice(0, 10);
   }
-  const categoriesResult = await pool.query(
-    `SELECT DISTINCT i.category
-     FROM order_item oi JOIN orders o ON o.id = oi.order_id JOIN item i ON i.id = oi.item_id
-     WHERE o.account_id = $1 AND oi.returned = false AND o.status != 'cancelled'`,
-    [accountId]
-  );
-  const categories = new Set(categoriesResult.rows.map((r) => r.category));
+  const categoriesResult = await db.selectDistinct({ category: item.category }).from(orderItem)
+    .innerJoin(orders, eq(orders.id, orderItem.orderId))
+    .innerJoin(item, eq(item.id, orderItem.itemId))
+    .where(and(eq(orders.accountId, accountId), eq(orderItem.returned, false),
+      ne(orders.status, "cancelled")));
+  const categories = new Set(categoriesResult.map((row) => row.category));
   if (categories.size === 0) return [];
-  const cartItemsResult = await pool.query(
-    `SELECT ci.item_id FROM cart c JOIN cart_item ci ON ci.cart_id = c.id WHERE c.account_id = $1`,
-    [accountId]
-  );
-  const inCart = new Set(cartItemsResult.rows.map((r) => r.item_id));
+  const cartItemsResult = await db.select({ itemId: cartItem.itemId }).from(cart)
+    .innerJoin(cartItem, eq(cartItem.cartId, cart.id)).where(eq(cart.accountId, accountId));
+  const inCart = new Set(cartItemsResult.map((row) => row.itemId));
   return catalog.filter((i) => categories.has(i.category) && !inCart.has(i.id)).slice(0, 10);
 }
 
 async function buildItemReviews(itemId: number) {
-  const rows = await pool.query(
-    `SELECT r.id, r.account_id, a.username, r.rating, r.comment, r.created_at
-     FROM review r JOIN account a ON a.id = r.account_id
-     WHERE r.item_id = $1
-     ORDER BY r.created_at DESC`,
-    [itemId]
-  );
-  const reviews = rows.rows.map((r) => ({
-    id: r.id,
-    accountId: r.account_id,
-    username: r.username,
-    rating: r.rating,
-    comment: r.comment,
-    createdAt: r.created_at,
+  const rows = await db.select({ id: review.id, accountId: review.accountId,
+    username: account.username, rating: review.rating, comment: review.comment,
+    createdAt: review.createdAt }).from(review)
+    .innerJoin(account, eq(account.id, review.accountId)).where(eq(review.itemId, itemId))
+    .orderBy(desc(review.createdAt));
+  const reviews = rows.map((row) => ({
+    ...row,
   }));
   const average =
     reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : null;
@@ -261,72 +225,58 @@ async function buildItemReviews(itemId: number) {
 }
 
 async function buildCartState(accountId: number) {
-  const cartMeta = await pool.query(`SELECT expired_at FROM cart WHERE account_id = $1`, [accountId]);
-  const rows = await pool.query(
-    `SELECT ci.item_id, i.name, i.price, ci.quantity, ci.expired, ci.reserved_until,
-            EXTRACT(EPOCH FROM (ci.reserved_until - now()))::int AS reservation_seconds
-     FROM cart c
-     JOIN cart_item ci ON ci.cart_id = c.id
-     JOIN item i ON i.id = ci.item_id
-     WHERE c.account_id = $1
-     ORDER BY ci.id ASC`,
-    [accountId]
-  );
-  const items = rows.rows.map((r) => ({
-    itemId: r.item_id,
-    name: r.name,
-    price: Number(r.price),
-    quantity: r.quantity,
-    expired: r.expired,
-    reservationSeconds: Math.max(0, r.reservation_seconds ?? 0),
-    lineTotal: Number(r.price) * r.quantity,
+  const [cartMeta, rows] = await Promise.all([
+    db.select({ expiredAt: cart.expiredAt }).from(cart).where(eq(cart.accountId, accountId)).limit(1),
+    db.select({ itemId: cartItem.itemId, name: item.name, price: item.price,
+      quantity: cartItem.quantity, expired: cartItem.expired,
+      reservationSeconds: sql<number>`extract(epoch from (${cartItem.reservedUntil} - now()))::int` })
+      .from(cart).innerJoin(cartItem, eq(cartItem.cartId, cart.id))
+      .innerJoin(item, eq(item.id, cartItem.itemId)).where(eq(cart.accountId, accountId))
+      .orderBy(asc(cartItem.id)),
+  ]);
+  const items = rows.map((row) => ({
+    itemId: row.itemId,
+    name: row.name,
+    price: Number(row.price),
+    quantity: row.quantity,
+    expired: row.expired,
+    reservationSeconds: Math.max(0, row.reservationSeconds ?? 0),
+    lineTotal: Number(row.price) * row.quantity,
   }));
   const total = items.reduce((sum, i) => sum + i.lineTotal, 0);
-  return { items, total, expiredAt: cartMeta.rows[0]?.expired_at ?? null };
+  return { items, total, expiredAt: cartMeta[0]?.expiredAt ?? null };
 }
 
 async function buildOrders(accountId: number) {
-  const ordersResult = await pool.query(
-    `SELECT id, created_at, total, status, discount, payment_status, payment_amount, refund_total
-     FROM orders WHERE account_id = $1 ORDER BY created_at DESC`,
-    [accountId]
-  );
-  const out = [];
-  for (const o of ordersResult.rows) {
-    const linesResult = await pool.query(
-      `SELECT id, item_id, item_name, quantity, price, returned FROM order_item WHERE order_id = $1 ORDER BY id ASC`,
-      [o.id]
-    );
-    out.push({
-      id: o.id,
-      createdAt: o.created_at,
-      total: Number(o.total),
-      status: o.status,
-      discount: Number(o.discount),
-      paymentStatus: o.payment_status,
-      paymentAmount: Number(o.payment_amount),
-      refundTotal: Number(o.refund_total),
-      items: linesResult.rows.map((l) => ({
-        orderItemId: l.id,
-        itemId: l.item_id,
-        name: l.item_name,
-        quantity: l.quantity,
-        price: Number(l.price),
-        returned: l.returned,
+  const orderRows = await db.select().from(orders).where(eq(orders.accountId, accountId))
+    .orderBy(desc(orders.createdAt));
+  const lines = orderRows.length === 0 ? [] : await db.select().from(orderItem)
+    .where(inArray(orderItem.orderId, orderRows.map((row) => row.id))).orderBy(asc(orderItem.id));
+  return orderRows.map((order) => ({
+      id: order.id,
+      createdAt: order.createdAt,
+      total: Number(order.total),
+      status: order.status,
+      discount: Number(order.discount),
+      paymentStatus: order.paymentStatus,
+      paymentAmount: Number(order.paymentAmount),
+      refundTotal: Number(order.refundTotal),
+      items: lines.filter((line) => line.orderId === order.id).map((line) => ({
+        orderItemId: line.id,
+        itemId: line.itemId,
+        name: line.itemName,
+        quantity: line.quantity,
+        price: Number(line.price),
+        returned: line.returned,
       })),
-    });
-  }
-  return out;
+    }));
 }
 
 async function getOrCreateCart(accountId: number): Promise<number> {
-  const result = await pool.query(
-    `INSERT INTO cart (account_id) VALUES ($1)
-     ON CONFLICT (account_id) DO UPDATE SET account_id = excluded.account_id
-     RETURNING id`,
-    [accountId]
-  );
-  return result.rows[0].id;
+  const result = await db.insert(cart).values({ accountId }).onConflictDoUpdate({
+    target: cart.accountId, set: { accountId },
+  }).returning({ id: cart.id });
+  return result[0].id;
 }
 
 // ---------- broadcasting ----------
@@ -461,7 +411,8 @@ app.get(
       res.status(404).json({ error: "item not found" });
       return;
     }
-    const stockRows = await pool.query(`SELECT COALESCE(SUM(quantity),0)::int AS stock FROM stock WHERE item_id = $1`, [itemId]);
+    const stockRows = await db.select({ value: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` })
+      .from(stock).where(eq(stock.itemId, itemId));
     const { reviews, average } = await buildItemReviews(itemId);
     res.json({
       item: {
@@ -469,7 +420,7 @@ app.get(
         name: rows[0].name,
         price: Number(rows[0].price),
         category: rows[0].category,
-        stock: stockRows.rows[0].stock,
+        stock: stockRows[0].value,
       },
       reviews,
       average,
@@ -484,53 +435,30 @@ app.post(
     const itemId = Number(req.params.id);
     const accountId = req.account!.id;
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const decrement = await client.query(
-        `WITH target AS (
-           SELECT item_id, warehouse_id FROM stock
-           WHERE item_id = $1 AND quantity > 0
-           ORDER BY warehouse_id
-           FOR UPDATE
-           LIMIT 1
-         )
-         UPDATE stock s SET quantity = quantity - 1
-         FROM target t
-         WHERE s.item_id = t.item_id AND s.warehouse_id = t.warehouse_id
-         RETURNING s.item_id, s.warehouse_id`,
-        [itemId]
-      );
-      if (decrement.rowCount === 0) {
-        await client.query("ROLLBACK");
-        res.status(409).json({ error: "item is out of stock" });
-        return;
-      }
-      const warehouseId = decrement.rows[0].warehouse_id;
-      const itemRow = await client.query(`SELECT name, price FROM item WHERE id = $1`, [itemId]);
-      if (itemRow.rowCount === 0) {
-        await client.query("ROLLBACK");
-        res.status(404).json({ error: "item not found" });
-        return;
-      }
-      const { name, price } = itemRow.rows[0];
-      const orderResult = await client.query(
-        `INSERT INTO orders (account_id, total, status, payment_status, payment_amount)
-         VALUES ($1, $2, 'pending', 'paid', $2) RETURNING id`,
-        [accountId, price]
-      );
-      const orderId = orderResult.rows[0].id;
-      await client.query(
-        `INSERT INTO order_item (order_id, item_id, item_name, quantity, price, warehouse_id) VALUES ($1, $2, $3, 1, $4, $5)`,
-        [orderId, itemId, name, price, warehouseId]
-      );
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+    const result = await db.transaction(async (tx) => {
+      const decrement = await tx.execute(sql<{ itemId: number; warehouseId: number }>`
+        WITH target AS (
+          SELECT item_id, warehouse_id FROM ${stock}
+          WHERE item_id = ${itemId} AND quantity > 0
+          ORDER BY warehouse_id FOR UPDATE LIMIT 1
+        )
+        UPDATE ${stock} SET quantity = quantity - 1
+        FROM target
+        WHERE ${stock.itemId} = target.item_id AND ${stock.warehouseId} = target.warehouse_id
+        RETURNING ${stock.itemId} AS "itemId", ${stock.warehouseId} AS "warehouseId"
+      `);
+      if (decrement.rows.length === 0) return { status: 409, error: "item is out of stock" };
+      const itemRows = await tx.select({ name: item.name, price: item.price }).from(item)
+        .where(eq(item.id, itemId)).limit(1);
+      if (itemRows.length === 0) return { status: 404, error: "item not found" };
+      const created = await tx.insert(orders).values({ accountId, total: itemRows[0].price,
+        paymentAmount: itemRows[0].price }).returning({ id: orders.id });
+      await tx.insert(orderItem).values({ orderId: created[0].id, itemId,
+        itemName: itemRows[0].name, quantity: 1, price: itemRows[0].price,
+        warehouseId: Number(decrement.rows[0].warehouseId) });
+      return null;
+    });
+    if (result) { res.status(result.status).json({ error: result.error }); return; }
 
     await broadcastCatalog();
     await broadcastOrders(accountId);
@@ -647,36 +575,27 @@ app.post(
   asyncHandler(async (req, res) => {
     const orderId = Number(req.params.id);
     const accountId = req.account!.id;
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
-      if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {
-        await client.query("ROLLBACK");
-        res.status(404).json({ error: "order not found" });
-        return;
+    const result = await db.transaction(async (tx) => {
+      const orderRows = await tx.select({ accountId: orders.accountId, status: orders.status })
+        .from(orders).where(eq(orders.id, orderId)).for("update");
+      if (orderRows.length === 0 || orderRows[0].accountId !== accountId) {
+        return { status: 404, error: "order not found" };
       }
-      if (orderRow.rows[0].status !== "pending") {
-        await client.query("ROLLBACK");
-        res.status(409).json({ error: "order has already shipped" });
-        return;
+      if (orderRows[0].status !== "pending") {
+        return { status: 409, error: "order has already shipped" };
       }
-      const lines = await client.query(`SELECT item_id, quantity, warehouse_id FROM order_item WHERE order_id = $1`, [orderId]);
-      for (const l of lines.rows) {
-        await client.query(
-          `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)
-           ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,
-          [l.item_id, l.warehouse_id, l.quantity]
-        );
+      const lines = await tx.select({ itemId: orderItem.itemId, quantity: orderItem.quantity,
+        warehouseId: orderItem.warehouseId }).from(orderItem).where(eq(orderItem.orderId, orderId));
+      for (const line of lines) {
+        await tx.insert(stock).values(line).onConflictDoUpdate({
+          target: [stock.itemId, stock.warehouseId],
+          set: { quantity: sql`${stock.quantity} + ${line.quantity}` },
+        });
       }
-      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+      await tx.update(orders).set({ status: "cancelled" }).where(eq(orders.id, orderId));
+      return null;
+    });
+    if (result) { res.status(result.status).json({ error: result.error }); return; }
 
     await broadcastCatalog();
     await broadcastOrders(accountId);
@@ -697,48 +616,29 @@ app.post(
       res.status(400).json({ error: "invalid item" });
       return;
     }
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);
-      if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {
-        await client.query("ROLLBACK");
-        res.status(404).json({ error: "order not found" });
-        return;
+    const result = await db.transaction(async (tx) => {
+      const orderRows = await tx.select({ accountId: orders.accountId, status: orders.status })
+        .from(orders).where(eq(orders.id, orderId)).for("update");
+      if (orderRows.length === 0 || orderRows[0].accountId !== accountId) {
+        return { status: 404, error: "order not found" };
       }
-      if (!['shipped', 'delivered'].includes(orderRow.rows[0].status)) {
-        await client.query("ROLLBACK");
-        res.status(409).json({ error: "order has not shipped" });
-        return;
+      if (!["shipped", "delivered"].includes(orderRows[0].status)) {
+        return { status: 409, error: "order has not shipped" };
       }
-      const lineRow = await client.query(
-        `SELECT id, item_id, quantity, warehouse_id, returned FROM order_item WHERE id = $1 AND order_id = $2 FOR UPDATE`,
-        [orderItemId, orderId]
-      );
-      if (lineRow.rowCount === 0) {
-        await client.query("ROLLBACK");
-        res.status(404).json({ error: "item not found in order" });
-        return;
-      }
-      if (lineRow.rows[0].returned) {
-        await client.query("ROLLBACK");
-        res.status(409).json({ error: "item already returned" });
-        return;
-      }
-      const { item_id, quantity, warehouse_id } = lineRow.rows[0];
-      await client.query(
-        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)
-         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,
-        [item_id, warehouse_id, quantity]
-      );
-      await client.query(`UPDATE order_item SET returned = true WHERE id = $1`, [orderItemId]);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+      const lines = await tx.select({ itemId: orderItem.itemId, quantity: orderItem.quantity,
+        warehouseId: orderItem.warehouseId, returned: orderItem.returned }).from(orderItem)
+        .where(and(eq(orderItem.id, orderItemId), eq(orderItem.orderId, orderId))).for("update");
+      if (lines.length === 0) return { status: 404, error: "item not found in order" };
+      if (lines[0].returned) return { status: 409, error: "item already returned" };
+      await tx.insert(stock).values({ itemId: lines[0].itemId,
+        warehouseId: lines[0].warehouseId, quantity: lines[0].quantity }).onConflictDoUpdate({
+        target: [stock.itemId, stock.warehouseId],
+        set: { quantity: sql`${stock.quantity} + ${lines[0].quantity}` },
+      });
+      await tx.update(orderItem).set({ returned: true }).where(eq(orderItem.id, orderItemId));
+      return null;
+    });
+    if (result) { res.status(result.status).json({ error: result.error }); return; }
 
     await broadcastCatalog();
     await broadcastOrders(accountId);
@@ -761,20 +661,18 @@ app.post(
       res.status(400).json({ error: "rating must be between 1 and 5" });
       return;
     }
-    const purchased = await pool.query(
-      `SELECT 1 FROM order_item oi JOIN orders o ON o.id = oi.order_id
-       WHERE o.account_id = $1 AND oi.item_id = $2 LIMIT 1`,
-      [accountId, itemId]
-    );
-    if (purchased.rowCount === 0) {
+    const purchased = await db.select({ id: orderItem.id }).from(orderItem)
+      .innerJoin(orders, eq(orders.id, orderItem.orderId))
+      .where(and(eq(orders.accountId, accountId), eq(orderItem.itemId, itemId))).limit(1);
+    if (purchased.length === 0) {
       res.status(403).json({ error: "you can only review items you have purchased" });
       return;
     }
-    await pool.query(
-      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,
-      [itemId, accountId, ratingNum, String(comment ?? "")]
-    );
+    await db.insert(review).values({ itemId, accountId, rating: ratingNum,
+      comment: String(comment ?? "") }).onConflictDoUpdate({
+        target: [review.itemId, review.accountId],
+        set: { rating: ratingNum, comment: String(comment ?? "") },
+      });
     const { reviews, average } = await buildItemReviews(itemId);
     io.emit("review:update", { itemId, reviews, average });
     res.json({ reviews, average });
@@ -801,16 +699,14 @@ app.post(
       res.status(400).json({ error: "invalid order" });
       return;
     }
-    const result = await pool.query(
-      `UPDATE orders SET status = 'shipped', shipped_at = now()
-       WHERE id = $1 AND status = 'pending' RETURNING account_id`,
-      [orderId]
-    );
-    if (result.rowCount === 0) {
+    const result = await db.update(orders).set({ status: "shipped", shippedAt: new Date() })
+      .where(and(eq(orders.id, orderId), eq(orders.status, "pending")))
+      .returning({ accountId: orders.accountId });
+    if (result.length === 0) {
       res.status(409).json({ error: "order is not waiting to ship" });
       return;
     }
-    const accountId = result.rows[0].account_id;
+    const accountId = result[0].accountId;
     await broadcastFulfilment();
     await broadcastOrders(accountId);
     await broadcastCatalog();
@@ -850,11 +746,10 @@ app.post(
       res.status(400).json({ error: "invalid restock request" });
       return;
     }
-    await pool.query(
-      `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)
-       ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,
-      [itemId, warehouseId, qty]
-    );
+    await db.insert(stock).values({ itemId, warehouseId, quantity: qty }).onConflictDoUpdate({
+      target: [stock.itemId, stock.warehouseId],
+      set: { quantity: sql`${stock.quantity} + ${qty}` },
+    });
     await processImmediateRestock(itemId);
     await broadcastCatalog();
     const state = await buildAdminState();
@@ -879,41 +774,28 @@ app.post(
       res.status(400).json({ error: "invalid transfer request" });
       return;
     }
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
+    const result = await db.transaction(async (tx) => {
       // Lock both warehouse rows in a fixed order (regardless of transfer
       // direction) so two transfers of the same item between the same two
       // warehouses can never deadlock waiting on each other's locks.
       const orderedWarehouseIds = [fromWarehouseId, toWarehouseId].sort((a, b) => a - b);
-      const lockedRows = await client.query(
-        `SELECT warehouse_id, quantity FROM stock WHERE item_id = $1 AND warehouse_id = ANY($2::int[]) ORDER BY warehouse_id ASC FOR UPDATE`,
-        [itemId, orderedWarehouseIds]
-      );
-      const fromRow = lockedRows.rows.find((r) => r.warehouse_id === fromWarehouseId);
+      const lockedRows = await tx.select({ warehouseId: stock.warehouseId,
+        quantity: stock.quantity }).from(stock)
+        .where(and(eq(stock.itemId, itemId), inArray(stock.warehouseId, orderedWarehouseIds)))
+        .orderBy(asc(stock.warehouseId)).for("update");
+      const fromRow = lockedRows.find((row) => row.warehouseId === fromWarehouseId);
       const available = fromRow ? fromRow.quantity : 0;
       if (available < qty) {
-        await client.query("ROLLBACK");
-        res.status(409).json({ error: "warehouse does not have enough stock to transfer" });
-        return;
+        return { status: 409, error: "warehouse does not have enough stock to transfer" };
       }
-      await client.query(`UPDATE stock SET quantity = quantity - $1 WHERE item_id = $2 AND warehouse_id = $3`, [
-        qty,
-        itemId,
-        fromWarehouseId,
-      ]);
-      await client.query(
-        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)
-         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,
-        [itemId, toWarehouseId, qty]
-      );
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+      await tx.update(stock).set({ quantity: sql`${stock.quantity} - ${qty}` })
+        .where(and(eq(stock.itemId, itemId), eq(stock.warehouseId, fromWarehouseId)));
+      await tx.insert(stock).values({ itemId, warehouseId: toWarehouseId, quantity: qty })
+        .onConflictDoUpdate({ target: [stock.itemId, stock.warehouseId],
+          set: { quantity: sql`${stock.quantity} + ${qty}` } });
+      return null;
+    });
+    if (result) { res.status(result.status).json({ error: result.error }); return; }
 
     await broadcastCatalog();
     const state = await buildAdminState();
@@ -931,14 +813,12 @@ app.post(
       res.status(400).json({ error: "invalid price" });
       return;
     }
-    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);
+    await db.update(item).set({ price: priceNum.toFixed(2) }).where(eq(item.id, itemId));
     await broadcastCatalog();
-    const cartAccounts = await pool.query(
-      `SELECT DISTINCT c.account_id FROM cart c JOIN cart_item ci ON ci.cart_id = c.id WHERE ci.item_id = $1`,
-      [itemId]
-    );
-    for (const row of cartAccounts.rows) {
-      await broadcastCart(row.account_id);
+    const cartAccounts = await db.selectDistinct({ accountId: cart.accountId }).from(cart)
+      .innerJoin(cartItem, eq(cartItem.cartId, cart.id)).where(eq(cartItem.itemId, itemId));
+    for (const row of cartAccounts) {
+      await broadcastCart(row.accountId);
     }
     const state = await buildAdminState();
     res.json(state);
@@ -1025,7 +905,6 @@ setInterval(() => {
 }, POLL_INTERVAL_MS);
 
 async function main() {
-  await initializeProgressionSchema(pool);
   await seed();
   httpServer.listen(PORT, () => {
     console.log(`PostgreSQL Shop server listening on port ${PORT}`);

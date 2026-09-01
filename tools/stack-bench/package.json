@@ -64,6 +64,7 @@
     "test:null": "node dist/commands/null-control.js"
   },
   "dependencies": {
+    "eventsource-parser": "3.1.1",
     "playwright": "1.62.1",
     "semver": "7.7.4",
     "zod": "4.5.4"

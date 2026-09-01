@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import type { AddressInfo } from 'node:net';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
+import { createParser } from 'eventsource-parser';
 
 import { normalizeClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
@@ -144,19 +145,26 @@ function responseUsage(body: Buffer, contentEncoding: string | string[] | undefi
     let sawError = false;
     let sawFinalUsage = false;
     let sawMessageStop = false;
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') continue;
-      try {
-        const event = JSON.parse(data);
-        if (isRecord(event) && event.type === 'error') sawError = true;
-        if (isRecord(event) && event.type === 'message_delta' && isRecord(event.usage)) sawFinalUsage = true;
-        if (isRecord(event) && event.type === 'message_stop') sawMessageStop = true;
-        add(event);
-      } catch { /* Ignore non-JSON event data. */ }
-    }
-    if (sawError || !sawFinalUsage || !sawMessageStop) return null;
+    let parseError = false;
+    const parser = createParser({
+      maxBufferSize: MAX_REQUEST_BYTES,
+      onError: () => { parseError = true; },
+      onEvent: ({ data }) => {
+        if (!data || data === '[DONE]') return;
+        try {
+          const event = JSON.parse(data);
+          if (isRecord(event) && event.type === 'error') sawError = true;
+          if (isRecord(event) && event.type === 'message_delta' && isRecord(event.usage)) {
+            sawFinalUsage = true;
+          }
+          if (isRecord(event) && event.type === 'message_stop') sawMessageStop = true;
+          add(event);
+        } catch { /* Ignore non-JSON event data. */ }
+      },
+    });
+    try { parser.feed(`${text}\n\n`); }
+    catch { parseError = true; }
+    if (parseError || sawError || !sawFinalUsage || !sawMessageStop) return null;
   }
   if (values.length === 0) return null;
   const number = (field: string): number => Math.max(0, ...values.map(value => Number(value[field]) || 0));

@@ -418,9 +418,9 @@ test('a negative delivery check observes its full window before passing', async 
 
 test('replay retargeting maps nested entity ids by field and relationship depth', async () => {
   const requests: CapturedRequest[] = [];
-  const actor = (name: string, received: unknown[], writes: UnknownRecord[]) => ({
+  const actor = (name: string, received: string[], writes: UnknownRecord[]) => ({
     name,
-    received: received.map(value => JSON.stringify(value)),
+    received,
     writes,
     page: {
       request: { fetch: async (url: string, options: UnknownRecord) => {
@@ -429,17 +429,18 @@ test('replay retargeting maps nested entity ids by field and relationship depth'
       } },
     },
   });
-  const staff = actor('staff', [{ orders: [{
-    _id: 'order-desk', userId: 'staff-user',
-    items: [{ itemId: 'item-desk', name: 'Desk Lamp' }],
-  }] }], [{
+  const staff = actor('staff', [[
+    'data: {"orders":[{"_id":"order-desk","userId":"staff-user",',
+    'data: "items":[{"itemId":"item-desk","name":"Desk Lamp"}]}]}',
+    '',
+  ].join('\n')], [{
     url: 'http://app.test/api/fulfilment/order-desk/ship', method: 'POST',
     headers: { authorization: 'Bearer staff-token' }, body: null,
   }]);
-  const customer = actor('customer', [{ order: {
+  const customer = actor('customer', [JSON.stringify({ order: {
     _id: 'order-webcam', userId: 'customer-user',
     items: [{ itemId: 'item-webcam', name: 'Webcam' }],
-  } }], [{
+  } })], [{
     url: 'http://app.test/api/items/item-webcam/buy', method: 'POST',
     headers: { authorization: 'Bearer customer-token' }, body: null,
   }]);
