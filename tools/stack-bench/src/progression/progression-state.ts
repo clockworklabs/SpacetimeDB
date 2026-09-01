@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { z } from 'zod';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
@@ -9,6 +10,7 @@ import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource } from '../runtime/source-snapshot.js';
+import { formatZodError } from '../zod-error.js';
 import {
   progressionEngine,
 } from './progression-engine.js';
@@ -202,20 +204,41 @@ interface DirectoryHash {
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const HASH = /^[a-f0-9]{64}$/;
+const hashSchema = z.string().regex(HASH);
+const boundIdentitySchema = z.strictObject({
+  id: z.string().min(1),
+  version: z.string().min(1).nullable().optional(),
+  sha256: hashSchema,
+  state: z.string().optional(),
+});
+const progressionOwnerSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  campaign: z.strictObject({ id: z.string().min(1), version: z.string().min(1), sha256: hashSchema }),
+  attempt: z.strictObject({
+    id: z.string().min(1),
+    track: z.string().min(1),
+    stack: z.string().min(1),
+    agentAdapter: z.string().min(1),
+    model: z.string().min(1),
+    conditionSha256: hashSchema,
+  }),
+  workspace: z.strictObject({ appDirectory: z.string().min(1) }).optional(),
+});
+const eventHistorySchema = z.looseObject({ events: z.array(z.unknown()) });
+const storedProgressionSchema = z.looseObject({
+  schemaVersion: z.literal(3),
+  featureCatalog: boundIdentitySchema,
+  dependencyPolicy: boundIdentitySchema,
+  owner: progressionOwnerSchema,
+  events: z.array(z.unknown()),
+  resume: z.unknown().optional(),
+  stateSha256: hashSchema,
+});
 
 function validateBoundIdentity(input: unknown, label: string): BoundIdentity {
-  if (!object(input)) throw new Error(`${label} identity must be an object`);
-  const fields = new Set(['id', 'version', 'sha256', 'state']);
-  for (const key of Object.keys(input)) {
-    if (!fields.has(key)) throw new Error(`${label} identity.${key} is unknown`);
-  }
-  if (typeof input.id !== 'string' || !input.id
-    || (input.version !== undefined && input.version !== null
-      && (typeof input.version !== 'string' || !input.version))
-    || !HASH.test(typeof input.sha256 === 'string' ? input.sha256 : '')) {
-    throw new Error(`${label} identity is invalid`);
-  }
-  return structuredClone(input) as BoundIdentity;
+  const parsed = boundIdentitySchema.safeParse(input);
+  if (!parsed.success) throw new Error(formatZodError(parsed.error, `${label} identity`));
+  return parsed.data;
 }
 
 function boundIdentities(featureCatalogIdentity: unknown, dependencyPolicyIdentity: unknown): {
@@ -230,50 +253,10 @@ function boundIdentities(featureCatalogIdentity: unknown, dependencyPolicyIdenti
 
 export function validateProgressionOwner(input: unknown,
   { requireWorkspace = false }: { requireWorkspace?: boolean } = {}): ProgressionOwner {
-  if (!object(input)) throw new Error('progression state owner must be an object');
-  const owner = structuredClone(input);
-  const fields = new Set(['schemaVersion', 'campaign', 'attempt', 'workspace']);
-  for (const key of Object.keys(owner)) {
-    if (!fields.has(key)) throw new Error(`progression state owner.${key} is unknown`);
-  }
-  if (owner.schemaVersion !== 1 || !object(owner.campaign) || !object(owner.attempt)
-    || (requireWorkspace && !object(owner.workspace))) {
-    throw new Error('progression state owner is incomplete');
-  }
-  const typedOwner = owner as unknown as ProgressionOwner;
-  const campaignFields = new Set(['id', 'version', 'sha256']);
-  const attemptFields = new Set([
-    'id', 'track', 'stack', 'agentAdapter', 'model', 'conditionSha256',
-  ]);
-  const workspaceFields = new Set(['appDirectory']);
-  for (const key of Object.keys(typedOwner.campaign)) {
-    if (!campaignFields.has(key)) throw new Error(`progression state owner.campaign.${key} is unknown`);
-  }
-  for (const key of Object.keys(typedOwner.attempt)) {
-    if (!attemptFields.has(key)) throw new Error(`progression state owner.attempt.${key} is unknown`);
-  }
-  for (const key of Object.keys(typedOwner.workspace ?? {})) {
-    if (!workspaceFields.has(key)) {
-      throw new Error(`progression state owner.workspace.${key} is unknown`);
-    }
-  }
-  for (const [at, value] of [
-    ['campaign.id', typedOwner.campaign.id], ['campaign.version', typedOwner.campaign.version],
-    ['attempt.id', typedOwner.attempt.id], ['attempt.track', typedOwner.attempt.track],
-    ['attempt.stack', typedOwner.attempt.stack],
-    ['attempt.agentAdapter', typedOwner.attempt.agentAdapter],
-    ['attempt.model', typedOwner.attempt.model],
-  ] satisfies Array<[string, unknown]>) {
-    if (typeof value !== 'string' || !value) throw new Error(`progression state owner.${at} is invalid`);
-  }
-  for (const [at, value] of [
-    ['campaign.sha256', typedOwner.campaign.sha256],
-    ['attempt.conditionSha256', typedOwner.attempt.conditionSha256],
-  ] satisfies Array<[string, unknown]>) {
-    if (typeof value !== 'string' || !HASH.test(value)) {
-      throw new Error(`progression state owner.${at} is invalid`);
-    }
-  }
+  const parsed = progressionOwnerSchema.safeParse(input);
+  if (!parsed.success) throw new Error(formatZodError(parsed.error, 'progression state owner'));
+  const typedOwner = parsed.data;
+  if (requireWorkspace && !typedOwner.workspace) throw new Error('progression state owner is incomplete');
   if (typedOwner.workspace) {
     if (typeof typedOwner.workspace.appDirectory !== 'string' || !typedOwner.workspace.appDirectory
       || isAbsolute(typedOwner.workspace.appDirectory)
@@ -308,10 +291,11 @@ function storedPayload(progressionInput: unknown, featureCatalogIdentity: unknow
   const progression = validateProgressionInput(progressionInput);
   const identities = boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity);
   const owner = validateWorkspaceOwner(ownerInput);
-  if (!object(stateInput) || !Array.isArray(stateInput.events)) {
+  const parsedState = eventHistorySchema.safeParse(stateInput);
+  if (!parsedState.success) {
     throw new Error('progression state must contain an event history');
   }
-  const state = progressionEngine.replay(progression.definition, stateInput.events);
+  const state = progressionEngine.replay(progression.definition, parsedState.data.events);
   if (!isDeepStrictEqual(stateInput, state)) {
     throw new Error('progression state contradicts its event history');
   }
@@ -327,30 +311,29 @@ function restorePayload(payload: unknown, progressionInput: unknown,
   const progression = validateProgressionInput(progressionInput);
   const identities = boundIdentities(featureCatalogIdentity, dependencyPolicyIdentity);
   const owner = validateWorkspaceOwner(ownerInput);
-  if (!object(payload) || payload.schemaVersion !== 3 || !object(payload.featureCatalog)
-    || !object(payload.dependencyPolicy)
-    || !object(payload.owner) || !Array.isArray(payload.events)
-    || typeof payload.stateSha256 !== 'string') {
+  const parsedPayload = storedProgressionSchema.safeParse(payload);
+  if (!parsedPayload.success) {
     throw new Error('progression state artifact is incomplete');
   }
-  if (canonicalDefinitionJson(payload.featureCatalog)
+  const stored = parsedPayload.data;
+  if (canonicalDefinitionJson(stored.featureCatalog)
       !== canonicalDefinitionJson(identities.featureCatalog)
-    || canonicalDefinitionJson(payload.dependencyPolicy)
+    || canonicalDefinitionJson(stored.dependencyPolicy)
       !== canonicalDefinitionJson(identities.dependencyPolicy)) {
     throw new Error('progression state artifact has the wrong feature catalog or dependency policy');
   }
-  if (canonicalDefinitionJson(payload.owner) !== canonicalDefinitionJson(owner)) {
+  if (canonicalDefinitionJson(stored.owner) !== canonicalDefinitionJson(owner)) {
     throw new Error('progression state artifact has the wrong campaign attempt owner');
   }
-  const content = { owner: payload.owner, featureCatalog: payload.featureCatalog,
-    dependencyPolicy: payload.dependencyPolicy, events: payload.events,
-    ...(payload.resume === undefined ? {} : { resume: payload.resume }) };
-  if (sha256(canonicalDefinitionJson(content)) !== payload.stateSha256) {
+  const content = { owner: stored.owner, featureCatalog: stored.featureCatalog,
+    dependencyPolicy: stored.dependencyPolicy, events: stored.events,
+    ...(stored.resume === undefined ? {} : { resume: stored.resume }) };
+  if (sha256(canonicalDefinitionJson(content)) !== stored.stateSha256) {
     throw new Error('progression state identity does not match its contents');
   }
-  const state = progressionEngine.replay(progression.definition, payload.events);
-  return { state, stateSha256: payload.stateSha256,
-    resume: payload.resume === undefined ? null : structuredClone(payload.resume) };
+  const state = progressionEngine.replay(progression.definition, stored.events);
+  return { state, stateSha256: stored.stateSha256,
+    resume: stored.resume === undefined ? null : structuredClone(stored.resume) };
 }
 
 export function writeProgressionState(path: string, { progression, featureCatalogIdentity,

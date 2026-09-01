@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { z } from 'zod';
 
 import { compilePromotionFile, compileRecipeFile } from './composition-compiler.js';
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.js';
@@ -178,62 +179,68 @@ export interface BundledRecipeRelease extends RecipeRelease {
 
 type UnknownRecord = Record<string, unknown>;
 
+const recipeReleaseSchema = z.looseObject({
+  recipeReleaseSchemaVersion: z.number(),
+  id: z.string(),
+  version: z.string(),
+  state: z.string(),
+  title: z.string(),
+  track: z.string(),
+  meaningSha256: z.string(),
+  executionSha256: z.string(),
+  contentSha256: z.string(),
+  sourceManifestSha256: z.string(),
+  capabilities: z.array(z.unknown()),
+  checkCatalog: z.array(z.unknown()),
+  sourceManifest: z.array(z.unknown()),
+  scoring: z.looseObject({}),
+  components: z.looseObject({ fixture: z.looseObject({}), packs: z.array(z.unknown()) }),
+  task: z.looseObject({ requirements: z.array(z.unknown()), contracts: z.array(z.unknown()) }),
+});
+const gradeRecipeReleaseSchema = z.looseObject({
+  selection: z.looseObject({}),
+  executionId: z.string(),
+  checks: z.array(z.unknown()),
+  contentSha256: z.string(),
+});
+
 function record(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function recipeFixturePath(value: unknown, source: string): string {
-  if (!record(value) || !record(value.fixture) || typeof value.fixture.path !== 'string') {
+  const parsed = z.looseObject({ fixture: z.looseObject({ path: z.string() }) }).safeParse(value);
+  if (!parsed.success) {
     throw new Error(`recipe ${source} has no fixture path`);
   }
-  return value.fixture.path;
+  return parsed.data.fixture.path;
 }
 
 function assertRecipeRelease(value: unknown): asserts value is RecipeRelease {
-  if (!record(value)
-    || typeof value.recipeReleaseSchemaVersion !== 'number'
-    || typeof value.id !== 'string'
-    || typeof value.version !== 'string'
-    || typeof value.state !== 'string'
-    || typeof value.title !== 'string'
-    || typeof value.track !== 'string'
-    || typeof value.meaningSha256 !== 'string'
-    || typeof value.executionSha256 !== 'string'
-    || typeof value.contentSha256 !== 'string'
-    || typeof value.sourceManifestSha256 !== 'string'
-    || !Array.isArray(value.capabilities)
-    || !Array.isArray(value.checkCatalog)
-    || !Array.isArray(value.sourceManifest)
-    || !record(value.scoring)
-    || !record(value.components)
-    || !record(value.components.fixture)
-    || !Array.isArray(value.components.packs)
-    || !record(value.task)
-    || !Array.isArray(value.task.requirements)
-    || !Array.isArray(value.task.contracts)) {
+  if (!recipeReleaseSchema.safeParse(value).success) {
     throw new Error('compiled recipe release is not valid');
   }
 }
 
 function assertRecipeGradeRelease(value: unknown): asserts value is RecipeGradeRelease {
-  if (!record(value) || !record(value.selection) || typeof value.executionId !== 'string'
-    || !Array.isArray(value.checks) || typeof value.contentSha256 !== 'string') {
+  if (!gradeRecipeReleaseSchema.safeParse(value).success) {
     throw new Error('compiled grade recipe release is not valid');
   }
 }
 
 function assertBundledRecipeRelease(value: unknown): asserts value is BundledRecipeRelease {
-  if (!record(value) || !record(value.selection)) {
+  if (!z.looseObject({ selection: z.looseObject({}) }).safeParse(value).success) {
     throw new Error('bundled recipe release has no selection');
   }
   assertRecipeRelease(value);
 }
 
 function sortedTrackActions(value: unknown): Array<UnknownRecord & { id: string }> {
-  if (!Array.isArray(value) || value.some(action => !record(action) || typeof action.id !== 'string')) {
+  const parsed = z.array(z.looseObject({ id: z.string() })).safeParse(value);
+  if (!parsed.success) {
     throw new Error('track manifest actions must have string ids');
   }
-  return value.sort((left, right) => left.id.localeCompare(right.id));
+  return parsed.data.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
+import { z } from 'zod';
 
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -13,6 +14,7 @@ import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { RequestedScope } from './condition-compiler.js';
 import { campaignChildPath as contained } from './campaign-path.js';
 import { campaignExecutionEnvironment, campaignSlotEnvironment } from './campaign-runtime.js';
+import { formatZodError } from '../zod-error.js';
 
 const SMOKE_REUSE_MS = 15 * 60_000;
 type UnknownRecord = Record<string, unknown>;
@@ -121,25 +123,43 @@ export type CampaignAdmissionSmokeReuse =
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
-function validCheck(value: unknown): value is CampaignAdmissionCheck {
-  return object(value)
-    && typeof value.id === 'string'
-    && (value.status === 'pass' || value.status === 'warn' || value.status === 'fail')
-    && typeof value.summary === 'string';
-}
+const admissionCheckSchema = z.looseObject({
+  id: z.string(),
+  status: z.enum(['pass', 'warn', 'fail']),
+  summary: z.string(),
+});
+const admissionReportSchema = z.looseObject({
+  schemaVersion: z.literal(1),
+  ok: z.boolean(),
+  request: z.looseObject({
+    agentAdapter: z.string(),
+    runIndex: z.number(),
+    backends: z.array(z.string()),
+    image: z.unknown(),
+  }),
+  checks: z.array(admissionCheckSchema),
+  summary: z.looseObject({ passed: z.number(), failed: z.number(), warnings: z.number() }),
+});
+const campaignAdmissionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  campaignId: z.string(),
+  campaignSha256: z.string(),
+  createdAt: z.iso.datetime(),
+  ok: z.boolean(),
+  runtime: z.unknown(),
+  agents: z.unknown(),
+  conditions: z.unknown(),
+  reports: z.array(admissionReportSchema),
+});
 
 function validReport(value: unknown): value is CampaignAdmissionReport {
-  if (!object(value) || value.schemaVersion !== 1 || typeof value.ok !== 'boolean'
-    || !object(value.request) || typeof value.request.agentAdapter !== 'string'
-    || typeof value.request.runIndex !== 'number' || !Array.isArray(value.request.backends)
-    || value.request.backends.some(backend => typeof backend !== 'string')
-    || !Array.isArray(value.checks)
-    || !value.checks.every(validCheck) || !object(value.summary)) return false;
-  const checks = value.checks;
-  return value.summary.passed === checks.filter(check => check.status === 'pass').length
-    && value.summary.failed === checks.filter(check => check.status === 'fail').length
-    && value.summary.warnings === checks.filter(check => check.status === 'warn').length
-    && value.ok === !checks.some(check => check.status === 'fail');
+  const parsed = admissionReportSchema.safeParse(value);
+  if (!parsed.success) return false;
+  const { checks, summary } = parsed.data;
+  return summary.passed === checks.filter(check => check.status === 'pass').length
+    && summary.failed === checks.filter(check => check.status === 'fail').length
+    && summary.warnings === checks.filter(check => check.status === 'warn').length
+    && parsed.data.ok === !checks.some(check => check.status === 'fail');
 }
 
 export function validateCampaignAdmission(
@@ -147,44 +167,33 @@ export function validateCampaignAdmission(
   plan: CampaignAdmissionPlan,
   directory: string,
 ): CampaignAdmission {
-  if (!object(input)) {
-    throw new Error('campaign admission payload must be an object');
-  }
-  const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
-    'ok', 'runtime', 'agents', 'conditions', 'reports']);
-  for (const key of Object.keys(input)) {
-    if (!fields.has(key)) throw new Error(`campaign admission.${key} is unknown`);
-  }
-  if (input.schemaVersion !== 1 || input.campaignId !== plan.id
-    || input.campaignSha256 !== plan.contentSha256
-    || typeof input.createdAt !== 'string' || Number.isNaN(Date.parse(input.createdAt))
-    || typeof input.ok !== 'boolean') {
+  const parsed = campaignAdmissionSchema.safeParse(input);
+  if (!parsed.success) throw new Error(formatZodError(parsed.error, 'campaign admission'));
+  const admission = parsed.data;
+  if (admission.campaignId !== plan.id || admission.campaignSha256 !== plan.contentSha256) {
     throw new Error('campaign admission identity or metadata is invalid');
   }
-  if (canonicalDefinitionJson(input.runtime) !== canonicalDefinitionJson(plan.definition.runtime)) {
+  if (canonicalDefinitionJson(admission.runtime) !== canonicalDefinitionJson(plan.definition.runtime)) {
     throw new Error('campaign admission runtime does not match the compiled plan');
   }
   const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
     identity: agent.identity }));
-  if (canonicalDefinitionJson(input.agents) !== canonicalDefinitionJson(expectedAgents)) {
+  if (canonicalDefinitionJson(admission.agents) !== canonicalDefinitionJson(expectedAgents)) {
     throw new Error('campaign admission agents do not match the compiled plan');
   }
-  if (canonicalDefinitionJson(input.conditions) !== canonicalDefinitionJson(plan.conditions)) {
+  if (canonicalDefinitionJson(admission.conditions) !== canonicalDefinitionJson(plan.conditions)) {
     throw new Error('campaign admission conditions do not match the compiled plan');
   }
-  if (!Array.isArray(input.reports)) throw new Error('campaign admission reports must be an array');
   const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
-  if (input.reports.length !== adapters.length * plan.summary.parallelism) {
+  if (admission.reports.length !== adapters.length * plan.summary.parallelism) {
     throw new Error('campaign admission reports are incomplete');
   }
   const expectedBackends = plan.stacks.map(stack => stack.id);
   const expectedResultsDir = resolve(directory);
   for (const adapter of adapters) {
     for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
-      const matches = input.reports.filter((report): report is UnknownRecord & {
-        request: UnknownRecord & { agentAdapter: string; runIndex: number };
-      } => object(report) && object(report.request)
-        && report.request.agentAdapter === adapter && report.request.runIndex === runIndex);
+      const matches = admission.reports.filter(report => report.request.agentAdapter === adapter
+        && report.request.runIndex === runIndex);
       if (matches.length !== 1) {
         throw new Error(`campaign admission must contain one ${adapter} report for run slot ${runIndex}`);
       }
@@ -209,10 +218,10 @@ export function validateCampaignAdmission(
       }
     }
   }
-  if (input.ok !== input.reports.every(report => report.ok)) {
+  if (admission.ok !== admission.reports.every(report => report.ok)) {
     throw new Error('campaign admission verdict does not match its reports');
   }
-  return structuredClone(input) as CampaignAdmission;
+  return admission as CampaignAdmission;
 }
 
 export function readCampaignAdmission(

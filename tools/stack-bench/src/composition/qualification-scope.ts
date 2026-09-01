@@ -1,14 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
+import { z } from 'zod';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.js';
 import { hashFiles, sha256 } from '../evidence/provenance.js';
 import { stackAdapterVersion } from '../stacks/stack-identities.js';
+import { formatZodError } from '../zod-error.js';
 
 export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 2;
 
 export type QualificationKind = 'reference' | 'mutation' | 'null';
-type UnknownRecord = Record<string, unknown>;
 
 interface QualificationCheck {
   stableKey: string;
@@ -68,8 +69,23 @@ export interface QualificationScopeInput {
 }
 
 const KINDS = new Set<QualificationKind>(['reference', 'mutation', 'null']);
-const qualificationKind = (value: string): value is QualificationKind =>
-  value === 'reference' || value === 'mutation' || value === 'null';
+const DIGEST = /^[a-f0-9]{64}$/;
+const qualificationScopeSchema = z.strictObject({
+  schemaVersion: z.literal(QUALIFICATION_SCOPE_SCHEMA_VERSION),
+  kind: z.enum(['reference', 'mutation', 'null']),
+  executableSha256: z.string().regex(DIGEST),
+  recipe: z.strictObject({
+    id: z.string().min(1), version: z.string().min(1), contentSha256: z.string().regex(DIGEST),
+  }),
+  checksSha256: z.string().regex(DIGEST),
+  stack: z.strictObject({
+    id: z.string().min(1),
+    version: z.string().min(1),
+    reference: z.strictObject({ id: z.string().min(1), sourceSha256: z.string().regex(DIGEST) }),
+  }).nullable(),
+  mutationSha256: z.string().regex(DIGEST).nullable(),
+  sha256: z.string().regex(DIGEST),
+});
 const KIND_ENTRYPOINTS: Readonly<Record<QualificationKind, readonly string[]>> = Object.freeze({
   reference: ['commands/bench.ts', 'src/references/reference-live.ts'],
   mutation: ['commands/bench.ts', 'src/references/reference-live.ts', 'grader/mutation-test.ts'],
@@ -113,9 +129,6 @@ const RUNTIME_INPUTS = Object.freeze([
 function fail(message: string): never {
   throw new Error(`qualification scope: ${message}`);
 }
-
-const record = (value: unknown): value is UnknownRecord =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 function resolveLocalImport(from: string, specifier: string, root: string): string {
   const base = resolve(dirname(from), specifier);
@@ -260,46 +273,17 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
 
 function assertQualificationScopeIdentity(value: unknown, at: string):
   asserts value is QualificationScopeIdentity {
-  if (!record(value)) fail(`${at} must be an object`);
-  const allowed = new Set(['schemaVersion', 'kind', 'executableSha256', 'recipe', 'checksSha256',
-    'stack', 'mutationSha256', 'sha256']);
-  for (const key of Object.keys(value)) if (!allowed.has(key)) fail(`${at}.${key} is unknown`);
-  if (value.schemaVersion !== QUALIFICATION_SCOPE_SCHEMA_VERSION) fail(`${at}.schemaVersion is unsupported`);
-  if (typeof value.kind !== 'string' || !qualificationKind(value.kind)) {
-    fail(`${at}.kind is invalid`);
-  }
-  const digest = /^[a-f0-9]{64}$/;
-  for (const field of ['executableSha256', 'checksSha256', 'sha256']) {
-    const candidate = value[field];
-    if (typeof candidate !== 'string' || !digest.test(candidate)) fail(`${at}.${field} is invalid`);
-  }
-  function exactFields(object: unknown, fields: ReadonlySet<string>, nestedAt: string):
-    asserts object is UnknownRecord {
-    if (!record(object)) fail(`${nestedAt} is invalid`);
-    for (const key of Object.keys(object)) if (!fields.has(key)) fail(`${nestedAt}.${key} is unknown`);
-  }
-  exactFields(value.recipe, new Set(['id', 'version', 'contentSha256']), `${at}.recipe`);
-  if (typeof value.recipe.id !== 'string' || !value.recipe.id
-    || typeof value.recipe.version !== 'string' || !value.recipe.version
-    || typeof value.recipe.contentSha256 !== 'string'
-    || !digest.test(value.recipe.contentSha256)) fail(`${at}.recipe is invalid`);
-  if (value.kind === 'null') {
-    if (value.stack !== null || value.mutationSha256 !== null) fail(`${at} has invalid null scope`);
+  const parsed = qualificationScopeSchema.safeParse(value);
+  if (!parsed.success) fail(formatZodError(parsed.error, at));
+  const scope = parsed.data;
+  if (scope.kind === 'null') {
+    if (scope.stack !== null || scope.mutationSha256 !== null) fail(`${at} has invalid null scope`);
   } else {
-    exactFields(value.stack, new Set(['id', 'version', 'reference']), `${at}.stack`);
-    exactFields(value.stack.reference, new Set(['id', 'sourceSha256']), `${at}.stack.reference`);
-    if (typeof value.stack.id !== 'string' || !value.stack.id
-      || typeof value.stack.version !== 'string' || !value.stack.version
-      || typeof value.stack.reference.id !== 'string'
-      || !value.stack.reference.id || typeof value.stack.reference.sourceSha256 !== 'string'
-      || !digest.test(value.stack.reference.sourceSha256)) {
-      fail(`${at}.stack is invalid`);
-    }
-    if (value.kind === 'mutation' ? typeof value.mutationSha256 !== 'string'
-      || !digest.test(value.mutationSha256)
-      : value.mutationSha256 !== null) fail(`${at}.mutationSha256 is invalid`);
+    if (!scope.stack) fail(`${at}.stack is invalid`);
+    if (scope.kind === 'mutation' ? scope.mutationSha256 === null
+      : scope.mutationSha256 !== null) fail(`${at}.mutationSha256 is invalid`);
   }
-  const { sha256: claimed, ...document } = value;
+  const { sha256: claimed, ...document } = scope;
   if (sha256(canonicalDefinitionJson(canonicalizeDefinition(document))) !== claimed) {
     fail(`${at}.sha256 does not match its fields`);
   }
