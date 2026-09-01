@@ -35,19 +35,19 @@ interface CandidateCase {
 const cases: CandidateCase[] = [
   {
     backend: 'mongodb',
-    sourceSha256: 'e183f9581446ed52c36d422e79298f933eb57b973591f5473da687008161428e',
+    sourceSha256: '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5',
     manifest: 'mongodb-ecommerce-2.0.1.json',
     lastUnitMutation: 'last-unit-allows-negative-stock',
   },
   {
     backend: 'postgres',
-    sourceSha256: '2c6d23e255d1ca930dd9fd8af1290dcfe0207cc0a7c9feefd9ec40889b0520bf',
+    sourceSha256: 'd780194a3c96825b1804a3a73e4fa85d5334d7a7f0f473e5988a1fb83979917a',
     manifest: 'postgres-ecommerce-2.0.1.json',
     lastUnitMutation: 'oversell-no-row-lock',
   },
   {
     backend: 'spacetime',
-    sourceSha256: '66ebf11ff476e23909ec7f972e509eb89844c42ba70ad91b6051d5078dd2e101',
+    sourceSha256: '4479e84b4e1c69136f32f574faae4381497e3e89194d7e01a7a8374acc8dd26c',
     manifest: 'spacetime-ecommerce-2.0.1.json',
     lastUnitMutation: 'purchase-does-not-reserve-stock-last-unit',
   },

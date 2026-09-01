@@ -295,11 +295,11 @@ async function main(): Promise<void> {
     }
     throw new Error('unsupported reference adapter');
   }, () => {
+    restoreReferenceSourceIdentity(source.fixture, args.app);
     for (const command of codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)) {
       runSync('sharing reference workspace', 'docker', ['exec', containerName, ...command],
         { encoding: 'utf8', stdio: 'pipe' });
     }
-    return restoreReferenceSourceIdentity(source.fixture, args.app);
   });
 
   phase('deployment complete');

@@ -21,9 +21,9 @@ const SCENARIO = join(ROOT, SCENARIO_RELATIVE);
 const registry = loadReferenceRegistry();
 
 const cases: ReadonlyArray<readonly [backend: string, fixtureSha256: string]> = [
-  ['mongodb', 'e183f9581446ed52c36d422e79298f933eb57b973591f5473da687008161428e'],
-  ['postgres', '2c6d23e255d1ca930dd9fd8af1290dcfe0207cc0a7c9feefd9ec40889b0520bf'],
-  ['spacetime', '66ebf11ff476e23909ec7f972e509eb89844c42ba70ad91b6051d5078dd2e101'],
+  ['mongodb', '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5'],
+  ['postgres', 'd780194a3c96825b1804a3a73e4fa85d5334d7a7f0f473e5988a1fb83979917a'],
+  ['spacetime', '4479e84b4e1c69136f32f574faae4381497e3e89194d7e01a7a8374acc8dd26c'],
 ];
 
 interface ReferenceSourceArguments extends ReferenceFixtureSelector {

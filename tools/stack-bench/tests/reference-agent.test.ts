@@ -191,7 +191,7 @@ test('the candidate L1 2.5 release uses the shared reference fixture', () => {
     const seeded = prepareReferenceSource(args);
     assert.equal(seeded.fixture.id, 'ecommerce-reference-mongodb');
     assert.equal(seeded.sourceSha256,
-      'e183f9581446ed52c36d422e79298f933eb57b973591f5473da687008161428e');
+      '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5');
     const client = readFileSync(join(args.app, 'client', 'src', 'App.tsx'), 'utf8');
     for (const attribute of ['data-buy-input=', 'data-cart-input=', 'data-restock-input=']) {
       assert.match(client, new RegExp(attribute));
@@ -204,9 +204,9 @@ test('the cumulative L2 fixture source prepares the exact seven action inputs fo
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-shared-'));
   const registry = loadReferenceRegistry();
   const expected = {
-    mongodb: 'e183f9581446ed52c36d422e79298f933eb57b973591f5473da687008161428e',
-    postgres: '2c6d23e255d1ca930dd9fd8af1290dcfe0207cc0a7c9feefd9ec40889b0520bf',
-    spacetime: '66ebf11ff476e23909ec7f972e509eb89844c42ba70ad91b6051d5078dd2e101',
+    mongodb: '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5',
+    postgres: 'd780194a3c96825b1804a3a73e4fa85d5334d7a7f0f473e5988a1fb83979917a',
+    spacetime: '4479e84b4e1c69136f32f574faae4381497e3e89194d7e01a7a8374acc8dd26c',
   };
   try {
     for (const [backend, sourceSha256] of Object.entries(expected)) {

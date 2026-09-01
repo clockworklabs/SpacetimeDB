@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "active",
-  "fixtureSha256": "e183f9581446ed52c36d422e79298f933eb57b973591f5473da687008161428e",
+  "fixtureSha256": "40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
