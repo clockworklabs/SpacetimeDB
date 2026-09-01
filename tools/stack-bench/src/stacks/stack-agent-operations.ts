@@ -1,8 +1,10 @@
-import { join, resolve } from 'node:path';
-import { CODING_CONTAINER_AGENT, CODING_CONTAINER_DEPENDENCY_READY_FILE,
+import { Buffer } from 'node:buffer';
+import { join } from 'node:path';
+import { CODING_CONTAINER_DEPENDENCY_READY_FILE,
   CODING_CONTAINER_RELEASE_DEPS_ROOT, CODING_CONTAINER_SPACETIME_CLI,
   CODING_CONTAINER_SPACETIME_PACKAGE, CODING_CONTAINER_SPACETIME_STANDALONE }
   from '../runtime/coding-container-policy.js';
+import { DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
 import { databaseContainerName } from './database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from './hosted-database-identity.js';
 
@@ -33,6 +35,30 @@ export interface BuildContainerPlan {
   init: string;
   readyFile: string | null;
   readyDescription: string | null;
+}
+
+const SPACETIME_CLI_BINARY = '/deps/.spacetimedb-cli';
+const SPACETIME_CLI_HOME = '/deps/.spacetime-owner';
+
+function spacetimeCliSetup(serverUri: URL): string {
+  const uri = serverUri.toString().replace(/\/$/, '');
+  const wrapper = `#!/bin/sh
+case " $* " in
+  *" publish "*" --anonymous "*|*" publish "*" --no-config "*|*" dev "*" --anonymous "*|*" dev "*" --no-config "*)
+    echo "SpacetimeDB publish and dev must use the run identity" >&2
+    exit 64
+    ;;
+esac
+exec env HOME=${SPACETIME_CLI_HOME} ${SPACETIME_CLI_BINARY} "$@"
+`;
+  const encodedWrapper = Buffer.from(wrapper).toString('base64');
+  return `mkdir -p ${SPACETIME_CLI_HOME}; `
+    + `identity=$(curl -fsS -X POST ${uri}/v1/identity); `
+    + `token=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).token)' "$identity"); `
+    + `HOME=${SPACETIME_CLI_HOME} ${SPACETIME_CLI_BINARY} login --token "$token" >/dev/null; `
+    + `chmod -R a-w ${SPACETIME_CLI_HOME}; `
+    + `printf %s ${encodedWrapper} | base64 -d > ${CODING_CONTAINER_SPACETIME_CLI}; `
+    + `chmod 755 ${CODING_CONTAINER_SPACETIME_CLI}; `;
 }
 
 export function postgresConnectionUrl({ dbPort, database, hostUrl }:
@@ -81,22 +107,22 @@ export function emptySetupMetadata(_input?: StackSetupMetadataInput): StackSetup
   return { spacetime: null, spacetimeBindings: null, database: null };
 }
 
-export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
+export function spacetimeBuildContainerPlan({ repo, env = {} }: {
   repo: string; appDir: string; env?: NodeJS.ProcessEnv;
 }): BuildContainerPlan {
   const bindings = join(repo, 'crates', 'bindings-typescript');
   const cli = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-cli');
   const standalone = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-standalone');
-  const config = resolve(appDir, '..', '.spacetime-cli-config');
+  const serverUri = loopbackHttpUri(env.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
+  if (env.STACK_BENCH_APPLIANCE !== '1') serverUri.hostname = 'host.docker.internal';
+  const cliSetup = spacetimeCliSetup(serverUri);
   const releaseVolume = env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
   if (releaseVolume) {
     return {
       networkNamespace: env.STACK_BENCH_APPLIANCE === '1' ? 'host' : null,
       requiredPaths: [],
-      ensureDirectories: [config],
+      ensureDirectories: [],
       mounts: [
-        { kind: 'bind', source: config,
-          target: `${CODING_CONTAINER_AGENT.home}/.config/spacetime`, readOnly: false },
         { kind: 'volume', source: releaseVolume,
           target: CODING_CONTAINER_RELEASE_DEPS_ROOT, readOnly: true },
       ],
@@ -106,9 +132,10 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
         + `test -x ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-cli; `
         + `test -x ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-standalone; `
         + `test -f ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb.tgz; `
-        + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-cli ${CODING_CONTAINER_SPACETIME_CLI}; `
+        + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-cli ${SPACETIME_CLI_BINARY}; `
         + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb-standalone ${CODING_CONTAINER_SPACETIME_STANDALONE}; `
         + `ln -s ${CODING_CONTAINER_RELEASE_DEPS_ROOT}/spacetimedb.tgz ${CODING_CONTAINER_SPACETIME_PACKAGE}; `
+        + cliSetup
         + `touch ${CODING_CONTAINER_DEPENDENCY_READY_FILE}; exec sleep infinity`,
       readyFile: CODING_CONTAINER_DEPENDENCY_READY_FILE,
       readyDescription: 'SpacetimeDB SDK staging',
@@ -117,12 +144,10 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
   return {
     networkNamespace: null,
     requiredPaths: [bindings, cli, standalone],
-    ensureDirectories: [config],
+    ensureDirectories: [],
     mounts: [
-      { kind: 'bind', source: config,
-        target: `${CODING_CONTAINER_AGENT.home}/.config/spacetime`, readOnly: false },
       { kind: 'bind', source: bindings, target: '/deps-src/bindings-typescript', readOnly: true },
-      { kind: 'bind', source: cli, target: CODING_CONTAINER_SPACETIME_CLI, readOnly: true },
+      { kind: 'bind', source: cli, target: SPACETIME_CLI_BINARY, readOnly: true },
       { kind: 'bind', source: standalone,
         target: CODING_CONTAINER_SPACETIME_STANDALONE, readOnly: true },
     ],
@@ -135,6 +160,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }: {
       + 'npm install --omit=dev --ignore-scripts --no-audit --no-fund; '
       + 'pack_name=$(npm pack --pack-destination /deps --silent); '
       + `mv "/deps/$pack_name" ${CODING_CONTAINER_SPACETIME_PACKAGE}; `
+      + cliSetup
       + `touch ${CODING_CONTAINER_DEPENDENCY_READY_FILE}; exec sleep infinity`,
     readyFile: CODING_CONTAINER_DEPENDENCY_READY_FILE,
     readyDescription: 'SpacetimeDB SDK staging',

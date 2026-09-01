@@ -75,7 +75,7 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
     levels: [1],
     selection: { packs: [], checks: [] },
     stacks: [
-      { id: 'spacetime', adapterVersion: '1.2.0' },
+      { id: 'spacetime', adapterVersion: '1.3.0' },
       { id: 'postgres', adapterVersion: '1.4.0' },
       { id: 'mongodb', adapterVersion: '1.3.0' },
     ],

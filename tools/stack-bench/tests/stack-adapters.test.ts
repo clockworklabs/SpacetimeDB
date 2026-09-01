@@ -12,7 +12,7 @@ test('built-in adapters preserve the port grid and lease identity', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
   assert.equal(stackAdapterVersion('postgres'), '1.4.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.3.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.2.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.3.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.1.0');
   assert.throws(() => stackAdapterVersion('unknown'), /unknown stack adapter/);
 
@@ -43,9 +43,11 @@ test('build plans expose only artifacts owned by the selected stack', () => {
   const appDir = resolve('bench', 'run', 'app');
   const repo = resolve('repo');
   const spacetime = STACK_ADAPTER_REGISTRY.get('spacetime').buildContainer.plan({ repo, appDir });
-  assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/spacetimedb-cli'), true);
-  assert.equal(spacetime.mounts.some(mount =>
-    mount.target === '/home/developer/.config/spacetime'), true);
+  assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/.spacetimedb-cli'), true);
+  const encodedWrapper = spacetime.init.match(/printf %s ([A-Za-z0-9+/=]+) \| base64/)?.[1];
+  assert(encodedWrapper);
+  assert.match(Buffer.from(encodedWrapper, 'base64').toString(),
+    /SpacetimeDB publish and dev must use the run identity/);
   assert.equal(spacetime.readyFile, '/deps/.ready');
   assert.equal(spacetime.networkNamespace, null);
 
@@ -57,8 +59,6 @@ test('build plans expose only artifacts owned by the selected stack', () => {
   });
   assert.deepEqual(appliance.requiredPaths, []);
   assert.deepEqual(appliance.mounts, [
-    { kind: 'bind', source: resolve(appDir, '..', '.spacetime-cli-config'),
-      target: '/home/developer/.config/spacetime', readOnly: false },
     { kind: 'volume', source: 'stack-bench-release-deps', target: '/release-deps', readOnly: true },
   ]);
   assert.doesNotMatch(appliance.init, /npm install|npm pack/);

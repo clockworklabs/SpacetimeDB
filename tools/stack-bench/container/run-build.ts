@@ -70,7 +70,7 @@ const REQUIRED_TMPFS = Object.freeze({
   '/tmp': 'rw,nosuid,nodev,mode=1777',
   [AGENT_HOME]: `rw,nosuid,nodev,uid=${AGENT_UID},gid=${AGENT_GID},mode=0700`,
   [`${AGENT_HOME}/.claude`]: `rw,nosuid,nodev,uid=${AGENT_UID},gid=${AGENT_GID},mode=0700`,
-  '/deps': 'rw,nosuid,nodev,mode=0755',
+  '/deps': 'rw,exec,nosuid,nodev,mode=0755',
   [CONTROL_DIR]: 'rw,nosuid,nodev,mode=0700',
 });
 

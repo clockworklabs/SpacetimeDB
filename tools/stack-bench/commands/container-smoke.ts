@@ -105,7 +105,7 @@ async function main() {
       [RUN_BUILD, '--app', app, '--backend', 'spacetime', '--image', IMAGE, '--prepare-only'],
       { encoding: 'utf8', stdio: 'pipe', maxBuffer: 16 * 1024 * 1024,
         env: { ...process.env, STACK_BENCH_LEASE: leasePath,
-          STACK_BENCH_LEASE_TOKEN: lease.ownershipToken } });
+          STACK_BENCH_LEASE_TOKEN: lease.ownershipToken, STACK_BENCH_STDB_URI: uri } });
     const identity = parsePreparedContainerIdentity(prepared);
     if (identity.containerName !== containerName) {
       throw new Error(`prepared unexpected container ${identity.containerName}`);
@@ -121,13 +121,17 @@ async function main() {
 
     cpSync(FIXTURE, join(app, 'spacetimedb'), { recursive: true });
     const agentExec = ['exec', ...codingContainerAgentExecOptions()];
+    const cliAccess = execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
+      `stat -c '%a %U %G' ${CODING_CONTAINER_SPACETIME_CLI}; test -x ${CODING_CONTAINER_SPACETIME_CLI}`],
+    { encoding: 'utf8', stdio: 'pipe' });
+    if (!/^755 root root/m.test(cliAccess)) throw new Error(`unexpected CLI access: ${cliAccess.trim()}`);
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       `umask 000; cd ${CODING_CONTAINER_APP_ROOT}/spacetimedb && npm install --no-audit --no-fund`],
     { stdio: 'pipe' });
 
     const startedDev = spawn('docker', [...agentExec, '-i', containerName, 'sh', '-c',
       `umask 000; cd ${CODING_CONTAINER_APP_ROOT}/spacetimedb && ${CODING_CONTAINER_SPACETIME_CLI} dev ${module} `
-      + `--no-config --project-path ${CODING_CONTAINER_APP_ROOT}/spacetimedb --module-path . `
+      + `--project-path ${CODING_CONTAINER_APP_ROOT}/spacetimedb --module-path . `
       + '--server-only --skip-generate '
       + `-s ${containerReachableSpacetimeUri({ resources: { serverUri: uri,
         buildContainer: lease.resources.buildContainer } }, identity.networkMode)} -y`],
@@ -165,14 +169,14 @@ async function main() {
     // rather than merely proving that the first anonymous-looking publish ran.
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       'for process in /proc/[0-9]*; do '
-      + 'test "$(cat "$process/comm" 2>/dev/null)" = spacetimedb-cli '
+      + 'test "$(readlink "$process/exe" 2>/dev/null)" = /deps/.spacetimedb-cli '
       + '&& kill -TERM "${process##*/}" || true; done'], { stdio: 'pipe' });
     await waitFor(() => startedDev.exitCode !== null, 15_000, 'spacetime dev to stop before reset publish');
     const targetUri = containerReachableSpacetimeUri({ resources: { serverUri: uri,
       buildContainer: lease.resources.buildContainer } }, identity.networkMode);
     execFileSync('docker', [...agentExec, containerName, 'sh', '-c',
       `umask 000; cd ${CODING_CONTAINER_APP_ROOT}/spacetimedb && ${CODING_CONTAINER_SPACETIME_CLI} publish ${module} `
-      + `--no-config --module-path . -s ${targetUri} --delete-data -y`],
+      + `--module-path . -s ${targetUri} --delete-data -y`],
     { stdio: 'pipe', timeout: 240_000 });
     const afterReset = execFileSync(CLI, ['sql', module, 'SELECT * FROM smoke_item', '-s', uri],
       { encoding: 'utf8', stdio: 'pipe' });
