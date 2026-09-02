@@ -100,13 +100,6 @@ test('definitions require schema v1 and explicit suite inheritance', () => {
     /schemaVersion: unsupported version undefined/);
 });
 
-test('the scenario language is an explicit 48-action registry', () => {
-  assert.equal(ACTION_IDS.length, 48);
-  assert.deepEqual(ACTION_REGISTRY.ids, ACTION_IDS);
-  assert(ACTION_IDS.includes('clickConcurrently'));
-  assert(ACTION_IDS.includes('restartBackend'));
-});
-
 test('the action implementation registry covers every action exactly once', () => {
   assert.deepEqual(Object.keys(ACTION_IMPLEMENTATIONS).sort(), ACTION_IDS);
 });

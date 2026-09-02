@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { checkCompositions } from '../commands/check-composition.js';
 import {
   compileFixtureDefinition,
   compilePackDefinition,
@@ -14,41 +13,6 @@ import {
   compileRecipeFile,
   resolveTaskFragment,
 } from '../src/composition/composition-compiler.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
-
-const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
-const recipePath = (name: string): string => join(ECOMMERCE, 'composition', 'recipes', name);
-
-test('the ecommerce composition tree validates as one source set', () => {
-  const [report] = checkCompositions({ trackName: 'ecommerce' });
-  assert.equal(report?.track, 'ecommerce');
-  assert(report && report.packs > 0 && report.recipes === 5 && report.checks > 0);
-});
-
-test('current ecommerce sequential recipes retain their exact base', () => {
-  const l1 = compileRecipeFile(recipePath('sequential-l1-2.5.0.json'), { trackRoot: ECOMMERCE });
-  const l2 = compileRecipeFile(recipePath('sequential-l2-1.6.0.json'), { trackRoot: ECOMMERCE });
-  const l3 = compileRecipeFile(recipePath('sequential-l3-1.0.0.json'), { trackRoot: ECOMMERCE });
-  assert.deepEqual({ id: l1.recipe.id, version: l1.recipe.version, state: l1.recipe.state },
-    { id: 'ecommerce.sequential-l1', version: '2.5.0', state: 'draft' });
-  assert.deepEqual([l1.recipe.sequence?.level, l2.recipe.sequence?.level,
-    l3.recipe.sequence?.level], [1, 2, 3]);
-  assert.equal(l2.recipe.task.baseRecipe?.id, l1.recipe.id);
-  assert.equal(l2.recipe.task.baseRecipe?.version, l1.recipe.version);
-  assert.equal(l3.recipe.task.baseRecipe?.id, l2.recipe.id);
-  assert.equal(l3.recipe.task.baseRecipe?.version, l2.recipe.version);
-  assert(l2.checks.length > l1.checks.length);
-  assert(l3.checks.length > l2.checks.length);
-  const promotions = compilePromotionFile(join(ECOMMERCE, 'composition', 'promotions.json'), {
-    trackRoot: ECOMMERCE,
-  });
-  assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
-    ['L1', 'candidate', 'ecommerce.sequential-l1'],
-    ['L2', 'candidate', 'ecommerce.sequential-l2'],
-    ['L3', 'candidate', 'ecommerce.sequential-l3'],
-  ]);
-});
-
 test('source contracts reject unknown fields, malformed versions, duplicate fixture data, and invalid aliases', () => {
   const pack = {
     schemaVersion: 1, kind: 'test-pack', id: 'example.pack', version: '1.0.0', state: 'draft',

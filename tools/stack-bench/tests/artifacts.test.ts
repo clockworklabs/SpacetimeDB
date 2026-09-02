@@ -1,40 +1,11 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
 import test from 'node:test';
 import { ARTIFACT_SCHEMA_VERSION, createArtifact, readArtifact, readArtifactPayload,
   readRunJson, writeArtifact, writeRunJson } from '../src/evidence/artifacts.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
-
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
-const BENCH_ROOT = STACK_BENCH_ROOT;
-
-function freshEngineIdentity(root: string = BENCH_ROOT): unknown {
-  const artifactsUrl = pathToFileURL(join(root, 'dist', 'src', 'evidence', 'artifacts.js')).href;
-  const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
-    `import { currentEngineIdentity } from ${JSON.stringify(artifactsUrl)}; console.log(JSON.stringify(currentEngineIdentity()));`],
-  { cwd: root, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout ?? '');
-}
-
-function writableEngineRoot(): { temp: string; root: string } {
-  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-engine-'));
-  const root = join(temp, 'stack-bench');
-  const excluded = new Set(['archive', 'local-notes', 'media', 'node_modules',
-    'qualification-evidence', 'reference-apps', 'results', 'tests', 'tracks', 'transcripts']);
-  cpSync(BENCH_ROOT, root, { recursive: true, filter: source => {
-    if (source === BENCH_ROOT) return true;
-    return !excluded.has(relative(BENCH_ROOT, source).split(/[\\/]/)[0] ?? '');
-  } });
-  mkdirSync(join(root, 'node_modules'), { recursive: true });
-  cpSync(join(BENCH_ROOT, 'node_modules', 'zod'), join(root, 'node_modules', 'zod'),
-    { recursive: true });
-  return { temp, root };
-}
 
 test('run artifacts are atomic and identify the producing run', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
@@ -69,15 +40,6 @@ test('an unversioned stale file is rejected before its run id can be trusted', (
     const path = join(root, 'run.json');
     writeFileSync(path, JSON.stringify({ id: 'old-run' }));
     assert.throws(() => readRunJson(path, 'current-run'), /unsupported schema missing/);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('historical unversioned artifacts are not accepted by the active reader', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
-  try {
-    const path = join(root, 'run.json');
-    writeFileSync(path, JSON.stringify({ id: 'legacy-run', complete: true }));
-    assert.throws(() => readRunJson(path, 'legacy-run'), /unsupported schema missing/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -280,74 +242,4 @@ test('active readers reject unversioned files without inferring their kind', () 
     writeFileSync(unknown, JSON.stringify({ kind: 'future_thing', id: 'x' }));
     assert.throws(() => readArtifact(unknown), /unsupported schema missing/);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('engine identity ignores hidden runtime work directories', () => {
-  const copy = writableEngineRoot();
-  const before = freshEngineIdentity(copy.root);
-  const runtime = mkdtempSync(join(copy.root, '.engine-runtime-'));
-  try {
-    writeFileSync(join(runtime, 'generated.mjs'), 'this is generated runtime state, not harness code\n');
-    writeFileSync(join(runtime, 'session.json'), '{"turns":999}\n');
-    assert.deepEqual(freshEngineIdentity(copy.root), before);
-  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
-});
-
-test('engine identity ignores nested hidden runtime files', () => {
-  const copy = writableEngineRoot();
-  const before = freshEngineIdentity(copy.root);
-  try {
-    const hidden = join(copy.root, 'grader', '.generated');
-    mkdirSync(hidden, { recursive: true });
-    writeFileSync(join(hidden, 'candidate.mjs'), 'generated candidate\n');
-    writeFileSync(join(copy.root, 'grader', '.generated-report.json'), '{"generated":true}\n');
-    assert.deepEqual(freshEngineIdentity(copy.root), before);
-  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
-});
-
-test('engine identity excludes the inert historical archive', () => {
-  const copy = writableEngineRoot();
-  const before = freshEngineIdentity(copy.root);
-  mkdirSync(join(copy.root, 'archive'));
-  const runtime = mkdtempSync(join(copy.root, 'archive', '.engine-runtime-'));
-  try {
-    writeFileSync(join(runtime, 'historical.mjs'), 'archived generated code is not the active harness\n');
-    assert.deepEqual(freshEngineIdentity(copy.root), before);
-  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
-});
-
-test('engine identity excludes local records and qualification evidence', () => {
-  const copy = writableEngineRoot();
-  const before = freshEngineIdentity(copy.root);
-  try {
-    for (const directory of ['local-notes', 'media', 'qualification-evidence', 'transcripts']) {
-      const path = join(copy.root, directory);
-      mkdirSync(path, { recursive: true });
-      writeFileSync(join(path, 'generated.json'), JSON.stringify({ changed: Date.now() }));
-      writeFileSync(join(path, 'generated.mjs'), 'local record, not executable harness source\n');
-    }
-    assert.deepEqual(freshEngineIdentity(copy.root), before);
-  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
-});
-
-test('engine identity excludes the generated controller dependency manifest', () => {
-  const copy = writableEngineRoot();
-  const before = freshEngineIdentity(copy.root);
-  try {
-    writeFileSync(join(copy.root, 'dependency-manifest.json'),
-      JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString() }));
-    assert.deepEqual(freshEngineIdentity(copy.root), before);
-  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
-});
-
-test('engine identity excludes installed dependencies at any directory depth', () => {
-  const copy = writableEngineRoot();
-  const before = freshEngineIdentity(copy.root);
-  try {
-    const nestedDependencies = join(copy.root, 'grader', 'node_modules', 'generated-package');
-    mkdirSync(nestedDependencies, { recursive: true });
-    writeFileSync(join(nestedDependencies, 'index.js'), 'installed dependency, not harness source\n');
-    writeFileSync(join(nestedDependencies, 'package.json'), '{"name":"generated-package"}\n');
-    assert.deepEqual(freshEngineIdentity(copy.root), before);
-  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });

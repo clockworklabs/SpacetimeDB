@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -38,46 +36,6 @@ function record(value: unknown, description: string): Record<string, unknown> {
     throw new Error(`${description} must be an object`);
   }
   return value;
-}
-
-function stringField(value: Record<string, unknown>, field: string, description: string): string {
-  const result = value[field];
-  if (typeof result !== 'string') throw new Error(`${description}.${field} must be a string`);
-  return result;
-}
-
-function stringArrayField(value: Record<string, unknown>, field: string, description: string): string[] {
-  const result = value[field];
-  if (!Array.isArray(result) || result.some(item => typeof item !== 'string')) {
-    throw new Error(`${description}.${field} must be a string array`);
-  }
-  return result;
-}
-
-function booleanField(value: Record<string, unknown>, field: string, description: string): boolean {
-  const result = value[field];
-  if (typeof result !== 'boolean') throw new Error(`${description}.${field} must be a boolean`);
-  return result;
-}
-
-function numberField(value: Record<string, unknown>, field: string, description: string): number {
-  const result = value[field];
-  if (typeof result !== 'number') throw new Error(`${description}.${field} must be a number`);
-  return result;
-}
-
-function stringRecordField(value: Record<string, unknown>, field: string, description: string): Record<string, string> {
-  const result = record(value[field], `${description}.${field}`);
-  const strings: Record<string, string> = {};
-  for (const [key, item] of Object.entries(result)) {
-    if (typeof item !== 'string') throw new Error(`${description}.${field} must contain only strings`);
-    strings[key] = item;
-  }
-  return strings;
-}
-
-function parseJsonRecord(text: string, description: string): Record<string, unknown> {
-  return record(JSON.parse(text), description);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -532,94 +490,4 @@ test('missing-container recovery clears only the authenticated lease target', ()
     assert.equal(recovered.lease.resources.buildContainer, null);
     assert.equal(readBackendLease(path).resources.buildContainer, null);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-test('Docker replaces a stopped leased build container and preserves its app mount', {
-  skip: process.env.STACK_BENCH_DOCKER_RECOVERY_SMOKE !== '1',
-}, () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-recovery-docker-'));
-  const app = join(root, 'app');
-  const leasePath = join(root, 'lease.json');
-  const containerName = `stack-bench-${required(root.split(/[\\/]/).at(-1), 'temporary directory name')}`;
-  const docker = (args: readonly string[], options: Omit<SpawnSyncOptionsWithStringEncoding, 'encoding'> = {}) => spawnSync('docker', args,
-    { encoding: 'utf8', timeout: 120_000, ...options });
-  try {
-    mkdirSync(app);
-    const databaseContainer = docker(['inspect', '--format', '{{.Id}}', 'stack-bench-mongodb']);
-    assert.equal(databaseContainer.status, 0, databaseContainer.stderr);
-    const lease = createBackendLease({ runId: 'recover-build-docker-smoke', backend: 'mongodb',
-      track: 'ecommerce', runIndex: 91, database: 'app_ecom_run91',
-      container: { name: 'stack-bench-mongodb', id: required(databaseContainer.stdout,
-        'database container identifier').trim() } });
-    lease.state = 'active';
-    writeBackendLease(leasePath, lease);
-    const env = { ...process.env, STACK_BENCH_LEASE: leasePath,
-      STACK_BENCH_LEASE_TOKEN: lease.ownershipToken };
-    const baseArgs = ['tools/stack-bench/dist/container/run-build.js', '--prepare-only',
-      '--app', app, '--backend', 'mongodb', '--image',
-      process.env.STACK_BENCH_BUILD_IMAGE
-        ?? 'stack-bench-build@sha256:b404d26138ea16be07a672389981e7e8b89d7740570f9baa3ddd4d0e96336c10'];
-    const first = spawnSync(process.execPath, baseArgs,
-      { encoding: 'utf8', env, timeout: 180_000 });
-    assert.equal(first.status, 0, first.stderr);
-    const firstResult = parseJsonRecord(required(first.stdout, 'first build result'), 'first build result');
-    const firstContainerName = stringField(firstResult, 'containerName', 'first build result');
-    const firstIdentity = stringField(firstResult, 'identity', 'first build result');
-    const hostConfigResult = docker(['inspect', '--format', '{{json .HostConfig}}',
-      firstContainerName]);
-    assert.equal(hostConfigResult.status, 0, hostConfigResult.stderr);
-    const hostConfig = parseJsonRecord(required(hostConfigResult.stdout, 'container host configuration'),
-      'container host configuration');
-    assert.equal(booleanField(hostConfig, 'ReadonlyRootfs', 'container host configuration'), true);
-    assert.deepEqual([...stringArrayField(hostConfig, 'CapAdd', 'container host configuration')].sort(),
-      ['CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FOWNER', 'CAP_KILL', 'CAP_SETGID', 'CAP_SETUID']);
-    assert.equal(stringArrayField(hostConfig, 'CapDrop', 'container host configuration')
-      .map(value => value.replace(/^CAP_/, '')).includes('ALL'), true);
-    assert.equal(stringArrayField(hostConfig, 'SecurityOpt', 'container host configuration')
-      .map(value => value.replace(/:true$/, '')).includes('no-new-privileges'), true);
-    assert.equal(numberField(hostConfig, 'PidsLimit', 'container host configuration'), 512);
-    const tmpfs = stringRecordField(hostConfig, 'Tmpfs', 'container host configuration');
-    assert.equal(tmpfs['/tmp'], 'rw,nosuid,nodev,mode=1777');
-    assert.equal(tmpfs['/home/developer'],
-      'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
-    assert.equal(tmpfs['/home/developer/.claude'],
-      'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
-    assert.equal(tmpfs['/deps'], 'rw,nosuid,nodev,mode=0755');
-    assert.equal(tmpfs['/run/application'], 'rw,nosuid,nodev,mode=0700');
-    assert.equal(tmpfs['/root'], undefined);
-    const agentCaps = docker(['exec', '--user', '10001:10001', firstContainerName,
-      'sh', '-c', 'grep "^CapEff:" /proc/self/status']);
-    assert.equal(agentCaps.status, 0, agentCaps.stderr);
-    assert.match(agentCaps.stdout, /CapEff:\s+0+\s*$/);
-    const sessionState = docker(['exec', '--user', '10001:10001', firstContainerName,
-      'sh', '-c', 'test -w /home/developer/.claude/session-env']);
-    assert.equal(sessionState.status, 0, sessionState.stderr);
-    const dropped = docker(['exec', firstContainerName, '/usr/bin/setpriv',
-      '--reuid=10001', '--regid=10001', '--init-groups', 'id', '-u']);
-    assert.equal(dropped.status, 0, dropped.stderr);
-    assert.equal(dropped.stdout.trim(), '10001');
-    writeFileSync(join(app, 'preserved.txt'), 'preserved\n');
-    const stopped = docker(['stop', firstContainerName]);
-    assert.equal(stopped.status, 0, stopped.stderr);
-    const second = spawnSync(process.execPath,
-      [required(baseArgs[0], 'build entry point'), '--recover-stopped-container', ...baseArgs.slice(1)],
-      { encoding: 'utf8', env, timeout: 180_000 });
-    assert.equal(second.status, 0, second.stderr);
-    const secondResult = parseJsonRecord(required(second.stdout, 'second build result'), 'second build result');
-    const secondContainerName = stringField(secondResult, 'containerName', 'second build result');
-    const secondIdentity = stringField(secondResult, 'identity', 'second build result');
-    assert.notEqual(firstIdentity, secondIdentity);
-    const mounted = docker(['exec', secondContainerName, 'cat', '/app/preserved.txt']);
-    assert.equal(mounted.status, 0, mounted.stderr);
-    assert.equal(mounted.stdout.trim(), 'preserved');
-    const reused = spawnSync(process.execPath, baseArgs,
-      { encoding: 'utf8', env, timeout: 180_000 });
-    assert.equal(reused.status, 0, reused.stderr);
-    assert.equal(stringField(parseJsonRecord(required(reused.stdout, 'reused build result'),
-      'reused build result'), 'identity', 'reused build result'), secondIdentity);
-  } finally {
-    const exact = docker(['inspect', '--format', '{{.Id}}', containerName]);
-    if (exact.status === 0 && exact.stdout.trim()) docker(['rm', '-f', exact.stdout.trim()]);
-    rmSync(root, { recursive: true, force: true });
-  }
 });

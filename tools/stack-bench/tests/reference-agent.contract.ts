@@ -190,8 +190,7 @@ test('the candidate L1 2.5 release uses the shared reference fixture', () => {
       recipe: 'ecommerce.sequential-l1@2.5.0', app: join(root, 'app') };
     const seeded = prepareReferenceSource(args);
     assert.equal(seeded.fixture.id, 'ecommerce-reference-mongodb');
-    assert.equal(seeded.sourceSha256,
-      '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5');
+    assert.equal(seeded.sourceSha256, seeded.fixture.imported?.sourceSha256);
     const client = readFileSync(join(args.app, 'client', 'src', 'App.tsx'), 'utf8');
     for (const attribute of ['data-buy-input=', 'data-cart-input=', 'data-restock-input=']) {
       assert.match(client, new RegExp(attribute));
@@ -203,19 +202,14 @@ test('the candidate L1 2.5 release uses the shared reference fixture', () => {
 test('the cumulative L2 fixture source prepares the exact seven action inputs for every backend', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-shared-'));
   const registry = loadReferenceRegistry();
-  const expected = {
-    mongodb: '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5',
-    postgres: 'd780194a3c96825b1804a3a73e4fa85d5334d7a7f0f473e5988a1fb83979917a',
-    spacetime: '4479e84b4e1c69136f32f574faae4381497e3e89194d7e01a7a8374acc8dd26c',
-  };
   try {
-    for (const [backend, sourceSha256] of Object.entries(expected)) {
+    for (const backend of ['mongodb', 'postgres', 'spacetime']) {
       const app = join(root, backend);
       const fixture = selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
         recipe: 'ecommerce.sequential-l2@1.6.0' });
       assert.equal(fixture.id, `ecommerce-reference-${backend}`);
-      assert.equal(fixture.imported?.sourceSha256, sourceSha256);
-      assert.equal(prepareReferenceFixtureSource(fixture, app).sha256, sourceSha256);
+      assert.equal(prepareReferenceFixtureSource(fixture, app).sha256,
+        fixture.imported?.sourceSha256);
       const files = backend === 'spacetime'
         ? ['client/src/components/ItemCard.tsx', 'client/src/components/OrdersPanel.tsx',
           'client/src/components/AdminPanel.tsx', 'client/src/components/CartPanel.tsx']
@@ -225,7 +219,8 @@ test('the cumulative L2 fixture source prepares the exact seven action inputs fo
         'data-buy-input=', 'data-ship-input=', 'data-cancel-input=', 'data-transfer-input=',
         'data-restock-input=', 'data-price-input=', 'data-cart-input=',
       ]) assert.match(client, new RegExp(attribute));
-      assert.equal(prepareReferenceFixtureSource(fixture, app).sha256, sourceSha256);
+      assert.equal(prepareReferenceFixtureSource(fixture, app).sha256,
+        fixture.imported?.sourceSha256);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -102,6 +102,11 @@ const productBrief = join(APPLIANCE_ROOT,
   'campaign.product-brief-reference.json');
 const dependencyModelFree = resolve(STACK_BENCH_ROOT, 'tests', 'fixtures',
   'dependency-model-free-campaign.json');
+const compiledExample = compileCampaignFile(example);
+const compiledDependencyModelFree = compileCampaignFile(dependencyModelFree);
+const examplePlan = (): CompiledCampaignPlan => structuredClone(compiledExample);
+const dependencyExamplePlan = (): CompiledCampaignPlan =>
+  structuredClone(compiledDependencyModelFree);
 
 // A valid run artifact carries the exact planned selection for each level; the
 // modular example selection made this mandatory for level-1 fixtures.
@@ -165,7 +170,7 @@ test('dependency completion does not hide a whole-app failure', () => {
 });
 
 test('attempt argv is derived completely from the compiled campaign plan', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0,
     '/campaign/plan.json');
   assert.deepEqual(argv.slice(1), [
@@ -223,7 +228,7 @@ test('campaign retry budget subtracts every prior execution cost', () => {
 });
 
 test('dependency attempts pass separate catalog and policy identities with no level range', () => {
-  const dependencyPlan = compileCampaignFile(dependencyModelFree);
+  const dependencyPlan = dependencyExamplePlan();
   const attempt = dependencyPlan.attempts[0];
   const argv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0,
     '/campaign/plan.json');
@@ -247,7 +252,7 @@ test('dependency attempts pass separate catalog and policy identities with no le
 });
 
 test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   const attempt = plan.attempts.find(item => item.levels.length > 1) ?? { ...plan.attempts[0], levels: [1, 2] };
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
   const stack = plan.stacks.find(item => item.id === attempt.stack)!;
@@ -300,7 +305,7 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
 });
 
 test('campaign validation accepts a zero-level interrupted run without invented cost totals', () => {
-  const compiled = compileCampaignFile(example);
+  const compiled = examplePlan();
   const plan = { ...compiled, definition: { ...compiled.definition,
     budgets: { ...compiled.definition.budgets, maxCostUsdPerAttempt: 100 } } };
   const attempt = { ...plan.attempts[0], levels: [1, 2] };
@@ -325,7 +330,7 @@ test('campaign validation accepts a zero-level interrupted run without invented 
 });
 
 test('paid campaign validation requires cost evidence unless the agent failed', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   const attempt = plan.attempts.find(item => item.levels.length > 1)
     ?? { ...plan.attempts[0], levels: [1, 2] };
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
@@ -374,7 +379,7 @@ test('paid campaign validation requires cost evidence unless the agent failed', 
 test('dependency validation keeps a conclusive grade when its repair session is interrupted', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-interrupted-'));
   try {
-    const plan = compileCampaignFile(dependencyModelFree);
+    const plan = dependencyExamplePlan();
     const attempt = plan.attempts[0];
     const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
     const stack = plan.stacks.find(item => item.id === attempt.stack)!;
@@ -424,7 +429,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
 test('dependency validation requires a matching pre-grade failure attempt', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-pre-grade-failure-'));
   try {
-    const plan = compileCampaignFile(dependencyModelFree);
+    const plan = dependencyExamplePlan();
     const attempt = plan.attempts[0];
     const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
     const stack = plan.stacks.find(item => item.id === attempt.stack)!;
@@ -500,7 +505,7 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
 });
 
 test('campaign validation accepts an explicit repeated-findings pause but rejects an unexplained stop', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   const attempt = plan.attempts[0];
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
   const stack = plan.stacks.find(item => item.id === attempt.stack)!;
@@ -556,7 +561,7 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
 });
 
 test('campaign validation requires complete first-build and final measurement coverage', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   const attempt = plan.attempts[0];
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
   const stack = plan.stacks.find(item => item.id === attempt.stack)!;
@@ -623,7 +628,7 @@ test('campaign validation requires complete first-build and final measurement co
 });
 
 test('campaign validation binds observed-only evidence to its exact first-build selection', () => {
-  const compiled = compileCampaignFile(example);
+  const compiled = examplePlan();
   const sourceSha256 = 'a'.repeat(64);
   const selectionSha256 = 'b'.repeat(64);
   const scoredChecks = [
@@ -792,7 +797,7 @@ test('only explicit transient provider failures receive campaign retry authority
 test('model-free campaign execution checkpoints an authorized retry and every completed attempt', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-'));
   const calls: ExecuteCall[] = [];
-  const planned = compileCampaignFile(example);
+  const planned = examplePlan();
   try {
     const state = await executeCampaign(example, root, { mode: 'model-free-trial',
       admit: () => ({ id: 'admission-1', payload: { ok: true } }),
@@ -1062,7 +1067,7 @@ test('interrupted parallel work advances only after every exact cleanup is prove
 test('reconciliation accepts the clean public proof left by authenticated recovery', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-recovered-'));
   try {
-    const plan = compileCampaignFile(example);
+    const plan = examplePlan();
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
     const admission = runCampaignAdmission(plan, root, {
@@ -1113,7 +1118,7 @@ test('reconciliation accepts the clean public proof left by authenticated recove
 test('campaign admission covers every stack once per distinct agent adapter and writes typed evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-admission-'));
   try {
-    const plan = compileCampaignFile(example);
+    const plan = examplePlan();
     const calls: PreflightRequest[] = [];
     const admission = runCampaignAdmission(plan, root, {
       env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',

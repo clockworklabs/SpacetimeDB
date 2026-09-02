@@ -8,7 +8,8 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact,
   writeRunJson } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import type { CampaignAttemptPlan } from '../src/campaigns/campaign-compiler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan }
+  from '../src/campaigns/campaign-compiler.js';
 import { buildCampaignReport, generateCampaignReport,
   campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../src/campaigns/campaign-report.js';
@@ -23,6 +24,8 @@ import { claimNextAttempt, createCampaignState, finishCampaignExecution,
 const projectRoot = STACK_BENCH_ROOT;
 const example = join(projectRoot, 'appliance', 'campaign.example.json');
 const created = '2026-08-12T00:00:00.000Z';
+const compiledExample = compileCampaignFile(example);
+const examplePlan = (): CompiledCampaignPlan => structuredClone(compiledExample);
 
 function run(id: string, attempt: { id: string; condition?: CampaignAttemptPlan['condition'] },
   { score = 8, max = 10, first = 5, cost = 2, durationSec = 30 }:
@@ -67,7 +70,7 @@ function writeFakePackageEvidence(output: string, level: NonNullable<BenchmarkRu
 }
 
 test('report read model keeps invalid evidence separate and computes declared dispersion', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   let state = createCampaignState(plan, { now: created });
   const runs = new Map();
   const admissionId = 'admission-1';
@@ -249,7 +252,7 @@ test('observed-only first-build behavior remains separate from scored results an
 });
 
 test('campaign HTML labels observed-only behavior as zero-score first-build observations', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   let state = createCampaignState(plan, { now: created });
   const claimed = claimNextAttempt(state, { now: created, admissionId: 'probe-admission' });
   assert.ok(claimed.claim);
@@ -302,7 +305,7 @@ test('campaign HTML states the build and evaluation setup in plain language', ()
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-report-'));
   try {
-    const plan = compileCampaignFile(example);
+    const plan = examplePlan();
     const initialized = initializeCampaignDirectory(plan, root, { now: created });
     const admission = runCampaignAdmission(plan, root, {
       env: {}, now: created, uuid: () => 'report',
@@ -358,7 +361,7 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
 });
 
 test('HTML escapes caller-controlled labels and reports exact scope', () => {
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   const state = createCampaignState(plan, { now: created });
   const report = buildCampaignReport({ ...plan, title: '<script>' }, state, () => {
     throw new Error('a pending campaign must not read run evidence');
@@ -383,7 +386,7 @@ test('human reports format normalized usage and elapsed time for people', () => 
   assert.equal(formatDurationMs(4_893_000), '1h 21m 33s');
   assert.equal(formatDurationMs(125_000), '2m 5s');
   assert.equal(formatDurationMs(9_000), '9s');
-  const plan = compileCampaignFile(example);
+  const plan = examplePlan();
   let state = createCampaignState(plan, { now: created });
   const claimed = claimNextAttempt(state, { now: created, admissionId: 'admission-format' });
   assert.ok(claimed.claim);

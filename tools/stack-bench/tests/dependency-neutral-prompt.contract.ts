@@ -23,9 +23,9 @@ type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;
 const EXPECTED = {
   1: {
-    mongodb: ['7a68ac41fbf9685904d0de480a889f7b192ffedb697040ac1d256f1a4d48dba7', 5702],
-    postgres: ['5444d9d6640f2a350e876ff799b4d7daa42150a375173ddfc6f4f98e8c381c66', 5744],
-    spacetime: ['a96468d334a7c9143a1f99a4fe610c28023c63004e8718e6a4afa7da4b935003', 9012],
+    mongodb: ['3286fc03b776d9e1c477c0fe26bd8bbb0af5b367309642a87466fa83331a145e', 5716],
+    postgres: ['016e234b3fb034cdc7514527250f71dde6aed29c552f62732807c79c328b6eed', 5758],
+    spacetime: ['4ea6ce3f81eeec22b39e1efe0f9a4484651c7285bd4ad6cdc88ab2ee93099279', 9026],
   },
   2: {
     mongodb: ['ebdd8c887d41274d86fdc65440a123ff35746f7d27b7f9f8ac5b6244eee7eee1', 6661],

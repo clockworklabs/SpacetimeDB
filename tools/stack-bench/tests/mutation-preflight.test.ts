@@ -122,7 +122,7 @@ test('a mismatched mutation fixture fails before acquiring any backend resource'
     assert.throws(() => execFileSync(process.execPath, [compiledEntrypoint('commands', 'bench.js'),
       '--backend', 'mongodb', '--track', 'ecommerce', '--levels', '1',
       '--run-index', '19', '--app', root, '--out', output,
-      '--mutations', manifest, '--no-media'],
+      '--agent-adapter', 'deterministic', '--mutations', manifest, '--no-media'],
     { encoding: 'utf8', stdio: 'pipe', timeout: 30_000 }), /targets fixture/);
     assert.equal(existsSync(lock), false);
   } finally {

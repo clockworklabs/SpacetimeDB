@@ -11,7 +11,7 @@ const prescribed = { id: 'prescribed', version: '1.0.0',
   guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.0.0' };
 const requested = { track: 'example', levels: [{ level: 1,
   recipe: { id: 'example.l1', version: '1.0.0', contentSha256: 'a'.repeat(64),
-    meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64), state: 'qualified' },
+    meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64) },
   selection: { sha256: 'd'.repeat(64), completeness: 'full', scoredPoints: 10,
     taskPacks: ['example.core'], requested: { packs: [], checks: [] } },
   task: { sha256: 'e'.repeat(64), requirementSha256: 'f'.repeat(64),

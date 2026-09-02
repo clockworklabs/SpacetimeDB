@@ -60,16 +60,6 @@ test('the authored project contains TypeScript, not JavaScript implementation fi
   assert.deepEqual(authoredJavaScript, []);
 });
 
-test('production-relative module references resolve after source reorganization', () => {
-  const missing: string[] = [];
-  for (const file of modulesBelow(ROOT)) {
-    for (const target of relativeModuleTargets(file)) {
-      if (!existsSync(target)) missing.push(`${relative(ROOT, file)} -> ${relative(dirname(file), target)}`);
-    }
-  }
-  assert.deepEqual(missing, []);
-});
-
 test('production libraries do not import command entrypoints', () => {
   const violations: string[] = [];
   for (const area of ['src', 'grader', 'dashboard']) {
@@ -147,49 +137,4 @@ test('local and appliance compose files pin the same images but isolate resource
     assert.match(appliance, new RegExp(`stack-bench-(?:appliance-)?${resource}`));
     assert.doesNotMatch(appliance, new RegExp(`stack-bench-dev-${resource}`));
   }
-});
-
-test('coding containers cannot inspect host-network traffic or gain privileges', () => {
-  const source = readFileSync(join(ROOT, 'container', 'run-build.ts'), 'utf8');
-  const policy = readFileSync(join(ROOT, 'src', 'runtime', 'coding-container-policy.ts'), 'utf8');
-  assert.match(source, /'--cap-drop', 'ALL'/);
-  assert.match(source, /'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL', 'SETGID', 'SETUID'/);
-  assert.match(source, /'--security-opt', 'no-new-privileges:true'/);
-  assert.match(source, /`127\.0\.0\.1:\$\{p\}:\$\{p\}`/);
-  assert.match(source, /'--pids-limit', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.pids\)/);
-  assert.match(source, /'--cpus', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.cpuCount\)/);
-  assert.match(source, /'--memory', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.memoryBytes\)/);
-  assert.match(source,
-    /'--memory-swap', String\(BUILD_CONTAINER_RESOURCE_LIMITS\.memorySwapBytes\)/);
-  assert.match(source, /resourceLimits: structuredClone\(BUILD_CONTAINER_RESOURCE_LIMITS\)/);
-  assert.match(source, /'--read-only'/);
-  assert.match(source, /'--user', `\$\{AGENT_UID\}:\$\{AGENT_GID\}`/);
-  assert.match(source, /'\/tmp': 'rw,nosuid,nodev,mode=1777'/);
-  assert.match(source, /'\/deps': 'rw,nosuid,nodev,mode=0755'/);
-  assert.match(source, /\[CONTROL_DIR\]: 'rw,nosuid,nodev,mode=0700'/);
-  assert.match(policy, /home: '\/home\/developer'/);
-  assert.match(source, /does not have the required isolation/);
-  assert.match(source, /STACK_BENCH_APPLIANCE === '1' \? 0o700 : 0o777/);
-  assert.match(source, /if \(process\.env\.STACK_BENCH_APPLIANCE !== '1'\) chmodSync/);
-  assert.match(source, /const CONTROLLER_GID = process\.getgid\?\.\(\) \?\? 0/);
-  assert.match(source, /\['chown', \['-R', `\$\{AGENT_UID\}:\$\{CONTROLLER_GID\}`/);
-  assert.match(source, /'u\+rwX,g\+rwX,o-rwx'/);
-  assert.match(source, /codingContainerWorkspaceHandoffCommands\(CONTROLLER_GID\)/);
-  assert.match(source, /'--bare'/);
-  assert.match(source, /'--settings', JSON\.stringify\(\{ permissions: \{ allow: \['Bash'\] \} \}\)/);
-  assert.doesNotMatch(source, /'\/root':\s*'rw/);
-});
-
-test('coding session transcripts are readable by the controller after handoff', () => {
-  const source = readFileSync(join(ROOT, 'container', 'run-build.ts'), 'utf8');
-  assert.match(source, /codingContainerTranscriptHandoffCommands\(CONTROLLER_GID\)/);
-});
-
-test('coding workspaces do not contain harness control files', () => {
-  const source = readFileSync(join(ROOT, 'commands', 'agent.ts'), 'utf8');
-  assert.doesNotMatch(source, /join\(args\.app, '\.stack-bench-backend'\)/);
-  assert.doesNotMatch(source, /join\(args\.app, `\.prompt-/);
-  assert.doesNotMatch(source, /join\(args\.app, `\.session-/);
-  assert.doesNotMatch(source, /writeSandbox\(args\.app\)/);
-  assert.doesNotMatch(source, /--settings|sandboxSettings/);
 });

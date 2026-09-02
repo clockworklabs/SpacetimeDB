@@ -42,6 +42,10 @@ Run the smallest check that covers the change:
 | Change | Check |
 |---|---|
 | TypeScript | `npm run typecheck` and the focused compiled test |
+| Unit tests | `npm test` |
+| Repository contracts | `npm run test:contracts` |
+| Mutation definitions and anchors | `npm run test:mutation-definitions` |
+| Browser, process, and Docker integration | `npm run test:integration` |
 | Prompt composition | `npm run check:prompts` |
 | Track scenarios | `npm run check:scenarios` |
 | Packs and recipes | `npm run check:composition` |
@@ -54,13 +58,21 @@ stable, run the integrated source gate once:
 ```bash
 npm run lint
 npm run typecheck
-npm test
+npm run test:all
 ```
+
+Use `npm test` while changing code. Run `npm run test:contracts` when tracks,
+prompts, reference applications, repository policies, or campaign definitions
+change. `npm run test:all` runs both tiers after one build. Docker and
+qualification checks remain separate.
+Mutation-definition tests are model-free. Run them when reference source, grading
+checks, or mutation manifests change. They do not run during ordinary unit work.
 
 Documentation-only changes need link and formatting checks, not the harness.
 Run Docker checks only when the changed code affects their boundary. Run
 targeted mutations while developing checks and the complete mutation set only
-for a release candidate.
+for a release candidate. Integration files run sequentially because they can
+own browsers, processes, ports, and Docker resources.
 
 A passing check stays valid until one of its inputs changes. Do not rerun it for
 reassurance. Add a test only when it protects a distinct invariant that an

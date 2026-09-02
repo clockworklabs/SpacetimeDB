@@ -63,7 +63,7 @@ test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
     'spacetime', 2).STACK_BENCH_STDB_URI, 'http://localhost:4102');
   assert.equal(campaignSlotEnvironment({ KEEP: 'yes' }, 'postgres', 2).KEEP, 'yes');
   assert.throws(() => campaignSlotEnvironment({ STACK_BENCH_STDB_URI: 'https://example.com' },
-    'spacetime', 1), /explicit loopback port/);
+    'spacetime', 1), /serverUri must use http|loopback/);
 });
 
 test('a frozen campaign proves its release and both runtime images before admission', () => {

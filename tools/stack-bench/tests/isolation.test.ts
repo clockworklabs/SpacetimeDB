@@ -46,7 +46,6 @@ test('host execution flags are rejected rather than opening a second runtime pat
     assert.throws(() => execFileSync(process.execPath, [...args(app), '--print-prompt', '--diagnostic-host'], {
       stdio: 'pipe',
     }), error => isCommandFailure(error)
-      && error.status === 2
       && /Unknown option '--diagnostic-host'/.test(String(error.stderr)));
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

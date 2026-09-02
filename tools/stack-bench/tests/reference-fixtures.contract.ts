@@ -13,8 +13,8 @@ test('the reference registry binds its current statuses and provenance', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 0);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 0);
   const escaped = structuredClone(registry);
   const escapedFixture = escaped.fixtures[0];
@@ -152,6 +152,7 @@ test('imported fixture inspection requires locks and rejects local or generated 
     writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
     writeFileSync(join(target, 'client', 'package.json'), '{}\n');
     writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'start.sh'), '#!/bin/sh\n');
     writeFileSync(join(target, 'reference.json'), JSON.stringify({ schemaVersion: 1,
       kind: 'node-api', installDirectories: ['server', 'client'],
       server: { directory: 'server' }, client: { directory: 'client' } }));
@@ -163,12 +164,18 @@ test('imported fixture inspection requires locks and rejects local or generated 
     assert.equal(inspectImportedReference(fixture, { root }).ok, true);
 
     mkdirSync(join(target, 'server', 'dist'));
-    writeFileSync(join(target, 'server', 'dist', 'app.js'), 'const local = "D:/Development/private";\n');
+    writeFileSync(join(target, 'server', 'dist', 'app.js'), 'generated\n');
+    writeFileSync(join(target, 'local.ts'), 'const local = "D:/Development/private";\n');
     fixture.imported.sourceSha256 = hashDirectory(target).sha256;
     const result = inspectImportedReference(fixture, { root });
     assert.equal(result.ok, false);
-    assert(result.failures.some(failure => failure.includes('generated directory')));
-    assert(result.failures.some(failure => failure.includes('workstation absolute path')));
+    assert.deepEqual(result.failures,
+      ['reference source contains forbidden generated directory server/dist']);
+
+    rmSync(join(target, 'server', 'dist'), { recursive: true });
+    fixture.imported.sourceSha256 = hashDirectory(target).sha256;
+    assert(inspectImportedReference(fixture, { root }).failures
+      .some(failure => failure.includes('workstation absolute path')));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -184,6 +191,7 @@ test('authored references bind checked-in bytes', () => {
     writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
     writeFileSync(join(target, 'client', 'package.json'), '{}\n');
     writeFileSync(join(target, 'client', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'start.sh'), '#!/bin/sh\n');
     writeFileSync(join(target, 'reference.json'), JSON.stringify({
       schemaVersion: 1, kind: 'node-api', installDirectories: ['server', 'client'],
       server: { directory: 'server' }, client: { directory: 'client' },

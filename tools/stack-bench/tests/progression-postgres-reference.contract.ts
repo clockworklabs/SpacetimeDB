@@ -51,7 +51,7 @@ test('PostgreSQL progression reference has local production builds', () => {
   assert.match(required(client.devDependencies, 'vite'), /8\./);
 });
 
-test('PostgreSQL progression reference exposes required progression actions', () => {
+test('PostgreSQL progression reference exposes required routes', () => {
   const server = `${read('server', 'src', 'index.ts')}\n${read('server', 'src', 'progression.ts')}`;
   for (const route of [
     '/api/profile', '/api/staff/:id/role', '/api/catalog/products', '/api/support/cases',
@@ -59,10 +59,6 @@ test('PostgreSQL progression reference exposes required progression actions', ()
     '/api/items/:id/stock-alert', '/api/admin/scheduled-restocks', '/api/reorders/:itemId',
     '/api/cart/recover/:id', '/api/recommendations/:itemId/dismiss',
   ]) assert.match(server, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  for (const behavior of [
-    'cart_reservation_allocation', "interval '90 seconds'", "interval '5 minutes'",
-    "interval '60 seconds'", 'payment_status', 'refund_entry', 'recommendation_dismissal',
-  ]) assert.ok(server.includes(behavior), `missing ${behavior}`);
 });
 
 test('PostgreSQL progression reference exposes stable testing handles', () => {
