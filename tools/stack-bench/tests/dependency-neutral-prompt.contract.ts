@@ -28,14 +28,14 @@ const EXPECTED = {
     spacetime: ['db9c29339592ad161735928ade2253098878f6ec8d08493277484318b276469b', 26148],
   },
   2: {
-    mongodb: ['588562684df4e900effa65602bc7b80906708fbead4ac8904f52125f8321153d', 7316],
-    postgres: ['4d5dcb07c741c80b8ba3272f014738e2d55f2a7e1f6e2ce2c1fd2d6b62ccc69f', 7358],
-    spacetime: ['70f74c1f2bbb4441385f33abb43b215de85cd1e14a3a210fbaa1600ac680335a', 27533],
+    mongodb: ['b9de74188375ff98b9934b0e1eae526ce8699ce02ad4c3283d3294184ce2c070', 7822],
+    postgres: ['271792b59bebf0655f8b7a7f8ef70faf440d76e1fac5ed74db037eb022290029', 7864],
+    spacetime: ['27441fb258b6c08fc7717cd4090296adf5ef91967851387e64f89f46614861ea', 28056],
   },
   3: {
-    mongodb: ['68084d789ed8af1281f1c22fed52ade3b38c7bba7b588f09e7e116b169dce3b0', 9605],
-    postgres: ['fbe03a34fa1651c82bf73ff1b23c28de650b2d9b59e0c085da1cc25d0de405cb', 9647],
-    spacetime: ['e0210c1fcbedc4ec81a996bb11fc5837b7da90ad41ad2b52871ad1f910035994', 29755],
+    mongodb: ['7a7bd8bd8d7f28b0cce0e9d52df0f5a7df3436aab40400ce3efbcbcc8d63f43e', 9788],
+    postgres: ['63045e86d913f61941ceb9be23ca14c7fcbb7e8c6bad8a847266d346fc35a082', 9830],
+    spacetime: ['7087468472d6d3ade81d5b0251d3d3f7ffa0f88776b7e999fb8f0099022d699d', 29941],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
