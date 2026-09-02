@@ -149,7 +149,7 @@ impl SimulatorIO {
 }
 
 struct SimulatorInner {
-    executor: spin::Mutex<Executor<32, usize>>,
+    executor: spin::Mutex<Executor<usize>>,
     pending: spin::Mutex<Slab<CompletionHandle>>,
     buffers: Arc<spin::Mutex<Slab<ErasedBox>>>,
 }
@@ -157,7 +157,7 @@ struct SimulatorInner {
 impl Default for SimulatorInner {
     fn default() -> Self {
         Self {
-            executor: spin::Mutex::new(Executor::with_capacity(128)),
+            executor: spin::Mutex::new(Executor::new(<_>::default())),
             pending: <_>::default(),
             buffers: <_>::default(),
         }

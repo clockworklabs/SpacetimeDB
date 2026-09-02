@@ -5,7 +5,8 @@ use alloc::{
     collections::{btree_map, BTreeMap, VecDeque},
     vec::Vec,
 };
-use core::result::Result;
+use core::{num::NonZeroUsize, result::Result};
+use slab::Slab;
 
 use crate::{
     io::{ErasedBoxPtr, Statx, SECTOR_SIZE},
@@ -15,9 +16,18 @@ use crate::{
     },
 };
 
+/// Dependency on the previous [Sqe].
+///
+/// A link imposes an ordering constraint: the [Sqe] carrying the link will not
+/// be executed before the preceding one completed. Note that a link is only
+/// meaningful within a batch of SQEs submitted together.
 #[derive(Clone, Copy)]
 pub enum LinkKind {
+    /// If the preceding SQE failed, cancel this SQE with [Error::Cancelled].
+    /// Analogous to `IOSQE_IO_LINK`.
     Soft,
+    /// Run the SQE regardless of the preceding SQE's result.
+    /// Analoguous to `IOSQE_IO_HARDLINK`.
     Hard,
 }
 
@@ -447,6 +457,7 @@ enum InFlightInner {
     Noop,
 }
 
+/*
 pub enum WriteFault {
     /// Misdirect the write to an arbitrary page offset in the file.
     Misdirected { page_offset: usize },
@@ -465,25 +476,86 @@ pub enum WriteFault {
 pub trait FaultInjector {
     fn maybe_write_fault(&self, rng: &Rng, now: Instant, page_offset: usize) -> Option<WriteFault>;
 }
+*/
 
-pub struct Executor<const MAX_INFLIGHT: usize, UserData> {
+/// Completion queue overflow policy.
+///
+/// Note that we do **not** model `IORING_FEAT_NODROP`, because we never want
+/// the application to rely on dynamic memory allocation in the kernel.
+///
+/// The default is to panic, which should prompt the user to adjust queue size
+/// configuration. However, sometimes it may be useful to see how the
+/// application behaves when completions are dropped.
+#[derive(Default)]
+pub enum OnCqOverflow {
+    #[default]
+    Panic,
+    Drop,
+}
+
+pub struct Options {
+    /// Capacity of the submission queue.
+    ///
+    /// This basically limits how many [Sqe]s can be submitted in one batch.
+    /// Should be a power of 2, or is otherwise rounded up to the next power of
+    /// 2.
+    pub capacity: NonZeroUsize,
+    /// Override the completion queue capacity.
+    ///
+    /// By default, the completion queue's capacity is twice the submission
+    /// queue's. This can be insufficient for some workloads, so this setting
+    /// can be used to override the default.
+    ///
+    /// Should be a power of 2, or is otherwise rounder up to the next power of
+    /// two.
+    pub cq_capacity: Option<NonZeroUsize>,
+    /// What to do if the completion queue overflows.
+    pub cq_overflow: OnCqOverflow,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            capacity: NonZeroUsize::new(8).unwrap(),
+            cq_capacity: None,
+            cq_overflow: OnCqOverflow::default(),
+        }
+    }
+}
+
+pub struct Executor<UserData> {
     submissions: VecDeque<Sqe<UserData>>,
     completions: VecDeque<Cqe<UserData>>,
 
-    in_flight: [Option<InFlight<UserData>>; MAX_INFLIGHT],
+    in_flight: Slab<InFlight<UserData>>,
     executing: VecDeque<Operation>,
 
     fstree: BTreeMap<Box<str>, fs::File>,
+
+    cq_overflow: OnCqOverflow,
+    cq_dropped: usize,
 }
 
-impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
-    pub fn with_capacity(capacity: usize) -> Self {
+impl<UserData> Executor<UserData> {
+    pub fn new(
+        Options {
+            capacity,
+            cq_capacity,
+            cq_overflow,
+        }: Options,
+    ) -> Self {
+        let sq_capacity = capacity.get().next_power_of_two();
+        let cq_capacity = cq_capacity
+            .map(|c| c.get().next_power_of_two())
+            .unwrap_or_else(|| 2 * sq_capacity);
         Self {
-            submissions: VecDeque::with_capacity(capacity),
-            completions: VecDeque::with_capacity(capacity),
-            in_flight: core::array::from_fn(|_| None),
+            submissions: VecDeque::with_capacity(sq_capacity),
+            completions: VecDeque::with_capacity(cq_capacity),
+            in_flight: Slab::new(),
             executing: VecDeque::new(),
             fstree: BTreeMap::new(),
+            cq_overflow,
+            cq_dropped: 0,
         }
     }
 
@@ -502,11 +574,20 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
     }
 
     fn complete(&mut self, cqe: Cqe<UserData>) {
-        assert!(
-            self.completions.len() < self.completions.capacity(),
-            "completion queue overflow"
-        );
+        if self.completions.len() == self.completions.capacity() {
+            match self.cq_overflow {
+                OnCqOverflow::Panic => panic!("completion queue overflow"),
+                OnCqOverflow::Drop => {
+                    self.cq_dropped += 1;
+                    return;
+                }
+            }
+        }
         self.completions.push_back(cqe);
+    }
+
+    pub fn dropped_completions(&self) -> usize {
+        self.cq_dropped
     }
 
     pub fn completed(&mut self) -> impl Iterator<Item = Cqe<UserData>> {
@@ -522,12 +603,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
     fn schedule(&mut self) -> bool {
         let mut progress = false;
 
-        // Fill free execution slots.
-        for (id, slot) in self.in_flight.iter_mut().filter(|f| f.is_none()).enumerate() {
-            let Some(sqe) = self.submissions.pop_front() else {
-                break;
-            };
-
+        while let Some(sqe) = self.submissions.pop_front() {
             // If the sqe is linked, pop the whole chain.
             // Links of sqes not submitted in the same batch are ignored.
             let mut successors = VecDeque::new();
@@ -545,10 +621,10 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                     }
                 }
             }
-
-            let (in_flight, ops) = sqe.inner.schedule(id);
+            let slot = self.in_flight.vacant_entry();
+            let (in_flight, ops) = sqe.inner.schedule(slot.key());
             self.executing.extend(ops);
-            slot.replace(InFlight {
+            slot.insert(InFlight {
                 inner: in_flight,
                 blocked: successors,
                 user_data: sqe.user_data,
@@ -580,7 +656,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                                     results,
                                 },
                             ..
-                        } = self.in_flight[sqe].as_mut().expect("invalid sqe id")
+                        } = self.in_flight.get_mut(sqe).expect("invalid sqe id")
                         else {
                             unreachable!("invalid sqe: expected write")
                         };
@@ -604,7 +680,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                                 },
                             blocked,
                             user_data,
-                        } = self.in_flight[sqe].take().expect("invalid sqe id")
+                        } = self.in_flight.remove(sqe)
                         else {
                             unreachable!("invalid sqe: expected write")
                         };
@@ -634,7 +710,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                                     results,
                                 },
                             ..
-                        } = self.in_flight[sqe].as_mut().expect("invalid sqe id")
+                        } = self.in_flight.get_mut(sqe).expect("invalid sqe id")
                         else {
                             unreachable!("invalid sqe: expected read")
                         };
@@ -658,7 +734,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                                 },
                             blocked,
                             user_data,
-                        } = self.in_flight[sqe].take().expect("invlid sqe id")
+                        } = self.in_flight.remove(sqe)
                         else {
                             unreachable!("invalid sqe: expected read")
                         };
@@ -679,7 +755,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                         inner: InFlightInner::Open { sqe: Open { path } },
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected open")
                     };
@@ -694,7 +770,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                         inner: InFlightInner::Create { sqe: Create { path } },
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected create")
                     };
@@ -714,7 +790,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                         inner: InFlightInner::Stat { sqe: Stat { fd } },
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected stat")
                     };
@@ -733,7 +809,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                             },
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected fallocate")
                     };
@@ -750,7 +826,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                         inner: InFlightInner::Fsync { sqe: Fsync { fd: _ } },
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected fsync")
                     };
@@ -770,7 +846,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                             },
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected fdatasync")
                     };
@@ -786,7 +862,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                         inner: InFlightInner::Noop,
                         blocked,
                         user_data,
-                    } = self.in_flight[sqe].take().expect("invalid sqe id")
+                    } = self.in_flight.remove(sqe)
                     else {
                         unreachable!("invalid sqe: expected noop")
                     };
@@ -805,12 +881,7 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
         false
     }
 
-    fn schedule_linked(
-        &mut self,
-        in_flight_slot: SqeId,
-        prev_succeeded: bool,
-        mut blocked: VecDeque<Blocked<UserData>>,
-    ) {
+    fn schedule_linked(&mut self, sqe: SqeId, prev_succeeded: bool, mut blocked: VecDeque<Blocked<UserData>>) {
         if let Some(Blocked {
             link,
             sqe: next,
@@ -830,13 +901,14 @@ impl<const MAX_INFLIGHT: usize, UserData> Executor<MAX_INFLIGHT, UserData> {
                     }
                 }
                 (LinkKind::Soft, true) | (LinkKind::Hard, _) => {
-                    let (inner, ops) = next.schedule(in_flight_slot);
+                    let (inner, ops) = next.schedule(sqe);
                     self.executing.extend(ops);
-                    self.in_flight[in_flight_slot].replace(InFlight {
+                    let slot = self.in_flight.get_mut(sqe).expect("invalid sqe id");
+                    *slot = InFlight {
                         inner,
                         blocked,
                         user_data,
-                    });
+                    };
                 }
             }
         }
