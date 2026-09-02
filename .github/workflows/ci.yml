@@ -738,18 +738,18 @@ jobs:
 
   sdk_tests_native:
     needs: [sdk_test_build]
-    name: SDK Tests (native ${{ matrix.partition }}/4)
+    name: SDK Tests (native ${{ matrix.partition }}/2)
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4]
+        partition: [1, 2]
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 10
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
-      PARTITION_COUNT: 4
+      PARTITION_COUNT: 2
       SDK_TEST_BUILD_ARTIFACT: sdk-test-native-linux
       SDK_TEST_ARCHIVE: sdk-tests-native-nextest.tar.zst
       SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-native.tar.zst
@@ -802,18 +802,18 @@ jobs:
 
   sdk_tests_browser:
     needs: [sdk_test_build]
-    name: SDK Tests (browser ${{ matrix.partition }}/4)
+    name: SDK Tests (browser ${{ matrix.partition }}/2)
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4]
+        partition: [1, 2]
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 10
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
-      PARTITION_COUNT: 4
+      PARTITION_COUNT: 2
       SDK_TEST_BUILD_ARTIFACT: sdk-test-browser-linux
       SDK_TEST_ARCHIVE: sdk-tests-browser-nextest.tar.zst
       SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-browser.tar.zst
@@ -824,11 +824,11 @@ jobs:
   sdk_tests_noop:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
-    name: SDK Tests (${{ matrix.mode }} ${{ matrix.partition }}/4)
+    name: SDK Tests (${{ matrix.mode }} ${{ matrix.partition }}/2)
     strategy:
       matrix:
         mode: [native, browser]
-        partition: [1, 2, 3, 4]
+        partition: [1, 2]
     runs-on: ubuntu-latest
     steps:
       - name: Skip duplicate merge queue SDK test
