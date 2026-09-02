@@ -50,7 +50,7 @@ concurrency:
 jobs:
   prepare_matrix:
     name: Prepare benchmark matrix
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     outputs:
       languages: ${{ steps.matrix.outputs.languages }}
     steps:
@@ -64,7 +64,7 @@ jobs:
   run-benchmarks:
     name: Run benchmarks (${{ matrix.lang }})
     needs: prepare_matrix
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       TARGET_TRIPLE: x86_64-unknown-linux-gnu

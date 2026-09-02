@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   resolvePush:
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     outputs:
       is_pr_merge: ${{ steps.resolve.outputs.is_pr_merge }}
       is_external: ${{ steps.resolve.outputs.is_external }}
@@ -80,7 +80,7 @@ jobs:
 
   discordNotification:
     needs: resolvePush
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: needs.resolvePush.outputs.is_pr_merge == 'true'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -157,7 +157,7 @@ jobs:
     needs:
       - resolvePush
       - discordNotification
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: ${{ always() && (needs.resolvePush.result == 'failure' || needs.discordNotification.result == 'failure') }}
     steps:
       - name: Send failure notification
@@ -172,7 +172,7 @@ jobs:
 
   warnDirectPush:
     needs: resolvePush
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: needs.resolvePush.outputs.is_pr_merge != 'true'
     steps:
       - name: Warn about non-PR push
@@ -197,7 +197,7 @@ jobs:
 
   invokePrivate:
     needs: resolvePush
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: needs.resolvePush.outputs.is_pr_merge == 'true'
     permissions:
       contents: read
