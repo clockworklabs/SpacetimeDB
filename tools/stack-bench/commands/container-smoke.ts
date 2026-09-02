@@ -8,6 +8,7 @@ import { createServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { killTree, pidsOnPort, processIdentity } from '../src/runtime/platform.js';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
@@ -25,8 +26,6 @@ const CLI = process.env.SPACETIME_BIN ?? join(REPO, 'target', 'release',
   process.platform === 'win32' ? 'spacetimedb-cli.exe' : 'spacetimedb-cli');
 const RUN_BUILD = compiledEntrypoint('container', 'run-build.js');
 const FIXTURE = join(ROOT, 'tests', 'fixtures', 'spacetime-module');
-
-const delay = (ms: number): Promise<void> => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 
 interface PreparedContainerIdentity {
   containerName: string;

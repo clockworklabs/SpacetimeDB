@@ -1,7 +1,7 @@
 import { db } from "./db.js";
 import { item, warehouse, stock, account } from "./schema.js";
 import { hashPassword } from "./auth.js";
-import { and, eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 const ITEMS: Array<{ name: string; price: string; east: number; west: number; category: string }> = [
   { name: "Air Purifier", price: "189.00", east: 60, west: 40, category: "Home" },
@@ -41,12 +41,11 @@ export async function seed() {
       await db
         .update(item)
         .set({ category: it.category })
-        .where(and(eq(item.name, it.name), eq(item.category, "")));
+        .where(sql`name = ${it.name} AND category = ''`);
     }
   }
 
-  const existingAdmin = await db.select({ id: account.id }).from(account)
-    .where(eq(account.username, "admin")).limit(1);
+  const existingAdmin = await db.select({ id: account.id }).from(account).where(sql`username = 'admin'`).limit(1);
   if (existingAdmin.length === 0) {
     await db.insert(account).values({
       username: "admin",
@@ -56,8 +55,7 @@ export async function seed() {
     console.log("Seeded admin account");
   }
 
-  const existingStaff = await db.select({ id: account.id }).from(account)
-    .where(eq(account.username, "staff")).limit(1);
+  const existingStaff = await db.select({ id: account.id }).from(account).where(sql`username = 'staff'`).limit(1);
   if (existingStaff.length === 0) {
     await db.insert(account).values({
       username: "staff",
@@ -68,8 +66,7 @@ export async function seed() {
     console.log("Seeded staff account");
   }
 
-  const existingCustomer = await db.select({ id: account.id }).from(account)
-    .where(eq(account.username, "customer")).limit(1);
+  const existingCustomer = await db.select({ id: account.id }).from(account).where(sql`username = 'customer'`).limit(1);
   if (existingCustomer.length === 0) {
     await db.insert(account).values({
       username: "customer",

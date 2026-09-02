@@ -92,6 +92,15 @@ function printPrompt(app: string, request: unknown, extraArgs: readonly string[]
   });
 }
 
+function printFixPrompt(app: string, request: unknown): string {
+  return execFileSync(process.execPath, [AGENT, '--mode', 'fix', '--backend', 'postgres',
+    '--track', 'ecommerce', '--level', '1', '--app', app,
+    '--recipe-task-json', JSON.stringify(request), '--print-prompt'], {
+    encoding: 'utf8', stdio: 'pipe',
+    env: { ...process.env, STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
+  });
+}
+
 function printStandalonePrompt(app: string, extraArgs: readonly string[] = []): string {
   return execFileSync(process.execPath, [AGENT, '--mode', 'build', '--backend', 'postgres',
     '--track', 'ecommerce', '--level', '1', '--app', app, ...extraArgs, '--print-prompt'], {
@@ -120,6 +129,19 @@ test('pack selection changes the real model prompt and exact task identity', () 
     tampered.task.sha256 = '0'.repeat(64);
     assert.throws(() => printPrompt(app, tampered), error =>
       /recipe task changed after request resolution/.test(commandStderr(error)));
+  } finally { rmSync(app, { recursive: true, force: true }); }
+});
+
+test('repair prompts retain the selected feature request and public interface', () => {
+  const app = mkdtempSync(join(tmpdir(), 'stack-bench-repair-task-'));
+  try {
+    const selected = createBoundRecipeTaskRequest(binding,
+      { featureIds: ['ecommerce.feature.accounts'] });
+    const prompt = printFixPrompt(app, createAgentVisibleTaskRequest(binding, selected));
+    assert.match(prompt, /## Accounts/);
+    assert.match(prompt, /## Application interface/);
+    assert.doesNotMatch(prompt, /## Reviews|## Cart/);
+    assert.doesNotMatch(prompt, /grader|harness|automated verification|score/i);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 

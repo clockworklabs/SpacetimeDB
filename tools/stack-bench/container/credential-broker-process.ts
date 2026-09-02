@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 
 import type { ContainerAuth } from './container-auth.js';
 import { MAX_BROKER_OUTPUT_TOKENS, readCredentialBrokerLedger, validateBrokerConfig }
@@ -87,8 +88,6 @@ function isRecord(value: unknown): value is JsonRecord {
 function fail(message: string): never {
   throw new Error(`credential broker: ${message}`);
 }
-
-const wait = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 function redactDiagnosticText(value: unknown,
   broker: CredentialBrokerHandle | string[] | null | undefined): string {

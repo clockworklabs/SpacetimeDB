@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { z } from 'zod';
 
 import { normalizeClaudeUsage, priceClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import type { ClaudeUsage } from '../src/evidence/claude-usage-cost.js';
 import { validatePricingRates as validateSharedPricingRates } from '../src/evidence/pricing-authority.js';
+import { formatZodError } from '../src/zod-error.js';
 
 export const BROKER_LEDGER_SCHEMA_VERSION = 3;
 export const MAX_BROKER_OUTPUT_TOKENS = 128_000;
@@ -65,16 +67,55 @@ export interface CredentialBrokerResult extends JsonRecord {
   stack_bench_cost_receipt: CredentialBrokerReceipt;
 }
 
+const positiveFinite = z.number().finite().positive();
+const nonNegativeFinite = z.number().finite().nonnegative();
+const nonNegativeSafeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const usageSchema = z.strictObject({
+  input: nonNegativeSafeInteger,
+  output: nonNegativeSafeInteger,
+  cacheRead: nonNegativeSafeInteger,
+  cacheWrite5m: nonNegativeSafeInteger,
+  cacheWrite1h: nonNegativeSafeInteger,
+});
+const brokerConfigSchema = z.strictObject({
+  mode: z.enum(['api-key', 'subscription-token']),
+  credential: z.string().min(16),
+  sessionToken: z.string().min(16),
+  readyPath: z.string().min(1).optional(),
+  parentPid: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  expiresAt: positiveFinite.optional(),
+  listenHost: z.enum(['127.0.0.1', '0.0.0.0']).optional(),
+  ledgerPath: z.string().min(1).optional(),
+  model: z.string().min(1),
+  maxOutputTokens: z.number().int().min(1).max(MAX_BROKER_OUTPUT_TOKENS),
+  maxBudgetUsd: positiveFinite.nullable().optional(),
+  pricingRates: z.unknown().optional(),
+}).superRefine((value, context) => {
+  if (value.expiresAt !== undefined && value.expiresAt <= Date.now()) {
+    context.addIssue({ code: 'custom', path: ['expiresAt'], message: 'must be in the future' });
+  }
+});
+const brokerLedgerSchema = z.strictObject({
+  schemaVersion: z.literal(BROKER_LEDGER_SCHEMA_VERSION),
+  model: z.string().min(1),
+  maxBudgetUsd: positiveFinite.nullable(),
+  acceptedRequests: nonNegativeSafeInteger,
+  billableRequests: nonNegativeSafeInteger,
+  completedBillableRequests: nonNegativeSafeInteger,
+  estimatedBillableRequests: nonNegativeSafeInteger,
+  spentUsd: nonNegativeFinite,
+  reservedUsd: nonNegativeFinite,
+  usage: usageSchema,
+  complete: z.boolean(),
+  updatedAt: z.string().refine(value => !Number.isNaN(Date.parse(value)), 'must be a timestamp'),
+});
+
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isNumber(value: unknown): value is number {
   return typeof value === 'number';
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === 'string';
 }
 
 function errorMessage(error: unknown): string {
@@ -123,120 +164,33 @@ function brokerCoversCliUsage(broker: ClaudeUsage, cli: ClaudeUsage): boolean {
 }
 
 export function validateBrokerConfig(value: unknown): BrokerConfig {
-  if (!isRecord(value)) fail('configuration must be an object');
-  if (value.mode !== 'api-key' && value.mode !== 'subscription-token') fail('credential mode is invalid');
-  for (const field of ['credential', 'sessionToken']) {
-    if (!isString(value[field]) || value[field].length < 16) fail(`${field} is invalid`);
-  }
-  if (value.readyPath !== undefined && (typeof value.readyPath !== 'string' || !value.readyPath)) {
-    fail('readyPath is invalid');
-  }
-  if (value.parentPid !== undefined && (!isNumber(value.parentPid)
-    || !Number.isInteger(value.parentPid) || value.parentPid < 1)) fail('parentPid is invalid');
-  if (value.expiresAt !== undefined && (!isNumber(value.expiresAt)
-    || !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now())) fail('expiresAt is invalid');
-  if (value.listenHost !== undefined && value.listenHost !== '127.0.0.1' && value.listenHost !== '0.0.0.0') {
-    fail('listenHost is invalid');
-  }
-  if (value.ledgerPath !== undefined && (typeof value.ledgerPath !== 'string' || !value.ledgerPath)) {
-    fail('ledgerPath is invalid');
-  }
-  if (typeof value.model !== 'string' || !value.model) fail('model is invalid');
-  if (!isNumber(value.maxOutputTokens) || !Number.isInteger(value.maxOutputTokens)
-    || value.maxOutputTokens < 1 || value.maxOutputTokens > MAX_BROKER_OUTPUT_TOKENS) {
-    fail('maxOutputTokens is invalid');
-  }
-  if (value.maxBudgetUsd !== null && value.maxBudgetUsd !== undefined) {
-    if (!isNumber(value.maxBudgetUsd) || !Number.isFinite(value.maxBudgetUsd) || value.maxBudgetUsd <= 0) {
-      fail('maxBudgetUsd is invalid');
-    }
-    validatePricingRates(value.pricingRates);
-  }
-  return {
-    mode: value.mode,
-    credential: value.credential as string,
-    sessionToken: value.sessionToken as string,
-    ...(typeof value.readyPath === 'string' ? { readyPath: value.readyPath } : {}),
-    ...(typeof value.parentPid === 'number' ? { parentPid: value.parentPid } : {}),
-    ...(typeof value.expiresAt === 'number' ? { expiresAt: value.expiresAt } : {}),
-    ...(value.listenHost === '127.0.0.1' || value.listenHost === '0.0.0.0'
-      ? { listenHost: value.listenHost } : {}),
-    ...(typeof value.ledgerPath === 'string' ? { ledgerPath: value.ledgerPath } : {}),
-    model: value.model,
-    maxOutputTokens: value.maxOutputTokens,
-    ...(typeof value.maxBudgetUsd === 'number' ? { maxBudgetUsd: value.maxBudgetUsd }
-      : value.maxBudgetUsd === null ? { maxBudgetUsd: null } : {}),
-    ...(value.maxBudgetUsd !== null && value.maxBudgetUsd !== undefined
-      ? { pricingRates: validatePricingRates(value.pricingRates) } : {}),
-  };
+  const parsed = brokerConfigSchema.safeParse(value);
+  if (!parsed.success) fail(formatZodError(parsed.error, 'configuration'));
+  const { pricingRates, ...config } = parsed.data;
+  return config.maxBudgetUsd === null || config.maxBudgetUsd === undefined
+    ? config
+    : { ...config, pricingRates: validatePricingRates(pricingRates) };
 }
 
 function validateLedger(value: unknown,
   { model = null, maxBudgetUsd = undefined }: { model?: string | null; maxBudgetUsd?: number | null } = {}): BrokerLedger {
-  if (!isRecord(value)) fail('spend ledger is invalid');
-  const fields = new Set(['schemaVersion', 'model', 'maxBudgetUsd', 'acceptedRequests',
-    'billableRequests', 'completedBillableRequests', 'estimatedBillableRequests',
-    'spentUsd', 'reservedUsd', 'usage', 'complete', 'updatedAt']);
-  for (const key of Object.keys(value)) if (!fields.has(key)) fail(`spend ledger.${key} is unknown`);
-  if (value.schemaVersion !== BROKER_LEDGER_SCHEMA_VERSION) fail('spend ledger schema is invalid');
-  if (typeof value.model !== 'string' || !value.model) fail('spend ledger model is invalid');
-  if (model !== null && value.model !== model) fail('spend ledger model does not match');
-  if (value.maxBudgetUsd !== null
-    && (!isNumber(value.maxBudgetUsd) || !Number.isFinite(value.maxBudgetUsd) || value.maxBudgetUsd <= 0)) {
-    fail('spend ledger budget is invalid');
+  const parsed = brokerLedgerSchema.safeParse(value);
+  if (!parsed.success) fail(formatZodError(parsed.error, 'spend ledger'));
+  const ledger = parsed.data;
+  if (model !== null && ledger.model !== model) fail('spend ledger model does not match');
+  if (maxBudgetUsd !== undefined && ledger.maxBudgetUsd !== maxBudgetUsd) {
+    fail('spend ledger budget does not match');
   }
-  if (maxBudgetUsd !== undefined && value.maxBudgetUsd !== maxBudgetUsd) fail('spend ledger budget does not match');
-  for (const field of ['acceptedRequests', 'billableRequests', 'completedBillableRequests',
-    'estimatedBillableRequests']) {
-    if (!isNumber(value[field]) || !Number.isSafeInteger(value[field]) || value[field] < 0) {
-      fail(`spend ledger.${field} is invalid`);
-    }
+  if (ledger.completedBillableRequests > ledger.billableRequests) {
+    fail('spend ledger completed request count is invalid');
   }
-  const completedBillableRequests = value.completedBillableRequests as number;
-  const billableRequests = value.billableRequests as number;
-  const estimatedBillableRequests = value.estimatedBillableRequests as number;
-  if (completedBillableRequests > billableRequests) fail('spend ledger completed request count is invalid');
-  if (estimatedBillableRequests > completedBillableRequests) fail('spend ledger estimated request count is invalid');
-  for (const field of ['spentUsd', 'reservedUsd']) {
-    if (!isNumber(value[field]) || !Number.isFinite(value[field]) || value[field] < 0) {
-      fail(`spend ledger.${field} is invalid`);
-    }
+  if (ledger.estimatedBillableRequests > ledger.completedBillableRequests) {
+    fail('spend ledger estimated request count is invalid');
   }
-  if (!isRecord(value.usage)
-    || Object.keys(value.usage).some(field => !(CLAUDE_USAGE_FIELDS as readonly string[]).includes(field))) {
-    fail('spend ledger.usage is invalid');
-  }
-  const usageSource = value.usage;
-  for (const field of CLAUDE_USAGE_FIELDS) {
-    if (!isNumber(usageSource[field]) || !Number.isSafeInteger(usageSource[field]) || usageSource[field] < 0) {
-      fail(`spend ledger.usage.${field} is invalid`);
-    }
-  }
-  const complete = value.reservedUsd === 0 && completedBillableRequests === billableRequests;
-  if (value.complete !== complete) fail('spend ledger completion state is invalid');
-  if (typeof value.updatedAt !== 'string' || Number.isNaN(Date.parse(value.updatedAt))) {
-    fail('spend ledger timestamp is invalid');
-  }
-  return {
-    schemaVersion: value.schemaVersion as number,
-    model: value.model as string,
-    maxBudgetUsd: value.maxBudgetUsd as number | null,
-    acceptedRequests: value.acceptedRequests as number,
-    billableRequests,
-    completedBillableRequests,
-    estimatedBillableRequests,
-    spentUsd: value.spentUsd as number,
-    reservedUsd: value.reservedUsd as number,
-    usage: {
-      input: usageSource.input as number,
-      output: usageSource.output as number,
-      cacheRead: usageSource.cacheRead as number,
-      cacheWrite5m: usageSource.cacheWrite5m as number,
-      cacheWrite1h: usageSource.cacheWrite1h as number,
-    },
-    complete: value.complete as boolean,
-    updatedAt: value.updatedAt as string,
-  };
+  const complete = ledger.reservedUsd === 0
+    && ledger.completedBillableRequests === ledger.billableRequests;
+  if (ledger.complete !== complete) fail('spend ledger completion state is invalid');
+  return ledger;
 }
 
 export function writeCredentialBrokerLedger(path: string | undefined, value: unknown): void {

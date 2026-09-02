@@ -12,9 +12,11 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "managed-private-owner" },
         { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "managed-private@example.com" },
         { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Private managed case" },
         { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private case details." },
         { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
         { "do": "signUp", "actor": "other", "name": "managed-private-other" },
         { "do": "click", "actor": "other", "testid": "support-link" },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },

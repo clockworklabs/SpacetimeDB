@@ -10,9 +10,9 @@
     "path": "../recipes/progression-depth3-2.0.1.json",
     "id": "ecommerce.progression-depth3",
     "version": "2.0.1",
-    "meaningSha256": "6507e6e2ae68075a9fbec8d5faed3cbae51de4664c346dc8a68fd07e864f980a",
-    "executionSha256": "c98ddb0a9e46afe9bc2ee4a9cfbfc940d97d0baa8852f5c9ba36269e03ee3acb",
-    "contentSha256": "fdc7b6917b65053e8cd87c3ab30f462d3b3e1e2837ed7b38c9033d670fa5ceda"
+    "meaningSha256": "69ee6ea7c17e7698c24b2dd720a3f61c73e184ec78015570405ca9747a7be242",
+    "executionSha256": "a5d86e63bed544851125497c49ee139eb2599898c72f2ba1480791e8f9879df1",
+    "contentSha256": "af2125d67f85d0748d91f57656ef4889e27547267a49c2974f67d00242db554f"
   },
   "fixture": {
     "id": "ecommerce.operations",

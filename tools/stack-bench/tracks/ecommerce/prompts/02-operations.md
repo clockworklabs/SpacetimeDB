@@ -91,7 +91,7 @@ action above changes it:
   admins, live
 - **Recommended for you** — for a signed-in customer, the items from categories
   they have bought from, most-purchased first, excluding items already in their
-  cart. For a signed-out visitor this is simply the best sellers.
+  cart. A signed-out visitor sees the best sellers on the storefront without opening another view.
 
 ### What must stay true
 

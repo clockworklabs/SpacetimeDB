@@ -592,6 +592,14 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
       'Output FIX_COMPLETE when done.',
       '',
       ...common,
+      '',
+      agentVisibleContractText(materials.requirementText ?? levelPrompt(track, args.level),
+        args.credentialAliases, applicationInterface),
+      '',
+      '## Application interface',
+      '',
+      agentVisibleContractText(materials.contractText ?? appendix(track, args.level),
+        args.credentialAliases, applicationInterface),
     ]);
   }
 

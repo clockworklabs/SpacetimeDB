@@ -10,6 +10,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { killTree, pidsOnPort } from '../src/runtime/platform.js';
@@ -22,8 +23,6 @@ const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 const CLI = process.env.SPACETIME_BIN ?? join(REPO, 'target', 'release',
   process.platform === 'win32' ? 'spacetimedb-cli.exe' : 'spacetimedb-cli');
 const RUN_BUILD = compiledEntrypoint('container', 'run-build.js');
-const delay = (ms: number): Promise<void> => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
-
 interface ContainerIdentity { id: string; running: boolean; }
 interface ExitResult { code: number | null; signal: NodeJS.Signals | null; }
 interface FaultLeaseResources {

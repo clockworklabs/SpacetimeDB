@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { leaseFromEnv } from '../runtime/backend-lease.js';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.js';
 import { fetchStatus } from '../runtime/readiness.js';
@@ -60,8 +61,6 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const stream = (error: unknown, key: string): string =>
   record(error) ? String(error[key] ?? '') : '';
 
-const delay = (ms: number): Promise<void> =>
-  new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 const phase = (message: string): void => {
   process.stderr.write(`[reference-agent] ${message}\n`);
 };

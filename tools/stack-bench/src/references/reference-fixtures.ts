@@ -331,6 +331,9 @@ export function assertPlainReferenceSourceTree(source: string): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
       const name = relative(source, path).replaceAll('\\', '/');
+      if (entry.isDirectory() && FORBIDDEN_DIRECTORIES.has(entry.name)) {
+        throw new Error(`reference source contains forbidden generated directory ${name}`);
+      }
       if (entry.isDirectory()) walk(path);
       else if (!entry.isFile()) throw new Error(`reference source contains unsupported filesystem entry ${name}`);
     }

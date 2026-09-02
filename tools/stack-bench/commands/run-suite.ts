@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { controlBackendRuntime, parseRuntimeControlSpec }
@@ -370,7 +371,6 @@ export function attachRegressionScope(selection: Selection | null, recipeBinding
   };
 }
 
-const sleep = (ms: number): Promise<void> => new Promise(resolveSleep => setTimeout(resolveSleep, ms));
 const COMMAND_TIMEOUT_MS = GRADER_SOURCE_TIMEOUT_MS;
 const run = (cmd: string, args: readonly string[], opts: Omit<ExecFileSyncOptionsWithStringEncoding, 'encoding'> = {}): string =>
   execFileSync(cmd, args, {

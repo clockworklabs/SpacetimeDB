@@ -108,6 +108,16 @@
           ""
         ],
         "id": "signUp",
+        "params": [
+          {
+            "in": "body",
+            "name": "username"
+          },
+          {
+            "in": "body",
+            "name": "password"
+          }
+        ],
         "path": "/api/auth/signup",
         "reducer": "sign_up"
       },

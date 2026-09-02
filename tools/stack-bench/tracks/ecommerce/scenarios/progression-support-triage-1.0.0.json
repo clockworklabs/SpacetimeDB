@@ -15,6 +15,7 @@
         { "do": "fill", "actor": "visitor", "testid": "support-subject", "text": "Missing item" },
         { "do": "fill", "actor": "visitor", "testid": "support-message", "text": "One item is missing." },
         { "do": "click", "actor": "visitor", "testid": "support-submit" },
+        { "do": "expect", "actor": "visitor", "testid": "support-reference", "nonEmpty": true },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
         { "do": "click", "actor": "staff", "testid": "staff-link" }
       ],
