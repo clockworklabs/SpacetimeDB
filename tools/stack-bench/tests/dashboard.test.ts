@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync,
+  watch, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -10,11 +11,16 @@ import test from 'node:test';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import type { CompiledCampaignPlan } from '../src/campaigns/campaign-compiler.js';
+import type { CampaignAttemptPlan, CompiledCampaignPlan }
+  from '../src/campaigns/campaign-compiler.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import { hashDirectory } from '../src/evidence/provenance.js';
+import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
+  overviewSummary } from '../dashboard/dashboard-views.js';
 import { campaignDetail, parseRunProgress,
   discoverCampaigns, readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact,
   summarizeCampaign,
@@ -28,6 +34,7 @@ import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.js';
 import { writeProgressionState } from '../src/progression/progression-state.js';
+import type { ProgressionState } from '../src/progression/progression-state.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const EXAMPLE_CAMPAIGN = join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json');
@@ -478,12 +485,14 @@ test('dashboard serves real state and protects campaign launch with a separate o
   const overview = await (await fetch(`${origin}/api/overview`)).json() as {
     canStart: boolean;
     csrfToken: string;
-    plans: Array<{ id: string }>;
+    campaigns: Array<{ key: string }>;
   };
   assert.equal(overview.canStart, true);
   assert.equal(overview.csrfToken, 'test-session-token');
   assert.doesNotMatch(JSON.stringify(overview), /test-control-secret-value/);
-  assert.deepEqual(overview.plans.map(plan => plan.id), [frozenPlan.id]);
+  assert.deepEqual(overview.campaigns.map(campaign => campaign.key), ['prepared-run']);
+  const served = await (await fetch(`${origin}/api/plans`)).json() as Array<{ id: string }>;
+  assert.deepEqual(served.map(plan => plan.id), [frozenPlan.id]);
 
   const reboundStatus = await new Promise((resolveStatus, reject) => {
     const rebound = httpRequest(`${origin}/api/overview`, { headers: { host: 'attacker.invalid' } },
@@ -559,4 +568,469 @@ test('host development mode is read-only even with a valid browser request', asy
     headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'readonly-token' },
     body: JSON.stringify({ planId: 'anything', outputName: 'meeting-run-2' }) });
   assert.equal(response.status, 503);
+});
+
+// A results tree the size of a real appliance week: thirty campaigns, nine
+// attempts each, with the artifacts the views actually read.
+const FIXTURE_CAMPAIGNS = 30;
+
+function writeRunEvidence(output: string, plan: CompiledCampaignPlan,
+  attempt: CampaignAttemptPlan, deficit: number): void {
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
+  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
+  const selection = structuredClone(attempt.condition.requested.levels
+    .find(item => item.level === 1)!.selection) as { sha256: string;
+      scoredPoints: number; scoredChecks?: Array<{ stableKey: string; points: number }> };
+  const max = selection.scoredPoints;
+  const score = max;
+  const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
+  const firstOutcome = { kind: 'app_failure', phase: 'grading', reason: null,
+    appFailures: [], inconclusive: [], harnessFailures: [] };
+  const source = join(output, 'source');
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, 'app.js'), 'export const ready = true;\n');
+  const checks = selection.scoredChecks ?? [];
+  const checkKeys = checks.map(check => check.stableKey);
+  const evidence = createCheckEvidence({ status: 'passed', code: 'completed',
+    phase: 'assertion', startedAtMs: 1, completedAtMs: 2 });
+  writeArtifact(join(output, 'grading', 'bundle.json'), {
+    kind: 'grade_bundle', id: `${attempt.id}-grade-l1`, payload: {
+      observation: 'scored', source: { sha256: hashDirectory(source).sha256 },
+      suites: { fixture: { features: [{ id: 'fixture', name: 'Fixture',
+        setupEvidence: createCheckEvidence({ status: 'passed', code: 'completed',
+          phase: 'setup', startedAtMs: 1, completedAtMs: 2 }),
+        criteria: checks.map(check => ({ id: check.stableKey, stableKey: check.stableKey,
+          desc: check.stableKey, points: check.points, evidence })) }] } },
+      totals: { score, max },
+      selection: { sha256: selection.sha256, checks, attemptedChecks: checkKeys,
+        reportedChecks: checkKeys, notRun: [] },
+    },
+  });
+  writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: `${attempt.id}-run`,
+    attempt: { id: `${attempt.id}-run`, parentId: attempt.id },
+    identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+      experiment: { id: plan.id, version: plan.version, sha256: plan.contentSha256,
+        state: plan.state },
+      agentAdapter: agent.identity, stackAdapter: stack }),
+    payload: {
+      mode: attempt.mode, track: plan.definition.track, backend: attempt.stack,
+      model: attempt.model, pricing: attempt.pricing, guidance: attempt.guidance,
+      condition: attempt.condition, selectionRequest: plan.definition.selection,
+      featureCatalog: attempt.featureCatalog ?? null,
+      dependencyPolicy: attempt.dependencyPolicy ?? null, progressionOwner: null,
+      skills: attempt.skills, runtime: { buildImage: plan.definition.runtime.buildImage },
+      totals: { score, max, costUsd: 1.25, costComplete: true, durationSec: 900 },
+      levels: [{ level: 1, graded: true, selection, score, max, fixRounds: 3,
+        firstBuild: { score: score - deficit, max, outcome: firstOutcome },
+        repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null },
+        durationSec: 900, buildCostUsd: 1.25, outcome }],
+      outcome: { kind: 'passed' },
+    } });
+  writeFileSync(join(output, 'process.stdout.log'),
+    `=== ${attempt.stack}-l1-first (${attempt.stack}) ===\n  TOTAL ... ${score - 1}/${max}\n`
+    + `--- repair round 1/3 ---\n=== ${attempt.stack}-l1-fix1 (${attempt.stack}) ===\n`
+    + `  TOTAL ... ${score}/${max}\n`);
+}
+
+function writeFixtureResults(resultsRoot: string, { running = false }: {
+  running?: boolean;
+} = {}): void {
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const now = '2026-08-18T12:00:00.000Z';
+  for (let index = 0; index < FIXTURE_CAMPAIGNS; index += 1) {
+    const directory = join(resultsRoot, 'campaigns', `fixture-run-${index}`);
+    let state = createCampaignState(plan, { now });
+    const claims = [];
+    for (;;) {
+      const claimed = claimNextAttempt(state, { now, admissionId: `admission-${index}` });
+      if (!claimed.claim) break;
+      claims.push(claimed.claim);
+      state = running && claims.length === 1 ? claimed.state
+        : finishCampaignExecution(claimed.state, claimed.claim.executionId,
+          { exitCode: 0, run: { outcome: { kind: 'passed' } } }, { now });
+    }
+    writeCampaign(directory, plan, state);
+    claims.forEach((claim, ordinal) => {
+      const output = join(directory, claim.output);
+      mkdirSync(output, { recursive: true });
+      writeRunEvidence(output, plan, claim.attempt, (ordinal % 3) * 4 + 1);
+    });
+  }
+}
+
+test('the overview stays a summary and the sheet stays one campaign at appliance scale', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-scale-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  writeFixtureResults(resultsRoot);
+  const campaignsRoot = join(resultsRoot, 'campaigns');
+  const controllerActive = (): boolean => true;
+
+  const overview = overviewSummary(campaignsRoot, { controllerActive });
+  assert.equal(overview.length, FIXTURE_CAMPAIGNS);
+  const first = overview[0];
+  assert.ok(first && 'scores' in first);
+  assert.equal(Object.keys(first.scores).length, 3);
+  assert.equal(first.attempts.total, 9);
+  assert.ok(Object.values(first.scores).every(score => score !== null));
+  assert.equal(JSON.stringify(overview).includes('process.stdout.log'), false);
+  const overviewBytes = Buffer.byteLength(JSON.stringify(overview));
+  assert.ok(overviewBytes < 12 * 1024, `overview payload is ${overviewBytes} bytes`);
+  const startedAt = performance.now();
+  overviewSummary(campaignsRoot, { controllerActive });
+  const warmMs = performance.now() - startedAt;
+  assert.ok(warmMs < 150, `warm overview took ${warmMs.toFixed(1)}ms`);
+
+  const sheet = campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive });
+  assert.equal(sheet.mode, 'sequential');
+  assert.equal(sheet.facts.fixRounds, 3);
+  assert.equal(sheet.facts.timeLimitMinutes, 240);
+  assert.equal(sheet.stacks.length, 3);
+  const stack = sheet.stacks[0];
+  assert.ok(stack);
+  assert.equal(stack.n, 3);
+  assert.ok(stack.score !== null && stack.unaided !== null);
+  assert.ok(stack.unaided < stack.score);
+  assert.deepEqual(stack.levels?.map(level => level.level), [1]);
+  assert.equal(stack.questlines, null);
+  assert.equal(stack.attempts.length, 3);
+  assert.ok(stack.climb.length >= 2);
+  const sheetBytes = Buffer.byteLength(JSON.stringify(sheet));
+  assert.ok(sheetBytes < 60 * 1024, `campaign sheet is ${sheetBytes} bytes`);
+});
+
+test('the overview caches a running campaign until its evidence changes', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-cache-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  writeFixtureResults(resultsRoot, { running: true });
+  const campaignsRoot = join(resultsRoot, 'campaigns');
+  const controllerActive = (): boolean => true;
+
+  const first = overviewSummary(campaignsRoot, { controllerActive })
+    .find(campaign => campaign.key === 'fixture-run-0');
+  assert.ok(first && 'scores' in first && first.status === 'running');
+  const cached = overviewSummary(campaignsRoot, { controllerActive })
+    .find(campaign => campaign.key === 'fixture-run-0');
+  assert.equal(cached, first);
+
+  const attempts = join(campaignsRoot, 'fixture-run-0', 'attempts');
+  const attempt = readdirSync(attempts)[0];
+  assert.ok(attempt);
+  const run = join(attempts, attempt, 'execution-1', 'run.json');
+  const later = new Date(Date.now() + 5000);
+  utimesSync(run, later, later);
+  const refreshed = overviewSummary(campaignsRoot, { controllerActive })
+    .find(campaign => campaign.key === 'fixture-run-0');
+  assert.ok(refreshed);
+  assert.notEqual(refreshed, first);
+  assert.deepEqual(refreshed, first);
+});
+
+test('attempt evidence is fetched per attempt, not per campaign', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-attempt-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const now = '2026-08-18T12:00:00.000Z';
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
+  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: { outcome: { kind: 'passed' } } }, { now });
+  const directory = join(resultsRoot, 'campaigns', 'attempt-run');
+  writeCampaign(directory, plan, state);
+  const output = join(directory, claimed.claim.output);
+  mkdirSync(output, { recursive: true });
+  writeRunEvidence(output, plan, claimed.claim.attempt, 1);
+  writeFileSync(join(output, 'process.stdout.log'),
+    `authorization: Bearer secret-token-value\n${'log line\n'.repeat(64)}`);
+  const attemptId = claimed.claim.attempt.id;
+
+  const checks = attemptChecks(resultsRoot, 'attempt-run', attemptId);
+  assert.equal(checks.stack, claimed.claim.attempt.stack);
+  assert.deepEqual(checks.grades.map(grade => grade.id), ['grading']);
+  assert.ok(checks.checks.length > 0);
+  assert.ok(checks.checks.every(check => check.outcome === 'pass'));
+  assert.ok(checks.checks.every(check => check.history.length === 1));
+  assert.equal(checks.checks.some(check => check.regressed), false);
+
+  const evidence = attemptPackage(resultsRoot, 'attempt-run', attemptId);
+  assert.equal(evidence.executions.length, 1);
+  const paths = evidence.executions[0]?.artifacts.map(item => item.path) ?? [];
+  assert.ok(paths.some(path => path.endsWith('/run.json')));
+  assert.ok(paths.some(path => path.endsWith('/grading/bundle.json')));
+  assert.equal(paths.some(path => path.includes('/source/')), false);
+
+  const head = attemptLogSlice(resultsRoot, 'attempt-run', attemptId, 0);
+  assert.match(head.text, /\[redacted credential\]/);
+  assert.doesNotMatch(head.text, /secret-token-value/);
+  assert.equal(head.offset, head.size);
+  const tail = attemptLogSlice(resultsRoot, 'attempt-run', attemptId, head.offset);
+  assert.equal(tail.text, '');
+  assert.equal(tail.offset, head.size);
+});
+
+test('the sheet reports dependency submodes and questlines in definition order', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-sheet-dependency-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const now = '2026-08-25T12:00:00.000Z';
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
+  const directory = join(resultsRoot, 'campaigns', 'dependency-run');
+  const output = join(directory, claimed.claim.output);
+  mkdirSync(join(output, 'source'), { recursive: true });
+  writeCampaign(directory, plan, claimed.state);
+  assert(plan.featureCatalog && plan.dependencyPolicy);
+  const attemptPlan = claimed.claim.attempt;
+  writeProgressionState(join(output, 'progression-state.json'), {
+    progression: compileProgressionInput(dependencyRuntimeDefinition(
+      plan.featureCatalog, plan.dependencyPolicy)),
+    featureCatalogIdentity: plan.featureCatalog.identity,
+    dependencyPolicyIdentity: plan.dependencyPolicy.identity,
+    owner: { schemaVersion: 1,
+      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+      attempt: { id: attemptPlan.id, track: plan.definition.track, stack: attemptPlan.stack,
+        agentAdapter: attemptPlan.agentAdapter, model: attemptPlan.model,
+        conditionSha256: attemptPlan.condition.sha256 },
+      workspace: { appDirectory: 'source' } },
+    state: progressionEngine.initialize(compileProgressionInput(dependencyRuntimeDefinition(
+      plan.featureCatalog, plan.dependencyPolicy)).definition) });
+
+  const sheet = campaignSheet(resultsRoot, 'dependency-run', { controllerActive: () => true });
+  assert.equal(sheet.mode, 'dependency');
+  assert.equal(sheet.facts.workSelection, 'progressive');
+  assert.equal(sheet.facts.repairSelection, 'feature');
+  assert.equal(sheet.facts.strikePolicy, 'feature');
+  assert.equal(sheet.facts.strikes, 1);
+  assert.equal(sheet.facts.guidance, attemptPlan.guidance);
+  const stack = sheet.stacks.find(item => item.questlines !== null);
+  assert.ok(stack?.questlines);
+  assert.equal(stack.levels, null);
+  assert.ok(stack.questlines.length > 0);
+  const questline = stack.questlines[0];
+  assert.ok(questline);
+  assert.ok(questline.nodes.length > 0);
+  assert.ok(questline.nodes.every(node => typeof node.status === 'string'));
+  assert.ok(stack.repairs.budget > 0);
+  assert.equal(stack.regressions, 0);
+  const bytes = Buffer.byteLength(JSON.stringify(sheet));
+  assert.ok(bytes < 60 * 1024, `dependency sheet is ${bytes} bytes`);
+});
+
+function writeSingleAttemptCampaign(resultsRoot: string, key: string): string {
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const now = '2026-08-18T12:00:00.000Z';
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
+  const state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: { outcome: { kind: 'passed' } } }, { now });
+  const directory = join(resultsRoot, 'campaigns', key);
+  writeCampaign(directory, plan, state);
+  const output = join(directory, claimed.claim.output);
+  mkdirSync(output, { recursive: true });
+  writeRunEvidence(output, plan, claimed.claim.attempt, 1);
+  writeFileSync(join(output, 'process.stdout.log'),
+    `authorization: Bearer secret-token-value\n${'log line\n'.repeat(8)}`);
+  return claimed.claim.attempt.id;
+}
+
+test('every view has a route, and a name that is not a campaign never reaches the evidence',
+  async t => {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-routes-'));
+    const attemptId = writeSingleAttemptCampaign(root, 'route-run');
+    const feed = { append() {}, list() { return []; } };
+    const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
+      allowLaunch: false, token: 'route-token', feed, plans: () => [] });
+    const origin = await listenOrigin(server);
+    t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
+
+    const overview = await fetch(`${origin}/api/overview`);
+    assert.equal(overview.headers.get('cache-control'), 'no-store');
+    const summary = await overview.json() as { campaigns: Array<{ key: string }>;
+      canStart: boolean; csrfToken: string };
+    assert.deepEqual(summary.campaigns.map(campaign => campaign.key), ['route-run']);
+    assert.equal(summary.canStart, false);
+    assert.equal(summary.csrfToken, 'route-token');
+    assert.equal('plans' in summary, false);
+    assert.deepEqual(await (await fetch(`${origin}/api/plans`)).json(), []);
+
+    const sheet = await (await fetch(`${origin}/api/campaigns/route-run`)).json() as {
+      key: string; stacks: Array<{ stack: string }> };
+    assert.equal(sheet.key, 'route-run');
+    assert.equal(sheet.stacks.length, 3);
+
+    const checks = await (await fetch(
+      `${origin}/api/campaigns/route-run/attempts/${attemptId}/checks`)).json() as {
+        checks: Array<{ outcome: string }> };
+    assert.ok(checks.checks.length > 0);
+    const evidence = await (await fetch(
+      `${origin}/api/campaigns/route-run/attempts/${attemptId}/package`)).json() as {
+        executions: Array<{ artifacts: unknown[] }> };
+    assert.equal(evidence.executions.length, 1);
+
+    const log = await fetch(`${origin}/api/campaigns/route-run/attempts/${attemptId}/log?from=0`);
+    assert.equal(log.headers.get('content-type'), 'text/plain; charset=utf-8');
+    const offset = Number(log.headers.get('x-stack-bench-log-offset'));
+    const text = await log.text();
+    assert.match(text, /\[redacted credential\]/);
+    assert.doesNotMatch(text, /secret-token-value/);
+    assert.ok(offset > 0);
+    const rest = await fetch(
+      `${origin}/api/campaigns/route-run/attempts/${attemptId}/log?from=${offset}`);
+    assert.equal(await rest.text(), '');
+    assert.equal(Number(rest.headers.get('x-stack-bench-log-offset')), offset);
+
+    assert.equal((await fetch(`${origin}/api/campaigns/route-run/progression`)).status, 404);
+    assert.equal((await fetch(`${origin}/api/campaigns/missing-run`)).status, 404);
+    assert.equal((await fetch(`${origin}/api/campaigns/Route-Run`)).status, 400);
+    assert.equal((await fetch(
+      `${origin}/api/campaigns/route-run/attempts/missing-attempt/checks`)).status, 404);
+    assert.equal((await fetch(
+      `${origin}/api/campaigns/route-run/attempts/${attemptId}/log?from=-1`)).status, 400);
+    assert.equal((await fetch(
+      `${origin}/api/campaigns/route-run/attempts/${attemptId}/log?from=eight`)).status, 400);
+    const missing = await (await fetch(`${origin}/api/campaigns/missing-run`)).json() as {
+      error: string };
+    assert.equal(missing.error, 'Not found');
+
+    for (const path of ['/', '/plans', '/c/route-run', `/c/route-run/a/${attemptId}`]) {
+      const page = await fetch(`${origin}${path}`);
+      assert.equal(page.status, 200, path);
+      assert.equal(page.headers.get('cache-control'), 'no-store');
+      assert.match(await page.text(), /<title>Stack Bench/);
+    }
+  });
+
+async function nextServerEvents(origin: string, signal: AbortSignal, count: number,
+  deadlineMs: number): Promise<string[]> {
+  const response = await fetch(`${origin}/api/events`, { signal });
+  assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8');
+  assert.ok(response.body);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const events: string[] = [];
+  const deadline = setTimeout(() => { void reader.cancel(); }, deadlineMs);
+  let buffered = '';
+  try {
+    while (events.length < count) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffered += decoder.decode(chunk.value, { stream: true });
+      const frames = buffered.split('\n\n');
+      buffered = frames.pop() ?? '';
+      for (const frame of frames) {
+        const match = frame.match(/^event: (\w+)\ndata: (.+)$/);
+        if (match) events.push(`${match[1]} ${match[2]}`);
+      }
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
+  return events;
+}
+
+test('the event stream reports a campaign write and the log bytes that follow it', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-events-'));
+  const attemptId = writeSingleAttemptCampaign(root, 'event-run');
+  const feed = { append() {}, list() { return []; } };
+  const { server } = createDashboardServer({ resultsRoot: root, plansRoot: join(root, 'plans'),
+    allowLaunch: false, token: 'event-token', feed, plans: () => [] });
+  const origin = await listenOrigin(server);
+  const abort = new AbortController();
+  t.after(() => { abort.abort(); server.close(); rmSync(root, { recursive: true, force: true }); });
+
+  let recursive = true;
+  try { watch(root, { recursive: true, persistent: false }).close(); }
+  catch { recursive = false; }
+  // Where the platform has no recursive watch the watcher polls every five
+  // seconds instead; the same events arrive.
+  const deadlineMs = recursive ? 1000 : 8000;
+
+  const execution = join(root, 'campaigns', 'event-run', 'attempts', attemptId, 'execution-1');
+  const events = nextServerEvents(origin, abort.signal, 2, deadlineMs);
+  await new Promise(done => setTimeout(done, 50));
+  const run = join(execution, 'run.json');
+  writeFileSync(run, readFileSync(run, 'utf8'));
+  appendFileSync(join(execution, 'process.stdout.log'), 'another line\n');
+  assert.deepEqual(await events, ['campaign {"key":"event-run"}',
+    `log {"key":"event-run","attemptId":"${attemptId}"}`]);
+});
+
+function dependencyProgressionEvidence(plan: CompiledCampaignPlan,
+  attempt: CampaignAttemptPlan): ProgressionState {
+  assert.ok(plan.featureCatalog && plan.dependencyPolicy);
+  const input = compileProgressionInput(dependencyRuntimeDefinition(
+    plan.featureCatalog, plan.dependencyPolicy));
+  let state = progressionEngine.initialize(input.definition);
+  const missed = new Set<string>();
+  for (let step = 1; step <= 24; step += 1) {
+    if (progressionEngine.nextAction(state).type === 'terminal') break;
+    const selection = progressionEngine.gradingSelection(state);
+    // One feature per grade misses a check the first time it is graded, so the
+    // replay carries repairs as well as builds.
+    const target = selection.nodeIds.find(nodeId => !missed.has(nodeId));
+    state = progressionEngine.recordResult(state, {
+      attemptId: `${attempt.id}-${step}`,
+      outcome: 'conclusive',
+      nodes: selection.nodeIds.map(nodeId => ({ id: nodeId,
+        checks: selection.checks.filter(check => check.nodeId === nodeId).map((check, index) => ({
+          id: check.id,
+          outcome: nodeId === target && index === 0 ? 'fail' as const : 'pass' as const })) })),
+    });
+    if (target) missed.add(target);
+  }
+  return state;
+}
+
+test('the progression view replays the graph once per stack within its budget', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-progression-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  assert.ok(plan.featureCatalog && plan.dependencyPolicy);
+  const now = '2026-08-25T12:00:00.000Z';
+  const directory = join(resultsRoot, 'campaigns', 'progression-run');
+  let state = createCampaignState(plan, { now });
+  const claims = [];
+  for (;;) {
+    const claimed = claimNextAttempt(state, { now, admissionId: 'admission-1' });
+    if (!claimed.claim) break;
+    claims.push(claimed.claim);
+    state = claimed.state;
+  }
+  writeCampaign(directory, plan, state);
+  const progression = compileProgressionInput(dependencyRuntimeDefinition(
+    plan.featureCatalog, plan.dependencyPolicy));
+  for (const claim of claims) {
+    const output = join(directory, claim.output);
+    mkdirSync(join(output, 'source'), { recursive: true });
+    writeProgressionState(join(output, 'progression-state.json'), {
+      progression,
+      featureCatalogIdentity: plan.featureCatalog.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy.identity,
+      owner: { schemaVersion: 1,
+        campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+        attempt: { id: claim.attempt.id, track: plan.definition.track,
+          stack: claim.attempt.stack, agentAdapter: claim.attempt.agentAdapter,
+          model: claim.attempt.model, conditionSha256: claim.attempt.condition.sha256 },
+        workspace: { appDirectory: 'source' } },
+      state: dependencyProgressionEvidence(plan, claim.attempt) });
+  }
+
+  const view = campaignProgression(resultsRoot, 'progression-run');
+  assert.ok(view);
+  assert.deepEqual(view.depths, plan.definition.levels);
+  assert.ok(view.nodes.length > 0);
+  assert.ok(view.nodes.every(node => view.depths.includes(node.depth)));
+  assert.equal(view.stacks.length, claims.length);
+  const track = view.stacks[0];
+  assert.ok(track);
+  assert.ok(track.steps.length > 0);
+  assert.ok(track.steps.every(step => step.statuses.length === view.nodes.length));
+  assert.ok(track.steps.some(step => step.action === 'build'));
+  assert.ok(track.steps.some(step => step.action === 'repair'));
+  assert.ok(track.steps.at(-1)?.statuses.includes('passed'));
+  assert.equal(campaignProgression(resultsRoot, 'progression-run'), view);
+  const bytes = Buffer.byteLength(JSON.stringify(view));
+  assert.ok(bytes < 80 * 1024, `progression payload is ${bytes} bytes`);
 });

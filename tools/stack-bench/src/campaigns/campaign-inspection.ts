@@ -31,6 +31,12 @@ interface RunOutcome {
   appFailures?: Array<string | CheckFailure>;
 }
 
+interface RunStrikes {
+  used?: number;
+  budget?: number;
+  granted?: number;
+}
+
 interface RunLevel {
   level: number;
   score: number;
@@ -40,7 +46,9 @@ interface RunLevel {
   buildCostUsd?: number | null;
   fixCostUsd?: number | null;
   firstBuild?: Score & { outcome?: RunOutcome; missed?: Array<string | CheckFailure> };
-  repair?: { roundsUsed?: number; status?: string | null };
+  repair?: { roundsUsed?: number; status?: string | null; nodeStrikes?: RunStrikes[] };
+  regression?: { score?: number | null; max?: number | null } | null;
+  resumedRepair?: unknown;
   outcome?: RunOutcome;
   missed?: Array<string | CheckFailure>;
 }
@@ -56,7 +64,7 @@ interface BenchmarkRunPayload {
   levels?: RunLevel[];
 }
 
-interface CampaignRunLevelResult {
+export interface CampaignRunLevelResult {
   level: number;
   firstScore: Score | null;
   firstAbort: { phase: string; reason: string | null } | null;
@@ -67,9 +75,13 @@ interface CampaignRunLevelResult {
   durationSec: number | null;
   costUsd: number | null;
   failures: string[];
+  // Checks that passed and then failed: the regression suite's missing points.
+  regressions: number;
+  strikes: { used: number; budget: number } | null;
+  continued: boolean;
 }
 
-interface CampaignRunResult {
+export interface CampaignRunResult {
   unreadable?: string;
   outcome?: string;
   outcomePhase?: string | null;
@@ -120,6 +132,14 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
         durationSec: level.durationSec ?? null,
         costUsd: level.buildCostUsd == null && level.fixCostUsd == null
           ? null : (level.buildCostUsd ?? 0) + (level.fixCostUsd ?? 0),
+        regressions: level.regression
+          ? Math.max(0, (level.regression.max ?? 0) - (level.regression.score ?? 0)) : 0,
+        strikes: level.repair?.nodeStrikes
+          ? level.repair.nodeStrikes.reduce<{ used: number; budget: number }>((total, node) => ({
+            used: total.used + (node.used ?? 0), budget: total.budget + (node.budget ?? 0) }),
+          { used: 0, budget: 0 })
+          : null,
+        continued: level.resumedRepair !== undefined && level.resumedRepair !== null,
         failures: (level.outcome?.appFailures
           ?? (level.graded ? [] : level.missed ?? level.firstBuild?.missed ?? [])).map(item =>
           typeof item === 'string' ? item : item.stableKey ?? item.description ?? 'Failed check'),
@@ -215,13 +235,20 @@ export interface DependencyProgress {
     firstTryPercentage: number;
     repairAttempts: number;
   };
+  // Checks that passed in one conclusive grade and failed in a later one.
+  regressions?: number;
   evidence?: DependencyProgressEvidence[];
   unreadable?: string;
   [key: string]: unknown;
 }
 
-function dependencyHistory(state: DependencyState): NonNullable<DependencyProgress['history']> {
+function dependencyHistory(state: DependencyState): {
+  history: NonNullable<DependencyProgress['history']>;
+  regressions: number;
+} {
   const firstOutcomes = new Map<string, string>();
+  const lastOutcomes = new Map<string, string>();
+  const regressed = new Set<string>();
   let replay = progressionEngine.initialize(state.definition);
   let repairAttempts = 0;
   for (const event of state.events as DependencyEvent[]) {
@@ -236,6 +263,8 @@ function dependencyHistory(state: DependencyState): NonNullable<DependencyProgre
         for (const check of node.checks) {
           const key = `${node.id}\u0000${check.id}`;
           if (!firstOutcomes.has(key)) firstOutcomes.set(key, check.outcome);
+          if (check.outcome === 'fail' && lastOutcomes.get(key) === 'pass') regressed.add(key);
+          if (check.outcome !== 'not-run') lastOutcomes.set(key, check.outcome);
         }
       }
     }
@@ -256,11 +285,14 @@ function dependencyHistory(state: DependencyState): NonNullable<DependencyProgre
     return available ? (passed / available) * 100 : 0;
   });
   return {
-    firstTryPercentage: questlinePercentages.length
-      ? questlinePercentages.reduce((sum, value) => sum + value, 0)
-        / questlinePercentages.length
-      : 0,
-    repairAttempts,
+    history: {
+      firstTryPercentage: questlinePercentages.length
+        ? questlinePercentages.reduce((sum, value) => sum + value, 0)
+          / questlinePercentages.length
+        : 0,
+      repairAttempts,
+    },
+    regressions: regressed.size,
   };
 }
 
@@ -334,7 +366,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
         nodes: [...questline.nodes] })),
       nodes,
       score: progressionEngine.score(state),
-      history: dependencyHistory(state as DependencyState),
+      ...dependencyHistory(state as DependencyState),
       evidence: state.attempts.map((item, index) => ({
         attempt: index + 1,
         depth: item.level,

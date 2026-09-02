@@ -9,10 +9,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { parseArgs as parseNodeArgs } from 'node:util';
 
-import { campaignDetail, discoverPlans, readCampaignArtifactBody, readDashboardOverview,
+import { campaignDetail, discoverPlans, readCampaignArtifactBody,
   readJsonLines, resolveCampaignArtifact,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
+import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
+  overviewSummary } from './dashboard-views.js';
+import { watchCampaigns } from './dashboard-events.js';
+import type { CampaignChange, CampaignWatcher } from './dashboard-events.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { stackBenchResultsRoot } from '../src/runtime/operational-paths.js';
 
@@ -21,10 +25,13 @@ const RUNTIME_ROOT = dirname(DASHBOARD_ROOT);
 const PUBLIC_ROOT = join(DASHBOARD_ROOT, 'public');
 const CAMPAIGN_CLI = join(RUNTIME_ROOT, 'commands', 'campaign-cli.js');
 const SAFE_NAME = /^[a-z0-9][a-z0-9.-]{2,119}$/;
+const SPA_PATH = /^\/(?:plans|c\/[^/]+(?:\/a\/[^/]+)?)$/;
+const HEARTBEAT_MS = 25_000;
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/metrics.js', ['metrics.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/spacetimedb-mark.svg', ['spacetimedb-mark.svg', 'image/svg+xml']],
   // The brand faces are served from here rather than a CDN: the dashboard's own
@@ -230,6 +237,21 @@ export function createDashboardServer(options: DashboardServerOptions) {
   const launch = options.launch ?? launchCampaign;
   const plans = options.plans ?? (() => discoverPlans(plansRoot));
   const launchReservations = new Set<string>();
+  const campaignsRoot = join(resultsRoot, 'campaigns');
+  const listeners = new Set<ServerResponse>();
+  let watcher: CampaignWatcher | null = null;
+  let heartbeat: NodeJS.Timeout | null = null;
+  const broadcast = (change: CampaignChange): void => {
+    const frame = `event: ${change.type}\ndata: ${JSON.stringify({ key: change.key,
+      ...(change.attemptId === undefined ? {} : { attemptId: change.attemptId }) })}\n\n`;
+    for (const listener of listeners) listener.write(frame);
+  };
+  const stopEvents = (): void => {
+    watcher?.close();
+    watcher = null;
+    if (heartbeat) clearInterval(heartbeat);
+    heartbeat = null;
+  };
   const server = createServer(async (request, response) => {
     securityHeaders(response);
     try {
@@ -237,7 +259,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 421, { error: 'Dashboard requests must use a loopback host.' });
       }
       const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
-      const staticFile = STATIC.get(url.pathname);
+      // The client routes are pages, not fragments: each serves the shell.
+      const staticFile = STATIC.get(url.pathname)
+        ?? (SPA_PATH.test(url.pathname) ? STATIC.get('/') : undefined);
       if (request.method === 'GET' && staticFile) {
         const [file, type] = staticFile;
         const path = join(PUBLIC_ROOT, file);
@@ -252,9 +276,28 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return json(response, 200, { ok: true, mode: allowLaunch ? 'controller' : 'read-only' });
       }
       if (request.method === 'GET' && url.pathname === '/api/overview') {
-        const overview = readDashboardOverview({ resultsRoot, plansRoot, operations: feed.list() });
-        return json(response, 200, { ...overview, plans: plans(),
+        return json(response, 200, { campaigns: overviewSummary(campaignsRoot),
           canStart: allowLaunch, csrfToken: token });
+      }
+      if (request.method === 'GET' && url.pathname === '/api/plans') {
+        return json(response, 200, plans());
+      }
+      if (request.method === 'GET' && url.pathname === '/api/events') {
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-store', connection: 'keep-alive' });
+        response.write(': open\n\n');
+        listeners.add(response);
+        watcher ??= watchCampaigns(campaignsRoot, broadcast);
+        // A silent connection is dropped by proxies long before a campaign
+        // writes anything.
+        heartbeat ??= setInterval(() => {
+          for (const listener of listeners) listener.write(': ping\n\n');
+        }, HEARTBEAT_MS).unref();
+        request.once('close', () => {
+          listeners.delete(response);
+          if (!listeners.size) stopEvents();
+        });
+        return;
       }
       const resumeRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/resume$/);
       if (request.method === 'POST' && resumeRoute) {
@@ -271,7 +314,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         const plan = plans().find(item => item.id === campaign.id && item.sha256 === campaign.sha256);
         if (!plan || plan.state !== 'frozen') {
-          return json(response, 409, { error: 'The exact frozen plan is unavailable.' });
+          return json(response, 409, { error: 'The test plan used by this campaign is unavailable.' });
         }
         const reservation = `${campaign.id}:${campaign.sha256}:${key}`;
         if (launchReservations.has(reservation)) {
@@ -324,9 +367,51 @@ export function createDashboardServer(options: DashboardServerOptions) {
         response.end(body);
         return;
       }
-      if (request.method === 'GET' && url.pathname.startsWith('/api/campaigns/')) {
-        const key = decodeURIComponent(url.pathname.slice('/api/campaigns/'.length));
-        return json(response, 200, campaignDetail(resultsRoot, key));
+      const campaignRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)(?:\/(.*))?$/);
+      if (request.method === 'GET' && campaignRoute) {
+        const key = decodeURIComponent(campaignRoute[1] ?? '');
+        const rest = campaignRoute[2] ?? '';
+        if (!SAFE_NAME.test(key)) {
+          return json(response, 400, { error: 'The campaign name is invalid.' });
+        }
+        const attemptRoute = rest.match(/^attempts\/([^/]+)\/(checks|package|log)$/);
+        const attemptId = attemptRoute ? decodeURIComponent(attemptRoute[1] ?? '') : '';
+        if (attemptRoute && !SAFE_NAME.test(attemptId)) {
+          return json(response, 400, { error: 'The attempt name is invalid.' });
+        }
+        const from = url.searchParams.get('from') ?? '0';
+        if (attemptRoute?.[2] === 'log' && (!/^\d+$/.test(from) || !Number.isSafeInteger(Number(from)))) {
+          return json(response, 400, { error: 'The log offset must be a whole number of bytes.' });
+        }
+        try {
+          if (!rest) return json(response, 200, campaignSheet(resultsRoot, key));
+          if (rest === 'progression') {
+            const progression = campaignProgression(resultsRoot, key);
+            return progression
+              ? json(response, 200, progression)
+              : json(response, 404, { error: 'Progression is recorded for dependency campaigns only.' });
+          }
+          if (attemptRoute?.[2] === 'checks') {
+            return json(response, 200, attemptChecks(resultsRoot, key, attemptId));
+          }
+          if (attemptRoute?.[2] === 'package') {
+            return json(response, 200, attemptPackage(resultsRoot, key, attemptId));
+          }
+          if (attemptRoute) {
+            const slice = attemptLogSlice(resultsRoot, key, attemptId, Number(from));
+            const text = Buffer.from(slice.text);
+            response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8',
+              'content-length': text.length, 'cache-control': 'no-store',
+              'x-stack-bench-log-offset': String(slice.offset) });
+            response.end(text);
+            return;
+          }
+        } catch {
+          // The evidence reader names real paths; a campaign or attempt that
+          // cannot be read is a miss, not a message.
+          return json(response, 404, { error: 'Not found' });
+        }
+        return json(response, 404, { error: 'Not found' });
       }
       if (request.method === 'POST' && url.pathname === '/api/campaigns') {
         if (!allowLaunch) return json(response, 503, { error: 'Run controls are available inside the Stack Bench appliance.' });
@@ -341,10 +426,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
           ? input as { planId?: unknown; outputName?: unknown } : {};
         if (typeof runRequest.planId !== 'string' || typeof runRequest.outputName !== 'string'
           || !SAFE_NAME.test(runRequest.outputName)) {
-          return json(response, 400, { error: 'Choose a frozen plan and a simple output name.' });
+          return json(response, 400, { error: 'Choose a test plan and a simple run name.' });
         }
         const plan = plans().find(item => item.id === runRequest.planId);
-        if (!plan || plan.state !== 'frozen') return json(response, 400, { error: 'The selected frozen plan is unavailable.' });
+        if (!plan || plan.state !== 'frozen') {
+          return json(response, 400, { error: 'The selected test plan is not ready to run.' });
+        }
         const path = join(plansRoot, plan.file);
         const output = join(resultsRoot, 'campaigns', runRequest.outputName);
         if (existsSync(output)) return json(response, 409, { error: 'That run output already exists.' });
@@ -381,6 +468,15 @@ export function createDashboardServer(options: DashboardServerOptions) {
       return json(response, 500, { error: errorMessage(error) });
     }
   });
+  // An open event stream is not an idle connection: the watchers stop and the
+  // streams end as the server closes, not once it has.
+  const closeServer = server.close.bind(server);
+  server.close = ((callback?: (error?: Error) => void) => {
+    stopEvents();
+    for (const listener of listeners) listener.end();
+    listeners.clear();
+    return closeServer(callback);
+  }) as typeof server.close;
   return { server, token, allowLaunch };
 }
 

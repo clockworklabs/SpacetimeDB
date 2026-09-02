@@ -14,7 +14,7 @@ import { campaignFacts, inspectCampaignAttempt } from '../src/campaigns/campaign
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
 
-const MAX_LOG_BYTES = 96 * 1024;
+export const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;
 const MAX_ARTIFACTS_PER_EXECUTION = 512;
 const IMAGE_TYPES = new Map([
@@ -42,7 +42,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function contained(root: string, path: string, label: string): string {
+export function contained(root: string, path: string, label: string): string {
   const absoluteRoot = resolve(root);
   const absolute = resolve(absoluteRoot, path);
   const rel = relative(absoluteRoot, absolute);
@@ -52,7 +52,7 @@ function contained(root: string, path: string, label: string): string {
   return absolute;
 }
 
-function readTextTail(path: string, limit = MAX_LOG_BYTES): string {
+export function readTextTail(path: string, limit = MAX_LOG_BYTES): string {
   if (!existsSync(path)) return '';
   const descriptor = openSync(path, 'r');
   try {
@@ -112,7 +112,7 @@ function rejectSymlinkPath(root: string, path: string): void {
   }
 }
 
-function walkPublicExecutionArtifacts(campaignDirectory: string, executionDirectory: string): {
+export function walkPublicExecutionArtifacts(campaignDirectory: string, executionDirectory: string): {
   artifacts: DashboardArtifact[];
   truncated: boolean;
 } {
