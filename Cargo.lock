@@ -870,6 +870,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-check-release-deps"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "rollback-coordination",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "ci-cla-assistant"
 version = "0.1.0"
 dependencies = [
@@ -6436,6 +6446,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.107",
+]
+
+[[package]]
+name = "rollback-coordination"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
