@@ -7,3 +7,13 @@ current state. Use `buy-error` or `out-of-stock` for a failed purchase.
 Put `data-buy-input` on each `item-card`. Its value is a JSON object containing that item's
 server identifier, for example `{"itemId":42}`. Use the same identifier for the visible buy
 action.
+
+Expose the same purchase used by `buy-now`.
+
+<!-- interface:http -->
+Use `POST /api/items/:id/buy`, where `:id` is the item identifier.
+<!-- /interface -->
+
+<!-- interface:reducer -->
+Use the `buy_now` reducer with the item identifier.
+<!-- /interface -->

@@ -14,5 +14,5 @@ Expose `POST /api/admin/scheduled-restocks` and `DELETE /api/admin/scheduled-res
 <!-- /interface -->
 
 <!-- interface:reducer -->
-Expose `scheduleRestock` and `cancelScheduledRestock`.
+Expose `schedule_restock` and `cancel_scheduled_restock`.
 <!-- /interface -->

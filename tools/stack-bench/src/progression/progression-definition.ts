@@ -3,12 +3,15 @@ import { dirname, join, resolve } from 'node:path';
 
 import {
   compilePackDefinition,
+  resolveTaskFragment,
   type CompiledPackDefinition,
 } from '../composition/composition-compiler.js';
 import {
   compileScenarioDefinition,
   type CompiledScenarioDefinition,
+  type CompiledStep,
 } from '../composition/definition-compiler.js';
+import { agentVisibleContractText } from '../composition/agent-visible-contract.js';
 import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
@@ -170,6 +173,28 @@ function packCatalog(trackRoot: string): Map<string, CompiledPackDefinition> {
 interface ResolvedGradingGroup {
   checks: CompiledProgressionCheck[];
   requiresFeatures: string[];
+  namedActions: Array<{ id: string; method?: string; path?: string; reducer?: string }>;
+}
+
+const pathTemplate = (value: string): string =>
+  value.replace(/:[A-Za-z][A-Za-z0-9_]*|\{[^}]+\}/g, '{}');
+const inlineCode = (value: string): string[] =>
+  [...value.matchAll(/`([^`\r\n]+)`/g)].map(match => match[1]!.trim());
+
+function inlineNamedActions(steps: readonly CompiledStep[]): ResolvedGradingGroup['namedActions'] {
+  const actions: ResolvedGradingGroup['namedActions'] = [];
+  const visit = (step: CompiledStep): void => {
+    if (object(step.namedAction)) {
+      const action = step.namedAction;
+      if (typeof action.id === 'string') actions.push({ id: action.id,
+        ...(typeof action.method === 'string' ? { method: action.method } : {}),
+        ...(typeof action.path === 'string' ? { path: action.path } : {}),
+        ...(typeof action.reducer === 'string' ? { reducer: action.reducer } : {}) });
+    }
+    for (const branch of step.branches ?? []) branch.forEach(visit);
+  };
+  steps.forEach(visit);
+  return actions;
 }
 
 function groupChecks(pack: CompiledPackDefinition, groupId: string, trackRoot: string,
@@ -205,6 +230,10 @@ function groupChecks(pack: CompiledPackDefinition, groupId: string, trackRoot: s
         ? { requiresFeatures: [...group.requiresFeatures].sort() } : {}),
     })),
     requiresFeatures: group.requiresFeatures ?? [],
+    namedActions: inlineNamedActions([
+      ...feature.setup,
+      ...criteria.flatMap(criterion => criterion.steps),
+    ]),
   };
 }
 
@@ -248,6 +277,8 @@ export function compileProgressionDefinition(input: unknown,
   const featureOwners = new Map<string, string>();
   const promptOwners = new Map<string, string>();
   const checkOwners = new Map<string, string>();
+  const nodeNamedActions = new Map<string, Array<ResolvedGradingGroup['namedActions'][number]
+    & { requiresFeatures: string[] }>>();
   const nodes = authored.nodes.map((node, index) => {
     const at = `${source}.nodes[${index}]`;
     strictObject(node, at, new Set([
@@ -286,6 +317,8 @@ export function compileProgressionDefinition(input: unknown,
       promptOwners.set(reference, node.id);
     }
     const gradingGroups = uniqueStrings(node.gradingGroups, `${at}.gradingGroups`).sort();
+    const namedActions: Array<ResolvedGradingGroup['namedActions'][number]
+      & { requiresFeatures: string[] }> = [];
     const gradingChecks = gradingGroups.flatMap((reference, groupIndex) => {
       const split = reference.lastIndexOf('#');
       if (split < 1) fail(`${at}.gradingGroups[${groupIndex}]`, 'must be pack@version#group');
@@ -304,6 +337,8 @@ export function compileProgressionDefinition(input: unknown,
       if (!group) return fail(`${at}.gradingGroups[${groupIndex}]`, `missing group ${groupId}`);
       if (group.checks.length === 0) fail(`${at}.gradingGroups[${groupIndex}]`, 'has no scored criteria');
       groupOwners.set(reference, node.id);
+      namedActions.push(...group.namedActions.map(action => ({ ...action,
+        requiresFeatures: group.requiresFeatures })));
       for (const check of group.checks) {
         if (checkOwners.has(check.id)) {
           fail(`${at}.gradingGroups[${groupIndex}]`,
@@ -313,6 +348,7 @@ export function compileProgressionDefinition(input: unknown,
       }
       return group.checks;
     });
+    nodeNamedActions.set(node.id, namedActions);
     const selectedGroups = new Set(gradingGroups);
     for (const featureRef of featureRefs) {
       const pack = packs.get(featureRef);
@@ -381,6 +417,41 @@ export function compileProgressionDefinition(input: unknown,
     if (canonicalDefinitionJson(node.dependencies) !== canonicalDefinitionJson(expected)) {
       fail(`${source}.nodes.${node.id}.dependencies`,
         `must equal minimal product dependencies: ${expected.join(', ') || '(none)'}`);
+    }
+  }
+  const featureRefsById = new Map([...featureOwners.keys()].map(reference =>
+    [reference.slice(0, reference.lastIndexOf('@')), reference]));
+  for (const node of compiled.nodes) {
+    for (const action of nodeNamedActions.get(node.id) ?? []) {
+      const references = [
+        ...node.featureRefs,
+        ...action.requiresFeatures.map(featureId => featureRefsById.get(featureId)
+          ?? fail(`${source}.nodes.${node.id}.gradingGroups`,
+            `action ${action.id} requires feature ${featureId} with no graph owner`)),
+      ];
+      const contracts = [...new Set(references)].flatMap(reference => {
+        const pack = packs.get(reference);
+        if (!pack) return fail(`${source}.nodes.${node.id}.gradingGroups`,
+          `action ${action.id} uses missing feature ${reference}`);
+        return pack.task.contracts.map(contract => resolveTaskFragment(contract, {
+          trackRoot: resolve(trackRoot),
+          source: `${reference}.task.contracts.${contract.id}`,
+        }).text);
+      });
+      const http = contracts.map(contract =>
+        agentVisibleContractText(contract, {}, 'http')).join('\n');
+      const reducer = contracts.map(contract =>
+        agentVisibleContractText(contract, {}, 'reducer')).join('\n');
+      const httpAction = `${action.method ?? 'POST'} ${action.path ?? ''}`.trim();
+      if (action.path && !inlineCode(http).map(pathTemplate).includes(pathTemplate(httpAction))) {
+        fail(`${source}.nodes.${node.id}.gradingGroups`,
+          `action ${action.id} HTTP interface ${httpAction} is absent from its feature contracts`);
+      }
+      if (action.reducer && !inlineCode(reducer)
+        .some(value => value === action.reducer || value.startsWith(`${action.reducer}(`))) {
+        fail(`${source}.nodes.${node.id}.gradingGroups`,
+          `action ${action.id} reducer ${action.reducer} is absent from its feature contracts`);
+      }
     }
   }
   for (const node of compiled.nodes) {

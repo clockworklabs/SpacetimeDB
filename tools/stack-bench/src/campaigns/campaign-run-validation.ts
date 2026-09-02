@@ -252,21 +252,20 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
     mismatch(canonicalDefinitionJson(ladder?.completedLevels)
       !== canonicalDefinitionJson(conclusiveLevels), 'validation.ladder.completedLevels');
     for (const level of run.levels ?? []) {
-      const last = [...stored.state.attempts].reverse().find(item => item.level === level.level);
-      mismatch(!last, `levels.L${level.level}.progressionAttempt`);
-      if (!last) continue;
-      mismatch(last.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
-        `levels.L${level.level}.selection.sha256`);
+      const matching = [...stored.state.attempts].reverse().find(item =>
+        item.level === level.level && item.selectionSha256 === level.selection?.sha256);
+      mismatch(!matching, `levels.L${level.level}.progressionAttempt`);
+      if (!matching) continue;
       const validScore = safeInteger(level.score) && safeInteger(level.max)
         && level.max > 0 && level.score >= 0 && level.score <= level.max;
-      mismatch(last.outcome === 'conclusive' && !validScore, `levels.L${level.level}.score`);
-      mismatch(last.outcome === 'inconclusive' && level.graded !== false,
+      mismatch(matching.outcome === 'conclusive' && !validScore, `levels.L${level.level}.score`);
+      mismatch(matching.outcome === 'inconclusive' && level.graded !== false,
         `levels.L${level.level}.graded`);
-      const codingInterruption = last.outcome === 'inconclusive'
+      const codingInterruption = matching.outcome === 'inconclusive'
         && level.outcome?.phase === 'coding-session';
-      mismatch(codingInterruption && last.category !== level.outcome?.kind,
+      mismatch(codingInterruption && matching.category !== level.outcome?.kind,
         `levels.L${level.level}.progressionAttempt.category`);
-      mismatch(codingInterruption && last.reason !== level.outcome?.reason,
+      mismatch(codingInterruption && matching.reason !== level.outcome?.reason,
         `levels.L${level.level}.progressionAttempt.reason`);
     }
     if (stored.state.phase === 'terminal') {

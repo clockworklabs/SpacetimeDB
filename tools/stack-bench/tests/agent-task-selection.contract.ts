@@ -281,6 +281,7 @@ test('a standalone recipe selects its exact prompt and cannot disagree with a bo
     assert.equal(candidate, promoted);
     assert.match(candidate, /data-buy-input/);
     assert.match(promoted, /data-buy-input/);
+    assert.match(promoted, /POST \/api\/items\/:id\/buy/);
 
     const request = createRecipeTaskRequest(binding).request;
     assert.throws(() => printPrompt(app, request,

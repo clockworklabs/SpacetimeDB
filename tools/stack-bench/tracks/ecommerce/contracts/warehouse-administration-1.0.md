@@ -18,5 +18,5 @@ Expose `POST /api/admin/restock`.
 <!-- /interface -->
 
 <!-- interface:reducer -->
-Expose `adminRestock`.
+Expose `admin_restock`.
 <!-- /interface -->

@@ -8,4 +8,4 @@ link action must expose its input in `data-action-input` for the named
 `linkSupportOrder` application action.
 
 For HTTP stacks, `linkSupportOrder` is `POST /api/support/cases/{caseId}/order`. For reducer
-stacks, it is `linkSupportOrder(caseId, orderId)`.
+stacks, it is `link_support_order(caseId, orderId)`.

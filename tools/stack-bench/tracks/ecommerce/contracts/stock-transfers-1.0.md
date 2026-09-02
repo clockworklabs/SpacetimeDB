@@ -15,5 +15,5 @@ Expose `POST /api/admin/transfer`.
 <!-- /interface -->
 
 <!-- interface:reducer -->
-Expose `adminTransferStock`.
+Expose `admin_transfer_stock`.
 <!-- /interface -->

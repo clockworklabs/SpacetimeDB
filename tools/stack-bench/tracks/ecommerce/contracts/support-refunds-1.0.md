@@ -9,4 +9,4 @@ Within a `support-ticket`, use `support-refund` for the refund action and
 `refund-entry` includes the order item name.
 
 For HTTP stacks, `supportRefund` is `POST /api/support/cases/{caseId}/refund`. For reducer stacks,
-it is `supportRefund(caseId)`.
+it is `support_refund(caseId)`.

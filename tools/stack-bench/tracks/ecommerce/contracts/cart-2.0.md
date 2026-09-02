@@ -10,5 +10,17 @@ server identifier, for example `{"itemId":42}`. Put `data-cart-input` on each `c
 Its value contains the item identifier and the invalid quantity `-3`, for example
 `{"itemId":42,"quantity":-3}`. The cart quantity action must reject this value.
 
+Expose the same add and quantity-update operations used by the cart controls.
+
+<!-- interface:http -->
+Use `POST /api/cart`. Put `itemId` in the JSON body.
+Use `PATCH /api/cart/:itemId`. Put `quantity` in the JSON body.
+<!-- /interface -->
+
+<!-- interface:reducer -->
+Use the `add_to_cart` reducer with the item identifier.
+Use the `update_cart_quantity` reducer with the item identifier and quantity.
+<!-- /interface -->
+
 Use `checkout-submit` to check out. Use `orders-toggle` to open order history and `order-item`
 for each order created by checkout. Cart state must remain correct after reconnect and reload.

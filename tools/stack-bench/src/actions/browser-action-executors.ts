@@ -85,6 +85,7 @@ type InteractionInput = CommonInput & {
   readonly key?: string;
 };
 type ExpectInput = CommonInput & {
+  readonly attribute?: string;
   readonly absent?: boolean;
   readonly count?: number;
   readonly value?: string;
@@ -281,13 +282,17 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
 
   if (input.value !== undefined) {
     const deadline = Date.now() + within;
-    let value = await readValue(loc);
+    const read = async () => input.attribute
+      ? await loc.getAttribute(input.attribute) ?? ''
+      : readValue(loc);
+    let value = await read();
     while (value !== input.value && Date.now() <= deadline) {
       await browser.sleep(250, signal);
-      value = await readValue(loc);
+      value = await read();
     }
     if (value !== input.value) {
-      fail(`${browser.testId(input.testid)} expected value "${input.value}", got "${value}"`);
+      fail(`${browser.testId(input.testid)} expected${input.attribute
+        ? ` ${input.attribute}` : ' value'} "${input.value}", got "${value}"`);
     }
   }
   if (input.notContains) {
@@ -301,7 +306,9 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     const text = (await readValue(loc)).trim();
     if (!text) fail(`${browser.testId(input.testid)} is visible but empty`);
   }
-  return { visible: true, ...(input.value === undefined ? {} : { value: input.value }) };
+  return { visible: true, ...(input.value === undefined ? {} : {
+    ...(input.attribute ? { attribute: input.attribute } : {}), value: input.value,
+  }) };
 }
 
 async function waitUntilAbsent({ input, capabilities }: BrowserArguments<CommonInput>) {

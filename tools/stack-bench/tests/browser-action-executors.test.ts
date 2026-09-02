@@ -256,6 +256,18 @@ test('expect can verify a persisted form value', async () => {
   assert.deepEqual(result.observation, { visible: true, value: 'staff' });
 });
 
+test('expect can verify an element attribute', async () => {
+  const locator = {
+    waitFor: async () => {},
+    getAttribute: async (name: string) => name === 'data-state' ? 'on' : null,
+  };
+  const actor = { loc: () => locator };
+  const result = await run({ do: 'expect', actor: 'a', testid: 'notification-preference',
+    attribute: 'data-state', value: 'on' }, services(actor));
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.observation, { visible: true, attribute: 'data-state', value: 'on' });
+});
+
 test('ordered text and unavailable controls are explicit implementation-neutral observations', async () => {
   const items = {
     filter: () => items,

@@ -156,7 +156,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   enterRoom: fields({ ...actor, room: nonEmptyString }),
   expect: fields({ ...actor, testid: nonEmptyString },
     { contains: string, notContains: string, value: string, nonEmpty: boolean,
-      count: nonNegativeInteger,
+      count: nonNegativeInteger, attribute: nonEmptyString,
       absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
     equals: nonNegativeInteger, maxEach: nonNegativeInteger }),

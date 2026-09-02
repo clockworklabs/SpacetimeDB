@@ -25,7 +25,7 @@
           "steps": [
             { "do": "reload", "actor": "owner", "settleMs": 3000 },
             { "do": "click", "actor": "owner", "testid": "notification-settings" },
-            { "do": "expect", "actor": "owner", "testid": "notification-order", "contains": "on", "notContains": "off" }
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" }
           ]
         },
         {
@@ -35,7 +35,7 @@
           "statedBy": "One customer's notification choices do not affect another customer.",
           "steps": [
             { "do": "click", "actor": "other", "testid": "notification-settings" },
-            { "do": "expect", "actor": "other", "testid": "notification-order", "contains": "off" }
+            { "do": "expect", "actor": "other", "testid": "notification-order", "attribute": "data-state", "value": "off" }
           ]
         }
       ]

@@ -7,7 +7,7 @@ Put a `data-price-input` attribute on each `admin-item-row`. Its value is a JSON
 JSON numbers or strings.
 
 For direct authorization actions, server-based stacks expose `POST /api/admin/price` and
-SpacetimeDB exposes `adminChangePrice`. These calls use the same authorization and price rules as
+SpacetimeDB exposes `admin_change_price`. These calls use the same authorization and price rules as
 the visible application.
 
 The price-history checks also use `add-to-cart` inside an `item-card`, `cart-toggle`, `cart-total`,
