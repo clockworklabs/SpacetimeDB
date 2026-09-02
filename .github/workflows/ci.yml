@@ -24,7 +24,7 @@ permissions:
 jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions:
       actions: write
       contents: read
@@ -584,7 +584,7 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
@@ -950,7 +950,7 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Skip duplicate merge queue update test
         run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
@@ -1549,7 +1549,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions:
       contents: read
     env:
@@ -1590,7 +1590,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions:
       contents: read
     env:

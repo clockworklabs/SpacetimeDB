@@ -50,7 +50,7 @@ concurrency:
 jobs:
   prepare_matrix:
     name: Prepare benchmark matrix
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     outputs:
       languages: ${{ steps.matrix.outputs.languages }}
     steps:
