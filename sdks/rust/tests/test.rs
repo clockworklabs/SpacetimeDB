@@ -865,7 +865,10 @@ procedural_view_pk_tests!(cpp_procedural_view_pk, "sdk-test-procedural-view-pk-c
 #[ignore = "CI prepares shared SDK client artifacts before partitioning"]
 fn prepare_clients() {
     let prepared_clients = [
-        rust::make_test("insert-primitive"),
+        // The Rust module exposes additional private reducers when generating with
+        // `--include-private`; use the C++ module whose schema matches the committed
+        // bindings shared by these otherwise equivalent module variants.
+        cpp::make_test("insert-primitive"),
         rust::make_connect_disconnect_test(),
         event_table_tests::make_test("event-table"),
         rust_procedures::make_test("procedure-return-values"),
