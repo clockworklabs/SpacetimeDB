@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
-    cmp, fmt,
+    fmt,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -41,6 +41,75 @@ impl Page {
     }
 }
 
+#[derive(Default)]
+struct PageMap {
+    volatile: BTreeMap<PageIndex, Arc<Page>>,
+    durable: BTreeMap<PageIndex, Arc<Page>>,
+}
+
+impl PageMap {
+    /// Reset the volatile to the durable state.
+    fn crash(&mut self) {
+        self.volatile = self.durable.clone();
+    }
+
+    /// Move the page at `index` from the volatile to the durable state.
+    fn sync(&mut self, index: PageIndex) {
+        self.durable.insert(index, self.volatile.get(&index).cloned().unwrap());
+    }
+
+    /// Get the page at `index` for reading. Uses the durable state.
+    fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
+        self.durable.get(&index).cloned()
+    }
+
+    /// Get the page at `index` for writing, or allocate a new page.
+    /// Uses the volatile state.
+    fn get_or_allocate_page(&mut self, index: PageIndex) -> Arc<Page> {
+        Arc::clone(self.volatile.entry(index).or_insert_with(|| Arc::new(Page::zeroed())))
+    }
+
+    /// Change the allocated space, allocating or deallocating pages as needed.
+    /// Changes the volatile state only.
+    fn set_len_volatile(&mut self, new_len: u64) {
+        Self::set_len(&mut self.volatile, new_len);
+    }
+
+    /// Like [Self::set_len], but operate on the durable state only.
+    fn set_len_durable(&mut self, new_len: u64) {
+        Self::set_len(&mut self.durable, new_len);
+    }
+
+    fn set_len(page_map: &mut BTreeMap<PageIndex, Arc<Page>>, new_len: u64) {
+        use core::cmp::Ordering::*;
+
+        let old_len = page_map.len() as u64;
+        match new_len.cmp(&old_len) {
+            Equal => {}
+            Greater => {
+                let first_new_page = old_len / PAGE_SIZE_U64;
+                let end_page = new_len / PAGE_SIZE_U64;
+
+                for index in first_new_page..end_page {
+                    page_map
+                        .entry(PageIndex(index))
+                        .or_insert_with(|| Arc::new(Page::zeroed()));
+                }
+            }
+            Less => {
+                let first_removed = PageIndex::from_offset(new_len);
+                let removed = page_map.split_off(&first_removed);
+                drop(removed);
+            }
+        }
+    }
+}
+
+pub enum Datasync {
+    Sector(u64),
+    Length,
+}
+
 /// A memory-backed file.
 ///
 /// A [File] is backed by a sparse array of [Page]s. Missing pages are read as
@@ -50,26 +119,39 @@ impl Page {
 /// or written. Writing a page is atomic.
 #[derive(Clone)]
 pub struct File {
-    pages: Arc<spin::Mutex<BTreeMap<PageIndex, Arc<Page>>>>,
-    len: Arc<AtomicU64>,
+    pages: Arc<spin::Mutex<PageMap>>,
+
+    volatile_len: Arc<AtomicU64>,
+    durable_len: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for File {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("File").field("len", &self.len).finish()
+        f.debug_struct("File")
+            .field("volatile_len", &self.volatile_len)
+            .field("durable_len", &self.durable_len)
+            .finish()
     }
 }
 
 impl File {
     pub(super) fn new() -> Self {
         Self {
-            pages: Arc::new(spin::Mutex::new(BTreeMap::new())),
-            len: Arc::new(AtomicU64::new(0)),
+            pages: <_>::default(),
+            volatile_len: <_>::default(),
+            durable_len: <_>::default(),
         }
     }
 
+    /// Simulate a crash by resetting to the durable state.
+    pub(super) fn crash(&self) {
+        self.volatile_len
+            .store(self.durable_len.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.pages.lock().crash();
+    }
+
     pub(super) fn len(&self) -> u64 {
-        self.len.load(Ordering::Relaxed)
+        self.volatile_len.load(Ordering::Relaxed)
     }
 
     #[allow(unused)]
@@ -84,33 +166,11 @@ impl File {
     /// Extending allocates pages eagerly as needed. Shrinking drops all pages
     /// at or beyond the new EOF.
     pub(super) fn set_len(&self, new_len: u64) -> Result<()> {
-        use cmp::Ordering::*;
-
         if !new_len.is_multiple_of(PAGE_SIZE_U64) {
             return Err(Error::UnalignedOffset);
         }
-        let old_len = self.len();
-
-        match new_len.cmp(&old_len) {
-            Equal => {}
-            Greater => {
-                let first_new_page = old_len / PAGE_SIZE_U64;
-                let end_page = new_len / PAGE_SIZE_U64;
-
-                for index in first_new_page..end_page {
-                    self.get_or_allocate_page(PageIndex(index));
-                }
-
-                self.len.store(new_len, Ordering::Relaxed);
-            }
-            Less => {
-                self.len.store(new_len, Ordering::Relaxed);
-
-                let first_removed = PageIndex::from_offset(new_len);
-                let removed = self.pages.lock().split_off(&first_removed);
-                drop(removed);
-            }
-        }
+        self.pages.lock().set_len_volatile(new_len);
+        self.volatile_len.store(new_len, Ordering::Relaxed);
 
         Ok(())
     }
@@ -147,17 +207,39 @@ impl File {
             .and_then(|pages| pages.checked_mul(PAGE_SIZE_U64))
             .ok_or(Error::OffsetOverflow)?;
 
-        self.len.fetch_max(end, Ordering::Relaxed);
+        self.volatile_len.fetch_max(end, Ordering::Relaxed);
 
         Ok(())
     }
 
+    /// Execute an `fdatasync(2)` operation as a series of [Datasync] effects.
+    ///
+    /// The result may or may not leave the durable state in the same state as
+    /// the volatile state at the time the operation started.
+    ///
+    /// It is the caller's responsibility to decide whether the operation is
+    /// considered successful - a partial operation may report success, or a
+    /// complete operation may report failure.
+    pub(super) fn fdatasync(&self, ops: impl IntoIterator<Item = Datasync>) {
+        for op in ops {
+            match op {
+                Datasync::Sector(offset) => {
+                    self.pages.lock().sync(PageIndex(offset));
+                }
+                Datasync::Length => {
+                    let new_durable_len = self.volatile_len.load(Ordering::Relaxed);
+                    self.durable_len.store(new_durable_len, Ordering::Relaxed);
+                    self.pages.lock().set_len_durable(new_durable_len);
+                }
+            }
+        }
+    }
+
     fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
-        self.pages.lock().get(&index).cloned()
+        self.pages.lock().get_page(index)
     }
 
     fn get_or_allocate_page(&self, index: PageIndex) -> Arc<Page> {
-        let mut pages = self.pages.lock();
-        Arc::clone(pages.entry(index).or_insert_with(|| Arc::new(Page::zeroed())))
+        self.pages.lock().get_or_allocate_page(index)
     }
 }
