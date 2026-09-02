@@ -16,7 +16,8 @@ import { claimNextAttempt, createCampaignState, finishCampaignExecution }
 import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { campaignDetail, parseRunProgress,
-  readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact, summarizeCampaign,
+  discoverCampaigns, readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact,
+  summarizeCampaign,
 } from '../dashboard/dashboard-model.js';
 import { campaignFacts, firstGradeAbort, inspectCampaignSummary }
   from '../src/campaigns/campaign-inspection.js';
@@ -314,6 +315,38 @@ test('dashboard rejects a run artifact that does not belong to its frozen attemp
   assert.equal(inspection.schemaVersion, 1);
   assert.match(inspected?.result?.unreadable ?? '', /attempt\.parentId/);
   assert.equal(inspected?.artifacts?.run, `${claimed.claim.output}/run.json`);
+});
+
+test('dashboard overview defers historical evidence validation until detail is opened', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-history-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const key = 'historical-run';
+  const campaign = join(resultsRoot, 'campaigns', key);
+  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  let state = createCampaignState(plan, { now: '2026-08-18T12:00:00.000Z' });
+  let firstClaim = null;
+  for (;;) {
+    const claimed = claimNextAttempt(state,
+      { now: '2026-08-18T12:00:00.000Z', admissionId: 'admission-1' });
+    if (!claimed.claim) break;
+    firstClaim ??= claimed.claim;
+    state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+      { exitCode: 0, run: { outcome: { kind: 'passed' } } },
+      { now: '2026-08-18T12:00:01.000Z' });
+  }
+  assert.ok(firstClaim);
+  writeCampaign(campaign, plan, state);
+  const output = join(campaign, firstClaim.output);
+  mkdirSync(output, { recursive: true });
+  writeFileSync(join(output, 'run.json'), '{"not":"a benchmark run"}\n');
+
+  const overview = discoverCampaigns(join(resultsRoot, 'campaigns'))[0];
+  assert.ok(overview && overview.status !== 'unreadable');
+  assert.equal(overview.status, 'completed');
+  assert.equal(overview.attempts.length, 0);
+
+  const detail = campaignDetail(resultsRoot, key);
+  assert.match(detail.attempts[0]?.result?.unreadable ?? '', /unsupported schema/);
 });
 
 test('campaign detail exposes the evidence package but not arbitrary campaign files', async t => {

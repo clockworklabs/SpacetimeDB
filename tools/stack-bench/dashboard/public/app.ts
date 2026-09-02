@@ -31,7 +31,7 @@ type ComparisonRow = ComparisonEntry & {
 interface QuestlineLane { id: string; title: string; stations: DependencyNode[]; }
 interface QuestlineLayout { x0: number; step: number; top: number; laneH: number; width: number; }
 interface DependencyColumn { stack: string; attempt: Attempt & { dependency: Dependency }; }
-interface RowEntry { html: string; className: string; toggles?: string; }
+interface RowEntry { html: string; className: string; }
 
 function readableCampaign(campaign: DashboardCampaignSummary): campaign is Campaign {
   return campaign.status !== 'unreadable';
@@ -51,14 +51,11 @@ const state: {
   selectedPlan: DashboardPlan | null;
   showArchived: boolean;
   openCampaign: string | null;
-  expanded: Set<string>;
-  collapsed: Set<string>;
   lastRefreshAt: number | null;
   prevScores: Map<string, number>;
 } = { questlineView: 'questlines', overview: null, csrfToken: null, controlSecret: null,
   selectedPlan: null, showArchived: false,
-  openCampaign: null, expanded: new Set(), collapsed: new Set(),
-  lastRefreshAt: null, prevScores: new Map() };
+  openCampaign: null, lastRefreshAt: null, prevScores: new Map() };
 
 interface DashboardElement extends HTMLElement {
   disabled: boolean;
@@ -528,19 +525,17 @@ function comparisonTable(campaign: Campaign): string {
 }
 
 function campaignRow(campaign: DashboardCampaignSummary): string {
-  if (!readableCampaign(campaign)) return `<td class="campaign-cell"><span class="chevron" aria-hidden="true"></span><div class="campaign-title"><button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button><i class="row-error">${escapeHtml(campaign.error)}</i></div></td><td class="state-cell"><span class="status unreadable">Cannot read</span></td><td class="num">—</td>`;
+  if (!readableCampaign(campaign)) return `<td class="campaign-cell"><div class="campaign-title"><button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button><i class="row-error">${escapeHtml(campaign.error)}</i></div></td><td class="state-cell"><span class="status unreadable">Cannot read</span></td><td class="num">—</td>`;
   const running = campaign.status === 'running';
   const live = (campaign.attempts ?? []).filter(attempt =>
     ['running', 'pending'].includes(attempt.status)).length;
   const status = running ? `${live} of ${campaign.attempts.length} running`
     : escapeHtml(statusLabel(campaign.status));
-  const stacks = STACK_ORDER.filter(stack =>
-    (campaign.attempts ?? []).some(attempt => attempt.stack === stack));
+  const stacks = STACK_ORDER.filter(stack => campaign.stacks.includes(stack));
   const shape = stacks.length
     ? `${stacks.map(title).join(' · ')}${campaign.repetitions > 1 ? ` ×${campaign.repetitions}` : ''}`
     : '';
   return `<td class="campaign-cell">
-      <span class="chevron${isExpanded(campaign) ? ' open' : ''}" aria-hidden="true"></span>
       <div class="campaign-title">
         <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
         <i>${escapeHtml(campaign.key)}${shape ? ` · ${escapeHtml(shape)}` : ''}</i>
@@ -548,64 +543,6 @@ function campaignRow(campaign: DashboardCampaignSummary): string {
     </td>
     <td class="state-cell"><span class="status ${escapeHtml(campaign.status)}">${status}</span></td>
     <td class="num"><time datetime="${escapeHtml(campaign.updatedAt ?? '')}" title="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></td>`;
-}
-
-// Whether a campaign's rows are open: running campaigns start expanded so the
-// live picture needs no click; anything can be toggled either way, and the
-// choice survives every poll.
-function isExpanded(campaign: { key: string; status?: string }): boolean {
-  if (state.collapsed.has(campaign.key)) return false;
-  return state.expanded.has(campaign.key) || campaign.status === 'running';
-}
-
-// One row per attempt, always available: the run-level facts an operator
-// otherwise opens the modal and expands each attempt for. While an attempt
-// runs, its phase, score, elapsed time and spend update on every poll.
-function attemptRows(campaign: Campaign): string {
-  const dependency = campaign.mode === 'dependency';
-  const attempts = [...(campaign.attempts ?? [])]
-    .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack)
-      || (left.repetition ?? 1) - (right.repetition ?? 1));
-  const rows = attempts.map(attempt => {
-    const metrics = attemptMetrics(attempt);
-    const reason = attemptExcluded(attempt);
-    const running = attempt.status === 'running';
-    const queued = attempt.status === 'pending';
-    const first = metrics?.raw.first ? `${metrics.raw.first.score}/${metrics.raw.first.max}`
-      : metrics ? percent(metrics.first) : '—';
-    const score = metrics?.raw.final ? `${metrics.raw.final.score}/${metrics.raw.final.max}`
-      : metrics ? percent(metrics.final)
-        : !dependency && attempt.progress?.latestScore
-        ? `${attempt.progress.latestScore.score}/${attempt.progress.latestScore.max}` : '—';
-    const level = attempt.progress?.level;
-    const current = attempt.dependency?.work.current.map(node => node.title).join(', ');
-    const middle = reason ? `excluded — ${reason}`
-      : running || queued ? (dependency && current ? `Working on ${current}`
-        : attempt.progress?.phase ?? '') : '';
-    const duration = attempt.result?.durationSec != null
-      ? durationFromSeconds(attempt.result.durationSec)
-      : running ? elapsedTime(attempt.execution?.startedAt) : '—';
-    return `<tr class="attempt-row">
-      <th scope="row">${escapeHtml(title(attempt.stack))} <i>rep ${escapeHtml(attempt.repetition ?? 1)}</i></th>
-      <td class="attempt-middle">${middle ? `<span>${escapeHtml(middle)}</span>`
-        : `<span class="status ${escapeHtml(attempt.status)}">${escapeHtml(statusLabel(attempt.status))}</span>`}</td>
-      ${dependency ? '' : `<td class="num">${level ? `L${escapeHtml(level)}` : '—'}</td>`}
-      <td class="num">${escapeHtml(first)}</td>
-      <td class="num">${escapeHtml(score)}</td>
-      <td class="num">${metrics ? metrics.rounds : (attempt.progress?.repair?.round || '—')}</td>
-      <td class="num">${escapeHtml(duration)}</td>
-      <td class="num">${attemptCostLabel(attempt)}</td>
-    </tr>`;
-  }).join('');
-  return `<td colspan="3"><table class="attempt-grid">
-    ${campaign.facts?.grading?.status === 'pending'
-    ? '<caption class="grading-note">Provisional scores. Grading qualification is pending.</caption>' : ''}
-    <thead><tr><th scope="col">Attempt</th><th scope="col">State</th>
-      ${dependency ? '' : '<th class="num" scope="col">Level</th>'}<th class="num" scope="col">Initial result</th>
-      <th class="num" scope="col">Final score</th><th class="num" scope="col">Repairs</th>
-      <th class="num" scope="col">Time</th><th class="num" scope="col">Cost</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table></td>`;
 }
 
 // Preserve row nodes during refresh so pointer targets stay stable.
@@ -628,8 +565,6 @@ function reconcileRows(tbody: HTMLElement, desired: ReadonlyMap<string, RowEntry
       row.dataset.html = entry.html;
     }
     if (row.className !== entry.className) row.className = entry.className;
-    if (entry.toggles) row.dataset.toggles = entry.toggles;
-    else delete row.dataset.toggles;
     const sibling: Element | null = cursor ? cursor.nextElementSibling : tbody.firstElementChild;
     const expected: HTMLElement | null = sibling instanceof HTMLElement ? sibling : null;
     if (row !== expected) tbody.insertBefore(row, expected);
@@ -664,13 +599,7 @@ function renderHistory(): void {
   } else {
     const desired = new Map<string, RowEntry>();
     for (const campaign of visible) {
-      // The whole row toggles the attempt rows; the title button opens the
-      // evidence modal and stays for keyboard and assistive access.
-      desired.set(campaign.key, { html: campaignRow(campaign), className: '',
-        toggles: campaign.key });
-      if (readableCampaign(campaign) && isExpanded(campaign)) {
-        desired.set(`${campaign.key}::attempts`, { html: attemptRows(campaign), className: 'live-row' });
-      }
+      desired.set(campaign.key, { html: campaignRow(campaign), className: '' });
     }
     reconcileRows(tbody, desired);
   }
@@ -1251,7 +1180,10 @@ function renderPlanSummary() {
   $('#output-name').value = runName(plan);
 }
 
+let refreshing = false;
 async function refresh({ quiet = false }: { quiet?: boolean } = {}): Promise<void> {
+  if (refreshing) return;
+  refreshing = true;
   try {
     const overview = parseOverview(await request('/api/overview'));
     state.overview = overview;
@@ -1263,6 +1195,8 @@ async function refresh({ quiet = false }: { quiet?: boolean } = {}): Promise<voi
     $('#refresh-state').textContent = '';
   } catch (error: unknown) {
     $('#refresh-state').textContent = quiet ? 'Not updating' : errorMessage(error);
+  } finally {
+    refreshing = false;
   }
 }
 
@@ -1301,14 +1235,6 @@ document.addEventListener('click', event => {
     document.querySelectorAll<HTMLElement>('[data-qlpanel]').forEach(panel =>
       panel.hidden = panel.dataset.qlpanel !== state.questlineView);
     return;
-  }
-  const toggle = target.closest<HTMLElement>('[data-toggles]');
-  if (toggle?.dataset.toggles) {
-    const key = toggle.dataset.toggles;
-    const campaign = state.overview?.campaigns.find(item => item.key === key);
-    if (isExpanded(campaign ?? { key })) { state.expanded.delete(key); state.collapsed.add(key); }
-    else { state.collapsed.delete(key); state.expanded.add(key); }
-    renderHistory();
   }
 });
 $('#close-detail').addEventListener('click', closeDetail);

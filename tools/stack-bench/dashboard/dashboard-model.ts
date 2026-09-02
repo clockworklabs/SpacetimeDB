@@ -299,15 +299,19 @@ function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptSt
 export function summarizeCampaign(directory: string, {
   includeLogs = false,
   includePackage = false,
+  includeAttempts = true,
   controllerActive = null,
 }: {
   includeLogs?: boolean;
   includePackage?: boolean;
+  includeAttempts?: boolean;
   controllerActive?: ControllerActive | null;
 } = {}) {
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
-  let attempts = state.attempts.map(attempt => summarizeAttempt(plan, attempt, directory,
-    plan.definition.budgets.fixRounds, { includeLog: includeLogs }));
+  let attempts = includeAttempts
+    ? state.attempts.map(attempt => summarizeAttempt(plan, attempt, directory,
+      plan.definition.budgets.fixRounds, { includeLog: includeLogs }))
+    : [];
   const interrupted = state.status === 'running' && controllerActive !== null
     && !controllerActive(directory, plan);
   if (interrupted) {
@@ -357,6 +361,28 @@ export interface UnreadableDashboardCampaign {
 export type DashboardCampaign = ReturnType<typeof summarizeCampaign>;
 export type DashboardCampaignSummary = DashboardCampaign | UnreadableDashboardCampaign;
 
+const overviewCampaignCache = new Map<string, {
+  fingerprint: string;
+  campaign: DashboardCampaign;
+}>();
+
+function summarizeOverviewCampaign(directory: string, includeAttempts: boolean,
+  controllerActive: ControllerActive): DashboardCampaign {
+  const fingerprint = [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state]
+    .map(file => {
+      const stat = statSync(join(directory, file));
+      return `${stat.size}:${stat.mtimeMs}`;
+    }).join('|');
+  const key = `${includeAttempts ? 'attempts' : 'summary'}:${directory}`;
+  const cached = overviewCampaignCache.get(key);
+  if (cached?.fingerprint === fingerprint) return cached.campaign;
+  const campaign = summarizeCampaign(directory, { includeAttempts, controllerActive });
+  if (campaign.summary.running === 0) {
+    overviewCampaignCache.set(key, { fingerprint, campaign });
+  }
+  return campaign;
+}
+
 export function discoverCampaigns(campaignsRoot: string, {
   includeLogs = false,
   controllerActive = campaignLockIsActive,
@@ -369,14 +395,36 @@ export function discoverCampaigns(campaignsRoot: string, {
     if (!existsSync(join(directory, CAMPAIGN_FILE.state))
       || !existsSync(join(directory, CAMPAIGN_FILE.plan))) continue;
     try {
-      campaigns.push(summarizeCampaign(directory, { includeLogs, controllerActive }));
+      campaigns.push(includeLogs
+        ? summarizeCampaign(directory, { includeLogs, controllerActive })
+        : summarizeOverviewCampaign(directory, false, controllerActive));
     } catch (error) {
       campaigns.push({ key: entry.name, id: entry.name, title: entry.name,
         status: 'unreadable', error: errorMessage(error), attempts: [] });
     }
   }
-  return campaigns.sort((left, right) => String('updatedAt' in right ? right.updatedAt ?? '' : '')
+  campaigns.sort((left, right) => String('updatedAt' in right ? right.updatedAt ?? '' : '')
     .localeCompare(String('updatedAt' in left ? left.updatedAt ?? '' : '')));
+  if (includeLogs) return campaigns;
+
+  const verdict = campaigns.find(campaign => campaign.status === 'completed'
+    && 'facts' in campaign && campaign.facts.grading.status === 'qualified');
+  return campaigns.map(campaign => {
+    if (campaign.status !== 'running' && campaign !== verdict) return campaign;
+    try {
+      return summarizeOverviewCampaign(join(campaignsRoot, campaign.key), true, controllerActive);
+    } catch (error) {
+      const unreadable: UnreadableDashboardCampaign = {
+        key: campaign.key,
+        id: campaign.id,
+        title: campaign.title,
+        status: 'unreadable',
+        error: errorMessage(error),
+        attempts: [],
+      };
+      return unreadable;
+    }
+  });
 }
 
 export interface DashboardPlan {
