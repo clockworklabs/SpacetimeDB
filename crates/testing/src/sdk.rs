@@ -111,7 +111,7 @@ impl Test {
         let prepared_client_dir = std::env::var_os(PREPARED_CLIENT_DIR_ENV_VAR).map(PathBuf::from);
         if prepared_client_dir.is_none() {
             self.generate_bindings(paths, &file, host_type);
-            compile_client(&self.compile_command, &self.client_project, &self.module_name);
+            compile_client(&self.compile_command, &self.client_project);
         }
 
         let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
@@ -132,13 +132,27 @@ impl Test {
         );
         let sdk_paths = SdkTestPaths::new();
         let (file, host_type) = compile_module(&self.module_name);
-        self.generate_bindings(&sdk_paths.paths, &file, host_type);
-        compile_client(&self.compile_command, &self.client_project, &self.module_name);
+        // Preparation is serial and must rebuild each explicitly requested artifact,
+        // including artifacts for distinct modules that share a client project.
+        self.generate_bindings_uncached(&sdk_paths.paths, &file, host_type);
+        compile_client_uncached(&self.compile_command, &self.client_project);
         self.export_prepared_client(&output_dir);
     }
 
     fn generate_bindings(&self, paths: &SpacetimePaths, file: &str, host_type: HostType) {
         generate_bindings(
+            paths,
+            &self.generate_language,
+            file,
+            host_type,
+            &self.client_project,
+            &self.generate_subdir,
+            self.generate_include_private,
+        );
+    }
+
+    fn generate_bindings_uncached(&self, paths: &SpacetimePaths, file: &str, host_type: HostType) {
+        generate_bindings_uncached(
             paths,
             &self.generate_language,
             file,
@@ -450,7 +464,50 @@ fn publish_module(paths: &SpacetimePaths, server_url: &str, wasm_file: &str, hos
 /// and the `generate_subdir` an arbitrary relative path within it.
 /// These will be combined as `"{client_project}/{generate_subdir}"` to produce the `--out-dir`.
 ///
-/// This function memoizes the complete generation input, not just the output directory.
+fn generate_bindings_uncached(
+    paths: &SpacetimePaths,
+    language: &str,
+    wasm_file: &str,
+    host_type: HostType,
+    client_project: &str,
+    generate_subdir: &str,
+    generate_include_private: bool,
+) {
+    let mut args: Vec<&str> = vec![
+        "generate",
+        "--yes",
+        "--lang",
+        language,
+        match host_type {
+            HostType::Wasm => "--bin-path",
+            HostType::Js => "--js-path",
+        },
+        wasm_file,
+    ];
+
+    if generate_include_private {
+        args.push("--include-private");
+    }
+
+    let generate_dir: String;
+
+    // `generate --lang unrealcpp` takes different arguments from non-Unreal languages
+    // to account for some quirks of Unreal project structure.
+    if language_is_unreal(language) {
+        // For unreal, we use `client_project` as the uproject directory,
+        // and `generate_subdir` as the module name.
+        args.extend_from_slice(&["--uproject-dir", client_project]);
+        args.extend_from_slice(&["--module-name", generate_subdir]);
+    } else {
+        generate_dir = format!("{client_project}/{generate_subdir}");
+        create_dir_all(&generate_dir).unwrap();
+        args.extend_from_slice(&["--out-dir", &generate_dir]);
+    }
+
+    invoke_cli(paths, &args);
+}
+
+/// Note: this function is memoized to ensure we only run `spacetime generate` once for each target directory.
 ///
 /// Without this lock, if multiple `Test`s ran concurrently in the same process
 /// with the same `client_project` and `generate_subdir`,
@@ -458,9 +515,13 @@ fn publish_module(paths: &SpacetimePaths, server_url: &str, wasm_file: &str, hos
 /// each of which would remove and re-populate the bindings directory,
 /// potentially sweeping them out from under a compile or run process.
 ///
-/// This lock ensures that only one `spacetime generate` process runs at a time.
+/// This lock ensures that only one `spacetime generate` process runs at a time,
+/// and the `HashSet` ensures that we run `spacetime generate` only once for each output directory.
 ///
 /// Circumstances where this will still break:
+/// - If multiple tests want to use the same client_project/generate_subdir pair,
+///   but for different modules' bindings, only one module's bindings will ever be generated.
+///   If you need bindings for multiple different modules, put them in different subdirs.
 /// - If multiple distinct test harness processes run concurrently,
 ///   they will encounter the race condition described above,
 ///   because the binding-generation lock is not shared between harness processes.
@@ -481,57 +542,24 @@ fn generate_bindings(
     generate_subdir: &str,
     generate_include_private: bool,
 ) {
-    // We need these to be owned values so we can memoize on them.
+    // We need these to be owned `String`s so we can memoize on them.
     let client_project = client_project.to_owned();
     let generate_subdir = generate_subdir.to_owned();
-    let language = language.to_owned();
-    let wasm_file = wasm_file.to_owned();
-    let host_is_js = matches!(host_type, HostType::Js);
 
     // Codegen is side-effecting and doesn't meaningfully return a Rust value,
     // so our memoization has unit as the value.
     // This makes it run at most once for each key.
-    memoized!(
-        |(client_project, generate_subdir, language, wasm_file, host_is_js, generate_include_private): (
-            String,
-            String,
-            String,
-            String,
-            bool,
-            bool,
-        )|
-         -> () {
-            let mut args: Vec<&str> = vec![
-                "generate",
-                "--yes",
-                "--lang",
-                &language,
-                if *host_is_js { "--js-path" } else { "--bin-path" },
-                &wasm_file,
-            ];
-
-            if *generate_include_private {
-                args.push("--include-private");
-            }
-
-            let generate_dir: String;
-
-            // `generate --lang unrealcpp` takes different arguments from non-Unreal languages
-            // to account for some quirks of Unreal project structure.
-            if language_is_unreal(language) {
-                // For unreal, we use `client_project` as the uproject directory,
-                // and `generate_subdir` as the module name.
-                args.extend_from_slice(&["--uproject-dir", client_project]);
-                args.extend_from_slice(&["--module-name", generate_subdir]);
-            } else {
-                generate_dir = format!("{client_project}/{generate_subdir}");
-                create_dir_all(&generate_dir).unwrap();
-                args.extend_from_slice(&["--out-dir", &generate_dir]);
-            }
-
-            invoke_cli(paths, &args);
-        }
-    )
+    memoized!(|(client_project, generate_subdir): (String, String)| -> () {
+        generate_bindings_uncached(
+            paths,
+            language,
+            wasm_file,
+            host_type,
+            client_project,
+            generate_subdir,
+            generate_include_private,
+        );
+    })
 }
 
 fn split_command_string(command: &str) -> (String, Vec<String>) {
@@ -566,25 +594,27 @@ fn split_command_string(command: &str) -> (String, Vec<String>) {
     (exe, iter.collect())
 }
 
+fn compile_client_uncached(compile_command: &str, client_project: &str) {
+    let (exe, args) = split_command_string(compile_command);
+
+    let output = cmd(exe, args)
+        .dir(client_project)
+        .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
+        .stderr_to_stdout()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .expect("Error running compile command");
+
+    status_ok_or_panic(output, compile_command, "(compiling)");
+}
+
 // Note: this function is memoized to ensure we only compile each client once.
-fn compile_client(compile_command: &str, client_project: &str, module_name: &str) {
+fn compile_client(compile_command: &str, client_project: &str) {
     let client_project = client_project.to_owned();
-    let module_name = module_name.to_owned();
 
-    memoized!(|(client_project, module_name): (String, String)| -> () {
-        let _ = module_name;
-        let (exe, args) = split_command_string(compile_command);
-
-        let output = cmd(exe, args)
-            .dir(client_project)
-            .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
-            .stderr_to_stdout()
-            .stdout_capture()
-            .unchecked()
-            .run()
-            .expect("Error running compile command");
-
-        status_ok_or_panic(output, compile_command, "(compiling)");
+    memoized!(|client_project: String| -> () {
+        compile_client_uncached(compile_command, client_project);
     })
 }
 

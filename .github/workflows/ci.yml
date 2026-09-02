@@ -688,6 +688,7 @@ jobs:
           ./target/debug/ci-sdk-tests archive --mode browser --archive-file sdk-tests-browser-nextest.tar.zst
           ./target/debug/ci-sdk-tests prepare-clients --archive-file sdk-tests-native-nextest.tar.zst --module-dir sdk-test-modules --output-dir sdk-test-clients/native
           ./target/debug/ci-sdk-tests prepare-clients --archive-file sdk-tests-browser-nextest.tar.zst --module-dir sdk-test-modules --output-dir sdk-test-clients/browser
+          bash tools/check-diff.sh
           tar -I 'zstd -T0 -3' -cf sdk-test-modules.tar.zst sdk-test-modules
           tar -I 'zstd -T0 -3' -cf sdk-test-clients-native.tar.zst sdk-test-clients/native
           tar -I 'zstd -T0 -3' -cf sdk-test-clients-browser.tar.zst sdk-test-clients/browser

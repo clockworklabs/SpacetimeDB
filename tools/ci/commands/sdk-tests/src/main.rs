@@ -135,6 +135,7 @@ fn run_local() -> Result<()> {
             ])
             .status()?;
         ensure!(status.success(), "SDK tests failed");
+        cmd!("bash", "tools/check-diff.sh").run()?;
     }
     Ok(())
 }
