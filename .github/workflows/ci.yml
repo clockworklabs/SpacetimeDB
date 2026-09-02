@@ -94,7 +94,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -324,7 +324,7 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -391,7 +391,7 @@ jobs:
   smoketest_build_windows:
     needs: [upload-build-artifacts-windows]
     name: Build smoketests (Windows)
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-staging
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -409,7 +409,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -559,7 +559,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1, 2, 3, 4]
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -593,7 +593,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -763,7 +763,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -1426,7 +1426,7 @@ jobs:
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -1659,7 +1659,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-new-runner-2-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
