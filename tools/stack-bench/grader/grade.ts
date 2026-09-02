@@ -248,6 +248,13 @@ class Actor {
     this.lastWrites = {};
     this.writes = [];
     this.lastWsWrite = null;
+    page.on('dialog', dialog => {
+      void dialog.dismiss().catch(error => {
+        if (page.isClosed()) return;
+        this.consoleErrors.push(`dialog dismiss failed: ${errorMessage(error)}`);
+        if (this.consoleErrors.length > MAX_CONSOLE_ERRORS) this.consoleErrors.shift();
+      });
+    });
     // A missing client identity in a WebSocket write proves server-derived identity.
     page.on('websocket', ws => {
       ws.on('framesent', f => {
