@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { auditFailureSummary, gradeArgv }
+import { auditFailureSummary, gradeArgv, parseAgentProcessResult }
   from '../commands/bench.js';
 import { finalizeRunTotals }
   from '../src/evidence/benchmark-run.js';
@@ -27,6 +27,7 @@ import { writeArtifact } from '../src/evidence/artifacts.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
 import { compiledEntrypoint } from '../src/package-root.js';
+import { agentSessionFailure } from '../src/agents/agent-result-contract.js';
 
 test('billable agent runs require the Docker appliance', () => {
   const env = { ...process.env };
@@ -36,6 +37,25 @@ test('billable agent runs require the Docker appliance', () => {
     { encoding: 'utf8', env });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /agent adapter claude-code requires the Docker appliance/);
+});
+
+test('a nonzero agent process preserves its valid provider-failure result', () => {
+  const request = { app: '/app', mode: 'build' as const, level: 1, backend: 'spacetime',
+    track: 'ecommerce', runIndex: 0, model: 'provider-model', guidance: 'neutral',
+    adapterCostLimit: 'non-billable' as const };
+  const raw = {
+    appDir: '/app', mode: 'build', level: 1, ok: false, sessionId: 'session-1',
+    costUsd: 0, tokens: 10, outputTokens: 2, turns: 1, promptBytes: 20, durationMs: 100,
+    setup: {}, usage: { input: 8, output: 2, cacheWrite: 0, cacheRead: 0 }, costReceipts: [],
+    providerMetadata: { failureCode: 'provider-usage-receipt-missing' },
+  };
+  const result = parseAgentProcessResult(`${JSON.stringify(raw)}\n`, '', new Error('exit code 3'),
+    request);
+  assert.equal(result.ok, false);
+  assert.equal(agentSessionFailure(result)?.kind, 'provider_failure');
+  assert.throws(() => parseAgentProcessResult(
+    `${JSON.stringify({ ...raw, ok: true })}\n`, '', new Error('exit code 3'), request),
+  /failed after reporting success/);
 });
 
 test('accepted source is materialized through the application lifecycle before grading', async () => {

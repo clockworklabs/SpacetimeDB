@@ -148,14 +148,17 @@
       "featureRefs": [
         "ecommerce.feature.warehouse-admin@1.2.1"
       ],
+      "promptModules": [
+        "ecommerce.spec.external-data-sync@1.2.0"
+      ],
       "gradingGroups": [
         "ecommerce.feature.warehouse-admin@1.2.1#access-boundary",
         "ecommerce.feature.warehouse-admin@1.2.1#warehouse-view",
         "ecommerce.feature.warehouse-admin@1.2.1#warehouse-stock",
         "ecommerce.feature.warehouse-admin@1.2.1#admin-write",
-        "ecommerce.spec.external-data-sync@1.1.1#external-live",
-        "ecommerce.spec.external-data-sync@1.1.1#external-reconnect",
-        "ecommerce.spec.external-data-sync@1.1.1#external-server-restart"
+        "ecommerce.spec.external-data-sync@1.2.0#external-live",
+        "ecommerce.spec.external-data-sync@1.2.0#external-reconnect",
+        "ecommerce.spec.external-data-sync@1.2.0#external-server-restart"
       ],
       "dependencies": [
         {
@@ -173,10 +176,11 @@
       "title": "Reviews",
       "questline": "reviews",
       "featureRefs": [
-        "ecommerce.feature.reviews@1.2.1"
+        "ecommerce.feature.reviews@1.2.2"
       ],
       "gradingGroups": [
-        "ecommerce.feature.reviews@1.2.1#reviews",
+        "ecommerce.feature.reviews@1.2.2#reviews",
+        "ecommerce.progression.review-access-specifications@1.0.0#review-eligibility-direct",
         "ecommerce.spec.access-control@2.0.0#review-eligibility",
         "ecommerce.spec.live-state@2.0.0#open-list",
         "ecommerce.spec.live-state@2.0.0#rating",
@@ -548,7 +552,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.support-history@1.0.0#persistence",
-        "ecommerce.progression.support-history@1.0.0#privacy"
+        "ecommerce.progression.support-history@1.0.0#privacy",
+        "ecommerce.progression.support-privacy-specifications@1.0.0#private-message-delivery"
       ],
       "dependencies": [
         {

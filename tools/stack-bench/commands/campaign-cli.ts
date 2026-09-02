@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import { CAMPAIGN_MODE_REGISTRY } from '../src/campaigns/campaign-mode.js';
-import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
+import { executeCampaign, inspectCampaign, reconcileCampaign }
   from '../src/campaigns/campaign-runner.js';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js';
 import { generateCampaignReport } from '../src/campaigns/campaign-report.js';
@@ -73,7 +73,6 @@ export type CampaignArgs =
     level: number; nodeIds: string[]; strikes: number }
   | { command: 'extend'; path: string; parentDirectory: string; fromDepth: number;
     directory: string }
-  | { command: 'prepare'; path: string; directory: string }
   | { command: 'trial'; path: string; directory: string }
   | { command: 'run'; path: string; directory: string }
   | { command: 'resume'; path: string; directory: string }
@@ -184,12 +183,12 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
     return { command, path: resolve(path), parentDirectory: resolve(rest[1]!),
       fromDepth, directory: resolve(rest[5]!) };
   }
-  if (isOneOf(command, ['prepare', 'trial', 'run', 'resume', 'reconcile'])
+  if (isOneOf(command, ['trial', 'run', 'resume', 'reconcile'])
     && path && rest.length === 2 && rest[0] === '--out') {
     return { command, path: resolve(path), directory: resolve(rest[1]!) };
   }
   throw new Error('usage: campaign-cli.js modes | validate|show <campaign.json> '
-    + '| prepare|trial|run|resume|reconcile <campaign.json> --out <directory> '
+    + '| trial|run|resume|reconcile <campaign.json> --out <directory> '
     + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> '
     + '| status <directory> [--full] | inspect|report|audit <directory> '
     + '| grant-strikes <directory> --attempt <id> --grant-id <id> --level <N> '
@@ -236,11 +235,6 @@ async function main() {
       nodeIds: args.nodeIds,
       strikes: args.strikes,
     }), null, 2));
-    return;
-  }
-  if (args.command === 'prepare') {
-    const prepared = prepareCampaign(args.path, args.directory);
-    console.log(JSON.stringify(campaignStateSummary(prepared.plan, prepared.state), null, 2));
     return;
   }
   if (args.command === 'extend') {

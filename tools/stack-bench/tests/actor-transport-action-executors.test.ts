@@ -416,6 +416,16 @@ test('a negative delivery check observes its full window before passing', async 
   assert.deepEqual(delays, [1234]);
 });
 
+test('a delivery check is inconclusive when application traffic is not observable', async () => {
+  const actor = { name: 'owner', wasSent: () => false };
+  const provided = services(new Map<string, unknown>([['owner', actor]]), {
+    sleep: async () => undefined,
+  });
+  const checked = await run({ do: 'expectReceived', actor: 'owner', contains: 'private message',
+    within: 1 }, provided);
+  assert.equal(checked.status, 'inconclusive');
+});
+
 test('replay retargeting maps nested entity ids by field and relationship depth', async () => {
   const requests: CapturedRequest[] = [];
   const actor = (name: string, received: string[], writes: UnknownRecord[]) => ({

@@ -723,7 +723,7 @@ test('ordinary campaign execution refuses draft plans', async () => {
   try {
     await assert.rejects(() => executeCampaign(example, root, { execute: async () => {
       throw new Error('must not launch');
-    } }), /requires a frozen plan/);
+    } }), /requires a complete test plan/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

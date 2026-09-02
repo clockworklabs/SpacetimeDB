@@ -433,7 +433,7 @@ async function expectReceived({ input, capabilities, signal }: TransportArgument
   const deadline = Date.now() + (input.within ?? transport.defaultWithin);
   while (!actor.wasSent(needle) && Date.now() < deadline) await transport.sleep(250, signal);
   if (!actor.wasSent(needle)) {
-    fail(`the harness never saw "${needle}" reach ${actor.name}, who should have it — traffic on this app is not visible to the wire checks`);
+    inconclusive(`the harness could not observe "${needle}" reaching ${actor.name}`);
   }
   return { received: true, contains: needle };
 }

@@ -332,13 +332,6 @@ function publicRecoveryProvesCleanup(output: string, backend: string, attemptId:
   }
 }
 
-export function prepareCampaign(campaignFile: string, directory: string): CampaignInspection {
-  const plan = compileCampaignFile(resolve(campaignFile));
-  const lock = acquireCampaignLock(directory, plan);
-  try { return initializeCampaignDirectory(plan, directory); }
-  finally { releaseCampaignLock(lock); }
-}
-
 export function reconcileCampaign(campaignFile: string, directory: string,
   { rescue = rescueSupervisedLease }: {
     rescue?: (supervisorState: string, output: string) => void;
@@ -389,11 +382,11 @@ export async function executeCampaign(campaignFile: string, directory: string,
     throw new Error(`unknown campaign execution mode ${JSON.stringify(mode)}`);
   }
   if (mode === 'frozen' && plan.state !== 'frozen') {
-    throw new Error('campaign execution requires a frozen plan; draft plans are inspection-only');
+    throw new Error('campaign run requires a complete test plan; this plan is for inspection only');
   }
   if (mode === 'model-free-trial') {
     if (plan.state !== 'draft') {
-      throw new Error('campaign trial requires a draft plan; use campaign run for a frozen plan');
+      throw new Error('campaign trial requires a model-free draft; use campaign run for a complete test plan');
     }
     const billable = plan.agents.filter(agent => agent.costLimit !== 'non-billable');
     if (billable.length) {

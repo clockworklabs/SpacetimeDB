@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Support message privacy",
+  "features": [
+    {
+      "id": 619,
+      "name": "Support message privacy",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "private-support-owner" },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "private@example.com" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Private support case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "support-secret-619" },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+        { "do": "signUp", "actor": "other", "name": "private-support-other" },
+        { "do": "click", "actor": "other", "testid": "support-link" }
+      ],
+      "criteria": [
+        {
+          "id": "619a",
+          "desc": "a customer's support message is not sent to another customer",
+          "points": 2,
+          "statedBy": "Do not send one customer's support messages to another customer.",
+          "steps": [
+            { "do": "expectReceived", "actor": "owner", "contains": "support-secret-619", "within": 5000 },
+            { "do": "expectNotReceived", "actor": "other", "contains": "support-secret-619", "within": 3000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

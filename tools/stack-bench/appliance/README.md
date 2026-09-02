@@ -90,11 +90,11 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
   campaign show /var/lib/stack-bench/results/plans/campaign.json
 ```
 
-A frozen campaign binds the model, stacks, work, checks, budgets, repetitions,
-parallelism, pricing, controller image, and build image. The runner must match
-those identities.
+A test plan selects the model, stacks, work, checks, budgets, repetitions,
+parallelism, pricing, controller image, and build image. When the run starts,
+Stack Bench records these settings with the results. This prevents settings
+from changing during a campaign.
 
-Frozen means immutable. It does not mean the grading checks are qualified.
 The plan, dashboard, and report show qualification status. Publish scores as
 verified comparison data only after every selected level is qualified.
 
@@ -103,16 +103,8 @@ the image before changing it.
 
 ## Run a campaign
 
-Prepare durable state without starting an attempt:
-
-```sh
-docker compose --env-file /var/lib/stack-bench/operator.env \
-  -f appliance/docker-compose.yaml run --rm controller \
-  campaign prepare /var/lib/stack-bench/results/plans/campaign.json \
-  --out /var/lib/stack-bench/results/campaigns/campaign-001
-```
-
-Start the exact frozen plan:
+Start the campaign. This command creates the run state and records the exact
+test plan automatically:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \

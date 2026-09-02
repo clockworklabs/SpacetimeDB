@@ -46,7 +46,7 @@ export function prepareCampaignExtension(targetCampaignFile: string, parentDirec
     throw new Error('campaign extension target must use progressive work selection');
   }
   if (targetPlan.state !== 'frozen') {
-    throw new Error('campaign extension requires a frozen target campaign');
+    throw new Error('campaign extension requires a complete target test plan');
   }
   const parent = inspectCampaign(resolve(parentDirectory), { requireCurrentInputs: false });
   const target = resolve(outputDirectory);

@@ -629,10 +629,12 @@ export function validateCampaignDefinition(input: unknown,
   }
   if (value.state === 'frozen') {
     if (value.budgets.maxCostUsdPerAttempt === null) {
-      fail(`${source}.budgets.maxCostUsdPerAttempt`, 'is required for a frozen campaign');
+      fail(`${source}.budgets.maxCostUsdPerAttempt`, 'is required for a runnable test plan');
     }
     for (const field of ['controllerImage', 'buildImage'] as const) {
-      if (value.runtime[field] === null) fail(`${source}.runtime.${field}`, 'is required for a frozen campaign');
+      if (value.runtime[field] === null) {
+        fail(`${source}.runtime.${field}`, 'is required for a runnable test plan');
+      }
     }
   }
   return canonicalizeDefinition(value) as unknown as CampaignDefinition;

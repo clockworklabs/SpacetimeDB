@@ -96,7 +96,9 @@ export function httpNamedActionRequest({
   if (!action.path) throw new TypeError('HTTP named action requires a path');
   let path = action.path;
   let body = input.body ?? {};
-  if (input.values !== undefined) {
+  const values = input.values ?? (input.args === undefined ? undefined
+    : Object.fromEntries((action.params ?? []).map((param, index) => [param.name, input.args?.[index]])));
+  if (values !== undefined) {
     body = {};
     for (const param of action.params ?? []) {
       if (param.in === 'path') {
@@ -105,10 +107,10 @@ export function httpNamedActionRequest({
         }
         path = path.replaceAll(
           param.placeholder,
-          encodeURIComponent(String(input.values[param.name])),
+          encodeURIComponent(String(values[param.name])),
         );
       } else {
-        (body as Record<string, unknown>)[param.name] = input.values[param.name];
+        (body as Record<string, unknown>)[param.name] = values[param.name];
       }
     }
   }

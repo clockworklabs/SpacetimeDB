@@ -343,6 +343,26 @@ let activeAgentChild: ChildProcess | null = null;
 // when an awaited build rejected unexpectedly.
 let emergencyTeardown: (() => void) | null = null;
 
+export function parseAgentProcessResult(stdout: string, stderr: string, processError: unknown,
+  request: AgentRequest): ValidatedAgentResult {
+  const resultLine = stdout.trim().split('\n').pop();
+  let result: ValidatedAgentResult;
+  try {
+    if (!resultLine) throw new Error('agent returned no result line');
+    result = validateAgentResult(JSON.parse(resultLine), request);
+  } catch (resultError) {
+    const stdoutTail = stdout.trim().slice(-2000) || '<empty>';
+    const stderrTail = stderr.trim().slice(-4000) || '<empty>';
+    const processDetail = processError ? `agent process failed: ${errorMessage(processError)}\n` : '';
+    throw new Error(`${processDetail}agent returned an invalid result: ${errorMessage(resultError)}\n`
+      + `agent stdout tail:\n${stdoutTail}\nagent stderr tail:\n${stderrTail}`);
+  }
+  if (processError && result.ok) {
+    throw new Error(`agent process failed after reporting success: ${errorMessage(processError)}`);
+  }
+  return result;
+}
+
 function runAgent(
   args: BenchArgs,
   adapter: AgentAdapter,
@@ -387,26 +407,13 @@ function runAgent(
     },
       (error, stdout, stderr) => {
         if (activeAgentChild === child) activeAgentChild = null;
-        if (error) {
-          error.stdout = stdout;
-          error.stderr = stderr;
-          rejectRun(error);
-          return;
-        }
         try {
-          const resultLine = stdout.trim().split('\n').pop();
-          if (!resultLine) throw new Error('agent returned no result line');
-          const result = validateAgentResult(JSON.parse(resultLine), request);
+          const result = parseAgentProcessResult(stdout, stderr, error, request);
           args.spentBudgetUsd = addCostUsd(args.spentBudgetUsd, result.costUsd);
           resolveRun(result);
         }
         catch (parseError) {
-          // Preserve bounded output tails when the agent result is malformed;
-          // teardown may remove the container that produced them.
-          const stdoutTail = stdout.trim().slice(-2000) || '<empty>';
-          const stderrTail = stderr.trim().slice(-4000) || '<empty>';
-          rejectRun(new Error(`agent returned invalid JSON: ${errorMessage(parseError)}\n`
-            + `agent stdout tail:\n${stdoutTail}\nagent stderr tail:\n${stderrTail}`));
+          rejectRun(parseError);
         }
       });
     activeAgentChild = child;

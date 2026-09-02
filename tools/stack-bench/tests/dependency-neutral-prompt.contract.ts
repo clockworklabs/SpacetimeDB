@@ -28,14 +28,14 @@ const EXPECTED = {
     spacetime: ['f9a000bc22b2f533933cd90ee76b30b6dfde6aade53edd984a9af85da3ba3fd7', 26291],
   },
   2: {
-    mongodb: ['902aed8a72ae1aa315fff1792e595c87ef2e4466ef238f16c05d38cf4d277965', 7965],
-    postgres: ['1dd90be430d810831834bac70fd284edad8a2ab1aca6a021a2424b55ae03dbab', 8007],
-    spacetime: ['346cc168f8cf05c3d40d9c186600daa6025ed5a530144c4cdffc5ee07788373d', 28199],
+    mongodb: ['dde62ff443bd09b52143b70cb08d326e507a7c81820e79d6a41cee708bb958bf', 8387],
+    postgres: ['1aeba9b16e11564036e53b692a2e186d9ace75258f7b8cbe8064e4ef57690d4b', 8429],
+    spacetime: ['04be08b97bfd127555dbdc0a3db44bc5ceec84cfc635e76e641220944d31c4c4', 28621],
   },
   3: {
-    mongodb: ['464c3618d1b9166776149309d8cb023472177c3a5eb1dfa880dd9395d5094412', 9931],
-    postgres: ['c827c2f57d09373fdcbcc4007962aa047b3315c1d739d20c42cbc6237fcce64a', 9973],
-    spacetime: ['504b10dd678da8544b5ed031a6afa89beafe296248f71993ccefc63aa1414251', 30084],
+    mongodb: ['f2352090f4f162792697734b66c1fa0217398dcbc7327dd8dc4b983888a7d214', 10197],
+    postgres: ['b40c655831e17626fbd13a731d25aedd4144c2e3371f719e21e4eff4d7dafaf6', 10239],
+    spacetime: ['a22ee45d8b87edc42955ad6806f398bcf038b638e0c31e7b0bd640474306ad1d', 30309],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
@@ -76,7 +76,7 @@ function renderPrompt({ level, stack, task, guidance }: {
   });
 }
 
-test('neutral dependency prompts through L3 contain only the selected stack interface', () => {
+test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.1', track);
   const guidance = resolveGuidanceProfile('neutral@1.8.0', STACKS);
@@ -94,7 +94,9 @@ test('neutral dependency prompts through L3 contain only the selected stack inte
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
       { cumulative: true });
     assert.deepEqual(selected.agent.request.selection.requested.specifications, {
-      requested: [], expected: [], observed: [],
+      requested: level === 2 ? ['ecommerce.spec.external-data-sync@1.2.0'] : [],
+      expected: [],
+      observed: [],
     });
     for (const stack of STACKS) {
       const prompt = renderPrompt({ level, stack, task: selected.agent.request, guidance });

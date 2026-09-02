@@ -7,11 +7,9 @@ import { auditCompletedReferenceCampaign, campaignStateSummary, parseCampaignArg
 
 const argv = (...args: string[]): string[] => ['node', 'campaign-cli.js', ...args];
 
-test('campaign CLI separates read-only, preparation, execution, and status commands', () => {
+test('campaign CLI separates read-only, execution, and status commands', () => {
   assert.equal(parseCampaignArgs(argv('modes')).command, 'modes');
   assert.equal(parseCampaignArgs(argv('show', './campaign.json')).command, 'show');
-  assert.equal(parseCampaignArgs(argv('prepare', './campaign.json', '--out', './results')).command,
-    'prepare');
   assert.equal(parseCampaignArgs(argv('trial', './campaign.json', '--out', './results')).command,
     'trial');
   assert.equal(parseCampaignArgs(argv('run', './campaign.json', '--out', './results')).command, 'run');
@@ -41,6 +39,8 @@ test('campaign CLI separates read-only, preparation, execution, and status comma
     fromDepth: 2, directory: resolve('./depth-3'),
   });
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json')), /usage/);
+  assert.throws(() => parseCampaignArgs(argv('prepare', './campaign.json', '--out', './results')),
+    /usage/);
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json', '--out', './a', '--out', './b')),
     /usage/);
   assert.throws(() => parseCampaignArgs(argv('status', './results', '--json')), /usage/);

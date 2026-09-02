@@ -16,7 +16,7 @@ const readScenario = (name: string, expectedLevel?: number) => compileScenarioDe
   readJson(join(root, 'scenarios', name)), { source: name, expectedLevel });
 
 const dedicatedPacks: readonly [name: string, modes: readonly string[]][] = [
-  ['feature-reviews-1.2.1.json', ['fresh', 'upgrade']],
+  ['feature-reviews-1.2.2.json', ['fresh', 'upgrade']],
   ['feature-warehouse-admin-1.2.1.json', ['fresh', 'upgrade']],
   ['feature-purchasing-1.2.1.json', ['fresh', 'upgrade']],
   ['feature-cart-2.0.0.json', ['fresh', 'upgrade']],
@@ -131,4 +131,31 @@ test('fulfilment and cancellation checks have separate authorization owners', ()
   assert(gradingGroups(fulfilment.id).some(group => group.endsWith('#operator-authorization-direct')));
   assert(!gradingGroups(fulfilment.id).some(group => group.endsWith('#order-owner-direct')));
   assert(gradingGroups(cancellation.id).some(group => group.endsWith('#order-owner-direct')));
+});
+
+test('external stock checks include their database contract in the agent request', () => {
+  const pack = readPack('spec-external-data-sync-1.2.0.json');
+  assert(pack.checks.every(check => check.observations?.includes('requested')));
+  assert(pack.checks.every(check => !check.observations?.includes('unmentioned')));
+  assert(pack.checks.every(check =>
+    check.requiresFeatures?.length === 1
+      && check.requiresFeatures[0] === 'ecommerce.feature.warehouse-admin'));
+
+  const { definition } = loadValidatedProgressionSource(
+    join(root, 'progression', 'ecommerce-2.0.1.json'), root);
+  const warehouse = definition.nodes.find(node => node.id === 'warehouse-admin');
+  assert(warehouse);
+  assert(warehouse.promptModules.includes('ecommerce.spec.external-data-sync@1.2.0'));
+});
+
+test('privacy checks prove a server or transport boundary', () => {
+  const review = readScenario('progression-review-access-1.0.0.json', 3).features[0]?.criteria[0];
+  assert(review);
+  assert(review.steps.some(step => step.do === 'replayAs'));
+  assert(review.steps.some(step => step.do === 'expectReplayRejected'));
+
+  const support = readScenario('progression-support-read-privacy-1.0.0.json', 2)
+    .features[0]?.criteria[0];
+  assert(support);
+  assert.deepEqual(support.steps.map(step => step.do), ['expectReceived', 'expectNotReceived']);
 });

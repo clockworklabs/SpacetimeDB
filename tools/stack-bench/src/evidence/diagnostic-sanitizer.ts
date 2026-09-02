@@ -85,9 +85,10 @@ export function humaniseDiagnostic(detail: unknown = ''): string {
       ? `the ${control} control did not offer the requested choice`
       : 'the requested choice was not available';
   }
-  const stateMismatch = raw.match(/(?:control,)?#?([a-z0-9_.:-]+).*?expected\s+data-state\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);
+  const stateMismatch = raw.match(/expected\s+data-state\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);
   if (stateMismatch) {
-    return `the ${stateMismatch[1]} control showed "${stateMismatch[3]}" instead of "${stateMismatch[2]}"`;
+    const control = publicControlName(raw);
+    return `${control ? `the ${control} control` : 'the control'} showed "${stateMismatch[2]}" instead of "${stateMismatch[1]}"`;
   }
   const valueMismatch = raw.match(/expected\s+(?:the\s+)?control,#([a-z0-9_.:-]+).*?value\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i)
     ?? raw.match(/(?:the\s+)?control,#([a-z0-9_.:-]+).*?expected\s+value\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);

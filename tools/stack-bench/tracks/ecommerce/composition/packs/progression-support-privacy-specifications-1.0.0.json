@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.support-privacy-specifications",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Support message privacy",
+  "description": "Transport-level proof that private support messages stay within their account.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 25000 },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.support-privacy",
+        "path": "prompts/modular/support-privacy-1.0.0.md",
+        "order": 2980,
+        "modes": ["upgrade"],
+        "requiresFeatures": ["ecommerce.progression.support-history"]
+      }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    {
+      "id": "private-message-delivery",
+      "stableId": "private-message-delivery",
+      "source": "scenarios/progression-support-read-privacy-1.0.0.json",
+      "feature": 619,
+      "criteria": ["619a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.support-history"]
+    }
+  ]
+}

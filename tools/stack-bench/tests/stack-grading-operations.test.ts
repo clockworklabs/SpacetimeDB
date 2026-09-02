@@ -57,4 +57,19 @@ test('HTTP requests substitute path values and keep other values in the body', (
     body: '{"quantity":3}',
     missingNote: 'no route at /items/:item',
   });
+
+  const replay = httpNamedActionRequest({
+    action: {
+      path: '/items/:item/reviews',
+      params: [
+        { name: 'item', in: 'path', placeholder: ':item' },
+        { name: 'rating' },
+        { name: 'comment' },
+      ],
+    },
+    input: { args: [42, 5, 'verified purchase'] },
+    url: 'http://127.0.0.1:4000',
+  });
+  assert.equal(replay.url, 'http://127.0.0.1:4000/items/42/reviews');
+  assert.deepEqual(JSON.parse(replay.body), { rating: 5, comment: 'verified purchase' });
 });

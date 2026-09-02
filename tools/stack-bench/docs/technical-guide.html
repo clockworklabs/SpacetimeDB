@@ -183,7 +183,7 @@
         <div class="card"><h3>Operator interfaces</h3><ul class="file-list">
           <li><span class="path">commands/campaign-cli.ts</span><span>CLI access to prepare, run, resume, reconcile, inspect, audit, and report operations.</span></li>
           <li><span class="path">dashboard/</span><span>Reads the same campaign state and artifacts. It does not define a second execution model.</span></li>
-          <li><span class="path">src/campaigns/campaign-report.ts</span><span>Builds JSON and HTML reports from frozen plan and state artifacts.</span></li>
+          <li><span class="path">src/campaigns/campaign-report.ts</span><span>Builds JSON and HTML reports from the recorded test plan and run state.</span></li>
         </ul></div>
       </details>
     </section>
@@ -309,7 +309,7 @@ function selectedGradingWork(state) {
       <div class="callout"><strong>Parallelism.</strong> Each active attempt gets separate ports, database names, containers, and resource locks.</div>
       <div class="callout"><strong>Extension.</strong> <code>campaign extend target.json --from prior-results --depth 2 --out extended-results</code> copies each matching depth-2 source, regrades depths 1 and 2 on a fresh database, and starts depth 3 only after both rechecks pass.</div>
       <div class="audit">
-        <div><span>✓</span><p>Draft plans can run only with the model-free trial path. Paid campaign execution requires a frozen plan.</p></div>
+        <div><span>✓</span><p>Model-free drafts use the trial path. Paid campaigns require a complete test plan.</p></div>
         <div><span>✓</span><p>An unresolved running attempt must be reconciled before the controller resumes.</p></div>
         <div><span class="risk-mark">!</span><p>Single-attempt orchestration remains concentrated in <code>commands/bench.ts</code>. Focused tests must protect its boundaries with campaign, runtime, grading, and repair code.</p></div>
       </div>

@@ -87,9 +87,9 @@
       ]
     },
     {
-      "path": "../packs/feature-reviews-1.2.1.json",
+      "path": "../packs/feature-reviews-1.2.2.json",
       "id": "ecommerce.feature.reviews",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "includeRoles": [
         "feature"
       ]
@@ -391,6 +391,14 @@
       ]
     },
     {
+      "path": "../packs/progression-review-access-specifications-1.0.0.json",
+      "id": "ecommerce.progression.review-access-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
       "path": "../packs/progression-staff-access-1.0.0.json",
       "id": "ecommerce.progression.staff-access",
       "version": "1.0.0",
@@ -428,6 +436,14 @@
       "version": "1.0.0",
       "includeRoles": [
         "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-support-privacy-specifications-1.0.0.json",
+      "id": "ecommerce.progression.support-privacy-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
       ]
     },
     {
@@ -471,9 +487,9 @@
       ]
     },
     {
-      "path": "../packs/spec-external-data-sync-1.1.1.json",
+      "path": "../packs/spec-external-data-sync-1.2.0.json",
       "id": "ecommerce.spec.external-data-sync",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "includeRoles": [
         "guarantee"
       ]

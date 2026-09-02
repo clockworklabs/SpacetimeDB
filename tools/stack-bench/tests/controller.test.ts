@@ -102,7 +102,7 @@ test('read-only and model-free controller commands do not require agent credenti
     ['init-deps', []], ['verify-deps', []], ['test', []],
     ['qualify-reference', []], ['qualify-null', []], ['qualification', ['status']],
     ['pack-budget', ['recommend']], ['campaign', ['validate']], ['campaign', ['show']],
-    ['campaign', ['prepare']], ['campaign', ['trial']], ['campaign', ['status']],
+    ['campaign', ['trial']], ['campaign', ['status']],
     ['campaign', ['report']], ['campaign', ['reconcile']], ['repair', ['status']],
     ['repair', ['grant']], ['verify-release', []], ['recover', []],
   ];

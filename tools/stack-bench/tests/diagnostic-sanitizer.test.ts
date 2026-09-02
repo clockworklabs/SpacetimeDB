@@ -59,6 +59,9 @@ test('humanisation keeps useful behaviour while hiding the implementation', () =
   'the notification-frequency control did not offer the requested choice');
   assert.equal(humaniseDiagnostic('control,#notification-enabled expected data-state "on", got "off"'),
     'the notification-enabled control showed "off" instead of "on"');
+  assert.equal(humaniseDiagnostic(
+    '[data-testid="notification-order"],#notification-order expected data-state "on", got "off"'),
+  'the notification-order control showed "off" instead of "on"');
   assert.equal(humaniseDiagnostic('the control,#support-assignee expected value "staff", got "1"'),
     'the support-assignee control showed "1" instead of "staff"');
   assert.equal(humaniseDiagnostic('expected the control,#item-name sequence ["A","B"], saw ["B"] (in time)'),

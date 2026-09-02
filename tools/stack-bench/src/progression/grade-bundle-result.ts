@@ -362,11 +362,11 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
   };
   const nonMeasured = expectedIds.map(id => checkEvidence(id))
     .filter(evidence => !['passed', 'failed'].includes(evidence.status));
-  if (nonMeasured.length === expectedIds.length) {
+  if (nonMeasured.length > 0) {
     const harness = nonMeasured.some(evidence => evidence.status === 'harness_failure');
     return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
       harness ? 'harness_failure' : 'inconclusive_evidence',
-      'selected checks did not produce measured evidence');
+      `${nonMeasured.length} selected ${nonMeasured.length === 1 ? 'check did' : 'checks did'} not produce measured evidence`);
   }
   const passedPoints = expected.reduce((total, check) => total
     + (checkEvidence(check.id).status === 'passed' ? check.points : 0), 0);

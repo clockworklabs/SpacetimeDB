@@ -23,30 +23,30 @@ export function verifyCampaignRuntime(plan: CampaignRuntimePlan,
   const expected = plan.definition.runtime;
   const plannedEngine = plan.identities?.engine;
   if (!plannedEngine?.sha256 || currentEngineIdentity().sha256 !== plannedEngine.sha256) {
-    throw new Error('running Stack Bench engine does not match the frozen campaign');
+    throw new Error('running Stack Bench engine does not match the recorded test plan');
   }
   if (env.STACK_BENCH_CONTROLLER_IMAGE !== expected.controllerImage) {
-    throw new Error('running controller image does not match the frozen campaign');
+    throw new Error('running controller image does not match the recorded test plan');
   }
   if (expected.releaseManifestSha256 === null) return structuredClone(expected);
   if (typeof env.STACK_BENCH_RELEASE_MANIFEST !== 'string'
     || env.STACK_BENCH_RELEASE_MANIFEST.trim() === '') {
-    throw new Error('STACK_BENCH_RELEASE_MANIFEST is required for a frozen campaign');
+    throw new Error('STACK_BENCH_RELEASE_MANIFEST is required to run this test plan');
   }
   let bytes;
   try { bytes = readFileSync(resolve(env.STACK_BENCH_RELEASE_MANIFEST)); }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`cannot read frozen campaign release manifest: ${message}`, { cause: error });
+    throw new Error(`cannot read the test plan release manifest: ${message}`, { cause: error });
   }
   if (sha256(bytes) !== expected.releaseManifestSha256) {
-    throw new Error('release manifest does not match the frozen campaign');
+    throw new Error('release manifest does not match the recorded test plan');
   }
   let manifest;
   try { manifest = validateReleaseManifest(JSON.parse(bytes.toString('utf8'))); }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`frozen campaign release manifest is invalid: ${message}`, { cause: error });
+    throw new Error(`test plan release manifest is invalid: ${message}`, { cause: error });
   }
   const controller = manifest.images.find(image => image.role === 'controller');
   const build = manifest.images.find(image => image.role === 'build-sandbox');
@@ -54,7 +54,7 @@ export function verifyCampaignRuntime(plan: CampaignRuntimePlan,
     || build?.reference !== expected.buildImage
     || controller?.platform !== expected.platform
     || build?.platform !== expected.platform) {
-    throw new Error('release manifest images do not match the frozen campaign');
+    throw new Error('release manifest images do not match the recorded test plan');
   }
   return structuredClone(expected);
 }

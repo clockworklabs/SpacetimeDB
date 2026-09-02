@@ -134,13 +134,12 @@ manifest digest. A mutable tag alone can never satisfy preflight.
 2. Configure registry login and provider secret files.
 3. Pull every image from the release manifest by digest.
 4. Initialize the release-dependency volume.
-5. Compile and inspect one exact campaign plan.
-6. Prepare its durable campaign state without starting model work.
-7. Run exact-plan admission and the required no-model checks once.
-8. Start or resume the frozen campaign explicitly.
-9. Observe durable state; use logs only to diagnose a live phase or failure.
-10. Generate the deterministic report from retained raw artifacts.
-11. Copy results off-runner, verify their manifest, then destroy the runner.
+5. Inspect the selected test plan.
+6. Start the campaign. The controller records the exact plan, runs admission,
+   and creates durable state before model work starts.
+7. Observe durable state; use logs only to diagnose a live phase or failure.
+8. Generate the deterministic report from retained raw artifacts.
+9. Copy results off-runner, verify their manifest, then destroy the runner.
 ```
 
 The plan owns intent. Campaign state owns scheduling. Attempt artifacts own
