@@ -1,8 +1,9 @@
 ## Public application interface
 
-Use these exact `id` attributes on the corresponding visible controls.
-These attributes are only an observation interface; they do not prescribe UI
-structure, data modeling, libraries, transport, or implementation strategy.
+Use each interface name below as an exact HTML attribute value. Use `id` for a
+one-off element. Use `data-role` when the same interface can appear more than
+once. These attributes do not prescribe the layout, data model, libraries, or
+transport.
 
 ## Catalog controls
 

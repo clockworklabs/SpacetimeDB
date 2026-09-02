@@ -189,7 +189,7 @@ export function createBugReport(args: ReportBugsArgs): number {
     }
   }
 
-  // Contract failures are separate because the element id is itself the public
+  // Contract failures are separate because the interface name is itself the public
   // requirement here. Behavioral failures above must never expose one.
   const lintPath = join(resultsDir, ARTIFACT_FILE.contractLint);
   if (existsSync(lintPath)) {
@@ -197,9 +197,9 @@ export function createBugReport(args: ReportBugsArgs): number {
     for (const result of (lint.results ?? []).filter(item => item.status === 'FAIL'
       && (!selectedControls || selectedControls.has(item.id)))) {
       bugs.push({
-        area: 'Application controls',
+        area: 'Application interface',
         actor: null,
-        expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use id="${result.id}"`,
+        expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use the "${result.id}" application interface`,
         observed: sanitiseDiagnostic(result.detail
           ?? `no visible element with id="${result.id}" was found after a clean reset`, 500),
         url: typeof lint.url === 'string' ? redactCredentials(lint.url).slice(0, 500) : null,
@@ -273,7 +273,7 @@ export function createBugReport(args: ReportBugsArgs): number {
   }
 
   if (contractFailures.length) {
-    lines.push('## Application controls', '');
+    lines.push('## Application interface', '');
     lines.push('These required elements were not available in the clean application state:', '');
     contractFailures.forEach(bug => {
       lines.push(`- **Expected:** ${bug.expected}`);

@@ -477,7 +477,7 @@ export function compileProgressionDefinition(input: unknown,
     if (!promptPacks.some(pack => pack.task.contracts.some(fragment =>
       (fragment.modes ?? []).includes(mode)))) {
       fail(`${source}.nodes.${node.id}.promptModules`,
-        `compose no ${mode} testing interface at calculated level ${node.level}`);
+        `compose no ${mode} application interface at calculated level ${node.level}`);
     }
   }
   return compiled as CompiledProgressionDefinition;

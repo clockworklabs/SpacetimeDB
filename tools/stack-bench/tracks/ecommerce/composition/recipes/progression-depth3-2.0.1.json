@@ -14,7 +14,14 @@
         { "id": "ecommerce.progression.fresh", "path": "prompts/modular/progression-framing-1.0.0.md", "order": 0, "until": "## Existing application", "modes": ["fresh"] },
         { "id": "ecommerce.progression.upgrade", "path": "prompts/modular/progression-framing-1.0.0.md", "order": 0, "from": "## Existing application", "modes": ["upgrade"] }
       ],
-      "contracts": []
+      "contracts": [
+        {
+          "id": "ecommerce.application-interface",
+          "path": "contracts/application-interface-1.0.md",
+          "order": 0,
+          "modes": ["fresh", "upgrade"]
+        }
+      ]
     }
   },
   "packs": [

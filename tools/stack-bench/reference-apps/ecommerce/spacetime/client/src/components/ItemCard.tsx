@@ -26,36 +26,36 @@ export default function ItemCard({
   const lowStock = !outOfStock && stock <= 5;
 
   return (
-    <div className={`item-card${outOfStock ? ' out-of-stock-card' : ''}`} data-testid="item-card" data-buy-input={JSON.stringify({ itemId: Number(item.id) })}>
+    <div className={`item-card${outOfStock ? ' out-of-stock-card' : ''}`} data-role="item-card" data-buy-input={JSON.stringify({ itemId: Number(item.id) })}>
       <button
         type="button"
         className="item-card-name"
-        data-testid="item-name"
+        data-role="item-name"
         onClick={() => onOpen(item.id)}
       >
         {item.name}
       </button>
       <div className="item-card-row">
         <span>SKU {String(item.id)}</span>
-        <span className="item-price" data-testid="item-price">
+        <span className="item-price" data-role="item-price">
           {formatMoney(item.price)}
         </span>
       </div>
       {variants.map(variant => (
-        <span className="badge badge-muted" data-testid="item-variant" key={variant}>{variant}</span>
+        <span className="badge badge-muted" data-role="item-variant" key={variant}>{variant}</span>
       ))}
       <div className="item-card-row">
         <span>
           Stock:{' '}
           <span
             className={`item-stock${outOfStock ? ' stock-zero' : lowStock ? ' stock-low' : ''}`}
-            data-testid="item-stock"
+            data-role="item-stock"
           >
             {stock}
           </span>
         </span>
         {outOfStock && (
-          <span className="badge badge-danger" data-testid="out-of-stock">
+          <span className="badge badge-danger" data-role="out-of-stock">
             Out of stock
           </span>
         )}
@@ -65,7 +65,7 @@ export default function ItemCard({
           <button
             type="button"
             className="btn btn-primary"
-            data-testid="buy-now"
+            data-role="buy-now"
             disabled={outOfStock}
             onClick={() => onBuyNow(item.id)}
           >
@@ -74,7 +74,7 @@ export default function ItemCard({
           <button
             type="button"
             className="btn btn-ghost"
-            data-testid="add-to-cart"
+            data-role="add-to-cart"
             disabled={outOfStock}
             onClick={() => onAddToCart(item.id)}
           >
@@ -83,7 +83,7 @@ export default function ItemCard({
         </div>
       )}
       {isSignedIn && outOfStock && (
-        <button type="button" className="btn btn-ghost" data-testid="stock-alert" onClick={() => onStockAlert(item.id)}>
+        <button type="button" className="btn btn-ghost" data-role="stock-alert" onClick={() => onStockAlert(item.id)}>
           Alert me
         </button>
       )}

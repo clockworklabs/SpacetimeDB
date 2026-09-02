@@ -124,7 +124,7 @@ test('repair feedback describes behavior instead of browser commands', () => {
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /notification-frequency control did not offer the requested choice/);
-    assert.doesNotMatch(repair, /locator|selectOption|data-testid|Timeout|5000ms/);
+    assert.doesNotMatch(repair, /locator|selectOption|data-(?:role|testid)|Timeout|5000ms/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -303,7 +303,7 @@ test('contract feedback reports the clean-state observation without claiming the
   }
 });
 
-test('dependency repair feedback contains only controls selected for that feature', () => {
+test('dependency repair feedback contains only interfaces selected for that feature', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-control-selection-'));
   try {
     const app = join(root, 'app');

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6",
+  "fixtureSha256": "edb9732535b2273232a320b8e7b4ad6758991683a6bd06103f2ec4be07dafe20",
   "backend": "mongodb",
   "track": "ecommerce",
   "note": "Mutation definitions for the MongoDB ecommerce reference.",
@@ -562,8 +562,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "Orders waiting: <span className=\"value\" data-testid=\"queue-depth\">{queue.depth}</span>",
-          "replace": "Orders waiting: <span className=\"value\" data-testid=\"queue-depth\">{Math.max(0, queue.depth - 1)}</span>"
+          "find": "Orders waiting: <span className=\"value\" data-role=\"queue-depth\">{queue.depth}</span>",
+          "replace": "Orders waiting: <span className=\"value\" data-role=\"queue-depth\">{Math.max(0, queue.depth - 1)}</span>"
         }
       ]
     },
@@ -592,8 +592,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "          {(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-testid=\"staff-link\"",
-          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-testid=\"staff-link\""
+          "find": "          {(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\"",
+          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-role=\"staff-link\""
         }
       ]
     },
@@ -803,8 +803,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "          {currentUser?.isAdmin && (\n            <button className=\"btn btn-ghost\" data-testid=\"admin-link\" onClick={openAdmin}>",
-          "replace": "          {(currentUser?.isAdmin || currentUser?.isStaff) && (\n            <button className=\"btn btn-ghost\" data-testid=\"admin-link\" onClick={openAdmin}>"
+          "find": "          {currentUser?.isAdmin && (\n            <button className=\"btn btn-ghost\" data-role=\"admin-link\" onClick={openAdmin}>",
+          "replace": "          {(currentUser?.isAdmin || currentUser?.isStaff) && (\n            <button className=\"btn btn-ghost\" data-role=\"admin-link\" onClick={openAdmin}>"
         }
       ]
     },
@@ -1107,8 +1107,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "      <div className=\"item-name\" data-testid=\"item-name\">\n        {item.name}\n      </div>",
-          "replace": "      <div className=\"item-name\" data-testid=\"item-name\">\n        {item.name === \"Travel Mug\" ? \"\" : item.name}\n      </div>"
+          "find": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name}\n      </div>",
+          "replace": "      <div className=\"item-name\" data-role=\"item-name\">\n        {item.name === \"Travel Mug\" ? \"\" : item.name}\n      </div>"
         }
       ]
     },
@@ -1682,8 +1682,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "          {currentUser?.isAdmin && (\n            <button className=\"btn btn-ghost\" data-testid=\"admin-link\" onClick={openAdmin}>",
-          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-testid=\"admin-link\" onClick={openAdmin}>"
+          "find": "          {currentUser?.isAdmin && (\n            <button className=\"btn btn-ghost\" data-role=\"admin-link\" onClick={openAdmin}>",
+          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-role=\"admin-link\" onClick={openAdmin}>"
         }
       ]
     },
@@ -1819,6 +1819,36 @@
         {
           "find": "l.returned ? \" (returned)\" : \"\"",
           "replace": "\"\""
+        }
+      ]
+    },
+    {
+      "id": "direct-review-access-is-not-checked",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access-1.0.0.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "The direct review action accepts a review from a customer who did not buy the item.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (!hasPurchased) {\n    return res.status(403).json({ error: \"You can only review items you have purchased\" });\n  }",
+          "replace": "  if (false && !hasPurchased) {\n    return res.status(403).json({ error: \"You can only review items you have purchased\" });\n  }"
+        }
+      ]
+    },
+    {
+      "id": "support-messages-are-sent-to-other-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-read-privacy-1.0.0.json",
+      "targets": [
+        "ecommerce.progression.support-privacy-specifications.private-message-delivery.619a"
+      ],
+      "desc": "A customer receives another customer's support message.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "const ticketFilter = isStaff ? {} : user ? { userId: user._id } : { _id: null };",
+          "replace": "const ticketFilter = isStaff ? {} : user ? {} : { _id: null };"
         }
       ]
     }

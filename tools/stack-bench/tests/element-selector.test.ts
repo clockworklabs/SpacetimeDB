@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import { stableElementSelector } from '../src/actions/element-selector.js';
 
-test('stable element selectors support ids used by grading hooks', () => {
+test('stable selectors support application interface names', () => {
   assert.equal(stableElementSelector('account-name'),
-    '[data-testid="account-name"],#account-name');
-  assert.throws(() => stableElementSelector('account name'), /invalid stable element id/);
+    '[data-role="account-name"],#account-name');
+  assert.throws(() => stableElementSelector('account name'), /invalid application interface name/);
 });

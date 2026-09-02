@@ -1,5 +1,5 @@
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m|\\[\\d+m`, 'g');
-const TEST_SELECTOR = /\[(?:data-testid|data-test|data-cy)\s*=\s*(?:"[^"]*"|'[^']*'|[^\]\s]+)\]/gi;
+const TEST_SELECTOR = /\[(?:data-role|data-testid|data-test|data-cy)\s*=\s*(?:"[^"]*"|'[^']*'|[^\]\s]+)\](?:,\s*#[a-z0-9_.:-]+)?/gi;
 const LOCATOR_CALL = /\b(?:page\.)?(?:locator|getByTestId|getByRole|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle|waitForSelector)\((?:[^()]|\([^()]*\))*\)/gi;
 const LOCAL_URL = /\b(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal)(?::\d+)?(?:\/[^\s'"`)]+)?/gi;
 const WINDOWS_PATH = /\b[A-Za-z]:[\\/][^\s'"`)]*/g;
@@ -11,7 +11,7 @@ const URL_CREDENTIAL = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi;
 
 function publicControlName(value: unknown): string | null {
   const raw = String(value ?? '');
-  const match = raw.match(/\[(?:data-testid|data-test|data-cy)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\]\s]+))\]/i)
+  const match = raw.match(/\[(?:data-role|data-testid|data-test|data-cy)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\]\s]+))\]/i)
     ?? raw.match(/(?:getByTestId|locator)\(\s*["']([^"']+)["']/i)
     ?? raw.match(/\bcontrol,#([a-z0-9_.:-]+)/i);
   const name = match?.[1] ?? match?.[2] ?? match?.[3];
@@ -111,7 +111,7 @@ export function humaniseDiagnostic(detail: unknown = ''): string {
   }
   if (/not visible within/i.test(raw)) {
     const control = publicControlName(raw);
-    return control ? `the ${control} control did not appear` : sanitiseDiagnostic(raw);
+    return control ? `the required ${control} application interface did not appear` : sanitiseDiagnostic(raw);
   }
   if (/missing, \d+ duplicated/i.test(raw)) {
     const match = raw.match(/(\d+) missing, (\d+) duplicated/i);

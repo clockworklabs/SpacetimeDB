@@ -205,7 +205,7 @@ test('every progression feature is a whole module and every direct graph edge is
       assert.equal(pack.task.requirements.length, 1,
         `${node.id} must have one product prompt module`);
       assert.equal(pack.task.contracts.length, 1,
-        `${node.id} must have one testing interface module`);
+        `${node.id} must have one application interface module`);
       for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
         assert.equal(fragment.from, undefined, `${node.id} must not slice ${fragment.path}`);
         assert.equal(fragment.until, undefined, `${node.id} must not slice ${fragment.path}`);

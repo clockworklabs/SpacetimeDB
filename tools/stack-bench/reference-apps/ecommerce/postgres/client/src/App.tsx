@@ -485,25 +485,25 @@ export default function App() {
         {!account && <RecommendedSection items={recommended} />}
 
         <div className="search-filters">
-          <select data-testid="category-filter" value={categoryFilter} onChange={(event) => {
+          <select data-role="category-filter" value={categoryFilter} onChange={(event) => {
             setCategoryFilter(event.target.value); setSearchPage(0);
           }}><option value="">All categories</option>{[...new Set(items.map((item) => item.category))].sort().map((category) =>
             <option key={category}>{category}</option>)}</select>
-          <input data-testid="minimum-price" type="number" placeholder="Minimum price" value={minimumPrice}
+          <input data-role="minimum-price" type="number" placeholder="Minimum price" value={minimumPrice}
             onChange={(event) => { setMinimumPrice(event.target.value); setSearchPage(0); }} />
-          <input data-testid="maximum-price" type="number" placeholder="Maximum price" value={maximumPrice}
+          <input data-role="maximum-price" type="number" placeholder="Maximum price" value={maximumPrice}
             onChange={(event) => { setMaximumPrice(event.target.value); setSearchPage(0); }} />
-          <button data-testid="in-stock-filter" onClick={() => { setInStockOnly(!inStockOnly); setSearchPage(0); }}>
+          <button data-role="in-stock-filter" onClick={() => { setInStockOnly(!inStockOnly); setSearchPage(0); }}>
             In stock: {inStockOnly ? "on" : "off"}
           </button>
         </div>
 
         <h2 className="section-title">{search.trim() ? "Search results" : "Best sellers"}</h2>
-        <div data-testid="search-results">
+        <div data-role="search-results">
           {visibleItems.length === 0 ? (
             <div className="empty-state">No items found.</div>
           ) : (
-            <div className="item-list" data-testid="item-list">{visibleItems.map((it) => (
+            <div className="item-list" data-role="item-list">{visibleItems.map((it) => (
               <ItemCard
                 key={it.id}
                 item={it}
@@ -517,8 +517,8 @@ export default function App() {
           )}
         </div>
         <div className="search-pagination">
-          <button data-testid="search-previous-page" disabled={searchPage === 0} onClick={() => setSearchPage(searchPage - 1)}>Previous</button>
-          <button data-testid="search-next-page"
+          <button data-role="search-previous-page" disabled={searchPage === 0} onClick={() => setSearchPage(searchPage - 1)}>Previous</button>
+          <button data-role="search-next-page"
             disabled={(searchPage + 1) * CATALOG_PAGE_SIZE >= filteredItemCount}
             onClick={() => setSearchPage(searchPage + 1)}>Next</button>
         </div>
@@ -526,7 +526,7 @@ export default function App() {
 
       {account && (account.isAdmin || account.isStaff) && (
         <nav className="progression-links">
-          <button data-testid="promotions-link" onClick={() => {
+          <button data-role="promotions-link" onClick={() => {
             setCartOpen(false);
             setOrdersOpen(false);
             setAdminOpen(false);
@@ -599,7 +599,7 @@ function ToastArea({ toasts }: { toasts: Toast[] }) {
   return (
     <div className="toast">
       {toasts.map((t) => (
-        <div className="toast-item" key={t.id} data-testid={t.kind}>
+        <div className="toast-item" key={t.id} data-role={t.kind}>
           {t.message}
         </div>
       ))}
@@ -663,15 +663,15 @@ function Header(props: {
 
   return (
     <header className="header">
-      <h1 className="app-title" data-testid="app-title">
+      <h1 className="app-title" data-role="app-title">
         Storefront
       </h1>
-      <button className="btn btn-ghost btn-sm" data-testid="catalog-link" onClick={onCatalog}>
+      <button className="btn btn-ghost btn-sm" data-role="catalog-link" onClick={onCatalog}>
         Catalog
       </button>
       <input
         className="input search-input"
-        data-testid="search-input"
+        data-role="search-input"
         placeholder="Search items..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -679,20 +679,20 @@ function Header(props: {
       <div className="header-actions">
         {!connected && <span className="muted">reconnecting...</span>}
         {account && !account.isAdmin && !account.isStaff && (
-          <button className="btn btn-ghost btn-sm" data-testid="orders-toggle" onClick={onOrdersToggle}>
+          <button className="btn btn-ghost btn-sm" data-role="orders-toggle" onClick={onOrdersToggle}>
             Orders
           </button>
         )}
-        <button className="btn btn-ghost btn-sm" data-testid="cart-toggle" onClick={onCartToggle}>
-          Cart <span className="badge" data-testid="cart-count">{cartCount}</span>
+        <button className="btn btn-ghost btn-sm" data-role="cart-toggle" onClick={onCartToggle}>
+          Cart <span className="badge" data-role="cart-count">{cartCount}</span>
         </button>
         {account?.isAdmin && (
-          <button className="btn btn-ghost btn-sm" data-testid="admin-link" onClick={onAdminToggle}>
+          <button className="btn btn-ghost btn-sm" data-role="admin-link" onClick={onAdminToggle}>
             Admin
           </button>
         )}
         {account && (account.isStaff || account.isAdmin) && (
-          <button className="btn btn-ghost btn-sm" data-testid="staff-link" onClick={onFulfilmentToggle}>
+          <button className="btn btn-ghost btn-sm" data-role="staff-link" onClick={onFulfilmentToggle}>
             Fulfilment
           </button>
         )}
@@ -700,12 +700,12 @@ function Header(props: {
       <div className="account-area">
         {account ? (
           <>
-            <span className="current-user" data-testid="current-user">
+            <span className="current-user" data-role="current-user">
               {account.isAdmin || account.isStaff
-                ? <span data-testid="staff-current-user">{account.username}</span>
+                ? <span data-role="staff-current-user">{account.username}</span>
                 : account.username}
             </span>
-            <button className="btn btn-ghost btn-sm" data-testid="signout" onClick={onSignout}>
+            <button className="btn btn-ghost btn-sm" data-role="signout" onClick={onSignout}>
               Sign out
             </button>
           </>
@@ -714,7 +714,7 @@ function Header(props: {
             <div className="auth-form-group">
               <input
                 className="input"
-                data-testid="signup-username"
+                data-role="signup-username"
                 placeholder="Username"
                 value={signupUsername}
                 onChange={(e) => setSignupUsername(e.target.value)}
@@ -723,24 +723,24 @@ function Header(props: {
               <input
                 className="input"
                 type="password"
-                data-testid="signup-password"
+                data-role="signup-password"
                 placeholder="Password"
                 value={signupPassword}
                 onChange={(e) => setSignupPassword(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submitSignup()}
               />
-              <button className="btn btn-sm" data-testid="signup-submit" onClick={submitSignup}>
+              <button className="btn btn-sm" data-role="signup-submit" onClick={submitSignup}>
                 Sign up
               </button>
             </div>
-            <button className="link-btn" data-testid="signin-toggle" onClick={() => setShowSignin(true)}>
+            <button className="link-btn" data-role="signin-toggle" onClick={() => setShowSignin(true)}>
               Sign in
             </button>
             {showSignin && (
               <div className="auth-form-group">
                 <input
                   className="input"
-                  data-testid="signin-username"
+                  data-role="signin-username"
                   placeholder="Username"
                   value={signinUsername}
                   onChange={(e) => setSigninUsername(e.target.value)}
@@ -749,13 +749,13 @@ function Header(props: {
                 <input
                   className="input"
                   type="password"
-                  data-testid="signin-password"
+                  data-role="signin-password"
                   placeholder="Password"
                   value={signinPassword}
                   onChange={(e) => setSigninPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && submitSignin()}
                 />
-                <button className="btn btn-sm" data-testid="signin-submit" onClick={submitSignin}>
+                <button className="btn btn-sm" data-role="signin-submit" onClick={submitSignin}>
                   Sign in
                 </button>
               </div>
@@ -771,13 +771,13 @@ function RecommendedSection({ items }: { items: Item[] }) {
   return (
     <div className="recommended-section">
       <h2 className="section-title">Recommended for you</h2>
-      <div className="recommended-list" data-testid="recommended-list">
+      <div className="recommended-list" data-role="recommended-list">
         {items.length === 0 ? (
           <div className="empty-state">Nothing recommended yet.</div>
         ) : (
           items.map((it, index) => (
-            <div className="recommended-item" data-testid="recommended-item" key={it.id}>
-              <span data-testid="recommendation-rank">{index + 1}</span>{' '}
+            <div className="recommended-item" data-role="recommended-item" key={it.id}>
+              <span data-role="recommendation-rank">{index + 1}</span>{' '}
               <span className="item-name">{it.name}</span>
               <span className="item-price">{money(it.price)}</span>
             </div>
@@ -803,36 +803,36 @@ function ItemCard(props: {
   return (
     <div
       className={`item-card${outOfStock ? " out-of-stock-card" : ""}`}
-      data-testid="item-card"
+      data-role="item-card"
       data-buy-input={JSON.stringify({ itemId: item.id })}
       onClick={onOpen}
     >
       <div className="item-row">
-        <span className="item-name" data-testid="item-name">{item.name}</span>
-        {item.variants?.map((variant) => <span data-testid="item-variant" key={variant}>{variant}</span>)}
+        <span className="item-name" data-role="item-name">{item.name}</span>
+        {item.variants?.map((variant) => <span data-role="item-variant" key={variant}>{variant}</span>)}
       </div>
       <div className="item-row">
-        <span className="item-price" data-testid="item-price">{money(item.price)}</span>
+        <span className="item-price" data-role="item-price">{money(item.price)}</span>
       </div>
       <div className="item-stock-row">
         <span>
-          Stock: <span className={`item-stock${item.stock > 0 && item.stock <= 5 ? " low-stock" : ""}`} data-testid="item-stock">{item.stock}</span>
+          Stock: <span className={`item-stock${item.stock > 0 && item.stock <= 5 ? " low-stock" : ""}`} data-role="item-stock">{item.stock}</span>
         </span>
         {outOfStock && (
-          <span className="out-of-stock-badge" data-testid="out-of-stock">
+          <span className="out-of-stock-badge" data-role="out-of-stock">
             Out of stock
           </span>
         )}
       </div>
       {canBuy && (
         <div className="item-card-actions" onClick={(e) => e.stopPropagation()}>
-          <button className="btn btn-sm" data-testid="buy-now" disabled={outOfStock} onClick={onBuy}>
+          <button className="btn btn-sm" data-role="buy-now" disabled={outOfStock} onClick={onBuy}>
             Buy now
           </button>
-          <button className="btn btn-ghost btn-sm" data-testid="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
+          <button className="btn btn-ghost btn-sm" data-role="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
             Add to cart
           </button>
-          {outOfStock && <button className="btn btn-ghost btn-sm" data-testid="stock-alert" onClick={onStockAlert}>Notify me</button>}
+          {outOfStock && <button className="btn btn-ghost btn-sm" data-role="stock-alert" onClick={onStockAlert}>Notify me</button>}
         </div>
       )}
     </div>
@@ -858,7 +858,7 @@ function ItemDetailPanel(props: {
   }
 
   return (
-    <div className="item-detail" data-testid="item-detail">
+    <div className="item-detail" data-role="item-detail">
       <div className="panel-header">
         <h3>{item.name}</h3>
         <button className="close-btn" onClick={onClose} aria-label="Close">
@@ -872,7 +872,7 @@ function ItemDetailPanel(props: {
         <div className="muted">Stock: {item.stock}</div>
         <div className="rating-row">
           <span>Average rating:</span>
-          <strong data-testid="review-average">{average != null ? average.toFixed(1) : "—"}</strong>
+          <strong data-role="review-average">{average != null ? average.toFixed(1) : "—"}</strong>
         </div>
         <div className="stack">
           <h4>Reviews</h4>
@@ -880,7 +880,7 @@ function ItemDetailPanel(props: {
             <div className="empty-state">No reviews yet. Be the first to write one.</div>
           ) : (
             reviews.map((r) => (
-              <div className="review-item" data-testid="review-item" key={r.id}>
+              <div className="review-item" data-role="review-item" key={r.id}>
                 <div className="muted">
                   {r.username} · {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}
                 </div>
@@ -895,7 +895,7 @@ function ItemDetailPanel(props: {
             <div className="review-form-row">
               <select
                 className="input"
-                data-testid="review-rating"
+                data-role="review-rating"
                 value={rating}
                 onChange={(e) => setRating(Number(e.target.value))}
               >
@@ -908,13 +908,13 @@ function ItemDetailPanel(props: {
             </div>
             <input
               className="input"
-              data-testid="review-input"
+              data-role="review-input"
               placeholder="Share your thoughts..."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
             />
-            <button className="btn btn-sm" data-testid="review-submit" onClick={submit}>
+            <button className="btn btn-sm" data-role="review-submit" onClick={submit}>
               Submit review
             </button>
           </div>
@@ -943,7 +943,7 @@ function CartPanel(props: {
   }, []);
   const elapsed = Math.floor((Date.now() - openedAt) / 1000);
   return (
-    <div className="panel" data-testid="cart-panel">
+    <div className="panel" data-role="cart-panel">
       <div className="panel-header">
         <h3>Your cart</h3>
         <button className="close-btn" onClick={onClose} aria-label="Close">
@@ -951,19 +951,19 @@ function CartPanel(props: {
         </button>
       </div>
       {cart.items.length === 0 ? (
-        <div className="empty-state" data-testid="empty-cart">
+        <div className="empty-state" data-role="empty-cart">
           Your cart is empty.
         </div>
       ) : (
         <div className="stack">
           {cart.items.map((line) => (
-            <div className="cart-item" data-testid="cart-item"
+            <div className="cart-item" data-role="cart-item"
               data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })} key={line.itemId}>
               <div className="cart-item-top">
                 <span className="item-name">{line.name}</span>
                 <span>{money(line.lineTotal)}</span>
-                <span data-testid="cart-reservation-timer">{Math.max(0, (line.reservationSeconds ?? 0) - elapsed)}</span>
-                {line.expired && <span data-testid="cart-item-expired">Expired</span>}
+                <span data-role="cart-reservation-timer">{Math.max(0, (line.reservationSeconds ?? 0) - elapsed)}</span>
+                {line.expired && <span data-role="cart-item-expired">Expired</span>}
               </div>
               <div className="cart-item-top">
                 <div className="qty-controls">
@@ -976,7 +976,7 @@ function CartPanel(props: {
                   </button>
                   <input
                     className="input qty-input"
-                    data-testid="cart-quantity"
+                    data-role="cart-quantity"
                     type="number"
                     min={1}
                     value={line.quantity}
@@ -989,7 +989,7 @@ function CartPanel(props: {
                     +
                   </button>
                 </div>
-                <button className="btn btn-ghost btn-sm" data-testid="cart-remove" onClick={() => onRemove(line.itemId)}>
+                <button className="btn btn-ghost btn-sm" data-role="cart-remove" onClick={() => onRemove(line.itemId)}>
                   Remove
                 </button>
               </div>
@@ -997,21 +997,21 @@ function CartPanel(props: {
           ))}
         </div>
       )}
-      {(cart.expiredAt || cart.items.some((line) => line.expired)) && <div data-testid="cart-expired-notice">The cart expired.</div>}
+      {(cart.expiredAt || cart.items.some((line) => line.expired)) && <div data-role="cart-expired-notice">The cart expired.</div>}
       <div className="stack">
-        <input className="input" data-testid="cart-promotion" value={promotionCode}
+        <input className="input" data-role="cart-promotion" value={promotionCode}
           placeholder="Promotion code" onChange={(event) => setPromotionCode(event.target.value)} />
-        <button className="btn btn-ghost" data-testid="apply-promotion" onClick={async () => {
+        <button className="btn btn-ghost" data-role="apply-promotion" onClick={async () => {
           try { await onApplyPromotion(promotionCode); setPromotionError(""); }
           catch (error) { setPromotionError(error instanceof Error ? error.message : "Promotion unavailable"); }
         }}>Apply promotion</button>
-        {promotionError && <span data-testid="promotion-error">{promotionError}</span>}
+        {promotionError && <span data-role="promotion-error">{promotionError}</span>}
       </div>
       <div className="panel-footer">
-        <div className="cart-total" data-testid="cart-total">
+        <div className="cart-total" data-role="cart-total">
           Total: {money(cart.total)}
         </div>
-        <button className="btn" data-testid="checkout-submit" disabled={cart.items.length === 0} onClick={onCheckout}>
+        <button className="btn" data-role="checkout-submit" disabled={cart.items.length === 0} onClick={onCheckout}>
           Checkout
         </button>
       </div>
@@ -1027,7 +1027,7 @@ function OrdersPanel(props: {
 }) {
   const { orders, onClose, onCancel, onReturn } = props;
   return (
-    <div className="panel" data-testid="order-list">
+    <div className="panel" data-role="order-list">
       <div className="panel-header">
         <h3>Order history</h3>
         <button className="close-btn" onClick={onClose} aria-label="Close">
@@ -1039,12 +1039,12 @@ function OrdersPanel(props: {
       ) : (
         <div className="stack">
           {orders.map((o) => (
-            <div className="order-item" data-testid="order-item" data-entity-id={String(o.id)}
+            <div className="order-item" data-role="order-item" data-entity-id={String(o.id)}
               data-ship-input={JSON.stringify({ orderId: o.id })}
               data-cancel-input={JSON.stringify({ orderId: o.id })} key={o.id}>
               <div className="order-item-top">
                 <span className="muted">{new Date(o.createdAt).toLocaleString()}</span>
-                <span className={`order-status order-status-${o.status}`} data-testid="order-status">
+                <span className={`order-status order-status-${o.status}`} data-role="order-status">
                   {o.status}
                 </span>
               </div>
@@ -1058,7 +1058,7 @@ function OrdersPanel(props: {
                     {(o.status === "shipped" || o.status === "delivered") && !l.returned && (
                       <button
                         className="btn btn-ghost btn-sm"
-                        data-testid="return-item"
+                        data-role="return-item"
                         onClick={() => onReturn(o.id, l.orderItemId)}
                       >
                         Return
@@ -1067,21 +1067,21 @@ function OrdersPanel(props: {
                   </div>
                 ))}
               </div>
-              <div data-testid="payment-record">
-                <span data-testid="payment-status">{o.paymentStatus}</span>
-                <span data-testid="payment-amount">{money(o.paymentAmount ?? o.total)}</span>
-                <span data-testid="order-discount">{money(o.discount ?? 0)}</span>
-                <span data-testid="order-refund-total">{money(o.refundTotal ?? 0)}</span>
-                {(o.refundTotal ?? 0) > 0 && <span data-testid="refund-entry">
+              <div data-role="payment-record">
+                <span data-role="payment-status">{o.paymentStatus}</span>
+                <span data-role="payment-amount">{money(o.paymentAmount ?? o.total)}</span>
+                <span data-role="order-discount">{money(o.discount ?? 0)}</span>
+                <span data-role="order-refund-total">{money(o.refundTotal ?? 0)}</span>
+                {(o.refundTotal ?? 0) > 0 && <span data-role="refund-entry">
                   {o.items.map((item) => item.name).join(", ")} refund {money(o.refundTotal ?? 0)}
                 </span>}
               </div>
               <div className="order-item-top">
-                <div className="order-total" data-testid="order-total">
+                <div className="order-total" data-role="order-total">
                   {money(o.total)}
                 </div>
                 {o.status === "pending" && (
-                  <button className="btn btn-ghost btn-sm" data-testid="cancel-order" onClick={() => onCancel(o.id)}>
+                  <button className="btn btn-ghost btn-sm" data-role="cancel-order" onClick={() => onCancel(o.id)}>
                     Cancel order
                   </button>
                 )}
@@ -1110,7 +1110,7 @@ function AdminPanel(props: {
 
   if (!admin) {
     return (
-      <div className="panel wide" data-testid="admin-panel">
+      <div className="panel wide" data-role="admin-panel">
         <div className="panel-header">
           <h3>Admin</h3>
           <button className="close-btn" onClick={onClose} aria-label="Close">
@@ -1139,7 +1139,7 @@ function AdminPanel(props: {
   }
 
   return (
-    <div className="panel wide" data-testid="admin-panel">
+    <div className="panel wide" data-role="admin-panel">
       <div className="panel-header">
         <h3>Admin</h3>
         <button className="close-btn" onClick={onClose} aria-label="Close">
@@ -1149,13 +1149,13 @@ function AdminPanel(props: {
 
       <div className="admin-section">
         <h4>Restock item</h4>
-        <input className="input" data-testid="restock-item" value={namedRestock.item}
+        <input className="input" data-role="restock-item" value={namedRestock.item}
           onChange={(event) => setNamedRestock({ ...namedRestock, item: event.target.value })} />
-        <input className="input" data-testid="restock-warehouse" value={namedRestock.warehouse}
+        <input className="input" data-role="restock-warehouse" value={namedRestock.warehouse}
           onChange={(event) => setNamedRestock({ ...namedRestock, warehouse: event.target.value })} />
-        <input className="input" data-testid="restock-quantity" value={namedRestock.quantity}
+        <input className="input" data-role="restock-quantity" value={namedRestock.quantity}
           onChange={(event) => setNamedRestock({ ...namedRestock, quantity: event.target.value })} />
-        <button className="btn btn-sm" data-testid="restock-submit" onClick={() => {
+        <button className="btn btn-sm" data-role="restock-submit" onClick={() => {
           const item = admin.items.find((entry) => entry.name.toLowerCase() === namedRestock.item.toLowerCase());
           const warehouse = admin.warehouses.find((entry) => entry.name.toLowerCase() === namedRestock.warehouse.toLowerCase());
           if (item && warehouse) onRestock(item.id, warehouse.id, Math.max(1, Number(namedRestock.quantity)));
@@ -1164,19 +1164,19 @@ function AdminPanel(props: {
 
       <div className="revenue-box">
         <span>Total revenue</span>
-        <strong data-testid="admin-revenue">{admin.revenue.toFixed(2)}</strong>
+        <strong data-role="admin-revenue">{admin.revenue.toFixed(2)}</strong>
       </div>
       <div className="revenue-box">
         <span>Orders waiting to ship</span>
-        <strong data-testid="queue-depth">{admin.queueDepth}</strong>
+        <strong data-role="queue-depth">{admin.queueDepth}</strong>
       </div>
 
       <div className="admin-section">
         <h4>Warehouses</h4>
         <div className="warehouse-list">
           {admin.warehouses.map((w) => (
-            <span className="warehouse-chip" data-testid="admin-warehouse-item" key={w.id}>
-              {w.name}: <span data-testid="warehouse-total">{w.total}</span>
+            <span className="warehouse-chip" data-role="admin-warehouse-item" key={w.id}>
+              {w.name}: <span data-role="warehouse-total">{w.total}</span>
             </span>
           ))}
         </div>
@@ -1184,12 +1184,12 @@ function AdminPanel(props: {
 
       <div className="admin-section">
         <h4>Low stock (≤ 10 units)</h4>
-        <div className="stack" data-testid="low-stock-list">
+        <div className="stack" data-role="low-stock-list">
           {admin.lowStock.length === 0 ? (
             <div className="empty-state">Nothing is low on stock.</div>
           ) : (
             admin.lowStock.map((it) => (
-              <div className="low-stock-item" data-testid="low-stock-item" key={it.id}>
+              <div className="low-stock-item" data-role="low-stock-item" key={it.id}>
                 <span className="item-name">{it.name}</span>
                 <span className="low-stock-qty">{it.stock} left</span>
               </div>
@@ -1202,13 +1202,13 @@ function AdminPanel(props: {
         <h4>Category totals</h4>
         <div className="stack">
           {admin.categoryTotals.map((c) => (
-            <div className="category-row" data-testid="category-row" key={c.category}>
+            <div className="category-row" data-role="category-row" key={c.category}>
               <span className="item-name">{c.category}</span>
               <span>
-                Units: <span data-testid="category-units">{c.units}</span>
+                Units: <span data-role="category-units">{c.units}</span>
               </span>
               <span>
-                Revenue: <span data-testid="category-revenue">{c.revenue.toFixed(2)}</span>
+                Revenue: <span data-role="category-revenue">{c.revenue.toFixed(2)}</span>
               </span>
             </div>
           ))}
@@ -1222,7 +1222,7 @@ function AdminPanel(props: {
             const t = transferFor(it.id);
             const priceValue = priceState[it.id] ?? it.price;
             return (
-              <div className="admin-item-row" data-testid="admin-item-row"
+              <div className="admin-item-row" data-role="admin-item-row"
                 data-price-input={JSON.stringify({ itemId: it.id, price: it.name === "Gaming Mouse" ? 1 : it.price })}
                 data-transfer-input={it.name === "Headphones" && warehouses.length >= 2 ? JSON.stringify({
                   itemId: it.id, fromWarehouseId: warehouses.find((w) => w.name === "East")?.id ?? warehouses[0].id,
@@ -1233,13 +1233,13 @@ function AdminPanel(props: {
                   <span className="muted">{it.category}</span>
                 </div>
                 <div className="muted">
-                  Total stock: <span data-testid="admin-stock">{it.stock}</span>
+                  Total stock: <span data-role="admin-stock">{it.stock}</span>
                 </div>
 
                 <div className="price-form">
                   <input
                     className="input qty-input price-input"
-                    data-testid="price-input"
+                    data-role="price-input"
                     type="number"
                     min={0.01}
                     step="0.01"
@@ -1248,7 +1248,7 @@ function AdminPanel(props: {
                   />
                   <button
                     className="btn btn-sm"
-                    data-testid="price-submit"
+                    data-role="price-submit"
                     onClick={() => onChangePrice(it.id, Number(priceValue))}
                   >
                     Set price
@@ -1258,7 +1258,7 @@ function AdminPanel(props: {
                 <div className="transfer-form">
                   <select
                     className="input"
-                    data-testid="transfer-from"
+                    data-role="transfer-from"
                     value={t.from}
                     onChange={(e) =>
                       setTransferState((prev) => ({ ...prev, [it.id]: { ...t, from: Number(e.target.value) } }))
@@ -1273,7 +1273,7 @@ function AdminPanel(props: {
                   <span>→</span>
                   <select
                     className="input"
-                    data-testid="transfer-to"
+                    data-role="transfer-to"
                     value={t.to}
                     onChange={(e) =>
                       setTransferState((prev) => ({ ...prev, [it.id]: { ...t, to: Number(e.target.value) } }))
@@ -1287,7 +1287,7 @@ function AdminPanel(props: {
                   </select>
                   <input
                     className="input qty-input"
-                    data-testid="transfer-qty"
+                    data-role="transfer-qty"
                     type="number"
                     min={1}
                     value={t.qty}
@@ -1297,7 +1297,7 @@ function AdminPanel(props: {
                   />
                   <button
                     className="btn btn-sm"
-                    data-testid="transfer-submit"
+                    data-role="transfer-submit"
                     onClick={() => onTransfer(it.id, t.from, t.to, Math.max(1, Math.floor(t.qty)))}
                   >
                     Transfer
@@ -1316,18 +1316,18 @@ function AdminPanel(props: {
             const k = key(loc.itemId, loc.warehouseId);
             const amount = restockAmounts[k] ?? 1;
             return (
-              <div className="admin-location-row" data-testid="admin-location-row"
+              <div className="admin-location-row" data-role="admin-location-row"
                 data-restock-input={JSON.stringify({ itemId: loc.itemId, warehouseId: loc.warehouseId, quantity: 1 })} key={k}>
                 <div className="admin-row-top">
                   <span>
                     {loc.itemName} @ {loc.warehouseName}
                   </span>
-                  <span data-testid="admin-location-qty">{loc.quantity}</span>
+                  <span data-role="admin-location-qty">{loc.quantity}</span>
                 </div>
                 <div className="restock-form">
                   <input
                     className="input qty-input"
-                    data-testid="restock-input"
+                    data-role="restock-input"
                     type="number"
                     min={1}
                     value={amount}
@@ -1337,7 +1337,7 @@ function AdminPanel(props: {
                   />
                   <button
                     className="btn btn-sm"
-                    data-testid="restock-submit"
+                    data-role="restock-submit"
                     onClick={() => onRestock(loc.itemId, loc.warehouseId, Math.max(1, Math.floor(amount)))}
                   >
                     Restock
@@ -1357,7 +1357,7 @@ function FulfilmentPanel(props: { queue: QueueState; onClose: () => void;
   onShip: (orderId: number) => void; children?: ReactNode }) {
   const { queue, onClose, onShip, children } = props;
   return (
-    <div className="panel wide" data-testid="fulfilment-panel">
+    <div className="panel wide" data-role="fulfilment-panel">
       <div className="panel-header">
         <h3>Fulfilment queue</h3>
         <button className="close-btn" onClick={onClose} aria-label="Close">
@@ -1366,14 +1366,14 @@ function FulfilmentPanel(props: { queue: QueueState; onClose: () => void;
       </div>
       <div className="revenue-box">
         <span>Orders waiting</span>
-        <strong data-testid="queue-depth">{queue.depth}</strong>
+        <strong data-role="queue-depth">{queue.depth}</strong>
       </div>
       {queue.queue.length === 0 ? (
         <div className="empty-state">No orders waiting to ship.</div>
       ) : (
         <div className="stack">
           {queue.queue.map((o) => (
-            <div className="queue-item" data-testid="queue-item" key={o.id}>
+            <div className="queue-item" data-role="queue-item" key={o.id}>
               <div className="muted">{new Date(o.createdAt).toLocaleString()}</div>
               <div className="stack">
                 {o.items.map((line, idx) => (
@@ -1382,12 +1382,12 @@ function FulfilmentPanel(props: { queue: QueueState; onClose: () => void;
                       {line.name} × {line.quantity}
                     </span>
                     <span className="muted">
-                      from <span data-testid="queue-warehouse">{line.warehouse}</span>
+                      from <span data-role="queue-warehouse">{line.warehouse}</span>
                     </span>
                   </div>
                 ))}
               </div>
-              <button className="btn btn-sm" data-testid="ship-submit" onClick={() => onShip(o.id)}>
+              <button className="btn btn-sm" data-role="ship-submit" onClick={() => onShip(o.id)}>
                 Mark shipped
               </button>
             </div>

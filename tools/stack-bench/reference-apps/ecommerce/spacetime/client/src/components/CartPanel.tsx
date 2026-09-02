@@ -67,7 +67,7 @@ export default function CartPanel({
       <div className="backdrop" onClick={onClose} />
       <div
         className="panel"
-        data-testid="cart-panel"
+        data-role="cart-panel"
         onKeyDown={(e) => {
           if (e.key === 'Escape') onClose();
         }}
@@ -80,14 +80,14 @@ export default function CartPanel({
         </div>
         <div className="panel-body">
           {lines.length === 0 && (
-            <div className="empty-state" data-testid="empty-cart">
+            <div className="empty-state" data-role="empty-cart">
               Your cart is empty. Add something you like!
             </div>
           )}
           {lines.map((line) => (
             <div
               className="cart-item"
-              data-testid="cart-item"
+              data-role="cart-item"
               data-cart-input={JSON.stringify({ itemId: line.itemId.toString(), quantity: -3 })}
               key={String(line.itemId)}
             >
@@ -98,7 +98,7 @@ export default function CartPanel({
               <input
                 type="number"
                 className="cart-quantity"
-                data-testid="cart-quantity"
+                data-role="cart-quantity"
                 min={1}
                 value={line.quantity}
                 onChange={(e) => {
@@ -109,43 +109,43 @@ export default function CartPanel({
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                data-testid="cart-remove"
+                data-role="cart-remove"
                 onClick={() => onRemove(line.itemId)}
               >
                 Remove
               </button>
               {(() => {
                 const reservation = reservations.find(row => row.itemId === line.itemId);
-                if (!reservation || reservation.expired) return <span data-testid="cart-item-expired">expired</span>;
+                if (!reservation || reservation.expired) return <span data-role="cart-item-expired">expired</span>;
                 const seconds = Math.max(0, Number((reservation.expiresMicros - BigInt(Date.now()) * 1000n) / 1_000_000n));
-                return <span data-testid="cart-reservation-timer">{seconds}</span>;
+                return <span data-role="cart-reservation-timer">{seconds}</span>;
               })()}
             </div>
           ))}
           {error && (
-            <div className="error-text" data-testid="buy-error">
+            <div className="error-text" data-role="buy-error">
               {error}
             </div>
           )}
         </div>
         <div className="panel-footer">
           <div className="inline-form">
-            <input data-testid="cart-promotion" value={promotionCode} onChange={event => setPromotionCode(event.target.value)} placeholder="Promotion code" />
-            <button className="btn btn-ghost btn-sm" data-testid="apply-promotion" onClick={async () => {
+            <input data-role="cart-promotion" value={promotionCode} onChange={event => setPromotionCode(event.target.value)} placeholder="Promotion code" />
+            <button className="btn btn-ghost btn-sm" data-role="apply-promotion" onClick={async () => {
               setPromotionError(null);
               try { await onApplyPromotion(promotionCode); }
               catch (error) { setPromotionError(error instanceof Error ? error.message : 'Promotion refused.'); }
             }}>Apply</button>
           </div>
-          {promotionError && <div className="error-text" data-testid="promotion-error">{promotionError}</div>}
+          {promotionError && <div className="error-text" data-role="promotion-error">{promotionError}</div>}
           <div className="cart-total-row">
             <span>Total</span>
-            <span data-testid="cart-total">{formatMoney(total)}</span>
+            <span data-role="cart-total">{formatMoney(total)}</span>
           </div>
           <button
             type="button"
             className="btn btn-primary"
-            data-testid="checkout-submit"
+            data-role="checkout-submit"
             disabled={lines.length === 0 || checkingOut}
             style={{ width: '100%', marginTop: 12 }}
             onClick={handleCheckout}

@@ -34,7 +34,17 @@
           ]
         }
       ],
-      "contracts": []
+      "contracts": [
+        {
+          "id": "ecommerce.application-interface",
+          "path": "contracts/application-interface-1.0.md",
+          "order": 0,
+          "modes": [
+            "fresh",
+            "upgrade"
+          ]
+        }
+      ]
     }
   },
   "packs": [

@@ -13,7 +13,7 @@ function checkScenarioArgs(args: readonly string[]): void {
   assert.match(result.stdout, /0 errors; 0 warnings/);
 }
 
-test('the progression scenarios use only their selected testing interfaces', () => {
+test('the progression scenarios use only their selected application interfaces', () => {
   checkScenarioArgs(['--track', 'ecommerce', '--recipe', 'progression-catalog-2.0.1.json']);
 });
 

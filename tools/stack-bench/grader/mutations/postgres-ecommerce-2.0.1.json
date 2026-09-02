@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "status": "candidate",
-  "fixtureSha256": "e461967ff8b99394c278e6d382e455a7fc3086c88016543fa668baf808baec0d",
+  "fixtureSha256": "356a4fb0602bc1ca4ac5b272ae6d9a434039a7f8da71c2f237a8793988e86fe0",
   "backend": "postgres",
   "track": "ecommerce",
   "note": "Mutation definitions for the PostgreSQL ecommerce reference.",
@@ -509,8 +509,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "<strong data-testid=\"queue-depth\">{queue.depth}</strong>",
-          "replace": "<strong data-testid=\"queue-depth\">{Math.max(0, queue.depth - 1)}</strong>"
+          "find": "<strong data-role=\"queue-depth\">{queue.depth}</strong>",
+          "replace": "<strong data-role=\"queue-depth\">{Math.max(0, queue.depth - 1)}</strong>"
         }
       ]
     },
@@ -522,8 +522,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "        {account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\"",
-          "replace": "        {account && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\""
+          "find": "        {account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-link\"",
+          "replace": "        {account && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-link\""
         }
       ]
     },
@@ -701,8 +701,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "{account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\"",
-          "replace": "{false && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\""
+          "find": "{account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-link\"",
+          "replace": "{false && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-link\""
         }
       ]
     },
@@ -714,8 +714,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "{account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\"",
-          "replace": "{account && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\""
+          "find": "{account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-link\"",
+          "replace": "{account && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"staff-link\""
         }
       ]
     },
@@ -755,8 +755,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "        <span className=\"item-name\" data-testid=\"item-name\">{item.name}</span>",
-          "replace": "        <span className=\"item-name\" data-testid=\"item-name\">{item.name === \"Travel Mug\" ? \"\" : item.name}</span>"
+          "find": "        <span className=\"item-name\" data-role=\"item-name\">{item.name}</span>",
+          "replace": "        <span className=\"item-name\" data-role=\"item-name\">{item.name === \"Travel Mug\" ? \"\" : item.name}</span>"
         }
       ]
     },
@@ -796,8 +796,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "              <div data-testid=\"payment-record\">\n                <span data-testid=\"payment-status\">{o.paymentStatus}</span>",
-          "replace": "              <div data-testid=\"payment-record\">\n                <span data-testid=\"payment-status\">{o.paymentStatus}</span>\n                <span data-testid=\"payment-record\"><span data-testid=\"payment-status\">{o.paymentStatus}</span></span>"
+          "find": "              <div data-role=\"payment-record\">\n                <span data-role=\"payment-status\">{o.paymentStatus}</span>",
+          "replace": "              <div data-role=\"payment-record\">\n                <span data-role=\"payment-status\">{o.paymentStatus}</span>\n                <span data-role=\"payment-record\"><span data-role=\"payment-status\">{o.paymentStatus}</span></span>"
         }
       ]
     },
@@ -1296,8 +1296,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "{account?.isAdmin && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"admin-link\"",
-          "replace": "{(account?.isAdmin || account?.isStaff) && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"admin-link\""
+          "find": "{account?.isAdmin && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"admin-link\"",
+          "replace": "{(account?.isAdmin || account?.isStaff) && (\n          <button className=\"btn btn-ghost btn-sm\" data-role=\"admin-link\""
         }
       ]
     },
@@ -1679,6 +1679,36 @@
         {
           "find": "l.returned ? \" (returned)\" : \"\"",
           "replace": "\"\""
+        }
+      ]
+    },
+    {
+      "id": "direct-review-access-is-not-checked",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access-1.0.0.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "The direct review action accepts a review from a customer who did not buy the item.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (purchased.rowCount === 0) {",
+          "replace": "    if (false && purchased.rowCount === 0) {"
+        }
+      ]
+    },
+    {
+      "id": "support-messages-are-sent-to-other-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-read-privacy-1.0.0.json",
+      "targets": [
+        "ecommerce.progression.support-privacy-specifications.private-message-delivery.619a"
+      ],
+      "desc": "A customer receives another customer's support message.",
+      "file": "server/src/progression.ts",
+      "edits": [
+        {
+          "find": "const where = account.isAdmin || account.isStaff ? \"TRUE\" : \"sc.account_id = $1\";\n  const values = account.isAdmin || account.isStaff ? [] : [account.id];",
+          "replace": "const where = \"TRUE\";\n  const values: unknown[] = [];"
         }
       ]
     }

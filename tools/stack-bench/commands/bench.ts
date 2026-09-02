@@ -45,7 +45,7 @@ import { materializationAppFailure, materializeAcceptedSource }
   from '../src/runtime/source-materialization.js';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
-import { contractControlIds } from '../src/composition/agent-visible-contract.js';
+import { contractInterfaceNames } from '../src/composition/agent-visible-contract.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
   repairHistoryEntry, repairProgressState, restorePrivateGradingEvidence }
   from '../src/evidence/repair-evidence.js';
@@ -215,9 +215,9 @@ function repairReportArgs(value: ProgressionRecipeAction | null): string[] {
     return promptNodeIds.has(check.nodeId) ? [check.id] : [];
   });
   if (checks.length === 0) throw new Error('dependency repair action selects no repair checks');
-  const controls = contractControlIds(value.agent.task.contractText);
+  const interfaces = contractInterfaceNames(value.agent.task.contractText);
   return ['--checks-json', JSON.stringify(checks),
-    '--controls-json', JSON.stringify(controls)];
+    '--controls-json', JSON.stringify(interfaces)];
 }
 
 function requireProgressionState(state: ProgressionState | null): ProgressionState {

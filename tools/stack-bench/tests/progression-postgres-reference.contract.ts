@@ -61,7 +61,7 @@ test('PostgreSQL progression reference exposes required routes', () => {
   ]) assert.match(server, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('PostgreSQL progression reference exposes stable testing handles', () => {
+test('PostgreSQL progression reference exposes stable application interfaces', () => {
   const client = `${read('client', 'src', 'App.tsx')}\n${read('client', 'src', 'ProgressionPanel.tsx')}`;
   for (const handle of [
     'profile-save', 'staff-signin-submit', 'staff-role-save', 'catalog-save',
@@ -70,7 +70,7 @@ test('PostgreSQL progression reference exposes stable testing handles', () => {
     'schedule-restock-submit', 'pending-restock-cancel', 'reorder-submit', 'restore-cart',
     'dismiss-recommendation', 'completed-order-status', 'payment-record', 'promotion-report',
     'category-filter', 'search-next-page', 'cart-reservation-timer', 'cart-expired-notice',
-  ]) assert.ok(client.includes(`data-testid="${handle}"`), `missing ${handle}`);
+  ]) assert.ok(client.includes(`data-role="${handle}"`), `missing ${handle}`);
   for (const attribute of [
     'data-restock-input', 'data-transfer-input', 'data-price-input', 'data-ship-input',
     'data-cancel-input', 'data-action-input',
@@ -79,13 +79,13 @@ test('PostgreSQL progression reference exposes stable testing handles', () => {
 
 test('support order choices expose product names as separate actions', () => {
   const client = read('client', 'src', 'ProgressionPanel.tsx');
-  assert.match(client, /orders\.map\(\(order\) => <button data-testid="support-order-option"/);
+  assert.match(client, /orders\.map\(\(order\) => <button data-role="support-order-option"/);
   assert.match(client, /order\.items\?\.map\(\(item\) => item\.name\)/);
-  assert.doesNotMatch(client, /<select data-testid="support-order-option"/);
+  assert.doesNotMatch(client, /<select data-role="support-order-option"/);
 });
 
 test('scheduled restocks expose the identifier used by access-control replay', () => {
   const client = read('client', 'src', 'ProgressionPanel.tsx');
   assert.match(client,
-    /data-testid="pending-restock-item" data-entity-id=\{String\(item\.id\)\}/);
+    /data-role="pending-restock-item" data-entity-id=\{String\(item\.id\)\}/);
 });

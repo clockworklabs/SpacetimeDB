@@ -121,13 +121,13 @@ test('the live grader executes account setup through the registered actor execut
     }],
   }));
   const server = startBlankApp(`<!doctype html><html><body>
-    <input data-testid="signup-username"><input data-testid="signup-password">
-    <button data-testid="signup-submit">Sign up</button>
-    <div data-testid="current-user" hidden></div>
+    <input data-role="signup-username"><input data-role="signup-password">
+    <button data-role="signup-submit">Sign up</button>
+    <div data-role="current-user" hidden></div>
     <script>
-      document.querySelector('[data-testid="signup-submit"]').onclick = () => {
-        const current = document.querySelector('[data-testid="current-user"]');
-        current.textContent = document.querySelector('[data-testid="signup-username"]').value;
+      document.querySelector('[data-role="signup-submit"]').onclick = () => {
+        const current = document.querySelector('[data-role="current-user"]');
+        current.textContent = document.querySelector('[data-role="signup-username"]').value;
         current.hidden = false;
       };
     </script>
@@ -180,17 +180,17 @@ test('setup can wait for app readiness without relaxing scored checks', async ()
     <script>
       setTimeout(() => {
         document.querySelector('#app').innerHTML = \`
-          <input data-testid="signup-username"><input data-testid="signup-password">
-          <button data-testid="signup-submit">Sign up</button>
-          <div data-testid="current-user" hidden></div>
-          <button data-testid="slow-action">Start</button>
+          <input data-role="signup-username"><input data-role="signup-password">
+          <button data-role="signup-submit">Sign up</button>
+          <div data-role="current-user" hidden></div>
+          <button data-role="slow-action">Start</button>
         \`;
-        document.querySelector('[data-testid="signup-submit"]').onclick = () => {
-          const current = document.querySelector('[data-testid="current-user"]');
-          current.textContent = document.querySelector('[data-testid="signup-username"]').value;
+        document.querySelector('[data-role="signup-submit"]').onclick = () => {
+          const current = document.querySelector('[data-role="current-user"]');
+          current.textContent = document.querySelector('[data-role="signup-username"]').value;
           current.hidden = false;
         };
-        document.querySelector('[data-testid="slow-action"]').onclick = () => {
+        document.querySelector('[data-role="slow-action"]').onclick = () => {
           setTimeout(() => {
             const result = document.createElement('div');
             result.dataset.testid = 'slow-result';
@@ -238,7 +238,7 @@ test('an inconclusive check keeps the recipe denominator fixed', async () => {
           input: { testid: 'action-input', attribute: 'data-input' } }] }],
     }],
   }));
-  const server = startBlankApp('<!doctype html><div data-testid="action-input" data-input="{}"></div>');
+  const server = startBlankApp('<!doctype html><div data-role="action-input" data-input="{}"></div>');
   try {
     const port = await server.port;
     await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1',

@@ -77,7 +77,7 @@ test('inventory and order nodes use the expected direct graph parents', () => {
   }
 });
 
-test('each node has a dedicated product prompt and testing interface', () => {
+test('each node has a dedicated product prompt and application interface', () => {
   const expectedPaths = new Map<CompiledPackDefinition, readonly [string, string]>([
     [packs.transfers, ['prompts/modular/stock-transfers-1.0.0.md',
       'contracts/stock-transfers-1.0.md']],

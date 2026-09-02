@@ -64,12 +64,12 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
             ×
           </button>
         </div>
-        <div className="panel-body" data-testid="order-list">
+        <div className="panel-body" data-role="order-list">
           {orders.length === 0 && <div className="empty-state">You have no past orders yet.</div>}
           {orders.map((order) => (
             <div
               className="order-item"
-              data-testid="order-item"
+              data-role="order-item"
               data-entity-id={String(order.orderId)}
               data-ship-input={JSON.stringify({ orderId: Number(order.orderId) })}
               data-cancel-input={JSON.stringify({ orderId: Number(order.orderId) })}
@@ -78,26 +78,26 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
               <div className="order-item-names">{order.items.map((i) => i.name).join(', ')}</div>
               <div className="order-item-meta">{order.createdAt.toLocaleString()}</div>
               <div className="order-item-row">
-                <span className="order-status" data-testid="order-status">
+                <span className="order-status" data-role="order-status">
                   {order.status}
                 </span>
-                <span className="order-total" data-testid="order-total">
+                <span className="order-total" data-role="order-total">
                   {formatMoney(order.total)}
                 </span>
               </div>
-              {order.discount > 0 && <div data-testid="order-discount">Discount: {formatMoney(order.discount)}</div>}
-              {order.refundedTotal > 0 && <div data-testid="order-refund-total">Refund: {formatMoney(order.refundedTotal)}</div>}
+              {order.discount > 0 && <div data-role="order-discount">Discount: {formatMoney(order.discount)}</div>}
+              {order.refundedTotal > 0 && <div data-role="order-refund-total">Refund: {formatMoney(order.refundedTotal)}</div>}
               {order.payments.map((payment, index) => payment.status === 'refunded' ? (
-                <div data-testid="refund-entry" key={`refund-${index}`}>
+                <div data-role="refund-entry" key={`refund-${index}`}>
                   {order.items.map(item => item.name).join(', ')}
-                  <span data-testid="payment-amount">{formatMoney(payment.amount)}</span>
-                  <span data-testid="payment-status">{payment.status}</span>
+                  <span data-role="payment-amount">{formatMoney(payment.amount)}</span>
+                  <span data-role="payment-status">{payment.status}</span>
                 </div>
               ) : (
-                <div data-testid="payment-record" key={`payment-${index}`}>
+                <div data-role="payment-record" key={`payment-${index}`}>
                   {order.items.map(item => item.name).join(', ')}
-                  <span data-testid="payment-amount">{formatMoney(payment.amount)}</span>
-                  <span data-testid="payment-status">{payment.status}</span>
+                  <span data-role="payment-amount">{formatMoney(payment.amount)}</span>
+                  <span data-role="payment-status">{payment.status}</span>
                 </div>
               ))}
               <div className="order-item-lines">
@@ -111,7 +111,7 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        data-testid="return-item"
+                        data-role="return-item"
                         onClick={() => handleReturn(order.orderId, item.itemId)}
                       >
                         Return
@@ -124,14 +124,14 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
                 <button
                   type="button"
                   className="btn btn-danger btn-sm"
-                  data-testid="cancel-order"
+                  data-role="cancel-order"
                   onClick={() => handleCancel(order.orderId)}
                 >
                   Cancel order
                 </button>
               )}
               {errors[String(order.orderId)] && (
-                <div className="error-text" data-testid="order-error">
+                <div className="error-text" data-role="order-error">
                   {errors[String(order.orderId)]}
                 </div>
               )}

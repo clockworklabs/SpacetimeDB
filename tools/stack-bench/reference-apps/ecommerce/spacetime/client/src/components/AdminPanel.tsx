@@ -97,10 +97,10 @@ export default function AdminPanel({
   };
 
   return (
-    <div className="admin-panel" data-testid="admin-panel">
+    <div className="admin-panel" data-role="admin-panel">
       <div className="admin-section">
         <h2 className="section-title">Revenue</h2>
-        <div className="admin-revenue" data-testid="admin-revenue">
+        <div className="admin-revenue" data-role="admin-revenue">
           {formatMoney(revenue)}
         </div>
       </div>
@@ -124,7 +124,7 @@ export default function AdminPanel({
               const east = warehouses.find((warehouse) => warehouse.name === 'East');
               const west = warehouses.find((warehouse) => warehouse.name === 'West');
               return (
-                <tr data-testid="admin-item-row" key={k}
+                <tr data-role="admin-item-row" key={k}
                   data-price-input={item.name === 'Gaming Mouse'
                     ? JSON.stringify({ itemId: Number(item.id), price: 1 }) : undefined}
                   data-transfer-input={item.name === 'Headphones' && east && west
@@ -132,13 +132,13 @@ export default function AdminPanel({
                       toWarehouseId: Number(west.id), quantity: 25 }) : undefined}>
                   <td>{item.name}</td>
                   <td>{formatMoney(item.price)}</td>
-                  <td data-testid="admin-stock">{totalStockOf(item.id)}</td>
+                  <td data-role="admin-stock">{totalStockOf(item.id)}</td>
                   <td>
                     <div className="inline-form">
                       <input
                         type="number"
                         className="price-input"
-                        data-testid="price-input"
+                        data-role="price-input"
                         min={0.01}
                         step={0.01}
                         placeholder={item.price.toFixed(2)}
@@ -148,7 +148,7 @@ export default function AdminPanel({
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        data-testid="price-submit"
+                        data-role="price-submit"
                         onClick={() => handlePriceSubmit(item.id)}
                       >
                         Set
@@ -158,7 +158,7 @@ export default function AdminPanel({
                   <td>
                     <div className="inline-form">
                       <select
-                        data-testid="transfer-from"
+                        data-role="transfer-from"
                         value={transfer.from}
                         onChange={(e) =>
                           setTransferInputs((v) => ({ ...v, [k]: { ...transfer, from: e.target.value } }))
@@ -172,7 +172,7 @@ export default function AdminPanel({
                         ))}
                       </select>
                       <select
-                        data-testid="transfer-to"
+                        data-role="transfer-to"
                         value={transfer.to}
                         onChange={(e) =>
                           setTransferInputs((v) => ({ ...v, [k]: { ...transfer, to: e.target.value } }))
@@ -188,7 +188,7 @@ export default function AdminPanel({
                       <input
                         type="number"
                         className="transfer-qty"
-                        data-testid="transfer-qty"
+                        data-role="transfer-qty"
                         min={1}
                         placeholder="qty"
                         value={transfer.qty}
@@ -199,7 +199,7 @@ export default function AdminPanel({
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        data-testid="transfer-submit"
+                        data-role="transfer-submit"
                         onClick={() => handleTransferSubmit(item.id)}
                       >
                         Move
@@ -214,7 +214,7 @@ export default function AdminPanel({
         {Object.entries(itemErrors).map(
           ([k, msg]) =>
             msg && (
-              <div className="error-text" data-testid="order-error" key={k}>
+              <div className="error-text" data-role="order-error" key={k}>
                 {msg}
               </div>
             )
@@ -223,10 +223,10 @@ export default function AdminPanel({
 
       <div className="admin-section">
         <h2 className="section-title">Low stock</h2>
-        <div className="low-stock-list" data-testid="low-stock-list">
+        <div className="low-stock-list" data-role="low-stock-list">
           {lowStockItems.length === 0 && <div className="empty-state">Nothing is running low.</div>}
           {lowStockItems.map((item) => (
-            <div className="low-stock-item" data-testid="low-stock-item" key={String(item.id)}>
+            <div className="low-stock-item" data-role="low-stock-item" key={String(item.id)}>
               {item.name}: {totalStockOf(item.id)} left
             </div>
           ))}
@@ -237,8 +237,8 @@ export default function AdminPanel({
         <h2 className="section-title">Warehouses</h2>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {warehouses.map((wh) => (
-            <span className="badge badge-muted" data-testid="admin-warehouse-item" key={String(wh.id)}>
-              {wh.name}: <span data-testid="warehouse-total">{warehouseTotal(wh.id)}</span>
+            <span className="badge badge-muted" data-role="admin-warehouse-item" key={String(wh.id)}>
+              {wh.name}: <span data-role="warehouse-total">{warehouseTotal(wh.id)}</span>
             </span>
           ))}
         </div>
@@ -256,10 +256,10 @@ export default function AdminPanel({
           </thead>
           <tbody>
             {categoryTotals.map((cat) => (
-              <tr data-testid="category-row" key={String(cat.categoryId)}>
+              <tr data-role="category-row" key={String(cat.categoryId)}>
                 <td>{cat.name}</td>
-                <td data-testid="category-units">{cat.unitsSold}</td>
-                <td data-testid="category-revenue">{formatMoney(cat.revenue)}</td>
+                <td data-role="category-units">{cat.unitsSold}</td>
+                <td data-role="category-revenue">{formatMoney(cat.revenue)}</td>
               </tr>
             ))}
           </tbody>
@@ -282,17 +282,17 @@ export default function AdminPanel({
               warehouses.map((wh) => {
                 const k = key(item.id, wh.id);
                 return (
-                  <tr data-testid="admin-location-row" key={k}
+                  <tr data-role="admin-location-row" key={k}
                     data-restock-input={JSON.stringify({ itemId: Number(item.id), warehouseId: Number(wh.id), quantity: Number(restockInputs[k] || 1) })}>
                     <td>{item.name}</td>
                     <td>{wh.name}</td>
-                    <td data-testid="admin-location-qty">{stockOf(item.id, wh.id)}</td>
+                    <td data-role="admin-location-qty">{stockOf(item.id, wh.id)}</td>
                     <td>
                       <div className="restock-form">
                         <input
                           type="number"
                           className="restock-input"
-                          data-testid="restock-input"
+                          data-role="restock-input"
                           min={1}
                           placeholder="qty"
                           value={restockInputs[k] ?? ''}
@@ -304,7 +304,7 @@ export default function AdminPanel({
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          data-testid="restock-submit"
+                          data-role="restock-submit"
                           onClick={() => handleRestock(item.id, wh.id)}
                         >
                           Add

@@ -20,20 +20,20 @@ export default function FulfilmentPanel({ queue, onShip }: FulfilmentPanelProps)
   };
 
   return (
-    <div className="fulfilment-panel" data-testid="fulfilment-panel">
+    <div className="fulfilment-panel" data-role="fulfilment-panel">
       <div className="fulfilment-header">
         <h2 className="section-title">Fulfilment queue</h2>
         <span className="muted">
-          Waiting: <span data-testid="queue-depth">{queue.length}</span>
+          Waiting: <span data-role="queue-depth">{queue.length}</span>
         </span>
       </div>
       {queue.length === 0 && <div className="empty-state">No orders are waiting to ship.</div>}
       {queue.map((order) => (
-        <div className="queue-item" data-testid="queue-item" key={String(order.orderId)}>
+        <div className="queue-item" data-role="queue-item" key={String(order.orderId)}>
           <div className="queue-item-names">{order.itemNames.join(', ')}</div>
           <div className="queue-item-warehouses">
             {order.itemNames.map((name, i) => (
-              <span className="badge badge-muted" data-testid="queue-warehouse" key={i}>
+              <span className="badge badge-muted" data-role="queue-warehouse" key={i}>
                 {name}: {order.warehouseNames[i]}
               </span>
             ))}
@@ -41,13 +41,13 @@ export default function FulfilmentPanel({ queue, onShip }: FulfilmentPanelProps)
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            data-testid="ship-submit"
+            data-role="ship-submit"
             onClick={() => handleShip(order.orderId)}
           >
             Mark shipped
           </button>
           {errors[String(order.orderId)] && (
-            <div className="error-text" data-testid="order-error">
+            <div className="error-text" data-role="order-error">
               {errors[String(order.orderId)]}
             </div>
           )}

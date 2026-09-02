@@ -2,13 +2,13 @@
 
 ## Appendix: Application interface (required)
 
-Add the exact `id` attributes below to the corresponding visible elements.
-These standard HTML attributes must not change the design, architecture, or
-selected stack.
+Use each interface name below as an exact HTML attribute value. Use `id` for a
+one-off element. Use `data-role` when the same interface can appear more than
+once. These attributes must not change the design, architecture, or selected
+stack.
 
 Rules:
-- Attribute name is exactly `id`; values are exactly as listed (kebab-case).
-- Repeated elements carry the same element ID on every instance.
+- Values are exactly as listed in kebab-case.
 - An element that is hidden until a menu/toggle opens still counts, as long as it is in the DOM after its toggle is clicked.
 - Do not add element IDs beyond this list to elements that could be confused with these.
 

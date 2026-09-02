@@ -1,6 +1,6 @@
 # Cart recovery application interface
 
-Use these `id` values:
+Use these application interface names:
 
 - `expired-cart` identifies the expired cart.
 - `restore-cart` restores that cart.

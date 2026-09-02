@@ -3,64 +3,64 @@
      nothing the walk inspects: signing up really reveals the buying controls,
      search really covers the whole catalogue, checkout really produces an order.
      Not a reference implementation — no server, no concurrency, no auth. -->
-<h1 data-testid="app-title">Mock Shop</h1>
+<h1 data-role="app-title">Mock Shop</h1>
 
 <div id="auth">
-  <input data-testid="signup-username" placeholder="username">
-  <input data-testid="signup-password" type="password" placeholder="password">
-  <button data-testid="signup-submit">Sign up</button>
-  <button data-testid="signin-toggle">Have an account?</button>
+  <input data-role="signup-username" placeholder="username">
+  <input data-role="signup-password" type="password" placeholder="password">
+  <button data-role="signup-submit">Sign up</button>
+  <button data-role="signin-toggle">Have an account?</button>
   <span id="signin-form" hidden>
-    <input data-testid="signin-username" placeholder="username">
-    <input data-testid="signin-password" type="password" placeholder="password">
-    <button data-testid="signin-submit">Sign in</button>
+    <input data-role="signin-username" placeholder="username">
+    <input data-role="signin-password" type="password" placeholder="password">
+    <button data-role="signin-submit">Sign in</button>
   </span>
 </div>
 
 <div id="account" hidden>
-  <span data-testid="current-user"></span>
-  <button data-testid="cart-toggle">Cart</button>
-  <span data-testid="cart-count">0</span>
-  <button data-testid="orders-toggle">Orders</button>
-  <button data-testid="admin-link" hidden>Admin</button>
-  <button data-testid="signout">Sign out</button>
+  <span data-role="current-user"></span>
+  <button data-role="cart-toggle">Cart</button>
+  <span data-role="cart-count">0</span>
+  <button data-role="orders-toggle">Orders</button>
+  <button data-role="admin-link" hidden>Admin</button>
+  <button data-role="signout">Sign out</button>
 </div>
 
-<input data-testid="search-input" placeholder="search">
-<div data-testid="search-results" hidden></div>
-<div data-testid="item-list"></div>
+<input data-role="search-input" placeholder="search">
+<div data-role="search-results" hidden></div>
+<div data-role="item-list"></div>
 
-<div data-testid="item-detail" hidden>
+<div data-role="item-detail" hidden>
   <h2 id="detail-name"></h2>
-  <span>Average rating: <span data-testid="review-average">0</span></span>
-  <select data-testid="review-rating">
+  <span>Average rating: <span data-role="review-average">0</span></span>
+  <select data-role="review-rating">
     <option value="1">1</option><option value="2">2</option><option value="3">3</option>
     <option value="4">4</option><option value="5">5</option>
   </select>
-  <input data-testid="review-input" placeholder="your review">
-  <button data-testid="review-submit">Submit review</button>
+  <input data-role="review-input" placeholder="your review">
+  <button data-role="review-submit">Submit review</button>
   <div id="reviews"></div>
 </div>
 
-<div data-testid="cart-panel" hidden>
+<div data-role="cart-panel" hidden>
   <div id="cart-lines"></div>
-  <div data-testid="empty-cart" hidden>Your cart is empty</div>
-  <span>Total: <span data-testid="cart-total">0.00</span></span>
-  <button data-testid="checkout-submit">Check out</button>
+  <div data-role="empty-cart" hidden>Your cart is empty</div>
+  <span>Total: <span data-role="cart-total">0.00</span></span>
+  <button data-role="checkout-submit">Check out</button>
 </div>
 
-<div data-testid="order-list" hidden></div>
+<div data-role="order-list" hidden></div>
 
-<div data-testid="admin-panel" hidden>
+<div data-role="admin-panel" hidden>
   <div id="admin-items"></div>
   <div id="admin-warehouses"></div>
   <div id="admin-locations"></div>
-  <span>Revenue: <span data-testid="admin-revenue">0.00</span></span>
+  <span>Revenue: <span data-role="admin-revenue">0.00</span></span>
 </div>
 
-<div data-testid="buy-error" hidden></div>
-<div data-testid="auth-error" hidden></div>
-<div data-testid="review-error" hidden></div>
+<div data-role="buy-error" hidden></div>
+<div data-role="auth-error" hidden></div>
+<div data-role="review-error" hidden></div>
 
 <script>
 // Must match the seed table in tracks/ecommerce/prompts/01-storefront.md.
@@ -101,18 +101,18 @@ function card(item) {
     add.onclick = e => { e.stopPropagation(); addToCart(item); };
     c.append(buy, add);
   }
-  c.querySelector('[data-testid="item-name"]').onclick = () => openItem(item);
+  c.querySelector('[data-role="item-name"]').onclick = () => openItem(item);
   return c;
 }
 
 function renderStorefront() {
-  const list = $('[data-testid="item-list"]');
+  const list = $('[data-role="item-list"]');
   list.textContent = '';
   for (const item of ranked().slice(0, 10)) list.append(card(item));
 }
 
 function renderSearch(q) {
-  const box = $('[data-testid="search-results"]');
+  const box = $('[data-role="search-results"]');
   box.textContent = '';
   if (!q) { box.hidden = true; return; }
   box.hidden = false;
@@ -149,11 +149,11 @@ function checkout() {
 }
 
 function openItem(item) {
-  $('[data-testid="item-detail"]').hidden = false;
+  $('[data-role="item-detail"]').hidden = false;
   $('#detail-name').textContent = item.name;
-  $('[data-testid="review-submit"]').onclick = () => {
-    const text = $('[data-testid="review-input"]').value;
-    const rating = Number($('[data-testid="review-rating"]').value);
+  $('[data-role="review-submit"]').onclick = () => {
+    const text = $('[data-role="review-input"]').value;
+    const rating = Number($('[data-role="review-rating"]').value);
     if (!text) return;
     if (!purchased.has(user + ':' + item.id)) {
       flash('review-error', 'You can only review items you have bought'); return;
@@ -171,7 +171,7 @@ function renderReviews(item) {
   for (const r of item.reviews) box.append(el('div', 'review-item', r.text));
   const avg = item.reviews.length
     ? item.reviews.reduce((s, r) => s + r.rating, 0) / item.reviews.length : 0;
-  $('[data-testid="review-average"]').textContent = String(avg);
+  $('[data-role="review-average"]').textContent = String(avg);
 }
 
 function renderCart() {
@@ -186,14 +186,14 @@ function renderCart() {
     row.append(rm);
     box.append(row);
   }
-  $('[data-testid="empty-cart"]').hidden = cart.length > 0;
-  $('[data-testid="cart-total"]').textContent =
+  $('[data-role="empty-cart"]').hidden = cart.length > 0;
+  $('[data-role="cart-total"]').textContent =
     cart.reduce((s, l) => s + l.price * l.qty, 0).toFixed(2);
-  $('[data-testid="cart-count"]').textContent = String(cart.reduce((s, l) => s + l.qty, 0));
+  $('[data-role="cart-count"]').textContent = String(cart.reduce((s, l) => s + l.qty, 0));
 }
 
 function renderOrders() {
-  const box = $('[data-testid="order-list"]');
+  const box = $('[data-role="order-list"]');
   box.textContent = '';
   for (const o of orders) {
     const row = el('div', 'order-item');
@@ -232,7 +232,7 @@ function renderAdmin() {
       locBox.append(row);
     }
   }
-  $('[data-testid="admin-revenue"]').textContent = revenue.toFixed(2);
+  $('[data-role="admin-revenue"]').textContent = revenue.toFixed(2);
 }
 
 function renderAll() {
@@ -240,12 +240,12 @@ function renderAll() {
   renderCart();
   renderOrders();
   if (user === 'admin') renderAdmin();
-  const q = $('[data-testid="search-input"]').value;
+  const q = $('[data-role="search-input"]').value;
   if (q) renderSearch(q);
 }
 
 function flash(testid, msg) {
-  const n = $('[data-testid="' + testid + '"]');
+  const n = $('[data-role="' + testid + '"]');
   n.textContent = msg; n.hidden = false;
 }
 
@@ -253,43 +253,43 @@ function signedIn(name) {
   user = name;
   $('#auth').hidden = true;
   $('#account').hidden = false;
-  $('[data-testid="current-user"]').textContent = name;
-  $('[data-testid="admin-link"]').hidden = name !== 'admin';
+  $('[data-role="current-user"]').textContent = name;
+  $('[data-role="admin-link"]').hidden = name !== 'admin';
   renderAll();
 }
 
-$('[data-testid="signup-submit"]').onclick = () => {
-  const name = $('[data-testid="signup-username"]').value;
+$('[data-role="signup-submit"]').onclick = () => {
+  const name = $('[data-role="signup-username"]').value;
   if (name) signedIn(name);
 };
-$('[data-testid="signin-toggle"]').onclick = () => { $('#signin-form').hidden = false; };
-$('[data-testid="signin-submit"]').onclick = () => {
-  const name = $('[data-testid="signin-username"]').value;
+$('[data-role="signin-toggle"]').onclick = () => { $('#signin-form').hidden = false; };
+$('[data-role="signin-submit"]').onclick = () => {
+  const name = $('[data-role="signin-username"]').value;
   if (name) signedIn(name);
 };
-$('[data-testid="signout"]').onclick = () => {
+$('[data-role="signout"]').onclick = () => {
   user = null; cart = [];
   $('#auth').hidden = false; $('#account').hidden = true;
-  $('[data-testid="admin-panel"]').hidden = true;
-  $('[data-testid="item-detail"]').hidden = true;
+  $('[data-role="admin-panel"]').hidden = true;
+  $('[data-role="item-detail"]').hidden = true;
   renderAll();
 };
-$('[data-testid="cart-toggle"]').onclick = () => {
-  const p = $('[data-testid="cart-panel"]'); p.hidden = !p.hidden;
+$('[data-role="cart-toggle"]').onclick = () => {
+  const p = $('[data-role="cart-panel"]'); p.hidden = !p.hidden;
 };
-$('[data-testid="orders-toggle"]').onclick = () => {
-  const p = $('[data-testid="order-list"]'); p.hidden = !p.hidden;
+$('[data-role="orders-toggle"]').onclick = () => {
+  const p = $('[data-role="order-list"]'); p.hidden = !p.hidden;
 };
-$('[data-testid="admin-link"]').onclick = () => {
-  $('[data-testid="admin-panel"]').hidden = false; renderAdmin();
+$('[data-role="admin-link"]').onclick = () => {
+  $('[data-role="admin-panel"]').hidden = false; renderAdmin();
 };
-$('[data-testid="checkout-submit"]').onclick = checkout;
-$('[data-testid="search-input"]').addEventListener('input', e => renderSearch(e.target.value));
+$('[data-role="checkout-submit"]').onclick = checkout;
+$('[data-role="search-input"]').addEventListener('input', e => renderSearch(e.target.value));
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   for (const id of ['cart-panel','order-list','admin-panel','item-detail']) {
-    const n = $('[data-testid="' + id + '"]'); if (n) n.hidden = true;
+    const n = $('[data-role="' + id + '"]'); if (n) n.hidden = true;
   }
 });
 

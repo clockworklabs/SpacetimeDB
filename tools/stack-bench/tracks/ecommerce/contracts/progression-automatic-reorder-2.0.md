@@ -1,6 +1,6 @@
 # Automatic reorder application interface
 
-Use these `id` values:
+Use these application interface names:
 
 - `reorder-link` opens the automatic reorder rules for warehouse staff.
 - `reorder-item`, `reorder-threshold`, and `reorder-quantity` identify the rule inputs.

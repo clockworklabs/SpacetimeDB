@@ -22,7 +22,7 @@ function filesBelow(directory: string): string[] {
 }
 
 interface ScenarioInterface {
-  testids: Set<string>;
+  roles: Set<string>;
   attributes: Set<string>;
 }
 
@@ -32,7 +32,7 @@ function collectScenarioInterface(value: unknown, interfaceNames: ScenarioInterf
     return;
   }
   if (!isRecord(value)) return;
-  if (typeof value.testid === 'string') interfaceNames.testids.add(value.testid);
+  if (typeof value.testid === 'string') interfaceNames.roles.add(value.testid);
   if (typeof value.attribute === 'string' && value.attribute.startsWith('data-')) {
     interfaceNames.attributes.add(value.attribute);
   }
@@ -106,11 +106,11 @@ test('the progression candidate retains the maintained SpacetimeDB build layout'
   assert.deepEqual(reference.installDirectories, ['backend/spacetimedb', 'client']);
 });
 
-test('the client implements the exact testing interface of every graph feature', () => {
+test('the client implements every graph feature interface', () => {
   const graph = progressionGraph();
   const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.1.json');
   const packs = recipePackPaths(readJson(catalogPath), catalogPath);
-  const interfaceNames: ScenarioInterface = { testids: new Set<string>(), attributes: new Set<string>() };
+  const interfaceNames: ScenarioInterface = { roles: new Set<string>(), attributes: new Set<string>() };
 
   for (const node of graph.nodes) {
     for (const featureRef of node.featureRefs) {
@@ -128,8 +128,8 @@ test('the client implements the exact testing interface of every graph feature',
     .filter(path => /\.(tsx|ts)$/.test(path) && !path.includes('module_bindings'))
     .map(read)
     .join('\n');
-  for (const testid of interfaceNames.testids) {
-    assert(clientSource.includes(`data-testid="${testid}"`), `client must expose ${testid}`);
+  for (const role of interfaceNames.roles) {
+    assert(clientSource.includes(`data-role="${role}"`), `client must expose ${role}`);
   }
   for (const attribute of interfaceNames.attributes) {
     assert(clientSource.includes(`${attribute}=`), `client must expose ${attribute}`);

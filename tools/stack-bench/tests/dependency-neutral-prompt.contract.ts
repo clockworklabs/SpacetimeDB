@@ -23,19 +23,19 @@ type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;
 const EXPECTED = {
   1: {
-    mongodb: ['08329dfdbd8e1017b8d79c67e8a9dd54c44e613c5b30090e1e40c9458d6478e8', 6084],
-    postgres: ['4b5e3dddc02f4a37b227131dd07b2ff9789f5ff86254cb9a9795a813236fb7eb', 6126],
-    spacetime: ['f9a000bc22b2f533933cd90ee76b30b6dfde6aade53edd984a9af85da3ba3fd7', 26291],
+    mongodb: ['43b2438c31a8c1da3052feb563cccc823fc15727ffe94325548c4e7515eba2bf', 6356],
+    postgres: ['7dccffc833832c919d587b4a68f48dc3801762b2cd6ea36fc3ec589637f996b1', 6398],
+    spacetime: ['c199a6798889c2e5af5c386df8fc8c6e56395c53a8d01427fc81d19abdfa8c70', 26563],
   },
   2: {
-    mongodb: ['dde62ff443bd09b52143b70cb08d326e507a7c81820e79d6a41cee708bb958bf', 8387],
-    postgres: ['1aeba9b16e11564036e53b692a2e186d9ace75258f7b8cbe8064e4ef57690d4b', 8429],
-    spacetime: ['04be08b97bfd127555dbdc0a3db44bc5ceec84cfc635e76e641220944d31c4c4', 28621],
+    mongodb: ['e48b7f4693f7a677fd9765df0528fbba0b3dae6b76e86092c292d9af13f685bb', 8721],
+    postgres: ['04ebec3ff71be76dfbb3d30ecdd7b1ad8fc960b71b619cf1565ee0b996f7bc88', 8763],
+    spacetime: ['597617697a3b938810c541ee7db5cc5e32347cea25e60fd82b044bd541bc78fd', 28955],
   },
   3: {
-    mongodb: ['f2352090f4f162792697734b66c1fa0217398dcbc7327dd8dc4b983888a7d214', 10197],
-    postgres: ['b40c655831e17626fbd13a731d25aedd4144c2e3371f719e21e4eff4d7dafaf6', 10239],
-    spacetime: ['a22ee45d8b87edc42955ad6806f398bcf038b638e0c31e7b0bd640474306ad1d', 30309],
+    mongodb: ['97d8f23a845f6a5e52845708bcce9671f1f71bedda0e1fab7c37af99308318b3', 10527],
+    postgres: ['e9b158b62db1c4158e92b6f38161097b45868960d8e9556e1f823b41a6dbfb01', 10569],
+    spacetime: ['250b869ccf51e8cd661033eb373443b7c889d94a47c5efbd4278fa7893a885f2', 30639],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 

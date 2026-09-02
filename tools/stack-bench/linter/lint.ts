@@ -226,8 +226,10 @@ async function run() {
       console.log(`${r.status.padEnd(9)} ${r.id}${r.detail ? ` — ${r.detail}` : ''}`);
     }
     console.log(failures.length === 0
-      ? `\nAPPLICATION CONTRACT PASS (${results.filter(r => r.status === 'PASS').length} controls)`
-      : `\nAPPLICATION CONTRACT FAIL (${failures.length} control(s) missing or blocked)`);
+      ? report.counts.pass > 0
+        ? `\nAPPLICATION CONTRACT PASS (${report.counts.pass} interfaces)`
+        : `\nAPPLICATION CONTRACT DEFERRED (${report.counts.scenario} interfaces checked during feature grading)`
+      : `\nAPPLICATION CONTRACT FAIL (${failures.length} interfaces missing or blocked)`);
   }
   process.exit(failures.length === 0 ? 0 : 1);
 }

@@ -7,7 +7,7 @@ import {
   sanitiseDiagnostic,
 } from '../src/evidence/diagnostic-sanitizer.js';
 
-const forbidden = /data-testid|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|selectOption|control,#|data-state|localhost|127\.0\.0\.1|host\.docker\.internal|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
+const forbidden = /data-(?:role|testid)|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|selectOption|control,#|data-state|localhost|127\.0\.0\.1|host\.docker\.internal|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
 
 test('sanitiser removes selector, timing, endpoint and harness-path mechanics', () => {
   const input = `Timeout 5000ms exceeded at C:\\repo\\tools\\stack-bench\\dist\\grader\\grade.js\n`
@@ -22,7 +22,7 @@ test('sanitiser removes selector, timing, endpoint and harness-path mechanics', 
 });
 
 test('sanitiser handles single-quoted and unquoted test selectors', () => {
-  const result = sanitiseDiagnostic("[data-testid='one'] [data-test=two] [data-cy=three]");
+  const result = sanitiseDiagnostic("[data-role='one'],#one [data-test=two] [data-cy=three]");
   assert.equal(result, 'the control the control the control');
 });
 
@@ -44,7 +44,9 @@ test('credential redaction covers provider environment and JSON spellings', () =
 
 test('humanisation keeps useful behaviour while hiding the implementation', () => {
   assert.equal(humaniseDiagnostic('[data-testid="toast"] not visible within 5000ms'),
-    'the toast control did not appear');
+    'the required toast application interface did not appear');
+  assert.equal(humaniseDiagnostic('[data-role="item-card"],#item-card not visible within 5000ms'),
+    'the required item-card application interface did not appear');
   assert.equal(humaniseDiagnostic('signup-username not visible within 5000ms'),
     'signup-username not visible in time');
   assert.equal(humaniseDiagnostic('ACCEPTED a write with a tampered ownerId'),

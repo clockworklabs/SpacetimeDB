@@ -349,16 +349,16 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <span className="app-title" data-testid="app-title">
+        <span className="app-title" data-role="app-title">
           Storefront
         </span>
-        <button type="button" className="btn btn-ghost btn-sm" data-testid="catalog-link" onClick={() => setActivePanel(null)}>
+        <button type="button" className="btn btn-ghost btn-sm" data-role="catalog-link" onClick={() => setActivePanel(null)}>
           Catalog
         </button>
         <input
           type="text"
           className="search-input"
-          data-testid="search-input"
+          data-role="search-input"
           placeholder="Search items..."
           value={searchQuery}
           onChange={(e) => {
@@ -368,18 +368,18 @@ export default function App() {
             setActivePanel(null);
           }}
         />
-        <input data-testid="category-filter" list="category-options" placeholder="Category" value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setSearchPage(0); }} />
+        <input data-role="category-filter" list="category-options" placeholder="Category" value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setSearchPage(0); }} />
         <datalist id="category-options">{categories.map(category => <option key={category}>{category}</option>)}</datalist>
-        <input data-testid="minimum-price" type="number" placeholder="Min" value={minimumPrice} onChange={e => { setMinimumPrice(e.target.value); setSearchPage(0); }} />
-        <input data-testid="maximum-price" type="number" placeholder="Max" value={maximumPrice} onChange={e => { setMaximumPrice(e.target.value); setSearchPage(0); }} />
-        <label><input data-testid="in-stock-filter" type="checkbox" checked={inStockOnly} onChange={e => { setInStockOnly(e.target.checked); setSearchPage(0); }} />In stock</label>
+        <input data-role="minimum-price" type="number" placeholder="Min" value={minimumPrice} onChange={e => { setMinimumPrice(e.target.value); setSearchPage(0); }} />
+        <input data-role="maximum-price" type="number" placeholder="Max" value={maximumPrice} onChange={e => { setMaximumPrice(e.target.value); setSearchPage(0); }} />
+        <label><input data-role="in-stock-filter" type="checkbox" checked={inStockOnly} onChange={e => { setInStockOnly(e.target.checked); setSearchPage(0); }} />In stock</label>
         <div className="header-spacer" />
         <div className="header-actions">
           {isAdmin && (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              data-testid="admin-link"
+              data-role="admin-link"
               onClick={() => setActivePanel('admin')}
             >
               Admin
@@ -389,7 +389,7 @@ export default function App() {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              data-testid="staff-link"
+              data-role="staff-link"
               onClick={() => setActivePanel('staff')}
             >
               Fulfilment
@@ -399,7 +399,7 @@ export default function App() {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              data-testid="orders-toggle"
+              data-role="orders-toggle"
               onClick={() => setActivePanel('orders')}
             >
               Orders
@@ -408,10 +408,10 @@ export default function App() {
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            data-testid="cart-toggle"
+            data-role="cart-toggle"
             onClick={() => setActivePanel('cart')}
           >
-            Cart <span className="badge" data-testid="cart-count" style={{ marginLeft: 6 }}>{cartCount}</span>
+            Cart <span className="badge" data-role="cart-count" style={{ marginLeft: 6 }}>{cartCount}</span>
           </button>
           <AuthWidget
             currentUsername={currentUser?.username ?? null}
@@ -424,7 +424,7 @@ export default function App() {
 
       <main className="main">
         {buyError && (
-          <div className="error-text" data-testid="buy-error" style={{ marginBottom: 16 }}>
+          <div className="error-text" data-role="buy-error" style={{ marginBottom: 16 }}>
             {buyError}
           </div>
         )}
@@ -442,8 +442,8 @@ export default function App() {
         )}
 
         <h1 className="section-title">{showingSearch ? 'Search results' : 'Best sellers'}</h1>
-        <div data-testid="item-list">
-          <div className="item-list" data-testid="search-results">
+        <div data-role="item-list">
+          <div className="item-list" data-role="search-results">
             {searchResults.length === 0 && (
               <div className="empty-state">No items match "{searchQuery}".</div>
             )}
@@ -463,10 +463,10 @@ export default function App() {
           </div>
         </div>
         <div className="search-pagination">
-          <button className="btn btn-ghost btn-sm" data-testid="search-previous-page"
+          <button className="btn btn-ghost btn-sm" data-role="search-previous-page"
             disabled={searchPage === 0}
             onClick={() => setSearchPage(page => Math.max(0, page - 1))}>Previous</button>
-          <button className="btn btn-ghost btn-sm" data-testid="search-next-page"
+          <button className="btn btn-ghost btn-sm" data-role="search-next-page"
             disabled={(searchPage + 1) * CATALOG_PAGE_SIZE >= catalogItems.length}
             onClick={() => setSearchPage(page => page + 1)}>Next</button>
         </div>
@@ -474,17 +474,17 @@ export default function App() {
         <h1 className="section-title" style={{ marginTop: 32 }}>
           Recommended for you
         </h1>
-        <div data-testid="recommendations">
-        <div className="recommended-list" data-testid="recommended-list">
+        <div data-role="recommendations">
+        <div className="recommended-list" data-role="recommended-list">
           {recommendedRows.length === 0 && (
             <div className="empty-state">Buy something to get recommendations.</div>
           )}
           {[...recommendedRows].sort((a, b) => a.rank - b.rank).map((r) => (
-            <div className="recommended-item" data-testid="recommended-item" key={String(r.itemId)}>
+            <div className="recommended-item" data-role="recommended-item" key={String(r.itemId)}>
               <span>
-                {r.name} <span data-testid="recommendation-rank">{r.rank}</span>
+                {r.name} <span data-role="recommendation-rank">{r.rank}</span>
                 <span>{formatMoney(r.price)}</span>
-                <button className="btn btn-ghost btn-sm" data-testid="dismiss-recommendation" onClick={() => conn?.reducers.dismissRecommendation({ itemId: r.itemId })}>Dismiss</button>
+                <button className="btn btn-ghost btn-sm" data-role="dismiss-recommendation" onClick={() => conn?.reducers.dismissRecommendation({ itemId: r.itemId })}>Dismiss</button>
               </span>
             </div>
           ))}

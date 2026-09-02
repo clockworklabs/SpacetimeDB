@@ -16,7 +16,7 @@ import { ARTIFACT_FILE, readArtifactPayload, recipeArtifactIdentities, writeArti
   from '../src/evidence/artifacts.js';
 import { bundleRecipeRelease, resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
-import { contractControlIds } from '../src/composition/agent-visible-contract.js';
+import { contractInterfaceNames } from '../src/composition/agent-visible-contract.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.js';
@@ -91,7 +91,10 @@ type GradeCriterion = { id: string; stableKey?: string; serverCheck?: string; ev
 type GradeFeature = { name: string; criteria: GradeCriterion[] };
 type GradePayload = { total: number; max: number; features: GradeFeature[];
   selection?: { checks?: RecipeCheck[] }; packRuntime?: PackRuntimeEvidence };
-type LintPayload = { pass: boolean; counts: { pass: number; fail: number; blocked: number } };
+type LintPayload = {
+  pass: boolean;
+  counts: { pass: number; fail: number; blocked: number; scenario: number };
+};
 type ActionsPayload = { missing: string[]; results: unknown[] };
 type RuntimeProvenance = { ok: boolean | null; verified: boolean; reason: string };
 type ApplicationProbeResult = { ok: boolean; detail: string | null };
@@ -607,14 +610,14 @@ function resetDatabase(args: RunArguments): { ok: boolean; detail: string | null
 
 export function contractLintArgv(args: ContractLintArguments,
   selectedTask: BoundRecipeTaskRequestResult | null = null): string[] {
-  const controls = selectedTask ? contractControlIds(selectedTask.task.contractText) : [];
+  const interfaces = selectedTask ? contractInterfaceNames(selectedTask.task.contractText) : [];
   const out = join(args.out, ARTIFACT_FILE.contractLint);
   return [compiledEntrypoint('linter', 'lint.js'), '--url', args.url, '--level', args.level,
       '--track', args.track, '--label', args.label, '--out', out,
       '--parent-attempt-id', args.bundleArtifactId,
       ...(args.credentialAliases
         ? ['--credential-aliases-json', JSON.stringify(args.credentialAliases)] : []),
-      ...controls.flatMap(id => ['--hook', id])];
+      ...interfaces.flatMap(id => ['--hook', id])];
 }
 
 function lint(args: RunArguments, selectedTask: BoundRecipeTaskRequestResult | null = null): LintPayload | null {
@@ -634,7 +637,9 @@ function lint(args: RunArguments, selectedTask: BoundRecipeTaskRequestResult | n
   }
   const r = readArtifactPayload<LintPayload>(out, { expectedKind: 'contract_lint' });
   console.log(r.pass
-    ? `PASS (${r.counts.pass} hooks)`
+    ? r.counts.pass > 0
+      ? `PASS (${r.counts.pass} interfaces)`
+      : `DEFERRED (${r.counts.scenario} interfaces checked during feature grading)`
     : `FAIL (${r.counts.fail} failed, ${r.counts.blocked} blocked)`);
   return r;
 }

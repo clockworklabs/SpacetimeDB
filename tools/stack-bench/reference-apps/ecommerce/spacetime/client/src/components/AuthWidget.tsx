@@ -23,11 +23,11 @@ export default function AuthWidget({
   if (currentUsername) {
     return (
       <div className="auth-widget">
-        <span className="current-user" data-testid="current-user">
+        <span className="current-user" data-role="current-user">
           {currentUsername}
         </span>
-        <span className="current-user" data-testid="staff-current-user">{currentUsername}</span>
-        <button type="button" className="btn btn-ghost btn-sm" data-testid="signout" onClick={onSignOut}>
+        <span className="current-user" data-role="staff-current-user">{currentUsername}</span>
+        <button type="button" className="btn btn-ghost btn-sm" data-role="signout" onClick={onSignOut}>
           Sign out
         </button>
       </div>
@@ -61,7 +61,7 @@ export default function AuthWidget({
       <div className="auth-form">
         <input
           type="text"
-          data-testid="signup-username"
+          data-role="signup-username"
           placeholder="Username"
           value={signUpUsername}
           onChange={(e) => setSignUpUsername(e.target.value)}
@@ -71,7 +71,7 @@ export default function AuthWidget({
         />
         <input
           type="password"
-          data-testid="signup-password"
+          data-role="signup-password"
           placeholder="Password"
           value={signUpPassword}
           onChange={(e) => setSignUpPassword(e.target.value)}
@@ -79,14 +79,14 @@ export default function AuthWidget({
             if (e.key === 'Enter') submitSignUp();
           }}
         />
-        <button type="button" className="btn btn-primary btn-sm" data-testid="signup-submit" onClick={submitSignUp}>
+        <button type="button" className="btn btn-primary btn-sm" data-role="signup-submit" onClick={submitSignUp}>
           Sign up
         </button>
         {!showSignIn && (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            data-testid="signin-toggle"
+            data-role="signin-toggle"
             onClick={() => setShowSignIn(true)}
           >
             Sign in instead
@@ -98,7 +98,7 @@ export default function AuthWidget({
         <div className="auth-form">
           <input
             type="text"
-            data-testid="signin-username"
+            data-role="signin-username"
             placeholder="Username"
             value={signInUsername}
             onChange={(e) => setSignInUsername(e.target.value)}
@@ -108,7 +108,7 @@ export default function AuthWidget({
           />
           <input
             type="password"
-            data-testid="signin-password"
+            data-role="signin-password"
             placeholder="Password"
             value={signInPassword}
             onChange={(e) => setSignInPassword(e.target.value)}
@@ -116,20 +116,20 @@ export default function AuthWidget({
               if (e.key === 'Enter') submitSignIn();
             }}
           />
-          <button type="button" className="btn btn-primary btn-sm" data-testid="signin-submit" onClick={submitSignIn}>
+          <button type="button" className="btn btn-primary btn-sm" data-role="signin-submit" onClick={submitSignIn}>
             Sign in
           </button>
         </div>
       )}
 
       <div className="auth-form staff-auth-form">
-        <input type="text" data-testid="staff-signin-username" placeholder="Staff username" value={signInUsername} onChange={(e) => setSignInUsername(e.target.value)} />
-        <input type="password" data-testid="staff-signin-password" placeholder="Staff password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} />
-        <button type="button" className="btn btn-ghost btn-sm" data-testid="staff-signin-submit" onClick={submitSignIn}>Staff sign in</button>
+        <input type="text" data-role="staff-signin-username" placeholder="Staff username" value={signInUsername} onChange={(e) => setSignInUsername(e.target.value)} />
+        <input type="password" data-role="staff-signin-password" placeholder="Staff password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} />
+        <button type="button" className="btn btn-ghost btn-sm" data-role="staff-signin-submit" onClick={submitSignIn}>Staff sign in</button>
       </div>
 
       {error && (
-        <div className="error-text" data-testid="auth-error">
+        <div className="error-text" data-role="auth-error">
           {error}
         </div>
       )}

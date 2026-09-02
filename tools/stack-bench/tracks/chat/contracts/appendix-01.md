@@ -2,14 +2,15 @@
 
 ## Application interface
 
-Use these exact `id` attributes on the corresponding visible controls. They do
-not prescribe the design, architecture, or implementation.
+Use each interface name below as an exact HTML attribute value. Use `id` for a
+one-off element. Use `data-role` when the same interface can appear more than
+once. These attributes do not prescribe the design, architecture, or
+implementation.
 
 Rules:
-- Attribute name is exactly `id`; values are exactly as listed (kebab-case).
-- Repeated elements such as rooms and messages use the listed ID on every instance.
+- Values are exactly as listed in kebab-case.
 - An element that is hidden until a menu/toggle opens still counts, as long as it is in the DOM after its toggle is clicked.
-- Do not reuse these IDs on unrelated elements.
+- Do not reuse these names on unrelated elements.
 
 | Element ID | Element |
 |---|---|

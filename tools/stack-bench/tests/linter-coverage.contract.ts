@@ -21,10 +21,10 @@ interface TestResult {
   detail?: string;
 }
 
-test('stable element selectors support ordinary ids and existing test ids', () => {
+test('stable element selectors support one-off ids and repeated roles', () => {
   assert.equal(stableElementSelector('account-name'),
-    '[data-testid="account-name"],#account-name');
-  assert.throws(() => stableElementSelector('account name'), /invalid stable element id/);
+    '[data-role="account-name"],#account-name');
+  assert.throws(() => stableElementSelector('account name'), /invalid application interface name/);
 });
 
 test('a selected lint surface excludes unrelated hooks and keeps unknown hooks for scenario grading', () => {

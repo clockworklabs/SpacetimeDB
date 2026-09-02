@@ -132,7 +132,7 @@ function missingOperationHint(call: ActionCall): string {
     call.operation.path ? `\`${call.operation.method} ${call.operation.path}\`` : null,
   ].filter(Boolean).join(' or ');
   return identities
-    ? ` — the public testing interface calls ${identities}, which must exist and apply the ordinary rules to this caller`
+    ? ` — the public application interface calls ${identities}, which must exist and apply the ordinary rules to this caller`
     : '';
 }
 

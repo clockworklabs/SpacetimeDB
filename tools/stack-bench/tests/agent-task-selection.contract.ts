@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { agentRecipeRequest, agentScenarioPaths } from '../commands/agent.js';
-import { agentVisibleContractText, contractControlIds }
+import { agentVisibleContractText, contractInterfaceNames }
   from '../src/composition/agent-visible-contract.js';
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
@@ -39,8 +39,8 @@ function commandStderr(error: unknown): string {
   return String(error.stderr);
 }
 
-test('selected contract linting uses only declared control ids', () => {
-  assert.deepEqual(contractControlIds([
+test('selected contract linting uses only declared interface names', () => {
+  assert.deepEqual(contractInterfaceNames([
     '| Element ID | Element |',
     '|---|---|',
     '| `staff-link` | staff link |',
@@ -117,6 +117,7 @@ test('pack selection changes the real model prompt and exact task identity', () 
     const visible = createAgentVisibleTaskRequest(binding, selected);
     const prompt = printPrompt(app, visible);
     assert.match(prompt, /## Accounts/);
+    assert.match(prompt, /`data-role`/);
     assert.doesNotMatch(prompt, /## Reviews/);
     assert.doesNotMatch(prompt, /## Cart/);
     assert.doesNotMatch(prompt,

@@ -39,8 +39,8 @@ export function agentVisibleContractText(
   return assertAgentVisibleText(text);
 }
 
-// Contract fragments declare stable element IDs in the first column of a table.
-export function contractControlIds(contractText: unknown): string[] {
+// Contract tables declare stable interface names in their first column.
+export function contractInterfaceNames(contractText: unknown): string[] {
   const matches = String(contractText ?? '').matchAll(
     /^\s*\|\s*`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`\s*\|/gm,
   );

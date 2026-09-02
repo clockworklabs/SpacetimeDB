@@ -529,15 +529,15 @@ export default function App() {
       )}
 
       <header className="header">
-        <h1 className="app-title" data-testid="app-title">
+        <h1 className="app-title" data-role="app-title">
           Storefront
         </h1>
-        <button className="btn btn-ghost" data-testid="catalog-link" onClick={() => setActiveView(null)}>
+        <button className="btn btn-ghost" data-role="catalog-link" onClick={() => setActiveView(null)}>
           Catalog
         </button>
         <input
           className="input search-input"
-          data-testid="search-input"
+          data-role="search-input"
           placeholder="Search items..."
           value={searchQuery}
           onChange={(e) => { setSearchQuery(e.target.value); setSearchPage(0); }}
@@ -547,30 +547,30 @@ export default function App() {
         />
         <div className="header-spacer" />
         <div className="header-actions">
-          <button className="btn btn-ghost" data-testid="cart-toggle" onClick={() => setActiveView("cart")}>
-            Cart <span className="badge" data-testid="cart-count">{cartCount}</span>
+          <button className="btn btn-ghost" data-role="cart-toggle" onClick={() => setActiveView("cart")}>
+            Cart <span className="badge" data-role="cart-count">{cartCount}</span>
           </button>
           {currentUser && (
-            <button className="btn btn-ghost" data-testid="orders-toggle" onClick={openOrders}>
+            <button className="btn btn-ghost" data-role="orders-toggle" onClick={openOrders}>
               Orders
             </button>
           )}
           {currentUser?.isAdmin && (
-            <button className="btn btn-ghost" data-testid="admin-link" onClick={openAdmin}>
+            <button className="btn btn-ghost" data-role="admin-link" onClick={openAdmin}>
               Admin
             </button>
           )}
           {(currentUser?.isStaff || currentUser?.isAdmin) && (
-            <button className="btn btn-ghost" data-testid="staff-link" onClick={openFulfilment}>
+            <button className="btn btn-ghost" data-role="staff-link" onClick={openFulfilment}>
               Fulfilment <span className="badge">{fulfilmentQueue.depth}</span>
             </button>
           )}
           {currentUser ? (
             <>
-              <span className="current-user" data-testid="current-user">
+              <span className="current-user" data-role="current-user">
                 {currentUser.username}
               </span>
-              <button className="btn btn-ghost btn-sm" data-testid="signout" onClick={handleSignOut}>
+              <button className="btn btn-ghost btn-sm" data-role="signout" onClick={handleSignOut}>
                 Sign out
               </button>
             </>
@@ -583,31 +583,31 @@ export default function App() {
       <div className="content-row" style={cartOpen || ordersOpen ? { marginRight: 420 } : undefined}>
         <main className="main">
           {buyError && (
-            <div className="toast" data-testid="buy-error">
+            <div className="toast" data-role="buy-error">
               {buyError}
             </div>
           )}
 
           <section>
               <div className="progression-filters">
-                <select data-testid="category-filter" value={categoryFilter}
+                <select data-role="category-filter" value={categoryFilter}
                   onChange={(e) => { setCategoryFilter(e.target.value); setSearchPage(0); }}>
                   <option value="">All categories</option>
                   {[...new Set(items.map((item) => item.category))].sort().map(category =>
                     <option key={category}>{category}</option>)}
                 </select>
-                <input data-testid="minimum-price" type="number" placeholder="Minimum price"
+                <input data-role="minimum-price" type="number" placeholder="Minimum price"
                   value={minimumPrice} onChange={(e) => { setMinimumPrice(e.target.value); setSearchPage(0); }} />
-                <input data-testid="maximum-price" type="number" placeholder="Maximum price"
+                <input data-role="maximum-price" type="number" placeholder="Maximum price"
                   value={maximumPrice} onChange={(e) => { setMaximumPrice(e.target.value); setSearchPage(0); }} />
                 <button className={`btn btn-sm ${inStockOnly ? "btn-primary" : "btn-ghost"}`}
-                  data-testid="in-stock-filter" onClick={() => { setInStockOnly(value => !value); setSearchPage(0); }}>
+                  data-role="in-stock-filter" onClick={() => { setInStockOnly(value => !value); setSearchPage(0); }}>
                   In stock
                 </button>
               </div>
               <h2 className="section-title">Catalog</h2>
-              <div className="item-list" data-testid="item-list">
-                <div className="search-results" data-testid="search-results">
+              <div className="item-list" data-role="item-list">
+                <div className="search-results" data-role="search-results">
                   {searchResults.map((item) => (
                     <ItemCard
                       key={item.id}
@@ -621,9 +621,9 @@ export default function App() {
                 </div>
               </div>
               <div className="pager">
-                <button data-testid="search-previous-page" className="btn btn-ghost btn-sm"
+                <button data-role="search-previous-page" className="btn btn-ghost btn-sm"
                   disabled={searchPage === 0} onClick={() => setSearchPage(page => Math.max(0, page - 1))}>Previous</button>
-                <button data-testid="search-next-page" className="btn btn-ghost btn-sm"
+                <button data-role="search-next-page" className="btn btn-ghost btn-sm"
                   disabled={(searchPage + 1) * CATALOG_PAGE_SIZE >= filteredItems.length}
                   onClick={() => setSearchPage(page => page + 1)}>Next</button>
               </div>
@@ -631,17 +631,17 @@ export default function App() {
 
           <section style={{ marginTop: 32 }}>
             <h2 className="section-title">Recommended for you</h2>
-            <div className="item-list" data-testid="recommended-list">
+            <div className="item-list" data-role="recommended-list">
               {recommended.length === 0 ? (
                 <div className="empty-state">Nothing recommended yet</div>
               ) : (
                 recommended.map((item, index) => (
-                  <div data-testid="recommended-item" key={item.id}>
-                    <span data-testid="recommendation-rank">{index + 1}</span>
+                  <div data-role="recommended-item" key={item.id}>
+                    <span data-role="recommendation-rank">{index + 1}</span>
                     <ItemCard item={item} isCustomer={isCustomer} testId={null}
                       onOpen={() => setSelectedItemId(item.id)} onBuy={() => handleBuyNow(item.id)}
                       onAddToCart={() => handleAddToCart(item.id)} />
-                    {currentUser && <button className="btn btn-ghost btn-sm" data-testid="dismiss-recommendation"
+                    {currentUser && <button className="btn btn-ghost btn-sm" data-role="dismiss-recommendation"
                       onClick={async () => { await apiFetch(`/api/progression/recommendations/${item.id}/dismiss`, token,
                         { method: "POST" }); setRecommended(value => value.filter(entry => entry.id !== item.id)); }}>
                       Dismiss
@@ -685,9 +685,9 @@ export default function App() {
             ×
           </button>
         </div>
-        <div data-testid="cart-panel">
+        <div data-role="cart-panel">
           {cart.items.length === 0 ? (
-            <div className="empty-state" data-testid="empty-cart">
+            <div className="empty-state" data-role="empty-cart">
               Your cart is empty
             </div>
           ) : (
@@ -701,16 +701,16 @@ export default function App() {
                 />
               ))}
               <div className="cart-promotion-row">
-                <input className="input" data-testid="cart-promotion" value={promotionCode}
+                <input className="input" data-role="cart-promotion" value={promotionCode}
                   onChange={(e) => setPromotionCode(e.target.value)} placeholder="Promotion code" />
-                <button className="btn btn-ghost" data-testid="apply-promotion" onClick={handleApplyPromotion}>Apply</button>
+                <button className="btn btn-ghost" data-role="apply-promotion" onClick={handleApplyPromotion}>Apply</button>
               </div>
-              {promotionError && <div className="auth-error" data-testid="promotion-error">{promotionError}</div>}
+              {promotionError && <div className="auth-error" data-role="promotion-error">{promotionError}</div>}
               <div className="cart-summary">
                 <span>Total</span>
-                <span data-testid="cart-total">${cart.total.toFixed(2)}</span>
+                <span data-role="cart-total">${cart.total.toFixed(2)}</span>
               </div>
-              <button className="btn btn-primary" data-testid="checkout-submit" style={{ marginTop: 16, width: "100%" }} onClick={handleCheckout}>
+              <button className="btn btn-primary" data-role="checkout-submit" style={{ marginTop: 16, width: "100%" }} onClick={handleCheckout}>
                 Checkout
               </button>
             </>
@@ -727,39 +727,39 @@ export default function App() {
           </button>
         </div>
         {orderError && (
-          <div className="auth-error" data-testid="order-error">
+          <div className="auth-error" data-role="order-error">
             {orderError}
           </div>
         )}
-        <div data-testid="order-list">
+        <div data-role="order-list">
           {orders.length === 0 ? (
             <div className="empty-state">You haven't placed any orders yet</div>
           ) : (
             orders.map((order) => (
-              <div className="order-item" data-testid="order-item" data-entity-id={String(order.id)}
+              <div className="order-item" data-role="order-item" data-entity-id={String(order.id)}
                 data-ship-input={JSON.stringify({ orderId: order.id })}
                 data-cancel-input={JSON.stringify({ orderId: order.id })} key={order.id}>
                 <div className="order-item-header">
                   <span>{new Date(order.createdAt).toLocaleString()}</span>
-                  <span data-testid="order-status">{order.status}</span>
+                  <span data-role="order-status">{order.status}</span>
                 </div>
                 <div>{order.items.map((l) => `${l.name} ×${l.quantity}${l.returned ? " (returned)" : ""}`).join(", ")}</div>
-                <div className="order-total" data-testid="order-total">
+                <div className="order-total" data-role="order-total">
                   ${order.total.toFixed(2)}
                 </div>
-                <div data-testid="order-discount">{Number(order.discount || 0).toFixed(2)}</div>
-                <div data-testid="order-refund-total">{Number(order.refundTotal || 0).toFixed(2)}</div>
+                <div data-role="order-discount">{Number(order.discount || 0).toFixed(2)}</div>
+                <div data-role="order-refund-total">{Number(order.refundTotal || 0).toFixed(2)}</div>
                 {(order.payments ?? []).map((payment) => (
-                  <div data-testid="payment-record" key={payment.id}>
-                    <span data-testid="payment-status">{payment.status}</span>
-                    <span data-testid="payment-amount">{Number(payment.amount).toFixed(2)}</span>
+                  <div data-role="payment-record" key={payment.id}>
+                    <span data-role="payment-status">{payment.status}</span>
+                    <span data-role="payment-amount">{Number(payment.amount).toFixed(2)}</span>
                   </div>
                 ))}
                 {order.status === "refunded" && order.items.map(line =>
-                  <div data-testid="refund-entry" key={`refund-${line.itemId}`}>{line.name}</div>)}
+                  <div data-role="refund-entry" key={`refund-${line.itemId}`}>{line.name}</div>)}
                 <div className="order-item-actions">
                   {order.status === "pending" && (
-                    <button className="btn btn-danger btn-sm" data-testid="cancel-order" onClick={() => handleCancelOrder(order.id)}>
+                    <button className="btn btn-danger btn-sm" data-role="cancel-order" onClick={() => handleCancelOrder(order.id)}>
                       Cancel order
                     </button>
                   )}
@@ -770,7 +770,7 @@ export default function App() {
                         <button
                           key={l.itemId}
                           className="btn btn-ghost btn-sm"
-                          data-testid="return-item"
+                          data-role="return-item"
                           onClick={() => handleReturnItem(order.id, l.itemId)}
                         >
                           Return {l.name}
@@ -827,39 +827,39 @@ function ItemCard({
 }) {
   const outOfStock = item.stock === 0;
   return (
-    <div className={`item-card${outOfStock ? " out-of-stock-card" : ""}`} data-testid={testId ?? undefined}
+    <div className={`item-card${outOfStock ? " out-of-stock-card" : ""}`} data-role={testId ?? undefined}
       data-buy-input={JSON.stringify({ itemId: item.id })} onClick={onOpen}>
-      <div className="item-name" data-testid="item-name">
+      <div className="item-name" data-role="item-name">
         {item.name}
       </div>
       <div className="item-row">
-        <span className="item-price" data-testid="item-price">
+        <span className="item-price" data-role="item-price">
           ${item.price.toFixed(2)}
         </span>
       </div>
       <div className="item-row">
-        <span className={`item-stock${item.stock > 0 && item.stock <= 5 ? " low" : ""}`} data-testid="item-stock">
+        <span className={`item-stock${item.stock > 0 && item.stock <= 5 ? " low" : ""}`} data-role="item-stock">
           {item.stock}
         </span>
         {outOfStock && (
-          <span className="pill-danger" data-testid="out-of-stock">
+          <span className="pill-danger" data-role="out-of-stock">
             Out of stock
           </span>
         )}
       </div>
       {isCustomer && (
         <div className="item-actions" onClick={(e) => e.stopPropagation()}>
-          <button className="btn btn-primary btn-sm" data-testid="buy-now" disabled={outOfStock} onClick={onBuy}>
+          <button className="btn btn-primary btn-sm" data-role="buy-now" disabled={outOfStock} onClick={onBuy}>
             Buy now
           </button>
-          <button className="btn btn-ghost btn-sm" data-testid="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
+          <button className="btn btn-ghost btn-sm" data-role="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
             Add to cart
           </button>
         </div>
       )}
       {(item.variants || []).map(variant =>
-        <span data-testid="item-variant" className="pill-warning" key={variant}>{variant}</span>)}
-      {isCustomer && outOfStock && <button data-testid="stock-alert" className="btn btn-ghost btn-sm"
+        <span data-role="item-variant" className="pill-warning" key={variant}>{variant}</span>)}
+      {isCustomer && outOfStock && <button data-role="stock-alert" className="btn btn-ghost btn-sm"
         onClick={async () => { await apiFetch("/api/progression/stock-alerts", localStorage.getItem(TOKEN_KEY),
           { method: "POST", body: JSON.stringify({ itemId: item.id }) }); }}>Notify me</button>}
     </div>
@@ -896,23 +896,23 @@ function ItemDetailPanel({
   };
 
   return (
-      <div className="item-detail" data-testid="item-detail">
+      <div className="item-detail" data-role="item-detail">
         <div className="panel-header">
-          <h2 data-testid="item-name">{item.name}</h2>
+          <h2 data-role="item-name">{item.name}</h2>
           <button className="close-btn" onClick={onClose}>
             ×
           </button>
         </div>
         <div className="item-row">
-          <span data-testid="item-price" className="item-price">
+          <span data-role="item-price" className="item-price">
             ${item.price.toFixed(2)}
           </span>
-          <span data-testid="item-stock" className={item.stock > 0 && item.stock <= 5 ? "item-stock low" : "item-stock"}>
+          <span data-role="item-stock" className={item.stock > 0 && item.stock <= 5 ? "item-stock low" : "item-stock"}>
             {item.stock} in stock
           </span>
         </div>
         {outOfStock && (
-          <span className="pill-danger" data-testid="out-of-stock">
+          <span className="pill-danger" data-role="out-of-stock">
             Out of stock
           </span>
         )}
@@ -920,23 +920,23 @@ function ItemDetailPanel({
 
         {isCustomer && (
           <div className="item-actions">
-            <button className="btn btn-primary" data-testid="buy-now" disabled={outOfStock} onClick={onBuy}>
+            <button className="btn btn-primary" data-role="buy-now" disabled={outOfStock} onClick={onBuy}>
               Buy now
             </button>
-            <button className="btn btn-ghost" data-testid="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
+            <button className="btn btn-ghost" data-role="add-to-cart" disabled={outOfStock} onClick={onAddToCart}>
               Add to cart
             </button>
           </div>
         )}
 
         <h3 style={{ marginTop: 24 }}>
-          Reviews — average <span data-testid="review-average">{(detail?.average ?? 0).toFixed(1)}</span>
+          Reviews — average <span data-role="review-average">{(detail?.average ?? 0).toFixed(1)}</span>
         </h3>
         {!detail || detail.reviews.length === 0 ? (
           <div className="empty-state">No reviews yet</div>
         ) : (
           detail.reviews.map((r) => (
-            <div className="review-item" data-testid="review-item" key={r.id}>
+            <div className="review-item" data-role="review-item" key={r.id}>
               <div className="review-item-header">
                 <span>{r.username}</span>
                 <span className="stars">{"★".repeat(r.rating)}</span>
@@ -948,7 +948,7 @@ function ItemDetailPanel({
 
         {isCustomer && (
           <form className="review-form" onSubmit={submit}>
-            <select data-testid="review-rating" value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+            <select data-role="review-rating" value={rating} onChange={(e) => setRating(Number(e.target.value))}>
               {[5, 4, 3, 2, 1].map((n) => (
                 <option key={n} value={n}>
                   {n} star{n > 1 ? "s" : ""}
@@ -957,18 +957,18 @@ function ItemDetailPanel({
             </select>
             <input
               className="input"
-              data-testid="review-input"
+              data-role="review-input"
               placeholder="Write a review..."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
-            <button className="btn btn-primary" data-testid="review-submit" type="submit">
+            <button className="btn btn-primary" data-role="review-submit" type="submit">
               Submit review
             </button>
           </form>
         )}
         {reviewError && (
-          <div className="auth-error" data-testid="review-error">
+          <div className="auth-error" data-role="review-error">
             {reviewError}
           </div>
         )}
@@ -1001,16 +1001,16 @@ function CartLineRow({
   };
 
   return (
-    <div className="cart-item" data-testid="cart-item"
+    <div className="cart-item" data-role="cart-item"
       data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })}>
       <span className="cart-item-name">{line.name}</span>
-      <span data-testid="cart-reservation-timer">{line.reservationSeconds || 0}</span>
-      {line.expired && <span data-testid="cart-item-expired">Expired</span>}
+      <span data-role="cart-reservation-timer">{line.reservationSeconds || 0}</span>
+      {line.expired && <span data-role="cart-item-expired">Expired</span>}
       <input
         type="number"
         min={1}
         className="input cart-quantity-input"
-        data-testid="cart-quantity"
+        data-role="cart-quantity"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
@@ -1022,7 +1022,7 @@ function CartLineRow({
         }}
       />
       <span className="cart-line-price">${(line.price * line.quantity).toFixed(2)}</span>
-      <button className="btn btn-danger btn-sm" data-testid="cart-remove" onClick={onRemove}>
+      <button className="btn btn-danger btn-sm" data-role="cart-remove" onClick={onRemove}>
         Remove
       </button>
     </div>
@@ -1070,53 +1070,53 @@ function AuthBox({
       <form className="auth-form" onSubmit={submitSignUp}>
         <input
           className="input"
-          data-testid="signup-username"
+          data-role="signup-username"
           placeholder="Username"
           value={signUpUsername}
           onChange={(e) => setSignUpUsername(e.target.value)}
         />
         <input
           className="input"
-          data-testid="signup-password"
+          data-role="signup-password"
           type="password"
           placeholder="Password"
           value={signUpPassword}
           onChange={(e) => setSignUpPassword(e.target.value)}
         />
-        <button className="btn btn-primary btn-sm" data-testid="signup-submit" type="submit">
+        <button className="btn btn-primary btn-sm" data-role="signup-submit" type="submit">
           Sign up
         </button>
         {signUpError && (
-          <div className="auth-error" data-testid="auth-error">
+          <div className="auth-error" data-role="auth-error">
             {signUpError}
           </div>
         )}
       </form>
-      <button className="link-btn" data-testid="signin-toggle" onClick={() => setShowSignIn((s) => !s)}>
+      <button className="link-btn" data-role="signin-toggle" onClick={() => setShowSignIn((s) => !s)}>
         {showSignIn ? "Hide sign in" : "Already have an account? Sign in"}
       </button>
       {showSignIn && (
         <form className="auth-form" onSubmit={submitSignIn}>
           <input
             className="input"
-            data-testid="signin-username"
+            data-role="signin-username"
             placeholder="Username"
             value={signInUsername}
             onChange={(e) => setSignInUsername(e.target.value)}
           />
           <input
             className="input"
-            data-testid="signin-password"
+            data-role="signin-password"
             type="password"
             placeholder="Password"
             value={signInPassword}
             onChange={(e) => setSignInPassword(e.target.value)}
           />
-          <button className="btn btn-primary btn-sm" data-testid="signin-submit" type="submit">
+          <button className="btn btn-primary btn-sm" data-role="signin-submit" type="submit">
             Sign in
           </button>
           {signInError && (
-            <div className="auth-error" data-testid="auth-error">
+            <div className="auth-error" data-role="auth-error">
               {signInError}
             </div>
           )}
@@ -1152,7 +1152,7 @@ function AdminPanel({
 
   if (!overview) {
     return (
-      <div className="admin-panel" data-testid="admin-panel">
+      <div className="admin-panel" data-role="admin-panel">
         <div className="panel-header">
           <h2>Admin</h2>
           <button className="close-btn" onClick={onClose}>
@@ -1170,7 +1170,7 @@ function AdminPanel({
     transferValues[itemId] || { from: warehouses[0]?.id || "", to: warehouses[1]?.id || warehouses[0]?.id || "", qty: "" };
 
   return (
-    <div className="admin-panel" data-testid="admin-panel">
+    <div className="admin-panel" data-role="admin-panel">
       <div className="panel-header">
         <h2>Admin</h2>
         <button className="close-btn" onClick={onClose}>
@@ -1179,23 +1179,23 @@ function AdminPanel({
       </div>
 
       {orderError && (
-        <div className="auth-error" data-testid="order-error">
+        <div className="auth-error" data-role="order-error">
           {orderError}
         </div>
       )}
 
       <div className="admin-revenue-box">
-        Total revenue: <span className="value" data-testid="admin-revenue">${overview.revenue.toFixed(2)}</span>
+        Total revenue: <span className="value" data-role="admin-revenue">${overview.revenue.toFixed(2)}</span>
       </div>
 
       <div className="progression-card">
-        <input data-testid="restock-item" placeholder="Item" value={globalRestock.item}
+        <input data-role="restock-item" placeholder="Item" value={globalRestock.item}
           onChange={(event) => setGlobalRestock(value => ({ ...value, item: event.target.value }))} />
-        <input data-testid="restock-warehouse" placeholder="Warehouse" value={globalRestock.warehouse}
+        <input data-role="restock-warehouse" placeholder="Warehouse" value={globalRestock.warehouse}
           onChange={(event) => setGlobalRestock(value => ({ ...value, warehouse: event.target.value }))} />
-        <input data-testid="restock-quantity" placeholder="Quantity" value={globalRestock.quantity}
+        <input data-role="restock-quantity" placeholder="Quantity" value={globalRestock.quantity}
           onChange={(event) => setGlobalRestock(value => ({ ...value, quantity: event.target.value }))} />
-        <button data-testid="restock-submit" className="btn btn-primary" onClick={() => {
+        <button data-role="restock-submit" className="btn btn-primary" onClick={() => {
           const item = overview.items.find(entry => entry.name === globalRestock.item);
           const warehouse = overview.warehouses.find(entry => entry.name === globalRestock.warehouse);
           const quantity = Number(globalRestock.quantity);
@@ -1211,7 +1211,7 @@ function AdminPanel({
           {overview.items.map((it) => {
             const transfer = transferFor(it.id);
             return (
-              <div className="admin-item-row" data-testid="admin-item-row"
+              <div className="admin-item-row" data-role="admin-item-row"
                 data-price-input={JSON.stringify({ itemId: it.id,
                   price: it.name === "Gaming Mouse" ? 1 : it.price })}
                 data-transfer-input={it.name === "Headphones" && warehouses.length >= 2
@@ -1225,21 +1225,21 @@ function AdminPanel({
                   })
                   : undefined} key={it.id}>
                 <span>{it.name}</span>
-                <span data-testid="admin-stock">{it.stock}</span>
+                <span data-role="admin-stock">{it.stock}</span>
                 <div className="admin-price-controls">
                   <input
                     type="number"
                     min={0.01}
                     step={0.01}
                     className="input price-input"
-                    data-testid="price-input"
+                    data-role="price-input"
                     placeholder={it.price.toFixed(2)}
                     value={priceValues[it.id] ?? ""}
                     onChange={(e) => setPriceValues((prev) => ({ ...prev, [it.id]: e.target.value }))}
                   />
                   <button
                     className="btn btn-primary btn-sm"
-                    data-testid="price-submit"
+                    data-role="price-submit"
                     onClick={() => {
                       const price = Number(priceValues[it.id]);
                       if (Number.isFinite(price) && price > 0) {
@@ -1254,7 +1254,7 @@ function AdminPanel({
                 <div className="admin-transfer-controls">
                   <select
                     className="input"
-                    data-testid="transfer-from"
+                    data-role="transfer-from"
                     value={transfer.from}
                     onChange={(e) =>
                       setTransferValues((prev) => ({ ...prev, [it.id]: { ...transferFor(it.id), from: e.target.value } }))
@@ -1268,7 +1268,7 @@ function AdminPanel({
                   </select>
                   <select
                     className="input"
-                    data-testid="transfer-to"
+                    data-role="transfer-to"
                     value={transfer.to}
                     onChange={(e) =>
                       setTransferValues((prev) => ({ ...prev, [it.id]: { ...transferFor(it.id), to: e.target.value } }))
@@ -1284,7 +1284,7 @@ function AdminPanel({
                     type="number"
                     min={1}
                     className="input transfer-qty-input"
-                    data-testid="transfer-qty"
+                    data-role="transfer-qty"
                     value={transfer.qty}
                     onChange={(e) =>
                       setTransferValues((prev) => ({ ...prev, [it.id]: { ...transferFor(it.id), qty: e.target.value } }))
@@ -1292,7 +1292,7 @@ function AdminPanel({
                   />
                   <button
                     className="btn btn-ghost btn-sm"
-                    data-testid="transfer-submit"
+                    data-role="transfer-submit"
                     onClick={() => {
                       const qty = Number(transfer.qty);
                       if (Number.isInteger(qty) && qty >= 1 && transfer.from && transfer.to && transfer.from !== transfer.to) {
@@ -1312,26 +1312,26 @@ function AdminPanel({
           <h3 className="section-title">Warehouses</h3>
           <div style={{ marginBottom: 16 }}>
             {overview.warehouses.map((w) => (
-              <span className="admin-warehouse-item" data-testid="admin-warehouse-item" key={w.id}>
-                {w.name} — <span data-testid="warehouse-total">{w.total}</span>
+              <span className="admin-warehouse-item" data-role="admin-warehouse-item" key={w.id}>
+                {w.name} — <span data-role="warehouse-total">{w.total}</span>
               </span>
             ))}
           </div>
           <h3 className="section-title">Stock by warehouse</h3>
           {overview.locations.map((loc) => (
-            <div className="admin-location-row" data-testid="admin-location-row"
+            <div className="admin-location-row" data-role="admin-location-row"
               data-restock-input={JSON.stringify({ itemId: loc.itemId,
                 warehouseId: loc.warehouseId, quantity: 1 })} key={loc.id}>
               <span>
                 {loc.itemName} @ {loc.warehouseName}
               </span>
-              <span data-testid="admin-location-qty">{loc.quantity}</span>
+              <span data-role="admin-location-qty">{loc.quantity}</span>
               <div className="admin-restock-controls">
                 <input
                   type="number"
                   min={1}
                   className="input restock-input"
-                  data-testid="restock-input"
+                  data-role="restock-input"
                   value={restockValues[loc.id] ?? ""}
                   onChange={(e) => setRestockValues((prev) => ({ ...prev, [loc.id]: e.target.value }))}
                   onKeyDown={(e) => {
@@ -1347,7 +1347,7 @@ function AdminPanel({
                 />
                 <button
                   className="btn btn-primary btn-sm"
-                  data-testid="restock-submit"
+                  data-role="restock-submit"
                   onClick={() => {
                     const qty = Number(restockValues[loc.id]);
                     if (Number.isInteger(qty) && qty >= 1) {
@@ -1367,12 +1367,12 @@ function AdminPanel({
       <div className="admin-grid" style={{ marginTop: 24 }}>
         <div>
           <h3 className="section-title">Low stock</h3>
-          <div data-testid="low-stock-list">
+          <div data-role="low-stock-list">
             {overview.lowStock.length === 0 ? (
               <div className="empty-state">Nothing is running low</div>
             ) : (
               overview.lowStock.map((it) => (
-                <div className="admin-item-row" data-testid="low-stock-item" key={it.id}>
+                <div className="admin-item-row" data-role="low-stock-item" key={it.id}>
                   <span>{it.name}</span>
                   <span>{it.stock}</span>
                 </div>
@@ -1383,10 +1383,10 @@ function AdminPanel({
         <div>
           <h3 className="section-title">Category totals</h3>
           {overview.categories.map((c) => (
-            <div className="admin-item-row" data-testid="category-row" key={c.category}>
+            <div className="admin-item-row" data-role="category-row" key={c.category}>
               <span>{c.category}</span>
-              <span data-testid="category-units">{c.units}</span>
-              <span data-testid="category-revenue">${c.revenue.toFixed(2)}</span>
+              <span data-role="category-units">{c.units}</span>
+              <span data-role="category-revenue">${c.revenue.toFixed(2)}</span>
             </div>
           ))}
         </div>
@@ -1410,7 +1410,7 @@ function FulfilmentPanel({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="admin-panel" data-testid="fulfilment-panel">
+    <div className="admin-panel" data-role="fulfilment-panel">
       <div className="panel-header">
         <h2>Fulfilment queue</h2>
         <button className="close-btn" onClick={onClose}>
@@ -1419,32 +1419,32 @@ function FulfilmentPanel({
       </div>
 
       {orderError && (
-        <div className="auth-error" data-testid="order-error">
+        <div className="auth-error" data-role="order-error">
           {orderError}
         </div>
       )}
 
       <div className="admin-revenue-box">
-        Orders waiting: <span className="value" data-testid="queue-depth">{queue.depth}</span>
+        Orders waiting: <span className="value" data-role="queue-depth">{queue.depth}</span>
       </div>
 
       {queue.orders.length === 0 ? (
         <div className="empty-state">Nothing waiting to ship</div>
       ) : (
         queue.orders.map((order) => (
-          <div className="order-item" data-testid="queue-item" key={order.id}>
+          <div className="order-item" data-role="queue-item" key={order.id}>
             <div className="order-item-header">
               <span>{new Date(order.createdAt).toLocaleString()}</span>
             </div>
             <div>{order.items.map((l) => `${l.name} ×${l.quantity}`).join(", ")}</div>
             <div>
               {order.items.map((l, idx) => (
-                <span className="pill-warning" data-testid="queue-warehouse" key={`${l.itemId}-${idx}`}>
+                <span className="pill-warning" data-role="queue-warehouse" key={`${l.itemId}-${idx}`}>
                   {(l.warehouseNames || []).join(", ") || "Unknown"}
                 </span>
               ))}
             </div>
-            <button className="btn btn-primary btn-sm" data-testid="ship-submit" style={{ marginTop: 8 }} onClick={() => onShip(order.id)}>
+            <button className="btn btn-primary btn-sm" data-role="ship-submit" style={{ marginTop: 8 }} onClick={() => onShip(order.id)}>
               Mark shipped
             </button>
           </div>

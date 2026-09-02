@@ -187,10 +187,10 @@ check('the bug report was written', reportExists);
 // target the check instead of the app. Missing-control findings are exempt:
 // there the element id is the requirement.
 const report = reportExists ? readFileSync(reportPath, 'utf8') : '';
-const behaviourSection = report.split('## Application controls')[0] ?? '';
+const behaviourSection = report.split('## Application interface')[0] ?? '';
 check('behavioural findings do not leak selectors or timings',
-  !/data-testid|locator|within \d+ms/.test(behaviourSection));
-check('missing controls are reported separately', /## Application controls/.test(report));
+  !/data-(?:role|testid)|locator|within \d+ms/.test(behaviourSection));
+check('missing interfaces are reported separately', /## Application interface/.test(report));
 check('build and fix costs are both recorded',
   (level?.buildCostUsd ?? 0) > 0 && (level?.fixCostUsd ?? 0) > 0,
   `build=${level?.buildCostUsd} fix=${level?.fixCostUsd}`);

@@ -43,7 +43,7 @@ export default function ItemDetail({
   return (
     <div
       className="inline-detail"
-      data-testid="item-detail"
+      data-role="item-detail"
       onKeyDown={(e) => {
         if (e.key === 'Escape') onClose();
       }}
@@ -63,7 +63,7 @@ export default function ItemDetail({
                 {outOfStock && <span className="badge badge-danger" style={{ marginLeft: 8 }}>Out of stock</span>}
               </div>
               <div className="muted">
-                Average rating: <span data-testid="review-average">{avgRating === null ? '—' : avgRating.toFixed(1)}</span>{' '}
+                Average rating: <span data-role="review-average">{avgRating === null ? '—' : avgRating.toFixed(1)}</span>{' '}
                 ({reviews.length} review{reviews.length === 1 ? '' : 's'})
               </div>
             </div>
@@ -74,7 +74,7 @@ export default function ItemDetail({
             <h3 className="section-title">Reviews</h3>
             {reviews.length === 0 && <div className="empty-state">No reviews yet.</div>}
             {reviews.map((r) => (
-              <div className="review-item" data-testid="review-item" key={String(r.id)}>
+              <div className="review-item" data-role="review-item" key={String(r.id)}>
                 <div className="review-item-rating">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</div>
                 <div>{r.comment}</div>
               </div>
@@ -89,7 +89,7 @@ export default function ItemDetail({
               <label>
                 Rating
                 <select
-                  data-testid="review-rating"
+                  data-role="review-rating"
                   value={rating}
                   onChange={(e) => setRating(e.target.value)}
                   style={{ marginLeft: 8 }}
@@ -103,7 +103,7 @@ export default function ItemDetail({
               </label>
               <input
                 type="text"
-                data-testid="review-input"
+                data-role="review-input"
                 placeholder="Share your thoughts..."
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
@@ -111,11 +111,11 @@ export default function ItemDetail({
                   if (e.key === 'Enter') submitReview();
                 }}
               />
-              <button type="button" className="btn btn-primary" data-testid="review-submit" onClick={submitReview}>
+              <button type="button" className="btn btn-primary" data-role="review-submit" onClick={submitReview}>
                 Submit review
               </button>
               {reviewError && (
-                <div className="error-text" data-testid="review-error">
+                <div className="error-text" data-role="review-error">
                   {reviewError}
                 </div>
               )}
