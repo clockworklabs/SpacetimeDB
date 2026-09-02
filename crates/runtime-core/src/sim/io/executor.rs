@@ -457,7 +457,6 @@ enum InFlightInner {
     Noop,
 }
 
-/*
 pub enum WriteFault {
     /// Misdirect the write to an arbitrary page offset in the file.
     Misdirected { page_offset: usize },
@@ -476,7 +475,6 @@ pub enum WriteFault {
 pub trait FaultInjector {
     fn maybe_write_fault(&self, rng: &Rng, now: Instant, page_offset: usize) -> Option<WriteFault>;
 }
-*/
 
 /// Completion queue overflow policy.
 ///

@@ -146,6 +146,57 @@ impl SimulatorIO {
 
         progress
     }
+
+    fn submit<T>(
+        &self,
+        sqe: Sqe<usize>,
+        completion_handle: impl FnOnce(CompletionSender<T, Error>) -> CompletionHandle,
+    ) -> Completion<Result<T, Error>> {
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([sqe.attach(pending_entry.key())]) {
+            Err(_sqe) => tx
+                .send(Err(Error::SubmissionQueueOverflow))
+                .unwrap_or_else(|_| unreachable!("rx is alive")),
+            Ok(()) => {
+                pending_entry.insert(completion_handle(tx));
+            }
+        }
+
+        rx.into()
+    }
+
+    fn submit_with<B: AlignedBytes + 'static>(
+        &self,
+        sqe: Sqe<usize>,
+        buf: ErasedBox,
+        completion_handle: impl FnOnce(CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>, usize) -> CompletionHandle,
+    ) -> Completion<Result<B, ErrorWith<Error, B>>> {
+        let (tx, rx) = oneshot::channel();
+
+        let mut executor = self.inner.executor.lock();
+        let mut pending = self.inner.pending.lock();
+        let pending_entry = pending.vacant_entry();
+
+        match executor.submit([sqe.attach(pending_entry.key())]) {
+            Err(_sqe) => tx
+                .send(Err(ErrorWith {
+                    error: Error::SubmissionQueueOverflow,
+                    with: buf,
+                }))
+                .unwrap_or_else(|_| unreachable!("rx is alive")),
+            Ok(()) => {
+                let buf_key = self.inner.buffers.lock().insert(buf);
+                pending_entry.insert(completion_handle(tx, buf_key));
+            }
+        }
+
+        Completion::mapped(rx, reify)
+    }
 }
 
 struct SimulatorInner {
@@ -164,12 +215,14 @@ impl Default for SimulatorInner {
     }
 }
 
+pub type CompletionReceiver<T, E> = oneshot::Receiver<Result<T, E>>;
+
 #[must_use = "completions must be polled to completion"]
 pub struct Completion<T>(CompletionInner<T>);
 
 impl<T> Completion<T> {
     pub fn mapped(
-        rx: oneshot::Receiver<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        rx: CompletionReceiver<ErasedBox, ErrorWith<Error, ErasedBox>>,
         map: fn(Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> T,
     ) -> Self {
         Self(CompletionInner::Mapped { rx, map })
@@ -196,7 +249,7 @@ enum CompletionInner<T> {
         rx: oneshot::Receiver<T>,
     },
     Mapped {
-        rx: oneshot::Receiver<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        rx: CompletionReceiver<ErasedBox, ErrorWith<Error, ErasedBox>>,
         map: fn(Result<ErasedBox, ErrorWith<Error, ErasedBox>>) -> T,
     },
 }
@@ -218,37 +271,38 @@ impl<T> Future for CompletionInner<T> {
     }
 }
 
+type CompletionSender<T, E> = oneshot::Sender<Result<T, E>>;
 enum CompletionHandle {
     Write {
-        tx: oneshot::Sender<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        tx: CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>,
         buf_key: usize,
     },
     Read {
-        tx: oneshot::Sender<Result<ErasedBox, ErrorWith<Error, ErasedBox>>>,
+        tx: CompletionSender<ErasedBox, ErrorWith<Error, ErasedBox>>,
         buf_key: usize,
     },
     Open {
-        tx: oneshot::Sender<Result<fs::File, Error>>,
+        tx: CompletionSender<fs::File, Error>,
     },
     Create {
-        tx: oneshot::Sender<Result<fs::File, Error>>,
+        tx: CompletionSender<fs::File, Error>,
     },
     Stat {
-        tx: oneshot::Sender<Result<Statx, Error>>,
+        tx: CompletionSender<Statx, Error>,
     },
     Fallocate {
-        tx: oneshot::Sender<Result<(), Error>>,
+        tx: CompletionSender<(), Error>,
     },
     Fsync {
-        tx: oneshot::Sender<Result<(), Error>>,
+        tx: CompletionSender<(), Error>,
     },
     Fdatasync {
-        tx: oneshot::Sender<Result<(), Error>>,
+        tx: CompletionSender<(), Error>,
     },
     // TODO: We may use this for timeouts.
     #[allow(unused)]
     Noop {
-        tx: oneshot::Sender<Result<(), Error>>,
+        tx: CompletionSender<(), Error>,
     },
 }
 
@@ -258,37 +312,11 @@ impl SpacetimeIO for SimulatorIO {
     type Completion<T> = Completion<T>;
 
     fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
-        match executor.submit([Sqe::open(path).attach(pending_entry.key())]) {
-            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
-            Ok(()) => {
-                pending_entry.insert(CompletionHandle::Open { tx });
-            }
-        }
-
-        rx.into()
+        self.submit(Sqe::open(path), |tx| CompletionHandle::Open { tx })
     }
 
     fn create_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
-        match executor.submit([Sqe::create(path).attach(pending_entry.key())]) {
-            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
-            Ok(()) => {
-                pending_entry.insert(CompletionHandle::Create { tx });
-            }
-        }
-
-        rx.into()
+        self.submit(Sqe::create(path), |tx| CompletionHandle::Create { tx })
     }
 
     fn write_all_at<B: AlignedBytes + Send + 'static>(
@@ -297,29 +325,11 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
         let erased_buf = ErasedBox::from_aligned(buf);
         let buf_ptr = erased_buf.as_ptr();
-
-        match executor.submit([Sqe::write(fd, buf_ptr, offset).attach(pending_entry.key())]) {
-            Err(_sqe) => tx
-                .send(Err(ErrorWith {
-                    error: Error::SubmissionQueueOverflow,
-                    with: erased_buf,
-                }))
-                .unwrap_or_else(|_| unreachable!("rx is still alive")),
-            Ok(()) => {
-                let buf_key = self.inner.buffers.lock().insert(erased_buf);
-                pending_entry.insert(CompletionHandle::Write { tx, buf_key });
-            }
-        }
-
-        Completion::mapped(rx, reify)
+        self.submit_with(Sqe::write(fd, buf_ptr, offset), erased_buf, |tx, buf_key| {
+            CompletionHandle::Write { tx, buf_key }
+        })
     }
 
     fn read_exact_at<B: AlignedBytes + Send + 'static>(
@@ -328,97 +338,27 @@ impl SpacetimeIO for SimulatorIO {
         buf: B,
         offset: u64,
     ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
         let erased_buf = ErasedBox::from_aligned(buf);
         let buf_ptr = erased_buf.as_ptr();
-
-        match executor.submit([Sqe::read(fd, buf_ptr, offset).attach(pending_entry.key())]) {
-            Err(_sqe) => tx
-                .send(Err(ErrorWith {
-                    error: Error::SubmissionQueueOverflow,
-                    with: erased_buf,
-                }))
-                .unwrap_or_else(|_| unreachable!("rx is still alive")),
-            Ok(()) => {
-                let buf_key = self.inner.buffers.lock().insert(erased_buf);
-                pending_entry.insert(CompletionHandle::Read { tx, buf_key });
-            }
-        }
-
-        Completion::mapped(rx, reify)
+        self.submit_with(Sqe::read(fd, buf_ptr, offset), erased_buf, |tx, buf_key| {
+            CompletionHandle::Read { tx, buf_key }
+        })
     }
 
     fn fsync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
-        match executor.submit([Sqe::fsync(fd).attach(pending_entry.key())]) {
-            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
-            Ok(()) => {
-                pending_entry.insert(CompletionHandle::Fsync { tx });
-            }
-        }
-
-        rx.into()
+        self.submit(Sqe::fsync(fd), |tx| CompletionHandle::Fsync { tx })
     }
 
     fn fdatasync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
-        match executor.submit([Sqe::fdatasync(fd).attach(pending_entry.key())]) {
-            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
-            Ok(()) => {
-                pending_entry.insert(CompletionHandle::Fdatasync { tx });
-            }
-        }
-
-        rx.into()
+        self.submit(Sqe::fdatasync(fd), |tx| CompletionHandle::Fdatasync { tx })
     }
 
     fn reserve(&self, fd: Self::Fd, total_size: u64) -> Self::Completion<Result<(), Self::Error>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
-        match executor.submit([Sqe::fallocate(fd, total_size).attach(pending_entry.key())]) {
-            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
-            Ok(()) => {
-                pending_entry.insert(CompletionHandle::Fallocate { tx });
-            }
-        }
-
-        rx.into()
+        self.submit(Sqe::fallocate(fd, total_size), |tx| CompletionHandle::Fallocate { tx })
     }
 
     fn statx(&self, fd: Self::Fd) -> Self::Completion<Result<Statx, Self::Error>> {
-        let (tx, rx) = oneshot::channel();
-
-        let mut executor = self.inner.executor.lock();
-        let mut pending = self.inner.pending.lock();
-        let pending_entry = pending.vacant_entry();
-
-        match executor.submit([Sqe::stat(fd).attach(pending_entry.key())]) {
-            Err(_sqe) => tx.send(Err(Error::SubmissionQueueOverflow)).unwrap(),
-            Ok(()) => {
-                pending_entry.insert(CompletionHandle::Stat { tx });
-            }
-        }
-
-        rx.into()
+        self.submit(Sqe::stat(fd), |tx| CompletionHandle::Stat { tx })
     }
 }
 
