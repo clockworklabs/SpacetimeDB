@@ -105,7 +105,10 @@ test('completion validation rejects wrong identity and malformed usage', () => {
     complete: true, reconciled: true, error: null };
   const valid = { appDir: request.app, mode: 'build', level: 1, ok: true,
     sessionId: 'session-1', costUsd: 0.0018, tokens: 3, outputTokens: 1, turns: 1,
-    promptBytes: 20, durationMs: 10, setup: { isolation: { mode: 'test' } },
+    promptBytes: 20, durationMs: 10, setup: { isolation: { mode: 'test' },
+      resources: { buildContainerMemory: {
+        currentBytes: 100, peakBytes: 200, limitBytes: 400,
+      }, memoryProbeError: null } },
     usage: { input: 1, output: 1, cacheWrite: 1, cacheRead: 0 },
     costReceipts: [{ invocation: 1, receipt }] };
   const normalized = validateAgentResult(valid, nativeRequest);
@@ -113,6 +116,7 @@ test('completion validation rejects wrong identity and malformed usage', () => {
   assert.equal(normalized.model, request.model);
   assert.deepEqual(normalized.transcript, { kind: 'provider-session', id: 'session-1' });
   assert.deepEqual(normalized.costReceipts, valid.costReceipts);
+  assert.deepEqual(normalized.setup.resources, valid.setup.resources);
   assert.equal(normalized.costComplete, true);
   assert.throws(() => validateAgentResult({ ...valid, appDir: 'C:\\other' }, nativeRequest), /appDir/);
   assert.throws(() => validateAgentResult({ ...valid, usage: { ...valid.usage, input: -1 } }, nativeRequest),

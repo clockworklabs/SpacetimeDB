@@ -74,6 +74,7 @@ export interface RunSessionRecord {
   costReceipts: unknown[];
   costComplete: boolean;
   providerThrottle: SessionMetricsInput['providerThrottle'];
+  resources: ValidatedAgentResult['setup']['resources'];
   tokens: number | null;
   outputTokens: number | null;
   turns: number | null;
@@ -279,6 +280,7 @@ export function runSessionRecord(
     costReceipts: session.costReceipts ?? [],
     costComplete: session.costComplete === true,
     providerThrottle: session.setup?.providerThrottle ?? null,
+    resources: session.setup?.resources ?? null,
     tokens: session.tokens ?? null,
     outputTokens: session.outputTokens ?? null,
     turns: session.turns ?? null,

@@ -17,11 +17,11 @@ export const BUILD_CONTAINER_RESOURCE_LIMITS = Object.freeze({
   pids: 512,
 });
 
-// A concurrent attempt also needs capacity outside its build container for the
-// grader, browser, database work, and controller processes.
+// The single-attempt floor covers shared grader, browser, database, and controller
+// work. Each additional attempt adds one build-container allowance.
 export const ADDITIONAL_ATTEMPT_RESOURCE_FLOORS = Object.freeze({
   cpuCount: BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount + 1,
-  memoryBytes: BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes + (2 * 1024 ** 3),
+  memoryBytes: BUILD_CONTAINER_RESOURCE_LIMITS.memoryBytes,
 });
 
 export interface ResourceFloors {
@@ -35,8 +35,8 @@ export function preflightResourceFloors(parallelism = 1): Readonly<ResourceFloor
   if (!Number.isInteger(parallelism) || parallelism < 1) {
     throw new Error('parallelism must be a positive integer');
   }
-  // The single-run floor includes shared services. Each extra attempt reserves
-  // its build-container limit plus capacity for work outside that container.
+  // The single-run floor includes shared services. Each extra attempt adds its
+  // build-container allowance; recorded peaks inform future changes to this estimate.
   return Object.freeze({
     ...PREFLIGHT_RESOURCE_FLOORS,
     cpuCount: PREFLIGHT_RESOURCE_FLOORS.cpuCount

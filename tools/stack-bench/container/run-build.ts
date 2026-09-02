@@ -15,7 +15,8 @@ import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import type { ContainerMount } from '../src/runtime/container-mount.js';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.js';
 import { resolveContainerAuth } from './container-auth.js';
-import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parsePublishedPorts }
+import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupMemory,
+  parsePublishedPorts }
   from './build-container-inspection.js';
 import { reconcileCredentialBrokerReceipt } from './credential-broker-accounting.js';
 import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
@@ -618,6 +619,17 @@ catch {
     try { cliResult = JSON.parse(line); break; } catch { /* Keep looking. */ }
   }
 }
+const memory = spawnSync('docker', ['exec', containerName, 'sh', '-c',
+  'for f in memory.events memory.current memory.peak memory.max; do '
+    + 'p="/sys/fs/cgroup/$f"; if test -r "$p"; then echo "[$f]"; cat "$p"; fi; done'], {
+  encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+});
+const resources = {
+  buildContainerMemory: memory.status === 0 ? parseCgroupMemory(memory.stdout) : null,
+  memoryProbeError: memory.status === 0 ? null
+    : memory.stderr?.trim() || (memory.error instanceof Error ? memory.error.message : null)
+      || `exit ${memory.status}`,
+};
 if (maxBudgetUsd !== null) {
   const reconciled = reconcileCredentialBrokerReceipt({
     ledger: brokerLedger,
@@ -627,6 +639,7 @@ if (maxBudgetUsd !== null) {
     pricingRates: pricing!.rates,
     brokerDiagnostics,
   });
+  reconciled.result.stack_bench_resources = resources;
   res.stdout = `${JSON.stringify(reconciled.result)}\n`;
   if (!reconciled.ok) {
     res.status = res.status === 0 ? 3 : res.status ?? 3;
@@ -635,16 +648,12 @@ if (maxBudgetUsd !== null) {
   }
 } else if (cliResult && typeof cliResult === 'object' && !Array.isArray(cliResult)) {
   cliResult.stack_bench_credential_broker = brokerDiagnostics;
+  cliResult.stack_bench_resources = resources;
   res.stdout = `${JSON.stringify(cliResult)}\n`;
 }
 
 if ((res.status ?? 1) !== 0) {
   const state = spawnSync('docker', ['inspect', '--format', '{{json .State}}', containerName], {
-    encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
-  });
-  const memory = spawnSync('docker', ['exec', containerName, 'sh', '-c',
-    'for f in memory.events memory.current memory.peak memory.max; do '
-      + 'p="/sys/fs/cgroup/$f"; if test -r "$p"; then echo "[$f]"; cat "$p"; fi; done'], {
     encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
   });
   let containerState = null;

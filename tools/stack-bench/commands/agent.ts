@@ -828,6 +828,7 @@ async function main() {
       env: ambientEnv(),
       node: { orchestrator: process.version, codingContainer: imageNodeVersion(imageIdentity.id) },
       platform: process.platform,
+      resources: result.stack_bench_resources ?? null,
     },
     costUsd: Number((result.total_cost_usd ?? 0).toFixed(6)),
     costReceipts: result.stack_bench_cost_receipts ?? [],

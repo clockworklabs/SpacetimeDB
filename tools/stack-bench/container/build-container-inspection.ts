@@ -52,6 +52,20 @@ function dockerDetail(result: SpawnSyncReturns<string>): string {
   return String(result.stderr || result.stdout || result.error?.message || `exit ${result.status}`).trim();
 }
 
+export function parseCgroupMemory(value: string) {
+  const bytes = (name: string): number | null => {
+    const match = value.match(new RegExp(`^\\[${name.replace('.', '\\.')}]\\r?\\n(\\d+)$`, 'm'));
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  };
+  return {
+    currentBytes: bytes('memory.current'),
+    peakBytes: bytes('memory.peak'),
+    limitBytes: bytes('memory.max'),
+  };
+}
+
 export function inspectBuildContainer(name: string, {
   env = process.env,
   timeoutMs = 120_000,

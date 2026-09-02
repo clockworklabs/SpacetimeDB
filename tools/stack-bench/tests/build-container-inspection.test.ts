@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parsePublishedPorts, sameHostPath }
+import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupMemory,
+  parsePublishedPorts, sameHostPath }
   from '../container/build-container-inspection.js';
 import type { InspectedBuildContainer } from '../container/build-container-inspection.js';
 
@@ -28,6 +29,20 @@ test('published ports must be valid and unique', () => {
   assert.throws(() => parsePublishedPorts('3000,3000'), /must not contain duplicates/);
   assert.throws(() => parsePublishedPorts('0'), /integers from 1 through 65535/);
   assert.throws(() => parsePublishedPorts('3000x'), /integers from 1 through 65535/);
+});
+
+test('cgroup memory reports current use, peak use, and the enforced limit', () => {
+  assert.deepEqual(parseCgroupMemory('[memory.events]\noom 0\n[memory.current]\n123\n'
+    + '[memory.peak]\n456\n[memory.max]\n4294967296\n'), {
+    currentBytes: 123,
+    peakBytes: 456,
+    limitBytes: 4 * 1024 ** 3,
+  });
+  assert.deepEqual(parseCgroupMemory('[memory.max]\nmax\n'), {
+    currentBytes: null,
+    peakBytes: null,
+    limitBytes: null,
+  });
 });
 
 test('build-container isolation validates the effective Docker configuration', () => {

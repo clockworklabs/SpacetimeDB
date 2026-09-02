@@ -23,10 +23,11 @@ test('preflight resource floors scale with concurrent attempts', () => {
   });
   assert.deepEqual(preflightResourceFloors(3), {
     cpuCount: 10,
-    memoryBytes: 20 * 1024 ** 3,
+    memoryBytes: 16 * 1024 ** 3,
     resultDiskBytes: 10 * 1024 ** 3,
     clockSkewMs: 5_000,
   });
+  assert.equal(preflightResourceFloors(9).memoryBytes, 40 * 1024 ** 3);
   assert.throws(() => preflightResourceFloors(0), /parallelism must be a positive integer/);
   assert.throws(() => preflightResourceFloors(1.5), /parallelism must be a positive integer/);
 });

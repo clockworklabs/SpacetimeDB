@@ -27,7 +27,9 @@ function session(marker: string,
     costUsd: billable ? 1 : 0, durationMs: 10,
     usage: { input: 1, output: 1, cacheWrite: 0, cacheRead: 0 },
     costReceipts: billable ? receipt() : [],
-    setup: {}, tokens: 2, outputTokens: 1, turns: 1,
+    setup: { resources: { buildContainerMemory: {
+      currentBytes: 100, peakBytes: 200, limitBytes: 400,
+    }, memoryProbeError: null } }, tokens: 2, outputTokens: 1, turns: 1,
     promptBytes: 20, thinking: null, transcript: { kind: 'test', id: marker },
     provenance: null, providerMetadata: null, costComplete };
 }
@@ -75,6 +77,7 @@ interface StoredSession {
   costReceipts: unknown[];
   costComplete: boolean;
   round?: number;
+  resources: unknown;
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -95,6 +98,7 @@ function storedSession(run: unknown, location: SessionLocation): StoredSession {
   }
   const round = typeof candidate.round === 'number' ? candidate.round : undefined;
   return { costReceipts: candidate.costReceipts, costComplete: candidate.costComplete,
+    resources: candidate.resources,
     ...(round === undefined ? {} : { round }) };
 }
 
@@ -110,6 +114,7 @@ for (const item of cases) {
       assert.deepEqual(stored.costReceipts, source.costReceipts);
       assert.equal(Object.hasOwn(stored, 'costReceipts'), true);
       assert.equal(stored.costComplete, source.costComplete);
+      assert.deepEqual(stored.resources, source.setup.resources);
       if (item.round !== undefined) assert.equal(stored.round, item.round);
     } finally {
       rmSync(root, { recursive: true, force: true });

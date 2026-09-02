@@ -14,6 +14,7 @@ interface CodingSessionResult {
   usage?: UnknownRecord;
   stack_bench_cost_receipt?: UnknownRecord;
   stack_bench_credential_broker?: CodingSessionCredentialBroker;
+  stack_bench_resources?: unknown;
   terminal_recovery?: unknown;
 }
 

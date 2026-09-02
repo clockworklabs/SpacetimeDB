@@ -61,6 +61,14 @@ export interface AgentSetup extends UnknownRecord {
   session?: string;
   isolation?: UnknownRecord & { imageId?: string | null };
   providerThrottle?: { waits?: number | null; waitedMs?: number | null };
+  resources?: {
+    buildContainerMemory: {
+      currentBytes: number | null;
+      peakBytes: number | null;
+      limitBytes: number | null;
+    } | null;
+    memoryProbeError: string | null;
+  } | null;
 }
 
 export interface ValidatedAgentResult {
@@ -131,6 +139,14 @@ const resultSchema = z.strictObject({
       waits: nonNegativeNumber.nullable().optional(),
       waitedMs: nonNegativeNumber.nullable().optional(),
     }).optional(),
+    resources: z.strictObject({
+      buildContainerMemory: z.strictObject({
+        currentBytes: nonNegativeNumber.nullable(),
+        peakBytes: nonNegativeNumber.nullable(),
+        limitBytes: nonNegativeNumber.nullable(),
+      }).nullable(),
+      memoryProbeError: z.string().min(1).nullable(),
+    }).nullable().optional(),
   }),
   costUsd: nonNegativeNumber,
   tokens: nonNegativeNumber,
