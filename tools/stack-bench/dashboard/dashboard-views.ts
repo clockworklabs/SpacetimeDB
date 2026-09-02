@@ -146,6 +146,14 @@ function overviewCampaign(directory: string): {
   };
 }
 
+// Liveness is one more fact about a running campaign, not a condition of
+// reading it: the read-only host view has no Docker socket to ask.
+function controllerInterrupted(probe: ControllerActive, directory: string,
+  plan: CompiledCampaignPlan, status: string): boolean {
+  if (status !== 'running') return false;
+  try { return !probe(directory, plan); } catch { return false; }
+}
+
 function withInterruption(campaign: OverviewCampaign, interrupted: boolean): OverviewCampaign {
   if (!interrupted) return campaign;
   return { ...campaign, status: 'attention-required',
@@ -171,8 +179,8 @@ export function overviewSummary(campaignsRoot: string,
       const fresh = cached?.fingerprint === fingerprint
         ? { plan: cached.plan, campaign: cached.campaign } : overviewCampaign(directory);
       overviewCache.set(directory, { fingerprint, ...fresh });
-      campaigns.push(withInterruption(fresh.campaign, fresh.campaign.status === 'running'
-        && !controllerActive(directory, fresh.plan)));
+      campaigns.push(withInterruption(fresh.campaign, controllerInterrupted(controllerActive,
+        directory, fresh.plan, fresh.campaign.status)));
     } catch (error) {
       campaigns.push({ key: entry.name, id: entry.name, title: entry.name,
         status: 'unreadable', error: errorMessage(error) });
@@ -270,6 +278,10 @@ export interface CampaignSheet {
   repetitions: number;
   provisional: boolean;
   mixedScope: boolean;
+  executions: number;
+  // A dependency campaign that stopped between executions is the one thing an
+  // operator can restart; the server checks the same three facts again.
+  resumable: boolean;
   createdAt: string;
   updatedAt: string;
   facts: SheetFacts;
@@ -406,7 +418,7 @@ export function campaignSheet(resultsRoot: string, key: string,
   const fingerprint = campaignFingerprint(directory, [CAMPAIGN_FILE.plan, CAMPAIGN_FILE.state],
     [ARTIFACT_FILE.run, ARTIFACT_FILE.progressionState, LOG_FILE]);
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
-  const interrupted = state.status === 'running' && !controllerActive(directory, plan);
+  const interrupted = controllerInterrupted(controllerActive, directory, plan, state.status);
   const cacheKey = `${directory}:${interrupted ? 'interrupted' : 'live'}`;
   const cached = sheetCache.get(cacheKey);
   if (cached?.fingerprint === fingerprint) return cached.sheet;
@@ -452,6 +464,8 @@ export function campaignSheet(resultsRoot: string, key: string,
     repetitions: plan.definition.repetitions,
     provisional: campaignFacts(plan).grading.status !== 'qualified',
     mixedScope: comparison.mixedScope,
+    executions: state.summary.executions,
+    resumable: dependency && state.status === 'prepared' && state.summary.executions > 0,
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
     facts: sheetFacts(plan),

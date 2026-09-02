@@ -38,6 +38,7 @@ const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/views/attempt.js', ['views/attempt.js', 'text/javascript; charset=utf-8']],
   ['/views/campaign.js', ['views/campaign.js', 'text/javascript; charset=utf-8']],
   ['/views/campaigns.js', ['views/campaigns.js', 'text/javascript; charset=utf-8']],
+  ['/views/plans.js', ['views/plans.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/spacetimedb-mark.svg', ['spacetimedb-mark.svg', 'image/svg+xml']],
   // The brand faces are served from here rather than a CDN: the dashboard's own
@@ -293,7 +294,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
           'cache-control': 'no-store', connection: 'keep-alive' });
         response.write(': open\n\n');
         listeners.add(response);
-        watcher ??= watchCampaigns(campaignsRoot, broadcast);
+        watcher ??= watchCampaigns(campaignsRoot, broadcast,
+          mode => console.log(`Stack Bench dashboard: campaign watcher ${mode}`));
         // A silent connection is dropped by proxies long before a campaign
         // writes anything.
         heartbeat ??= setInterval(() => {

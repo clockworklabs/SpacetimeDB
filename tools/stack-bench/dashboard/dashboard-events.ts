@@ -17,6 +17,8 @@ export interface CampaignChange {
   attemptId?: string;
 }
 
+export type WatchMode = 'watch' | 'poll';
+
 export interface CampaignWatcher {
   close(): void;
 }
@@ -66,7 +68,8 @@ function fingerprintCampaign(directory: string): CampaignFingerprint {
 // where the platform supports it (Windows, macOS, and Linux on Node 20 and
 // later), and a poll of the same fingerprints where it does not.
 export function watchCampaigns(campaignsRoot: string,
-  emit: (change: CampaignChange) => void): CampaignWatcher {
+  emit: (change: CampaignChange) => void,
+  onMode: (mode: WatchMode) => void = () => {}): CampaignWatcher {
   const fingerprints = new Map<string, CampaignFingerprint>();
   const watchers = new Map<string, FSWatcher>();
   const timers = new Map<string, NodeJS.Timeout>();
@@ -100,6 +103,7 @@ export function watchCampaigns(campaignsRoot: string,
 
   const startPoll = (): void => {
     if (closed || poll) return;
+    onMode('poll');
     poll = setInterval(() => {
       attach();
       for (const key of directories(campaignsRoot)) check(key);
@@ -143,6 +147,7 @@ export function watchCampaigns(campaignsRoot: string,
   }
   attach();
   if (!rootWatcher) startPoll();
+  else if (!poll) onMode('watch');
   return {
     close() {
       closed = true;

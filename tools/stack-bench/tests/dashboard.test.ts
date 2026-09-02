@@ -17,8 +17,8 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
   overviewSummary } from '../dashboard/dashboard-views.js';
 import { parseRunProgress,
-  discoverCampaigns, readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact,
-  summarizeCampaign,
+  discoverCampaigns, discoverPlans, readCampaignArtifactBody, readJsonLines,
+  resolveCampaignArtifact, summarizeCampaign,
 } from '../dashboard/dashboard-model.js';
 import { campaignFacts, firstGradeAbort, inspectCampaignSummary }
   from '../src/campaigns/campaign-inspection.js';
@@ -32,10 +32,11 @@ import { writeProgressionState } from '../src/progression/progression-state.js';
 import { attemptPage } from '../dashboard/public/views/attempt.js';
 import { campaignPage } from '../dashboard/public/views/campaign.js';
 import { campaignsPage } from '../dashboard/public/views/campaigns.js';
+import { afterRun, plansPage, runName, topbar } from '../dashboard/public/views/plans.js';
 
 import { DEPENDENCY_CAMPAIGN, EXAMPLE_CAMPAIGN, FIXTURE_CAMPAIGNS,
   dependencyProgressionEvidence, writeCampaign, writeDependencyResults, writeFixtureResults,
-  writeRunEvidence } from './fixtures/dashboard-fixture.js';
+  writePlanFixtures, writeRunEvidence } from './fixtures/dashboard-fixture.js';
 
 async function listenOrigin(server: Server): Promise<string> {
   await new Promise<void>((resolveListen, reject) => {
@@ -545,6 +546,49 @@ test('dashboard serves real state and protects campaign launch with a separate o
   assert.equal(launches.length, 2);
 });
 
+test('the run form sends the plan, the run name and the operator secret the route requires',
+  async t => {
+    const root = mkdtempSync(join(tmpdir(), 'stack-bench-run-form-'));
+    const plansRoot = join(root, 'plans');
+    writePlanFixtures(plansRoot);
+    const launches: LaunchInput[] = [];
+    const feed = { append() {}, list() { return []; } };
+    const { server } = createDashboardServer({ resultsRoot: root, plansRoot, allowLaunch: true,
+      token: 'form-token', controlSecret: 'form-control-secret-value-1234567890', feed,
+      plans: () => discoverPlans(plansRoot),
+      launch(input) {
+        launches.push(input);
+        return Object.assign(new EventEmitter(), { pid: 77 });
+      } });
+    const origin = await listenOrigin(server);
+    t.after(() => { server.close(); rmSync(root, { recursive: true, force: true }); });
+    const plan = discoverPlans(plansRoot).find(item => item.state === 'frozen');
+    assert.ok(plan);
+    // The form's own prefill, held to the name the route accepts.
+    const outputName = runName(plan.id, new Date('2026-09-02T15:04:00'));
+    assert.match(outputName, /^[a-z0-9][a-z0-9.-]{2,119}$/);
+    const send = (secret: string): Promise<Response> => fetch(`${origin}/api/campaigns`,
+      { method: 'POST',
+        headers: { origin, 'content-type': 'application/json', 'x-stack-bench-token': 'form-token',
+          'x-stack-bench-control-secret': secret },
+        body: JSON.stringify({ planId: plan.id, outputName }) });
+
+    const refused = await send('wrong-control-secret-value-1234567890');
+    assert.equal(refused.status, 403);
+    assert.equal(launches.length, 0);
+    const typed = { planId: plan.id, outputName, secret: 'typed-secret', error: '' };
+    const refusedError = ((await refused.json()) as { error: string }).error;
+    assert.deepEqual(afterRun(typed, refused.status, refusedError),
+      { planId: plan.id, outputName, secret: '', error: 'The run request is not authorized.' });
+    assert.equal(afterRun(typed, 409, 'That run output already exists.').secret, 'typed-secret');
+
+    const accepted = await send('form-control-secret-value-1234567890');
+    assert.equal(accepted.status, 202);
+    assert.equal(launches.length, 1);
+    assert.equal(launches[0]?.plan.id, plan.id);
+    assert.equal(launches[0]?.output, join(root, 'campaigns', outputName));
+  });
+
 test('host development mode is read-only even with a valid browser request', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-readonly-'));
   mkdirSync(join(root, 'plans'), { recursive: true });
@@ -597,6 +641,21 @@ test('the overview stays a summary and the sheet stays one campaign at appliance
   assert.ok(stack.climb.length >= 2);
   const sheetBytes = Buffer.byteLength(JSON.stringify(sheet));
   assert.ok(sheetBytes < 60 * 1024, `campaign sheet is ${sheetBytes} bytes`);
+});
+
+test('a liveness probe that cannot answer still reads the campaign', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-liveness-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  writeFixtureResults(resultsRoot, { running: true });
+  const controllerActive = (): boolean => {
+    throw new Error('failed to connect to the docker API at unix:///var/run/docker.sock');
+  };
+
+  const campaign = overviewSummary(join(resultsRoot, 'campaigns'), { controllerActive })
+    .find(entry => entry.key === 'fixture-run-0');
+  assert.ok(campaign && 'scores' in campaign);
+  assert.equal(campaign.status, 'running');
+  assert.equal(campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive }).status, 'running');
 });
 
 test('the overview caches a running campaign until its evidence changes', t => {
@@ -735,6 +794,34 @@ function writeSingleAttemptCampaign(resultsRoot: string, key: string): string {
     `authorization: Bearer secret-token-value\n${'log line\n'.repeat(8)}`);
   return claimed.claim.attempt.id;
 }
+
+test('the sheet says a dependency campaign that stopped between executions can resume', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-resume-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const now = '2026-08-25T12:00:00.000Z';
+  const claimed = claimNextAttempt(createCampaignState(plan, { now }),
+    { now, admissionId: 'admission-1' });
+  assert.ok(claimed.claim);
+  const stopped = finishCampaignExecution(claimed.state, claimed.claim.executionId, {
+    exitCode: 1,
+    run: { outcome: { kind: 'harness_failure', reason: 'controller stopped' } },
+    retryAuthority: { transient: true, recoveryClean: true, budgetKnown: true,
+      cause: 'controller stopped' },
+  }, { now, retries: 1, retryOn: ['harness_failure'] });
+  writeCampaign(join(resultsRoot, 'campaigns', 'prepared-run'), plan, stopped);
+  const sheet = campaignSheet(resultsRoot, 'prepared-run', { controllerActive: () => false });
+  assert.equal(sheet.status, 'prepared');
+  assert.equal(sheet.executions, 1);
+  assert.equal(sheet.resumable, true);
+  // A campaign that has run nothing, and a sequential one, have nothing to resume.
+  writeCampaign(join(resultsRoot, 'campaigns', 'fresh-run'), plan, createCampaignState(plan, { now }));
+  assert.equal(campaignSheet(resultsRoot, 'fresh-run', { controllerActive: () => false })
+    .resumable, false);
+  writeFixtureResults(resultsRoot);
+  assert.equal(campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive: () => false })
+    .resumable, false);
+});
 
 test('every view has a route, and a name that is not a campaign never reaches the evidence',
   async t => {
@@ -925,12 +1012,13 @@ interface MarkupText {
 }
 
 const VOID_TAGS = new Set(['img', 'br', 'line', 'circle', 'path', 'rect', 'meta', 'link', 'input']);
-const CONTROL_TAGS = new Set(['a', 'button', 'summary']);
+const CONTROL_TAGS = new Set(['a', 'button', 'select', 'summary']);
 const LABEL_HOLDERS = new Set(['label', 'k', 'th']);
 const DATA_HOLDERS = new Set(['v', 'big', 'phase', 'who', 'q', 'pct', 'd', 'h', 'shape', 'when',
   'stack', 'name', 'state', 'ev', 'band', 'log', 'links', 'files-list', 'title', 'crumbs', 'text',
-  'group', 'b', 'live-head', 'facts', 'chart', 'sum', 'views']);
+  'group', 'b', 'live-head', 'facts', 'chart', 'sum', 'views', 'err']);
 const LABELS = new Set(['Campaign', 'Shape', 'Status', 'SpacetimeDB', 'PostgreSQL', 'MongoDB',
+  'Stacks', 'Attempts', 'Parallel', 'State', 'Run name', 'Secret',
   'Updated', 'Mode', 'Depth', 'Levels', 'Work', 'Repair', 'Repairs', 'Strikes', 'Repetitions',
   'Agent', 'Model', 'Guidance', 'Recipe', 'Recipes', 'Time limit', 'Spend limit', 'Controller',
   'Plan', 'Grading', 'Scope', 'Continued', 'Score', 'Unaided', 'Regressions', 'Time', 'Spend',
@@ -1023,6 +1111,12 @@ test('the client renders each page as data, labels and controls only', t => {
   assert.ok(progression);
   const attempt = sequential.stacks[0]?.attempts[0];
   assert.ok(attempt);
+  const plansRoot = join(resultsRoot, 'plans');
+  writePlanFixtures(plansRoot);
+  const plans = discoverPlans(plansRoot);
+  const runForm = { planId: plans.find(plan => plan.state === 'frozen')?.id ?? '',
+    outputName: 'ecommerce-20260902-1504', secret: '',
+    error: 'That run output already exists.' };
   const pages: Array<[string, string]> = [
     ['campaigns', campaignsPage({ campaigns: overview, sheets: [dependency], filter: 'all' })],
     ['campaigns filtered',
@@ -1032,6 +1126,11 @@ test('the client renders each page as data, labels and controls only', t => {
     ['campaign grid', campaignPage({ sheet: dependency, progression, view: 'grid', step: 0 })],
     ['campaign graph', campaignPage({ sheet: dependency, progression, view: 'graph', step: 0 })],
     ['campaign replay', campaignPage({ sheet: dependency, progression, view: 'replay', step: 3 })],
+    ['plans', plansPage({ plans, canStart: false, form: runForm })],
+    ['plans form', plansPage({ plans, canStart: true, form: runForm })],
+    ['topbar plans', topbar({ page: 'plans', key: '', canStart: true, resumable: false, error: '' })],
+    ['topbar resume', topbar({ page: 'campaign', key: 'progression-run', canStart: true,
+      resumable: true, error: 'Only an interrupted campaign that is ready can resume.' })],
     ['attempt', attemptPage({ sheet: sequential, attemptId: attempt.id, tab: 'checks',
       checks: attemptChecks(resultsRoot, 'fixture-run-0', attempt.id),
       evidence: attemptPackage(resultsRoot, 'fixture-run-0', attempt.id), log: '' })],
@@ -1058,4 +1157,16 @@ test('the client renders each page as data, labels and controls only', t => {
   for (const path of statusCells(campaigns)) {
     assert.match(path, /state/, 'a status word sits outside the Status column');
   }
+  // Read-only host mode has the table and no form; only a frozen plan is offered.
+  const readOnly = plansPage({ plans, canStart: false, form: runForm });
+  const startable = plansPage({ plans, canStart: true, form: runForm });
+  assert.equal(/<form/.test(readOnly), false);
+  assert.deepEqual([...startable.matchAll(/<option value="([^"]*)"/g)].map(match => match[1]),
+    plans.filter(plan => plan.state === 'frozen').map(plan => plan.id));
+  assert.match(startable, /name="secret" type="password"/);
+  // An unreadable plan is a row whose state is invalid and whose error is a hover.
+  const invalid = /<span class="state \w+" title="([^"]+)">invalid</.exec(readOnly);
+  assert.ok(invalid?.[1] && invalid[1] !== 'invalid');
+  assert.equal(topbar({ page: 'campaigns', key: '', canStart: false, resumable: false, error: '' })
+    .includes('Start a run'), false);
 });

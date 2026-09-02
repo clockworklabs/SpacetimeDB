@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ARTIFACT_FILE, emptyArtifactIdentities, writeArtifact } from '../../src/evidence/artifacts.js';
@@ -182,4 +182,24 @@ export function writeDependencyResults(resultsRoot: string, key: string): void {
         workspace: { appDirectory: 'source' } },
       state: dependencyProgressionEvidence(plan, claim.attempt) });
   }
+}
+
+// Three plans as the Plans page sees them: one frozen and startable, one draft,
+// and one file that does not compile.
+export function writePlanFixtures(plansRoot: string): void {
+  mkdirSync(plansRoot, { recursive: true });
+  const frozen = JSON.parse(readFileSync(DEPENDENCY_CAMPAIGN, 'utf8')) as {
+    state: string;
+    budgets: { maxCostUsdPerAttempt: number | null };
+    runtime: { controllerImage: string | null; buildImage: string | null };
+  };
+  frozen.state = 'frozen';
+  frozen.budgets.maxCostUsdPerAttempt = 12;
+  const digest = `sha256:${'a1'.repeat(32)}`;
+  frozen.runtime.controllerImage = `stack-bench-controller@${digest}`;
+  frozen.runtime.buildImage = `stack-bench-build@${digest}`;
+  writeFileSync(join(plansRoot, 'ecommerce-progression-reference.json'),
+    JSON.stringify(frozen, null, 2));
+  writeFileSync(join(plansRoot, 'campaign.example.json'), readFileSync(EXAMPLE_CAMPAIGN));
+  writeFileSync(join(plansRoot, 'broken.json'), '{');
 }

@@ -7,12 +7,12 @@
 
 import type { AttemptChecks, AttemptPackage, CampaignProgression, CampaignSheet, OverviewEntry }
   from '../dashboard-views.js';
-import { campaignPage, replayTimeline } from './views/campaign.js';
-import type { QuestlineView } from './views/campaign.js';
-import { attemptPage } from './views/attempt.js';
-import type { AttemptTab } from './views/attempt.js';
-import { campaignsPage } from './views/campaigns.js';
-import type { CampaignFilter } from './views/campaigns.js';
+import type { DashboardPlan } from '../dashboard-model.js';
+import { type QuestlineView, campaignPage, replayTimeline } from './views/campaign.js';
+import { type AttemptTab, attemptPage } from './views/attempt.js';
+import { type CampaignFilter, campaignsPage } from './views/campaigns.js';
+import { type Page, type RunForm, afterRun, plansPage, runName, topbar }
+  from './views/plans.js';
 import { esc } from './format.js';
 
 const FALLBACK_MS = 15_000;
@@ -23,6 +23,7 @@ const FILTERS: readonly CampaignFilter[] = ['all', 'attention', 'completed', 're
 interface Route {
   key: string;
   attempt: string;
+  plans: boolean;
   filter: CampaignFilter;
   view: QuestlineView;
   step: number;
@@ -31,6 +32,10 @@ interface Route {
 
 const state = {
   overview: [] as OverviewEntry[],
+  plans: [] as DashboardPlan[],
+  canStart: false,
+  csrfToken: '',
+  form: { planId: '', outputName: '', secret: '', error: '' } as RunForm,
   sheets: new Map<string, CampaignSheet>(),
   progression: new Map<string, CampaignProgression | null>(),
   checks: new Map<string, AttemptChecks>(),
@@ -48,6 +53,7 @@ function route(): Route {
   return {
     key: parts[0] === 'c' ? parts[1] ?? '' : '',
     attempt: parts[2] === 'a' ? parts[3] ?? '' : '',
+    plans: parts[0] === 'plans',
     filter: pick(FILTERS, 'filter', 'all'),
     view: pick(VIEWS, 'questlines', 'grid'),
     step: Math.max(0, Number(url.searchParams.get('step') ?? 0)),
@@ -80,22 +86,19 @@ async function readLog(current: Route): Promise<void> {
   } catch { /* the stream reconnects and asks again */ }
 }
 
-function topbar(current: Route): string {
-  const artifact = (path: string): string =>
-    `/api/campaigns/${encodeURIComponent(current.key)}/artifacts/`
-    + btoa(path).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const files = current.key && !current.attempt
-    ? `<details class="files"><summary class="btn">Files</summary><div>`
-      + `<a href="${artifact('plan.json')}">plan</a>`
-      + `<a href="${artifact('state.json')}">state</a>`
-      + `<a href="${artifact('report/report.html')}">report</a></div></details>` : '';
-  return '<div class="topbar"><a class="brand" href="/">'
-    + '<img src="/spacetimedb-mark.svg" alt="" width="26" height="24">'
-    + `<b>STACK BENCH</b></a>${files}</div>`;
+function chrome(current: Route): string {
+  const sheet = state.sheets.get(current.key) ?? null;
+  const page: Page = current.plans ? 'plans'
+    : current.key && !current.attempt ? 'campaign' : 'campaigns';
+  return topbar({ page, key: current.key, canStart: state.canStart, error: state.form.error,
+    resumable: state.canStart && page === 'campaign' && (sheet?.resumable ?? false) });
 }
 
 function page(current: Route): string {
   const sheet = state.sheets.get(current.key) ?? null;
+  if (current.plans) {
+    return plansPage({ plans: state.plans, canStart: state.canStart, form: state.form });
+  }
   if (!current.key) {
     const running = state.overview.filter(campaign => campaign.status === 'running')
       .map(campaign => state.sheets.get(campaign.key))
@@ -156,16 +159,35 @@ function render(): void {
   const current = route();
   const root = document.body;
   const next = document.createElement('body');
-  next.innerHTML = `${topbar(current)}<main>${page(current)}</main>`;
+  next.innerHTML = `${chrome(current)}<main>${page(current)}</main>`;
   patch(root, next);
+  // The secret and the run name live in the tab, never in the markup.
+  for (const field of document.querySelectorAll<HTMLInputElement>('form[data-run] input')) {
+    const value = field.name === 'secret' ? state.form.secret : state.form.outputName;
+    if (field.value !== value) field.value = value;
+  }
 }
 
 async function load(): Promise<void> {
   const current = route();
-  if (!current.key) {
-    const overview = await read<{ campaigns: OverviewEntry[] }>('/api/overview');
-    if (overview) state.overview = overview.campaigns;
+  if (!current.key || !state.csrfToken) {
+    const overview = await read<{ campaigns: OverviewEntry[]; canStart: boolean;
+      csrfToken: string; }>('/api/overview');
+    if (overview) Object.assign(state, { overview: overview.campaigns,
+      canStart: overview.canStart, csrfToken: overview.csrfToken });
     render();
+  }
+  if (current.plans) {
+    const plans = await read<DashboardPlan[]>('/api/plans');
+    if (plans) state.plans = plans;
+    const first = state.plans.find(plan => plan.state === 'frozen');
+    if (first && !state.form.planId) {
+      state.form = { ...state.form, planId: first.id, outputName: runName(first.id, new Date()) };
+    }
+    render();
+    return;
+  }
+  if (!current.key) {
     for (const campaign of state.overview.filter(entry => entry.status === 'running')) {
       const sheet = await read<CampaignSheet>(`/api/campaigns/${encodeURIComponent(campaign.key)}`);
       if (sheet) state.sheets.set(campaign.key, sheet);
@@ -243,6 +265,49 @@ document.addEventListener('click', event => {
   if (!href || href.startsWith('/api/') || !/^[/?]/.test(href)) return;
   event.preventDefault();
   go(href.startsWith('?') ? `${location.pathname}${href}` : href);
+});
+
+// Start and resume are the same request twice: the browser token, the operator
+// secret the operator just typed, and the plan the server re-reads itself.
+async function post(form: HTMLFormElement): Promise<void> {
+  const current = route();
+  const data = new FormData(form);
+  const resume = form.dataset.run === 'resume';
+  const output = resume ? current.key : String(data.get('output') ?? '');
+  const response = await fetch(resume
+    ? `/api/campaigns/${encodeURIComponent(current.key)}/resume` : '/api/campaigns', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-stack-bench-token': state.csrfToken,
+      'x-stack-bench-control-secret': String(data.get('secret') ?? '') },
+    body: JSON.stringify(resume ? {} : { planId: String(data.get('plan') ?? ''), outputName: output }),
+  });
+  if (response.ok) {
+    state.form = { ...state.form, secret: '', error: '' };
+    if (resume) return void load();
+    return go(`/c/${encodeURIComponent(output)}`);
+  }
+  const failure = await response.json().catch(() => ({})) as { error?: string };
+  state.form = afterRun(state.form, response.status, failure.error ?? '');
+  render();
+}
+
+document.addEventListener('submit', event => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || !form.dataset.run) return;
+  event.preventDefault();
+  void post(form);
+});
+
+// The form's fields are the state; picking a plan renames the output with it.
+document.addEventListener('input', event => {
+  const field = event.target as HTMLInputElement;
+  if (field.name === 'secret') state.form = { ...state.form, secret: field.value };
+  else if (field.name === 'output') state.form = { ...state.form, outputName: field.value };
+  else if (field.name === 'plan') {
+    state.form = { ...state.form, planId: field.value,
+      outputName: runName(field.value, new Date()) };
+    render();
+  }
 });
 
 document.addEventListener('keydown', event => {

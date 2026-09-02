@@ -42,7 +42,12 @@ a { color: var(--n1); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--n1); text-decoration: none; }
 .brand b { font: 600 12px/1 var(--mono); letter-spacing: .1em; }
 .btn { display: inline-flex; align-items: center; min-height: 30px; padding: 0 14px; border-radius: 4px; border: 1px solid var(--shade1); color: var(--n1); background: transparent; font: 500 11.7px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; list-style: none; }
-.files { position: relative; margin-left: auto; }
+.nav { display: flex; gap: 2px; }
+.nav a { padding: 6px 10px; border-radius: 4px; color: var(--n4); text-decoration: none; font: 500 12.5px var(--sans); }
+.nav a.on { color: var(--n1); background: var(--shade5); }
+.btn.primary { background: var(--green); border-color: var(--green); color: var(--n7); text-decoration: none; }
+.tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.files { position: relative; }
 .files summary::-webkit-details-marker { display: none; }
 .files div { position: absolute; right: 0; top: 36px; display: grid; gap: 2px; padding: 8px 10px; background: var(--shade6); border: 1px solid var(--shade1); border-radius: 4px; }
 .files div a { color: var(--n2); font: 12px var(--mono); text-decoration: none; }
@@ -102,6 +107,18 @@ table.runs td.stack.na { color: var(--n5); }
 table.runs td.stack u { text-decoration-color: var(--green); text-underline-offset: 5px; text-decoration-thickness: 2px; }
 table.runs th.when, table.runs td.when { color: var(--n4); font: 12px var(--mono); text-align: right; }
 table.runs thead th.when { color: var(--n4); font: 500 11.7px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+
+/* plans and the run form */
+table.plans th.stack, table.plans td.stack { width: auto; }
+table.plans td.name { color: var(--n1); font-weight: 600; }
+.runform { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 18px; border: 1px solid var(--shade4); border-radius: 4px; background: var(--shade6); }
+.runform > div { display: grid; gap: 6px; }
+.runform select, .runform input, .secret input { height: 30px; padding: 0 10px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade7); color: var(--n1); font: 13px var(--mono); }
+.runform select { min-width: 300px; }
+.runform input[name=output] { min-width: 330px; }
+.secret { display: flex; align-items: center; gap: 8px; }
+.secret input { width: 168px; }
+.err { color: var(--red); font: 12.5px var(--sans); align-self: center; }
 
 /* campaign sheet: stacks across, facts down */
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 1px; margin: 0 0 16px; background: var(--shade4); border: 1px solid var(--shade4); border-radius: 4px; overflow: hidden; }
