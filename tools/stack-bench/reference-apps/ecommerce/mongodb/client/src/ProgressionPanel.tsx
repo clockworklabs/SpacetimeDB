@@ -171,7 +171,7 @@ function SupportTicket({ ticket, user, orders, act }: any) {
   const staff = user?.isStaff || user?.isAdmin;
   const order = ticket.order;
   const actionInput = JSON.stringify({ caseId: ticket.id, orderId });
-  return <article data-testid="support-ticket" className="support-ticket">
+  return <article data-testid="support-ticket" data-entity-id={ticket.id} className="support-ticket">
     <strong>{ticket.subject}</strong> <span data-testid="support-status">{ticket.status}</span>
     <span>{ticket.reference}</span>
     {staff && <>

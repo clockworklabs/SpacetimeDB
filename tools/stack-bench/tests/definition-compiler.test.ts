@@ -170,6 +170,8 @@ test('extracted action inputs expose their runtime options without allowing scri
     namedTarget: { testid: 'order-item', contains: 'Webcam',
       attribute: 'data-entity-id', valueType: 'number' } };
   assert.doesNotThrow(() => compileScenarioDefinition(scenario(namedReplay)));
+  const { namedTarget: _target, ...literalNamedReplay } = namedReplay;
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario(literalNamedReplay)));
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ ...namedReplay,
     namedAction: { ...namedReplay.namedAction, method: 'PATCH' } })));
   assert.throws(() => compileScenarioDefinition(scenario({ ...namedReplay,
@@ -177,7 +179,7 @@ test('extracted action inputs expose their runtime options without allowing scri
   /method: must be "DELETE", "PATCH", "POST", or "PUT"/);
   const { namedAction: _omitted, ...missingNamedAction } = namedReplay;
   assert.throws(() => compileScenarioDefinition(scenario(missingNamedAction)),
-    /namedAction and namedTarget must be supplied together/);
+    /namedTarget requires namedAction/);
   assert.throws(() => compileScenarioDefinition(scenario({ ...namedReplay,
     namedTarget: { ...namedReplay.namedTarget, valueType: 'bigint' } })),
   /valueType: must be "number" or "string"/);

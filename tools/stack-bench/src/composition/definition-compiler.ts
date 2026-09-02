@@ -383,8 +383,8 @@ function validateStep(step: unknown, at: string): asserts step is CompiledStep {
       fail(`${at}.authentication`, 'must be "actor" or "none"');
     }
   }
-  if (step.do === 'replayAs' && Boolean(step.namedAction) !== Boolean(step.namedTarget)) {
-    fail(at, 'replayAs namedAction and namedTarget must be supplied together');
+  if (step.do === 'replayAs' && step.namedTarget && !step.namedAction) {
+    fail(at, 'replayAs namedTarget requires namedAction');
   }
   if (step.do === 'sendConcurrently') validateSenders(step.senders, `${at}.senders`);
   if (step.do === 'clickConcurrently' || step.do === 'replayConcurrently') {

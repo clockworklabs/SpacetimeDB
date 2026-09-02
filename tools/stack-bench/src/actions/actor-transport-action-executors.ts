@@ -295,35 +295,45 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
     .find(candidate => `${candidate.method} ${candidate.url} ${JSON.stringify(candidate.body)}`
       .toLowerCase().includes(needle));
   if (!write) {
-    if (input.namedAction && input.namedTarget) {
+    if (input.namedAction) {
       const named = capabilities['named-actions'];
       const action = input.namedAction;
-      const target = source.loc(input.namedTarget.testid, { contains: input.namedTarget.contains });
-      await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
-      const rawValue = await target.getAttribute(input.namedTarget.attribute);
-      if (rawValue === null || rawValue === '') {
-        replayUnavailable(actor,
-          `${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay`);
-      }
-      let value: string | number = rawValue;
-      if (input.swap) {
-        value = value.replaceAll(transport.expand(input.swap.find),
-          transport.expand(input.swap.with));
-      }
-      if (input.namedTarget.valueType === 'number') {
-        value = Number(value);
-        if (!Number.isSafeInteger(value)) {
-          replayUnavailable(actor,
-            `${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"`);
+      const args = [...(action.args ?? [])];
+      if (input.namedTarget) {
+        const target = source.loc(input.namedTarget.testid, { contains: input.namedTarget.contains });
+        await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
+        const rawValue = await target.getAttribute(input.namedTarget.attribute);
+        if (rawValue === null || rawValue === '') {
+          fail(`${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay`);
         }
+        let value: string | number = rawValue;
+        if (input.swap) {
+          value = value.replaceAll(transport.expand(input.swap.find),
+            transport.expand(input.swap.with));
+        }
+        if (input.namedTarget.valueType === 'number') {
+          value = Number(value);
+          if (!Number.isSafeInteger(value)) {
+            fail(`${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"`);
+          }
+        }
+        args[0] = value;
+      } else if (input.swap) {
+        const find = transport.expand(input.swap.find);
+        const replacement = transport.expand(input.swap.with);
+        const index = args.findIndex(value => typeof value === 'string' && value.includes(find));
+        if (index < 0) {
+          replayUnavailable(actor,
+            `literal "${find}" does not appear in the arguments for named action "${action.id}"`);
+        }
+        args[index] = String(args[index]).replaceAll(find, replacement);
       }
       const mine = capturedCredentials(actor) ?? await browserCredentials(actor);
       if (!mine) {
         replayUnavailable(actor,
           `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
       }
-      const request = namedActionRequest(named, action,
-        { ...input, args: [value, ...(action.args ?? []).slice(1)] });
+      const request = namedActionRequest(named, action, { ...input, args });
       if (!request?.url) {
         replayUnavailable(actor,
           `could not resolve where to send named action "${action.id}" for this backend`);

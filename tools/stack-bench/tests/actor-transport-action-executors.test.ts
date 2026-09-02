@@ -576,6 +576,54 @@ test('replay uses an authenticated named action when the source write is an opaq
   assert.equal(record(rejected.observation).classification, 'verified');
 });
 
+test('named replay can replace a declared literal without an undeclared UI attribute', async () => {
+  const requests: CapturedRequest[] = [];
+  const source = { name: 'staff', writes: [], received: [],
+    lastWsWrite: { event: 'binary reducer call', body: {} } };
+  const customer = {
+    name: 'customer', writes: [], received: [],
+    context: { cookies: async () => [] },
+    page: { evaluate: async () => ['customer-token'] },
+  };
+  const provided = services(new Map<string, unknown>([
+    ['staff', source],
+    ['customer', customer],
+  ]), {
+    backend: 'spacetime',
+    spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options: options as unknown as UnknownRecord });
+      return namedResponse(530, false);
+    },
+  });
+
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'SAVE10',
+    swap: { find: 'SAVE10', with: 'HACK10' },
+    namedAction: { id: 'createPromotion', path: '/api/promotions', reducer: 'create_promotion',
+      args: ['SAVE10', 10] }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.equal(requests[0]?.options.body, '["HACK10",10]');
+});
+
+test('a missing or malformed declared replay target is an application failure', async () => {
+  for (const [value, message] of [[null, /exposes no data-entity-id/],
+    ['not-an-id', /is not a safe integer/]] as const) {
+    const source = { name: 'staff', writes: [], received: [],
+      loc: () => ({ waitFor: async () => undefined, getAttribute: async () => value }) };
+    const customer = { name: 'customer', writes: [], received: [] };
+    const provided = services(new Map<string, unknown>([
+      ['staff', source],
+      ['customer', customer],
+    ]));
+    const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+      namedAction: { id: 'ship', path: '/api/ship', reducer: 'ship', args: [0] },
+      namedTarget: { testid: 'order', attribute: 'data-entity-id', valueType: 'number' },
+      settleMs: 0 }, provided);
+    assert.equal(replayed.status, 'failed');
+    assert.match(replayed.summary ?? '', message);
+  }
+});
+
 test('only an explicit authorization response proves a replay refusal', async () => {
   for (const status of [0, 302, 400, 404, 422, 503]) {
     const actor = {

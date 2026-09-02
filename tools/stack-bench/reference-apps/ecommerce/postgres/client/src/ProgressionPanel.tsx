@@ -106,7 +106,7 @@ export function ProgressionPanel({
           const update = (field: keyof typeof draft, value: string) =>
             setTriage((current) => ({ ...current,
               [entry.id]: { ...draft, [field]: value } }));
-          return <div data-testid="support-ticket" key={entry.id}>
+          return <div data-testid="support-ticket" data-entity-id={entry.id} key={entry.id}>
           <strong data-testid="support-reference">{entry.reference}</strong>
           <span>{entry.subject}</span>
           <span data-testid="support-status">{entry.status}</span>
