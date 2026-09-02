@@ -77,8 +77,8 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
 
   if (staffOnly) {
     if (!(user?.isStaff || user?.isAdmin)) return null;
-    return <StaffTools token={token} user={user} state={state} items={items}
-      orders={orders.length ? orders : state.orders || []} act={act} refresh={refresh}
+    return <StaffTools user={user} state={state} items={items}
+      orders={orders.length ? orders : state.orders || []} act={act}
       onRefreshItems={onRefreshItems} />;
   }
 
@@ -120,13 +120,13 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
 
     {supportOpen && <div className="progression-card">
       <h3>Support</h3>
-      {!user && <input data-testid="support-email" value={supportEmail} onChange={event => setSupportEmail(event.target.value)} placeholder="Email" />}
+      <input data-testid="support-email" value={supportEmail} onChange={event => setSupportEmail(event.target.value)} placeholder="Email" />
       <input data-testid="support-subject" value={supportSubject} onChange={event => setSupportSubject(event.target.value)} placeholder="Subject" />
       <textarea data-testid="support-message" value={supportMessage} onChange={event => setSupportMessage(event.target.value)} placeholder="Message" />
       <button data-testid="support-submit" className="btn btn-primary" onClick={submitSupport}>Submit</button>
       {supportReference && <span data-testid="support-reference">{supportReference}</span>}
       {(state.tickets || []).map((ticket: any) => <SupportTicket key={ticket.id} ticket={ticket}
-        token={token} user={user} orders={state.orders || orders} act={act} />)}
+        user={user} orders={state.orders || orders} act={act} />)}
     </div>}
 
     {notificationsOpen && user && <div className="progression-card">
@@ -162,7 +162,7 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
   </section>;
 }
 
-function SupportTicket({ ticket, token, user, orders, act }: any) {
+function SupportTicket({ ticket, user, orders, act }: any) {
   const [assignee, setAssignee] = useState(ticket.assignee || "");
   const [priority, setPriority] = useState(ticket.priority || "normal");
   const [status, setStatus] = useState(ticket.status || "new");
@@ -204,7 +204,7 @@ function SupportTicket({ ticket, token, user, orders, act }: any) {
   </article>;
 }
 
-function StaffTools({ token, user, state, items, orders, act, refresh, onRefreshItems }: any) {
+function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
   const [section, setSection] = useState("support");
   const [catalog, setCatalog] = useState({ name: "", category: "", price: "", variants: "" });
   const [promotion, setPromotion] = useState({ code: "", discount: "", limit: "",
@@ -253,7 +253,7 @@ function StaffTools({ token, user, state, items, orders, act, refresh, onRefresh
     </div>}
 
     {(state.tickets || []).map((ticket: any) => <SupportTicket key={ticket.id} ticket={ticket}
-      token={token} user={user} orders={orders} act={act} />)}
+      user={user} orders={orders} act={act} />)}
 
     {section === "promotions" && <div className="progression-card">
       <h3>Promotions</h3>

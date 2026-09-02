@@ -35,7 +35,7 @@ interface CandidateCase {
 const cases: CandidateCase[] = [
   {
     backend: 'mongodb',
-    sourceSha256: '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5',
+    sourceSha256: 'f210c07de82b70fa9f788518e6b2efcf065f867ee56948f676204b3b545d0fc3',
     manifest: 'mongodb-ecommerce-2.0.1.json',
     lastUnitMutation: 'last-unit-allows-negative-stock',
   },

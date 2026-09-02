@@ -42,7 +42,7 @@ interface ExternalSyncCase {
 const cases: ExternalSyncCase[] = [
   {
     backend: 'mongodb',
-    fixtureSha256: '40c5b19cbfd48a98414b7398683bd4ab12912a1c4c99db5f856716c40cf495a5',
+    fixtureSha256: 'f210c07de82b70fa9f788518e6b2efcf065f867ee56948f676204b3b545d0fc3',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['server-restart-disables-catalog-recovery', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
