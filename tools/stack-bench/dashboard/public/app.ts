@@ -254,7 +254,7 @@ function attemptMetrics(attempt: Attempt): {
 
 function attemptExcluded(attempt: Attempt): string | null {
   const outcome = attempt.execution?.outcome ?? attempt.result?.outcome;
-  if (attempt.result?.unreadable) return 'result could not be read';
+  if (attempt.result?.unreadable && attempt.status !== 'running') return 'result could not be read';
   if (attempt.status === 'invalid') return attempt.execution?.reason ?? outcome ?? 'excluded';
   // 'ungraded' on an attempt still running means "not yet", not "thrown out".
   if (outcome && EXCLUDED_OUTCOMES.has(outcome) && attempt.status === 'completed') return outcome;
