@@ -21,7 +21,7 @@ const packs = {
   accounts: readPack('feature-accounts-1.2.0.json'),
   profile: readPack('progression-customer-profile-1.0.0.json'),
   access: readPack('progression-staff-access-1.0.0.json'),
-  roles: readPack('progression-staff-roles-1.0.0.json'),
+  roles: readPack('progression-staff-roles-1.0.1.json'),
 };
 
 function fragmentText(
@@ -104,18 +104,14 @@ test('each feature pack owns exact, bounded criteria without shared setup failur
 
 test('staff access is self-contained and staff-role checks inherit its interface', () => {
   const accessContract = fragmentText(requiredContract(packs.access));
-  for (const hook of [
-    'staff-signin-username', 'staff-signin-password', 'staff-signin-submit',
-    'staff-current-user', 'staff-link',
-  ]) assert.match(accessContract, new RegExp(`\\b${hook}\\b`));
+  for (const hook of ['staff-link', 'admin-link']) {
+    assert.match(accessContract, new RegExp(`\\b${hook}\\b`));
+  }
   assert.match(accessContract, /stackbench-staff-2026/);
   assert.match(accessContract, /stackbench-customer-2026/);
 
   const access = selectedCriteria(packs.access).map(item => item.criterion);
-  assert(access.every(criterion => criterion.steps.some(step =>
-    step.testid === 'staff-current-user')));
-  assert(access.every(criterion => !criterion.steps.some(step => step.do === 'signIn'
-    || step.do === 'signUp')));
+  assert(access.every(criterion => criterion.steps.some(step => step.do === 'signIn')));
 
   const roles = selectedCriteria(packs.roles).map(item => item.criterion);
   const adminCriterion = roles.find(criterion => criterion.id === '621a');
@@ -127,6 +123,12 @@ test('staff access is self-contained and staff-role checks inherit its interface
   assert(adminStep && replayStep, 'staff-role criteria must contain steps');
   assert.equal(adminStep.actor, 'admin');
   assert.equal(replayStep.actor, 'replayAdmin');
+  for (const criterion of [adminCriterion, replayCriterion]) {
+    assert(criterion.steps.some(step => step.do === 'click'
+      && step.actor !== 'staff' && step.testid === 'admin-link'));
+  }
+  assert(replayCriterion.steps.some(step => step.do === 'click'
+    && step.actor === 'staff' && step.testid === 'staff-link'));
   const replay = replayCriterion.steps
     .find(step => step.do === 'replayAs');
   assert(replay, 'criterion 621b must replay an administrator session');
@@ -139,7 +141,7 @@ test('profile and staff roles use focused scenarios and dedicated interfaces', (
   assert.equal(profileCheck.source,
     'scenarios/progression-customer-profile-1.0.0.json');
   assert.equal(rolesCheck.source,
-    'scenarios/progression-staff-roles-1.0.0.json');
+    'scenarios/progression-staff-roles-1.0.1.json');
   for (const pack of [packs.profile, packs.roles]) {
     const check = requiredCheck(pack);
     const scenario = compileScenarioDefinition(
@@ -166,7 +168,7 @@ test('profile and staff roles use focused scenarios and dedicated interfaces', (
   }
 
   const { definition, gradingGroups } = loadValidatedProgressionSource(
-    join(trackRoot, 'progression', 'ecommerce-2.0.1.json'), trackRoot);
+    join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), trackRoot);
   const nodes = new Map(definition.nodes.map(node => [node.id, node]));
   const profileNode = requiredNode(nodes, 'customer-profile');
   const rolesNode = requiredNode(nodes, 'staff-roles');
@@ -175,7 +177,7 @@ test('profile and staff roles use focused scenarios and dedicated interfaces', (
   assert.deepEqual(gradingGroups(profileNode.id),
     ['ecommerce.progression.customer-profile@1.0.0#profile']);
   assert.deepEqual(gradingGroups(rolesNode.id),
-    ['ecommerce.progression.staff-roles@1.0.0#roles']);
+    ['ecommerce.progression.staff-roles@1.0.1#roles']);
 });
 
 function requiredNode(

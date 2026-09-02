@@ -173,6 +173,22 @@ test('signed-out purchase access does not depend on cart controls', () => {
   assert.notEqual(cartBoundary.source, purchase.source);
 });
 
+test('cart isolation reads the action input from the acting customer', () => {
+  const pack = compilePackDefinition(
+    readJson(join(packRoot, 'spec-access-control-2.0.1.json')),
+    { source: 'spec-access-control-2.0.1.json' },
+  );
+  const source = pack.checks.find(check => check.id === 'cart-boundary')?.source;
+  assert(source, 'access control must include cart-boundary');
+  const scenario = compileScenarioDefinition(readJson(join(trackRoot, source)), { source });
+  const action = scenario.features.find(feature => feature.id === 109)
+    ?.criteria.find(criterion => criterion.id === '109a')
+    ?.steps.find(step => step.do === 'callAction');
+  assert(action && action.do === 'callAction');
+  assert.equal(action.actor, 'stranger');
+  assert.equal(action.from, undefined);
+});
+
 test('every progression feature is a whole module and every direct graph edge is required', () => {
   const packByRef = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
     .filter(name => name.endsWith('.json'))

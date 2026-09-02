@@ -7,7 +7,7 @@ import {
   sanitiseDiagnostic,
 } from '../src/evidence/diagnostic-sanitizer.js';
 
-const forbidden = /data-(?:role|testid)|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|selectOption|control,#|data-state|localhost|127\.0\.0\.1|host\.docker\.internal|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
+const forbidden = /data-(?:role|testid)|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|selectOption|control,#|data-state|localhost|127\.0\.0\.1|host\.docker\.internal|https?:\/\/|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
 
 test('sanitiser removes selector, timing, endpoint and harness-path mechanics', () => {
   const input = `Timeout 5000ms exceeded at C:\\repo\\tools\\stack-bench\\dist\\grader\\grade.js\n`
@@ -44,9 +44,9 @@ test('credential redaction covers provider environment and JSON spellings', () =
 
 test('humanisation keeps useful behaviour while hiding the implementation', () => {
   assert.equal(humaniseDiagnostic('[data-testid="toast"] not visible within 5000ms'),
-    'the required toast application interface did not appear');
+    'the required toast did not appear');
   assert.equal(humaniseDiagnostic('[data-role="item-card"],#item-card not visible within 5000ms'),
-    'the required item-card application interface did not appear');
+    'the required item card did not appear');
   assert.equal(humaniseDiagnostic('signup-username not visible within 5000ms'),
     'signup-username not visible in time');
   assert.equal(humaniseDiagnostic('ACCEPTED a write with a tampered ownerId'),
@@ -55,21 +55,30 @@ test('humanisation keeps useful behaviour while hiding the implementation', () =
     'signing in never completed, so nothing behind it could be reached');
   assert.equal(humaniseDiagnostic(`locator.click: Timeout 5000ms exceeded.\n`
     + `waiting for locator('[data-testid="profile-link"],#profile-link')`),
-  'the profile-link control did not become usable');
+  'the profile link control did not become usable');
   assert.equal(humaniseDiagnostic(`locator.selectOption: Timeout 5000ms exceeded.\n`
     + `waiting for locator('[data-testid="notification-frequency"]')`),
-  'the notification-frequency control did not offer the requested choice');
+  'the notification frequency control did not offer the requested choice');
   assert.equal(humaniseDiagnostic('control,#notification-enabled expected data-state "on", got "off"'),
-    'the notification-enabled control showed "off" instead of "on"');
+    'the notification enabled control showed "off" instead of "on"');
   assert.equal(humaniseDiagnostic(
     '[data-testid="notification-order"],#notification-order expected data-state "on", got "off"'),
-  'the notification-order control showed "off" instead of "on"');
+  'the notification order control showed "off" instead of "on"');
   assert.equal(humaniseDiagnostic('the control,#support-assignee expected value "staff", got "1"'),
-    'the support-assignee control showed "1" instead of "staff"');
+    'the support assignee control showed "1" instead of "staff"');
   assert.equal(humaniseDiagnostic('expected the control,#item-name sequence ["A","B"], saw ["B"] (in time)'),
-    'the item-name list showed ["B"] instead of ["A","B"]');
+    'the item name list showed ["B"] instead of ["A","B"]');
   assert.equal(humaniseDiagnostic('the control,#buy-now became available to visitor during the observation window'),
-    'the buy-now control was available when it should not have been');
+    'the buy now control was available when it should not have been');
   assert.equal(humaniseDiagnostic('the control,#recommended-item containing "Headphones" became visible during the observation window'),
-    'the recommended-item control showed "Headphones" when it should not have');
+    'the recommended item control showed "Headphones" when it should not have');
+  assert.equal(humaniseDiagnostic(
+    'expected exactly 1 [data-testid="item-card"],#item-card containing "Coffee Grinder", saw 2 (after 10000ms)'),
+  'found 2 matching entries for "Coffee Grinder"; expected 1');
+  assert.equal(humaniseDiagnostic(
+    '[data-testid="recommendation-rank"],#recommendation-rank inside [data-testid="recommended-item"],#recommended-item "Gaming Mouse" reads 6, expected exactly 1'),
+  'the recommendation rank for "Gaming Mouse" showed 6 instead of 1');
+  assert.equal(humaniseDiagnostic(
+    '[data-testid="recommended-item"],#recommended-item containing "Headphones" still visible after 10000ms'),
+  'the recommended item for "Headphones" was still visible');
 });

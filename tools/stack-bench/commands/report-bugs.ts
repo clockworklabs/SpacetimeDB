@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { redactCredentials, sanitiseConsoleError,
+import { sanitiseConsoleError,
   humaniseDiagnostic, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeArtifact } from '../src/evidence/artifacts.js';
@@ -61,7 +61,6 @@ interface GradeFeature {
 }
 
 interface GradePayload {
-  url?: string;
   features?: GradeFeature[];
 }
 
@@ -72,25 +71,36 @@ interface ContractResult {
 }
 
 interface ContractLintPayload {
-  url?: string;
   results?: ContractResult[];
 }
 
 interface GradeBundlePayload {
   backend?: string;
-  url?: string;
   outcome?: { kind?: string; phase?: string; reason?: string };
 }
 
 interface RepairBug {
   area: string;
   actor: string | null;
+  action: string | null;
   expected: string;
   observed: string;
-  url: string | null;
   consoleErrors: string[];
   contract: boolean;
   vague: boolean;
+}
+
+function failedAction(action: string | undefined, detail: unknown): string | null {
+  if (action === 'fill') {
+    return /selectOption/i.test(String(detail ?? ''))
+      ? 'Select the requested choice'
+      : 'Enter the requested value';
+  }
+  if (action === 'click') return 'Use the requested control';
+  if (action === 'signIn') return 'Sign in';
+  if (action === 'signUp') return 'Create the account';
+  if (action === 'reload') return 'Reload the page';
+  return null;
 }
 
 function repairValue(value: unknown, fallback: string): string {
@@ -178,9 +188,9 @@ export function createBugReport(args: ReportBugsArgs): number {
         bugs.push({
           area: sanitiseDiagnostic(feature.name, 120),
           actor: sanitiseDiagnostic(actionEntry?.actor ?? evidence.actor, 120) || null,
+          action: failedAction(actionEvidence?.action.id, actionEvidence?.summary),
           expected,
           observed: actual,
-          url: typeof report.url === 'string' ? redactCredentials(report.url).slice(0, 500) : null,
           consoleErrors: (feature.consoleErrors ?? []).slice(0, 3)
             .map(sanitiseConsoleError).filter(Boolean),
           contract: false, vague,
@@ -199,10 +209,10 @@ export function createBugReport(args: ReportBugsArgs): number {
       bugs.push({
         area: 'Application interface',
         actor: null,
+        action: null,
         expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use the "${result.id}" application interface`,
         observed: sanitiseDiagnostic(result.detail
           ?? `no visible element with id="${result.id}" was found after a clean reset`, 500),
-        url: typeof lint.url === 'string' ? redactCredentials(lint.url).slice(0, 500) : null,
         consoleErrors: [], contract: true, vague: false,
       });
     }
@@ -222,9 +232,9 @@ export function createBugReport(args: ReportBugsArgs): number {
       bugs.unshift({
         area: 'Application setup',
         actor: null,
+        action: null,
         expected,
         observed: sanitiseDiagnostic(bundle.outcome.reason, 500),
-        url: typeof bundle.url === 'string' ? redactCredentials(bundle.url).slice(0, 500) : null,
         consoleErrors: [],
         contract: false, vague: false,
       });
@@ -261,9 +271,9 @@ export function createBugReport(args: ReportBugsArgs): number {
     behavioral.forEach((bug, index) => {
       lines.push(`### Bug ${index + 1}: ${bug.area}`, '');
       if (bug.actor) lines.push(`**Actor/session:** ${bug.actor}`, '');
+      if (bug.action) lines.push(`**Failed action:** ${bug.action}`, '');
       lines.push(`**Expected:** ${bug.expected}`, '');
       lines.push(`**Actual:** ${bug.observed}`, '');
-      if (bug.url) lines.push(`**Application URL:** \`${bug.url.replaceAll('`', "'")}\``, '');
       if (bug.consoleErrors.length) {
         lines.push('**Console or network errors:**', '');
         bug.consoleErrors.forEach(error => lines.push(`- \`${error}\``));
@@ -278,7 +288,6 @@ export function createBugReport(args: ReportBugsArgs): number {
     contractFailures.forEach(bug => {
       lines.push(`- **Expected:** ${bug.expected}`);
       lines.push(`  **Actual:** ${bug.observed}`);
-      if (bug.url) lines.push(`  **Application URL:** \`${bug.url.replaceAll('`', "'")}\``);
     });
     lines.push('');
   }

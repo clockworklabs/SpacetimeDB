@@ -99,7 +99,7 @@ test('repair feedback includes actionable runtime evidence without private artif
     assert.match(repair, /Actor\/session:\*\* buyer/);
     assert.match(repair, /Expected:\*\* 12/);
     assert.match(repair, /Actual:\*\* 9/);
-    assert.match(repair, /Application URL:\*\* `http:\/\/app\/cart`/);
+    assert.doesNotMatch(repair, /Application URL|http:\/\//);
     assert.doesNotMatch(repair, /failure-buyer\.png/);
     assert.match(repair, /Console or network errors:[\s\S]*HTTP 500/);
     assert.doesNotMatch(repair, /expect number|private\.check|Stack Bench|grader|criterion/i);
@@ -117,14 +117,22 @@ test('repair feedback describes behavior instead of browser commands', () => {
     const evidence = createCheckEvidence({
       status: 'failed', code: 'test_result', phase: 'assertion', summary: detail,
       observation: detail, startedAtMs: 3, completedAtMs: 4,
+      actions: [{ actor: 'owner', evidence: {
+        schemaVersion: 1, action: { id: 'fill', version: '1.0.0' },
+        status: 'failed', type: 'browser-interaction-evidence', code: 'application_failure',
+        phase: 'execute', summary: detail, observation: null, expected: null,
+        retryable: false, timing: { startedAtMs: 3, completedAtMs: 4,
+          durationMs: 1, deadlineMs: 60_000 }, attachments: [], sensitivity: [],
+      } }],
     });
     writeGrade(app, 'failed', detail, { evidence });
 
     const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /notification-frequency control did not offer the requested choice/);
-    assert.doesNotMatch(repair, /locator|selectOption|data-(?:role|testid)|Timeout|5000ms/);
+    assert.match(repair, /notification frequency control did not offer the requested choice/);
+    assert.match(repair, /Failed action:\*\* Select the requested choice/);
+    assert.doesNotMatch(repair, /locator|selectOption|data-(?:role|testid)|Timeout|5000ms|http:\/\//);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

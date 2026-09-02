@@ -2,6 +2,7 @@ const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m|\\[\\d+m`, 'g');
 const TEST_SELECTOR = /\[(?:data-role|data-testid|data-test|data-cy)\s*=\s*(?:"[^"]*"|'[^']*'|[^\]\s]+)\](?:,\s*#[a-z0-9_.:-]+)?/gi;
 const LOCATOR_CALL = /\b(?:page\.)?(?:locator|getByTestId|getByRole|getByText|getByLabel|getByPlaceholder|getByAltText|getByTitle|waitForSelector)\((?:[^()]|\([^()]*\))*\)/gi;
 const LOCAL_URL = /\b(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal)(?::\d+)?(?:\/[^\s'"`)]+)?/gi;
+const WEB_URL = /\b(?:https?|wss?):\/\/[^\s'"`)]+/gi;
 const WINDOWS_PATH = /\b[A-Za-z]:[\\/][^\s'"`)]*/g;
 const HARNESS_PATH = /\/(?:app|workspace|root|home|tmp|mnt|tools\/stack-bench)(?:\/[^\s'"`):]*)*/g;
 const BEARER_CREDENTIAL = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+/-]+=*/gi;
@@ -17,6 +18,24 @@ function publicControlName(value: unknown): string | null {
   const name = match?.[1] ?? match?.[2] ?? match?.[3];
   if (!name || !/^[a-z0-9][a-z0-9_.:-]{0,79}$/i.test(name)) return null;
   return name.toLowerCase();
+}
+
+function publicControlLabel(value: unknown): string | null {
+  return publicControlName(value)?.replace(/[_.:-]+/g, ' ') ?? null;
+}
+
+function publicContext(value: unknown): string | null {
+  const raw = String(value ?? '');
+  const match = raw.match(/\bcontaining\s+["']([^"']+)["']/i)
+    ?? raw.match(/\binside\s+.*?\s+["']([^"']+)["']/i);
+  const context = sanitiseDiagnostic(match?.[1] ?? '', 120);
+  return context || null;
+}
+
+function publicSubject(value: unknown, fallback = 'item'): string {
+  const label = publicControlLabel(value) ?? fallback;
+  const context = publicContext(value);
+  return `${label}${context ? ` for "${context}"` : ''}`;
 }
 
 export function redactCredentials(value: unknown): string {
@@ -54,6 +73,7 @@ function clean(value: unknown, limit: number, { callLog = true }: CleanOptions =
     .replace(/^\s*at\s+.*$/gm, ' ')
     .replace(/\bfile:\/\/\/?[^\s'"`)]+/gi, 'a file')
     .replace(LOCAL_URL, 'the app')
+    .replace(WEB_URL, 'a service')
     .replace(WINDOWS_PATH, 'a file')
     .replace(HARNESS_PATH, 'a file')
     .replace(TEST_SELECTOR, 'the control')
@@ -80,38 +100,50 @@ export function sanitiseConsoleError(detail: unknown = ''): string {
 export function humaniseDiagnostic(detail: unknown = ''): string {
   const raw = String(detail ?? '');
   if (/selectOption/i.test(raw)) {
-    const control = publicControlName(raw);
+    const control = publicControlLabel(raw);
     return control
       ? `the ${control} control did not offer the requested choice`
       : 'the requested choice was not available';
   }
   const stateMismatch = raw.match(/expected\s+data-state\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);
   if (stateMismatch) {
-    const control = publicControlName(raw);
+    const control = publicControlLabel(raw);
     return `${control ? `the ${control} control` : 'the control'} showed "${stateMismatch[2]}" instead of "${stateMismatch[1]}"`;
   }
   const valueMismatch = raw.match(/expected\s+(?:the\s+)?control,#([a-z0-9_.:-]+).*?value\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i)
     ?? raw.match(/(?:the\s+)?control,#([a-z0-9_.:-]+).*?expected\s+value\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);
   if (valueMismatch) {
-    return `the ${valueMismatch[1]} control showed "${valueMismatch[3]}" instead of "${valueMismatch[2]}"`;
+    return `the ${valueMismatch[1]?.replace(/[_.:-]+/g, ' ')} control showed "${valueMismatch[3]}" instead of "${valueMismatch[2]}"`;
   }
   const sequenceMismatch = raw.match(/expected\s+(?:the\s+)?control,#([a-z0-9_.:-]+)\s+sequence\s+(.+),\s+saw\s+(.+?)(?:\s+\(|$)/i);
   if (sequenceMismatch) {
-    return `the ${sequenceMismatch[1]} list showed ${sequenceMismatch[3]} instead of ${sequenceMismatch[2]}`;
+    return `the ${sequenceMismatch[1]?.replace(/[_.:-]+/g, ' ')} list showed ${sequenceMismatch[3]} instead of ${sequenceMismatch[2]}`;
+  }
+  const numberMismatch = raw.match(/\breads\s+(no number|-?\d+(?:\.\d+)?),\s+expected\s+(?:exactly\s+)?(-?\d+(?:\.\d+)?)/i);
+  if (numberMismatch) {
+    return `the ${publicSubject(raw, 'value')} showed ${numberMismatch[1]} instead of ${numberMismatch[2]}`;
+  }
+  const countMismatch = raw.match(/expected exactly\s+(\d+)\s+[\s\S]*?,\s*(?:found|saw)\s+(\d+)/i);
+  if (countMismatch) {
+    const context = publicContext(raw);
+    return `found ${countMismatch[2]} matching entries${context ? ` for "${context}"` : ''}; expected ${countMismatch[1]}`;
   }
   const unexpectedControl = raw.match(/(?:the\s+)?control,#([a-z0-9_.:-]+)(?:\s+containing\s+(["'][^"']+["']))?\s+became\s+(?:available|visible)/i);
   if (unexpectedControl) {
+    const control = unexpectedControl[1]?.replace(/[_.:-]+/g, ' ');
     return unexpectedControl[2]
-      ? `the ${unexpectedControl[1]} control showed ${unexpectedControl[2]} when it should not have`
-      : `the ${unexpectedControl[1]} control was available when it should not have been`;
+      ? `the ${control} control showed ${unexpectedControl[2]} when it should not have`
+      : `the ${control} control was available when it should not have been`;
   }
   if (/still visible after/i.test(raw)) {
-    const control = publicControlName(raw);
-    return control ? `the ${control} control was still visible` : sanitiseDiagnostic(raw);
+    return publicControlName(raw)
+      ? `the ${publicSubject(raw)} was still visible`
+      : sanitiseDiagnostic(raw);
   }
   if (/not visible within/i.test(raw)) {
-    const control = publicControlName(raw);
-    return control ? `the required ${control} application interface did not appear` : sanitiseDiagnostic(raw);
+    return publicControlName(raw)
+      ? `the required ${publicSubject(raw)} did not appear`
+      : sanitiseDiagnostic(raw);
   }
   if (/missing, \d+ duplicated/i.test(raw)) {
     const match = raw.match(/(\d+) missing, (\d+) duplicated/i);
@@ -124,10 +156,7 @@ export function humaniseDiagnostic(detail: unknown = ''): string {
   }
   if (/order differs between/i.test(raw)) return 'the two users saw the messages in different orders';
   if (/unexpectedly contains/i.test(raw)) return 'it included something it should not have';
-  if (/expected exactly (\d+)/i.test(raw)) {
-    const match = raw.match(/expected exactly (\d+) .*?, found (\d+)/i);
-    return match ? `there were ${match[2]} of them instead of ${match[1]}` : 'the wrong number of them appeared';
-  }
+  if (/expected exactly \d+/i.test(raw)) return 'the wrong number of them appeared';
   if (/ACCEPTED a write with a tampered/i.test(raw))
     return 'the server accepted a request that claimed to be from a different user';
   if (/intercepts pointer events/i.test(raw))
@@ -145,7 +174,7 @@ export function humaniseDiagnostic(detail: unknown = ''): string {
   }
 
   if (/Timeout/i.test(raw)) {
-    const control = publicControlName(raw);
+    const control = publicControlLabel(raw);
     if (control) return `the ${control} control did not become usable`;
     const why = sanitiseDiagnostic(raw).replace(/^timeout\b[:\s-]*/i, '').trim();
     return why ? `the app did not respond in time: ${why}` : 'the app did not respond in time';
