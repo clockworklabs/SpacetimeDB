@@ -836,10 +836,9 @@ function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane
   nodes.forEach(node => depthOf(node.id));
   const maxDepth = Math.max(0, ...depths.values());
 
-  // the columns spread to the panel rather than huddling at a fixed step —
-  // without node labels the width is free, and longer edges cross less steeply
-  const LABEL = 148, ROWH = 26, BANDPAD = 12, TOP = 56, WIDTH = 800;
-  const STEP = Math.floor((WIDTH - LABEL - 20 - 40 - 54) / Math.max(1, maxDepth));
+  const LABEL = 160, NODE_W = 180, NODE_H = 24, ROWH = 32, BANDPAD = 12;
+  const TOP = 62, WIDTH = 1120;
+  const STEP = Math.floor((WIDTH - LABEL - NODE_W - 70) / Math.max(1, maxDepth));
   const colX = (depth: number): number => LABEL + 20 + depth * STEP;
   const width = WIDTH;
 
@@ -878,8 +877,8 @@ function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane
     .filter(parent => positions.has(parent) && positions.has(node.id)).map(parent => {
       const from = positions.get(parent), to = positions.get(node.id);
       if (!from || !to) return '';
-      const x1 = from.x + 6, y1 = from.y;
-      const x2 = to.x - 6, y2 = to.y;
+      const x1 = from.x + NODE_W, y1 = from.y;
+      const x2 = to.x, y2 = to.y;
       const parentStatus = byId.get(parent)?.status;
       const cls = ['working', 'passed'].includes(parentStatus ?? '')
         && ['working', 'passed'].includes(node.status) ? ' lit'
@@ -890,12 +889,14 @@ function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane
 
   const orderedNodes = bands.flatMap(band => band.lane.stations)
     .filter(node => positions.has(node.id));
-  const numbers = new Map(orderedNodes.map((node, index) => [node.id, index + 1]));
   const pills = orderedNodes.map(node => {
     const point = positions.get(node.id);
     if (!point) return '';
-    return nodeMark(node, currentIds, point.x, point.y, 5.5, stationTip(node, byId))
-      + `<text class="node-number" x="${point.x}" y="${point.y - 9}" text-anchor="middle">${numbers.get(node.id)}</text>`;
+    const cls = nodeClass(node, currentIds);
+    return `<g class="node-card ${cls}"><rect x="${point.x}" y="${point.y - NODE_H / 2}"
+      width="${NODE_W}" height="${NODE_H}" rx="4"/><circle cx="${point.x + 12}" cy="${point.y}" r="3"/>
+      <text x="${point.x + 22}" y="${point.y + 3.5}">${escapeHtml(node.title)}</text>
+      <title>${escapeHtml(stationTip(node, byId))}</title></g>`;
   });
 
   const sides = bands.map(band => {
@@ -906,10 +907,20 @@ function questlineSingle(column: DependencyColumn, lanes: readonly QuestlineLane
     return label + `<text class="lq${laneValue === 100 ? ' full' : ''}" x="${width - 10}" y="${laneY + 3}" text-anchor="end">${laneValue == null ? '—' : `${Math.round(laneValue)}%`}</text>`;
   }).join('');
 
-  const key = `<details class="graph-key"><summary>Feature key</summary><ol>${orderedNodes.map(node =>
-    `<li><span>${numbers.get(node.id)}</span>${escapeHtml(node.title)} <i>${escapeHtml(statusLabel(node.status))}</i></li>`).join('')}</ol></details>`;
   return `<svg viewBox="0 0 ${width} ${height}" width="${width}" role="img"
-    aria-label="${escapeHtml(`${title(column.stack)} dependency graph`)}">${head}${sides}${edges.join('')}${pills.join('')}</svg>${key}`;
+    aria-label="${escapeHtml(`${title(column.stack)} dependency graph`)}">${head}${sides}${edges.join('')}${pills.join('')}</svg>`;
+}
+
+function stackGraph(campaign: Campaign, column: DependencyColumn,
+  lanes: readonly QuestlineLane[]): string {
+  return `<article class="stack-graph" data-stack-graph="${escapeHtml(column.stack)}">
+    <header><div><h4>${escapeHtml(title(column.stack))}</h4><p>${escapeHtml(campaign.title)}</p></div>
+      <span class="stack-graph-actions">
+        <button class="secondary" type="button" data-save-stack="${escapeHtml(column.stack)}" data-format="png">Save PNG</button>
+        <button class="secondary" type="button" data-save-stack="${escapeHtml(column.stack)}" data-format="svg">Save SVG</button>
+      </span></header>
+    <div class="stack-graph-canvas">${questlineSingle(column, lanes)}</div>
+  </article>`;
 }
 
 function dependencyConstellation(campaign: Campaign): string {
@@ -965,7 +976,7 @@ function dependencyConstellation(campaign: Campaign): string {
     <div class="constellation" data-qlpanel="questlines"${active === 'questlines' ? '' : ' hidden'}><svg viewBox="0 0 ${width} ${height}" width="${width}" role="img"
       aria-label="each questline as a journey per stack: stations light as they pass">${labels}${heads}${graphs}</svg></div>
     <div class="constellation" data-qlpanel="stacks"${active === 'stacks' ? '' : ' hidden'}>${questlineStrip(columns, lanes)}</div>
-    ${columns.map(column => `<div class="constellation" data-qlpanel="${escapeHtml(column.stack)}"${active === column.stack ? '' : ' hidden'}>${questlineSingle(column, lanes)}</div>`).join('')}
+    ${columns.map(column => `<div data-qlpanel="${escapeHtml(column.stack)}"${active === column.stack ? '' : ' hidden'}>${stackGraph(campaign, column, lanes)}</div>`).join('')}
     <p class="constellation-note">Green passed. Yellow means the feature works but required checks remain. Blue is the current request. Red failed. An empty gray ring is waiting. A crossed gray mark is blocked. Hover a feature for its checks and dependency cause.</p>
   </section>`;
 }
@@ -1066,6 +1077,63 @@ function attemptSummaryLine(attempt: Attempt): string {
       <i title="normalized cost">${queued ? '—' : attemptCostLabel(attempt)}</i>
     </span>
   </summary>`;
+}
+
+function download(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function standaloneGraph(stack: string): { svg: string; width: number; height: number } | null {
+  const panel = Array.from(document.querySelectorAll<HTMLElement>('[data-stack-graph]'))
+    .find(candidate => candidate.dataset.stackGraph === stack);
+  const source = panel?.querySelector('svg');
+  if (!source) return null;
+  const clone = source.cloneNode(true) as SVGSVGElement;
+  const { width, height } = source.viewBox.baseVal;
+  const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  style.textContent = `text{fill:#b6c0cf;font-family:Arial,sans-serif}.ch-name{font-size:11px}
+    .ch-score{fill:#4cf490;font-size:15px}.ch-score.prov,.lq{fill:#b6c0cf}.ch-sub{fill:#6f7987;font-size:9px}
+    .cq{fill:#6f7987;font-size:10px}.lq{font-size:10px}.de{fill:none;stroke:#162d38;stroke-width:1.1;opacity:.45}
+    .de.lit{stroke:#4cf490}.de.cut{stroke:#ff4c4c;stroke-dasharray:3 4}.node-card rect{fill:#0e161a;stroke:#162d38}
+    .node-card circle{fill:#162d38}.node-card text{font-size:10px}.node-card.pass rect{stroke:#4cf490}
+    .node-card.pass circle{fill:#4cf490}.node-card.warn rect{stroke:#fbdc8e}.node-card.warn circle{fill:#fbdc8e}
+    .node-card.act rect{stroke:#02befa}.node-card.act circle{fill:#02befa}.node-card.fail rect{stroke:#ff4c4c}
+    .node-card.fail circle{fill:#ff4c4c}.node-card.blocked{opacity:.55}`;
+  const backdrop = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  backdrop.setAttribute('width', '100%');
+  backdrop.setAttribute('height', '100%');
+  backdrop.setAttribute('fill', '#050505');
+  clone.prepend(style);
+  clone.prepend(backdrop);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('width', String(width));
+  clone.setAttribute('height', String(height));
+  return { svg: new XMLSerializer().serializeToString(clone), width, height };
+}
+
+async function saveStackGraph(stack: string, format: string): Promise<void> {
+  const graph = standaloneGraph(stack);
+  if (!graph) return;
+  const svgBlob = new Blob([graph.svg], { type: 'image/svg+xml;charset=utf-8' });
+  const base = `stack-bench-${stack}-graph`;
+  if (format === 'svg') return download(svgBlob, `${base}.svg`);
+  const image = new Image();
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(graph.svg)}`;
+  await image.decode();
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = graph.width * scale;
+  canvas.height = graph.height * scale;
+  canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+  if (png) download(png, `${base}.png`);
 }
 
 function errorMessage(error: unknown): string {
@@ -1227,6 +1295,12 @@ document.addEventListener('click', event => {
   }
   const detail = target.closest<HTMLElement>('[data-campaign]');
   if (detail?.dataset.campaign) { showDetail(detail.dataset.campaign); return; }
+  const saveStack = target.closest<HTMLElement>('[data-save-stack]');
+  if (saveStack?.dataset.saveStack) {
+    void saveStackGraph(saveStack.dataset.saveStack, saveStack.dataset.format ?? 'png')
+      .catch((error: unknown) => { saveStack.title = errorMessage(error); });
+    return;
+  }
   const qlview = target.closest<HTMLElement>('[data-qlview]');
   if (qlview) {
     state.questlineView = qlview.dataset.qlview ?? 'questlines';
