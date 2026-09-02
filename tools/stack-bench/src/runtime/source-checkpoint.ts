@@ -30,6 +30,12 @@ export interface PreserveLevelCheckpointOptions {
   selectionSha256?: string | null;
 }
 
+export function finalPackageEvidenceRequired(outcome: RunOutcome | null | undefined,
+  levels: ReadonlyArray<{ graded?: boolean }>): boolean {
+  return ['passed', 'app_failure'].includes(outcome?.kind ?? '')
+    && levels.some(level => level.graded === true);
+}
+
 export function preserveFinalPackageEvidence(
   { appDir, outputDir }: { appDir: string; outputDir: string },
 ): {

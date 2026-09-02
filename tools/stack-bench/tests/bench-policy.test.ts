@@ -15,7 +15,7 @@ import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
   repairHistoryEntry, repairProgressState } from '../src/evidence/repair-evidence.js';
-import { preserveFinalPackageEvidence, sourceBoundFirstBuildOutcome }
+import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, sourceBoundFirstBuildOutcome }
   from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource }
   from '../src/runtime/source-materialization.js';
@@ -142,6 +142,13 @@ test('final package preservation verifies both source and grading before success
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('an interrupted run keeps its root failure even after an earlier grade', () => {
+  const levels = [{ graded: true }, { graded: false }];
+  assert.equal(finalPackageEvidenceRequired({ kind: 'provider_failure' }, levels), false);
+  assert.equal(finalPackageEvidenceRequired({ kind: 'harness_failure' }, levels), false);
+  assert.equal(finalPackageEvidenceRequired({ kind: 'app_failure' }, levels), true);
+});
+
 test('a missing first-build source is a harness failure', () => {
   const passed = { outcome: { kind: 'passed' }, totals: { score: 1, max: 1 }, suites: {} };
   assert.equal(sourceBoundFirstBuildOutcome(passed, { sha256: 'a'.repeat(64) }).kind, 'passed');
@@ -176,6 +183,8 @@ test('bench arguments validate pricing at the CLI boundary', () => {
 test('progression level usability follows its stricter evidence result', () => {
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }), true);
   assert.equal(levelGradeIsUsable({ kind: 'app_failure', inconclusive: ['feature/check'] }), false);
+  assert.equal(levelGradeIsUsable(
+    { kind: 'app_failure', inconclusive: ['unrelated/check'] }, { outcome: 'conclusive' }), true);
   assert.equal(levelGradeIsUsable({ kind: 'inconclusive' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'provider_failure' }), false);
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'inconclusive' }), false);

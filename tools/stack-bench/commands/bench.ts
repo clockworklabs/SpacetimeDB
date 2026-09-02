@@ -39,7 +39,7 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { applyAgentCredential } from '../src/agents/agent-credentials.js';
 import { hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
-import { preserveFinalPackageEvidence, preserveLevelCheckpoint,
+import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, preserveLevelCheckpoint,
   sourceBoundFirstBuildOutcome } from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource }
   from '../src/runtime/source-materialization.js';
@@ -1440,7 +1440,11 @@ async function main() {
       return true;
     };
     const initialBundleOutcome = classifyBundle(bundle);
-    const initialGradeUsable = ladderMayContinue(initialBundleOutcome);
+    const initialProgressionAttempt = args.progression
+      ? requireProgressionState(progressionExecution?.state ?? null).attempts.at(-1) ?? null
+      : null;
+    const initialGradeUsable = levelGradeIsUsable(initialBundleOutcome,
+      initialProgressionAttempt);
     if (!initialGradeUsable) {
       repairStopReason = 'initial-grading-failed';
       console.log('  repairs skipped: the initial grade did not complete, so there are no reliable findings to fix');
@@ -1484,7 +1488,9 @@ async function main() {
     };
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
-    while (ladderMayContinue(classifyBundle(bundle)) && progressionMayRepair()
+    while (levelGradeIsUsable(classifyBundle(bundle), args.progression
+      ? requireProgressionState(progressionExecution?.state ?? null).attempts.at(-1) ?? null
+      : null) && progressionMayRepair()
       && (args.progression || fixRounds < args.fixRounds)) {
       if (args.progression) {
         progressionSelection = bindProgressionAction(level);
@@ -1929,7 +1935,7 @@ async function main() {
       appFailures: [], inconclusive: [] };
   }
 
-  if (run.levels.some(level => level.graded === true)) {
+  if (finalPackageEvidenceRequired(run.outcome, run.levels)) {
     try {
       preserveFinalPackageEvidence({ appDir, outputDir });
       console.log(`  source kept at ${join(outputDir, 'source')}`);
