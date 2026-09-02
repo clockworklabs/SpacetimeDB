@@ -13,7 +13,7 @@ concurrency:
 jobs:
   check_base_ref:
     name: Based on `master`
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - id: not_based_on_master
         if: |

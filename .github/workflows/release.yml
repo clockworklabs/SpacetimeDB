@@ -60,7 +60,7 @@ concurrency:
 jobs:
   validate-release-invoker:
     name: Validate release invoker
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Reject direct public release invocations
         env:
@@ -286,7 +286,7 @@ jobs:
 
   release-npm:
     needs: build-cargo-release
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
@@ -380,7 +380,7 @@ jobs:
 
   update-mirror-latest-version:
     needs: validate-release-invoker
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
     steps:
@@ -422,7 +422,7 @@ jobs:
       - release-npm
       - release-docker
       - update-mirror-latest-version
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     if: >-
       ${{
         always()
