@@ -6,7 +6,9 @@
   "state": "draft",
   "title": "Ecommerce progression reference pilot",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "3.0.0", "repairSelection": "feature",
+  "mode": { "id": "dependency", "version": "3.2.0", "workSelection": "progressive",
+    "repairSelection": "feature",
+    "strikePolicy": "feature",
     "strikes": { "default": 1, "levels": {} } },
   "levels": [1, 2, 3, 4, 5, 6],
   "featureCatalog": "ecommerce.questlines@2.0.1",
@@ -21,8 +23,8 @@
     ]
   },
   "stacks": [
-    { "id": "mongodb", "adapterVersion": "1.3.0" },
-    { "id": "postgres", "adapterVersion": "1.4.0" },
+    { "id": "mongodb", "adapterVersion": "1.4.0" },
+    { "id": "postgres", "adapterVersion": "1.5.0" },
     { "id": "spacetime", "adapterVersion": "1.3.0" }
   ],
   "agents": [

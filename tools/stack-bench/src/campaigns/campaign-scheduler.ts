@@ -41,6 +41,21 @@ export interface CampaignContinuation {
   scheduledAt: string;
 }
 
+export interface CampaignExtensionSeed {
+  fromDepth: number;
+  source: string;
+  sourceSha256: string;
+  sourceFiles: number;
+  parent: {
+    campaignId: string;
+    campaignSha256: string;
+    attemptId: string;
+    executionId: string;
+    runId: string;
+    runSha256: string;
+  };
+}
+
 export interface CampaignExecution {
   id: string;
   ordinal: number;
@@ -61,6 +76,7 @@ export interface CampaignAttemptState {
   plan: CampaignAttemptPlan;
   status: string;
   executions: CampaignExecution[];
+  extension?: CampaignExtensionSeed;
 }
 
 export interface CampaignSummary {
@@ -92,6 +108,7 @@ export interface CampaignClaim {
   runIndex: number;
   resumeFrom: string | null;
   priorOutputs: string[];
+  extension: CampaignExtensionSeed | null;
 }
 
 interface RunArtifact {
@@ -141,6 +158,28 @@ const continuationSchema = z.strictObject({
   resumeFrom: z.string(),
   scheduledAt: timestampSchema,
 });
+const extensionSeedSchema = z.strictObject({
+  fromDepth: z.number().int().positive(),
+  source: z.string().min(1),
+  sourceSha256: z.string().regex(HASH),
+  sourceFiles: z.number().int().nonnegative(),
+  parent: z.strictObject({
+    campaignId: z.string().min(1),
+    campaignSha256: z.string().regex(HASH),
+    attemptId: z.string().min(1),
+    executionId: z.string().min(1),
+    runId: z.string().min(1),
+    runSha256: z.string().regex(HASH),
+  }),
+});
+
+export function validateCampaignExtensionSeed(input: unknown): CampaignExtensionSeed {
+  const parsed = extensionSeedSchema.safeParse(structuredClone(input));
+  if (!parsed.success) {
+    throw new Error(`invalid campaign extension: ${formatZodError(parsed.error, 'extension')}`);
+  }
+  return parsed.data;
+}
 const executionSchema = z.strictObject({
   id: z.string().min(1),
   ordinal: z.number().int(),
@@ -170,6 +209,7 @@ const campaignStateSchema = z.strictObject({
     plan: z.looseObject({ id: z.string().min(1) }),
     status: z.enum(['pending', 'running', 'completed', 'invalid']),
     executions: z.array(executionSchema),
+    extension: extensionSeedSchema.optional(),
   })).min(1),
   summary: z.strictObject({
     total: z.number().int(),
@@ -219,6 +259,20 @@ export function validateCampaignState(input: unknown): CampaignState {
     if (!SAFE_ID.test(attempt.plan.id)) fail(`${at}.plan.id is not a safe path component`);
     if (ids.has(attempt.plan.id)) fail(`${at}.plan.id duplicates ${attempt.plan.id}`);
     ids.add(attempt.plan.id);
+    if (attempt.extension !== undefined) {
+      const extensionAt = `${at}.extension`;
+      if (attempt.plan.mode?.id !== 'dependency') {
+        fail(`${extensionAt} requires dependency mode`);
+      }
+      if (!attempt.plan.levels.includes(attempt.extension.fromDepth)
+        || !attempt.plan.levels.some(level => level > attempt.extension!.fromDepth)) {
+        fail(`${extensionAt}.fromDepth must precede another planned depth`);
+      }
+      const expectedSource = `.private/extensions/${attempt.plan.id}/source`;
+      if (attempt.extension.source !== expectedSource) {
+        fail(`${extensionAt}.source is not the exact extension source directory`);
+      }
+    }
     let previousCompletedAt = null;
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
@@ -381,8 +435,23 @@ export function claimNextAttempt(input: CampaignState, { now = new Date().toISOS
     admissionId: exactAdmissionId, runIndex });
   return { state: recalculate(state, now),
     claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex,
-      resumeFrom, priorOutputs },
+      resumeFrom, priorOutputs, extension: structuredClone(attempt.extension ?? null) },
     capacityFull: false };
+}
+
+export function addCampaignExtensions(input: unknown,
+  extensions: Readonly<Record<string, CampaignExtensionSeed>>,
+  { now = new Date().toISOString() }: { now?: string } = {}): CampaignState {
+  const state = validateCampaignState(input);
+  if (state.attempts.some(attempt => attempt.executions.length > 0)) {
+    throw new Error('campaign extensions must be attached before execution starts');
+  }
+  for (const attempt of state.attempts) {
+    const extension = extensions[attempt.plan.id];
+    if (!extension) throw new Error(`campaign attempt ${attempt.plan.id} has no extension source`);
+    attempt.extension = structuredClone(extension);
+  }
+  return recalculate(state, now);
 }
 
 export function scheduleDependencyContinuation(input: unknown, attemptId: string,

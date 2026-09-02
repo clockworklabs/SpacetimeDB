@@ -32,7 +32,7 @@ const progression = () => compileProgressionInput({
   version: '1.0.0',
   state: 'draft',
   title: 'Persisted runner',
-  policy: 'dependency-gated',
+  policy: 'dependency-graph',
   strikes: { default: 1, levels: {} },
   nodes: [{ id: 'account', title: 'Account', questline: 'identity', dependencies: [],
     featureRefs: ['feature.account@1.0.0'], promptModules: [],
@@ -42,7 +42,7 @@ const progression = () => compileProgressionInput({
 const stateIdentities = Object.freeze({
   featureCatalogIdentity: { id: 'persisted-runner', version: '1.0.0',
     sha256: 'c'.repeat(64), state: 'draft' },
-  dependencyPolicyIdentity: { id: 'dependency-gated', version: '3.0.0',
+  dependencyPolicyIdentity: { id: 'dependency-graph', version: '3.2.0',
     sha256: 'd'.repeat(64) },
 });
 const owner = () => ({ schemaVersion: 1,

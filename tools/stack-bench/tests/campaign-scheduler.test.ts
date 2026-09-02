@@ -7,8 +7,9 @@ import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 import { compileCampaignFile, validateCampaignDefinition }
   from '../src/campaigns/campaign-compiler.js';
-import { claimNextAttempt, classifyCampaignExecution, createCampaignState, finishCampaignExecution,
-  markInterruptedExecution, scheduleDependencyContinuation, validateCampaignState }
+import { addCampaignExtensions, claimNextAttempt, classifyCampaignExecution, createCampaignState,
+  finishCampaignExecution, markInterruptedExecution, scheduleDependencyContinuation,
+  validateCampaignState }
   from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignClaim, CampaignState } from '../src/campaigns/campaign-scheduler.js';
 
@@ -64,7 +65,7 @@ test('a contaminated run remains contaminated when its process exits nonzero', (
 
 test('a targeted dependency grant schedules one exact completed attempt for resume', () => {
   let state = prepared();
-  attemptAt(state).plan.mode = { id: 'dependency', version: '3.0.0' };
+  attemptAt(state).plan.mode = { id: 'dependency', version: '3.2.0' };
   for (let index = 0; index < state.attempts.length; index += 1) {
     const minute = String(index * 2 + 1).padStart(2, '0');
     const completedMinute = String(index * 2 + 2).padStart(2, '0');
@@ -104,12 +105,35 @@ test('a targeted dependency grant schedules one exact completed attempt for resu
 test('dependency continuation scheduling rejects non-terminal and duplicate requests', () => {
   const state = prepared();
   const attempt = attemptAt(state);
-  attempt.plan.mode = { id: 'dependency', version: '3.0.0' };
+  attempt.plan.mode = { id: 'dependency', version: '3.2.0' };
   assert.throws(() => scheduleDependencyContinuation(state, attempt.plan.id, {
     grantId: 'grant', level: 1, nodeIds: ['accounts'], strikes: 1,
     stateSha256: 'a'.repeat(64),
     resumeFrom: `continuations/${attempt.plan.id}/grant`,
   }), /completed campaign/);
+});
+
+test('campaign extension sources are attached before work is claimed', () => {
+  const state = prepared();
+  const extensions = Object.fromEntries(state.attempts.map(attempt => {
+    attempt.plan.mode = { id: 'dependency', version: '3.2.0' };
+    attempt.plan.levels = [1, 2];
+    return [attempt.plan.id, {
+      fromDepth: 1,
+      source: `.private/extensions/${attempt.plan.id}/source`,
+      sourceSha256: 'a'.repeat(64),
+      sourceFiles: 3,
+      parent: { campaignId: 'parent', campaignSha256: 'b'.repeat(64),
+        attemptId: `parent-${attempt.plan.id}`, executionId: 'execution-1',
+        runId: 'run-1', runSha256: 'c'.repeat(64) },
+    }];
+  }));
+  const extended = addCampaignExtensions(state, extensions,
+    { now: '2026-08-12T00:01:00.000Z' });
+  const claimed = requireClaim(claimNextAttempt(extended,
+    { now: '2026-08-12T00:02:00.000Z', admissionId: 'admission-1' }));
+  assert.equal(claimed.claim.extension?.fromDepth, 1);
+  assert.equal(claimed.claim.extension?.sourceSha256, 'a'.repeat(64));
 });
 
 function parallelPlan(parallelism = 3, repetitions = 1) {

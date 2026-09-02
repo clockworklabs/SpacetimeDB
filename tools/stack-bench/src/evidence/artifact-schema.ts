@@ -89,7 +89,7 @@ const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'mode', 'track', 'backen
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
   'skills', 'runtime', 'pricing', 'featureCatalog', 'dependencyPolicy', 'progressionOwner', 'progressionStatus',
-  'progressionResume']);
+  'progressionResume', 'progressionSeed']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -317,6 +317,46 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
     if (progressionResume.priorTotals !== null && !isObject(progressionResume.priorTotals)) {
       fail('benchmark_run payload.progressionResume.priorTotals is invalid');
+    }
+  }
+  if (kind === 'benchmark_run' && payload.progressionSeed !== undefined) {
+    const seed = asObject(payload.progressionSeed,
+      'benchmark_run payload.progressionSeed must be an object');
+    const fields = new Set(['fromDepth', 'sourceSha256', 'sourceFiles', 'parent',
+      'validatedDepths']);
+    for (const key of Object.keys(seed)) {
+      if (!fields.has(key)) fail(`benchmark_run payload.progressionSeed.${key} is unknown`);
+    }
+    if (!isSafeInteger(seed.fromDepth) || seed.fromDepth < 1
+      || !isHash(seed.sourceSha256)
+      || !isSafeInteger(seed.sourceFiles) || seed.sourceFiles < 0) {
+      fail('benchmark_run payload.progressionSeed source is invalid');
+    }
+    const parent = asObject(seed.parent,
+      'benchmark_run payload.progressionSeed.parent must be an object');
+    const parentFields = new Set(['campaignId', 'campaignSha256', 'attemptId', 'executionId',
+      'runId', 'runSha256']);
+    for (const key of Object.keys(parent)) {
+      if (!parentFields.has(key)) fail(`benchmark_run payload.progressionSeed.parent.${key} is unknown`);
+    }
+    for (const field of ['campaignId', 'attemptId', 'executionId', 'runId']) {
+      if (typeof parent[field] !== 'string' || !parent[field]) {
+        fail(`benchmark_run payload.progressionSeed.parent.${field} is invalid`);
+      }
+    }
+    for (const field of ['campaignSha256', 'runSha256']) {
+      if (!isHash(parent[field])) {
+        fail(`benchmark_run payload.progressionSeed.parent.${field} is invalid`);
+      }
+    }
+    const validatedDepths = seed.validatedDepths;
+    const fromDepth = seed.fromDepth;
+    if (!Array.isArray(validatedDepths)
+      || validatedDepths.some(depth => !isSafeInteger(depth) || depth < 1)
+      || validatedDepths.some((depth, index) => index > 0
+        && validatedDepths[index - 1] >= depth)
+      || validatedDepths.some(depth => typeof fromDepth !== 'number' || depth > fromDepth)) {
+      fail('benchmark_run payload.progressionSeed.validatedDepths is invalid');
     }
   }
   if (kind === 'progression_state') {
@@ -737,7 +777,8 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
       fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');
     }
     if (repair.strikeScope !== undefined || repair.nodeStrikes !== undefined) {
-      if (repair.strikeScope !== 'feature' || !Array.isArray(repair.nodeStrikes)) {
+      if (!['feature', 'depth', 'banked'].includes(String(repair.strikeScope))
+        || !Array.isArray(repair.nodeStrikes)) {
         fail('source_checkpoint payload.repair feature strikes are invalid');
       }
       const ids = new Set<string>();

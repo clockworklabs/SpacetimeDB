@@ -243,6 +243,16 @@ test('dependency attempts pass separate catalog and policy identities with no le
     '/campaign/plan.json', '/campaign/dependency-1');
   assert.equal(resumedArgv[resumedArgv.indexOf('--progression-resume-from') + 1],
     resolve('/campaign/dependency-1'));
+  const extension = { fromDepth: 1, source: `.private/extensions/${attempt.id}/source`,
+    sourceSha256: 'a'.repeat(64), sourceFiles: 4,
+    parent: { campaignId: 'parent', campaignSha256: 'b'.repeat(64),
+      attemptId: 'parent-attempt', executionId: 'execution-1', runId: 'run-1',
+      runSha256: 'c'.repeat(64) } };
+  const extendedArgv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency-3', 0,
+    '/campaign/plan.json', null, null, undefined, extension);
+  assert.equal(extendedArgv[extendedArgv.indexOf('--seed-through') + 1], '1');
+  assert.equal(extendedArgv[extendedArgv.indexOf('--seed-from') + 1],
+    resolve('/campaign/.private/extensions', attempt.id, 'source'));
   assert.throws(() => attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0),
     /requires its compiled campaign plan path/);
   assert.throws(() => attemptArgv(dependencyPlan, { ...attempt,
@@ -268,7 +278,7 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   assert.throws(() => validateCampaignRun(plan, attempt,
-    { ...run, mode: { id: 'dependency', version: '3.0.0' } },
+    { ...run, mode: { id: 'dependency', version: '3.2.0' } },
     { buildImage: 'test-build-image' }), /does not match.*mode/);
   assert.throws(() => validateCampaignRun(plan, attempt, { ...run,
     artifactEnvelope: { ...run.artifactEnvelope, identities: {
@@ -415,7 +425,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
       progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
       progressionStatus: liveProgressionStatus(state), skills: attempt.skills,
       runtime: { buildImage: 'test-build-image' },
-      validation: { ladder: { policy: 'dependency-gated', requestedLevels: attempt.levels,
+      validation: { ladder: { policy: 'dependency-graph', requestedLevels: attempt.levels,
         completedLevels: [1], stoppedAfterLevel: null, blockedLevels: [1] } },
       levels: [], outcome: { kind: 'harness_failure', phase: 'agent-fix',
         reason: 'repair process exited before completion' },
@@ -462,7 +472,7 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
       progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
       progressionStatus: liveProgressionStatus(state), skills: attempt.skills,
       runtime: { buildImage: 'test-build-image' },
-      validation: { ladder: { policy: 'dependency-gated', requestedLevels: attempt.levels,
+      validation: { ladder: { policy: 'dependency-graph', requestedLevels: attempt.levels,
         completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } },
       levels: [{ level: state.level, graded: false, score: null, max: null,
         error: 'coding-session-failed',

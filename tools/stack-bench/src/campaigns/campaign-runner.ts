@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
@@ -12,6 +12,7 @@ import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
   markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.js';
 import type { CampaignClaim, CampaignDirectory, CampaignExecutionResult, CampaignState }
   from './campaign-scheduler.js';
+import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 import { rescueSupervisedLease } from '../runtime/recovery.js';
 import { runBounded } from '../runtime/bounded-process.js';
 import type { BoundedProcessResult, RunBoundedOptions }
@@ -93,7 +94,8 @@ interface AttemptResult extends CampaignExecutionResult {
 export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
   output: string, runIndex: unknown = undefined, campaignPlanPath: string | null = null,
   progressionResumeFrom: string | null = null, campaignAdmissionId: string | null = null,
-  maxBudgetUsd: number | null | undefined = undefined): string[] {
+  maxBudgetUsd: number | null | undefined = undefined,
+  extension: CampaignExtensionSeed | null = null): string[] {
   if (!integer(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
@@ -137,8 +139,13 @@ export function attemptArgv(plan: CompiledCampaignPlan, attempt: CampaignAttempt
       }
       args.push('--progression-resume-from', resolve(progressionResumeFrom));
     }
+    if (extension !== null) {
+      args.push('--seed-from', resolve(dirname(campaignPlanPath), extension.source),
+        '--seed-through', String(extension.fromDepth),
+        '--progression-seed-json', JSON.stringify(extension));
+    }
   } else {
-    if (progressionResumeFrom !== null) {
+    if (progressionResumeFrom !== null || extension !== null) {
       throw new Error(`strict attempt ${attempt.id} cannot resume dependency progression state`);
     }
   }
@@ -185,7 +192,8 @@ export function campaignRetryAuthority(run: BenchmarkRun | null | undefined, {
 }
 
 function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptPlan,
-  executionId: string, output: string, processResult: RunnerProcessResult): AttemptResult {
+  executionId: string, output: string, processResult: RunnerProcessResult,
+  extension: CampaignExtensionSeed | null = null): AttemptResult {
   const withRetryAuthority = (result: AttemptResult): AttemptResult => ({ ...result,
     retryAuthority: campaignRetryAuthority(result.run, {
       recoveryClean: publicRecoveryProvesCleanup(output, attempt.stack, attempt.id,
@@ -206,6 +214,7 @@ function readAttemptResult(plan: CompiledCampaignPlan, attempt: CampaignAttemptP
       validateCampaignRun(plan, attempt, run, {
         buildImage: processResult.buildImage,
         resultDir: output,
+        progressionSeed: extension,
       });
     }
     catch (error) { artifactError = error instanceof Error ? error : new Error(String(error)); }
@@ -425,7 +434,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
         attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan,
           claim.attempt.mode?.id !== 'dependency' || claim.resumeFrom === null ? null
             : contained(initialized.paths.root, claim.resumeFrom,
-              'progression resume directory'), admission.id, remainingBudget), {
+              'progression resume directory'), admission.id, remainingBudget,
+          claim.extension), {
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },
@@ -488,7 +498,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
         return { cleanupRequired: true,
           reason: `attempt cleanup failed: ${cleanupError.message}` };
       }
-      return readAttemptResult(plan, claim.attempt, claim.executionId, output, processResult);
+      return readAttemptResult(plan, claim.attempt, claim.executionId, output, processResult,
+        claim.extension);
     };
     const active = new Map<string, Promise<{ claim: CampaignClaim; result: AttemptResult }>>();
     const invalidAtStart = state.summary.invalid;

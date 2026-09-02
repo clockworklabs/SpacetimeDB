@@ -14,7 +14,8 @@ import type { RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
-  repairHistoryEntry, repairProgressState } from '../src/evidence/repair-evidence.js';
+  repairHistoryEntry, repairProgressState, restorePrivateGradingEvidence }
+  from '../src/evidence/repair-evidence.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, sourceBoundFirstBuildOutcome }
   from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource }
@@ -197,7 +198,7 @@ test('dependency repair accounting uses repair rounds, not grading observations'
   assert.equal(dependencyRepairBudget(action, 0), 3);
   assert.equal(dependencyRepairBudget(action, 1), 4);
   assert.throws(() => dependencyRepairBudget({ strikes: { scope: 'level', maxRemaining: 3 } }, 0),
-    /feature-strike action/);
+    /valid strike action/);
 
   const state = {
     definition: { nodes: [
@@ -357,6 +358,23 @@ test('the first repair that makes an unstartable app gradeable is never rolled b
   assert.equal(repairEvidenceDecision({ suites: {} }, after).action, 'rollback-no-comparison');
 });
 
+test('repair rollback restores the accepted grading evidence without another grade', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-grade-rollback-'));
+  try {
+    const app = join(root, 'app');
+    const snapshot = join(root, 'snapshot');
+    mkdirSync(join(app, 'stack-bench'), { recursive: true });
+    mkdirSync(snapshot, { recursive: true });
+    writeFileSync(join(app, 'stack-bench', 'bundle.json'), 'new grade\n');
+    writeFileSync(join(snapshot, 'bundle.json'), 'accepted grade\n');
+
+    restorePrivateGradingEvidence(app, snapshot);
+
+    assert.equal(readFileSync(join(app, 'stack-bench', 'bundle.json'), 'utf8'),
+      'accepted grade\n');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('grading restarts the complete application on its public port', () => {
   const track = loadTrack('ecommerce');
   const argv = gradeArgv({ backend: 'postgres', track: 'ecommerce', runIndex: 0,
@@ -425,7 +443,7 @@ test('later-level grading receives prior selected checks as regression scope', (
 test('dependency grading uses its exact action scope without a second regression selection', () => {
   const track = loadTrack('ecommerce');
   const args = { backend: 'postgres', track: 'ecommerce', runIndex: 0, media: false,
-    progression: { identity: { policy: 'dependency-gated' } },
+    progression: { identity: { policy: 'dependency-graph' } },
     recipeTasks: new Map([
       [1, { request: { schemaVersion: 3 }, selection: { scoredChecks: [
         { stableKey: 'prior/a' },

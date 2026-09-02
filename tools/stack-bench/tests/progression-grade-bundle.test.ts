@@ -38,7 +38,7 @@ const setupEvidence = () => createCheckEvidence({ status: 'passed', code: 'compl
 const sourceSha256 = 'c'.repeat(64);
 const recipeIdentity = { id: 'ecommerce-l1', version: '1.0.0', sha256: 'd'.repeat(64) };
 const progressionIdentity = { id: 'dependency', version: '1.0.0',
-  policy: 'dependency-gated', sha256: '8'.repeat(64) };
+  policy: 'dependency-graph', sha256: '8'.repeat(64) };
 const featureCatalogIdentity = { id: 'catalog', version: '1.0.0', sha256: '7'.repeat(64) };
 const owner = { schemaVersion: 1,
   campaign: { id: 'campaign', version: '1.0.0', sha256: 'e'.repeat(64) },

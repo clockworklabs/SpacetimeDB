@@ -1860,7 +1860,7 @@
                   },
                   {
                     "actor": "admin",
-                    "count": 12,
+                    "count": 13,
                     "do": "expect",
                     "testid": "admin-item-row"
                   },

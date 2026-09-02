@@ -89,7 +89,7 @@ export interface RunRepairRecord {
   budgetRounds: number;
   roundsUsed: number;
   stopReason: string | null;
-  strikeScope?: 'feature';
+  strikeScope?: 'feature' | 'depth' | 'banked';
   nodeStrikes?: Array<{
     nodeId: string;
     initialBudget: number;
@@ -176,6 +176,21 @@ export interface RunProgressionResume {
   priorTotals: RunTotals | null;
 }
 
+export interface RunProgressionSeed {
+  fromDepth: number;
+  sourceSha256: string;
+  sourceFiles: number;
+  parent: {
+    campaignId: string;
+    campaignSha256: string;
+    attemptId: string;
+    executionId: string;
+    runId: string;
+    runSha256: string;
+  };
+  validatedDepths: number[];
+}
+
 export interface RunProgressionStatus {
   stateArtifact: string;
   phase: 'active' | 'terminal';
@@ -218,6 +233,7 @@ export interface BenchmarkRunRecord {
   progressionOwner?: UnknownRecord;
   progressionStatus?: RunProgressionStatus;
   progressionResume?: RunProgressionResume;
+  progressionSeed?: RunProgressionSeed;
   progressionResumeFrom?: unknown;
   backendLease: PublicBackendLease;
   backendDiagnostics?: unknown;

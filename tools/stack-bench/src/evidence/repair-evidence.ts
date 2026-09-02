@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { cpSync, existsSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
@@ -20,6 +20,12 @@ export interface RepairProgress {
 
 export function clearPrivateGradingEvidence(appDir: string): void {
   rmSync(join(resolve(appDir), 'stack-bench'), { recursive: true, force: true });
+}
+
+export function restorePrivateGradingEvidence(appDir: string, snapshot: string): void {
+  if (!existsSync(snapshot)) throw new Error('repair grading snapshot does not exist');
+  clearPrivateGradingEvidence(appDir);
+  cpSync(snapshot, join(resolve(appDir), 'stack-bench'), { recursive: true });
 }
 
 export function repairProgressState(previous: RepairProgress | null,

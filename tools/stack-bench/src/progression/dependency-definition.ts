@@ -15,17 +15,31 @@ import {
 } from './dependency-validation.js';
 
 export const DEPENDENCY_MODE_SCHEMA_VERSION = 4;
-export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
-export const DEPENDENCY_MODE_VERSION = '3.0.0';
+export const DEPENDENCY_MODE_POLICY = 'dependency-graph';
+export const DEPENDENCY_MODE_VERSION = '3.2.0';
 export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
 export const DEFAULT_UNCHANGED_FAILURE_LIMIT = 3;
 export const DEFAULT_DEPENDENCY_REPAIR_SELECTION = 'feature';
 export const DEPENDENCY_REPAIR_SELECTIONS = ['feature', 'batch'] as const;
+export const DEFAULT_DEPENDENCY_STRIKE_POLICY = 'feature';
+export const DEPENDENCY_STRIKE_POLICIES = ['feature', 'depth', 'banked'] as const;
+export const DEFAULT_DEPENDENCY_WORK_SELECTION = 'progressive';
+export const DEPENDENCY_WORK_SELECTIONS = ['progressive', 'all-at-once'] as const;
 
 export type DependencyRepairSelection = typeof DEPENDENCY_REPAIR_SELECTIONS[number];
+export type DependencyStrikePolicy = typeof DEPENDENCY_STRIKE_POLICIES[number];
+export type DependencyWorkSelection = typeof DEPENDENCY_WORK_SELECTIONS[number];
 
 export function isDependencyRepairSelection(value: unknown): value is DependencyRepairSelection {
   return DEPENDENCY_REPAIR_SELECTIONS.includes(value as DependencyRepairSelection);
+}
+
+export function isDependencyStrikePolicy(value: unknown): value is DependencyStrikePolicy {
+  return DEPENDENCY_STRIKE_POLICIES.includes(value as DependencyStrikePolicy);
+}
+
+export function isDependencyWorkSelection(value: unknown): value is DependencyWorkSelection {
+  return DEPENDENCY_WORK_SELECTIONS.includes(value as DependencyWorkSelection);
 }
 
 interface AuthoredDependency extends Record<string, unknown> {
@@ -50,6 +64,8 @@ interface MutableDefinition extends Record<string, unknown> {
   strikes?: { default?: number; levels?: Record<string, number> };
   unchangedFailureLimit?: number;
   repairSelection?: DependencyRepairSelection;
+  strikePolicy?: DependencyStrikePolicy;
+  workSelection?: DependencyWorkSelection;
   nodes: AuthoredNode[];
   questlines: Array<Omit<CompiledProgressionQuestline, 'nodes'> & { nodes?: string[] }>;
 }
@@ -59,6 +75,8 @@ export interface CompiledDependencyDefinition extends CompiledProgressionDefinit
   strikes: { levels: Record<string, number> };
   unchangedFailureLimit: number;
   repairSelection: DependencyRepairSelection;
+  strikePolicy: DependencyStrikePolicy;
+  workSelection: DependencyWorkSelection;
 }
 
 function progressionVersion(value: unknown, at: string): string {
@@ -127,7 +145,8 @@ function compileGraphDefinition(input: unknown,
   const definition = structuredClone(input) as MutableDefinition;
   const fields = ['schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes',
     'questlines'];
-  if (!catalogOnly) fields.push('policy', 'strikes', 'unchangedFailureLimit', 'repairSelection');
+  if (!catalogOnly) fields.push('policy', 'strikes', 'unchangedFailureLimit', 'repairSelection',
+    'strikePolicy', 'workSelection');
   strictObject(definition, source, new Set(fields));
   const expectedSchema = catalogOnly ? FEATURE_CATALOG_SCHEMA_VERSION : DEPENDENCY_MODE_SCHEMA_VERSION;
   const expectedKind = catalogOnly ? 'feature-catalog' : 'progression-mode';
@@ -152,6 +171,14 @@ function compileGraphDefinition(input: unknown,
     definition.repairSelection ??= DEFAULT_DEPENDENCY_REPAIR_SELECTION;
     if (!isDependencyRepairSelection(definition.repairSelection)) {
       fail(`${source}.repairSelection`, 'must be "feature" or "batch"');
+    }
+    definition.strikePolicy ??= DEFAULT_DEPENDENCY_STRIKE_POLICY;
+    if (!isDependencyStrikePolicy(definition.strikePolicy)) {
+      fail(`${source}.strikePolicy`, 'must be "feature", "depth", or "banked"');
+    }
+    definition.workSelection ??= DEFAULT_DEPENDENCY_WORK_SELECTION;
+    if (!isDependencyWorkSelection(definition.workSelection)) {
+      fail(`${source}.workSelection`, 'must be "progressive" or "all-at-once"');
     }
   }
   if (!Array.isArray(definition.nodes) || definition.nodes.length === 0) {

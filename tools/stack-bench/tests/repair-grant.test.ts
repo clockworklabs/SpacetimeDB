@@ -137,7 +137,7 @@ test('repair grants reject incomplete evidence, remaining budget, and changed so
 test('generic repair grants reject dependency campaigns', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-dependency-'));
   try {
-    parentFixture(root, { mode: { id: 'dependency', version: '3.0.0' } });
+    parentFixture(root, { mode: { id: 'dependency', version: '3.2.0' } });
     assert.throws(() => createRepairGrant(root, { level: 1, rounds: 2 }),
       /do not support dependency campaigns/);
   } finally { rmSync(root, { recursive: true, force: true }); }

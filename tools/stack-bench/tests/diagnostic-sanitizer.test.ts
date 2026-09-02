@@ -7,7 +7,7 @@ import {
   sanitiseDiagnostic,
 } from '../src/evidence/diagnostic-sanitizer.js';
 
-const forbidden = /data-testid|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|localhost|127\.0\.0\.1|host\.docker\.internal|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
+const forbidden = /data-testid|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|selectOption|control,#|data-state|localhost|127\.0\.0\.1|host\.docker\.internal|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
 
 test('sanitiser removes selector, timing, endpoint and harness-path mechanics', () => {
   const input = `Timeout 5000ms exceeded at C:\\repo\\tools\\stack-bench\\dist\\grader\\grade.js\n`
@@ -54,4 +54,17 @@ test('humanisation keeps useful behaviour while hiding the implementation', () =
   assert.equal(humaniseDiagnostic(`locator.click: Timeout 5000ms exceeded.\n`
     + `waiting for locator('[data-testid="profile-link"],#profile-link')`),
   'the profile-link control did not become usable');
+  assert.equal(humaniseDiagnostic(`locator.selectOption: Timeout 5000ms exceeded.\n`
+    + `waiting for locator('[data-testid="notification-frequency"]')`),
+  'the notification-frequency control did not offer the requested choice');
+  assert.equal(humaniseDiagnostic('control,#notification-enabled expected data-state "on", got "off"'),
+    'the notification-enabled control showed "off" instead of "on"');
+  assert.equal(humaniseDiagnostic('the control,#support-assignee expected value "staff", got "1"'),
+    'the support-assignee control showed "1" instead of "staff"');
+  assert.equal(humaniseDiagnostic('expected the control,#item-name sequence ["A","B"], saw ["B"] (in time)'),
+    'the item-name list showed ["B"] instead of ["A","B"]');
+  assert.equal(humaniseDiagnostic('the control,#buy-now became available to visitor during the observation window'),
+    'the buy-now control was available when it should not have been');
+  assert.equal(humaniseDiagnostic('the control,#recommended-item containing "Headphones" became visible during the observation window'),
+    'the recommended-item control showed "Headphones" when it should not have');
 });

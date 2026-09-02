@@ -87,6 +87,7 @@ export function controlHostedFor(adapterId: 'postgres' | 'mongodb',
     environment: {
       ...leasedDatabaseEnvironment(adapter, { database: resources.database,
         networkMode: resources.buildContainer?.networkMode }),
+      APP_WARM_START: '1',
       VITE_PORT: String(request.port),
     },
   });

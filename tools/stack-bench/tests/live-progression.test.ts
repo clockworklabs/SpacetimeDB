@@ -99,7 +99,7 @@ const definition = (): FixtureDefinition => ({
   version: '1.0.0',
   state: 'draft',
   title: 'Live fixture',
-  policy: 'dependency-gated',
+  policy: 'dependency-graph',
   strikes: { default: 2, levels: {} },
   nodes: [{
     id: 'accounts',
@@ -116,15 +116,17 @@ const definition = (): FixtureDefinition => ({
 const splitIdentities = (progression: ProgressionInput) => {
   const progressionDefinition = progression.definition as typeof progression.definition & {
     repairSelection?: 'feature' | 'batch';
+    strikePolicy?: 'feature' | 'depth' | 'banked';
+    workSelection?: 'progressive' | 'all-at-once';
   };
   const { policy: _policy, strikes, unchangedFailureLimit: _limit,
-    repairSelection,
+    repairSelection, strikePolicy, workSelection,
     ...catalogDefinition } = progressionDefinition;
   assert(strikes);
   const featureCatalog = compileFeatureCatalogInput({ ...catalogDefinition,
     schemaVersion: 1, kind: 'feature-catalog' });
   const dependencyPolicy = compileDependencyPolicyInput({ levels: strikes.levels }, featureCatalog,
-    undefined, undefined, repairSelection);
+    { repairSelection, strikePolicy, workSelection });
   return { featureCatalog, dependencyPolicy,
     featureCatalogIdentity: featureCatalog.identity,
     dependencyPolicyIdentity: dependencyPolicy.identity };
@@ -176,7 +178,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       attempt: { id: 'run-1', parentId: owner.attempt.id },
       identities,
       payload: {
-        mode: { id: 'dependency', version: '3.0.0' },
+        mode: { id: 'dependency', version: '3.2.0' },
         backend: owner.attempt.stack,
         model: owner.attempt.model,
         condition: { sha256: owner.attempt.conditionSha256 },
@@ -271,7 +273,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
 
     const attempt = {
       id: owner.attempt.id,
-      mode: { id: 'dependency', version: '3.0.0' },
+      mode: { id: 'dependency', version: '3.2.0' },
       levels: [1],
       featureCatalog: split.featureCatalogIdentity,
       dependencyPolicy: split.dependencyPolicyIdentity,
@@ -317,7 +319,7 @@ test('live progression binds, records, checkpoints, and persists one exact actio
         skills: attempt.skills,
         runtime: { buildImage: null },
         progressionStatus: states.at(-1),
-        validation: { ladder: { policy: 'dependency-gated', requestedLevels: [1],
+        validation: { ladder: { policy: 'dependency-graph', requestedLevels: [1],
           completedLevels: [1], stoppedAfterLevel: null, blockedLevels: [] } },
         levels: [{ level: 1, selection: selected.grader.selection,
           graded: true, score: 1, max: 1, outcome: { kind: 'passed' } }],

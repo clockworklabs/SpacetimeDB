@@ -82,8 +82,8 @@ test('dependency-owned checks use only interfaces supplied by their parents', ()
     const feature = scenario.features.find(candidate => candidate.id === check.feature);
     assert(feature, `${warehouse.id}.${check.id} must select a feature`);
     const setup = feature.setup;
-    assert(setup.some(step => step.testid === 'staff-signin-submit'));
-    assert.equal(setup.some(step => step.do === 'signIn' || step.do === 'signUp'), false);
+    assert(setup.some(step => step.do === 'signIn'
+      && (step.actor === 'admin' || step.actor === 'staff')));
   }
 
   const cancellation = readPack('l2-order-cancellation-features-1.0.1.json');

@@ -39,7 +39,8 @@ import type { ConditionReference, ResolvedStudyCondition } from './condition-com
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.js';
 import type { CampaignModeInput } from './campaign-mode.js';
 import { validateCampaignMode } from './campaign-mode.js';
-import type { DependencyRepairSelection } from '../progression/dependency-definition.js';
+import type { DependencyRepairSelection, DependencyStrikePolicy, DependencyWorkSelection }
+  from '../progression/dependency-definition.js';
 
 type UnknownRecord = Record<string, unknown>;
 type CampaignState = 'draft' | 'frozen';
@@ -50,6 +51,8 @@ type DependencyPolicyInput = ProgressionInput<CompiledDependencyPolicyDefinition
 interface CampaignMode extends CampaignModeInput {
   strikes?: UnknownRecord;
   repairSelection?: DependencyRepairSelection;
+  strikePolicy?: DependencyStrikePolicy;
+  workSelection?: DependencyWorkSelection;
 }
 
 export interface CampaignStackSelection {
@@ -994,8 +997,12 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     requested: requestedForCondition,
   });
   const dependencyPolicy = definition.mode.id === 'dependency'
-    ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog!,
-      definition.levels, undefined, definition.mode.repairSelection) : null;
+    ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog!, {
+      selectedLevels: definition.levels,
+      repairSelection: definition.mode.repairSelection,
+      strikePolicy: definition.mode.strikePolicy,
+      workSelection: definition.mode.workSelection,
+    }) : null;
   return { bindings, grading, stacks, agents, conditions, featureCatalog, dependencyPolicy };
 }
 

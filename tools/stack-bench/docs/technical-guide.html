@@ -227,7 +227,7 @@ const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></deta
       <h2>Dependency mode</h2>
       <p class="section-intro">Dependency depth sets the level. Passed parents open child features.</p>
       <p><a href="dependency-graph.html">Open the current dependency graph</a> to trace parents, children, and feature descriptions.</p>
-      <div class="callout"><strong>Repair selection.</strong> The first build receives all open features. The default <code>feature</code> policy sends one failed feature in each repair. The optional <code>batch</code> policy sends all currently failed features. Grading includes current work, passed features, and required parents. Only repaired failed features spend a strike. Sequential mode does not use this setting.</div>
+      <div class="callout"><strong>Work selection.</strong> <code>progressive</code> sends features as their prerequisites pass. <code>all-at-once</code> sends every selected feature in the first build. <strong>Repair selection.</strong> <code>feature</code> sends one failed feature per repair. <code>batch</code> sends all current failures and returns one combined report. <strong>Strike policy.</strong> <code>feature</code> gives each feature its own limit. <code>depth</code> shares a limit within one depth. <code>banked</code> carries unused depth budget forward.</div>
       <details open><summary>Real example: a node owns prompt modules, checks, and dependencies</summary><pre><code>{
   "id": "purchasing",
   "title": "Purchasing and orders",
@@ -290,21 +290,24 @@ function selectedGradingWork(state) {
         <div class="card"><h3>Execution</h3><ol><li>Run campaign-wide admission checks.</li><li>Claim up to the configured parallel slots.</li><li>Give each slot a distinct run index and resource scope.</li><li>Write attempt state after each completion.</li></ol></div>
       </div>
       <details open><summary>Reference campaign excerpt</summary><pre><code>{
-  "mode": { "id": "dependency", "version": "3.0.0",
+  "mode": { "id": "dependency", "version": "3.2.0",
+    "workSelection": "progressive",
     "repairSelection": "feature",
+    "strikePolicy": "feature",
     "strikes": { "default": 1, "levels": {} } },
   "levels": [1, 2, 3, 4, 5, 6],
   "featureCatalog": "ecommerce.questlines@2.0.1",
   "stacks": [
-    { "id": "mongodb", "adapterVersion": "1.3.0" },
-    { "id": "postgres", "adapterVersion": "1.4.0" },
-    { "id": "spacetime", "adapterVersion": "1.1.0" }
+    { "id": "mongodb", "adapterVersion": "1.4.0" },
+    { "id": "postgres", "adapterVersion": "1.5.0" },
+    { "id": "spacetime", "adapterVersion": "1.3.0" }
   ],
   "repetitions": 1,
   "parallelism": 3,
   "budgets": { "fixRounds": 0, "attemptTimeoutMinutes": 180 }
 }</code></pre></details>
       <div class="callout"><strong>Parallelism.</strong> Each active attempt gets separate ports, database names, containers, and resource locks.</div>
+      <div class="callout"><strong>Extension.</strong> <code>campaign extend target.json --from prior-results --depth 2 --out extended-results</code> copies each matching depth-2 source, regrades depths 1 and 2 on a fresh database, and starts depth 3 only after both rechecks pass.</div>
       <div class="audit">
         <div><span>✓</span><p>Draft plans can run only with the model-free trial path. Paid campaign execution requires a frozen plan.</p></div>
         <div><span>✓</span><p>An unresolved running attempt must be reconciled before the controller resumes.</p></div>

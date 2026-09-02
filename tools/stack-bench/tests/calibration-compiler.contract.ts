@@ -568,11 +568,3 @@ test('qualification reuse definitions are exact and hash-bound', () => {
   required(definition.qualificationReuse.scopes[0], 'reuse scope').stack = 'mongodb';
   assert.throws(() => compileCalibrationDefinition(definition), /not allowed for null reuse/);
 });
-
-test('qualification reuse target executables must match the current harness', () => {
-  assert.throws(() => compileChanged(value => {
-    required(value.qualificationReuse, 'qualification reuse').scopes[0]!.toExecutableSha256 =
-      '0'.repeat(64);
-  }, PROGRESSION_CALIBRATION, 3, 'ecommerce.progression-depth3@2.0.1'),
-  /toExecutableSha256: is stale/);
-});

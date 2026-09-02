@@ -305,6 +305,27 @@ test('one progression catalog binds every node and selects only current work', (
       .map(reference => reference.slice(0, reference.lastIndexOf('@'))).sort());
 });
 
+test('all-at-once composes every selected feature into one fresh request', () => {
+  const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  const catalog = compileFeatureCatalogInput(definition);
+  const policy = compileDependencyPolicyInput({ default: 1, levels: {} }, catalog, {
+    workSelection: 'all-at-once', repairSelection: 'batch',
+  });
+  const state = progressionEngine.initialize(dependencyRuntimeDefinition(catalog, policy));
+  const binding = resolveRecipeRelease(loadTrack('ecommerce'), 6,
+    'ecommerce.progression-catalog@2.0.1');
+  const selected = resolveProgressionRecipeAction(binding, state);
+  if (selected.action.type === 'terminal' || !('agent' in selected)) {
+    throw new Error('all-at-once must produce one build request');
+  }
+  const featureIds = definition.nodes.flatMap(node => node.featureRefs)
+    .map(reference => reference.slice(0, reference.lastIndexOf('@'))).sort();
+  assert.equal(selected.action.level, 6);
+  assert.equal(selected.agent.request.task.mode, 'fresh');
+  assert.deepEqual(selected.agent.request.selection.requested.features, featureIds);
+  assert(selected.agent.task.requirementIds.includes('ecommerce.progression.managed-support'));
+});
+
 test('the current campaign binds the full graph to one catalog across six levels', () => {
   const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'appliance',
     'campaign.ecommerce-progression-reference.json'));

@@ -58,7 +58,7 @@ test('the ecommerce reference pilot resolves the exact L1-L6 progression inputs'
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5, 6]);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
   assert.equal(plan.featureCatalog.identity.version, '2.0.1');
-  assert.equal(plan.dependencyPolicy.identity.id, 'dependency-gated');
+  assert.equal(plan.dependencyPolicy.identity.id, 'dependency-graph');
   assert.deepEqual(plan.bindings.map(binding => `${binding.recipe.id}@${binding.recipe.version}`),
     Array(6).fill('ecommerce.progression-catalog@2.0.1'));
   assert.deepEqual(plan.attempts.map(attempt => attempt.stack).sort(),

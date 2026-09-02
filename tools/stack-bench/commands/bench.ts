@@ -47,7 +47,8 @@ import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { contractControlIds } from '../src/composition/agent-visible-contract.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
-  repairHistoryEntry, repairProgressState } from '../src/evidence/repair-evidence.js';
+  repairHistoryEntry, repairProgressState, restorePrivateGradingEvidence }
+  from '../src/evidence/repair-evidence.js';
 import { mutationControlArgv, mutationControlTimeoutMs, pristineMutationBaselinePath }
   from '../src/evidence/mutation-control.js';
 import type { MutationControlArgs } from '../src/evidence/mutation-control.js';
@@ -983,6 +984,13 @@ async function main() {
     const from = resolve(args.seedFrom);
     if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
     seedAppSource(from, appDir);
+    if (args.progressionSeed) {
+      const seeded = hashAppSource(appDir);
+      if (seeded.sha256 !== args.progressionSeed.sourceSha256
+        || seeded.files.length !== args.progressionSeed.sourceFiles) {
+        throw new Error('extension source does not match its recorded identity');
+      }
+    }
     console.log(args.repairGrant
       ? `  restored L${args.levelList[0]} checkpoint from ${from} for a bounded repair continuation`
       : `  seeded from ${from} — level ${args.levelList[0]} will UPGRADE it, not rebuild`);
@@ -1010,6 +1018,13 @@ async function main() {
     featureCatalog: args.featureCatalog?.identity ?? null,
     dependencyPolicy: args.dependencyPolicy?.identity ?? null,
     ...(args.progressionOwner ? { progressionOwner: args.progressionOwner } : {}),
+    ...(args.progressionSeed ? { progressionSeed: {
+      fromDepth: args.progressionSeed.fromDepth,
+      sourceSha256: args.progressionSeed.sourceSha256,
+      sourceFiles: args.progressionSeed.sourceFiles,
+      parent: structuredClone(args.progressionSeed.parent),
+      validatedDepths: [],
+    } } : {}),
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
     validation: {
@@ -1142,7 +1157,7 @@ async function main() {
         failure: progressionFailure(outcome),
         repair: { status: 'ungraded', budgetRounds: 0, roundsUsed: 0,
           stopReason: audit.kind === 'harness_failure' ? 'audit-failure' : 'contaminated' } });
-      run.progressionStatus = progressionExecution.status();
+      run.progressionStatus = progressionExecution!.status();
     }
     run.validation.ladder.stoppedAfterLevel = run.levels.at(-2)?.level ?? null;
     run.validation.ladder.blockedLevels = args.levelList
@@ -1172,6 +1187,81 @@ async function main() {
 
     let progressionSelection = bindProgressionAction(level);
     if (progressionSelection?.action.type === 'terminal') break;
+    if (args.dependencyPolicy?.definition.workSelection === 'all-at-once'
+      && progressionSelection?.action.level !== level) continue;
+    const applicationControl = materializeCodingOutput
+      ? restartSpecFor(args, appDir, track) : null;
+    if (args.seedThrough !== undefined && level <= args.seedThrough) {
+      if (!progressionSelection || !isProgressionWorkRecipeAction(progressionSelection)
+        || progressionSelection.action.level !== level || !args.seedFrom || !run.progressionSeed) {
+        throw new Error(`extension cannot validate depth ${level}`);
+      }
+      let applicationFailure: RunOutcome | null = null;
+      if (applicationControl) {
+        try {
+          await materializeAcceptedSource(args.seedFrom, appDir, applicationControl);
+        } catch (error) {
+          applicationFailure = materializationAppFailure(error);
+        }
+      } else {
+        resetAppToSource(args.seedFrom, appDir);
+      }
+      const bundle = grade(args, appDir, url, `${args.backend}-extension-l${level}`,
+        level, track, runId, { applicationFailure });
+      const outcome = applicationFailure ?? classifyBundle(bundle);
+      const next = recordProgressionGrade({ selected: progressionSelection, bundle, level,
+        repair: { status: outcome.kind === 'passed' ? 'not-needed' : 'incomplete',
+          budgetRounds: 0, roundsUsed: 0,
+          stopReason: outcome.kind === 'passed' ? 'not-needed' : 'extension-validation-failed' } });
+      const progressionState = requireProgressionState(progressionExecution?.state ?? null);
+      const progressionAttempt = progressionState.attempts.at(-1) ?? null;
+      const graded = levelGradeIsUsable(outcome, progressionAttempt);
+      const passed = graded && outcome.kind === 'passed';
+      const repair = { status: passed ? 'not-needed' as const : 'incomplete' as const,
+        budgetRounds: 0, roundsUsed: 0,
+        stopReason: passed ? 'not-needed' : 'extension-validation-failed' };
+      let checkpoint = null;
+      try {
+        checkpoint = preserveLevelCheckpoint({ appDir, outputDir: args.out, runId,
+          identities: run.identities, track: args.track, backend: args.backend, level,
+          repair, outcome, selectionSha256: bundle?.selection?.sha256 ?? null });
+      } catch (error) {
+        throw new Error(`could not preserve extension depth ${level}: ${errorMessage(error)}`);
+      }
+      const source = hashAppSource(appDir);
+      run.levels.push({ level, graded,
+        score: graded ? bundle?.totals?.score ?? null : null,
+        max: graded ? bundle?.totals?.max ?? null : null,
+        selection: bundle?.selection ?? null,
+        baseline: { kind: 'extension-validation', source: {
+          sha256: source.sha256, files: source.files.length } },
+        regression: bundle?.totals?.regression ?? null,
+        contractPass: bundle?.totals?.contractPass ?? null,
+        code: bundle?.code ?? null,
+        repair,
+        checkpoint,
+        sessionTotals: summarizeSessions([]),
+        costUsd: 0,
+        fixRounds: 0,
+        durationSec: Math.round((Date.now() - t0) / 1000),
+        outcome });
+      if (progressionAttempt?.outcome === 'conclusive') {
+        run.validation.ladder.completedLevels.push(level);
+      }
+      run.progressionStatus = progressionExecution!.status();
+      if (passed) run.progressionSeed.validatedDepths.push(level);
+      if (!passed) {
+        run.validation.ladder.stoppedAfterLevel = level > 1 ? level - 1 : null;
+        run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
+        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        break;
+      }
+      writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+      if (!next || next.type === 'terminal' || next.level === undefined || next.level <= level) {
+        throw new Error(`extension did not advance after depth ${level}`);
+      }
+      continue;
+    }
     const resumedRepair = progressionStart?.resumed === true
       && progressionStart.action.type === 'repair';
     const priorRepairRounds = resumedRepair
@@ -1204,7 +1294,7 @@ async function main() {
     const firstMode = resumedRepair ? 'fix'
       : continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
     const build = await runAgentForLevel(
-      resumedRepair || level === args.levelList[0] ? firstMode : 'upgrade', level);
+      resumedRepair || run.levels.length === 0 ? firstMode : 'upgrade', level);
     const buildLeak = auditContamination(appDir);
     if (buildLeak) {
       const buildSession = runSessionRecord(build,
@@ -1253,8 +1343,6 @@ async function main() {
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
     }
-    const applicationControl = materializeCodingOutput
-      ? restartSpecFor(args, appDir, track) : null;
     const gradeAcceptedSource = async (sourcePath: string,
       label: string): Promise<GradeBundlePayload | null> => {
       let failure: RunOutcome | null = null;
@@ -1269,6 +1357,11 @@ async function main() {
       }
       return grade(args, appDir, url, label, level, track, runId,
         { applicationFailure: failure });
+    };
+    const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string): Promise<void> => {
+      if (applicationControl) await materializeAcceptedSource(sourcePath, appDir, applicationControl);
+      else resetAppToSource(sourcePath, appDir);
+      restorePrivateGradingEvidence(appDir, gradingPath);
     };
     if (continuing) {
       // A resume may restore runtime state but cannot change checkpoint source.
@@ -1660,7 +1753,8 @@ async function main() {
       }
       if (decision.action === 'rollback-no-comparison') {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
-        bundle = await gradeAcceptedSource(snapshot, `${args.backend}-l${level}-rollback${fixRounds}`);
+        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        bundle = beforeBundle;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because the result could not be compared'));
         if (!recordRepairProgression()) break;
@@ -1679,7 +1773,8 @@ async function main() {
         } else {
           console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back this fix`);
         }
-        bundle = await gradeAcceptedSource(snapshot, `${args.backend}-l${level}-rollback${fixRounds}`);
+        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        bundle = beforeBundle;
         regressed = true;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because earlier behavior regressed'));
@@ -1744,7 +1839,7 @@ async function main() {
       ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
       ...(nodeStrikes ? {
-        strikeScope: 'feature' as const,
+        strikeScope: progressionState?.definition.strikePolicy,
         nodeStrikes,
       } : {}),
     };

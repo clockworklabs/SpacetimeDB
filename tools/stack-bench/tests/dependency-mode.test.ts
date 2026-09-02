@@ -45,6 +45,8 @@ interface FixtureDefinition {
   strikes: { default?: number; levels: Record<number, number> };
   unchangedFailureLimit?: number;
   repairSelection?: 'feature' | 'batch';
+  strikePolicy?: 'feature' | 'depth' | 'banked';
+  workSelection?: 'progressive' | 'all-at-once';
   nodes: FixtureNode[];
   questlines: Array<{ id: string; title: string }>;
 }
@@ -86,7 +88,7 @@ const fixture = (): FixtureDefinition => ({
   version: '1.0.0',
   state: 'draft',
   title: 'Storefront paths',
-  policy: 'dependency-gated',
+  policy: 'dependency-graph',
   strikes: { default: 2, levels: { 2: 1 } },
   nodes: [
     node('accounts', [], 'identity', [2, 1]),
@@ -135,12 +137,15 @@ test('a valid graph compiles in deterministic level and id order', () => {
   assert.deepEqual(compiled.strikes, { levels: { 1: 2, 2: 1, 3: 2 } });
   assert.equal(compiled.unchangedFailureLimit, 3);
   assert.equal(compiled.repairSelection, 'feature');
+  assert.equal(compiled.strikePolicy, 'feature');
+  assert.equal(compiled.workSelection, 'progressive');
 });
 
 test('repair selection and the unchanged failure limit are versioned dependency policy inputs', () => {
   const runtime = compileDependencyMode(fixture());
   const { policy: _policy, strikes, unchangedFailureLimit: _limit,
-    repairSelection: _repairSelection,
+    repairSelection: _repairSelection, strikePolicy: _strikePolicy,
+    workSelection: _workSelection,
     ...catalogDefinition } = runtime;
   const catalog = compileFeatureCatalogInput({
     ...catalogDefinition,
@@ -148,12 +153,12 @@ test('repair selection and the unchanged failure limit are versioned dependency 
     kind: 'feature-catalog',
   });
   const first = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
-    undefined, 2);
+    { unchangedFailureLimit: 2 });
   const second = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
-    undefined, 3);
+    { unchangedFailureLimit: 3 });
   const batch = compileDependencyPolicyInput({ levels: strikes.levels }, catalog,
-    undefined, 2, 'batch');
-  assert.equal(first.definition.version, '3.0.0');
+    { unchangedFailureLimit: 2, repairSelection: 'batch' });
+  assert.equal(first.definition.version, '3.2.0');
   assert.equal(first.definition.unchangedFailureLimit, 2);
   assert.equal(first.definition.repairSelection, 'feature');
   assert.equal(batch.definition.repairSelection, 'batch');
@@ -178,6 +183,9 @@ test('invalid graphs, questlines, and strike budgets fail before execution', asy
     ['invalid repair selection', value => {
       value.repairSelection = 'invalid' as 'feature';
     }, /feature.*batch/],
+    ['invalid work selection', value => {
+      value.workSelection = 'invalid' as 'progressive';
+    }, /progressive.*all-at-once/],
     ['negative check points', value => { value.nodes[0]!.gradingChecks[0]!.points = -1; }, /positive integer/],
     ['zero-point gate check', value => {
       value.nodes[0]!.gradingChecks[0]!.points = 0;
@@ -325,6 +333,94 @@ test('batch repairs keep all failed features in one repair action', () => {
   }));
   assert.equal(state.nodes.accounts!.strikes.used, 2);
   assert.equal(state.nodes.catalog!.strikes.used, 2);
+});
+
+test('all-at-once requests and grades every selected feature without dependency blocking', () => {
+  const value = fixture();
+  value.workSelection = 'all-at-once';
+  value.repairSelection = 'batch';
+  let state = progressionEngine.initialize(value);
+  assert.equal(dependencyAction(state).level, 3);
+  assert.deepEqual(dependencyPrompt(state).nodeIds,
+    ['accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery']);
+  assert.deepEqual(dependencyGrading(state).nodeIds, dependencyPrompt(state).nodeIds);
+
+  state = progressionEngine.recordResult(state, conclusive(state, 'full-grade', {
+    accounts: 'fail', catalog: 'pass', ownership: 'pass', search: 'pass',
+    recommendations: 'pass', recovery: 'pass',
+  }));
+  assert.equal(state.nodes.ownership!.status, 'passed');
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
+  assert.deepEqual(dependencyGrading(state).nodeIds,
+    ['accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery']);
+  assert.equal(dependencyAction(state).level, 3);
+  state = progressionEngine.recordResult(state, conclusive(state, 'full-repair', {
+    accounts: 'fail',
+  }));
+  assert.equal(state.phase, 'terminal');
+  assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.nodes.ownership!.status, 'passed');
+});
+
+test('all-at-once regrades checks owned by failures outside a feature-scoped repair', () => {
+  const value = fixture();
+  value.workSelection = 'all-at-once';
+  value.repairSelection = 'feature';
+  value.nodes.find(node => node.id === 'search')!.gradingChecks[0]!.requiresFeatures =
+    ['features.catalog'];
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'full-grade', {
+    accounts: 'fail', catalog: 'fail', ownership: 'pass', search: 'pass',
+    recommendations: 'pass', recovery: 'pass',
+  }));
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
+  assert(dependencyGrading(state).checks.some(check => check.id === 'check.search.1'));
+});
+
+test('depth strikes are shared while repair prompts remain feature-scoped', () => {
+  const value = fixture();
+  value.strikePolicy = 'depth';
+  value.strikes.default = 3;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'initial', {
+    accounts: 'fail', catalog: 'fail',
+  }));
+  assert.equal(dependencyAction(state).strikes.scope, 'depth');
+  assert.equal(state.nodes.accounts!.strikes.used, 1);
+  assert.equal(state.nodes.catalog!.strikes.used, 1);
+  assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
+  state = progressionEngine.recordResult(state, conclusive(state, 'accounts-fail', {
+    accounts: 'fail',
+  }));
+  assert.equal(state.nodes.accounts!.strikes.used, 2);
+  assert.equal(state.nodes.catalog!.strikes.used, 2);
+  assert.equal(state.nodes.accounts!.status, 'active');
+  assert.equal(state.nodes.catalog!.status, 'active');
+  state = progressionEngine.recordResult(state, conclusive(state, 'accounts-fail-again', {
+    accounts: 'fail',
+  }));
+  assert.equal(state.phase, 'terminal');
+  assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.nodes.catalog!.status, 'failed');
+});
+
+test('banked strikes carry unused budget into later depths', () => {
+  const value = fixture();
+  value.strikePolicy = 'banked';
+  value.strikes.default = 3;
+  value.strikes.levels = {};
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'initial', {
+    accounts: 'pass', catalog: 'fail',
+  }));
+  state = progressionEngine.recordResult(state, conclusive(state, 'catalog-pass', {
+    catalog: 'pass',
+  }));
+  const action = dependencyAction(state);
+  assert.equal(action.level, 2);
+  assert.equal(action.strikes.scope, 'banked');
+  assert(action.strikes.nodes.every(item => item.budget === 6 && item.used === 1
+    && item.remaining === 5));
 });
 
 test('passed siblings are regraded and return to repair work if they regress', () => {
@@ -608,7 +704,7 @@ test('a child with multiple parents opens only when every parent passes', () => 
     version: '1.0.0',
     state: 'draft',
     title: 'Multi-parent graph',
-    policy: 'dependency-gated',
+    policy: 'dependency-graph',
     strikes: { default: 1, levels: {} },
     nodes: [node('account', [], 'orders'), node('cart', [], 'shopping'),
       node('checkout', ['account', 'cart'], 'orders')],

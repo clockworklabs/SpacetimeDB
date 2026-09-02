@@ -35,6 +35,11 @@ test('campaign CLI separates read-only, preparation, execution, and status comma
     attemptId: 'campaign-r1', grantId: 'grant-1', level: 3,
     nodeIds: ['orders', 'inventory'], strikes: 2,
   });
+  assert.deepEqual(parseCampaignArgs(argv('extend', './depth-3.json', '--from', './depth-2',
+    '--depth', '2', '--out', './depth-3')), {
+    command: 'extend', path: resolve('./depth-3.json'), parentDirectory: resolve('./depth-2'),
+    fromDepth: 2, directory: resolve('./depth-3'),
+  });
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json')), /usage/);
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json', '--out', './a', '--out', './b')),
     /usage/);

@@ -15,13 +15,20 @@ test('the campaign mode registry requires an exact supported mode', () => {
     id: 'sequential', version: '1.0.0', extra: true,
   }), /extra is unknown/);
   assert.deepEqual(CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '3.0.0', strikes: { default: 3, levels: {} },
-  }), { id: 'dependency', version: '3.0.0', repairSelection: 'feature',
+    id: 'dependency', version: '3.2.0', strikes: { default: 3, levels: {} },
+  }), { id: 'dependency', version: '3.2.0', repairSelection: 'feature', strikePolicy: 'feature',
+    workSelection: 'progressive',
     strikes: { default: 3, levels: {} } });
   assert.deepEqual(CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '3.0.0', repairSelection: 'batch',
-    strikes: { default: 3, levels: {} },
-  }).repairSelection, 'batch');
+    id: 'dependency', version: '3.2.0', repairSelection: 'batch',
+    strikePolicy: 'banked', strikes: { default: 3, levels: {} },
+  }), { id: 'dependency', version: '3.2.0', repairSelection: 'batch',
+    strikePolicy: 'banked', workSelection: 'progressive',
+    strikes: { default: 3, levels: {} } });
+  assert.equal(CAMPAIGN_MODE_REGISTRY.validate({
+    id: 'dependency', version: '3.2.0', workSelection: 'all-at-once',
+    strikes: { default: 1, levels: {} },
+  }).workSelection, 'all-at-once');
   assert.throws(() => CAMPAIGN_MODE_REGISTRY.validate({
     id: 'dependency', version: '2.1.0', strikes: { default: 3, levels: {} },
   }), /unknown dependency@2\.1\.0/);

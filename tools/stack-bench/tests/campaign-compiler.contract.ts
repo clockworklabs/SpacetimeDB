@@ -76,8 +76,8 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
     selection: { packs: [], checks: [] },
     stacks: [
       { id: 'spacetime', adapterVersion: '1.3.0' },
-      { id: 'postgres', adapterVersion: '1.4.0' },
-      { id: 'mongodb', adapterVersion: '1.3.0' },
+      { id: 'postgres', adapterVersion: '1.5.0' },
+      { id: 'mongodb', adapterVersion: '1.4.0' },
     ],
     agents: [{ adapter: 'deterministic', adapterVersion: '1.3.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
@@ -196,7 +196,7 @@ function multiLevelDefinition(levels: number[]): TestCampaignDefinition {
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '3.0.0',
+  value.mode = { id: 'dependency', version: '3.2.0',
     strikes: { default: 2, levels: {} } };
   delete value.levels;
   delete value.selection.levels![0]!.features;
@@ -248,7 +248,7 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce-dependency');
   assert.equal(plan.featureCatalog.identity.version, '1.0.0');
   assert.equal(plan.dependencyPolicy.definition.repairSelection, 'feature');
-  assert.equal(plan.dependencyPolicy.definition.version, '3.0.0');
+  assert.equal(plan.dependencyPolicy.definition.version, '3.2.0');
   assert.match(plan.featureCatalog.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.dependencyPolicy)
@@ -372,7 +372,7 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
     assert.deepEqual(args.featureCatalog, plan.featureCatalog);
     assert.deepEqual(args.dependencyPolicy, plan.dependencyPolicy);
     assert(args.progression);
-    assert.equal(args.progression.definition.policy, 'dependency-gated');
+    assert.equal(args.progression.definition.policy, 'dependency-graph');
     assert.deepEqual(args.progressionOwner, { schemaVersion: 1,
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
@@ -607,14 +607,14 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '3.0.0', strikes: { default: 3, levels: {} },
+    id: 'dependency', version: '3.2.0', strikes: { default: 3, levels: {} },
   } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',
   } }), /graph is unknown for sequential mode/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
   assert.throws(() => validateCampaignDefinition(definition({ stacks: [
-    { id: 'postgres', adapterVersion: '1.4.0' }, { id: 'postgres', adapterVersion: '1.4.0' },
+    { id: 'postgres', adapterVersion: '1.5.0' }, { id: 'postgres', adapterVersion: '1.5.0' },
   ] })), /duplicates|name each stack once/);
   assert.throws(() => validateCampaignDefinition(definition({ attemptPolicy: {
     retries: 1, retryOn: [], excludeFromAnalysis: [],

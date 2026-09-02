@@ -1075,7 +1075,7 @@
               "do": "expect",
               "actor": "admin",
               "testid": "admin-item-row",
-              "count": 12
+              "count": 13
             },
             {
               "do": "expect",

@@ -96,6 +96,18 @@ test('partial and invalid attempts are representable without invented scores', (
   assert.equal('totals' in artifact.payload, false);
 });
 
+test('campaign extension provenance is strict and records completed rechecks', () => {
+  const seed = { fromDepth: 2, sourceSha256: 'a'.repeat(64), sourceFiles: 4,
+    parent: { campaignId: 'parent', campaignSha256: 'b'.repeat(64),
+      attemptId: 'attempt-1', executionId: 'execution-1', runId: 'run-1',
+      runSha256: 'c'.repeat(64) }, validatedDepths: [1, 2] };
+  assert.doesNotThrow(() => createArtifact({ kind: 'benchmark_run', id: 'extension',
+    payload: { progressionSeed: seed } }));
+  assert.throws(() => createArtifact({ kind: 'benchmark_run', id: 'bad-extension',
+    payload: { progressionSeed: { ...seed, validatedDepths: [2, 1] } } }),
+  /validatedDepths is invalid/);
+});
+
 test('unknown kinds, fields, malformed payloads, and backward timestamps fail closed', () => {
   assert.throws(() => createArtifact({ kind: 'mystery', id: 'x' }), /unknown kind/);
   assert.throws(() => createArtifact({ kind: 'benchmark_run', id: 'x',

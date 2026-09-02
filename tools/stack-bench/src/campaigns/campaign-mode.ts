@@ -1,7 +1,11 @@
 import {
   DEFAULT_DEPENDENCY_REPAIR_SELECTION,
+  DEFAULT_DEPENDENCY_STRIKE_POLICY,
+  DEFAULT_DEPENDENCY_WORK_SELECTION,
   DEPENDENCY_MODE_VERSION,
   isDependencyRepairSelection,
+  isDependencyStrikePolicy,
+  isDependencyWorkSelection,
 } from '../progression/dependency-definition.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
 
@@ -83,7 +87,8 @@ const dependencyMode = {
   id: 'dependency',
   version: DEPENDENCY_MODE_VERSION,
   validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
-    const fields = new Set(['id', 'version', 'strikes', 'repairSelection']);
+    const fields = new Set(['id', 'version', 'strikes', 'repairSelection', 'strikePolicy',
+      'workSelection']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
     }
@@ -103,7 +108,16 @@ const dependencyMode = {
     if (!isDependencyRepairSelection(repairSelection)) {
       fail(`${at}.repairSelection must be "feature" or "batch"`);
     }
-    return { id: value.id, version: value.version, repairSelection, strikes: {
+    const strikePolicy = value.strikePolicy ?? DEFAULT_DEPENDENCY_STRIKE_POLICY;
+    if (!isDependencyStrikePolicy(strikePolicy)) {
+      fail(`${at}.strikePolicy must be "feature", "depth", or "banked"`);
+    }
+    const workSelection = value.workSelection ?? DEFAULT_DEPENDENCY_WORK_SELECTION;
+    if (!isDependencyWorkSelection(workSelection)) {
+      fail(`${at}.workSelection must be "progressive" or "all-at-once"`);
+    }
+    return { id: value.id, version: value.version, repairSelection, strikePolicy, workSelection,
+      strikes: {
       ...(value.strikes.default === undefined ? {}
         : { default: positiveInteger(value.strikes.default, `${at}.strikes.default`) }),
       levels: normalizedLevels,

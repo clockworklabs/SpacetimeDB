@@ -23,19 +23,19 @@ type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;
 const EXPECTED = {
   1: {
-    mongodb: ['79e57a58008b4ac1cd62de05cbcf2c09f52db6edf23b6d3645896e923c844293', 5941],
-    postgres: ['6f290756d6e85681f7e5390d3f4c4e7171eff8d224a5ff8340e76d60f7515f96', 5983],
-    spacetime: ['db9c29339592ad161735928ade2253098878f6ec8d08493277484318b276469b', 26148],
+    mongodb: ['08329dfdbd8e1017b8d79c67e8a9dd54c44e613c5b30090e1e40c9458d6478e8', 6084],
+    postgres: ['4b5e3dddc02f4a37b227131dd07b2ff9789f5ff86254cb9a9795a813236fb7eb', 6126],
+    spacetime: ['f9a000bc22b2f533933cd90ee76b30b6dfde6aade53edd984a9af85da3ba3fd7', 26291],
   },
   2: {
-    mongodb: ['b9de74188375ff98b9934b0e1eae526ce8699ce02ad4c3283d3294184ce2c070', 7822],
-    postgres: ['271792b59bebf0655f8b7a7f8ef70faf440d76e1fac5ed74db037eb022290029', 7864],
-    spacetime: ['27441fb258b6c08fc7717cd4090296adf5ef91967851387e64f89f46614861ea', 28056],
+    mongodb: ['902aed8a72ae1aa315fff1792e595c87ef2e4466ef238f16c05d38cf4d277965', 7965],
+    postgres: ['1dd90be430d810831834bac70fd284edad8a2ab1aca6a021a2424b55ae03dbab', 8007],
+    spacetime: ['346cc168f8cf05c3d40d9c186600daa6025ed5a530144c4cdffc5ee07788373d', 28199],
   },
   3: {
-    mongodb: ['7a7bd8bd8d7f28b0cce0e9d52df0f5a7df3436aab40400ce3efbcbcc8d63f43e', 9788],
-    postgres: ['63045e86d913f61941ceb9be23ca14c7fcbb7e8c6bad8a847266d346fc35a082', 9830],
-    spacetime: ['7087468472d6d3ade81d5b0251d3d3f7ffa0f88776b7e999fb8f0099022d699d', 29941],
+    mongodb: ['464c3618d1b9166776149309d8cb023472177c3a5eb1dfa880dd9395d5094412', 9931],
+    postgres: ['c827c2f57d09373fdcbcc4007962aa047b3315c1d739d20c42cbc6237fcce64a', 9973],
+    spacetime: ['504b10dd678da8544b5ed031a6afa89beafe296248f71993ccefc63aa1414251', 30084],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
@@ -157,6 +157,7 @@ test('direct neutral guidance uses the current stack access documents', () => {
     assert.match(prompt, /store-admin-2026/);
     assert.match(prompt, /Create `\/app\/start\.sh`/);
     assert.match(prompt, /clean\s+source checkout.*install\s+dependencies.*build.*start/s);
+    assert.match(prompt, /APP_WARM_START=1.*reuse them instead of installing them again/s);
     assert.match(prompt, /script must not change source files/);
     assert.doesNotMatch(prompt, /package cache/i);
     assert.doesNotMatch(prompt, /npm `start` script|either `\/app\/start\.sh`/);

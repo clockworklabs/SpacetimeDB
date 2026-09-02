@@ -555,6 +555,8 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     '',
       'The web application must listen on 0.0.0.0, not localhost, so it is reachable '
       + 'outside its process.',
+    'The environment can run /app/start.sh again with APP_WARM_START=1. '
+      + 'When dependencies are current, reuse them instead of installing them again.',
     '',
     '## Stack',
     '',

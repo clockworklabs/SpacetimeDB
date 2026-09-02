@@ -6,7 +6,7 @@
   "state": "draft",
   "title": "Internal dependency campaign proof",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "3.0.0",
+  "mode": { "id": "dependency", "version": "3.2.0", "workSelection": "progressive",
     "strikes": { "default": 3, "levels": {} } },
   "selection": {
     "levels": [

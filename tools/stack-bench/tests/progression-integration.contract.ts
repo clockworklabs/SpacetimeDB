@@ -52,7 +52,7 @@ const definition = (): DefinitionFixture => ({
   version: '1.0.0',
   state: 'draft',
   title: 'Ecommerce dependency fixture',
-  policy: 'dependency-gated',
+  policy: 'dependency-graph',
   strikes: { default: 2, levels: {} },
   nodes: [{
     id: 'accounts',

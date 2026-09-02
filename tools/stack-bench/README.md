@@ -24,7 +24,9 @@ harness failures, and incomplete measurements remain separate.
   checks run again to catch regressions.
 - **Dependency:** each feature opens after its required parents pass. One branch
   can stop while unrelated branches continue. Repairs target one failed feature
-  by default.
+  by default, or all current failures when `repairSelection` is `batch`. Set
+  `workSelection` to `all-at-once` to request and grade every selected feature
+  in one build.
 
 ## Start here
 

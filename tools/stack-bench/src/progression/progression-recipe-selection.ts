@@ -338,7 +338,7 @@ export function resolveProgressionRecipeAction(binding: RecipeBinding,
   const action = progressionEngine.nextAction(state);
   if (action.type === 'terminal') return { action };
   const workAction = asRecipeWorkAction(action);
-  const taskMode = action.type === 'build' && action.level === 1 && state.attempts.length === 0
+  const taskMode = action.type === 'build' && state.attempts.length === 0
     ? 'fresh' : 'upgrade';
   return { action, ...resolveSelections(binding, state.definition, workAction.prompt.nodeIds,
     workAction.grading.nodeIds, workAction.grading.checks, taskMode) };

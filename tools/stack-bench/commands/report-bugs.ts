@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { redactCredentials, sanitiseConsoleError,
-  sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
+  humaniseDiagnostic, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
   writeArtifact } from '../src/evidence/artifacts.js';
 import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
@@ -168,8 +168,10 @@ export function createBugReport(args: ReportBugsArgs): number {
         const expected = safeDetails
           ? repairValue(actionEvidence?.expected ?? evidence.expected, fallbackExpected)
           : fallbackExpected;
+        const rawActual = actionEvidence?.observation ?? evidence.observation;
         const actual = safeDetails
-          ? repairValue(actionEvidence?.observation ?? evidence.observation, observed)
+          ? typeof rawActual === 'string' ? humaniseDiagnostic(rawActual)
+            : repairValue(rawActual, observed)
           : observed;
         const vague = VAGUE.has(actual);
         if (vague) vagueBugs += 1;

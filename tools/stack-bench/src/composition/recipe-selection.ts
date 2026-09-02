@@ -78,6 +78,10 @@ export interface ComposableSelection {
   taskPacks?: string[];
   promptPacks?: string[];
   features?: string[];
+  requested?: {
+    features?: string[];
+    specifications?: Record<string, string[]>;
+  };
 }
 
 export interface ComposedRecipeTask {
@@ -495,15 +499,25 @@ export function composeSelectedRecipeTask(plan: RecipeTaskPlan,
   if (!actionSelectable && mode !== plan.recipe.task.mode) {
     throw new Error(`recipe task mode is ${plan.recipe.task.mode}, not ${mode}`);
   }
-  const applies = (fragment: RecipeTaskDocument): boolean => fragment.ownerConditions
-    ? fragment.ownerConditions.some(entry => owners.has(entry.owner)
-      && entry.modes.includes(mode) && entry.requiresFeatures.every(featureApplies))
-    : fragment.owners.some(owner => owners.has(owner))
-      && fragment.modes.includes(mode)
-      && (fragment.requiresFeatures === undefined
-        || fragment.requiresFeatures.every(featureApplies));
-  const select = (fragments: readonly RecipeTaskDocument[]): RecipeTaskDocument[] =>
-    fragments.filter(applies);
+  const requestedOwners = new Set([
+    ...(selection.requested?.features ?? []),
+    ...Object.values(selection.requested?.specifications ?? {}).flat()
+      .map(reference => reference.slice(0, reference.lastIndexOf('@'))),
+  ]);
+  const select = (fragments: readonly RecipeTaskDocument[]): RecipeTaskDocument[] => {
+    const ownersWithCurrentText = new Set(fragments.flatMap(fragment =>
+      fragment.ownerConditions
+        ? fragment.ownerConditions.filter(entry => entry.modes.includes(mode)).map(entry => entry.owner)
+        : fragment.modes.includes(mode) ? fragment.owners : []));
+    const modeApplies = (owner: string, modes: string[]): boolean => modes.includes(mode)
+      || (actionSelectable && requestedOwners.has(owner) && !ownersWithCurrentText.has(owner));
+    return fragments.filter(fragment => fragment.ownerConditions
+      ? fragment.ownerConditions.some(entry => owners.has(entry.owner)
+        && modeApplies(entry.owner, entry.modes) && entry.requiresFeatures.every(featureApplies))
+      : fragment.owners.some(owner => owners.has(owner) && modeApplies(owner, fragment.modes))
+        && (fragment.requiresFeatures === undefined
+          || fragment.requiresFeatures.every(featureApplies)));
+  };
   const requirements = select(plan.recipe.task.requirements);
   const contracts = select(plan.recipe.task.contracts);
   const compose = (fragments: readonly RecipeTaskDocument[]): string =>

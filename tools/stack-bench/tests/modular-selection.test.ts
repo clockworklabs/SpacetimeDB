@@ -182,3 +182,20 @@ test('modular task composition includes requested specs and withholds expected a
   assert.equal(requestedOnly.task.sha256, compiled.task.sha256);
   assert.notEqual(requestedOnly.selection.sha256, compiled.selection.sha256);
 });
+
+test('a fresh action includes directly selected upgrade-only feature text', () => {
+  const actionPlan = structuredClone(plan);
+  actionPlan.recipe.task.mode = 'action';
+  actionPlan.recipe.task.requirements.push({
+    id: 'upgrade-frame', owners: ['recipe'], modes: ['upgrade'], text: 'Update this product.\n',
+  });
+  const cart = actionPlan.recipe.task.requirements.find(fragment => fragment.id === 'cart')!;
+  cart.modes = ['upgrade'];
+  const task = createModularRecipeTaskRequest({ release, plan: actionPlan }, {
+    featureIds: ['example.cart'], taskMode: 'fresh',
+  }).task;
+  assert.match(task.requirementText, /Build this product/);
+  assert.match(task.requirementText, /Support accounts/);
+  assert.match(task.requirementText, /Support a cart/);
+  assert.doesNotMatch(task.requirementText, /Update this product/);
+});

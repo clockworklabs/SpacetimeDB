@@ -108,6 +108,26 @@ test('repair feedback includes actionable runtime evidence without private artif
   }
 });
 
+test('repair feedback describes behavior instead of browser commands', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-browser-language-'));
+  try {
+    const app = join(root, 'app');
+    const detail = `locator.selectOption: Timeout 5000ms exceeded.\n`
+      + `waiting for locator('[data-testid="notification-frequency"]')`;
+    const evidence = createCheckEvidence({
+      status: 'failed', code: 'test_result', phase: 'assertion', summary: detail,
+      observation: detail, startedAtMs: 3, completedAtMs: 4,
+    });
+    writeGrade(app, 'failed', detail, { evidence });
+
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+    assert.match(repair, /notification-frequency control did not offer the requested choice/);
+    assert.doesNotMatch(repair, /locator|selectOption|data-testid|Timeout|5000ms/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('repair feedback refuses internal evaluation language', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-disclosure-'));
   try {

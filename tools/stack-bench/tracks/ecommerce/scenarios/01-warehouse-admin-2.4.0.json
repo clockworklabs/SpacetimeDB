@@ -32,8 +32,8 @@
           "points": 1,
           "steps": [
             { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 12 },
-            { "do": "expect", "actor": "admin", "testid": "admin-location-row", "count": 24 },
+            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 13 },
+            { "do": "expect", "actor": "admin", "testid": "admin-location-row", "count": 26 },
             { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
             { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
             { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 100 }

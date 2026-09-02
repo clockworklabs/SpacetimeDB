@@ -12,7 +12,8 @@ const URL_CREDENTIAL = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+:[^\s/@]+@/gi;
 function publicControlName(value: unknown): string | null {
   const raw = String(value ?? '');
   const match = raw.match(/\[(?:data-testid|data-test|data-cy)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\]\s]+))\]/i)
-    ?? raw.match(/(?:getByTestId|locator)\(\s*["']([^"']+)["']/i);
+    ?? raw.match(/(?:getByTestId|locator)\(\s*["']([^"']+)["']/i)
+    ?? raw.match(/\bcontrol,#([a-z0-9_.:-]+)/i);
   const name = match?.[1] ?? match?.[2] ?? match?.[3];
   if (!name || !/^[a-z0-9][a-z0-9_.:-]{0,79}$/i.test(name)) return null;
   return name.toLowerCase();
@@ -78,6 +79,31 @@ export function sanitiseConsoleError(detail: unknown = ''): string {
 
 export function humaniseDiagnostic(detail: unknown = ''): string {
   const raw = String(detail ?? '');
+  if (/selectOption/i.test(raw)) {
+    const control = publicControlName(raw);
+    return control
+      ? `the ${control} control did not offer the requested choice`
+      : 'the requested choice was not available';
+  }
+  const stateMismatch = raw.match(/(?:control,)?#?([a-z0-9_.:-]+).*?expected\s+data-state\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);
+  if (stateMismatch) {
+    return `the ${stateMismatch[1]} control showed "${stateMismatch[3]}" instead of "${stateMismatch[2]}"`;
+  }
+  const valueMismatch = raw.match(/expected\s+(?:the\s+)?control,#([a-z0-9_.:-]+).*?value\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i)
+    ?? raw.match(/(?:the\s+)?control,#([a-z0-9_.:-]+).*?expected\s+value\s+["']([^"']+)["'].*?got\s+["']([^"']+)["']/i);
+  if (valueMismatch) {
+    return `the ${valueMismatch[1]} control showed "${valueMismatch[3]}" instead of "${valueMismatch[2]}"`;
+  }
+  const sequenceMismatch = raw.match(/expected\s+(?:the\s+)?control,#([a-z0-9_.:-]+)\s+sequence\s+(.+),\s+saw\s+(.+?)(?:\s+\(|$)/i);
+  if (sequenceMismatch) {
+    return `the ${sequenceMismatch[1]} list showed ${sequenceMismatch[3]} instead of ${sequenceMismatch[2]}`;
+  }
+  const unexpectedControl = raw.match(/(?:the\s+)?control,#([a-z0-9_.:-]+)(?:\s+containing\s+(["'][^"']+["']))?\s+became\s+(?:available|visible)/i);
+  if (unexpectedControl) {
+    return unexpectedControl[2]
+      ? `the ${unexpectedControl[1]} control showed ${unexpectedControl[2]} when it should not have`
+      : `the ${unexpectedControl[1]} control was available when it should not have been`;
+  }
   if (/still visible after/i.test(raw)) {
     const control = publicControlName(raw);
     return control ? `the ${control} control was still visible` : sanitiseDiagnostic(raw);

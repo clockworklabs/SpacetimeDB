@@ -35,7 +35,7 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
   });
   const dependencyPolicy = compileDependencyPolicyInput({ default: 1, levels: {} }, featureCatalog);
   const attemptPlan = {
-    id: 'campaign-r1-c1-a1-postgres', mode: { id: 'dependency', version: '3.0.0' },
+    id: 'campaign-r1-c1-a1-postgres', mode: { id: 'dependency', version: '3.2.0' },
     stack: 'postgres', agentAdapter: 'claude-code', model: 'test-model',
     condition: { sha256: 'c'.repeat(64) },
   };
@@ -46,7 +46,7 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
   };
   const plan = {
     id: 'campaign', version: '1.0.0', contentSha256: 'a'.repeat(64),
-    definition: { mode: { id: 'dependency', version: '3.0.0' }, track: 'ecommerce' },
+    definition: { mode: { id: 'dependency', version: '3.2.0' }, track: 'ecommerce' },
     featureCatalog, dependencyPolicy,
   };
   const state = { status: campaignStatus, attempts: [{ plan: attemptPlan,

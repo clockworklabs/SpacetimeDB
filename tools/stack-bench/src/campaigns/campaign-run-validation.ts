@@ -10,11 +10,13 @@ import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord }
   from '../evidence/benchmark-run.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { liveProgressionStatus } from '../progression/live-progression.js';
+import { DEPENDENCY_MODE_POLICY } from '../progression/dependency-definition.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../progression/progression-definition.js';
 import { readProgressionState } from '../progression/progression-state.js';
 import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
+import type { CampaignExtensionSeed } from './campaign-scheduler.js';
 
 type UnknownRecord = Record<string, unknown>;
 type PlannedLevel = CompiledCampaignPlan['conditions'][number]['requested']['levels'][number];
@@ -104,6 +106,7 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
   dependencyPolicy?: unknown;
   progressionOwner?: unknown;
   progressionStatus?: unknown;
+  progressionSeed?: unknown;
   skills?: unknown;
   levels?: RunLevel[];
   outcome?: RunOutcome;
@@ -276,8 +279,15 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
         run.levels ?? [], stored.state.terminalOutcome);
       mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');
     } else if (!interruptedPrefix) {
-      mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
-        'progressionState.phase');
+      const seed = record(run.progressionSeed) ? run.progressionSeed : null;
+      const stoppedLevel = run.levels?.at(-1);
+      const stoppedDuringRecheck = seed !== null && safeInteger(seed.fromDepth)
+        && Array.isArray(seed.validatedDepths)
+        && seed.validatedDepths.length < seed.fromDepth
+        && stoppedLevel !== undefined && stoppedLevel.level <= seed.fromDepth
+        && stoppedLevel.outcome?.kind === 'app_failure';
+      mismatch(!stoppedDuringRecheck
+        && stored.state.attempts.at(-1)?.outcome !== 'inconclusive', 'progressionState.phase');
     }
   } catch {
     mismatch(true, 'progressionState');
@@ -286,8 +296,9 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
 
 export function validateCampaignRun(plan: CampaignValidationPlan, attempt: CampaignValidationAttempt,
   input: unknown, {
-  buildImage = null, resultDir = null,
-}: { buildImage?: string | null; resultDir?: string | null } = {}): BenchmarkRun {
+  buildImage = null, resultDir = null, progressionSeed = null,
+}: { buildImage?: string | null; resultDir?: string | null;
+  progressionSeed?: CampaignExtensionSeed | null } = {}): BenchmarkRun {
   if (!record(input)) throw new Error('campaign run must be an object');
   const run = input as BenchmarkRun;
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
@@ -297,6 +308,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
   const dependencyMode = attempt.mode?.id === 'dependency';
   const exactLevels = canonicalDefinitionJson(actualLevels) === canonicalDefinitionJson(expectedLevels);
+  const allAtOnceLevels = dependencyMode && attempt.mode?.workSelection === 'all-at-once'
+    && actualLevels.length === 1 && actualLevels[0] === expectedLevels.at(-1);
   const ladder = run.validation?.ladder;
   const lastActualLevel = actualLevels.at(-1) ?? null;
   const blockedLevels = expectedLevels.slice(actualLevels.length);
@@ -316,7 +329,7 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   const dependencyPrefix = dependencyMode && actualLevels.length > 0
     && actualLevels.length <= expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
-    && run.validation?.ladder?.policy === 'dependency-gated';
+    && run.validation?.ladder?.policy === DEPENDENCY_MODE_POLICY;
   const mismatches: string[] = [];
   const mismatch = (condition: unknown, field: string): void => {
     if (condition) mismatches.push(field);
@@ -353,7 +366,21 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   mismatch(canonicalDefinitionJson(run.progressionOwner ?? null)
     !== canonicalDefinitionJson(expectedProgressionOwner), 'progressionOwner');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
-  mismatch(!exactLevels && !interruptedPrefix && !gatedPrefix && !dependencyPrefix, 'levels');
+  const actualSeed = record(run.progressionSeed) ? run.progressionSeed : null;
+  const expectedSeed = progressionSeed === null ? null
+    : Object.fromEntries(Object.entries(progressionSeed).filter(([field]) => field !== 'source'));
+  const validatedDepths = actualSeed?.validatedDepths;
+  mismatch(canonicalDefinitionJson(actualSeed === null ? null
+    : Object.fromEntries(Object.entries(actualSeed).filter(([field]) => field !== 'validatedDepths')))
+    !== canonicalDefinitionJson(expectedSeed), 'progressionSeed');
+  if (progressionSeed !== null) {
+    const passedRechecks = (run.levels ?? []).filter(level => level.level <= progressionSeed.fromDepth
+      && level.graded === true && level.outcome?.kind === 'passed').map(level => level.level);
+    mismatch(canonicalDefinitionJson(validatedDepths)
+      !== canonicalDefinitionJson(passedRechecks), 'progressionSeed.validatedDepths');
+  }
+  mismatch(!exactLevels && !allAtOnceLevels && !interruptedPrefix && !gatedPrefix
+    && !dependencyPrefix, 'levels');
   mismatch(run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256,
     'identities.agentAdapter.sha256');
   mismatch(run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256,

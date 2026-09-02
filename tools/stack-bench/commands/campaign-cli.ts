@@ -15,6 +15,7 @@ import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAu
   from '../src/campaigns/progression-reference-campaign-audit.js';
 import type { ReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';
+import { prepareCampaignExtension } from '../src/campaigns/campaign-extension.js';
 
 interface CampaignSummaryPlan {
   id: string;
@@ -70,6 +71,8 @@ export type CampaignArgs =
   | { command: 'audit'; directory: string }
   | { command: 'grant-strikes'; directory: string; attemptId: string; grantId: string;
     level: number; nodeIds: string[]; strikes: number }
+  | { command: 'extend'; path: string; parentDirectory: string; fromDepth: number;
+    directory: string }
   | { command: 'prepare'; path: string; directory: string }
   | { command: 'trial'; path: string; directory: string }
   | { command: 'run'; path: string; directory: string }
@@ -172,12 +175,22 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
       grantId: values.grantId, level: values.level, nodeIds: values.nodeIds,
       strikes: values.strikes };
   }
+  if (command === 'extend' && path && rest.length === 6
+    && rest[0] === '--from' && rest[2] === '--depth' && rest[4] === '--out') {
+    const fromDepth = Number(rest[3]);
+    if (!Number.isSafeInteger(fromDepth) || fromDepth < 1) {
+      throw new Error('extend --depth must be a positive integer');
+    }
+    return { command, path: resolve(path), parentDirectory: resolve(rest[1]!),
+      fromDepth, directory: resolve(rest[5]!) };
+  }
   if (isOneOf(command, ['prepare', 'trial', 'run', 'resume', 'reconcile'])
     && path && rest.length === 2 && rest[0] === '--out') {
     return { command, path: resolve(path), directory: resolve(rest[1]!) };
   }
   throw new Error('usage: campaign-cli.js modes | validate|show <campaign.json> '
     + '| prepare|trial|run|resume|reconcile <campaign.json> --out <directory> '
+    + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> '
     + '| status <directory> [--full] | inspect|report|audit <directory> '
     + '| grant-strikes <directory> --attempt <id> --grant-id <id> --level <N> '
     + '--feature <id> [--feature <id> ...] --strikes <N>');
@@ -228,6 +241,14 @@ async function main() {
   if (args.command === 'prepare') {
     const prepared = prepareCampaign(args.path, args.directory);
     console.log(JSON.stringify(campaignStateSummary(prepared.plan, prepared.state), null, 2));
+    return;
+  }
+  if (args.command === 'extend') {
+    prepareCampaignExtension(args.path, args.parentDirectory, args.directory, args.fromDepth);
+    const plan = compileCampaignFile(args.path);
+    const state = await executeCampaign(args.path, args.directory, { mode: 'frozen' });
+    console.log(JSON.stringify(campaignStateSummary(plan, state), null, 2));
+    if (state.status !== 'completed') process.exitCode = 1;
     return;
   }
   const plan = compileCampaignFile(args.path);

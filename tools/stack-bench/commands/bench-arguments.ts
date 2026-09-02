@@ -18,6 +18,8 @@ import { validatePricingAuthority } from '../src/evidence/pricing-authority.js';
 import type { PricingAuthority } from '../src/evidence/pricing-authority.js';
 import { parseGuidanceMode } from '../src/campaigns/condition-compiler.js';
 import type { GuidanceMode } from '../src/campaigns/condition-compiler.js';
+import { validateCampaignExtensionSeed } from '../src/campaigns/campaign-scheduler.js';
+import type { CampaignExtensionSeed } from '../src/campaigns/campaign-scheduler.js';
 
 type StudyCondition = CampaignAttemptPlan['condition'];
 type UnknownRecord = Record<string, unknown>;
@@ -64,6 +66,8 @@ export interface BenchArguments {
   mutationMaxRuntimeMinutes: number;
   referenceMutationOnly?: boolean;
   seedFrom?: string;
+  seedThrough?: number;
+  progressionSeed?: CampaignExtensionSeed;
   parentAttemptId?: string;
   repairFrom?: string;
   repairLevel?: number;
@@ -90,6 +94,7 @@ interface BenchCliOptions extends Partial<BenchArguments> {
   expectSpec?: string[];
   observeSpec?: string[];
   expectedMutationCalibrationJson?: unknown;
+  progressionSeedJson?: unknown;
 }
 
 function parseCli(argv: readonly string[]): BenchCliOptions {
@@ -100,6 +105,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     'mutation-shard-index', 'mutation-shard-count', 'mutation-resume-from',
     'mutation-checkpoint-out', 'mutation-baseline-bundle',
     'expected-mutation-calibration-json', 'mutation-max-runtime-minutes', 'seed-from',
+    'seed-through', 'progression-seed-json',
     'parent-attempt-id', 'repair-from', 'repair-level'] as const;
   const multiple = ['pack', 'check', 'feature-module', 'request-spec', 'expect-spec',
     'observe-spec'] as const;
@@ -121,7 +127,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     if (value) parsed[key] = value.flatMap(item => item.split(',').filter(Boolean));
   }
   for (const key of ['fixRounds', 'maxStalledRepairs', 'maxBudgetUsd', 'mutationShardIndex',
-    'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel']) {
+    'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel', 'seedThrough']) {
     if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
   }
   if (typeof parsed.runIndex === 'string') parsed.runIndex = Number(parsed.runIndex);
@@ -129,7 +135,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     'mutationResumeFrom', 'mutationCheckpointOut', 'mutationBaselineBundle', 'repairFrom']) {
     if (typeof parsed[key] === 'string') parsed[key] = resolve(parsed[key]);
   }
-  for (const key of ['pricingJson', 'expectedMutationCalibrationJson']) {
+  for (const key of ['pricingJson', 'expectedMutationCalibrationJson', 'progressionSeedJson']) {
     if (typeof parsed[key] === 'string') parsed[key] = JSON.parse(parsed[key]);
   }
   if (typeof parsed.guidance === 'string') parsed.guidance = parseGuidanceMode(parsed.guidance);
@@ -147,7 +153,7 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     expectedSpecifications: [], observedSpecifications: [],
     mutationMaxRuntimeMinutes: 60 };
   const { pack, check, pricingJson, featureModule, requestSpec, expectSpec, observeSpec,
-    expectedMutationCalibrationJson, ...options } = parseCli(argv);
+    expectedMutationCalibrationJson, progressionSeedJson, ...options } = parseCli(argv);
   Object.assign(args, options);
   if (pack) args.packIds = pack;
   if (check) args.checkKeys = check;
@@ -161,6 +167,9 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   args.levelsProvided = options.levels !== undefined;
   if (expectedMutationCalibrationJson !== undefined) {
     args.expectedMutationCalibration = expectedMutationCalibrationJson;
+  }
+  if (progressionSeedJson !== undefined) {
+    args.progressionSeed = validateCampaignExtensionSeed(progressionSeedJson);
   }
   if ((args.mutationResumeFrom || args.mutationCheckpointOut || args.mutationBaselineBundle)
       && !args.mutations) {
@@ -193,10 +202,22 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   if (args.progressionResumeFrom && !args.campaignFile) {
     throw new Error('--progression-resume-from requires a compiled campaign');
   }
+  if (args.seedThrough !== undefined && (!args.seedFrom || !args.campaignFile)) {
+    throw new Error('--seed-through requires --seed-from and a compiled campaign');
+  }
+  if (args.seedThrough !== undefined && !args.progressionSeed) {
+    throw new Error('--seed-through requires --progression-seed-json');
+  }
+  if (args.progressionSeed !== undefined && args.seedThrough === undefined) {
+    throw new Error('--progression-seed-json requires --seed-through');
+  }
+  if (args.progressionSeed && args.progressionSeed.fromDepth !== args.seedThrough) {
+    throw new Error('--progression-seed-json does not match --seed-through');
+  }
   if (args.campaignFile) {
     const allowed = new Set(['--campaign-file', '--campaign-attempt-id',
       '--campaign-admission-id', '--progression-resume-from', '--run-index', '--out',
-      '--max-budget-usd']);
+      '--max-budget-usd', '--seed-from', '--seed-through', '--progression-seed-json']);
     const override = argv.slice(2).find(value => value.startsWith('--')
       && !allowed.has(value.split('=', 1)[0]!));
     if (override) throw new Error(`campaign attempts cannot override ${override}`);
@@ -210,6 +231,15 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     args.progression = validateProgressionInput(args.progression);
     args.levelList = progressionLevels(args.progression);
     args.levels = `${args.levelList[0]}-${args.levelList.at(-1)}`;
+    const seedThrough = args.seedThrough;
+    if (seedThrough !== undefined && (!args.levelList.includes(seedThrough)
+      || !args.levelList.some(level => level > seedThrough))) {
+      throw new Error('--seed-through must precede another planned dependency depth');
+    }
+    if (seedThrough !== undefined
+      && args.dependencyPolicy?.definition.workSelection !== 'progressive') {
+      throw new Error('--seed-through requires progressive dependency work selection');
+    }
   } else {
     const [fromText, toText] = args.levels.split('-');
     const from = Number(fromText);
@@ -218,6 +248,9 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
       throw new Error('--levels must be one positive level or an ascending range');
     }
     args.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, index) => from + index);
+    if (args.seedThrough !== undefined) {
+      throw new Error('--seed-through requires dependency mode');
+    }
   }
   if (args.recipe && args.levelList.length !== 1) {
     throw new Error('--recipe requires exactly one requested level');

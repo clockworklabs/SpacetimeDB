@@ -16,7 +16,7 @@ export interface ProgressionWorkAction extends Record<string, unknown> {
   type: 'build' | 'repair';
   level: number;
   strikes: {
-    scope: 'feature';
+    scope: 'feature' | 'depth' | 'banked';
     maxRemaining: number;
     nodes: Array<{
       nodeId: string;
