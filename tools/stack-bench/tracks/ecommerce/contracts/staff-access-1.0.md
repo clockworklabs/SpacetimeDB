@@ -1,8 +1,7 @@
 ## Staff access controls
 
-Keep `staff-signin-username`, `staff-signin-password`, and `staff-signin-submit` available before
-sign-in. Show the active account in `staff-current-user`. Use `staff-link` for the staff area and
-`admin-link` for the administrator area.
+Use the existing account sign-in controls. Use `staff-link` for the staff area and `admin-link`
+for the administrator area. Show neither link to customers.
 
 Use these provided accounts:
 

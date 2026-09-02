@@ -417,7 +417,7 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div className="spinner" />
-        <span>Connecting to PostgreSQL Shop...</span>
+        <span>Connecting to Storefront...</span>
       </div>
     );
   }
@@ -438,6 +438,12 @@ export default function App() {
           setAdminOpen(false);
           setFulfilmentOpen(false);
           setCartOpen(true);
+        }}
+        onCatalog={() => {
+          setCartOpen(false);
+          setOrdersOpen(false);
+          setAdminOpen(false);
+          setFulfilmentOpen(false);
         }}
         onOrdersToggle={() => {
           setCartOpen(false);
@@ -606,6 +612,7 @@ function Header(props: {
   search: string;
   setSearch: (s: string) => void;
   cartCount: number;
+  onCatalog: () => void;
   onCartToggle: () => void;
   onOrdersToggle: () => void;
   onAdminToggle: () => void;
@@ -622,6 +629,7 @@ function Header(props: {
     search,
     setSearch,
     cartCount,
+    onCatalog,
     onCartToggle,
     onOrdersToggle,
     onAdminToggle,
@@ -656,8 +664,11 @@ function Header(props: {
   return (
     <header className="header">
       <h1 className="app-title" data-testid="app-title">
-        PostgreSQL Shop
+        Storefront
       </h1>
+      <button className="btn btn-ghost btn-sm" data-testid="catalog-link" onClick={onCatalog}>
+        Catalog
+      </button>
       <input
         className="input search-input"
         data-testid="search-input"

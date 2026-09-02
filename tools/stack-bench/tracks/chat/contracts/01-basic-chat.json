@@ -4,7 +4,7 @@
   "hooks": [
     {
       "id": "app-title",
-      "element": "the app's visible title, naming which backend it is built on (for example \"PostgreSQL Chat\")",
+      "element": "the app's visible title, \"Chat\"",
       "stage": "landing",
       "check": "visible"
     },

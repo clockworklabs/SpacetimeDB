@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "status": "active",
-  "fixtureSha256": "4479e84b4e1c69136f32f574faae4381497e3e89194d7e01a7a8374acc8dd26c",
+  "status": "candidate",
+  "fixtureSha256": "58a193d61e02eac8e2c4801dc4cefb78db42468515a452a17e2544f2132148ce",
   "backend": "spacetime",
   "track": "ecommerce",
   "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",

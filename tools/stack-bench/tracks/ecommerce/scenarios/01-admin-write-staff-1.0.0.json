@@ -10,14 +10,8 @@
       "name": "Only an administrator can restock",
       "actors": ["admin", "staff"],
       "setup": [
-        { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
-        { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
-        { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
-        { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
-        { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
-        { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
-        { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 }
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true }
       ],
       "criteria": [
         {

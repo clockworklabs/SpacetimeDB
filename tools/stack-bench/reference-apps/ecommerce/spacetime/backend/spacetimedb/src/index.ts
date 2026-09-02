@@ -353,6 +353,7 @@ const CATALOGUE: Array<[string, number, number, number, string]> = [
   ['Keyboard', 89.0, 70, 30, 'Computing'],
   ['Laptop Stand', 29.0, 90, 10, 'Computing'],
   ['Mirrorless Camera', 1299.0, 2, 1, 'Photo'],
+  ['USB Cable', 65.0, 0, 0, 'Home'],
   ['Webcam', 69.0, 60, 40, 'Computing'],
 ];
 

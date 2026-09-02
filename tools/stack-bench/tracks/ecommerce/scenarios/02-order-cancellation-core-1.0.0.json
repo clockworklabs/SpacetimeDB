@@ -11,10 +11,7 @@
       "actors": ["customer", "admin"],
       "setup": [
         { "do": "signUp", "actor": "customer", "name": "cancel-core" },
-        { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
-        { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
-        { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" }
       ],
       "criteria": [
@@ -30,7 +27,7 @@
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 2000 },
             { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Coffee Grinder" } },
             { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 0, "within": 10000 },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "click", "actor": "customer", "testid": "catalog-link" },
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "relativeTo": "stock-before", "plus": 0, "within": 10000 }
           ]
         }

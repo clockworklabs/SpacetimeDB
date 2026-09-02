@@ -115,7 +115,7 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
     blockedLevels?: unknown;
   } };
   runtime?: { buildImage?: string | null };
-  totals?: { costUsd?: number | null; costComplete?: boolean };
+  totals?: { score?: number; max?: number; costUsd?: number | null; costComplete?: boolean };
   backendLease?: { runId?: string; backend?: string; state?: string };
   contaminated?: boolean;
   contamination?: { verdict?: string };
@@ -270,6 +270,9 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
         `levels.L${level.level}.progressionAttempt.reason`);
     }
     if (stored.state.phase === 'terminal') {
+      const points = storedStatus.score.uniqueChecks;
+      mismatch(run.totals?.score !== points.passedPoints
+        || run.totals?.max !== points.availablePoints, 'totals.score');
       const expectedOutcome = expectedDependencyRunOutcomeKind(
         run.levels ?? [], stored.state.terminalOutcome);
       mismatch(expectedOutcome === null || run.outcome?.kind !== expectedOutcome, 'outcome.kind');

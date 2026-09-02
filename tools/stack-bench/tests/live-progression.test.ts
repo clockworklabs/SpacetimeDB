@@ -321,12 +321,16 @@ test('live progression binds, records, checkpoints, and persists one exact actio
           completedLevels: [1], stoppedAfterLevel: null, blockedLevels: [] } },
         levels: [{ level: 1, selection: selected.grader.selection,
           graded: true, score: 1, max: 1, outcome: { kind: 'passed' } }],
-        totals: { costUsd: 0 },
+        totals: { score: 1, max: 1, costUsd: 0 },
         outcome: { kind: 'passed' },
       },
     }));
     assert.equal(validateCampaignRun(plan, attempt, completedRun, { resultDir: outputDir }),
       completedRun);
+    assert.throws(() => validateCampaignRun(plan, attempt, {
+      ...completedRun,
+      totals: { ...completedRun.totals, score: 2 },
+    }, { resultDir: outputDir }), /totals\.score/);
     assert.throws(() => validateCampaignRun(plan, attempt, {
       ...completedRun,
       progressionStatus: { ...completedRun.progressionStatus, attempts: 0 },

@@ -8,8 +8,9 @@ structure, data modeling, libraries, transport, or implementation strategy.
 
 | Element ID | Observable element |
 |---|---|
-| `app-title` | visible application title naming the selected backend |
+| `app-title` | visible application title, `Storefront` |
 | `item-list` | storefront item-card container |
+| `catalog-link` | control that returns to the storefront catalog |
 | `item-card` | one storefront or search-result item |
 | `item-name` | item name within a card |
 | `item-price` | numeric item price within a card |

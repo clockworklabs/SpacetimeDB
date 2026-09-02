@@ -15,6 +15,7 @@ const ITEMS: Array<{ name: string; price: string; east: number; west: number; ca
   { name: "Keyboard", price: "89.00", east: 70, west: 30, category: "Computing" },
   { name: "Laptop Stand", price: "29.00", east: 90, west: 10, category: "Computing" },
   { name: "Mirrorless Camera", price: "1299.00", east: 2, west: 1, category: "Photo" },
+  { name: "USB Cable", price: "65.00", east: 0, west: 0, category: "Home" },
   { name: "Webcam", price: "69.00", east: 60, west: 40, category: "Computing" },
 ];
 

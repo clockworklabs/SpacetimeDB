@@ -19,7 +19,7 @@ const aliases = {
 };
 
 test('neutral guidance gives the agent and grader the same credential aliases', () => {
-  const guidance = resolveGuidanceProfile('neutral@1.7.0', ['mongodb']);
+  const guidance = resolveGuidanceProfile('neutral@1.8.0', ['mongodb']);
   assert.deepEqual(guidance.credentialAliases, aliases);
 
   const source = 'Admin: `stackbench-admin-2026`; staff: `stackbench-staff-2026`; '

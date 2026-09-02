@@ -11,7 +11,7 @@ Create a **real-time chat app**.
 - **Panels** (right slide-in or overlay): threads, pinned messages, profiles, settings
 
 ### Visual Design
-- Dark theme using the brand colors from the language section below
+- Dark theme with a blue primary accent
 - Background: darkest shade for main bg, slightly lighter for sidebar and cards
 - Text: light on dark, muted color for timestamps and secondary info
 - Borders: subtle 1px, low contrast against background

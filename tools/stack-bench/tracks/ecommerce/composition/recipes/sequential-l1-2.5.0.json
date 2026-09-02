@@ -8,9 +8,9 @@
   "track": "ecommerce",
   "sequence": { "level": 1 },
   "fixture": {
-    "path": "../fixtures/storefront-1.0.0.json",
+    "path": "../fixtures/storefront-1.0.1.json",
     "id": "ecommerce.storefront",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "task": {
     "mode": "fresh",

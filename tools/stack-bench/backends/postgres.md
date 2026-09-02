@@ -36,24 +36,6 @@ so a code change is live without redeploying.
 Keep existing application data when you change the schema. Do not drop or
 recreate tables during upgrades or repairs.
 
-## Branding & Styling
-
-- App title: **"PostgreSQL <APP_NOUN>"**
-- Dark theme using official PostgreSQL brand colors:
-  - Primary: `#336791` (PostgreSQL blue)
-  - Primary hover: `#008bb9` (lighter PostgreSQL blue)
-  - Secondary: `#0064a5` (dark PostgreSQL blue)
-  - Background: `#1a1a2e` (dark navy)
-  - Surface: `#16213e` (slightly lighter)
-  - Border: `#2a2a4a` (muted border)
-  - Text: `#e8e8e8` (light gray)
-  - Text muted: `#848484` (PostgreSQL light grey)
-  - Accent: `#008bb9` (PostgreSQL light blue)
-  - Success: `#27ae60` (green for online indicators)
-  - Warning: `#f26522` (PostgreSQL light orange)
-  - Danger: `#cc3b03` (PostgreSQL dark orange/red)
-
-
 ## Configuration
 
 | Setting | Value |

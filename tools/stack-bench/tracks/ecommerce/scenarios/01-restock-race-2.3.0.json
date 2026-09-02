@@ -67,7 +67,6 @@
               "plus": 5,
               "within": 8000
             },
-            { "do": "pressKey", "actor": "a", "key": "Escape", "settleMs": 800 },
             {
               "do": "expectNumber",
               "actor": "a",
@@ -121,7 +120,6 @@
               ],
               "settleMs": 6000
             },
-            { "do": "pressKey", "actor": "a", "key": "Escape", "settleMs": 800 },
             {
               "do": "expectNumber",
               "actor": "a",

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "backend-guidance-profile",
   "id": "neutral",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "state": "qualified",
   "mode": "neutral",
   "material": {
@@ -23,7 +23,7 @@
   "skills": {
     "mongodb": [],
     "postgres": [],
-    "spacetime": ["spacetimedb-typescript-core"]
+    "spacetime": ["typescript-server", "typescript-client"]
   },
   "credentialAliases": {
     "stackbench-admin-2026": "store-admin-2026",

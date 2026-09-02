@@ -50,6 +50,19 @@ test('an interrupted later level keeps completed totals and marks cost incomplet
   });
 });
 
+test('dependency totals use the cumulative progression score', () => {
+  const run = {
+    levels: [
+      { level: 1, graded: true, score: 8, max: 12 },
+      { level: 2, graded: true, score: 13, max: 15 },
+    ],
+    progressionStatus: { score: { uniqueChecks: { passedPoints: 17, availablePoints: 162 } } },
+  };
+  const totals = finalizeRunTotals(run, 1_000, { now: 2_000 });
+  assert.equal(totals.score, 17);
+  assert.equal(totals.max, 162);
+});
+
 test('session and run totals keep receipt precision', () => {
   const sessions = [{ costUsd: 0.123456 }, { costUsd: 0.234567 }, { costUsd: 0.345678 }];
   assert.equal(summarizeSessions(sessions).costUsd, 0.703701);

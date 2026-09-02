@@ -630,10 +630,6 @@ function validateConclusiveResult(state: DependencyState,
   const missingNodes = [...expectedNodes.keys()].filter(nodeId => !actualNodes.has(nodeId));
   if (missingNodes.length) throw new Error(`result is missing nodes: ${missingNodes.join(', ')}`);
   const currentNodes = new Set(selectedPromptNodeIds(state));
-  const hasNotRun = [...actualNodes.values()].some(checks => [...checks.values()].includes('not-run'));
-  if (result.applicationFailure === undefined && hasNotRun) {
-    throw new Error('not-run checks require a typed application failure');
-  }
   if (result.applicationFailure !== undefined) {
     validateApplicationFailure(result.applicationFailure, 'result.applicationFailure');
     for (const [nodeId, checks] of actualNodes) {

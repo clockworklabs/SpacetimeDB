@@ -42,7 +42,7 @@ interface ExternalSyncCase {
 const cases: ExternalSyncCase[] = [
   {
     backend: 'mongodb',
-    fixtureSha256: 'f210c07de82b70fa9f788518e6b2efcf065f867ee56948f676204b3b545d0fc3',
+    fixtureSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['server-restart-disables-catalog-recovery', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
@@ -51,7 +51,7 @@ const cases: ExternalSyncCase[] = [
   },
   {
     backend: 'postgres',
-    fixtureSha256: 'd780194a3c96825b1804a3a73e4fa85d5334d7a7f0f473e5988a1fb83979917a',
+    fixtureSha256: 'e461967ff8b99394c278e6d382e455a7fc3086c88016543fa668baf808baec0d',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['server-restart-does-not-resynchronize-catalog', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
@@ -60,7 +60,7 @@ const cases: ExternalSyncCase[] = [
   },
   {
     backend: 'spacetime',
-    fixtureSha256: '4479e84b4e1c69136f32f574faae4381497e3e89194d7e01a7a8374acc8dd26c',
+    fixtureSha256: '58a193d61e02eac8e2c4801dc4cefb78db42468515a452a17e2544f2132148ce',
     mutations: [
       ['stock-subscription-snapshotted-once', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['stock-view-ignores-update-across-app-server-stop', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],

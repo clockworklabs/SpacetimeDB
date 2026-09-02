@@ -33,7 +33,7 @@
             { "do": "click", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Keyboard" } },
             { "do": "expect", "actor": "customer", "testid": "order-item", "contains": "eturned", "within": 10000 },
             { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "return-revenue-before", "plus": 0, "within": 10000 },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "click", "actor": "customer", "testid": "catalog-link" },
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "return-stock-before", "plus": 0 }
           ]
         }

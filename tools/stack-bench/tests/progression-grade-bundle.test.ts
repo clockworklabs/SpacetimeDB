@@ -179,6 +179,23 @@ test('typed grader failures do not consume a progression strike as a zero score'
     reason: 'browser worker stopped' });
 });
 
+test('one unmeasured node does not hide another node failure', () => {
+  const mixed = bundle();
+  mixed.outcome = { kind: 'app_failure', phase: 'grading', reason: 'catalog failed' };
+  mixed.suites.application.features[0]!.criteria[0]!.evidence = evidence('inconclusive');
+  mixed.suites.application.features[0]!.criteria[1]!.evidence = evidence('failed');
+  mixed.totals.score = 0;
+  assert.deepEqual(gradeBundleToProgressionResult(artifact(mixed, 'mixed'),
+    action(), conversion), {
+    attemptId: 'mixed', runId: 'run-1', sourceSha256,
+    selectionSha256: 'a'.repeat(64), outcome: 'conclusive',
+    nodes: [
+      { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'not-run' }] },
+      { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
+    ],
+  });
+});
+
 test('completed progression evidence outranks a stale application failure', () => {
   const completed = bundle();
   completed.outcome = { kind: 'app_failure', phase: 'grading', reason: 'stale summary' };

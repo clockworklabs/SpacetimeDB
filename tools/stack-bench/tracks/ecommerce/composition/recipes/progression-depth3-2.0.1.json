@@ -6,7 +6,7 @@
   "state": "draft",
   "title": "Ecommerce progression through depth 3",
   "track": "ecommerce",
-  "fixture": { "path": "../fixtures/operations-1.0.0.json", "id": "ecommerce.operations", "version": "1.0.0" },
+  "fixture": { "path": "../fixtures/operations-1.0.1.json", "id": "ecommerce.operations", "version": "1.0.1" },
   "task": {
     "mode": "action",
     "framing": {

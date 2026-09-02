@@ -350,8 +350,11 @@ export default function App() {
     <div className="app">
       <header className="header">
         <span className="app-title" data-testid="app-title">
-          SpacetimeDB Shop
+          Storefront
         </span>
+        <button type="button" className="btn btn-ghost btn-sm" data-testid="catalog-link" onClick={() => setActivePanel(null)}>
+          Catalog
+        </button>
         <input
           type="text"
           className="search-input"

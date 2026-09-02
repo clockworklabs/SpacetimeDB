@@ -10,8 +10,6 @@
       "name": "Filters compose",
       "actors": ["visitor"],
       "setup": [
-        { "do": "dbSetStock", "item": "Air Purifier", "warehouse": "East", "quantity": 0, "settleMs": 1000 },
-        { "do": "dbSetStock", "item": "Air Purifier", "warehouse": "West", "quantity": 0, "settleMs": 2000 },
         { "do": "fill", "actor": "visitor", "testid": "category-filter", "text": "Home" },
         { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "50" },
         { "do": "fill", "actor": "visitor", "testid": "maximum-price", "text": "200" },
@@ -25,10 +23,11 @@
           "statedBy": "Apply all selected filters together",
           "steps": [
             { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Coffee Grinder", "equals": 1, "within": 10000 },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Gaming Mouse", "absent": true },
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Air Purifier", "equals": 1 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "USB Cable", "absent": true },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Desk Lamp", "absent": true },
             { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Espresso Machine", "absent": true },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Air Purifier", "absent": true }
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Gaming Mouse", "absent": true }
           ]
         }
       ]

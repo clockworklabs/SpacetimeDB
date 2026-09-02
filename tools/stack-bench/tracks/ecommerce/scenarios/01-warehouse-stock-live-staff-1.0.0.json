@@ -10,10 +10,7 @@
       "name": "Warehouse stock stays live",
       "actors": ["admin", "visitor"],
       "setup": [
-        { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
-        { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
-        { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
         { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 100 }
       ],

@@ -156,7 +156,7 @@
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cancel-stock-before", "plus": -1 },
             { "do": "click", "actor": "customer", "testid": "orders-toggle" },
             { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Induction Cooktop" }, "settleMs": 2000 },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "click", "actor": "customer", "testid": "catalog-link" },
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cancel-stock-before", "plus": 0 }
           ]
         },

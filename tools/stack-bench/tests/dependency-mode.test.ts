@@ -872,3 +872,16 @@ test('test-system checks remain build work', () => {
   assert.equal(dependencyAction(state).type, 'build');
   assert.deepEqual(dependencyPrompt(state).nodeIds, ['accounts']);
 });
+
+test('an unmeasured check does not hide an independent measured failure', () => {
+  const value = fixture();
+  value.strikes.default = 3;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'mixed-grade', {
+    accounts: 'not-run', catalog: 'fail',
+  }));
+  assert.deepEqual(Object.values(state.nodes.accounts!.checks), ['test-system', 'test-system']);
+  assert.equal(state.nodes.accounts!.strikes.used, 0);
+  assert.equal(state.nodes.catalog!.checks['check.catalog.1'], 'fail');
+  assert.equal(state.nodes.catalog!.strikes.used, 1);
+});

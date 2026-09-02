@@ -362,11 +362,11 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
   };
   const nonMeasured = expectedIds.map(id => checkEvidence(id))
     .filter(evidence => !['passed', 'failed'].includes(evidence.status));
-  if (nonMeasured.length) {
+  if (nonMeasured.length === expectedIds.length) {
     const harness = nonMeasured.some(evidence => evidence.status === 'harness_failure');
     return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
       harness ? 'harness_failure' : 'inconclusive_evidence',
-      'one or more selected checks did not produce measured evidence');
+      'selected checks did not produce measured evidence');
   }
   const passedPoints = expected.reduce((total, check) => total
     + (checkEvidence(check.id).status === 'passed' ? check.points : 0), 0);
@@ -393,7 +393,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     id: nodeId,
     checks: expected.filter(check => check.nodeId === nodeId).map(check => ({
       id: check.id,
-      outcome: checkEvidence(check.id).status === 'passed' ? 'pass' : 'fail',
+      outcome: checkEvidence(check.id).status === 'passed' ? 'pass'
+        : checkEvidence(check.id).status === 'failed' ? 'fail' : 'not-run',
     })),
   })) };
 }

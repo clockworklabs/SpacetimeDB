@@ -7,9 +7,9 @@
   "title": "Ecommerce progression catalog",
   "track": "ecommerce",
   "fixture": {
-    "path": "../fixtures/operations-1.0.0.json",
+    "path": "../fixtures/operations-1.0.1.json",
     "id": "ecommerce.operations",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "task": {
     "mode": "action",

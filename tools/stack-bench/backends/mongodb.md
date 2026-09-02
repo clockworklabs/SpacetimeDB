@@ -35,24 +35,6 @@ so a code change is live without redeploying.
 Keep existing application data when you change the schema. Do not drop
 collections during upgrades or repairs.
 
-## Branding & Styling
-
-- App title: **"MongoDB <APP_NOUN>"**
-- Dark theme using official MongoDB brand colors:
-  - Primary: `#00ED64` (MongoDB green)
-  - Primary hover: `#00C957` (darker green)
-  - Secondary: `#00684A` (MongoDB forest green)
-  - Background: `#001E2B` (MongoDB dark slate)
-  - Surface: `#023430` (deep green-slate)
-  - Border: `#1C2D38` (muted slate border)
-  - Text: `#E8EDEB` (light gray)
-  - Text muted: `#889397` (MongoDB gray)
-  - Accent: `#00ED64` (MongoDB green)
-  - Success: `#00ED64` (green for online indicators)
-  - Warning: `#FFC010` (MongoDB amber)
-  - Danger: `#FF4F4F` (MongoDB red)
-
-
 ## Configuration
 
 | Setting | Value |

@@ -524,14 +524,17 @@ export default function App() {
       {initializing && (
         <div className="loading-screen">
           <div className="spinner" />
-          <div>Connecting to MongoDB Shop...</div>
+          <div>Connecting to Storefront...</div>
         </div>
       )}
 
       <header className="header">
         <h1 className="app-title" data-testid="app-title">
-          MongoDB Shop
+          Storefront
         </h1>
+        <button className="btn btn-ghost" data-testid="catalog-link" onClick={() => setActiveView(null)}>
+          Catalog
+        </button>
         <input
           className="input search-input"
           data-testid="search-input"

@@ -22,14 +22,13 @@
             { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
             { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
             { "do": "click", "actor": "shopper", "testid": "checkout-submit" },
-            { "do": "pressKey", "actor": "shopper", "key": "Escape" },
+            { "do": "click", "actor": "shopper", "testid": "catalog-link", "settleMs": 2500 },
             { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
             { "do": "reload", "actor": "shopper", "settleMs": 4000 },
             { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
             { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
             { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
             { "do": "reload", "actor": "shopper", "settleMs": 2500 },
-            { "do": "pressKey", "actor": "shopper", "key": "Escape" },
             { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
             { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Headphones", "count": 1 }
           ]

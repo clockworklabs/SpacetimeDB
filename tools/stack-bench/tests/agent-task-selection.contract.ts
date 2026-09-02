@@ -183,7 +183,7 @@ test('ordinary runs select scored checks while test-development checks require e
 test('selected pack prompts contain only their own framework-neutral named actions', () => {
   const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.sequential-l1@2.5.0');
-  const neutral = resolveGuidanceProfile('neutral@1.7.0', ['postgres']);
+  const neutral = resolveGuidanceProfile('neutral@1.8.0', ['postgres']);
   const app = mkdtempSync(join(tmpdir(), 'stack-bench-candidate-task-'));
   try {
     const identity = createBoundRecipeTaskRequest(candidate,

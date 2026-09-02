@@ -20,10 +20,8 @@
           "statedBy": "Recommend items from categories the customer bought from and exclude items already in the cart",
           "steps": [
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
             { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "within": 10000 },
             { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
             { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "absent": true, "within": 10000 }
           ]
         }

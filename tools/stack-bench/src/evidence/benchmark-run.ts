@@ -181,7 +181,9 @@ export interface RunProgressionStatus {
   phase: 'active' | 'terminal';
   level: number;
   attempts: number;
-  score: unknown;
+  score: {
+    uniqueChecks: { passedPoints: number; availablePoints: number };
+  };
 }
 
 export interface RunContinuation {
@@ -292,6 +294,7 @@ interface RunTotalsLevel {
 
 export interface RunTotalsInput {
   levels: RunTotalsLevel[];
+  progressionStatus?: Pick<RunProgressionStatus, 'score'>;
   progressionResume?: {
     inheritedLevels: number[];
     priorTotals: Pick<RunTotals, 'costUsd' | 'costComplete'> | null;
@@ -314,9 +317,17 @@ export function finalizeRunTotals(
     ? (typeof priorExecutionCostUsd === 'number'
       ? addCostUsd(priorExecutionCostUsd, currentExecutionCostUsd) : null)
     : currentExecutionCostUsd;
+  const progressionPoints = run.progressionStatus?.score?.uniqueChecks;
+  const progressionScore = progressionPoints
+    && Number.isSafeInteger(progressionPoints.passedPoints)
+    && Number.isSafeInteger(progressionPoints.availablePoints)
+    ? { score: progressionPoints.passedPoints, max: progressionPoints.availablePoints }
+    : null;
   run.totals = {
-    score: run.levels.reduce((n, level) => n + (level.score ?? 0), 0),
-    max: run.levels.reduce((n, level) => n + (level.max ?? 0), 0),
+    score: progressionScore?.score
+      ?? run.levels.reduce((n, level) => n + (level.score ?? 0), 0),
+    max: progressionScore?.max
+      ?? run.levels.reduce((n, level) => n + (level.max ?? 0), 0),
     costUsd: cumulativeCostUsd,
     costComplete: costComplete && (!run.progressionResume
       || (typeof priorExecutionCostUsd === 'number'

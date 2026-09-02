@@ -14,9 +14,10 @@ Rules:
 
 | Element ID | Element |
 |---|---|
-| `app-title` | the app's visible title, naming its stack (for example "PostgreSQL Shop") |
+| `app-title` | the app's visible title, `Storefront` |
 | `item-list` | the container holding the storefront's item cards |
 | `item-card` | one per item shown on the storefront; contains that item's name, price and stock |
+| `catalog-link` | control that returns to the storefront catalog |
 | `item-name` | the item's name, inside its card |
 | `item-price` | the item's price, inside its card |
 | `item-stock` | the item's current stock as a number, inside its card |

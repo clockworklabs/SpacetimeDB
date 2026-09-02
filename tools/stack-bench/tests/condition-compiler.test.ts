@@ -69,7 +69,7 @@ test('the prescribed condition binds independent guidance, repair, and document 
 });
 
 test('packaged neutral guidance exists symmetrically without architecture advice', () => {
-  const neutral = { id: 'neutral', version: '1.0.0', guidanceProfile: 'neutral@1.7.0',
+  const neutral = { id: 'neutral', version: '1.0.0', guidanceProfile: 'neutral@1.8.0',
     repairPolicy: 'scored-only@1.0.0' };
   const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
     { requested });
@@ -79,11 +79,12 @@ test('packaged neutral guidance exists symmetrically without architecture advice
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
 });
 
-test('neutral guidance uses current stack documents and credential aliases', () => {
-  const profile = resolveGuidanceProfile('neutral@1.7.0', ['mongodb', 'postgres', 'spacetime']);
+test('neutral guidance uses current stack documents, skills, and credential aliases', () => {
+  const profile = resolveGuidanceProfile('neutral@1.8.0', ['mongodb', 'postgres', 'spacetime']);
   assert.equal(profile.state, 'qualified');
   assert.equal(profile.material.designAdvice, false);
   assert.deepEqual(Object.keys(profile.documents), ['mongodb', 'postgres', 'spacetime']);
+  assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client']);
   assert.deepEqual(profile.credentialAliases, {
     'stackbench-admin-2026': 'store-admin-2026',
     'stackbench-customer-2026': 'store-customer-2026',
@@ -92,7 +93,7 @@ test('neutral guidance uses current stack documents and credential aliases', () 
 });
 
 test('expected modular specifications are scored under the ordinary repair policy', () => {
-  const selected = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.7.0',
+  const selected = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.8.0',
     repairPolicy: 'scored-only@1.0.0' };
   const [condition] = resolveStudyConditions([selected], ['mongodb', 'postgres', 'spacetime'],
     { requested: modularRequested });

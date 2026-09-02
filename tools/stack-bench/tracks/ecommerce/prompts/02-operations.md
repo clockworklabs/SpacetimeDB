@@ -110,7 +110,7 @@ Add to the level 1 catalogue, without disturbing it:
 
 | Category | Items |
 |---|---|
-| `Home` | Air Purifier, Desk Lamp, Induction Cooktop, Espresso Machine, Coffee Grinder |
+| `Home` | Air Purifier, Desk Lamp, Induction Cooktop, Espresso Machine, Coffee Grinder, USB Cable |
 | `Audio` | Bluetooth Speaker, Headphones |
 | `Computing` | Gaming Mouse, Keyboard, Laptop Stand, Webcam |
 | `Photo` | Mirrorless Camera |

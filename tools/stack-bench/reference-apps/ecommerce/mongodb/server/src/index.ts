@@ -42,6 +42,7 @@ const CATALOGUE: Array<{ name: string; price: number; east: number; west: number
   { name: "Keyboard", price: 89.0, east: 70, west: 30, description: "Mechanical keyboard with tactile switches." },
   { name: "Laptop Stand", price: 29.0, east: 90, west: 10, description: "Ergonomic aluminum stand for laptops." },
   { name: "Mirrorless Camera", price: 1299.0, east: 2, west: 1, description: "Compact mirrorless camera for enthusiasts." },
+  { name: "USB Cable", price: 65.0, east: 0, west: 0, description: "USB cable currently awaiting restock." },
   { name: "Webcam", price: 69.0, east: 60, west: 40, description: "1080p webcam for calls and streaming." },
 ];
 
@@ -58,6 +59,7 @@ const CATEGORY_MAP: Record<string, string> = {
   "Gaming Mouse": "Computing",
   "Keyboard": "Computing",
   "Laptop Stand": "Computing",
+  "USB Cable": "Home",
   "Webcam": "Computing",
   "Mirrorless Camera": "Photo",
 };

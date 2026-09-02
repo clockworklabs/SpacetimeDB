@@ -519,15 +519,16 @@ test('balanced rotation covers every stack-agent condition and rotates the globa
 
 test('guidance conditions are an independent campaign axis with stack-specific API material', () => {
   const conditions = [...definition().conditions, { id: 'neutral', version: '1.0.0',
-    guidanceProfile: 'neutral@1.7.0', repairPolicy: 'scored-only@1.0.0' }];
+    guidanceProfile: 'neutral@1.8.0', repairPolicy: 'scored-only@1.0.0' }];
   const plan = compile(definition({ conditions, repetitions: 1 }));
   assert.equal(plan.summary.attempts, 6);
   assert.equal(new Set(plan.attempts.map(attempt =>
     `${attempt.stack}:${attempt.condition.id}`)).size, 6);
   const neutralSpacetime = plan.attempts.filter(attempt =>
     attempt.stack === 'spacetime' && attempt.condition.id === 'neutral');
-  assert(neutralSpacetime.every(attempt => attempt.skills.length === 1
-    && attempt.skills[0] === 'spacetimedb-typescript-core'));
+  for (const attempt of neutralSpacetime) {
+    assert.deepEqual(attempt.skills, ['typescript-server', 'typescript-client']);
+  }
   assert(plan.attempts.filter(attempt => attempt.stack !== 'spacetime')
     .every(attempt => attempt.skills.length === 0));
 });

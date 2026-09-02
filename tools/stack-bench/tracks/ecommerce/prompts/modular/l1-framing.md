@@ -1,9 +1,9 @@
 # Ecommerce storefront
 
-Build a polished ecommerce web application using the selected backend and only
-the feature sections that follow. The page title should name the backend. Use a
-clear responsive layout, useful loading, empty, and error states, and ordinary
-keyboard support.
+Build a polished ecommerce web application using the selected stack and only
+the feature sections that follow. Use `Storefront` as the visible page title.
+Use a clear responsive layout, useful loading, empty, and error states, and
+ordinary keyboard support.
 
 Start with exactly two warehouses, `East` and `West`, and these items:
 
@@ -20,4 +20,5 @@ Start with exactly two warehouses, `East` and `West`, and these items:
 | Keyboard | 89.00 | 70 | 30 |
 | Laptop Stand | 29.00 | 90 | 10 |
 | Mirrorless Camera | 1299.00 | 2 | 1 |
+| USB Cable | 65.00 | 0 | 0 |
 | Webcam | 69.00 | 60 | 40 |

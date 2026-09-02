@@ -23,19 +23,19 @@ type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;
 const EXPECTED = {
   1: {
-    mongodb: ['3286fc03b776d9e1c477c0fe26bd8bbb0af5b367309642a87466fa83331a145e', 5716],
-    postgres: ['016e234b3fb034cdc7514527250f71dde6aed29c552f62732807c79c328b6eed', 5758],
-    spacetime: ['4ea6ce3f81eeec22b39e1efe0f9a4484651c7285bd4ad6cdc88ab2ee93099279', 9026],
+    mongodb: ['79e57a58008b4ac1cd62de05cbcf2c09f52db6edf23b6d3645896e923c844293', 5941],
+    postgres: ['6f290756d6e85681f7e5390d3f4c4e7171eff8d224a5ff8340e76d60f7515f96', 5983],
+    spacetime: ['db9c29339592ad161735928ade2253098878f6ec8d08493277484318b276469b', 26148],
   },
   2: {
-    mongodb: ['ebdd8c887d41274d86fdc65440a123ff35746f7d27b7f9f8ac5b6244eee7eee1', 6661],
-    postgres: ['a6b57fce8b373c4a7d2349e252024aad8b899d559c6c8bd7ebe706036d918b90', 6703],
-    spacetime: ['f0f6bf0eccb00d7210f8bd00f736e1dcb9d13534213cc8bf0d83d6b97fe7aa4f', 9981],
+    mongodb: ['588562684df4e900effa65602bc7b80906708fbead4ac8904f52125f8321153d', 7316],
+    postgres: ['4d5dcb07c741c80b8ba3272f014738e2d55f2a7e1f6e2ce2c1fd2d6b62ccc69f', 7358],
+    spacetime: ['70f74c1f2bbb4441385f33abb43b215de85cd1e14a3a210fbaa1600ac680335a', 27533],
   },
   3: {
-    mongodb: ['1ad9c25da4ec9541a00b53dae6600ecd30ef8dcf86b8e7d2aea2f1defb133370', 9534],
-    postgres: ['a2a147a28d9e49a1ed85178b408608239569cd5ca12a6d7a54c7992477d70c72', 9576],
-    spacetime: ['eb6c22911e54954523fa44c4d45fc41a602f2517538692b83044c778fd5c0700', 12787],
+    mongodb: ['68084d789ed8af1281f1c22fed52ade3b38c7bba7b588f09e7e116b169dce3b0', 9605],
+    postgres: ['fbe03a34fa1651c82bf73ff1b23c28de650b2d9b59e0c085da1cc25d0de405cb', 9647],
+    spacetime: ['e0210c1fcbedc4ec81a996bb11fc5837b7da90ad41ad2b52871ad1f910035994', 29755],
   },
 } satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
@@ -79,14 +79,17 @@ function renderPrompt({ level, stack, task, guidance }: {
 test('neutral dependency prompts through L3 contain only the selected stack interface', () => {
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.1', track);
-  const guidance = resolveGuidanceProfile('neutral@1.7.0', STACKS);
+  const guidance = resolveGuidanceProfile('neutral@1.8.0', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime?.ids ?? []);
-  assert.match(spacetimeReference, /schema\(\{ record \}\).*spacetimedb\.reducer/s);
-  assert.match(spacetimeReference, /DbConnection\.builder\(\).*subscriptionBuilder/s);
-  assert.doesNotMatch(spacetimeReference,
-    /localStorage|withToken|clientVisibilityFilter|scheduled\s*[:(]|spacetimedb\.(?:view|procedure|httpHandler)/);
+  assert.match(spacetimeReference, /schema\(\{ score_record \}\).*spacetimedb\.reducer/s);
+  assert.match(spacetimeReference, /ctx\.sender/);
+  assert.match(spacetimeReference, /SenderError/);
+  assert.match(spacetimeReference, /clientVisibilityFilter/);
+  assert.match(spacetimeReference, /DbConnection\.builder\(\).*withToken.*subscriptionBuilder/s);
+  const actual = {} as Record<Level, Record<Stack, readonly [string, number]>>;
   for (const level of [1, 2, 3] as const) {
+    actual[level] = {} as Record<Stack, readonly [string, number]>;
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-depth3@2.0.1');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
       { cumulative: true });
@@ -95,7 +98,7 @@ test('neutral dependency prompts through L3 contain only the selected stack inte
     });
     for (const stack of STACKS) {
       const prompt = renderPrompt({ level, stack, task: selected.agent.request, guidance });
-      assert.deepEqual([sha256(prompt), Buffer.byteLength(prompt)], EXPECTED[level][stack]);
+      actual[level][stack] = [sha256(prompt), Buffer.byteLength(prompt)];
       assert.doesNotMatch(prompt,
         new RegExp(`${EVALUATION_LANGUAGE.source}|Branding & Styling|App title:|<!-- /?interface`, 'i'));
       assert.doesNotMatch(prompt, /\blevel\s+\d+\b/i);
@@ -128,6 +131,7 @@ test('neutral dependency prompts through L3 contain only the selected stack inte
       }
     }
   }
+  assert.deepEqual(actual, EXPECTED);
 });
 
 test('direct neutral guidance uses the current stack access documents', () => {
@@ -162,8 +166,9 @@ test('direct neutral guidance uses the current stack access documents', () => {
       assert.match(prompt, /Serve the complete application on `\d+`/);
       assert.doesNotMatch(prompt, /Application service port/);
     } else {
-      assert.doesNotMatch(prompt,
-        /localStorage|withToken|clientVisibilityFilter|scheduled\s*[:(]|spacetimedb\.(?:view|procedure|httpHandler)/);
+      assert.match(prompt, /withToken/);
+      assert.match(prompt, /ctx\.sender/);
+      assert.match(prompt, /clientVisibilityFilter/);
     }
   }
 });
@@ -192,7 +197,7 @@ test('direct prescribed SpacetimeDB guidance includes token-handling guidance', 
 });
 
 test('campaign skill material cannot change after compilation', () => {
-  const identity = resolveGuidanceProfile('neutral@1.7.0', ['spacetime']).skills.spacetime;
+  const identity = resolveGuidanceProfile('neutral@1.8.0', ['spacetime']).skills.spacetime;
   assert(identity);
   assert.throws(() => execFileSync(process.execPath, [AGENT,
     '--mode', 'build',

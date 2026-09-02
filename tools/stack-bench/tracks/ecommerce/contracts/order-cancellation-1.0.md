@@ -1,7 +1,7 @@
 # Order cancellation application interface
 
 Use `order-status` for an order's state inside its `order-item`. Use `cancel-order` on a pending
-order.
+order. Use `catalog-link` to return to the catalog.
 
 The same authentication, ownership, and data rules apply to this action.
 

@@ -1895,8 +1895,8 @@ async function main() {
   const finalAudit = auditContamination(appDir);
   if (!finalAudit) {
     run.contaminated = false;
-    run.contamination = { evidence: 'no reads of the grader, contracts, prompts or notes',
-      verdict: 'scores usable' };
+    run.contamination = { evidence: 'no agent access to private benchmark files detected',
+      verdict: 'private-access audit passed' };
   } else if (finalAudit.kind === 'contaminated') {
     run.contaminated = true;
     run.contamination = { evidence: finalAudit.evidence, verdict: finalAudit.verdict };
