@@ -108,6 +108,13 @@ test('dashboard reports a dependency repair by feature instead of the level sess
   assert.deepEqual(progress.repair, { round: 1, budget: 1 });
 });
 
+test('dashboard calls dependency graph position depth', () => {
+  const progress = parseRunProgress(`
+=== mongodb-l2-first (mongodb) ===
+`, { dependency: true });
+  assert.equal(progress.phase, 'Grading the first depth 2 build');
+});
+
 test('an aborted first grade is classified, not treated as a scored zero', () => {
   // A readiness failure stops the grade before any suite runs, so 0/58 must
   // read as an abort with its reason.

@@ -215,10 +215,12 @@ function matches(text: string, pattern: RegExp): Array<RegExpMatchArray & { inde
   return [...text.matchAll(pattern)].map(match => Object.assign(match, { index: match.index ?? 0 }));
 }
 
-export function parseRunProgress(log: string, { fixRounds = 0, running = true, status = null }: {
+export function parseRunProgress(log: string, { fixRounds = 0, running = true, status = null,
+  dependency = false }: {
   fixRounds?: number;
   running?: boolean;
   status?: string | null;
+  dependency?: boolean;
 } = {}) {
   const totals = matches(log, /^\s*TOTAL\b.*?(\d+)\/(\d+)\s*$/gm)
     .map(match => ({ index: match.index, score: Number(match[1]), max: Number(match[2]) }));
@@ -240,14 +242,15 @@ export function parseRunProgress(log: string, { fixRounds = 0, running = true, s
   const round = latestRound?.round ?? latestGrading?.round ?? 0;
   const budget = latestRound?.budget ?? fixRounds;
   const target = latestRound?.target ? ` for ${latestRound.target}` : '';
+  const stage = (value: number): string => dependency ? `depth ${value}` : `L${value}`;
   if (latestIndex === latestGrading?.index) {
     phase = latestGrading.round
-      ? `Grading L${latestGrading.level} after repair ${round} of ${budget}${target}`
-      : `Grading the first L${latestGrading.level} build`;
+      ? `Grading ${stage(latestGrading.level)} after repair ${round} of ${budget}${target}`
+      : `Grading the first ${stage(latestGrading.level)} build`;
   } else if (latestIndex === latestRound?.index) {
     phase = latestRound.target
       ? `Repairing ${latestRound.target} · ${latestRound.round} of ${latestRound.budget}`
-      : `Repairing L${latestGrading?.level ?? 1} · round ${latestRound.round} of ${latestRound.budget}`;
+      : `Repairing ${stage(latestGrading?.level ?? 1)} · round ${latestRound.round} of ${latestRound.budget}`;
   } else if (latestIndex === latestTotal?.index && running) {
     phase = 'Preparing the next step';
   }
@@ -283,7 +286,7 @@ function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptSt
     if (existsSync(logPath)) logUpdatedAt = new Date(statSync(logPath).mtimeMs).toISOString();
   }
   const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running',
-    status: attempt.status });
+    status: attempt.status, dependency: plan.definition.mode.id === 'dependency' });
   if (inspected.result?.score) progress.latestScore = inspected.result.score;
   return {
     ...inspected,

@@ -1095,7 +1095,8 @@ function factsBlock(campaign: Campaign): string {
     ...facts.agents.map(agent => fact('Agent', [agent.adapter, agent.version ? `@${agent.version}` : '',
       agent.model ? ` · ${agent.model}` : ''].join(''))),
     ...facts.recipes.filter(recipe => recipe.id).map(recipe =>
-      fact(`L${recipe.level}`, `${recipe.id}@${recipe.version ?? '?'}`)),
+      fact(campaign.mode === 'dependency' ? `Depth ${recipe.level}` : `L${recipe.level}`,
+        `${recipe.id}@${recipe.version ?? '?'}`)),
     facts.runtime?.controllerImage ? fact('Controller', digest(facts.runtime.controllerImage)) : null,
     facts.runtime?.buildImage ? fact('Build image', digest(facts.runtime.buildImage)) : null,
     campaign.createdAt ? fact('Started', new Date(campaign.createdAt).toLocaleString()) : null,
@@ -1238,7 +1239,8 @@ function renderPlanSummary() {
   const facts = [
     ['Mode', title(plan.mode)],
     ['Stacks', (plan.stacks ?? []).map(title).join(', ')],
-    ['Levels', (plan.levels ?? []).map(level => `L${level}`).join('–')],
+    [plan.mode === 'dependency' ? 'Depths' : 'Levels',
+      (plan.levels ?? []).map(level => plan.mode === 'dependency' ? level : `L${level}`).join('–')],
     ['Attempts', plan.attempts],
     ['At once', plan.parallelism],
     ['Repair rounds', plan.budgets?.fixRounds],
