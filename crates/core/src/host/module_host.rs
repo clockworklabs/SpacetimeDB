@@ -1662,6 +1662,8 @@ pub enum ProcedureCallError {
     #[error("Procedure terminated due to insufficient budget")]
     OutOfEnergy,
     #[error("The module instance encountered a fatal error: {0}")]
+    GuestPanic(String),
+    #[error("The procedure call encountered an internal error: {0}")]
     InternalError(String),
 }
 
