@@ -865,19 +865,21 @@ impl InstanceEnv {
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
         }
 
+        let database_identity = *self.database_identity();
+
         // Record in metrics that we're starting an HTTP request.
         DB_METRICS
             .procedure_num_http_requests
-            .with_label_values(self.database_identity())
+            .with_label_values(&database_identity)
             .inc();
         DB_METRICS
             .procedure_http_request_size_bytes
-            .with_label_values(self.database_identity())
+            .with_label_values(&database_identity)
             .inc_by((request.size_in_bytes() + body.len()) as _);
         // Make a guard for the `in_progress` metric that will be decremented on exit.
         let _in_progress_metric = DB_METRICS
             .procedure_num_in_progress_http_requests
-            .with_label_values(self.database_identity())
+            .with_label_values(&database_identity)
             .inc_scope();
 
         /// Strip the query part out of the URL in `err`, as query parameters may be sensitive
@@ -942,8 +944,6 @@ impl InstanceEnv {
             }
         });
 
-        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
-
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
         let execute_fut = reqwest::Client::builder()
@@ -972,11 +972,19 @@ impl InstanceEnv {
         })
         .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
-        let database_identity = *self.database_identity();
+        let response_wait_metric = DB_METRICS
+            .procedure_http_response_wait_seconds
+            .with_label_values(&database_identity);
 
         Ok(async move {
-            let (response, body) = response_fut
-                .await
+            // Time only the module's wait for the network task: validation and client setup are excluded,
+            // while successful, failed, and canceled waits all observe when this scope exits.
+            let response_result = {
+                let _response_wait_timer = response_wait_metric.start_timer();
+                response_fut.await
+            };
+
+            let (response, body) = response_result
                 .inspect_err(|err: &reqwest::Error| {
                     // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
                     if err.is_timeout() {
@@ -1435,6 +1443,88 @@ mod test {
             Err(NodesError::HttpError(message)) => assert_eq!(message, MODULE_HTTP_DISABLED_ERROR),
             _ => panic!("module HTTP request was not rejected by configuration"),
         }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    #[test]
+    fn procedure_http_metrics_are_labeled_by_function() -> Result<()> {
+        use axum::{body::Body, response::Response, routing::post, Router};
+        use spacetimedb_schema::identifier::Identifier;
+        use tokio::{net::TcpListener, sync::oneshot};
+
+        async fn delayed_response() -> Response {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Response::builder()
+                .header("x-response-metric", "response-header")
+                .body(Body::from("response body"))
+                .unwrap()
+        }
+
+        let db = relational_db()?;
+        let (mut env, runtime) = instance_env(db)?;
+        let function_name = "http_metrics_test";
+        env.start_funcall(
+            NamespacedIdentifier::from(Identifier::for_test(function_name)),
+            Timestamp::now(),
+            FuncCallType::Procedure,
+        );
+
+        let listener = runtime.block_on(TcpListener::bind("127.0.0.1:0"))?;
+        let addr = listener.local_addr()?;
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let server = runtime.spawn(async move {
+            axum::serve(listener, Router::new().route("/metrics", post(delayed_response)))
+                .with_graceful_shutdown(async {
+                    shutdown_rx.await.ok();
+                })
+                .await
+                .unwrap();
+        });
+
+        let database_identity = *env.database_identity();
+        let request_metric = DB_METRICS
+            .procedure_http_request_size_bytes
+            .with_label_values(&database_identity);
+        let response_metric = DB_METRICS
+            .procedure_http_response_size_bytes
+            .with_label_values(&database_identity);
+        let response_wait_metric = DB_METRICS
+            .procedure_http_response_wait_seconds
+            .with_label_values(&database_identity);
+        let request_before = request_metric.get();
+        let response_before = response_metric.get();
+        let wait_count_before = response_wait_metric.get_sample_count();
+        let wait_sum_before = response_wait_metric.get_sample_sum();
+
+        let request = st_http::Request {
+            method: st_http::Method::Post,
+            headers: [(
+                Some("x-request-metric".into()),
+                b"request-header".to_vec().into_boxed_slice(),
+            )]
+            .into_iter()
+            .collect(),
+            timeout: None,
+            uri: format!("http://{addr}/metrics"),
+            version: st_http::Version::Http11,
+        };
+        let request_body = bytes::Bytes::from_static(b"request body");
+        let expected_request_size = request.size_in_bytes() + request_body.len();
+
+        let (response, response_body) = runtime.block_on(async { env.http_request(request, request_body)?.await })?;
+
+        shutdown_tx.send(()).unwrap();
+        runtime.block_on(server).unwrap();
+
+        assert_eq!(request_metric.get() - request_before, expected_request_size as u64);
+        assert_eq!(
+            response_metric.get() - response_before,
+            (response.size_in_bytes() + response_body.len()) as u64
+        );
+        assert_eq!(response_wait_metric.get_sample_count() - wait_count_before, 1);
+        assert!(response_wait_metric.get_sample_sum() > wait_sum_before);
 
         Ok(())
     }

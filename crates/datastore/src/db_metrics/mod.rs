@@ -212,18 +212,24 @@ metrics_group!(
         pub num_queries_evaluated: IntCounterVec,
 
         #[name = spacetime_procedure_http_request_size_bytes]
-        #[help = "Size in bytes of HTTP requests performed by procedures running in databases.
+        #[help = "Size in bytes of HTTP requests performed by procedures and HTTP handlers running in databases.
 
 An individual HTTP request's size in bytes is the sum of the sizes of the URI, header names, header values and body."]
         #[labels(db: Identity)]
         pub procedure_http_request_size_bytes: IntCounterVec,
 
         #[name = spacetime_procedure_http_response_size_bytes]
-        #[help = "Size in bytes of HTTP responses to requests performed by procedures running in databases.
+        #[help = "Size in bytes of HTTP responses to requests performed by procedures and HTTP handlers running in databases.
 
 An individual HTTP response's size in bytes is the sum of the sizes of the header names, header values and body."]
         #[labels(db: Identity)]
         pub procedure_http_response_size_bytes: IntCounterVec,
+
+        #[name = spacetime_procedure_http_response_wait_seconds]
+        #[help = "Time procedures and HTTP handlers wait for responses to outbound HTTP requests."]
+        #[labels(db: Identity)]
+        #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 120, 180)]
+        pub procedure_http_response_wait_seconds: HistogramVec,
 
         #[name = spacetime_http_response_size_bytes_total]
         #[help = "Total logical bytes sent in HTTP responses for routes scoped to a specific database.
