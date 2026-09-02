@@ -11,17 +11,12 @@ import test from 'node:test';
 
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
-import type { CampaignAttemptPlan, CompiledCampaignPlan }
-  from '../src/campaigns/campaign-compiler.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
   from '../src/campaigns/campaign-scheduler.js';
-import type { CampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
-import { createCheckEvidence } from '../src/evidence/check-evidence.js';
-import { hashDirectory } from '../src/evidence/provenance.js';
 import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
   overviewSummary } from '../dashboard/dashboard-views.js';
-import { campaignDetail, parseRunProgress,
+import { parseRunProgress,
   discoverCampaigns, readCampaignArtifactBody, readJsonLines, resolveCampaignArtifact,
   summarizeCampaign,
 } from '../dashboard/dashboard-model.js';
@@ -34,20 +29,13 @@ import { progressionEngine } from '../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
   from '../src/progression/progression-definition.js';
 import { writeProgressionState } from '../src/progression/progression-state.js';
-import type { ProgressionState } from '../src/progression/progression-state.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { attemptPage } from '../dashboard/public/views/attempt.js';
+import { campaignPage } from '../dashboard/public/views/campaign.js';
+import { campaignsPage } from '../dashboard/public/views/campaigns.js';
 
-const EXAMPLE_CAMPAIGN = join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json');
-const DEPENDENCY_CAMPAIGN = join(STACK_BENCH_ROOT, 'appliance',
-  'campaign.ecommerce-progression-reference.json');
-
-function writeCampaign(root: string, plan: CompiledCampaignPlan, state: CampaignState): void {
-  mkdirSync(root, { recursive: true });
-  writeArtifact(join(root, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
-    identities: emptyArtifactIdentities(), payload: plan });
-  writeArtifact(join(root, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
-    identities: emptyArtifactIdentities(), payload: state });
-}
+import { DEPENDENCY_CAMPAIGN, EXAMPLE_CAMPAIGN, FIXTURE_CAMPAIGNS,
+  dependencyProgressionEvidence, writeCampaign, writeDependencyResults, writeFixtureResults,
+  writeRunEvidence } from './fixtures/dashboard-fixture.js';
 
 async function listenOrigin(server: Server): Promise<string> {
   await new Promise<void>((resolveListen, reject) => {
@@ -324,7 +312,7 @@ test('dashboard rejects a run artifact that does not belong to its frozen attemp
   assert.equal(inspected?.artifacts?.run, `${claimed.claim.output}/run.json`);
 });
 
-test('dashboard overview defers historical evidence validation until detail is opened', t => {
+test('dashboard overview defers historical evidence validation until the sheet is opened', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-history-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
   const key = 'historical-run';
@@ -352,11 +340,13 @@ test('dashboard overview defers historical evidence validation until detail is o
   assert.equal(overview.status, 'completed');
   assert.equal(overview.attempts.length, 0);
 
-  const detail = campaignDetail(resultsRoot, key);
-  assert.match(detail.attempts[0]?.result?.unreadable ?? '', /unsupported schema/);
+  const sheet = campaignSheet(resultsRoot, key);
+  const excluded = sheet.stacks.flatMap(stack => stack.attempts)
+    .map(attempt => attempt.excluded);
+  assert.ok(excluded.includes('result could not be read'));
 });
 
-test('campaign detail exposes the evidence package but not arbitrary campaign files', async t => {
+test('the attempt package exposes the evidence but not arbitrary campaign files', async t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-package-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
   const campaign = join(resultsRoot, 'campaigns', 'evidence-run');
@@ -384,12 +374,11 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   mkdirSync(join(campaign, 'admissions'), { recursive: true });
   writeFileSync(join(campaign, 'admissions', 'private.json'), '{"token":"do-not-serve"}\n');
 
-  const detail = campaignDetail(resultsRoot, 'evidence-run');
-  assert.ok(detail.package);
-  const packageExecution = detail.package.executions[0];
+  const attemptId = claimed.claim.attempt.id;
+  const evidence = attemptPackage(resultsRoot, 'evidence-run', attemptId);
+  const packageExecution = evidence.executions[0];
   assert.ok(packageExecution);
-  assert.deepEqual(detail.package.campaign.map(item => item.path), ['plan.json', 'state.json']);
-  assert.equal(detail.package.executions.length, 1);
+  assert.equal(evidence.executions.length, 1);
   assert.equal(packageExecution.truncated, false);
   const initialVisual = packageExecution.visuals[0];
   assert.ok(initialVisual);
@@ -473,9 +462,9 @@ test('dashboard serves real state and protects campaign launch with a separate o
   const page = await fetch(origin);
   assert.equal(page.status, 200);
   const pageHtml = await page.text();
-  assert.match(pageHtml, /Stack Bench Control Room/);
-  assert.match(pageHtml, /id="campaign-list"/);
-  assert.match(pageHtml, /class="primary topbar-run"/);
+  assert.match(pageHtml, /<title>Stack Bench<\/title>/);
+  assert.match(pageHtml, /src="\/app\.js"/);
+  assert.doesNotMatch(pageHtml, /Control Room/);
   assert.doesNotMatch(pageHtml, /Controller activity/);
   assert.doesNotMatch(pageHtml, /See every run/);
   const brand = await fetch(`${origin}/spacetimedb-mark.svg`);
@@ -569,94 +558,6 @@ test('host development mode is read-only even with a valid browser request', asy
     body: JSON.stringify({ planId: 'anything', outputName: 'meeting-run-2' }) });
   assert.equal(response.status, 503);
 });
-
-// A results tree the size of a real appliance week: thirty campaigns, nine
-// attempts each, with the artifacts the views actually read.
-const FIXTURE_CAMPAIGNS = 30;
-
-function writeRunEvidence(output: string, plan: CompiledCampaignPlan,
-  attempt: CampaignAttemptPlan, deficit: number): void {
-  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
-  const stack = plan.stacks.find(item => item.id === attempt.stack)!;
-  const selection = structuredClone(attempt.condition.requested.levels
-    .find(item => item.level === 1)!.selection) as { sha256: string;
-      scoredPoints: number; scoredChecks?: Array<{ stableKey: string; points: number }> };
-  const max = selection.scoredPoints;
-  const score = max;
-  const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-  const firstOutcome = { kind: 'app_failure', phase: 'grading', reason: null,
-    appFailures: [], inconclusive: [], harnessFailures: [] };
-  const source = join(output, 'source');
-  mkdirSync(source, { recursive: true });
-  writeFileSync(join(source, 'app.js'), 'export const ready = true;\n');
-  const checks = selection.scoredChecks ?? [];
-  const checkKeys = checks.map(check => check.stableKey);
-  const evidence = createCheckEvidence({ status: 'passed', code: 'completed',
-    phase: 'assertion', startedAtMs: 1, completedAtMs: 2 });
-  writeArtifact(join(output, 'grading', 'bundle.json'), {
-    kind: 'grade_bundle', id: `${attempt.id}-grade-l1`, payload: {
-      observation: 'scored', source: { sha256: hashDirectory(source).sha256 },
-      suites: { fixture: { features: [{ id: 'fixture', name: 'Fixture',
-        setupEvidence: createCheckEvidence({ status: 'passed', code: 'completed',
-          phase: 'setup', startedAtMs: 1, completedAtMs: 2 }),
-        criteria: checks.map(check => ({ id: check.stableKey, stableKey: check.stableKey,
-          desc: check.stableKey, points: check.points, evidence })) }] } },
-      totals: { score, max },
-      selection: { sha256: selection.sha256, checks, attemptedChecks: checkKeys,
-        reportedChecks: checkKeys, notRun: [] },
-    },
-  });
-  writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: `${attempt.id}-run`,
-    attempt: { id: `${attempt.id}-run`, parentId: attempt.id },
-    identities: emptyArtifactIdentities({ engine: plan.identities.engine,
-      experiment: { id: plan.id, version: plan.version, sha256: plan.contentSha256,
-        state: plan.state },
-      agentAdapter: agent.identity, stackAdapter: stack }),
-    payload: {
-      mode: attempt.mode, track: plan.definition.track, backend: attempt.stack,
-      model: attempt.model, pricing: attempt.pricing, guidance: attempt.guidance,
-      condition: attempt.condition, selectionRequest: plan.definition.selection,
-      featureCatalog: attempt.featureCatalog ?? null,
-      dependencyPolicy: attempt.dependencyPolicy ?? null, progressionOwner: null,
-      skills: attempt.skills, runtime: { buildImage: plan.definition.runtime.buildImage },
-      totals: { score, max, costUsd: 1.25, costComplete: true, durationSec: 900 },
-      levels: [{ level: 1, graded: true, selection, score, max, fixRounds: 3,
-        firstBuild: { score: score - deficit, max, outcome: firstOutcome },
-        repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null },
-        durationSec: 900, buildCostUsd: 1.25, outcome }],
-      outcome: { kind: 'passed' },
-    } });
-  writeFileSync(join(output, 'process.stdout.log'),
-    `=== ${attempt.stack}-l1-first (${attempt.stack}) ===\n  TOTAL ... ${score - 1}/${max}\n`
-    + `--- repair round 1/3 ---\n=== ${attempt.stack}-l1-fix1 (${attempt.stack}) ===\n`
-    + `  TOTAL ... ${score}/${max}\n`);
-}
-
-function writeFixtureResults(resultsRoot: string, { running = false }: {
-  running?: boolean;
-} = {}): void {
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
-  const now = '2026-08-18T12:00:00.000Z';
-  for (let index = 0; index < FIXTURE_CAMPAIGNS; index += 1) {
-    const directory = join(resultsRoot, 'campaigns', `fixture-run-${index}`);
-    let state = createCampaignState(plan, { now });
-    const claims = [];
-    for (;;) {
-      const claimed = claimNextAttempt(state, { now, admissionId: `admission-${index}` });
-      if (!claimed.claim) break;
-      claims.push(claimed.claim);
-      state = running && claims.length === 1 ? claimed.state
-        : finishCampaignExecution(claimed.state, claimed.claim.executionId,
-          { exitCode: 0, run: { outcome: { kind: 'passed' } } }, { now });
-    }
-    writeCampaign(directory, plan, state);
-    claims.forEach((claim, ordinal) => {
-      const output = join(directory, claim.output);
-      mkdirSync(output, { recursive: true });
-      writeRunEvidence(output, plan, claim.attempt, (ordinal % 3) * 4 + 1);
-    });
-  }
-}
 
 test('the overview stays a summary and the sheet stays one campaign at appliance scale', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-scale-'));
@@ -957,32 +858,6 @@ test('the event stream reports a campaign write and the log bytes that follow it
     `log {"key":"event-run","attemptId":"${attemptId}"}`]);
 });
 
-function dependencyProgressionEvidence(plan: CompiledCampaignPlan,
-  attempt: CampaignAttemptPlan): ProgressionState {
-  assert.ok(plan.featureCatalog && plan.dependencyPolicy);
-  const input = compileProgressionInput(dependencyRuntimeDefinition(
-    plan.featureCatalog, plan.dependencyPolicy));
-  let state = progressionEngine.initialize(input.definition);
-  const missed = new Set<string>();
-  for (let step = 1; step <= 24; step += 1) {
-    if (progressionEngine.nextAction(state).type === 'terminal') break;
-    const selection = progressionEngine.gradingSelection(state);
-    // One feature per grade misses a check the first time it is graded, so the
-    // replay carries repairs as well as builds.
-    const target = selection.nodeIds.find(nodeId => !missed.has(nodeId));
-    state = progressionEngine.recordResult(state, {
-      attemptId: `${attempt.id}-${step}`,
-      outcome: 'conclusive',
-      nodes: selection.nodeIds.map(nodeId => ({ id: nodeId,
-        checks: selection.checks.filter(check => check.nodeId === nodeId).map((check, index) => ({
-          id: check.id,
-          outcome: nodeId === target && index === 0 ? 'fail' as const : 'pass' as const })) })),
-    });
-    if (target) missed.add(target);
-  }
-  return state;
-}
-
 test('the progression view replays the graph once per stack within its budget', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-progression-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
@@ -1033,4 +908,154 @@ test('the progression view replays the graph once per stack within its budget', 
   assert.equal(campaignProgression(resultsRoot, 'progression-run'), view);
   const bytes = Buffer.byteLength(JSON.stringify(view));
   assert.ok(bytes < 80 * 1024, `progression payload is ${bytes} bytes`);
+});
+
+// The client is a set of pure functions, so the rules the pages are held to —
+// no prose, no badge, one value per cell, stacks in fixed order — are asserted
+// here on rendered HTML rather than in a browser.
+
+interface MarkupNode {
+  tag: string;
+  classes: string[];
+}
+
+interface MarkupText {
+  text: string;
+  path: MarkupNode[];
+}
+
+const VOID_TAGS = new Set(['img', 'br', 'line', 'circle', 'path', 'rect', 'meta', 'link', 'input']);
+const CONTROL_TAGS = new Set(['a', 'button', 'summary']);
+const LABEL_HOLDERS = new Set(['label', 'k', 'th']);
+const DATA_HOLDERS = new Set(['v', 'big', 'phase', 'who', 'q', 'pct', 'd', 'h', 'shape', 'when',
+  'stack', 'name', 'state', 'ev', 'band', 'log', 'links', 'files-list', 'title', 'crumbs', 'text',
+  'group', 'b', 'live-head', 'facts', 'chart', 'sum', 'views']);
+const LABELS = new Set(['Campaign', 'Shape', 'Status', 'SpacetimeDB', 'PostgreSQL', 'MongoDB',
+  'Updated', 'Mode', 'Depth', 'Levels', 'Work', 'Repair', 'Repairs', 'Strikes', 'Repetitions',
+  'Agent', 'Model', 'Guidance', 'Recipe', 'Recipes', 'Time limit', 'Spend limit', 'Controller',
+  'Plan', 'Grading', 'Scope', 'Continued', 'Score', 'Unaided', 'Regressions', 'Time', 'Spend',
+  'Climb', 'Attempt', 'Questline average', 'Evidence', 'Completed', 'Excluded', 'Check', 'Proves',
+  'Grades', 'Now', 'Step', 'Stack', 'Action', 'Feature', 'Strike']);
+const STATUS_WORDS = ['running', 'completed', 'ready', 'needs attention', 'unreadable', 'queued'];
+const BANNED = [/\bfirst try\b/i, /\bfirst build\b/i, /\binitial\b/i, /\bbefore repairs\b/i,
+  /\bverdict\b/i, /\bcontrol room\b/i];
+
+function markupText(html: string): MarkupText[] {
+  const found: MarkupText[] = [];
+  const path: MarkupNode[] = [];
+  const pattern = /<\/?([a-zA-Z][\w-]*)([^>]*)>/g;
+  let index = 0;
+  for (;;) {
+    const tag = pattern.exec(html);
+    const text = html.slice(index, tag?.index ?? html.length);
+    if (text.trim()) found.push({ text: text.trim(), path: [...path] });
+    if (!tag) break;
+    index = pattern.lastIndex;
+    const name = (tag[1] ?? '').toLowerCase();
+    const attributes = tag[2] ?? '';
+    if (tag[0].startsWith('</')) {
+      const open = path.findLastIndex(entry => entry.tag === name);
+      if (open >= 0) path.length = open;
+      continue;
+    }
+    if (VOID_TAGS.has(name) || attributes.trimEnd().endsWith('/')) continue;
+    path.push({ tag: name,
+      classes: (/class="([^"]*)"/.exec(attributes)?.[1] ?? '').split(/\s+/).filter(Boolean) });
+  }
+  return found;
+}
+
+function dataShaped(text: string): boolean {
+  return /^[-—·✓✕$/\d]/.test(text) || /^[a-z][a-z0-9.\-/ ]*$/.test(text);
+}
+
+function lintPage(name: string, html: string): void {
+  assert.equal(/class="[^"]*\b(?:pill|badge)\b/.test(html), false, `${name} has a badge`);
+  for (const banned of BANNED) assert.doesNotMatch(html, banned, `${name} uses a banned word`);
+  for (const node of markupText(html)) {
+    const control = node.path.some(entry => CONTROL_TAGS.has(entry.tag)
+      || entry.classes.includes('chip') || entry.classes.includes('btn'));
+    const label = node.path.some(entry => entry.classes.some(value => LABEL_HOLDERS.has(value))
+      || LABEL_HOLDERS.has(entry.tag));
+    const data = node.path.some(entry =>
+      entry.classes.some(value => DATA_HOLDERS.has(value)) || DATA_HOLDERS.has(entry.tag));
+    if (control) continue;
+    if (label) {
+      assert.ok(LABELS.has(node.text) || /^L\d+ (?:unaided|score)$/.test(node.text)
+        || dataShaped(node.text) || node.path.some(entry => entry.classes.includes('q')),
+      `${name} labels with "${node.text}"`);
+      continue;
+    }
+    assert.ok(data || dataShaped(node.text),
+      `${name} prints "${node.text}" that is neither data, a label nor a control`);
+  }
+}
+
+function statusCells(html: string): string[] {
+  return markupText(html)
+    .filter(node => STATUS_WORDS.includes(node.text.toLowerCase())
+      && !node.path.some(entry => entry.classes.some(value => LABEL_HOLDERS.has(value))
+        || LABEL_HOLDERS.has(entry.tag)))
+    .map(node => node.path.map(entry => entry.classes.join('.')).join('>'));
+}
+
+// Where the stacks are columns or rows they run in one order; the crumbs, the
+// attempt title and the replay's selected event name a single stack.
+function stackOrder(html: string): string[] {
+  const single = new Set(['crumbs', 'title', 'ev', 'figs']);
+  return markupText(html)
+    .filter(node => ['SpacetimeDB', 'PostgreSQL', 'MongoDB'].includes(node.text)
+      && !node.path.some(entry => entry.classes.some(value => single.has(value))))
+    .map(node => node.text);
+}
+
+test('the client renders each page as data, labels and controls only', t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-render-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  writeFixtureResults(resultsRoot);
+  writeDependencyResults(resultsRoot, 'progression-run');
+
+  const controllerActive = (): boolean => true;
+  const overview = overviewSummary(join(resultsRoot, 'campaigns'), { controllerActive });
+  const sequential = campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive });
+  const dependency = campaignSheet(resultsRoot, 'progression-run', { controllerActive });
+  const progression = campaignProgression(resultsRoot, 'progression-run');
+  assert.ok(progression);
+  const attempt = sequential.stacks[0]?.attempts[0];
+  assert.ok(attempt);
+  const pages: Array<[string, string]> = [
+    ['campaigns', campaignsPage({ campaigns: overview, sheets: [dependency], filter: 'all' })],
+    ['campaigns filtered',
+      campaignsPage({ campaigns: overview, sheets: [], filter: 'completed' })],
+    ['campaign sequential',
+      campaignPage({ sheet: sequential, progression: null, view: 'grid', step: 0 })],
+    ['campaign grid', campaignPage({ sheet: dependency, progression, view: 'grid', step: 0 })],
+    ['campaign graph', campaignPage({ sheet: dependency, progression, view: 'graph', step: 0 })],
+    ['campaign replay', campaignPage({ sheet: dependency, progression, view: 'replay', step: 3 })],
+    ['attempt', attemptPage({ sheet: sequential, attemptId: attempt.id, tab: 'checks',
+      checks: attemptChecks(resultsRoot, 'fixture-run-0', attempt.id),
+      evidence: attemptPackage(resultsRoot, 'fixture-run-0', attempt.id), log: '' })],
+  ];
+
+  for (const [name, html] of pages) {
+    lintPage(name, html);
+    // Fixed stack order everywhere, and never a colour to tell them apart.
+    const stacks = stackOrder(html);
+    for (let index = 0; index + 2 < stacks.length; index += 3) {
+      assert.deepEqual(stacks.slice(index, index + 3),
+        ['SpacetimeDB', 'PostgreSQL', 'MongoDB'], `${name} reorders the stacks`);
+    }
+    // One value per sheet cell: a number, or a number over the total it is out of.
+    for (const cell of html.match(/<div class="v">.*?<\/div>/g) ?? []) {
+      const text = cell.replace(/<[^>]*>/g, ' ').trim();
+      assert.match(text, /^\S+(?: \/ \S+)?$/, `${name} packs "${text}" into one cell`);
+    }
+    if (name.startsWith('campaigns')) continue;
+    assert.deepEqual(statusCells(html), [], `${name} shows a status word outside the table`);
+  }
+  const campaigns = pages[0]![1];
+  assert.ok(statusCells(campaigns).length > 0);
+  for (const path of statusCells(campaigns)) {
+    assert.match(path, /state/, 'a status word sits outside the Status column');
+  }
 });

@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { parseArgs as parseNodeArgs } from 'node:util';
 
-import { campaignDetail, discoverPlans, readCampaignArtifactBody,
-  readJsonLines, resolveCampaignArtifact,
+import { contained, discoverPlans, readCampaignArtifactBody,
+  readJsonLines, resolveCampaignArtifact, summarizeCampaign,
 } from './dashboard-model.js';
 import type { DashboardPlan } from './dashboard-model.js';
 import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
@@ -31,7 +31,13 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/climb.js', ['climb.js', 'text/javascript; charset=utf-8']],
+  ['/format.js', ['format.js', 'text/javascript; charset=utf-8']],
+  ['/graph.js', ['graph.js', 'text/javascript; charset=utf-8']],
   ['/metrics.js', ['metrics.js', 'text/javascript; charset=utf-8']],
+  ['/views/attempt.js', ['views/attempt.js', 'text/javascript; charset=utf-8']],
+  ['/views/campaign.js', ['views/campaign.js', 'text/javascript; charset=utf-8']],
+  ['/views/campaigns.js', ['views/campaigns.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/spacetimedb-mark.svg', ['spacetimedb-mark.svg', 'image/svg+xml']],
   // The brand faces are served from here rather than a CDN: the dashboard's own
@@ -307,7 +313,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         const key = decodeURIComponent(resumeRoute[1] ?? '');
         if (!SAFE_NAME.test(key)) return json(response, 400, { error: 'The campaign name is invalid.' });
-        const campaign = campaignDetail(resultsRoot, key);
+        const campaign = summarizeCampaign(
+          contained(join(resultsRoot, 'campaigns'), key, 'campaign'), { includeAttempts: false });
         const priorExecutions = campaign.summary?.executions ?? 0;
         if (campaign.mode !== 'dependency' || campaign.status !== 'prepared' || priorExecutions < 1) {
           return json(response, 409, { error: 'Only an interrupted campaign that is ready can resume.' });

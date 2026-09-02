@@ -261,10 +261,15 @@ export function parseRunProgress(log: string, { fixRounds = 0, running = true, s
     firstScore: totals[0] ? { score: totals[0].score, max: totals[0].max } : null,
     latestScore: latestTotal ? { score: latestTotal.score, max: latestTotal.max } : null,
     completedGrades: totals.length,
-    // Every completed grade in order — the attempt's trajectory. A view can
-    // draw the climb, and a flat tail is the stall an operator otherwise
-    // discovers by diffing round logs.
-    series: totals.map(total => ({ score: total.score, max: total.max })),
+    // Every completed grade in order — the attempt's trajectory — carrying the
+    // level it graded and whether it was the unaided build of that level. A
+    // view can draw the climb with its bands, and a flat tail is the stall an
+    // operator otherwise discovers by diffing round logs.
+    series: totals.map(total => {
+      const mark = grading.findLast(entry => entry.index < total.index) ?? null;
+      return { score: total.score, max: total.max, level: mark?.level ?? null,
+        unaided: mark ? mark.round === 0 : false };
+    }),
   };
 }
 
@@ -465,54 +470,6 @@ export function discoverPlans(plansRoot: string): DashboardPlan[] {
   }
   return plans.sort((left, right) => left.title.localeCompare(right.title));
 }
-
-export interface DashboardOverview {
-  schemaVersion: number;
-  generatedAt: string;
-  counts: { running: number; completed: number; attention: number; prepared: number };
-  campaigns: DashboardCampaignSummary[];
-  plans: DashboardPlan[];
-  operations: unknown[];
-}
-
-export interface DashboardOverviewResponse extends DashboardOverview {
-  csrfToken: string;
-  canStart: boolean;
-}
-
-export function readDashboardOverview({
-  resultsRoot,
-  plansRoot,
-  operations = [],
-  controllerActive = campaignLockIsActive,
-}: {
-  resultsRoot: string;
-  plansRoot: string;
-  operations?: unknown[];
-  controllerActive?: ControllerActive;
-}): DashboardOverview {
-  const campaignsRoot = join(resolve(resultsRoot), 'campaigns');
-  const campaigns = discoverCampaigns(campaignsRoot, { controllerActive });
-  const plans = discoverPlans(plansRoot);
-  const counts = {
-    running: campaigns.filter(campaign => campaign.status === 'running').length,
-    completed: campaigns.filter(campaign => campaign.status === 'completed').length,
-    attention: campaigns.filter(campaign => ['attention-required', 'unreadable'].includes(campaign.status)).length,
-    prepared: campaigns.filter(campaign => campaign.status === 'prepared').length,
-  };
-  return { schemaVersion: 1, generatedAt: new Date().toISOString(), counts, campaigns, plans,
-    operations };
-}
-
-export function campaignDetail(resultsRoot: string, key: string, {
-  controllerActive = campaignLockIsActive,
-}: { controllerActive?: ControllerActive } = {}) {
-  if (!/^[a-z0-9][a-z0-9.-]*$/.test(key)) throw new Error('campaign key is invalid');
-  return summarizeCampaign(contained(join(resolve(resultsRoot), 'campaigns'), key, 'campaign'),
-    { includeLogs: true, includePackage: true, controllerActive });
-}
-
-export type DashboardCampaignDetail = ReturnType<typeof campaignDetail>;
 
 export function readJsonLines(path: string): unknown[] {
   if (!existsSync(path)) return [];

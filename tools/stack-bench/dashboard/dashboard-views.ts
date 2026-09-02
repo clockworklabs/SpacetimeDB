@@ -202,6 +202,14 @@ export interface SheetFacts {
   buildImage: string | null;
   planSha256: string;
   grading: string;
+  gradingReasons: string[];
+}
+
+export interface ClimbPoint {
+  score: number;
+  max: number;
+  level: number | null;
+  unaided: boolean;
 }
 
 export interface SheetAttempt {
@@ -212,7 +220,13 @@ export interface SheetAttempt {
   stalling: boolean;
   excluded: string | null;
   continued: boolean;
+  logUpdatedAt: string | null;
   score: number | null;
+  unaided: number | null;
+  repairs: { used: number; budget: number };
+  timeSec: number | null;
+  spendUsd: number | null;
+  climb: ClimbPoint[];
 }
 
 export interface SheetLevel {
@@ -240,7 +254,7 @@ export interface SheetStack {
   timeSec: number | null;
   spendUsd: number | null;
   n: number;
-  climb: Array<{ score: number; max: number }>;
+  climb: ClimbPoint[];
   attempts: SheetAttempt[];
   levels: SheetLevel[] | null;
   questlines: SheetQuestline[] | null;
@@ -265,7 +279,7 @@ export interface CampaignSheet {
 interface SheetAttemptView {
   inspected: InspectedAttempt;
   attempt: SheetAttempt;
-  series: Array<{ score: number; max: number }>;
+  series: ClimbPoint[];
 }
 
 function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
@@ -290,8 +304,15 @@ function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
     controllerImage: facts.runtime.controllerImage,
     buildImage: facts.runtime.buildImage,
     planSha256: plan.contentSha256,
-    grading: facts.grading.status,
+    grading: gradingStatus(facts.grading),
+    gradingReasons: [...new Set(facts.grading.levels.flatMap(level => level.reasons ?? []))],
   };
+}
+
+// A campaign whose levels disagree is partly publishable and says so.
+function gradingStatus(grading: ReturnType<typeof campaignFacts>['grading']): string {
+  const levels = new Set(grading.levels.map(level => level.status));
+  return levels.size > 1 ? 'partial' : grading.status;
 }
 
 function dependencyStrikes(dependency: DependencyProgress): { used: number; budget: number } {
@@ -350,6 +371,7 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
     running, status: inspected.status,
     dependency: plan.definition.mode?.id === 'dependency' });
   const metrics = attemptMetrics({ ...inspected, logUpdatedAt });
+  const strikes = inspected.dependency ? dependencyStrikes(inspected.dependency) : null;
   return {
     inspected,
     series: progress.series,
@@ -362,7 +384,14 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       stalling: attemptStalling({ ...inspected, logUpdatedAt }, progress.series),
       excluded: attemptExcluded(inspected),
       continued: attemptContinued(inspected),
+      logUpdatedAt,
       score: percentage(metrics?.final ?? null),
+      unaided: percentage(metrics?.first ?? null),
+      repairs: strikes ?? { used: metrics?.rounds ?? 0,
+        budget: plan.definition.budgets.fixRounds * plan.definition.levels.length },
+      timeSec: metrics?.duration ?? null,
+      spendUsd: metrics?.spend ?? null,
+      climb: progress.series,
     },
   };
 }
