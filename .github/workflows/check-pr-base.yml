@@ -13,7 +13,7 @@ concurrency:
 jobs:
   check_base_ref:
     name: Based on `master`
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     steps:
       - id: not_based_on_master
         if: |
@@ -26,7 +26,7 @@ jobs:
   release_dependencies:
     if: ${{ github.event_name == 'pull_request' }}
     name: Check release dependencies
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     permissions:
       contents: read
       pull-requests: read
