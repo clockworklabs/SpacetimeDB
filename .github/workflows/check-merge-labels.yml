@@ -10,7 +10,7 @@ permissions: read-all
 jobs:
   label_checks:
     name: Check merge labels
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     steps:
       - if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'do not merge')
         run: |

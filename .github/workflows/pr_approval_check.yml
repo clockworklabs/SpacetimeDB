@@ -29,7 +29,7 @@ concurrency:
 jobs:
   publish-approval-status:
     name: Set approval status
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     # Disabled until we can spend some more focus on making this work consistently.
     # See https://github.com/clockworklabs/SpacetimeDB/pull/4673.
     if: false
