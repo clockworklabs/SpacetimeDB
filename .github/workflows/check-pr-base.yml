@@ -2,14 +2,18 @@ name: Git tree checks
 
 on:
   pull_request:
-    types: [opened, edited]
+    types: [opened, reopened, edited, synchronize]
   merge_group:
 permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
 
 jobs:
   check_base_ref:
     name: Based on `master`
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - id: not_based_on_master
         if: |
@@ -18,3 +22,27 @@ jobs:
         run: |
           echo "This PR is not based on master. Please wait until the base PR merges."
           exit 1
+
+  release_dependencies:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Check release dependencies
+    runs-on: spacetimedb-new-runner-2
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_LOG: rollback_coordination=info
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # We inspect local tags and git commits in order to determine whether things have been released
+          fetch-depth: 0
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Check release dependencies
+        run: >-
+          cargo ci other-workflows check-release-deps
+          --current-repo .
+          --allowed-reference-repo .
+          --pr-number "${{ github.event.pull_request.number }}"

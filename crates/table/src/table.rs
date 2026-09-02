@@ -2505,6 +2505,11 @@ impl Table {
         &self.inner.pages
     }
 
+    #[cfg(test)]
+    fn pages_mut(&mut self) -> &mut Pages {
+        &mut self.inner.pages
+    }
+
     /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
     ///
     /// Used when capturing a snapshot.

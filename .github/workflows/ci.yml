@@ -23,10 +23,15 @@ permissions:
 
 jobs:
   merge_queue_noop:
-    name: Detect merge queue no-op
-    runs-on: ubuntu-latest
+    name: Merge queue no-op/reuse
+    runs-on: spacetimedb-new-runner-2
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
     outputs:
-      skip: ${{ steps.compare.outputs.skip }}
+      # A reused failure also skips fresh jobs; the final step reports that failure on this commit.
+      skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
@@ -69,6 +74,21 @@ jobs:
           else
             echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
           fi
+
+      # The merge queue coordinator is part of cargo ci and needs the repository's pinned Rust toolchain.
+      - uses: dsherret/rust-toolchain-file@v1
+        if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
+
+      - name: Reuse merge queue run
+        id: reuse
+        if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo ci other-workflows coordinate merge-queue-reuse
+
+      - name: Report merge queue workflow reuse failure on this commit
+        if: ${{ steps.reuse.outputs.failed == 'true' }}
+        run: exit 1
 
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
@@ -314,7 +334,6 @@ jobs:
       SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
       - *find-git-ref
-
       - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
@@ -400,7 +419,6 @@ jobs:
       PARTITION_COUNT: 1
     steps: &smoketest-partition-steps
       - *find-git-ref
-
       - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
@@ -420,16 +438,6 @@ jobs:
 
       - name: Install TypeScript SDK dependencies
         run: pnpm --filter spacetimedb install
-
-      # Install emscripten for C++ module compilation tests.
-      - name: Install emscripten (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
 
       - name: Install emscripten (Windows)
         if: runner.os == 'Windows'
@@ -482,13 +490,15 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Download build artifacts
+      - &download-build-artifacts
+        name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
           path: build-artifacts
 
-      - name: Extract build artifacts
+      - &extract-build-artifacts
+        name: Extract build artifacts
         shell: bash
         run: |
           tar -xzf build-artifacts/build-support.tar.gz
@@ -574,13 +584,13 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
 
   test:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
     runs-on: spacetimedb-new-runner-2
@@ -588,6 +598,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
       - name: Find Git ref
         env:
@@ -636,6 +648,9 @@ jobs:
         with: *v8-release-cache
       - *restore-openssl
       - *configure-cached-openssl
+
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -830,47 +845,29 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
-  wasm_bindings:
-    needs: [merge_queue_noop]
+  module_latest_deps:
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
-      - uses: actions/checkout@v3
+      - *find-git-ref
+      - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-openssl
-      - *configure-cached-openssl
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Run bindgen tests
-        run: cargo ci wasm-bindings
-
-      - name: Upload timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-timings-wasm-bindings
-          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
-          retention-days: 14
+      - name: Build module with latest compatible dependencies
+        run: cargo ci module-latest-deps
 
   publish_checks:
     needs: [merge_queue_noop]
@@ -953,7 +950,7 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     steps:
       - name: Skip duplicate merge queue update test
         run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
@@ -1113,7 +1110,7 @@ jobs:
           retention-days: 14
 
   unity-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
@@ -1125,11 +1122,11 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
       UNITY_VERSION: 2022.3.32f1
     steps:
-      - name: Checkout repository
-        id: checkout-stdb
-        uses: actions/checkout@v4
+      - *find-git-ref
+      - *checkout-sources
 
       # Keep this before generation/hydration so ignored build outputs do not affect hashFiles.
       - name: Restore Unity Library
@@ -1187,14 +1184,15 @@ jobs:
       - *restore-openssl
       - *configure-cached-openssl
 
-      - name: Install SpacetimeDB CLI from the local checkout
+      - *download-build-artifacts
+      - *extract-build-artifacts
+
+      - &expose-spacetime-cli
+        name: Expose SpacetimeDB CLI on PATH
+        shell: bash
         run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+          ln -sf spacetimedb-cli target/release/spacetime
+          echo "$GITHUB_WORKSPACE/target/release" >> "$GITHUB_PATH"
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1256,19 +1254,79 @@ jobs:
           path: demo/Blackholio/client-unity/Library
           key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
-  godot-testsuite:
+  unity-webgl-build:
+    name: Unity WebGL build
     needs: [merge_queue_noop, lints]
+    # Skip if this is an external contribution.
+    # The license secrets will be empty, so the step would fail anyway.
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    permissions:
+      contents: read
+    runs-on: spacetimedb-unity-runner
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      UNITY_VERSION: 2022.3.32f1
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      # Keep this before hydration so ignored build outputs do not affect hashFiles.
+      - name: Restore Unity WebGL Library
+        id: restore-unity-webgl-library
+        uses: actions/cache/restore@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-WebGL-v1-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-WebGL-v1-${{ runner.os }}-${{ env.UNITY_VERSION }}-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Hydrate Unity SDK DLLs
+        run: cargo regen csharp dlls
+
+      - name: Build Unity WebGL player
+        uses: game-ci/unity-builder@v4
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
+          projectPath: demo/Blackholio/client-unity
+          targetPlatform: WebGL
+          buildsPath: demo/Blackholio/client-unity/Build
+          versioning: None
+          runAsHostUser: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+
+      - name: Save Unity WebGL Library
+        if: ${{ github.ref == 'refs/heads/master' && steps.restore-unity-webgl-library.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: ${{ steps.restore-unity-webgl-library.outputs.cache-primary-key }}
+
+  godot-testsuite:
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      ARTIFACT_SUFFIX: linux
       UseLocalBsatnRuntime: true
     steps:
-      - name: Checkout repository
-        id: checkout-stdb
-        uses: actions/checkout@v4
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1314,14 +1372,9 @@ jobs:
       - *restore-openssl
       - *configure-cached-openssl
 
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - *download-build-artifacts
+      - *extract-build-artifacts
+      - *expose-spacetime-cli
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1371,17 +1424,18 @@ jobs:
         run: godot --headless --scene res://tests/GodotPlayModeTests.tscn
 
   csharp-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
-      - name: Checkout repository
-        id: checkout-stdb
-        uses: actions/checkout@v4
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1439,14 +1493,9 @@ jobs:
       - *restore-openssl
       - *configure-cached-openssl
 
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - *download-build-artifacts
+      - *extract-build-artifacts
+      - *expose-spacetime-cli
 
       - name: Check quickstart-chat bindings are up to date
         run: |
@@ -1500,7 +1549,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions:
       contents: read
     env:
@@ -1541,7 +1590,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions:
       contents: read
     env:
@@ -1607,16 +1656,18 @@ jobs:
           retention-days: 14
 
   typescript-test:
-    needs: [merge_queue_noop]
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -1626,31 +1677,6 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
-
-      # - name: Extract SpacetimeDB branch name from file
-      #   id: extract-branch
-      #   run: |
-      #     # Define the path to the branch file
-      #     BRANCH_FILE=".github/spacetimedb-branch.txt"
-
-      #     # Default to master if file doesn't exist
-      #     if [ ! -f "$BRANCH_FILE" ]; then
-      #       echo "::notice::No SpacetimeDB branch file found, using 'master'"
-      #       echo "branch=master" >> $GITHUB_OUTPUT
-      #       exit 0
-      #     fi
-
-      #     # Read and trim whitespace from the file
-      #     branch=$(cat "$BRANCH_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-      #     # Fallback to master if empty
-      #     if [ -z "$branch" ]; then
-      #       echo "::warning::SpacetimeDB branch file is empty, using 'master'"
-      #       branch="master"
-      #     fi
-
-      #     echo "branch=$branch" >> $GITHUB_OUTPUT
-      #     echo "Using SpacetimeDB branch from file: $branch"
 
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
@@ -1666,16 +1692,8 @@ jobs:
       - *restore-openssl
       - *configure-cached-openssl
 
-      # - name: Install SpacetimeDB CLI from the local checkout
-      #   run: |
-      #     export CARGO_HOME="$HOME/.cargo"
-      #     echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-      #     cargo install --force --path crates/cli --locked --message-format=short
-      #     cargo install --force --path crates/standalone --locked --message-format=short
-      #     # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-      #     ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
-      #     # Clear any existing information
-      #     spacetime server clear -y
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
       - name: Run TypeScript tests
         run: cargo ci typescript-test

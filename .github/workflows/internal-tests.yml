@@ -27,7 +27,7 @@ jobs:
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     env:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
@@ -63,7 +63,7 @@ jobs:
           fi
           cargo run --quiet \
             --manifest-path tools/ci/Cargo.toml \
-            -- other-workflows coordinate-internal-tests "${args[@]}"
+            -- other-workflows coordinate internal-tests "${args[@]}"
 
       - name: Wait for Internal Tests to complete
         if: steps.filter.outputs.non_docs == 'true'
