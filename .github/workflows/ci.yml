@@ -589,16 +589,15 @@ jobs:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
 
-  sdk_test_build:
-    needs: [upload-build-artifacts-linux]
-    name: Build SDK tests
+  sdk_test_modules:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Build SDK test modules
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      ARTIFACT_SUFFIX: linux
-      SPACETIME_BIN: ${{ github.workspace }}/target/release/spacetimedb-cli
     steps:
       - *find-git-ref
       - *checkout-sources
@@ -624,9 +623,6 @@ jobs:
       - *configure-cached-zstd
       - *restore-openssl
       - *configure-cached-openssl
-
-      - *download-build-artifacts
-      - *extract-build-artifacts
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -658,10 +654,144 @@ jobs:
           cd sdks/csharp
           ./tools~/write-nuget-config.sh ../..
 
+      - name: Build SDK test modules
+        shell: bash
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo run --timings -p ci-sdk-tests -- prepare-modules --output-dir sdk-test-modules
+          tar -I 'zstd -T0 -3' -cf sdk-test-modules.tar.zst sdk-test-modules
+
+      - name: Upload SDK test modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-common-linux
+          path: sdk-test-modules.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-modules-cargo-timings
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
+
+  sdk_test_archives:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Build SDK test archives
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 15
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+      - *set-native-cache-keys
+
+      - name: Restore rusty_v8 (debug)
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
+      - name: Restore jemalloc
+        id: cache-jemalloc
+        uses: actions/cache/restore@v4
+        with: *jemalloc-cache
+      - *configure-cached-jemalloc
+      - name: Restore Zstd
+        id: cache-zstd
+        uses: actions/cache/restore@v4
+        with: *zstd-cache
+      - *configure-cached-zstd
+      - *restore-openssl
+      - *configure-cached-openssl
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      # Build the archives independently of the modules so both expensive phases
+      # can run in parallel before client preparation joins their artifacts.
+      - name: Build SDK test archives
+        shell: bash
+        run: |
+          cargo nextest archive --timings -p spacetimedb-sdk --features allow_loopback_http_for_tests --archive-file sdk-tests-native-nextest.tar.zst
+          cargo nextest archive --timings -p spacetimedb-sdk --features allow_loopback_http_for_tests,browser --archive-file sdk-tests-browser-nextest.tar.zst
+
+      - name: Upload native SDK test archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-native-archive-linux
+          path: sdk-tests-native-nextest.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload browser SDK test archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-browser-archive-linux
+          path: sdk-tests-browser-nextest.tar.zst
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-archives-cargo-timings
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
+
+  sdk_test_prepare_native:
+    needs: [sdk_test_modules, sdk_test_archives]
+    name: Prepare SDK test clients (native)
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SDK_TEST_MODE: native
+      SDK_TEST_ARCHIVE_ARTIFACT: sdk-test-native-archive-linux
+      SDK_TEST_ARCHIVE: sdk-tests-native-nextest.tar.zst
+      SDK_TEST_CLIENT_ARTIFACT: sdk-test-native-clients-linux
+      SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-native.tar.zst
+      SDK_TEST_CLIENT_DIR: sdk-test-clients/native
+    steps: &sdk-test-prepare-steps
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
       - name: Install wasm-bindgen CLI
+        if: env.SDK_TEST_MODE == 'browser'
         run: |
           REQUIRED_WASM_BINDGEN_VERSION="$(
             awk '
@@ -679,66 +809,66 @@ jobs:
           fi
           cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
 
-      - name: Build SDK test modules and archives
-        shell: bash
-        run: |
-          source ~/emsdk/emsdk_env.sh
-          cargo run --timings -p ci-sdk-tests -- prepare-modules --output-dir sdk-test-modules
-          ./target/debug/ci-sdk-tests archive --mode native --archive-file sdk-tests-native-nextest.tar.zst
-          ./target/debug/ci-sdk-tests archive --mode browser --archive-file sdk-tests-browser-nextest.tar.zst
-          ./target/debug/ci-sdk-tests prepare-clients --archive-file sdk-tests-native-nextest.tar.zst --module-dir sdk-test-modules --output-dir sdk-test-clients/native
-          ./target/debug/ci-sdk-tests prepare-clients --archive-file sdk-tests-browser-nextest.tar.zst --module-dir sdk-test-modules --output-dir sdk-test-clients/browser
-          bash tools/check-diff.sh
-          tar -I 'zstd -T0 -3' -cf sdk-test-modules.tar.zst sdk-test-modules
-          tar -I 'zstd -T0 -3' -cf sdk-test-clients-native.tar.zst sdk-test-clients/native
-          tar -I 'zstd -T0 -3' -cf sdk-test-clients-browser.tar.zst sdk-test-clients/browser
-
-      - name: Upload common SDK test build
-        uses: actions/upload-artifact@v4
+      - name: Download SDK test modules
+        uses: actions/download-artifact@v4
         with:
           name: sdk-test-common-linux
-          path: sdk-test-modules.tar.zst
+
+      - name: Download SDK test archive
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SDK_TEST_ARCHIVE_ARTIFACT }}
+
+      # Preparation needs both independently-built inputs. Keeping it in a
+      # separate job also allows a failed client build to reuse those artifacts.
+      - name: Prepare SDK test clients
+        shell: bash
+        run: |
+          tar --zstd -xf sdk-test-modules.tar.zst
+          mkdir -p "${SDK_TEST_CLIENT_DIR}"
+          cargo nextest run \
+            --archive-file "${SDK_TEST_ARCHIVE}" \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --run-ignored only \
+            -E 'test(prepare_clients)' \
+            --no-fail-fast \
+            --no-tests fail \
+            -j 1
+          bash tools/check-diff.sh
+          tar -I 'zstd -T0 -3' -cf "${SDK_TEST_CLIENT_ARCHIVE}" "${SDK_TEST_CLIENT_DIR}"
+        env:
+          SPACETIME_SDK_TEST_MODULE_DIR: ${{ github.workspace }}/sdk-test-modules
+          SPACETIME_SDK_TEST_PREPARE_CLIENT_DIR: ${{ github.workspace }}/${{ env.SDK_TEST_CLIENT_DIR }}
+          SPACETIME_SDK_TEST_WORKSPACE_ROOT: ${{ github.workspace }}
+
+      - name: Upload prepared SDK test clients
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SDK_TEST_CLIENT_ARTIFACT }}
+          path: ${{ env.SDK_TEST_CLIENT_ARCHIVE }}
           compression-level: 0
           if-no-files-found: error
           overwrite: true
           retention-days: 14
 
-      - name: Upload native SDK test build
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-test-native-linux
-          path: |
-            sdk-tests-native-nextest.tar.zst
-            sdk-test-clients-native.tar.zst
-          compression-level: 0
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-
-      - name: Upload browser SDK test build
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-test-browser-linux
-          path: |
-            sdk-tests-browser-nextest.tar.zst
-            sdk-test-clients-browser.tar.zst
-          compression-level: 0
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-
-      - name: Upload Cargo timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-test-build-cargo-timings
-          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
-          if-no-files-found: warn
-          overwrite: true
-          retention-days: 14
+  sdk_test_prepare_browser:
+    needs: [sdk_test_modules, sdk_test_archives]
+    name: Prepare SDK test clients (browser)
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SDK_TEST_MODE: browser
+      SDK_TEST_ARCHIVE_ARTIFACT: sdk-test-browser-archive-linux
+      SDK_TEST_ARCHIVE: sdk-tests-browser-nextest.tar.zst
+      SDK_TEST_CLIENT_ARTIFACT: sdk-test-browser-clients-linux
+      SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-browser.tar.zst
+      SDK_TEST_CLIENT_DIR: sdk-test-clients/browser
+    steps: *sdk-test-prepare-steps
 
   sdk_tests_native:
-    needs: [sdk_test_build]
+    needs: [upload-build-artifacts-linux, sdk_test_prepare_native]
     name: SDK Tests (native ${{ matrix.partition }}/2)
     strategy:
       fail-fast: false
@@ -751,7 +881,8 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 2
-      SDK_TEST_BUILD_ARTIFACT: sdk-test-native-linux
+      SDK_TEST_ARCHIVE_ARTIFACT: sdk-test-native-archive-linux
+      SDK_TEST_CLIENT_ARTIFACT: sdk-test-native-clients-linux
       SDK_TEST_ARCHIVE: sdk-tests-native-nextest.tar.zst
       SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-native.tar.zst
       SDK_TEST_CLIENT_DIR: sdk-test-clients/native
@@ -779,10 +910,15 @@ jobs:
         with:
           name: sdk-test-common-linux
 
-      - name: Download mode-specific SDK test build
+      - name: Download SDK test archive
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.SDK_TEST_BUILD_ARTIFACT }}
+          name: ${{ env.SDK_TEST_ARCHIVE_ARTIFACT }}
+
+      - name: Download prepared SDK test clients
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SDK_TEST_CLIENT_ARTIFACT }}
 
       - name: Extract SDK test support files
         run: |
@@ -802,7 +938,7 @@ jobs:
             -E 'not test(/unreal/)'
 
   sdk_tests_browser:
-    needs: [sdk_test_build]
+    needs: [upload-build-artifacts-linux, sdk_test_prepare_browser]
     name: SDK Tests (browser ${{ matrix.partition }}/2)
     strategy:
       fail-fast: false
@@ -815,7 +951,8 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 2
-      SDK_TEST_BUILD_ARTIFACT: sdk-test-browser-linux
+      SDK_TEST_ARCHIVE_ARTIFACT: sdk-test-browser-archive-linux
+      SDK_TEST_CLIENT_ARTIFACT: sdk-test-browser-clients-linux
       SDK_TEST_ARCHIVE: sdk-tests-browser-nextest.tar.zst
       SDK_TEST_CLIENT_ARCHIVE: sdk-test-clients-browser.tar.zst
       SDK_TEST_CLIENT_DIR: sdk-test-clients/browser
