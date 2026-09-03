@@ -105,6 +105,7 @@ impl PageMap {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Datasync {
     Sector(u64),
     Length,

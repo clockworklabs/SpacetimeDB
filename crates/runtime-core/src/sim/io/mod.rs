@@ -10,7 +10,7 @@ use slab::Slab;
 
 use crate::{
     io::{AlignedBytes, ErasedBox, ErrorWith, SpacetimeIO, Statx},
-    sim::Rng,
+    sim::{io::executor::FaultInjector, Rng},
 };
 
 mod executor;
@@ -60,12 +60,12 @@ pub struct SimulatorIO {
 }
 
 impl SimulatorIO {
-    pub fn tick(&self, rng: &Rng, now: Instant) -> bool {
+    pub fn tick(&self, rng: &Rng, faults: &mut impl FaultInjector<usize>) -> bool {
         let mut executor = self.inner.executor.lock();
         let mut pending = self.inner.pending.lock();
         let mut buffers = self.inner.buffers.lock();
 
-        let mut progress = executor.tick(rng, now);
+        let mut progress = executor.tick(rng, faults);
         for cqe in executor.completed() {
             let completion = pending.remove(cqe.user_data().unwrap());
             match cqe {
@@ -376,7 +376,7 @@ fn reify<T: AlignedBytes + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use crate::sim::{time::TimeHandle, GlobalRng};
+    use crate::sim::{io::executor::NoFaults, GlobalRng};
 
     use super::*;
 
@@ -384,7 +384,6 @@ mod tests {
         rt: tokio::runtime::LocalRuntime,
         io: SimulatorIO,
         rng: Rng,
-        time: TimeHandle,
     }
 
     impl Runtime {
@@ -395,13 +394,12 @@ mod tests {
                     .unwrap(),
                 io: SimulatorIO::default(),
                 rng: GlobalRng::new(0),
-                time: TimeHandle::default(),
             }
         }
 
         fn run<T: 'static>(&self, f: impl FnOnce(&SimulatorIO) -> Completion<T>) -> T {
             let fut = self.rt.spawn_local(f(&self.io));
-            while self.io.tick(&self.rng, self.time.now()) {}
+            while self.io.tick(&self.rng, &mut NoFaults) {}
             self.rt.block_on(fut).unwrap()
         }
     }
