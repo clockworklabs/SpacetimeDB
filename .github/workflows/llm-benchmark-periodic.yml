@@ -50,7 +50,8 @@ concurrency:
 jobs:
   prepare_matrix:
     name: Prepare benchmark matrix
-    runs-on: spacetimedb-new-runner-2
+    # This only parses workflow inputs into a JSON matrix and performs no benchmark work.
+    runs-on: spacetimedb-linux-small
     outputs:
       languages: ${{ steps.matrix.outputs.languages }}
     steps:

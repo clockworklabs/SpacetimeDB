@@ -60,7 +60,8 @@ concurrency:
 jobs:
   validate-release-invoker:
     name: Validate release invoker
-    runs-on: spacetimedb-new-runner-2
+    # This only validates workflow inputs and the invoking actor.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Reject direct public release invocations
         env:
@@ -80,7 +81,8 @@ jobs:
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
     needs: validate-release-invoker
-    runs-on: spacetimedb-new-runner-2
+    # This compiles only the small release automation binary for downstream jobs.
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -109,7 +111,8 @@ jobs:
 
   release-crates:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    # This packages and publishes crates with the prebuilt release helper; it does not build the workspace.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
@@ -151,7 +154,8 @@ jobs:
 
   release-csharp:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    # This packages the C# SDK and generated DLLs rather than building the core server.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
@@ -230,7 +234,8 @@ jobs:
 
   release-cpp:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    # This updates and publishes the generated C++ SDK repository without a core build.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_cpp }}
     env:
       CARGO_TERM_COLOR: always
@@ -286,7 +291,8 @@ jobs:
 
   release-npm:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    # This installs and publishes the TypeScript SDK with the prebuilt release helper.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
@@ -380,7 +386,8 @@ jobs:
 
   update-mirror-latest-version:
     needs: validate-release-invoker
-    runs-on: spacetimedb-new-runner-2
+    # This only verifies S3 objects and updates the latest-version marker.
+    runs-on: spacetimedb-linux-small
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
     steps:
@@ -422,7 +429,8 @@ jobs:
       - release-npm
       - release-docker
       - update-mirror-latest-version
-    runs-on: spacetimedb-new-runner-2
+    # This only publishes existing artifacts and dispatches the release announcement.
+    runs-on: spacetimedb-linux-small
     if: >-
       ${{
         always()

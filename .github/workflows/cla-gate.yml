@@ -17,7 +17,8 @@ permissions:
 jobs:
   publish-cla-gate-status:
     name: CLA status
-    runs-on: spacetimedb-new-runner-2
+    # This only evaluates GitHub status metadata and publishes a commit status.
+    runs-on: spacetimedb-linux-small
     if: github.event_name != 'status' || github.event.context == 'license/cla'
 
     steps:

@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   resolvePush:
-    runs-on: spacetimedb-new-runner-2
+    # This only resolves GitHub event metadata and performs no checkout or build.
+    runs-on: spacetimedb-linux-small
     outputs:
       is_pr_merge: ${{ steps.resolve.outputs.is_pr_merge }}
       is_external: ${{ steps.resolve.outputs.is_external }}
@@ -80,7 +81,8 @@ jobs:
 
   discordNotification:
     needs: resolvePush
-    runs-on: spacetimedb-new-runner-2
+    # This only queries pull-request checks and posts a Discord notification.
+    runs-on: spacetimedb-linux-small
     if: needs.resolvePush.outputs.is_pr_merge == 'true'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -157,7 +159,8 @@ jobs:
     needs:
       - resolvePush
       - discordNotification
-    runs-on: spacetimedb-new-runner-2
+    # This failure path only posts a Discord notification.
+    runs-on: spacetimedb-linux-small
     if: ${{ always() && (needs.resolvePush.result == 'failure' || needs.discordNotification.result == 'failure') }}
     steps:
       - name: Send failure notification
@@ -172,7 +175,8 @@ jobs:
 
   warnDirectPush:
     needs: resolvePush
-    runs-on: spacetimedb-new-runner-2
+    # This only formats commit metadata and posts a Discord warning.
+    runs-on: spacetimedb-linux-small
     if: needs.resolvePush.outputs.is_pr_merge != 'true'
     steps:
       - name: Warn about non-PR push
@@ -197,7 +201,8 @@ jobs:
 
   invokePrivate:
     needs: resolvePush
-    runs-on: spacetimedb-new-runner-2
+    # This only dispatches the private workflow through the GitHub API.
+    runs-on: spacetimedb-linux-small
     if: needs.resolvePush.outputs.is_pr_merge == 'true'
     permissions:
       contents: read
