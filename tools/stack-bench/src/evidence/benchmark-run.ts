@@ -85,6 +85,14 @@ export interface RunSessionRecord {
   providerMetadata: unknown;
 }
 
+// A completed repair whose grade did not finish. The source is kept beside the
+// run so a resume grades it instead of paying for another coding session.
+export interface RunRepairCandidate {
+  directory: string;
+  sha256: string;
+  files: number;
+}
+
 export interface RunRepairRecord {
   status: string;
   limit: number;
@@ -95,6 +103,7 @@ export interface RunRepairRecord {
     used: number;
     exhaustionReason: string | null;
   }>;
+  candidate?: RunRepairCandidate;
 }
 
 export interface RunLevelRecord {

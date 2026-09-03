@@ -39,7 +39,8 @@ const featureCatalog = compileFeatureCatalogInput(compileProgressionDefinitionFi
   join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-2.0.2.json'),
   { trackRoot: track.dir },
 ));
-const dependencyPolicy = compileDependencyPolicyInput({ default: 3, levels: {} }, featureCatalog);
+const dependencyPolicy = compileDependencyPolicyInput(
+  { selection: 'feature', budget: { perFeature: 2 } }, featureCatalog);
 const progression = compileProgressionInput(dependencyRuntimeDefinition(
   featureCatalog, dependencyPolicy));
 const recipeBindings = new Map([1, 2, 3, 4, 5, 6].map(level => [level,

@@ -101,9 +101,22 @@ The manifest also defines how repair work is selected and limited:
 "repair": { "selection": "feature", "budget": { "perFeature": 1 } }
 ```
 
-Dependency mode supports `feature` or `batch` selection and total, per-feature,
-or per-depth limits. When limits are combined, the tightest remaining limit
-wins. Sequential mode requires `batch` selection and one `total` limit.
+Dependency mode supports `feature` or `batch` selection. The budget must name
+at least one limit; each is a non-negative integer with no upper cap:
+
+- `total`: repairs across the whole attempt. `0` runs the initial grade and
+  advances passed branches without any repair.
+- `perFeature`: repairs that may include one feature.
+- `perDepth`: `{ "count": N, "carry": true | false }`. Each opened depth adds
+  `count` repairs; `carry` keeps unused depth repairs available later.
+
+When limits are combined, the tightest remaining limit wins, and the result
+names which one stopped a feature: `feature-repairs-exhausted`,
+`depth-repairs-exhausted`, `total-repairs-exhausted`, or `repeated-findings`
+when the same failures survived the configured number of repairs. A completed
+repair counts even when its grade did not finish; its source is kept beside
+the run and graded on resume before any further coding session. Sequential
+mode requires `batch` selection and one `total` limit.
 
 The plan, dashboard, and report show qualification status. Publish scores as
 verified comparison data only after every selected level is qualified.

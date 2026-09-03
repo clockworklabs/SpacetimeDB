@@ -98,12 +98,22 @@ test('dashboard reports a dependency repair by feature instead of the level sess
   const progress = parseRunProgress(`
 === mongodb-l3-first (mongodb) ===
   TOTAL      ... 26/43
---- feature repair 1/1: Customer recommendations ---
+--- feature repair 1: Customer recommendations ---
 === mongodb-l3-fix3 (mongodb) ===
 `, { repairs: 3 });
   assert.equal(progress.phase,
-    'Grading L3 after repair 1 of 1 for Customer recommendations');
-  assert.deepEqual(progress.repair, { round: 1, budget: 1 });
+    'Grading L3 after repair 1 for Customer recommendations');
+  assert.deepEqual(progress.repair, { round: 1, budget: null });
+});
+
+test('dashboard shows a feature repair in progress without a run-wide budget', () => {
+  const progress = parseRunProgress(`
+=== mongodb-l3-first (mongodb) ===
+  TOTAL      ... 26/43
+--- feature repair 2: Customer recommendations ---
+`, { repairs: 3, running: true });
+  assert.equal(progress.phase, 'Repairing Customer recommendations · 2');
+  assert.deepEqual(progress.repair, { round: 2, budget: null });
 });
 
 test('dashboard calls dependency graph position depth', () => {

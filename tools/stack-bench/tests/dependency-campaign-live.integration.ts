@@ -162,11 +162,11 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     const accounts = replayed.nodes.accounts;
     assert(accounts);
     assert.equal(accounts.repairs.used, 1);
-    assert.equal(accounts.exhaustionReason, 'repair-budget-exhausted');
+    assert.equal(accounts.exhaustionReason, 'feature-repairs-exhausted');
     const catalog = replayed.nodes.catalog;
     assert(catalog);
     assert.equal(catalog.repairs.used, 1);
-    assert.equal(catalog.exhaustionReason, 'repair-budget-exhausted');
+    assert.equal(catalog.exhaustionReason, 'feature-repairs-exhausted');
     assert.deepEqual(replayed.attempts.map(attempt => attempt.attemptId),
       Array.from({ length: 3 }, (_, index) => `${run.id}-progression-${index + 1}`));
     assert(replayed.attempts.every(attempt => attempt.evidence?.kind === 'grade_bundle'));

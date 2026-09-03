@@ -10,6 +10,7 @@ import { sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
 import { hashAppSource } from '../runtime/source-snapshot.js';
+import type { RepairExhaustionReason } from './repair-plan.js';
 import { formatZodError } from '../zod-error.js';
 import {
   progressionEngine,
@@ -51,7 +52,7 @@ export type ProgressionNodeStatus =
 export interface ProgressionNodeState {
   status: ProgressionNodeStatus;
   exhaustedAtLevel: number | null;
-  exhaustionReason: 'repair-budget-exhausted' | 'repeated-findings' | null;
+  exhaustionReason: RepairExhaustionReason | null;
   unchangedFailure: { fingerprint: string | null; count: number };
   repairs: { used: number };
   checks: Record<string, 'pass' | 'fail' | 'test-system' | null>;

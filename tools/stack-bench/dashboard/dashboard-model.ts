@@ -225,9 +225,12 @@ export function parseRunProgress(log: string, { repairs = 0, running = true, sta
 } = {}) {
   const totals = matches(log, /^\s*TOTAL\b.*?(\d+)\/(\d+)\s*$/gm)
     .map(match => ({ index: match.index, score: Number(match[1]), max: Number(match[2]) }));
+  // A run-wide repair prints "repair N/M"; a feature repair prints
+  // "feature repair N: title" because its limit belongs to the feature.
   const roundMarkers = matches(log,
-    /^--- (?:feature )?repair (\d+)\/(\d+)(?:: (.+))? ---$/gm)
-    .map(match => ({ index: match.index, round: Number(match[1]), budget: Number(match[2]),
+    /^--- (?:feature )?repair (\d+)(?:\/(\d+))?(?:: (.+))? ---$/gm)
+    .map(match => ({ index: match.index, round: Number(match[1]),
+      budget: match[2] === undefined ? null : Number(match[2]),
       target: match[3] ?? null }));
   const grading = matches(log, /^===\s+[^\n]*?-l(\d+)(?:-(?:first|fix(\d+)))?\s+\([^\n]+\)\s*===$/gm)
     .map(match => ({ index: match.index, level: Number(match[1]),
@@ -241,17 +244,18 @@ export function parseRunProgress(log: string, { repairs = 0, running = true, sta
     : running ? 'Building the generated app' : 'Finished';
   const level = latestGrading?.level ?? null;
   const round = latestRound?.round ?? latestGrading?.round ?? 0;
-  const budget = latestRound?.budget ?? repairs;
+  const budget = latestRound ? latestRound.budget : repairs;
   const target = latestRound?.target ? ` for ${latestRound.target}` : '';
+  const of = (limit: number | null): string => limit === null ? '' : ` of ${limit}`;
   const stage = (value: number): string => dependency ? `depth ${value}` : `L${value}`;
   if (latestIndex === latestGrading?.index) {
     phase = latestGrading.round
-      ? `Grading ${stage(latestGrading.level)} after repair ${round} of ${budget}${target}`
+      ? `Grading ${stage(latestGrading.level)} after repair ${round}${of(budget)}${target}`
       : `Grading the first ${stage(latestGrading.level)} build`;
   } else if (latestIndex === latestRound?.index) {
     phase = latestRound.target
-      ? `Repairing ${latestRound.target} · ${latestRound.round} of ${latestRound.budget}`
-      : `Repairing ${stage(latestGrading?.level ?? 1)} · round ${latestRound.round} of ${latestRound.budget}`;
+      ? `Repairing ${latestRound.target} · ${latestRound.round}${of(latestRound.budget)}`
+      : `Repairing ${stage(latestGrading?.level ?? 1)} · round ${latestRound.round}${of(latestRound.budget)}`;
   } else if (latestIndex === latestTotal?.index && running) {
     phase = 'Preparing the next step';
   }

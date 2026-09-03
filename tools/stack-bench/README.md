@@ -25,7 +25,8 @@ harness failures, and incomplete measurements remain separate.
 - **Dependency:** each feature opens after its required parents pass. One branch
   can stop while unrelated branches continue. `workSelection` controls whether
   the agent gets one ready feature, all ready features, or the full graph. The
-  separate repair plan targets one failed feature or all current failures.
+  manifest's `repair` object targets one failed feature or all current
+  failures and sets the repair budget.
 
 ## Start here
 

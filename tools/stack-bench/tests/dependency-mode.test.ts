@@ -52,7 +52,7 @@ const node = (id: string, dependencies: string[], questline: string,
 });
 
 const fixture = (): FixtureDefinition => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   kind: 'progression-mode',
   id: 'storefront-paths',
   version: '1.0.0',
@@ -127,7 +127,7 @@ test('the graph and repair plan compile deterministically', () => {
   });
   const first = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 2 });
   const second = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 3 });
-  assert.equal(first.definition.version, '4.0.0');
+  assert.equal(first.definition.version, '4.1.0');
   assert.notEqual(first.identity.sha256, second.identity.sha256);
 });
 
@@ -148,6 +148,18 @@ test('invalid graphs and repair plans fail before execution', async t => {
       value.workSelection = 'other' as 'feature';
     }, /feature.*progressive.*all-at-once/],
     ['unknown questline', value => { value.nodes[0]!.questline = 'missing'; }, /unknown questline/],
+    ['empty questline', value => { value.questlines.push({ id: 'empty', title: 'Empty' }); },
+      /owns no nodes/],
+    ['bad version', value => { value.version = 'latest'; }, /exact semantic version/],
+    ['no feature check', value => {
+      value.nodes[1]!.gradingChecks[0]!.role = 'guarantee';
+    }, /at least one feature check/],
+    ['check owned twice', value => {
+      value.nodes[1]!.gradingChecks[0]!.id = value.nodes[0]!.gradingChecks[0]!.id;
+    }, /already owned by another node/],
+    ['missing dependency reason', value => {
+      value.nodes[2]!.dependencies[0] = { id: 'accounts' } as { id: string; reason: string };
+    }, /reason/],
   ];
   for (const [name, mutate, expected] of cases) {
     await t.test(name, () => {
@@ -187,6 +199,7 @@ test('an initial failure costs no repair and passed branches continue', () => {
   }));
   assert.equal(state.nodes.accounts!.repairs.used, 1);
   assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.nodes.accounts!.exhaustionReason, 'feature-repairs-exhausted');
   assert.equal(state.nodes.ownership!.status, 'blocked');
   assert.equal(state.nodes.search!.status, 'active');
   assert.deepEqual(prompt(state).nodeIds, ['search']);
@@ -200,8 +213,39 @@ test('zero repair budget stops only the failed branch', () => {
     accounts: 'fail', catalog: 'pass',
   }));
   assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.nodes.accounts!.exhaustionReason, 'total-repairs-exhausted');
   assert.equal(state.nodes.accounts!.repairs.used, 0);
   assert.deepEqual(prompt(state).nodeIds, ['search']);
+});
+
+test('a run-wide total never allows a fourth repair anywhere in the run', () => {
+  const definition = fixture();
+  definition.repair.budget = { total: 3, perFeature: 5 };
+  definition.unchangedFailureLimit = 10;
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'initial', {
+    accounts: 'fail', catalog: 'pass',
+  }));
+  for (const attemptId of ['repair-1', 'repair-2', 'repair-3']) {
+    assert.equal(action(state).type, 'repair');
+    state = progressionEngine.recordResult(state, repairedGrade(state, attemptId, {
+      accounts: 'fail', catalog: 'pass',
+    }));
+  }
+  assert.equal(state.attempts.filter(attempt => attempt.repair).length, 3);
+  assert.equal(state.nodes.accounts!.repairs.used, 3);
+  assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.nodes.accounts!.exhaustionReason, 'total-repairs-exhausted');
+  // Exhausting the run-wide total ends repairs, not the passed branch's new work.
+  assert.equal(action(state).type, 'build');
+  assert.deepEqual(prompt(state).nodeIds, ['search']);
+  state = progressionEngine.recordResult(state, grade(state, 'search', {
+    accounts: 'fail', catalog: 'pass', search: 'fail',
+  }));
+  assert.equal(state.nodes.search!.status, 'failed');
+  assert.equal(state.nodes.search!.repairs.used, 0);
+  assert.equal(state.nodes.search!.exhaustionReason, 'total-repairs-exhausted');
+  assert.equal(state.phase, 'terminal');
 });
 
 test('the total budget is shared across features in deterministic order', () => {
@@ -237,7 +281,7 @@ test('one batch repair charges the session and each selected feature once', () =
   assert.equal(state.nodes.catalog!.repairs.used, 1);
 });
 
-test('provider failure costs zero and completed repair with failed grading costs one', () => {
+test('provider failure costs zero and a completed repair with failed grading awaits its grade', () => {
   let state = progressionEngine.initialize(fixture());
   state = progressionEngine.recordResult(state, grade(state, 'initial', {
     accounts: 'fail', catalog: 'pass',
@@ -247,16 +291,40 @@ test('provider failure costs zero and completed repair with failed grading costs
     category: 'provider_failure', reason: 'provider stopped',
   });
   assert.equal(state.nodes.accounts!.repairs.used, 0);
+  assert.equal(action(state).repair.awaitingGrade, undefined);
   state = progressionEngine.recordResult(state, {
     attemptId: 'grade-failure', outcome: 'inconclusive',
     category: 'harness_failure', reason: 'grader stopped',
     completedRepair: true,
   });
+  // Charged, but nothing about the feature changes until the repaired source
+  // is graded: no finalization, no children opened, no fourth state.
+  assert.equal(state.nodes.accounts!.repairs.used, 1);
+  assert.equal(state.nodes.accounts!.status, 'active');
+  assert.equal(state.nodes.ownership!.status, 'locked');
+  assert.equal(state.phase, 'active');
+  assert.deepEqual(action(state).repair, { nodeIds: ['accounts'], remaining: 0, awaitingGrade: true });
+  // A second grader failure on the regrade neither charges nor changes anything.
+  state = progressionEngine.recordResult(state, {
+    attemptId: 'regrade-failure', outcome: 'inconclusive',
+    category: 'harness_failure', reason: 'grader stopped again',
+  });
+  assert.equal(state.nodes.accounts!.repairs.used, 1);
+  assert.deepEqual(action(state).repair, { nodeIds: ['accounts'], remaining: 0, awaitingGrade: true });
+  // The conclusive regrade settles the charged repair without charging again.
+  state = progressionEngine.recordResult(state, grade(state, 'regrade', {
+    accounts: 'fail', catalog: 'pass',
+  }));
   assert.equal(state.nodes.accounts!.repairs.used, 1);
   assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.nodes.accounts!.exhaustionReason, 'feature-repairs-exhausted');
+  assert.equal(state.nodes.ownership!.status, 'blocked');
+  assert.deepEqual(prompt(state).nodeIds, ['search']);
+  assert.equal(JSON.stringify(progressionEngine.replay(fixture(), state.events)),
+    JSON.stringify(state));
 });
 
-test('a completed repair exhausts shared budget even when grading is inconclusive', () => {
+test('a completed repair with an inconclusive grade spends shared budget but settles only when graded', () => {
   const definition = fixture();
   definition.repair.budget = { total: 1 };
   let state = progressionEngine.initialize(definition);
@@ -268,9 +336,33 @@ test('a completed repair exhausts shared budget even when grading is inconclusiv
     category: 'harness_failure', reason: 'grader stopped',
     completedRepair: true,
   });
-  assert.equal(state.nodes.accounts!.status, 'failed');
+  assert.equal(state.attempts.filter(attempt => attempt.repair).length, 1);
+  assert.equal(state.nodes.accounts!.status, 'active');
+  assert.equal(state.nodes.catalog!.status, 'active');
+  assert.equal(state.phase, 'active');
+  state = progressionEngine.recordResult(state, grade(state, 'regrade', {
+    accounts: 'pass', catalog: 'fail',
+  }));
+  assert.equal(state.nodes.accounts!.status, 'passed');
   assert.equal(state.nodes.catalog!.status, 'failed');
-  assert.equal(state.phase, 'terminal');
+  assert.equal(state.nodes.catalog!.exhaustionReason, 'total-repairs-exhausted');
+  assert.deepEqual(prompt(state).nodeIds, ['ownership']);
+});
+
+test('a rolled-back repair with regression feedback is charged exactly once', () => {
+  let state = progressionEngine.initialize(fixture());
+  state = progressionEngine.recordResult(state, grade(state, 'roots', {
+    accounts: 'pass', catalog: 'fail',
+  }));
+  state = progressionEngine.recordResult(state, {
+    ...repairedGrade(state, 'rolled-back', { accounts: 'pass', catalog: 'fail', ownership: 'pass' }),
+    repairRegression: { ownerNodeIds: ['catalog'], report: 'The account list no longer loads.' },
+  });
+  assert.equal(state.attempts.filter(attempt => attempt.repair).length, 1);
+  assert.equal(state.nodes.catalog!.repairs.used, 1);
+  assert.equal(state.attempts.at(-1)?.repairRegression?.ownerNodeIds[0], 'catalog');
+  assert.equal(state.nodes.catalog!.status, 'failed');
+  assert.equal(state.nodes.catalog!.exhaustionReason, 'feature-repairs-exhausted');
 });
 
 test('unused depth repairs carry forward when configured', () => {
@@ -290,22 +382,107 @@ test('unused depth repairs carry forward when configured', () => {
   assert.deepEqual(action(state).repair, { nodeIds: ['ownership'], remaining: 1 });
 });
 
+test('depth repairs do not carry forward unless configured', () => {
+  const definition = fixture();
+  definition.repair.budget = { perDepth: { count: 1, carry: false } };
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'roots', {
+    accounts: 'pass', catalog: 'pass',
+  }));
+  state = progressionEngine.recordResult(state, grade(state, 'depth-two', {
+    accounts: 'pass', catalog: 'pass', ownership: 'fail', search: 'fail',
+  }));
+  assert.deepEqual(action(state).repair, { nodeIds: ['ownership'], remaining: 1 });
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'ownership-repair', {
+    accounts: 'pass', ownership: 'fail',
+  }));
+  assert.equal(state.nodes.ownership!.exhaustionReason, 'depth-repairs-exhausted');
+  assert.equal(state.nodes.search!.exhaustionReason, 'depth-repairs-exhausted');
+  assert.equal(state.nodes.search!.repairs.used, 0);
+});
+
 test('repeated failures stop their branch while unmeasured work remains build work', () => {
   const definition = fixture();
-  definition.unchangedFailureLimit = 1;
+  definition.unchangedFailureLimit = 2;
   definition.repair.budget = { perFeature: 5 };
   let state = progressionEngine.initialize(definition);
   state = progressionEngine.recordResult(state, grade(state, 'initial', {
     accounts: 'not-run', catalog: 'fail',
   }));
+  assert.equal(state.nodes.catalog!.unchangedFailure.count, 1);
   state = progressionEngine.recordResult(state, repairedGrade(state, 'unchanged', {
     catalog: 'fail',
   }));
   assert(Object.values(state.nodes.accounts!.checks).every(outcome => outcome === 'test-system'));
   assert.equal(state.nodes.accounts!.repairs.used, 0);
+  assert.equal(state.nodes.catalog!.unchangedFailure.count, 2);
   assert.equal(state.nodes.catalog!.exhaustionReason, 'repeated-findings');
   assert.equal(action(state).type, 'build');
   assert.deepEqual(prompt(state).nodeIds, ['accounts']);
+});
+
+test('only a completed repair can count as a repeated finding', () => {
+  const definition = fixture();
+  definition.unchangedFailureLimit = 2;
+  definition.repair.budget = { perFeature: 5 };
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'initial', {
+    accounts: 'fail', catalog: 'pass',
+  }));
+  // A regrade of unchanged source observes the same findings without a repair.
+  state = progressionEngine.recordResult(state, grade(state, 'regrade', {
+    accounts: 'fail', catalog: 'pass', search: 'pass',
+  }));
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 1);
+  assert.equal(state.nodes.accounts!.status, 'active');
+  // A repair that changes the findings starts the count over.
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'changed', {
+    accounts: { 'check.accounts.1': 'pass', 'check.accounts.2': 'fail' }, catalog: 'pass',
+  }));
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 1);
+  assert.equal(state.nodes.accounts!.repairs.used, 1);
+  state = progressionEngine.recordResult(state, repairedGrade(state, 'unchanged', {
+    accounts: { 'check.accounts.1': 'pass', 'check.accounts.2': 'fail' }, catalog: 'pass',
+  }));
+  assert.equal(state.nodes.accounts!.unchangedFailure.count, 2);
+  assert.equal(state.nodes.accounts!.exhaustionReason, 'repeated-findings');
+});
+
+test('repair order is fixed by the compiled graph, not by declared or filesystem order', () => {
+  // The queue repairs the first failed feature by graph order (level, then id)
+  // until it passes or stops, then moves to the next. Declared order is not
+  // the tie-break, and a replay of the same events reproduces the sequence.
+  const definition = fixture();
+  definition.repair.budget = { total: 4, perFeature: 5 };
+  definition.unchangedFailureLimit = 3;
+  definition.nodes = [
+    node('zeta', [], 'identity'),
+    node('alpha', [], 'discovery'),
+    node('mid', [], 'identity'),
+  ];
+  const compiled = compileDependencyMode(definition);
+  assert.deepEqual(compiled.nodes.map(item => item.id), ['alpha', 'mid', 'zeta']);
+  let state = progressionEngine.initialize(definition);
+  state = progressionEngine.recordResult(state, grade(state, 'initial', {
+    zeta: 'fail', alpha: 'fail', mid: 'fail',
+  }));
+  const sequence: string[][] = [];
+  while (progressionEngine.nextAction(state).type === 'repair') {
+    sequence.push([...action(state).repair.nodeIds]);
+    state = progressionEngine.recordResult(state, repairedGrade(state, `repair-${sequence.length}`, {
+      zeta: 'fail', alpha: 'fail', mid: 'fail',
+    }));
+  }
+  assert.deepEqual(sequence, [['alpha'], ['alpha'], ['mid'], ['mid']]);
+  assert.equal(state.nodes.alpha!.exhaustionReason, 'repeated-findings');
+  // mid's second repair both reached the stall limit and spent the last
+  // run-wide repair; the budget check runs first and names the reason.
+  assert.equal(state.nodes.mid!.exhaustionReason, 'total-repairs-exhausted');
+  assert.equal(state.nodes.zeta!.exhaustionReason, 'total-repairs-exhausted');
+  const replayed = progressionEngine.replay(definition, state.events);
+  assert.equal(JSON.stringify(replayed), JSON.stringify(state));
+  assert.deepEqual(state.attempts.filter(attempt => attempt.repair)
+    .map(attempt => attempt.repair!.nodeIds), sequence);
 });
 
 test('application startup failures target current work without consuming a repair', () => {
@@ -320,6 +497,34 @@ test('application startup failures target current work without consuming a repai
   const missing = grade(state, 'missing-check', { accounts: 'fail' });
   missing.nodes[0]!.checks.pop();
   assert.throws(() => progressionEngine.recordResult(state, missing), /missing checks/);
+});
+
+test('a result must cover the selected graph exactly', () => {
+  let state = progressionEngine.initialize(fixture());
+  state = progressionEngine.recordResult(state, grade(state, 'initial', {
+    accounts: 'fail', catalog: 'pass',
+  }));
+  const missingNode = grade(state, 'missing-node', { accounts: 'fail' });
+  missingNode.nodes.pop();
+  assert.throws(() => progressionEngine.recordResult(state, missingNode), /missing nodes/);
+  const repeated = grade(state, 'repeated-check', { accounts: 'fail' });
+  repeated.nodes[0]!.checks.push({ ...repeated.nodes[0]!.checks[0]! });
+  assert.throws(() => progressionEngine.recordResult(state, repeated), /repeats check/);
+  const unselected = grade(state, 'unselected-node', { accounts: 'fail' });
+  unselected.nodes.push({ id: 'recovery', checks: [] });
+  assert.throws(() => progressionEngine.recordResult(state, unselected), /unselected node/);
+  const foreignRegression = {
+    ...repairedGrade(state, 'foreign-regression', { accounts: 'fail', catalog: 'pass' }),
+    repairRegression: { ownerNodeIds: ['catalog'], report: 'Catalog broke.' },
+  };
+  assert.throws(() => progressionEngine.recordResult(state, foreignRegression),
+    /does not belong to the current repair/);
+  const staleRepair = { ...grade(state, 'stale-repair', { accounts: 'fail' }), completedRepair: true };
+  const passed = progressionEngine.recordResult(state, grade(state, 'passed', {
+    accounts: 'pass', catalog: 'pass',
+  }));
+  assert.throws(() => progressionEngine.recordResult(passed, staleRepair),
+    /only a repair action can record a completed repair/);
 });
 
 test('feature work selection requests one ready feature at a time', () => {

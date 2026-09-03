@@ -17,6 +17,7 @@ import type {
   EngineArtifactIdentity,
 } from './artifact-identities.js';
 import { formatZodError } from '../zod-error.js';
+import { REPAIR_EXHAUSTION_REASONS } from '../progression/repair-plan.js';
 
 export {
   currentEngineIdentity,
@@ -793,7 +794,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
           || !isSafeInteger(counter.used) || counter.used < 0
           || (counter.exhaustionReason !== null
             && (typeof counter.exhaustionReason !== 'string'
-              || !['repair-budget-exhausted', 'repeated-findings'].includes(counter.exhaustionReason)))) {
+              || !(REPAIR_EXHAUSTION_REASONS as readonly string[]).includes(counter.exhaustionReason)))) {
           fail(`source_checkpoint payload.repair.nodeRepairs[${index}] is invalid`);
         }
         ids.add(counter.nodeId);

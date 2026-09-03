@@ -38,6 +38,8 @@ import {
   dependencyPositiveInteger as positiveInteger,
   isDependencyObject as object,
 } from './dependency-validation.js';
+import { REPAIR_EXHAUSTION_REASONS } from './repair-plan.js';
+import type { RepairLimitExhaustion } from './repair-plan.js';
 
 const getNodeState = dependencyNodeState;
 
@@ -236,15 +238,18 @@ interface RepairAllowance {
   grantId?: string;
 }
 
-function baseRepairRemaining(state: DependencyState, nodeIds: readonly string[], depth: number): number {
+// Each configured limit and what it still allows, most specific first, so the
+// first limit with nothing left names why a feature stopped.
+function repairLimits(state: DependencyState, nodeIds: readonly string[], depth: number):
+Array<{ limit: RepairLimitExhaustion; remaining: number }> {
   const repairs = state.attempts.filter(attempt => attempt.repair && !attempt.repair.grantId);
-  const limits: number[] = [];
+  const limits: Array<{ limit: RepairLimitExhaustion; remaining: number }> = [];
   const budget = state.definition.repair.budget;
-  if (budget.total !== undefined) limits.push(budget.total - repairs.length);
   if (budget.perFeature !== undefined) {
     for (const nodeId of nodeIds) {
-      limits.push(budget.perFeature - repairs.filter(attempt =>
-        attempt.repair?.nodeIds.includes(nodeId)).length);
+      limits.push({ limit: 'feature-repairs-exhausted',
+        remaining: budget.perFeature - repairs.filter(attempt =>
+          attempt.repair?.nodeIds.includes(nodeId)).length });
     }
   }
   if (budget.perDepth !== undefined) {
@@ -255,9 +260,23 @@ function baseRepairRemaining(state: DependencyState, nodeIds: readonly string[],
       ? budget.perDepth.count * new Set(state.definition.nodes
         .filter(node => node.level <= depth).map(node => node.level)).size
       : budget.perDepth.count;
-    limits.push(available - used);
+    limits.push({ limit: 'depth-repairs-exhausted', remaining: available - used });
   }
-  return Math.max(0, Math.min(...limits));
+  if (budget.total !== undefined) {
+    limits.push({ limit: 'total-repairs-exhausted', remaining: budget.total - repairs.length });
+  }
+  return limits;
+}
+
+function baseRepairRemaining(state: DependencyState, nodeIds: readonly string[], depth: number): number {
+  return Math.max(0, Math.min(...repairLimits(state, nodeIds, depth).map(limit => limit.remaining)));
+}
+
+function exhaustedRepairLimit(state: DependencyState, nodeIds: readonly string[],
+  depth: number): RepairLimitExhaustion {
+  const exhausted = repairLimits(state, nodeIds, depth).find(limit => limit.remaining <= 0);
+  if (!exhausted) throw new Error(`no repair limit is exhausted for ${nodeIds.join(', ')}`);
+  return exhausted.limit;
 }
 
 function repairAllowance(state: DependencyState, nodeIds: readonly string[], depth: number):
@@ -444,7 +463,7 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
     nodeState.exhaustedAtLevel = state.level;
     nodeState.exhaustionReason = nodeState.unchangedFailure.count
       >= state.definition.unchangedFailureLimit
-      ? 'repeated-findings' : 'repair-budget-exhausted';
+      ? 'repeated-findings' : exhaustedRepairLimit(state, [node.id], state.level);
   } else {
     nodeState.status = 'active';
   }
@@ -586,7 +605,7 @@ function assertState(input: unknown,
       || (unchangedFailure.fingerprint !== null && !HASH.test(unchangedFailure.fingerprint))
       || (unchangedFailure.count === 0) !== (unchangedFailure.fingerprint === null)
       || (nodeState.exhaustionReason !== null
-        && !['repair-budget-exhausted', 'repeated-findings'].includes(nodeState.exhaustionReason))
+        && !(REPAIR_EXHAUSTION_REASONS as readonly string[]).includes(nodeState.exhaustionReason))
       || (nodeState.exhaustedAtLevel !== null
         && (!Number.isInteger(nodeState.exhaustedAtLevel)
           || !validLevels.has(nodeState.exhaustedAtLevel)))
@@ -718,7 +737,12 @@ function failureFingerprint(state: DependencyState, nodeIds: string[]): string {
   return createHash('sha256').update(JSON.stringify(failedChecks)).digest('hex');
 }
 
-function stopUnchangedFeatures(state: DependencyState, promptedNodeIds: ReadonlySet<string>): void {
+// The stall detector counts consecutive repairs that leave a feature's
+// findings unchanged. The first observation of the findings, usually the
+// initial grade, seeds the count; only a completed repair can raise it, so a
+// regrade of unchanged source neither charges the detector nor resets it.
+function observeUnchangedFailures(state: DependencyState, promptedNodeIds: ReadonlySet<string>,
+  repaired: boolean): void {
   const failed = new Set<string>();
   const failedNodes = state.definition.nodes.filter(node => {
     const nodeState = getNodeState(state, node.id);
@@ -729,7 +753,8 @@ function stopUnchangedFeatures(state: DependencyState, promptedNodeIds: Readonly
   for (const node of failedNodes) {
     const fingerprint = failureFingerprint(state, [node.id]);
     const prior = getNodeState(state, node.id).unchangedFailure;
-    const count = prior.fingerprint === fingerprint ? prior.count + 1 : 1;
+    const count = prior.fingerprint !== fingerprint ? 1
+      : repaired ? prior.count + 1 : prior.count;
     getNodeState(state, node.id).unchangedFailure = {
       fingerprint,
       count,
@@ -826,17 +851,11 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
       ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
       ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
       ...(repair ? { repair } : {}) });
-    if (repair) {
-      recordRepair(state, repair);
-      repair.nodeIds.forEach(nodeId =>
-        updateNodeStatus(state, getDefinitionNode(state.definition, nodeId)));
-      for (const node of state.definition.nodes) {
-        if (!repair.nodeIds.includes(node.id) && hasFailedFeatureCheck(state, node)) {
-          updateNodeStatus(state, node);
-        }
-      }
-      openLevel(state, repair.depth);
-    }
+    // A completed repair is charged even when its grade did not finish. The
+    // feature keeps its current status: the repaired source is preserved and
+    // graded before any status can change, so a grader failure can never
+    // finalize a feature or open its children.
+    if (repair) recordRepair(state, repair);
     return state;
   }
   if (result.reason !== undefined || result.category !== undefined) {
@@ -888,17 +907,30 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
       getNodeState(state, nodeId).unchangedFailure = { fingerprint: null, count: 0 };
     }
   }
-  if (repair) {
-    for (const node of state.definition.nodes) {
-      if (!selectedNodeIds.includes(node.id) && hasFailedFeatureCheck(state, node)) {
-        updateNodeStatus(state, node);
-      }
+  // Repair budget is shared, so a feature that was not graded this time may
+  // have lost its last repair. Finalize it now rather than offering a repair
+  // with nothing left; features already finalized keep their exhaustion level.
+  for (const node of state.definition.nodes) {
+    if (!selectedNodeIds.includes(node.id)
+      && ['active', 'working'].includes(getNodeState(state, node.id).status)
+      && hasFailedFeatureCheck(state, node)) {
+      updateNodeStatus(state, node);
     }
   }
   blockBrokenDescendants(state);
-  if (repair) stopUnchangedFeatures(state, failedPromptNodeIds);
+  observeUnchangedFailures(state, failedPromptNodeIds, repair !== undefined);
   openLevel(state, state.level);
   return state;
+}
+
+// True while the most recent completed repair has no conclusive grade.
+function awaitingRepairGrade(state: DependencyState): boolean {
+  for (let index = state.attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = state.attempts[index]!;
+    if (attempt.outcome === 'conclusive') return false;
+    if (attempt.repair) return true;
+  }
+  return false;
 }
 
 function applyRepairGrant(inputState: DependencyState,
@@ -1031,7 +1063,8 @@ export function nextDependencyAction(inputState: ProgressionState): ProgressionA
   return {
     type: repairing ? 'repair' : 'build',
     level: actionLevel,
-    repair: { nodeIds: repairing ? [...featureIds] : [], ...allowance },
+    repair: { nodeIds: repairing ? [...featureIds] : [], ...allowance,
+      ...(repairing && awaitingRepairGrade(state) ? { awaitingGrade: true as const } : {}) },
     prompt,
     grading,
   };

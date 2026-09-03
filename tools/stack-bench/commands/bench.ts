@@ -77,7 +77,8 @@ import type { ValidatedAgentResult } from '../src/agents/agent-result-contract.j
 import type { Track } from '../src/composition/tracks.js';
 import type { RunOutcome } from '../src/evidence/outcomes.js';
 import type { GradeBundlePayload, BenchmarkRunRecord, RunLevelRecord,
-  RunContinuation, RunSessionRecord, RunTotals } from '../src/evidence/benchmark-run.js';
+  RunContinuation, RunRepairCandidate, RunSessionRecord, RunTotals }
+  from '../src/evidence/benchmark-run.js';
 import { addCostUsd, finalizeRunTotals, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
@@ -1474,6 +1475,10 @@ async function main() {
     }
     const resumedRepair = progressionStart?.resumed === true
       && progressionStart.action.type === 'repair';
+    // The interrupted repair was charged but never graded. Grade its preserved
+    // source before any coding session.
+    const resumedGrade = resumedRepair && progressionStart?.action.type === 'repair'
+      && progressionStart.action.repair.awaitingGrade === true;
     const resumedRegression = resumedRepair
       ? savedRepairRegression(progressionExecution?.state ?? null, progressionSelection) : null;
     const resumedRegressionReport = resumedRegression
@@ -1498,7 +1503,7 @@ async function main() {
       progressionRepairLimit = Math.max(
         progressionRepairLimit, repairBudgetFor(selected, completedRepairs));
     };
-    if (resumedRepair) {
+    if (resumedRepair && !resumedGrade) {
       let reportFailure: string | null = null;
       try {
         if (resumedRegressionReport && resumedRegression) {
@@ -1538,42 +1543,50 @@ async function main() {
 
     const firstMode = resumedRepair ? 'fix'
       : continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
-    const build = await runAgentForLevel(
+    const build = resumedGrade ? null : await runAgentForLevel(
       resumedRepair || run.levels.length === 0 ? firstMode : 'upgrade', level,
       featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
-    const buildLeak = auditContamination(appDir);
+    // Only a resumed grade runs a level without a coding session.
+    const requireBuild = (): NonNullable<typeof build> => {
+      if (!build) throw new Error(`level ${level} has no coding session`);
+      return build;
+    };
+    const buildLeak = build ? auditContamination(appDir) : null;
     if (buildLeak) {
-      const buildSession = runSessionRecord(build,
+      const session = requireBuild();
+      const buildSession = runSessionRecord(session,
         resumedRepair ? priorRepairs + 1 : null);
       const sessionTotals = summarizeSessions([buildSession]);
       abortUnusableSession(`level ${level} ${firstMode}`, buildLeak, {
         level, graded: false, score: null, max: null, selection: null,
         ...(resumedRepair
-          ? { repairCostUsd: build.costUsd, repairSessions: [buildSession], repairs: 1,
+          ? { repairCostUsd: session.costUsd, repairSessions: [buildSession], repairs: 1,
             priorRepairs, cumulativeRepairs: priorRepairs + 1 }
           : continuing
-          ? { resumeCostUsd: build.costUsd, resumeSession: buildSession }
-          : { buildCostUsd: build.costUsd, buildSessions: [buildSession] }),
-        sessionTotals, costUsd: build.costUsd, durationMs: Date.now() - t0,
+          ? { resumeCostUsd: session.costUsd, resumeSession: buildSession }
+          : { buildCostUsd: session.costUsd, buildSessions: [buildSession] }),
+        sessionTotals, costUsd: session.costUsd, durationMs: Date.now() - t0,
       }, progressionSelection, resumedRepair);
     }
     // Record the session setup needed to compare runs.
-    run.setup ??= build.setup;
+    if (build) run.setup ??= build.setup;
     if (continuing) {
+      const session = requireBuild();
       requireContinuation(run).resumeSetup = {
-        sessionId: build.sessionId ?? null,
-        costUsd: build.costUsd,
-        durationMs: build.durationMs,
+        sessionId: session.sessionId ?? null,
+        costUsd: session.costUsd,
+        durationMs: session.durationMs,
         sourceVerified: false,
       };
     }
     // No session, no app. Grading an empty directory yields a real-looking zero
     // that is a harness failure, not a result for this backend.
-    const buildFailure = agentSessionFailure(build);
+    const buildFailure = build ? agentSessionFailure(build) : null;
     if (buildFailure) {
+      const session = requireBuild();
       await restoreFeatureAcceptedSource();
       console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, ARTIFACT_FILE.run)}`);
-      const failedSession = runSessionRecord(build);
+      const failedSession = runSessionRecord(session);
       if (progressionExecution) {
         recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
           failure: buildFailure });
@@ -1582,10 +1595,10 @@ async function main() {
         selection: null, error: buildFailure.reason,
         outcome: buildFailure,
         ...(continuing
-          ? { resumeSession: failedSession, resumeCostUsd: build.costUsd }
-          : { buildSessions: [failedSession], buildCostUsd: build.costUsd }),
-        sessionTotals: summarizeSessions([build]),
-        costUsd: build.costUsd, durationMs: Date.now() - t0 });
+          ? { resumeSession: failedSession, resumeCostUsd: session.costUsd }
+          : { buildSessions: [failedSession], buildCostUsd: session.costUsd }),
+        sessionTotals: summarizeSessions([session]),
+        costUsd: session.costUsd, durationMs: Date.now() - t0 });
       break;
     }
     const gradeAcceptedSource = async (sourcePath: string,
@@ -1616,6 +1629,58 @@ async function main() {
       else resetAppToSource(sourcePath, appDir);
       restorePrivateGradingEvidence(appDir, gradingPath);
     };
+    // Keep a repaired source whose grade did not finish beside the run, bound
+    // by hash, so a resume can grade exactly what the paid session produced.
+    const preserveRepairCandidate = (directory: string): RunRepairCandidate => {
+      const path = join(outputDir, directory);
+      rmSync(path, { recursive: true, force: true });
+      const live = hashAppSource(appDir);
+      snapshotSource(appDir, path);
+      const preserved = hashDirectory(path);
+      if (live.sha256 !== preserved.sha256 || live.files.length !== preserved.files.length) {
+        throw new Error('preserved repair source differs from the live application source');
+      }
+      return { directory, sha256: preserved.sha256, files: preserved.files.length };
+    };
+    if (resumedGrade) {
+      const candidate = progressionStart?.priorRun?.payload.levels
+        ?.find(item => item.level === level)?.repair?.candidate;
+      const candidateRoot = args.progressionResumeFrom ?? outputDir;
+      let candidateFailure: string | null = null;
+      if (!candidate || !/^[A-Za-z0-9._-]+$/.test(candidate.directory)
+        || !existsSync(join(candidateRoot, candidate.directory))) {
+        candidateFailure = 'the interrupted repair left no source to grade';
+      } else {
+        const candidatePath = join(candidateRoot, candidate.directory);
+        const preserved = hashDirectory(candidatePath);
+        if (preserved.sha256 !== candidate.sha256
+          || preserved.files.length !== candidate.files) {
+          candidateFailure = 'the interrupted repair source does not match its record';
+        } else {
+          resetAppToSource(candidatePath, appDir);
+          console.log(`  restored the interrupted repair source from ${candidatePath}`);
+        }
+      }
+      if (candidateFailure) {
+        const outcome: RunOutcome = {
+          kind: 'harness_failure', phase: 'repair-candidate', reason: candidateFailure,
+          appFailures: [], inconclusive: [], harnessFailures: [candidateFailure],
+        };
+        recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
+          failure: progressionFailure(outcome) });
+        appendLevelRecord({ level, graded: false, score: null, max: null,
+          selection: null, error: candidateFailure, outcome,
+          repair: { status: 'ungraded', limit: progressionRepairLimit,
+            used: priorRepairs, stopReason: 'repair-candidate' },
+          repairCostUsd: 0, repairSessions: [], repairs: 0, priorRepairs,
+          cumulativeRepairs: priorRepairs, sessionTotals: summarizeSessions([]),
+          costUsd: 0, durationSec: Math.round((Date.now() - t0) / 1000) });
+        run.validation.ladder.stoppedAfterLevel = level;
+        run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
+        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        break;
+      }
+    }
     if (continuing) {
       // A resume may restore runtime state but cannot change checkpoint source.
       const resumed = hashAppSource(appDir);
@@ -1630,14 +1695,15 @@ async function main() {
       continuation.resumeSetup.sourceVerified = true;
     }
     if (args.referenceMutationOnly) {
+      const session = requireBuild();
       appendLevelRecord({ level, score: null, max: null, graded: false, contractPass: null,
         selection: null,
         outcome: { kind: 'ungraded', phase: 'reference-mutation-only',
           reason: 'the parent qualification owns the full clean grade',
           appFailures: [], inconclusive: [], harnessFailures: [] },
-        buildSessions: [runSessionRecord(build)],
-        buildCostUsd: build.costUsd, sessionTotals: summarizeSessions([build]),
-        costUsd: build.costUsd, durationMs: Date.now() - t0 });
+        buildSessions: [runSessionRecord(session)],
+        buildCostUsd: session.costUsd, sessionTotals: summarizeSessions([session]),
+        costUsd: session.costUsd, durationMs: Date.now() - t0 });
       break;
     }
     const firstBuildDirectory = continuing
@@ -1670,6 +1736,12 @@ async function main() {
     let bundle = firstBuildSource
       ? grade(args, appDir, url, firstBuildLabel, level, track, runId,
         { applicationFailure: materializationOutcome }) : null;
+    // A grader failure on unchanged source is retried once, as a repair grade is.
+    if (firstBuildSource && !materializationOutcome
+      && !levelGradeIsUsable(classifyBundle(bundle))) {
+      console.log('  grade did not complete; retrying the same source once');
+      bundle = grade(args, appDir, url, `${firstBuildLabel}-retry`, level, track, runId);
+    }
     let reusableRepairEvidence: {
       bundle: GradeBundlePayload;
       results: string;
@@ -1798,11 +1870,14 @@ async function main() {
       console.log(`  !! could not keep the first build: ${errorMessage(e).split('\n')[0]}`);
     }
 
-    let repairs = resumedRepair ? 1 : 0;
-    let repairCost = resumedRepair ? build.costUsd : 0;
-    const repairSessions = resumedRepair
+    // A resumed grade settles a repair that was already charged; only a
+    // resumed coding session is a new repair.
+    let repairs = resumedRepair && !resumedGrade ? 1 : 0;
+    let repairCost = resumedRepair && build ? build.costUsd : 0;
+    const repairSessions = resumedRepair && build
       ? [runSessionRecord(build, priorRepairs + 1)] : [];
     const repairHistory: ReturnType<typeof repairHistoryEntry>[] = [];
+    let repairCandidate: RunRepairCandidate | null = null;
     let priorRegressionReport = resumedRegressionReport;
     let priorRegressionOwner = repairOwnerNodeIds(progressionSelection).join('\n') || null;
     let regressed = false;
@@ -1834,10 +1909,20 @@ async function main() {
       bundle: initialProgressionFailure ? null : bundle,
       level,
       failure: initialProgressionFailure,
-      completedRepair: resumedRepair,
+      completedRepair: resumedRepair && !resumedGrade,
     });
+    // Never start a paid repair with nothing left to spend or while a charged
+    // repair still waits for its grade.
     const progressionMayRepair = () => !args.progression
-      || progressionNext?.type === 'repair';
+      || (progressionNext?.type === 'repair' && progressionNext.repair.remaining > 0
+        && progressionNext.repair.awaitingGrade !== true);
+    // One allowance for both modes: the engine's remaining repairs in
+    // dependency mode, the run-wide total less every repair so far otherwise.
+    const repairsRemaining = (): number => args.progression
+      ? (progressionNext?.type === 'repair' ? progressionNext.repair.remaining : 0)
+      : args.repairs - priorRepairs - repairs;
+    const mayRepair = (): boolean => args.progression
+      ? progressionMayRepair() : repairsRemaining() > 0;
     const recordRepairProgression = ({ failure = null, repairRegression = null,
       completedRepair = false }: {
       failure?: ProgressionFailure | null;
@@ -1916,8 +2001,7 @@ async function main() {
     // Hand back findings and let the agent fix, until clean or out of rounds.
     while (levelGradeIsUsable(classifyBundle(bundle), args.progression
       ? requireProgressionState(progressionExecution?.state ?? null).attempts.at(-1) ?? null
-      : null) && progressionMayRepair()
-      && (args.progression || priorRepairs + repairs < args.repairs)) {
+      : null) && mayRepair()) {
       let reportReady = false;
       const acceptedBundle = bundle;
       let repairBaselineBundle = bundle;
@@ -2053,8 +2137,9 @@ async function main() {
       // Reject contaminated repairs before spending time on grading.
       const fixLeak = auditContamination(appDir);
       if (fixLeak) {
-        const buildSession = runSessionRecord(build);
-        const sessions = resumedRepair ? repairSessions : [buildSession, ...repairSessions];
+        const buildSession = build ? runSessionRecord(build) : null;
+        const sessions = resumedRepair || !buildSession
+          ? repairSessions : [buildSession, ...repairSessions];
         const sessionTotals = summarizeSessions(sessions);
         cleanupRepairSnapshots();
         abortUnusableSession(`repair ${repairs}`, fixLeak, {
@@ -2063,8 +2148,10 @@ async function main() {
           ...(resumedRepair
             ? { resumedRepair: firstBuild }
             : continuing
-            ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
-            : { firstBuild, buildCostUsd: build.costUsd, buildSessions: [buildSession] }),
+            ? { baseline: firstBuild, resumeCostUsd: requireBuild().costUsd,
+              resumeSession: runSessionRecord(requireBuild()) }
+            : { firstBuild, buildCostUsd: requireBuild().costUsd,
+              buildSessions: [runSessionRecord(requireBuild())] }),
           repairCostUsd: addCostUsd(repairCost), repairSessions, repairs,
           ...(resumedRepair ? { priorRepairs,
             cumulativeRepairs: priorRepairs + repairs } : {}),
@@ -2072,7 +2159,8 @@ async function main() {
             used: priorRepairs + repairs,
             stopReason: fixLeak.kind === 'harness_failure' ? 'audit-failure' : 'contaminated' },
           sessionTotals,
-          costUsd: resumedRepair ? addCostUsd(repairCost) : addCostUsd(build.costUsd, repairCost),
+          costUsd: resumedRepair ? addCostUsd(repairCost)
+            : addCostUsd(requireBuild().costUsd, repairCost),
           durationMs: Date.now() - t0,
         }, progressionSelection, true);
       }
@@ -2113,11 +2201,25 @@ async function main() {
       if (!levelGradeIsUsable(repairedOutcome)) {
         const reason = repairedOutcome.reason
           ?? 'the repaired source did not produce a reliable grade';
-        console.log(`    repair grade failed: ${reason}; restoring the accepted source`);
-        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        // The session is paid for and charged. Keep what it produced so a
+        // resume grades it instead of buying another repair; the feature's
+        // status waits for that grade.
+        const candidateDirectory = `repair-candidate-l${level}${featureActionSuffix}`;
+        let preserveFailure: string | null = null;
+        try {
+          repairCandidate = preserveRepairCandidate(candidateDirectory);
+          console.log(`    repair grade failed: ${reason}; kept the repaired source at `
+            + `${join(outputDir, candidateDirectory)} for grading on resume`);
+        } catch (error) {
+          preserveFailure = errorMessage(error).split(/\r?\n/)[0]
+            ?? 'could not keep the repaired source';
+          console.log(`    repair grade failed: ${reason}; ${preserveFailure}; restoring the accepted source`);
+          await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        }
         repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
           'repair completed; grading failed'));
-        recordRepairHarnessFailure('repair-grading', reason, bundle, true);
+        recordRepairHarnessFailure('repair-grading',
+          preserveFailure ? `${reason}; ${preserveFailure}` : reason, bundle, true);
         break;
       }
 
@@ -2220,7 +2322,7 @@ async function main() {
       }
       priorRegressionReport = null;
       if (shared.after === shared.before) {
-        const remaining = displayedRepairBudget - repairs;
+        const remaining = displayedRepairBudget - priorRepairs - repairs;
         console.log(`    ${formatRepairProgress(shared, { before, beforeMax, after, afterMax })}; `
           + (remaining > 0 ? `${remaining} repair(s) remain` : 'repair budget exhausted'));
       }
@@ -2257,7 +2359,7 @@ async function main() {
     const repairBudgetExhausted = progressionExecution
       ? finalBundleOutcome.kind === 'app_failure'
         && progressionNext?.type !== 'repair'
-      : repairs >= args.repairs;
+      : priorRepairs + repairs >= args.repairs;
     const repairStatus: RepairStatus = repairStopReason === 'no-source-change' ? 'incomplete'
       : !graded ? 'ungraded'
       : finalBundleOutcome.kind === 'passed' ? (repairs > 0 ? 'corrected' : 'not-needed')
@@ -2277,6 +2379,7 @@ async function main() {
       ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
       ...(nodeRepairs ? { nodeRepairs } : {}),
+      ...(repairCandidate ? { candidate: repairCandidate } : {}),
     };
     const latestProgressionAttempt = progressionState?.attempts.at(-1) ?? null;
     const featureDepthContinues = featureActionSequence !== null
@@ -2331,8 +2434,12 @@ async function main() {
       console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
         `Score is unknown, not zero; re-grade this level before using the run.`);
     }
-    const buildSession = runSessionRecord(build);
-    const sessionTotals = summarizeSessions(resumedRepair ? repairSessions
+    const buildSession = build ? runSessionRecord(build) : null;
+    const requireBuildSession = (): RunSessionRecord => {
+      if (!buildSession) throw new Error(`level ${level} has no coding session`);
+      return buildSession;
+    };
+    const sessionTotals = summarizeSessions(resumedRepair || !buildSession ? repairSessions
       : [buildSession, ...repairSessions]);
     appendLevelRecord({
       level,
@@ -2345,10 +2452,12 @@ async function main() {
       ...(resumedRepair
         ? { resumedRepair: firstBuild }
         : continuing
-        ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
+        ? { baseline: firstBuild, resumeCostUsd: requireBuild().costUsd,
+          resumeSession: requireBuildSession() }
         : featureActionSequence !== null
-        ? { buildCostUsd: build.costUsd, buildSessions: [buildSession] }
-        : { firstBuild, buildCostUsd: build.costUsd, buildSessions: [buildSession] }),
+        ? { buildCostUsd: requireBuild().costUsd, buildSessions: [requireBuildSession()] }
+        : { firstBuild, buildCostUsd: requireBuild().costUsd,
+          buildSessions: [requireBuildSession()] }),
       contractPass: levelBundle?.totals?.contractPass ?? null,
       code: levelBundle?.code ?? null,
       repairCostUsd: addCostUsd(repairCost),

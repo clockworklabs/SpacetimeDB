@@ -234,14 +234,14 @@ test('dependency repair accounting uses repairs, not grading observations', () =
       accounts: { repairs: { used: 1 },
         exhaustedAtLevel: null, exhaustionReason: null },
       catalog: { repairs: { used: 5 },
-        exhaustedAtLevel: 1, exhaustionReason: 'repair-budget-exhausted' },
+        exhaustedAtLevel: 1, exhaustionReason: 'feature-repairs-exhausted' },
       recovery: { repairs: { used: 1 },
         exhaustedAtLevel: null, exhaustionReason: null },
     },
   };
   assert.deepEqual(dependencyRepairRecords(state, 1, ['recovery']), [
     { nodeId: 'accounts', used: 1, exhaustionReason: null },
-    { nodeId: 'catalog', used: 5, exhaustionReason: 'repair-budget-exhausted' },
+    { nodeId: 'catalog', used: 5, exhaustionReason: 'feature-repairs-exhausted' },
     { nodeId: 'recovery', used: 1, exhaustionReason: null },
   ]);
 });

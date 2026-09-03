@@ -2,6 +2,19 @@ export const REPAIR_SELECTIONS = ['feature', 'batch'] as const;
 
 export type RepairSelection = typeof REPAIR_SELECTIONS[number];
 
+// Why a feature can no longer be repaired. The first three name the configured
+// limit that ran out, most specific first; the last is the stall detector.
+export const REPAIR_EXHAUSTION_REASONS = [
+  'feature-repairs-exhausted',
+  'depth-repairs-exhausted',
+  'total-repairs-exhausted',
+  'repeated-findings',
+] as const;
+
+export type RepairExhaustionReason = typeof REPAIR_EXHAUSTION_REASONS[number];
+
+export type RepairLimitExhaustion = Exclude<RepairExhaustionReason, 'repeated-findings'>;
+
 export interface RepairBudget extends Record<string, unknown> {
   total?: number;
   perFeature?: number;

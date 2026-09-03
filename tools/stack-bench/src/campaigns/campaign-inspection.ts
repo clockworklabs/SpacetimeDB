@@ -252,9 +252,9 @@ function dependencyHistory(state: DependencyState): {
       replay = progressionEngine.grantRepairs(replay, event.grant);
       continue;
     }
-    const action = progressionEngine.nextAction(replay);
+    // A completed coding session is one repair whether or not its grade finished.
+    if (event.result.completedRepair === true) repairAttempts += 1;
     if (event.result.outcome === 'conclusive') {
-      if (action.type === 'repair') repairAttempts += 1;
       for (const node of event.result.nodes) {
         for (const check of node.checks) {
           const key = `${node.id}\u0000${check.id}`;

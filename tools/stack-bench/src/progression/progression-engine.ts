@@ -17,8 +17,11 @@ export interface ProgressionWorkAction extends Record<string, unknown> {
   level: number;
   repair: {
     nodeIds: string[];
-    remaining: number | null;
+    remaining: number;
     grantId?: string;
+    // The last completed repair was charged but never graded. Grade its
+    // preserved source before starting another coding session.
+    awaitingGrade?: true;
   };
   prompt: unknown;
   grading: unknown;
