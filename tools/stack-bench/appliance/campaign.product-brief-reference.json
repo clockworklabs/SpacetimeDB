@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-product-brief-reference",
   "version": "2.0.0",
@@ -7,6 +7,7 @@
   "title": "Ecommerce L1 product brief and quality validation",
   "track": "ecommerce",
   "mode": { "id": "sequential", "version": "1.0.0" },
+  "repair": { "selection": "batch", "budget": { "total": 0 } },
   "levels": [1],
   "selection": {
     "levels": [
@@ -68,7 +69,6 @@
     "seed": "product-brief-quality-reference-1"
   },
   "budgets": {
-    "fixRounds": 0,
     "attemptTimeoutMinutes": 60,
     "maxCostUsdPerAttempt": null
   },

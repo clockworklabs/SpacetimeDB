@@ -77,7 +77,7 @@ function planRow(plan: DashboardPlan): string {
     + `<td class="shape">${esc(shapeOf(plan))}</td>`
     + cell(stacks.length ? num(stacks.length) : DASH, stacks.join(' · '))
     + cell(num(plan.attempts)) + cell(num(plan.parallelism))
-    + cell(budgets ? num(budgets.fixRounds) : DASH)
+    + cell(plan.repairBudget === undefined ? DASH : num(plan.repairBudget))
     + cell(budgets ? `${budgets.attemptTimeoutMinutes} min` : DASH)
     + cell(budgets ? money(budgets.maxCostUsdPerAttempt) : DASH)
     + `<td><span class="state ${plan.state === 'frozen' ? 'done' : 'idle'}" `

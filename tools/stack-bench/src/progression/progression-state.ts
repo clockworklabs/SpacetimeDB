@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
@@ -6,10 +6,10 @@ import { z } from 'zod';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../evidence/artifacts.js';
-import { hashDirectory, sha256 } from '../evidence/provenance.js';
+import { sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
-import { hashAppSource, restoreAppSource, snapshotAppSource } from '../runtime/source-snapshot.js';
+import { hashAppSource } from '../runtime/source-snapshot.js';
 import { formatZodError } from '../zod-error.js';
 import {
   progressionEngine,
@@ -51,9 +51,9 @@ export type ProgressionNodeStatus =
 export interface ProgressionNodeState {
   status: ProgressionNodeStatus;
   exhaustedAtLevel: number | null;
-  exhaustionReason: 'strikes-exhausted' | 'repeated-findings' | null;
+  exhaustionReason: 'repair-budget-exhausted' | 'repeated-findings' | null;
   unchangedFailure: { fingerprint: string | null; count: number };
-  strikes: { initialBudget: number; granted: number; budget: number; used: number };
+  repairs: { used: number };
   checks: Record<string, 'pass' | 'fail' | 'test-system' | null>;
 }
 
@@ -69,6 +69,7 @@ export interface ProgressionAttempt {
   evidence?: ProgressionEvidence;
   applicationFailure?: { phase: string; reason: string };
   repairRegression?: ProgressionRepairRegression;
+  repair?: { nodeIds: string[]; depth: number; grantId?: string };
 }
 
 export interface ProgressionRepairRegression extends Record<string, unknown> {
@@ -96,11 +97,11 @@ export interface ProgressionEvent extends Record<string, unknown> {
   grant?: Record<string, unknown>;
 }
 
-export interface ProgressionGrant extends Record<string, unknown> {
+export interface ProgressionRepairGrant extends Record<string, unknown> {
   grantId: string;
   level: number;
   nodeIds: string[];
-  strikes: number;
+  repairs: number;
 }
 
 export interface ProgressionResumeBinding extends Record<string, unknown> {
@@ -117,7 +118,7 @@ export interface ProgressionState extends Record<string, unknown> {
   level: number;
   nodes: Record<string, ProgressionNodeState>;
   attempts: ProgressionAttempt[];
-  grants: ProgressionGrant[];
+  grants: ProgressionRepairGrant[];
   events: ProgressionEvent[];
 }
 
@@ -126,7 +127,7 @@ interface WorkspaceProgressionOwner extends ProgressionOwner {
 }
 
 export interface ProgressionStatePayload extends Record<string, unknown> {
-  schemaVersion: 3;
+  schemaVersion: 4;
   owner: WorkspaceProgressionOwner;
   featureCatalog: BoundIdentity;
   dependencyPolicy: BoundIdentity;
@@ -180,32 +181,8 @@ interface GrantProgressionStateOptions {
   featureCatalogIdentity: unknown;
   dependencyPolicyIdentity: unknown;
   owner: unknown;
-  grant: ProgressionGrant;
-  checkpoint: unknown;
+  grant: ProgressionRepairGrant;
   expectedStateSha256: unknown;
-}
-
-interface SourceCheckpointPayload extends Record<string, unknown> {
-  track: string;
-  backend: string;
-  level: number;
-  selectionSha256: string;
-  source: { directory: string; sha256: string; files: number };
-}
-
-interface SourceCheckpointArtifact extends Record<string, unknown> {
-  attempt: { parentId?: string | null };
-  identities: {
-    engine?: { sha256?: string };
-    agentAdapter?: { id?: string };
-    stackAdapter?: { id?: string };
-  };
-  payload: SourceCheckpointPayload;
-}
-
-interface DirectoryHash {
-  sha256: string;
-  files: unknown[];
 }
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -233,7 +210,7 @@ const progressionOwnerSchema = z.strictObject({
 });
 const eventHistorySchema = z.looseObject({ events: z.array(z.unknown()) });
 const storedProgressionSchema = z.looseObject({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(4),
   featureCatalog: boundIdentitySchema,
   dependencyPolicy: boundIdentitySchema,
   owner: progressionOwnerSchema,
@@ -288,10 +265,6 @@ function validateWorkspaceOwner(input: unknown): WorkspaceProgressionOwner {
   return owner as WorkspaceProgressionOwner;
 }
 
-function directoryHash(path: string): DirectoryHash {
-  return hashDirectory(path) as unknown as DirectoryHash;
-}
-
 function storedPayload(progressionInput: unknown, featureCatalogIdentity: unknown,
   dependencyPolicyIdentity: unknown, ownerInput: unknown, stateInput: unknown,
   resume: unknown | null = null): ProgressionStatePayload {
@@ -308,7 +281,7 @@ function storedPayload(progressionInput: unknown, featureCatalogIdentity: unknow
   }
   const content = { owner, ...identities, events: state.events,
     ...(resume === null ? {} : { resume: structuredClone(resume) }) };
-  return { schemaVersion: 3, ...content,
+  return { schemaVersion: 4, ...content,
     stateSha256: sha256(canonicalDefinitionJson(content)) } as ProgressionStatePayload;
 }
 
@@ -431,47 +404,25 @@ function rejectTreeSymlinks(path: string, label: string): void {
   }
 }
 
-function grantSource(state: ProgressionState, owner: WorkspaceProgressionOwner,
-  grant: ProgressionGrant, checkpoint: unknown, workspaceRoot: string,
-  engineSha256: string): { appDir: string; sourcePath: string; sha256: string } {
-  if (!object(checkpoint) || typeof checkpoint.artifact !== 'string'
-    || !checkpoint.artifact) {
-    throw new Error('continuation grant requires an exact source checkpoint artifact');
+function validateGrantSource(state: ProgressionState, owner: WorkspaceProgressionOwner,
+  resume: unknown, workspaceRoot: string): void {
+  if (!object(resume) || typeof resume.actionSha256 !== 'string'
+    || !HASH.test(resume.actionSha256) || !object(resume.source)
+    || resume.source.directory !== owner.workspace.appDirectory
+    || typeof resume.source.sha256 !== 'string' || !HASH.test(resume.source.sha256)
+    || !Number.isSafeInteger(resume.source.files) || Number(resume.source.files) < 0) {
+    throw new Error('continuation grant requires the current accepted source binding');
   }
-  const attempt: ProgressionAttempt | undefined = [...state.attempts].reverse().find(item =>
-    item.level === grant?.level && item.outcome === 'conclusive');
-  if (!attempt?.runId || !attempt.sourceSha256 || !attempt.selectionSha256) {
-    throw new Error('progression level has no source-bound graded attempt to continue');
+  if (resume.actionSha256 !== sha256(canonicalDefinitionJson(progressionEngine.nextAction(state)))) {
+    throw new Error('continuation source binding does not match the terminal progression action');
   }
-  const checkpointPath = ownedPath(workspaceRoot, checkpoint.artifact,
-    'continuation checkpoint artifact');
-  const artifact = readArtifact(checkpointPath, { expectedKind: 'source_checkpoint',
-    expectedId: `${attempt.runId}-l${grant.level}-checkpoint` }) as unknown as SourceCheckpointArtifact;
-  if (artifact.attempt.parentId !== attempt.runId
-    || artifact.payload.track !== owner.attempt.track
-    || artifact.payload.backend !== owner.attempt.stack
-    || artifact.payload.level !== grant.level
-    || artifact.payload.selectionSha256 !== attempt.selectionSha256
-    || artifact.payload.source.sha256 !== attempt.sourceSha256
-    || artifact.identities.engine?.sha256 !== engineSha256
-    || artifact.identities.agentAdapter?.id !== owner.attempt.agentAdapter
-    || artifact.identities.stackAdapter?.id !== owner.attempt.stack) {
-    throw new Error('continuation checkpoint does not match the graded level attempt');
-  }
-  const artifactDirectory = relative(workspaceRoot, dirname(checkpointPath));
-  const sourcePath = ownedPath(workspaceRoot,
-    join(artifactDirectory, artifact.payload.source.directory),
-    'continuation checkpoint source');
-  const appDir = ownedPath(workspaceRoot, owner.workspace.appDirectory,
+  const sourcePath = ownedPath(workspaceRoot, resume.source.directory,
     'progression application');
-  if (sourcePath === appDir) throw new Error('continuation checkpoint cannot be the live application');
-  rejectTreeSymlinks(sourcePath, 'continuation checkpoint source');
-  const saved = directoryHash(sourcePath);
-  if (saved.sha256 !== artifact.payload.source.sha256
-    || saved.files.length !== artifact.payload.source.files) {
-    throw new Error('continuation checkpoint bytes do not match the graded level source');
+  rejectTreeSymlinks(sourcePath, 'progression application');
+  const source = hashAppSource(sourcePath);
+  if (source.sha256 !== resume.source.sha256 || source.files.length !== resume.source.files) {
+    throw new Error('current accepted source does not match the progression state');
   }
-  return { appDir, sourcePath, sha256: artifact.payload.source.sha256 };
 }
 
 function grantResumeBinding(state: ProgressionState, owner: WorkspaceProgressionOwner,
@@ -491,7 +442,7 @@ function grantResumeBinding(state: ProgressionState, owner: WorkspaceProgression
 
 export function grantProgressionState(path: string, { progression, featureCatalogIdentity,
   dependencyPolicyIdentity, owner, grant,
-  checkpoint, expectedStateSha256 }: Partial<GrantProgressionStateOptions> = {}): StateResult {
+  expectedStateSha256 }: Partial<GrantProgressionStateOptions> = {}): StateResult {
   if (typeof expectedStateSha256 !== 'string' || !expectedStateSha256) {
     throw new Error('continuation grant requires the expected progression state identity');
   }
@@ -504,41 +455,13 @@ export function grantProgressionState(path: string, { progression, featureCatalo
       throw new Error('progression state changed before the continuation grant');
     }
     const validatedOwner = validateWorkspaceOwner(owner);
-    const state = progressionEngine.grantStrikes(current.state, grant);
     const workspaceRoot = dirname(resolve(path));
-    const source = grantSource(current.state, validatedOwner, grant as ProgressionGrant,
-      checkpoint, workspaceRoot,
-      current.artifact.identities.engine.sha256);
-    const previous = hashAppSource(source.appDir);
-    const backupRoot = mkdtempSync(join(workspaceRoot, '.progression-grant-'));
-    const backupSource = join(backupRoot, 'source');
-    try {
-      snapshotAppSource(source.appDir, backupSource);
-      try {
-        restoreAppSource(source.sourcePath, source.appDir);
-        if (hashAppSource(source.appDir).sha256 !== source.sha256) {
-          throw new Error('continuation source restoration did not reproduce the graded level source');
-        }
-        return writeProgressionState(path, { progression, featureCatalogIdentity,
-          dependencyPolicyIdentity, owner: validatedOwner, state,
-          resume: grantResumeBinding(state, validatedOwner, workspaceRoot),
-          id: current.artifact.id });
-      } catch (error) {
-        try {
-          restoreAppSource(backupSource, source.appDir);
-          const restored = hashAppSource(source.appDir);
-          if (restored.sha256 !== previous.sha256 || restored.files.length !== previous.files.length) {
-            throw new Error('continuation grant rollback did not restore the prior application source');
-          }
-        } catch (rollbackError) {
-          throw new AggregateError([error, rollbackError],
-            'continuation grant failed and its source rollback also failed');
-        }
-        throw error;
-      }
-    } finally {
-      rmSync(backupRoot, { recursive: true, force: true });
-    }
+    validateGrantSource(current.state, validatedOwner, current.resume, workspaceRoot);
+    const state = progressionEngine.grantRepairs(current.state, grant);
+    return writeProgressionState(path, { progression, featureCatalogIdentity,
+      dependencyPolicyIdentity, owner: validatedOwner, state,
+      resume: grantResumeBinding(state, validatedOwner, workspaceRoot),
+      id: current.artifact.id });
   } finally {
     releaseCampaignLock(lock);
   }

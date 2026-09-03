@@ -39,8 +39,10 @@ import type { ConditionReference, ResolvedStudyCondition } from './condition-com
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.js';
 import type { CampaignModeInput } from './campaign-mode.js';
 import { validateCampaignMode } from './campaign-mode.js';
-import type { DependencyRepairSelection, DependencyStrikePolicy, DependencyWorkSelection }
+import type { DependencyWorkSelection }
   from '../progression/dependency-definition.js';
+import { validateRepairPlan } from '../progression/repair-plan.js';
+import type { RepairPlan } from '../progression/repair-plan.js';
 
 type UnknownRecord = Record<string, unknown>;
 type CampaignState = 'draft' | 'frozen';
@@ -49,9 +51,6 @@ type FeatureCatalogInput = ProgressionInput<CompiledProgressionDefinition>;
 type DependencyPolicyInput = ProgressionInput<CompiledDependencyPolicyDefinition>;
 
 interface CampaignMode extends CampaignModeInput {
-  strikes?: UnknownRecord;
-  repairSelection?: DependencyRepairSelection;
-  strikePolicy?: DependencyStrikePolicy;
   workSelection?: DependencyWorkSelection;
 }
 
@@ -89,6 +88,7 @@ export interface CampaignDefinition {
   title: string;
   track: string;
   mode: CampaignMode;
+  repair: RepairPlan;
   levels: number[];
   selection: CampaignSelection;
   stacks: CampaignStackSelection[];
@@ -98,7 +98,6 @@ export interface CampaignDefinition {
   ordering: { method: 'balanced-rotation'; seed: string };
   parallelism: number;
   budgets: {
-    fixRounds: number;
     attemptTimeoutMinutes: number;
     maxCostUsdPerAttempt: number | null;
   };
@@ -324,12 +323,12 @@ interface ValidationOptions {
   recipeResolver?: RecipeResolver;
 }
 
-export const CAMPAIGN_SCHEMA_VERSION = 6;
+export const CAMPAIGN_SCHEMA_VERSION = 7;
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
-  'track', 'mode', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
+  'track', 'mode', 'repair', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
   'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis', 'featureCatalog']);
 ROOT_FIELDS.add('runtime');
 const PACK_SELECTION_FIELDS = new Set(['packs', 'checks']);
@@ -339,7 +338,7 @@ const PROGRESSION_LEVEL_FIELDS = new Set(['level', 'recipe']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion', 'repetitions']);
 const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
-const BUDGET_FIELDS = new Set(['fixRounds', 'attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
+const BUDGET_FIELDS = new Set(['attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
 const PRICING_FIELDS = new Set(['currency', 'unit', 'capturedAt', 'source', 'models']);
 const PRICE_MODEL_FIELDS = new Set(PRICING_RATE_FIELDS);
@@ -350,7 +349,7 @@ const RETRY_CAUSES = new Set(['provider_failure', 'harness_failure', 'inconclusi
 const EXCLUSION_CAUSES = new Set(['provider_failure', 'harness_failure', 'inconclusive',
   'ungraded', 'contaminated']);
 const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'totalCostUsd',
-  'totalDurationMs', 'fixRounds', 'correctionSuccessRate', 'correctionCostUsd',
+  'totalDurationMs', 'repairs', 'correctionSuccessRate', 'correctionCostUsd',
   'correctionSpendUsd', 'firstBuildCoverageRate', 'finalCoverageRate',
   'invalidAttemptRate']);
 const DISPERSION = new Set(['median-iqr', 'mean-sd']);
@@ -438,6 +437,12 @@ export function validateCampaignDefinition(input: unknown,
   string(value.title, `${source}.title`);
   identifier(value.track, `${source}.track`);
   value.mode = validateCampaignMode(value.mode, { at: `${source}.mode` }) as CampaignMode;
+  value.repair = validateRepairPlan(value.repair, `${source}.repair`);
+  if (value.mode.id === 'sequential'
+    && (value.repair.selection !== 'batch'
+      || Object.keys(value.repair.budget).some(key => key !== 'total'))) {
+    fail(`${source}.repair`, 'sequential mode requires batch selection and one total budget');
+  }
   if (value.mode.id === 'dependency' && value.featureCatalog === undefined) {
     fail(`${source}.featureCatalog`, 'is required for dependency mode');
   }
@@ -539,7 +544,6 @@ export function validateCampaignDefinition(input: unknown,
   string(value.ordering.seed, `${source}.ordering.seed`);
 
   strict(value.budgets, `${source}.budgets`, BUDGET_FIELDS);
-  integer(value.budgets.fixRounds, `${source}.budgets.fixRounds`, { min: 0, max: 20 });
   integer(value.budgets.attemptTimeoutMinutes, `${source}.budgets.attemptTimeoutMinutes`, { min: 10, max: 480 });
   if (value.budgets.maxCostUsdPerAttempt !== null) {
     finite(value.budgets.maxCostUsdPerAttempt, `${source}.budgets.maxCostUsdPerAttempt`, { min: 0.01 });
@@ -999,10 +1003,8 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     requested: requestedForCondition,
   });
   const dependencyPolicy = definition.mode.id === 'dependency'
-    ? compileDependencyPolicyInput(definition.mode.strikes, featureCatalog!, {
+    ? compileDependencyPolicyInput(definition.repair, featureCatalog!, {
       selectedLevels: definition.levels,
-      repairSelection: definition.mode.repairSelection,
-      strikePolicy: definition.mode.strikePolicy,
       workSelection: definition.mode.workSelection,
     }) : null;
   return { bindings, grading, stacks, agents, conditions, featureCatalog, dependencyPolicy };

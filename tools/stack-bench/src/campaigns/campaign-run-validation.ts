@@ -9,6 +9,7 @@ import type { OutcomeBundle, RunOutcome as EvidenceRunOutcome } from '../evidenc
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord }
   from '../evidence/benchmark-run.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
+import { dependencyRepairRecords } from '../progression/dependency-mode.js';
 import { liveProgressionStatus } from '../progression/live-progression.js';
 import { DEPENDENCY_MODE_POLICY } from '../progression/dependency-definition.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
@@ -17,6 +18,8 @@ import { readProgressionState } from '../progression/progression-state.js';
 import { campaignProgressionOwner } from './campaign-compiler.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
+import { repairBudgetLimit } from '../progression/repair-plan.js';
+import type { RepairPlan } from '../progression/repair-plan.js';
 
 type UnknownRecord = Record<string, unknown>;
 type PlannedLevel = CompiledCampaignPlan['conditions'][number]['requested']['levels'][number];
@@ -64,11 +67,12 @@ interface RunLevel extends Omit<Partial<RunLevelRecord>,
   score?: number;
   max?: number;
   graded?: boolean;
-  fixRounds?: number;
+  repairs?: number;
   contractPass?: boolean;
   selection?: RunSelection;
   outcome?: RunOutcome;
-  repair?: { status?: string; budgetRounds?: number; roundsUsed?: number; stopReason?: string };
+  repair?: { status?: string; limit?: number; used?: number; stopReason?: string;
+    nodeRepairs?: Array<{ nodeId?: string; used?: number; exhaustionReason?: string | null }> };
   regression?: RunRegression | null;
   firstBuild?: {
     score?: number;
@@ -159,7 +163,8 @@ interface CampaignValidationPlan {
     track: string;
     selection: unknown;
     runtime: { buildImage: string | null };
-    budgets: { fixRounds: number; maxCostUsdPerAttempt: number | null };
+    repair: RepairPlan;
+    budgets: { maxCostUsdPerAttempt: number | null };
   };
   identities: { engine: { sha256: string | null } };
   agents: Array<{ adapter: string; model: string; costLimit: string;
@@ -182,6 +187,35 @@ export function expectedDependencyRunOutcomeKind(
 }
 
 type Mismatch = (condition: unknown, field: string) => void;
+
+function validateDependencyRepairSummary(
+  state: ReturnType<typeof readProgressionState>['state'],
+  level: RunLevel,
+  mismatch: Mismatch,
+): void {
+  const at = `levels.L${level.level}.repair`;
+  const repairAttempts = state.attempts.filter(attempt =>
+    attempt.repair?.depth === level.level);
+  const repair = level.repair;
+  mismatch(!repair, at);
+  if (!repair) return;
+
+  const used = repairAttempts.length;
+  const priorRepairs = level.priorRepairs ?? 0;
+  mismatch(repair.used !== used, `${at}.used`);
+  mismatch(!integer(level.repairs) || level.repairs < 0
+    || !integer(priorRepairs) || priorRepairs < 0
+    || priorRepairs + level.repairs !== used,
+  `levels.L${level.level}.repairs`);
+  if (level.cumulativeRepairs !== undefined) {
+    mismatch(level.cumulativeRepairs !== used, `levels.L${level.level}.cumulativeRepairs`);
+  }
+  const repairedNodeIds = repairAttempts.flatMap(attempt => attempt.repair?.nodeIds ?? []);
+  const expectedNodeRepairs = dependencyRepairRecords(
+    state, level.level, repairedNodeIds);
+  mismatch(canonicalDefinitionJson(repair.nodeRepairs)
+    !== canonicalDefinitionJson(expectedNodeRepairs), `${at}.nodeRepairs`);
+}
 
 function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
   finalGradedLevel: RunLevel | null, mismatch: Mismatch): void {
@@ -270,6 +304,10 @@ function validateDependencyEvidence(plan: CampaignValidationPlan,
         `levels.L${level.level}.progressionAttempt.category`);
       mismatch(codingInterruption && matching.reason !== level.outcome?.reason,
         `levels.L${level.level}.progressionAttempt.reason`);
+      if (matching.outcome === 'conclusive' || level.repair !== undefined
+        || stored.state.attempts.some(item => item.level === level.level && item.repair)) {
+        validateDependencyRepairSummary(stored.state, level, mismatch);
+      }
     }
     if (stored.state.phase === 'terminal') {
       const points = storedStatus.score.uniqueChecks;
@@ -515,6 +553,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
       'outcome.kind');
     mismatch(runOutcome.kind === 'app_failure'
       && !levelOutcomes.some(kind => kind === 'app_failure'), 'outcome.kind');
+    const repairLimit = repairBudgetLimit(plan.definition.repair);
+    let cumulativeRepairs = 0;
     for (const level of run.levels ?? []) {
       const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
       const repair = level.repair;
@@ -522,10 +562,11 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
       const validObject = repair && typeof repair === 'object' && !Array.isArray(repair);
       mismatch(!validObject, at);
       if (!validObject) continue;
-      mismatch(!integer(level.fixRounds) || level.fixRounds < 0
-        || level.fixRounds > plan.definition.budgets.fixRounds, `levels.L${level.level}.fixRounds`);
-      mismatch(repair.budgetRounds !== plan.definition.budgets.fixRounds, `${at}.budgetRounds`);
-      mismatch(repair.roundsUsed !== level.fixRounds, `${at}.roundsUsed`);
+      mismatch(!integer(level.repairs) || level.repairs < 0
+        || level.repairs > repairLimit, `levels.L${level.level}.repairs`);
+      cumulativeRepairs += integer(level.repairs) ? level.repairs : 0;
+      mismatch(repair.limit !== repairLimit, `${at}.limit`);
+      mismatch(repair.used !== cumulativeRepairs, `${at}.used`);
       const validScore = integer(level.score) && integer(level.max)
         && level.max > 0 && level.score >= 0 && level.score <= level.max;
       mismatch(!validScore, `levels.L${level.level}.score`);
@@ -554,20 +595,20 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
           `${atOutcome}.harnessFailures`);
       }
       if (level.outcome?.kind === 'passed') {
-        const expected = integer(level.fixRounds) && level.fixRounds > 0
+        const expected = integer(level.repairs) && level.repairs > 0
           ? 'corrected' : 'not-needed';
         mismatch(repair.status !== expected, `${at}.status`);
         mismatch(validScore && level.score !== level.max, `levels.L${level.level}.score`);
       } else if (level.outcome?.kind === 'app_failure') {
         const exhausted = repair.status === 'budget-exhausted'
-          && repair.roundsUsed === repair.budgetRounds;
+          && repair.used === repair.limit;
         const paused = repair.status === 'incomplete'
-          && integer(repair.roundsUsed) && integer(repair.budgetRounds)
-          && repair.roundsUsed > 0
+          && integer(repair.used) && integer(repair.limit)
+          && repair.used > 0
           && (repair.stopReason === 'no-source-change'
-            ? repair.roundsUsed <= repair.budgetRounds
+            ? repair.used <= repair.limit
             : repair.stopReason === 'repeated-findings'
-              && repair.roundsUsed < repair.budgetRounds);
+              && repair.used < repair.limit);
         mismatch(!exhausted && !paused, `${at}.status`);
         // A perfect level score does not excuse an inherited or contract regression.
         const inheritedDeficit = integer(level.regression?.score)

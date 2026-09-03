@@ -13,30 +13,18 @@ import {
   dependencyNonEmptyString as nonEmptyString,
   dependencyPositiveInteger as positiveInteger,
 } from './dependency-validation.js';
+import { validateRepairPlan } from './repair-plan.js';
+import type { RepairPlan } from './repair-plan.js';
 
-export const DEPENDENCY_MODE_SCHEMA_VERSION = 4;
+export const DEPENDENCY_MODE_SCHEMA_VERSION = 5;
 export const DEPENDENCY_MODE_POLICY = 'dependency-graph';
-export const DEPENDENCY_MODE_VERSION = '3.2.0';
+export const DEPENDENCY_MODE_VERSION = '4.0.0';
 export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
 export const DEFAULT_UNCHANGED_FAILURE_LIMIT = 3;
-export const DEFAULT_DEPENDENCY_REPAIR_SELECTION = 'feature';
-export const DEPENDENCY_REPAIR_SELECTIONS = ['feature', 'batch'] as const;
-export const DEFAULT_DEPENDENCY_STRIKE_POLICY = 'feature';
-export const DEPENDENCY_STRIKE_POLICIES = ['feature', 'depth', 'banked'] as const;
 export const DEFAULT_DEPENDENCY_WORK_SELECTION = 'progressive';
-export const DEPENDENCY_WORK_SELECTIONS = ['progressive', 'all-at-once'] as const;
+export const DEPENDENCY_WORK_SELECTIONS = ['feature', 'progressive', 'all-at-once'] as const;
 
-export type DependencyRepairSelection = typeof DEPENDENCY_REPAIR_SELECTIONS[number];
-export type DependencyStrikePolicy = typeof DEPENDENCY_STRIKE_POLICIES[number];
 export type DependencyWorkSelection = typeof DEPENDENCY_WORK_SELECTIONS[number];
-
-export function isDependencyRepairSelection(value: unknown): value is DependencyRepairSelection {
-  return DEPENDENCY_REPAIR_SELECTIONS.includes(value as DependencyRepairSelection);
-}
-
-export function isDependencyStrikePolicy(value: unknown): value is DependencyStrikePolicy {
-  return DEPENDENCY_STRIKE_POLICIES.includes(value as DependencyStrikePolicy);
-}
 
 export function isDependencyWorkSelection(value: unknown): value is DependencyWorkSelection {
   return DEPENDENCY_WORK_SELECTIONS.includes(value as DependencyWorkSelection);
@@ -61,10 +49,8 @@ interface MutableDefinition extends Record<string, unknown> {
   state: string;
   title: string;
   policy?: string;
-  strikes?: { default?: number; levels?: Record<string, number> };
+  repair?: RepairPlan;
   unchangedFailureLimit?: number;
-  repairSelection?: DependencyRepairSelection;
-  strikePolicy?: DependencyStrikePolicy;
   workSelection?: DependencyWorkSelection;
   nodes: AuthoredNode[];
   questlines: Array<Omit<CompiledProgressionQuestline, 'nodes'> & { nodes?: string[] }>;
@@ -72,10 +58,8 @@ interface MutableDefinition extends Record<string, unknown> {
 
 export interface CompiledDependencyDefinition extends CompiledProgressionDefinition {
   policy: typeof DEPENDENCY_MODE_POLICY;
-  strikes: { levels: Record<string, number> };
+  repair: RepairPlan;
   unchangedFailureLimit: number;
-  repairSelection: DependencyRepairSelection;
-  strikePolicy: DependencyStrikePolicy;
   workSelection: DependencyWorkSelection;
 }
 
@@ -106,23 +90,6 @@ function uniqueStrings(value: unknown, at: string,
   });
 }
 
-function compileStrikeBudgets(value: unknown, levels: number[]): Record<string, number> {
-  strictObject(value, 'strikes', new Set(['default', 'levels']));
-  if (value.default !== undefined) positiveInteger(value.default, 'strikes.default');
-  const rawLevels = value.levels ?? {};
-  strictObject(rawLevels, 'strikes.levels', new Set(levels.map(String)));
-  const overrides = new Map<number, number>();
-  for (const [level, budget] of Object.entries(rawLevels)) {
-    if (!/^[1-9]\d*$/.test(level)) fail(`strikes.levels.${level}`, 'level key must be a positive integer');
-    overrides.set(Number(level), positiveInteger(budget, `strikes.levels.${level}`));
-  }
-  return Object.fromEntries(levels.map(level => {
-    const budget = overrides.get(level) ?? value.default;
-    if (budget === undefined) fail(`strikes.levels.${level}`, 'is required when no default is set');
-    return [String(level), budget];
-  })) as Record<string, number>;
-}
-
 function assertAcyclic(nodesById: Map<string, CompiledProgressionNode>): void {
   const visiting = new Set<string>();
   const visited = new Set<string>();
@@ -145,8 +112,7 @@ function compileGraphDefinition(input: unknown,
   const definition = structuredClone(input) as MutableDefinition;
   const fields = ['schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes',
     'questlines'];
-  if (!catalogOnly) fields.push('policy', 'strikes', 'unchangedFailureLimit', 'repairSelection',
-    'strikePolicy', 'workSelection');
+  if (!catalogOnly) fields.push('policy', 'repair', 'unchangedFailureLimit', 'workSelection');
   strictObject(definition, source, new Set(fields));
   const expectedSchema = catalogOnly ? FEATURE_CATALOG_SCHEMA_VERSION : DEPENDENCY_MODE_SCHEMA_VERSION;
   const expectedKind = catalogOnly ? 'feature-catalog' : 'progression-mode';
@@ -164,21 +130,14 @@ function compileGraphDefinition(input: unknown,
     fail(`${source}.policy`, `must be ${JSON.stringify(DEPENDENCY_MODE_POLICY)}`);
   }
   if (!catalogOnly) {
+    definition.repair = validateRepairPlan(definition.repair, `${source}.repair`);
     definition.unchangedFailureLimit = positiveInteger(
       definition.unchangedFailureLimit ?? DEFAULT_UNCHANGED_FAILURE_LIMIT,
       `${source}.unchangedFailureLimit`,
     );
-    definition.repairSelection ??= DEFAULT_DEPENDENCY_REPAIR_SELECTION;
-    if (!isDependencyRepairSelection(definition.repairSelection)) {
-      fail(`${source}.repairSelection`, 'must be "feature" or "batch"');
-    }
-    definition.strikePolicy ??= DEFAULT_DEPENDENCY_STRIKE_POLICY;
-    if (!isDependencyStrikePolicy(definition.strikePolicy)) {
-      fail(`${source}.strikePolicy`, 'must be "feature", "depth", or "banked"');
-    }
     definition.workSelection ??= DEFAULT_DEPENDENCY_WORK_SELECTION;
     if (!isDependencyWorkSelection(definition.workSelection)) {
-      fail(`${source}.workSelection`, 'must be "progressive" or "all-at-once"');
+      fail(`${source}.workSelection`, 'must be "feature", "progressive", or "all-at-once"');
     }
   }
   if (!Array.isArray(definition.nodes) || definition.nodes.length === 0) {
@@ -325,11 +284,6 @@ function compileGraphDefinition(input: unknown,
   }
   definition.nodes.sort((left, right) => (left.level ?? 0) - (right.level ?? 0)
     || left.id.localeCompare(right.id));
-  const levels = [...new Set(definition.nodes.map(node => node.level as number))].sort((a, b) => a - b);
-  if (!catalogOnly) {
-    definition.strikes = { levels: compileStrikeBudgets(definition.strikes, levels) };
-  }
-
   if (!Array.isArray(definition.questlines) || definition.questlines.length === 0) {
     fail(`${source}.questlines`, 'must be a non-empty array');
   }

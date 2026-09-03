@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-example",
   "version": "2.0.0",
@@ -7,6 +7,7 @@
   "title": "Ecommerce L1 model-free example",
   "track": "ecommerce",
   "mode": { "id": "sequential", "version": "1.0.0" },
+  "repair": { "selection": "batch", "budget": { "total": 3 } },
   "levels": [1],
   "selection": {
     "levels": [
@@ -69,7 +70,6 @@
     "seed": "replace-before-measurement"
   },
   "budgets": {
-    "fixRounds": 3,
     "attemptTimeoutMinutes": 240,
     "maxCostUsdPerAttempt": null
   },

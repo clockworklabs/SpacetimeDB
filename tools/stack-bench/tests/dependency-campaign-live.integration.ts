@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -132,11 +132,11 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     assert.deepEqual(run.payload.dependencyPolicy, plan.dependencyPolicy.identity);
     assert(run.payload.progressionStatus);
     assert.equal(run.payload.progressionStatus.phase, 'terminal');
-    assert.equal(run.payload.progressionStatus.attempts, 5);
+    assert.equal(run.payload.progressionStatus.attempts, 3);
     assert.equal(run.payload.levels.length, 1);
     const level = run.payload.levels[0];
     assert(level);
-    assert.equal(level.fixRounds, 4);
+    assert.equal(level.repairs, 2);
     assert(run.payload.outcome);
     assert.equal(run.payload.outcome.kind, 'app_failure');
 
@@ -147,10 +147,8 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     assert.equal(progression.attempt.id, campaignAttempt.plan.id);
     assert(progression.identities.experiment);
     assert.equal(progression.identities.experiment.sha256, plan.contentSha256);
-    assert.equal(progression.payload.events.length, 5);
+    assert.equal(progression.payload.events.length, 3);
     assert.deepEqual(progression.payload.events.map(event => event.type), [
-      'attempt-recorded',
-      'attempt-recorded',
       'attempt-recorded',
       'attempt-recorded',
       'attempt-recorded',
@@ -160,17 +158,17 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     const replayed = replayDependencyMode(runtimeDefinition,
       progression.payload.events);
     assert.equal(replayed.phase, 'terminal');
-    assert.equal(replayed.attempts.length, 5);
+    assert.equal(replayed.attempts.length, 3);
     const accounts = replayed.nodes.accounts;
     assert(accounts);
-    assert.equal(accounts.strikes.used, 3);
-    assert.equal(accounts.exhaustionReason, 'strikes-exhausted');
+    assert.equal(accounts.repairs.used, 1);
+    assert.equal(accounts.exhaustionReason, 'repair-budget-exhausted');
     const catalog = replayed.nodes.catalog;
     assert(catalog);
-    assert.equal(catalog.strikes.used, 3);
-    assert.equal(catalog.exhaustionReason, 'strikes-exhausted');
+    assert.equal(catalog.repairs.used, 1);
+    assert.equal(catalog.exhaustionReason, 'repair-budget-exhausted');
     assert.deepEqual(replayed.attempts.map(attempt => attempt.attemptId),
-      Array.from({ length: 5 }, (_, index) => `${run.id}-progression-${index + 1}`));
+      Array.from({ length: 3 }, (_, index) => `${run.id}-progression-${index + 1}`));
     assert(replayed.attempts.every(attempt => attempt.evidence?.kind === 'grade_bundle'));
     assert(replayed.attempts.every(attempt => attempt.evidence !== undefined
       && /^[a-f0-9]{64}$/.test(attempt.evidence.sha256)));
@@ -189,11 +187,9 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
         'ecommerce.feature.catalog.catalog.2a',
       ],
       ['ecommerce.feature.accounts.accounts.1a'],
-      ['ecommerce.feature.accounts.accounts.1a'],
-      ['ecommerce.feature.catalog.catalog.2a'],
       ['ecommerce.feature.catalog.catalog.2a'],
     ];
-    for (let sequence = 1; sequence <= 5; sequence += 1) {
+    for (let sequence = 1; sequence <= 3; sequence += 1) {
       const attempt = String(sequence).padStart(3, '0');
       const bundlePath = join(executionDirectory, 'progression', `attempt-${attempt}`, 'bundle.json');
       assert(existsSync(bundlePath), `missing progression evidence ${bundlePath}`);
@@ -209,5 +205,45 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     assert(existsSync(join(executionDirectory, 'level-l1-checkpoint.json')));
   } finally {
     rmSync(output, { recursive: true, force: true });
+  }
+});
+
+test('feature work runs same-depth features and writes one depth record', { timeout: 300_000 }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-feature-live-'));
+  try {
+    const campaign = JSON.parse(readFileSync(CAMPAIGN, 'utf8')) as {
+      mode: { workSelection: string };
+    };
+    campaign.mode.workSelection = 'feature';
+    const campaignPath = join(root, 'campaign.json');
+    const output = join(root, 'results');
+    writeFileSync(campaignPath, `${JSON.stringify(campaign, null, 2)}\n`);
+    const result = spawnSync(process.execPath, [CLI, 'trial', campaignPath, '--out', output], {
+      cwd: STACK_BENCH_ROOT,
+      encoding: 'utf8',
+      timeout: 240_000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const { state } = readCampaignState(output);
+    const execution = state.attempts[0]?.executions[0];
+    assert(execution);
+    const run = readArtifact<BenchmarkRunRecord>(join(output, execution.output, 'run.json'), {
+      expectedKind: 'benchmark_run',
+    });
+    assert.equal(run.payload.levels.length, 1);
+    assert.equal(run.payload.levels[0]?.firstBuild, undefined);
+    assert.equal(run.payload.levels[0]?.buildSessions?.length, 2);
+    assert.equal(run.payload.levels[0]?.repairSessions?.length, 2);
+    assert.equal(run.payload.levels[0]?.repairs, 2);
+    assert.equal(run.payload.progressionStatus?.attempts, 4);
+    assert(existsSync(join(output, execution.output,
+      'candidate-grades', 'l1-action001')));
+    assert(existsSync(join(output, execution.output,
+      'candidate-grades', 'l1-action003')));
+    assert(existsSync(join(output, execution.output, 'level-l1-checkpoint.json')));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

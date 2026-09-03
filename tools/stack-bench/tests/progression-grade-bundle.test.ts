@@ -169,7 +169,7 @@ test('grade bundle conversion binds the artifact owner, source, stack, recipe, a
     /node ownership/);
 });
 
-test('typed grader failures do not consume a progression strike as a zero score', () => {
+test('typed grader failures do not consume a progression repair as a zero score', () => {
   const failed = bundle();
   failed.outcome = { kind: 'harness_failure', reason: 'browser worker stopped' };
   assert.deepEqual(gradeBundleToProgressionResult(artifact(failed, 'harness'),

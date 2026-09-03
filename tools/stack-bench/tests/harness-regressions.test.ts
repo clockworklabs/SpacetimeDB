@@ -41,10 +41,10 @@ test('coding sessions are bounded without the former 55-minute cutoff', () => {
 
 test('an interrupted later level keeps completed totals and marks cost incomplete', () => {
   const run = { levels: [{ level: 1, graded: true, score: 58, max: 58,
-    buildCostUsd: 10, fixCostUsd: 2.5, fixRounds: 1,
+    buildCostUsd: 10, repairCostUsd: 2.5, repairs: 1,
     sessionTotals: { sessions: 2, tokens: 100, outputTokens: 20, turns: 8, durationMs: 900 } }] };
   assert.deepEqual(finalizeRunTotals(run, 1_000, { now: 11_000, costComplete: false }), {
-    score: 58, max: 58, costUsd: 12.5, costComplete: false, fixRounds: 1,
+    score: 58, max: 58, costUsd: 12.5, costComplete: false, repairs: 1,
     sessions: 2, tokens: 100, outputTokens: 20, turns: 8, modelDurationMs: 900,
     durationSec: 10, ungraded: [],
   });
@@ -66,8 +66,8 @@ test('dependency totals use the cumulative progression score', () => {
 test('session and run totals keep receipt precision', () => {
   const sessions = [{ costUsd: 0.123456 }, { costUsd: 0.234567 }, { costUsd: 0.345678 }];
   assert.equal(summarizeSessions(sessions).costUsd, 0.703701);
-  const run = { levels: [{ level: 1, buildCostUsd: 0.123456, fixCostUsd: 0.234567 },
-    { level: 2, buildCostUsd: 0.345678, fixCostUsd: 0 }] };
+  const run = { levels: [{ level: 1, buildCostUsd: 0.123456, repairCostUsd: 0.234567 },
+    { level: 2, buildCostUsd: 0.345678, repairCostUsd: 0 }] };
   assert.equal(finalizeRunTotals(run, 0, { now: 1 }).costUsd, 0.703701);
   assert.equal(addCostUsd(0.123456, 0.234567, 0.345678), 0.703701);
 });

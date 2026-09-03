@@ -84,15 +84,15 @@ export function writeRunEvidence(output: string, plan: CompiledCampaignPlan,
       dependencyPolicy: attempt.dependencyPolicy ?? null, progressionOwner: null,
       skills: attempt.skills, runtime: { buildImage: plan.definition.runtime.buildImage },
       totals: { score, max, costUsd: 1.25, costComplete: true, durationSec: 900 },
-      levels: [{ level: 1, graded: true, selection, score, max, fixRounds: 3,
+      levels: [{ level: 1, graded: true, selection, score, max, repairs: 3,
         firstBuild: { score: score - deficit, max, outcome: firstOutcome },
-        repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null },
+        repair: { status: 'corrected', limit: 3, used: 3, stopReason: null },
         durationSec: 900, buildCostUsd: 1.25, outcome }],
       outcome: { kind: 'passed' },
     } });
   writeFileSync(join(output, 'process.stdout.log'),
     `=== ${attempt.stack}-l1-first (${attempt.stack}) ===\n  TOTAL ... ${score - 1}/${max}\n`
-    + `--- repair round 1/3 ---\n=== ${attempt.stack}-l1-fix1 (${attempt.stack}) ===\n`
+    + `--- repair 1/3 ---\n=== ${attempt.stack}-l1-fix1 (${attempt.stack}) ===\n`
     + `  TOTAL ... ${score}/${max}\n`);
 }
 

@@ -35,7 +35,7 @@ export interface CampaignContinuation {
   grantId: string;
   level: number;
   nodeIds: string[];
-  strikes: number;
+  repairs: number;
   stateSha256: string;
   resumeFrom: string;
   scheduledAt: string;
@@ -153,7 +153,7 @@ const continuationSchema = z.strictObject({
   grantId: z.string().min(1),
   level: z.number().int(),
   nodeIds: z.array(z.string()),
-  strikes: z.number().int(),
+  repairs: z.number().int(),
   stateSha256: z.string(),
   resumeFrom: z.string(),
   scheduledAt: timestampSchema,
@@ -351,8 +351,8 @@ export function validateCampaignState(input: unknown): CampaignState {
               && continuation.nodeIds[nodeIndex - 1]!.localeCompare(nodeId) >= 0))) {
           fail(`${continuationAt}.nodeIds must be sorted unique feature ids`);
         }
-        if (!Number.isSafeInteger(continuation.strikes)
-          || continuation.strikes < 1) fail(`${continuationAt}.strikes is invalid`);
+        if (!Number.isSafeInteger(continuation.repairs)
+          || continuation.repairs < 1) fail(`${continuationAt}.repairs is invalid`);
         if (!HASH.test(continuation.stateSha256 ?? '')) {
           fail(`${continuationAt}.stateSha256 is invalid`);
         }

@@ -227,7 +227,7 @@ const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></deta
       <h2>Dependency mode</h2>
       <p class="section-intro">Dependency depth sets the level. Passed parents open child features.</p>
       <p><a href="dependency-graph.html">Open the current dependency graph</a> to trace parents, children, and feature descriptions.</p>
-      <div class="callout"><strong>Work selection.</strong> <code>progressive</code> sends features as their prerequisites pass. <code>all-at-once</code> sends every selected feature in the first build. <strong>Repair selection.</strong> <code>feature</code> sends one failed feature per repair. <code>batch</code> sends all current failures and returns one combined report. <strong>Strike policy.</strong> <code>feature</code> gives each feature its own limit. <code>depth</code> shares a limit within one depth. <code>banked</code> carries unused depth budget forward.</div>
+      <div class="callout"><strong>Work selection.</strong> <code>feature</code> sends one ready feature. <code>progressive</code> sends all ready features. <code>all-at-once</code> sends the full selected graph. <strong>Repair plan.</strong> Selection can target one failed feature or all current failures. The budget can limit the full run, each feature, each depth, or any combination. When limits are combined, the tightest remaining limit wins.</div>
       <details open><summary>Real example: a node owns prompt modules, checks, and dependencies</summary><pre><code>{
   "id": "purchasing",
   "title": "Purchasing and orders",
@@ -259,7 +259,8 @@ function selectedGradingWork(state) {
     nodeIds,
     checks: state.definition.nodes.filter(node =&gt; selected.has(node.id)).flatMap(node =&gt;
       node.gradingChecks.filter(check =&gt;
-        checkRequirementsAvailable(state, check, promptNodeIds))
+        state.definition.workSelection === 'all-at-once'
+          || checkRequirementsAvailable(state, check, promptNodeIds))
         .map(check =&gt; ({ ...check, nodeId: node.id })))
   };
 }</code></pre></details>
@@ -278,7 +279,7 @@ function selectedGradingWork(state) {
         <div><span>✓</span><p>Every scored group can have only one owner. Duplicate ownership fails compilation.</p></div>
         <div><span>✓</span><p>Feature pack dependencies must exist in the node or one of its ancestors.</p></div>
         <div><span>✓</span><p>The persisted event history is hash-checked and replayed. A contradictory or corrupted state cannot resume silently.</p></div>
-        <div><span class="risk-mark">!</span><p>The full catalog is draft. Reference, mutation, and null-control qualification covers dependency depths 1 through 3. Deeper nodes still need qualification.</p></div>
+        <div><span class="risk-mark">!</span><p>The full catalog is draft. Fresh qualification is still required for the current dependency definition.</p></div>
       </div>
     </section>
 
@@ -289,12 +290,10 @@ function selectedGradingWork(state) {
         <div class="card"><h3>Compilation</h3><ol><li>Validate the manifest schema.</li><li>Resolve exact versions.</li><li>Expand all stack, agent, condition, and repetition attempts.</li><li>Hash the definition and engine identity.</li></ol></div>
         <div class="card"><h3>Execution</h3><ol><li>Run campaign-wide admission checks.</li><li>Claim up to the configured parallel slots.</li><li>Give each slot a distinct run index and resource scope.</li><li>Write attempt state after each completion.</li></ol></div>
       </div>
-      <details open><summary>Reference campaign excerpt</summary><pre><code>{
-  "mode": { "id": "dependency", "version": "3.2.0",
-    "workSelection": "progressive",
-    "repairSelection": "feature",
-    "strikePolicy": "feature",
-    "strikes": { "default": 1, "levels": {} } },
+      <details open><summary>Example campaign excerpt</summary><pre><code>{
+  "mode": { "id": "dependency", "version": "4.0.0",
+    "workSelection": "feature" },
+  "repair": { "selection": "feature", "budget": { "perFeature": 1 } },
   "levels": [1, 2, 3, 4, 5, 6],
   "featureCatalog": "ecommerce.questlines@2.0.2",
   "stacks": [
@@ -304,7 +303,7 @@ function selectedGradingWork(state) {
   ],
   "repetitions": 1,
   "parallelism": 3,
-  "budgets": { "fixRounds": 0, "attemptTimeoutMinutes": 180 }
+  "budgets": { "attemptTimeoutMinutes": 180 }
 }</code></pre></details>
       <div class="callout"><strong>Parallelism.</strong> Each active attempt gets separate ports, database names, containers, and resource locks.</div>
       <div class="callout"><strong>Extension.</strong> <code>campaign extend target.json --from prior-results --depth 2 --out extended-results</code> copies each matching depth-2 source, regrades depths 1 and 2 on a fresh database, and starts depth 3 only after both rechecks pass.</div>
@@ -409,7 +408,7 @@ return {
       <p class="section-intro">Selected scenarios produce typed check evidence. Only application failures are repairable.</p>
       <div class="grid two">
         <div class="card"><h3>Measured results</h3><table><tr><th>Status</th><th>Meaning</th><th>Repair</th></tr><tr><td>passed</td><td>The app met the assertion.</td><td>No</td></tr><tr><td>failed</td><td>The app did not meet the assertion.</td><td>Yes</td></tr></table></div>
-        <div class="card"><h3>Invalid evidence</h3><table><tr><th>Status</th><th>Meaning</th><th>Score</th></tr><tr><td>inconclusive</td><td>The result cannot prove pass or fail.</td><td>Excluded</td></tr><tr><td>harness_failure</td><td>The test system failed.</td><td>Excluded</td></tr></table></div>
+        <div class="card"><h3>Invalid evidence</h3><table><tr><th>Status</th><th>Meaning</th><th>Score</th></tr><tr><td>inconclusive</td><td>The result cannot prove pass or fail.</td><td>0 points; attempt invalid</td></tr><tr><td>harness_failure</td><td>The test system failed.</td><td>0 points; attempt invalid</td></tr></table></div>
       </div>
       <details open><summary>Core status policy</summary><pre><code>export const CHECK_EVIDENCE_DISPOSITIONS = Object.freeze({
   passed: { outcomeKind: 'passed', passed: true, measured: true,
@@ -435,7 +434,7 @@ return {
       <div class="example">
         <div class="example-step"><h3>Hash current source</h3><p>The controller records the authored source before grading.</p></div>
         <div class="example-step"><h3>Grade selected checks</h3><p>Passed, failed, inconclusive, and harness failure results remain distinct.</p></div>
-        <div class="example-step"><h3>Send repairable failures</h3><p>Dependency mode sends one failed feature by default. Batch and sequential runs send their selected failing set.</p></div>
+        <div class="example-step"><h3>Send repairable failures</h3><p>With feature selection, dependency mode sends one failed feature. Batch and sequential runs send their selected failing set.</p></div>
         <div class="example-step"><h3>Grade the changed source</h3><p>A repair is useful only if the new result is usable and the source is intact.</p></div>
         <div class="example-step"><h3>Accept or restore</h3><p>The checkpoint becomes the next source, or the controller restores the last accepted source.</p></div>
       </div>
@@ -455,7 +454,7 @@ export function hashAppSource(appDir) {
       <div class="audit">
         <div><span>✓</span><p>Source identity excludes dependencies, build output, logs, and harness-owned files.</p></div>
         <div><span>✓</span><p>Repair continuation checks the parent agent adapter, stack adapter, selection, build image, and source.</p></div>
-        <div><span class="risk-mark">!</span><p>The repair policy must stop repeated failures that provide no new information. The run report should show repeated failure signatures and cost per changed result.</p></div>
+        <div><span class="risk-mark">!</span><p>The repair loop must stop repeated failures that provide no new information. The run report should show repeated failure signatures and cost per changed result.</p></div>
       </div>
     </section>
 
@@ -584,7 +583,7 @@ Grade: bundle, contract lint, actions, check evidence, screenshots</code></pre><
           <h3>Continue a stopped repair</h3>
           <ol>
             <li>Select the exact parent run and level.</li>
-            <li>Create a repair grant with the new round count.</li>
+            <li>Create a repair grant with the number of repairs.</li>
             <li>Verify source, adapter, selection, model, stack, and image identities.</li>
             <li>Seed the accepted checkpoint.</li>
             <li>Run only the added repairs and required regression checks.</li>
@@ -605,10 +604,10 @@ Grade: bundle, contract lint, actions, check evidence, screenshots</code></pre><
         <tr><td>Grader correctness</td><td>Known-good app passes. Known defects fail the intended criterion without collateral failures.</td><td>Mutation framework exists. Qualification coverage is the gating evidence.</td></tr>
         <tr><td>Failure attribution</td><td>Application failure, inconclusive evidence, provider failure, and harness failure remain separate.</td><td>Central evidence disposition table exists.</td></tr>
         <tr><td>Repair quality</td><td>Failures contain useful structured evidence. Repeated unchanged failures stop. Accepted source remains recoverable.</td><td>Checkpoint and repair lineage exist. Cost efficiency still needs run evidence.</td></tr>
-        <tr><td>Parallel isolation</td><td>Every attempt gets unique ports, database, containers, paths, and locks.</td><td>Run index, leases, and lock keys exist. Appliance reference qualification covers all three stacks through depth 3.</td></tr>
+        <tr><td>Parallel isolation</td><td>Every attempt gets unique ports, database, containers, paths, and locks.</td><td>Run index, leases, and lock keys exist. Fresh qualification is required for the current definition.</td></tr>
         <tr><td>Reproducibility</td><td>Plan, engine, definitions, adapters, image, model, source, pricing, and checks are all recorded.</td><td>Identity model is broad and strict.</td></tr>
         <tr><td>Code size</td><td>Large orchestration files have clear internal phases and focused tests.</td><td><code>commands/bench.ts</code> and <code>grader/grade.ts</code> remain the main responsibility concentrations.</td></tr>
-        <tr><td>Production data</td><td>Only qualified, complete, comparable attempts enter stack conclusions.</td><td>Dependency depths 1 through 3 have qualified model-free evidence. Paid comparison data must pass the same artifact validation.</td></tr>
+        <tr><td>Production data</td><td>Only qualified, complete, comparable attempts enter stack conclusions.</td><td>Current dependency qualification is pending. Paid comparison data must pass the same artifact validation.</td></tr>
       </table>
       <div class="callout risk"><strong>Main risk.</strong> Large execution files can duplicate selection, scoring, cleanup, or retry policy.</div>
     </section>

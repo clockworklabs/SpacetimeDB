@@ -29,7 +29,7 @@ export interface MetricAttempt {
 export interface AttemptMetrics {
   first: number | null;
   final: number;
-  rounds: number;
+  repairs: number;
   spend: number | null;
   duration: number | null;
   scope: string;
@@ -51,7 +51,7 @@ export interface ComparisonEntry<Attempt extends MetricAttempt> {
 
 export type ComparisonRow<Attempt extends MetricAttempt> = ComparisonEntry<Attempt> & {
   n: number; scopes: string[]; first: number | null; final: number | null;
-  rounds: number | null; spend: number | null; duration: number | null;
+  repairs: number | null; spend: number | null; duration: number | null;
   firstRange: { min: number; max: number } | null;
   spendRange: { min: number; max: number } | null;
   durationRange: { min: number; max: number } | null;
@@ -86,7 +86,7 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
     return {
       first: dependency.history ? dependency.history.firstTryPercentage / 100 : null,
       final: score.questlineAveragePercentage / 100,
-      rounds: dependency.history?.repairAttempts ?? 0,
+      repairs: dependency.history?.repairAttempts ?? 0,
       spend: run.costComplete === true ? attemptSpend(attempt) : null,
       duration: run.durationSec ?? null,
       scope: `dependency:${dependency.nodes.length}:${available}`,
@@ -111,7 +111,7 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
   return {
     first: firstMax ? sum(scored, level => level.firstScore.score) / firstMax : null,
     final: sum(levels, level => level.finalScore.score) / finalMax,
-    rounds: sum(levels, level => level.roundsUsed ?? 0),
+    repairs: sum(levels, level => level.used ?? 0),
     spend: run.costComplete === true ? attemptSpend(attempt) : null,
     duration: run.durationSec ?? null,
     scope: `sequential:${levels.map(level => level.level).join(',')}`,
@@ -157,7 +157,7 @@ export function compareCampaign<Attempt extends MetricAttempt>(campaign: {
   const rows = [...byStack.values()]
     .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack))
     .map(entry => {
-      const pick = (key: 'first' | 'final' | 'rounds' | 'spend' | 'duration'): number[] =>
+      const pick = (key: 'first' | 'final' | 'repairs' | 'spend' | 'duration'): number[] =>
         entry.runs.map(run => run.metrics[key]).filter((value): value is number => value !== null);
       const range = (values: readonly number[]): { min: number; max: number } | null =>
         values.length ? { min: Math.min(...values), max: Math.max(...values) } : null;
@@ -168,7 +168,7 @@ export function compareCampaign<Attempt extends MetricAttempt>(campaign: {
       return { ...entry, n: entry.runs.length, scopes,
         first: median(first), firstRange: range(first),
         final: median(pick('final')),
-        rounds: median(pick('rounds')),
+        repairs: median(pick('repairs')),
         spend: median(spend), spendRange: range(spend),
         duration: median(duration), durationRange: range(duration) };
     });

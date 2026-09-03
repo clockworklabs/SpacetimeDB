@@ -262,7 +262,7 @@ if (existing) {
 }
 
 // Create it if this is the first round of the run; reuse it for every round
-// after, so a fix round finds the app, its node_modules and its servers exactly
+// after, so a repair finds the app, its node_modules and its servers exactly
 // where the build round left them.
 let containerInspection = existing;
 if (!existing) {

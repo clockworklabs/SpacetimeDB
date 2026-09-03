@@ -20,6 +20,7 @@ import { progressionEngine } from '../src/progression/progression-engine.js';
 import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { readProgressionState } from '../src/progression/progression-state.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
+import { repairBudgetLimit } from '../src/progression/repair-plan.js';
 import { MAX_LOG_BYTES, contained, parseRunProgress, readTextTail,
   walkPublicExecutionArtifacts } from './dashboard-model.js';
 import type { DashboardArtifact } from './dashboard-model.js';
@@ -197,13 +198,11 @@ export interface SheetFacts {
   mode: string;
   workSelection: string | null;
   repairSelection: string | null;
-  strikePolicy: string | null;
-  strikes: number | null;
+  repairBudget: number;
   agent: string | null;
   model: string | null;
   guidance: string | null;
   recipes: Array<{ level: number; id: string | null; version: string | null }>;
-  fixRounds: number;
   timeLimitMinutes: number;
   spendLimitUsd: number | null;
   controllerImage: string | null;
@@ -297,20 +296,20 @@ interface SheetAttemptView {
 function sheetFacts(plan: CompiledCampaignPlan): SheetFacts {
   const mode = plan.definition.mode;
   const policy = plan.dependencyPolicy?.definition ?? null;
-  const strikes = mode.strikes?.default;
   const agent = plan.agents[0] ?? null;
   const facts = campaignFacts(plan);
   return {
     mode: mode.id,
     workSelection: policy?.workSelection ?? mode.workSelection ?? null,
-    repairSelection: policy?.repairSelection ?? mode.repairSelection ?? null,
-    strikePolicy: policy?.strikePolicy ?? mode.strikePolicy ?? null,
-    strikes: typeof strikes === 'number' ? strikes : null,
+    repairSelection: policy?.repair.selection ?? plan.definition.repair.selection,
+    repairBudget: repairBudgetLimit(plan.definition.repair, {
+      features: plan.featureCatalog?.definition.nodes.length ?? 1,
+      depths: plan.definition.levels.length,
+    }),
     agent: agent?.adapter ?? null,
     model: agent?.model ?? null,
     guidance: plan.attempts[0]?.guidance ?? null,
     recipes: facts.recipes,
-    fixRounds: plan.definition.budgets.fixRounds,
     timeLimitMinutes: plan.definition.budgets.attemptTimeoutMinutes,
     spendLimitUsd: plan.definition.budgets.maxCostUsdPerAttempt,
     controllerImage: facts.runtime.controllerImage,
@@ -327,10 +326,15 @@ function gradingStatus(grading: ReturnType<typeof campaignFacts>['grading']): st
   return levels.size > 1 ? 'partial' : grading.status;
 }
 
-function dependencyStrikes(dependency: DependencyProgress): { used: number; budget: number } {
-  return dependency.nodes.reduce((total, node) => ({
-    used: total.used + node.strikes.used, budget: total.budget + node.strikes.budget }),
-  { used: 0, budget: 0 });
+function dependencyRepairs(plan: CompiledCampaignPlan,
+  dependency: DependencyProgress): { used: number; budget: number } {
+  return {
+    used: dependency.history?.repairAttempts ?? 0,
+    budget: repairBudgetLimit(plan.definition.repair, {
+      features: dependency.nodes.length,
+      depths: plan.definition.levels.length,
+    }),
+  };
 }
 
 function attemptRegressions(attempt: InspectedAttempt): number {
@@ -353,7 +357,7 @@ function sheetLevels(attempt: InspectedAttempt | null): SheetLevel[] {
     level: level.level,
     unaided: level.firstAbort ? null : level.firstScore,
     score: level.finalScore,
-    repairs: level.roundsUsed,
+    repairs: level.used,
   }));
 }
 
@@ -379,11 +383,15 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
   const logUpdatedAt = logPath && existsSync(logPath)
     ? new Date(statSync(logPath).mtimeMs).toISOString() : null;
   const running = inspected.status === 'running' && !interrupted;
-  const progress = parseRunProgress(log, { fixRounds: plan.definition.budgets.fixRounds,
+  const repairLimit = repairBudgetLimit(plan.definition.repair, {
+    features: plan.featureCatalog?.definition.nodes.length ?? 1,
+    depths: plan.definition.levels.length,
+  });
+  const progress = parseRunProgress(log, { repairs: repairLimit,
     running, status: inspected.status,
     dependency: plan.definition.mode?.id === 'dependency' });
   const metrics = attemptMetrics({ ...inspected, logUpdatedAt });
-  const strikes = inspected.dependency ? dependencyStrikes(inspected.dependency) : null;
+  const repairs = inspected.dependency ? dependencyRepairs(plan, inspected.dependency) : null;
   return {
     inspected,
     series: progress.series,
@@ -399,8 +407,7 @@ function sheetAttemptView(plan: CompiledCampaignPlan, state: CampaignAttemptStat
       logUpdatedAt,
       score: percentage(metrics?.final ?? null),
       unaided: percentage(metrics?.first ?? null),
-      repairs: strikes ?? { used: metrics?.rounds ?? 0,
-        budget: plan.definition.budgets.fixRounds * plan.definition.levels.length },
+      repairs: repairs ?? { used: metrics?.repairs ?? 0, budget: repairLimit },
       timeSec: metrics?.duration ?? null,
       spendUsd: metrics?.spend ?? null,
       climb: progress.series,
@@ -427,6 +434,10 @@ export function campaignSheet(resultsRoot: string, key: string,
   const comparison = compareCampaign<InspectedAttempt>({
     attempts: views.map(view => view.inspected) });
   const dependency = plan.definition.mode?.id === 'dependency';
+  const plannedRepairLimit = repairBudgetLimit(plan.definition.repair, {
+    features: plan.featureCatalog?.definition.nodes.length ?? 1,
+    depths: plan.definition.levels.length,
+  });
   const stacks = plan.stacks.map(stack => {
     const owned = views.filter(view => view.inspected.stack === stack.id);
     const row = comparison.rows.find(entry => entry.stack === stack.id);
@@ -434,7 +445,7 @@ export function campaignSheet(resultsRoot: string, key: string,
     // per-level rows — come from the newest attempt that actually ran.
     const latest = owned.findLast(view => view.inspected.execution !== null) ?? null;
     const lead = latest?.inspected ?? null;
-    const strikes = lead?.dependency ? dependencyStrikes(lead.dependency) : null;
+    const repairs = lead?.dependency ? dependencyRepairs(plan, lead.dependency) : null;
     const metrics = lead ? attemptMetrics(lead) : null;
     return {
       stack: stack.id,
@@ -442,8 +453,8 @@ export function campaignSheet(resultsRoot: string, key: string,
       points: dependency ? uniquePoints(lead?.dependency ?? null) : metrics?.raw.final ?? null,
       unaided: percentage(row?.first ?? null),
       continued: owned.some(view => view.attempt.continued),
-      repairs: strikes ?? { used: Math.round(row?.rounds ?? 0),
-        budget: plan.definition.budgets.fixRounds * plan.definition.levels.length },
+      repairs: repairs ?? { used: Math.round(row?.repairs ?? 0),
+        budget: plannedRepairLimit },
       regressions: Math.round(median(owned.map(view => attemptRegressions(view.inspected))) ?? 0),
       timeSec: row?.duration ?? null,
       spendUsd: row?.spend ?? null,
@@ -684,7 +695,7 @@ export interface ProgressionStep {
   // Node status after the event, index-aligned with `nodes`.
   statuses: string[];
   score: number | null;
-  strikes: number;
+  repairs: number;
 }
 
 export interface ProgressionTrack {
@@ -705,13 +716,13 @@ export interface CampaignProgression {
 function progressionSnapshot(state: ProgressionState, nodeIds: readonly string[]): {
   statuses: string[];
   score: number | null;
-  strikes: number;
+  repairs: number;
 } {
   const average = progressionEngine.score(state).questlineAveragePercentage;
   return {
     statuses: nodeIds.map(id => state.nodes[id]?.status ?? 'locked'),
     score: average == null ? null : Math.round(average * 10) / 10,
-    strikes: Object.values(state.nodes).reduce((total, node) => total + node.strikes.used, 0),
+    repairs: state.attempts.filter(attempt => attempt.repair !== undefined).length,
   };
 }
 
@@ -719,8 +730,8 @@ function progressionSteps(state: DependencyState, nodeIds: readonly string[]): P
   let replay = progressionEngine.initialize(state.definition);
   return state.events.map(event => {
     const action = progressionEngine.nextAction(replay);
-    if (event.type === 'strikes-granted') {
-      replay = progressionEngine.grantStrikes(replay, event.grant);
+    if (event.type === 'repairs-granted') {
+      replay = progressionEngine.grantRepairs(replay, event.grant);
       return { sequence: event.sequence, action: 'grant' as const,
         targets: [...event.grant.nodeIds], ...progressionSnapshot(replay, nodeIds) };
     }

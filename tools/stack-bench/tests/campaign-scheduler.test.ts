@@ -81,7 +81,7 @@ test('a targeted dependency grant schedules one exact completed attempt for resu
   const priorOutput = executionAt(state).output;
   state = scheduleDependencyContinuation(state, attempt.plan.id, {
     grantId: 'operator-grant-1', level: 1, nodeIds: ['catalog', 'accounts'],
-    strikes: 2, stateSha256: 'a'.repeat(64),
+    repairs: 2, stateSha256: 'a'.repeat(64),
     resumeFrom: `continuations/${attempt.plan.id}/operator-grant-1`,
   }, { now: '2026-08-12T00:20:00.000Z' });
   assert.equal(state.status, 'prepared');
@@ -107,7 +107,7 @@ test('dependency continuation scheduling rejects non-terminal and duplicate requ
   const attempt = attemptAt(state);
   attempt.plan.mode = { id: 'dependency', version: '3.2.0' };
   assert.throws(() => scheduleDependencyContinuation(state, attempt.plan.id, {
-    grantId: 'grant', level: 1, nodeIds: ['accounts'], strikes: 1,
+    grantId: 'grant', level: 1, nodeIds: ['accounts'], repairs: 1,
     stateSha256: 'a'.repeat(64),
     resumeFrom: `continuations/${attempt.plan.id}/grant`,
   }), /completed campaign/);

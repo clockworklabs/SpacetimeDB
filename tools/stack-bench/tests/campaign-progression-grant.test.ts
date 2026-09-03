@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { grantCampaignDependencyStrikes, prepareGrantWorkspace }
+import { grantCampaignDependencyRepairs, prepareGrantWorkspace }
   from '../src/campaigns/campaign-progression-grant.js';
 import { compileDependencyPolicyInput, compileFeatureCatalogInput }
   from '../src/progression/progression-definition.js';
@@ -13,7 +13,7 @@ interface TestContinuation {
   grantId: string;
   level: number;
   nodeIds: string[];
-  strikes: number;
+  repairs: number;
   stateSha256: string;
   resumeFrom: string;
   scheduledAt: string;
@@ -33,9 +33,11 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
       gradingChecks: [{ id: 'accounts.create', points: 1, role: 'feature' }], dependencies: [] }],
     questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
   });
-  const dependencyPolicy = compileDependencyPolicyInput({ default: 1, levels: {} }, featureCatalog);
+  const dependencyPolicy = compileDependencyPolicyInput({
+    selection: 'feature', budget: { perFeature: 1 },
+  }, featureCatalog);
   const attemptPlan = {
-    id: 'campaign-r1-c1-a1-postgres', mode: { id: 'dependency', version: '3.2.0' },
+    id: 'campaign-r1-c1-a1-postgres', mode: { id: 'dependency', version: '4.0.0' },
     stack: 'postgres', agentAdapter: 'claude-code', model: 'test-model',
     condition: { sha256: 'c'.repeat(64) },
   };
@@ -46,7 +48,7 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
   };
   const plan = {
     id: 'campaign', version: '1.0.0', contentSha256: 'a'.repeat(64),
-    definition: { mode: { id: 'dependency', version: '3.2.0' }, track: 'ecommerce' },
+    definition: { mode: { id: 'dependency', version: '4.0.0' }, track: 'ecommerce' },
     featureCatalog, dependencyPolicy,
   };
   const state = { status: campaignStatus, attempts: [{ plan: attemptPlan,
@@ -59,7 +61,7 @@ const input = {
   grantId: 'operator-grant-1',
   level: 1,
   nodeIds: ['accounts'],
-  strikes: 2,
+  repairs: 2,
 };
 
 test('a grant workspace copies only resumable evidence without changing its source', () => {
@@ -68,38 +70,33 @@ test('a grant workspace copies only resumable evidence without changing its sour
     const execution = join(root, 'attempts', input.attemptId, 'execution-1');
     mkdirSync(join(execution, 'source'), { recursive: true });
     mkdirSync(join(execution, 'progression', 'attempt-001'), { recursive: true });
-    mkdirSync(join(execution, 'level-l1-source'), { recursive: true });
     writeFileSync(join(execution, 'run.json'), '{"status":"complete"}\n');
     writeFileSync(join(execution, 'progression-state.json'), '{}\n');
-    writeFileSync(join(execution, 'level-l1-checkpoint.json'), '{}\n');
     writeFileSync(join(execution, 'source', 'app.js'), 'export const value = 1;\n');
-    writeFileSync(join(execution, 'level-l1-source', 'app.js'), 'export const value = 1;\n');
     writeFileSync(join(execution, 'progression', 'attempt-001', 'bundle.json'), '{}\n');
     writeFileSync(join(execution, 'process.stdout.log'), 'not resumable\n');
-    const prepared = prepareGrantWorkspace(root, execution, input.attemptId, input.grantId, 1);
+    const prepared = prepareGrantWorkspace(root, execution, input.attemptId, input.grantId);
     assert.equal(prepared.relativePath,
       `continuations/${input.attemptId}/${input.grantId}`);
     writeFileSync(join(prepared.directory, 'source', 'app.js'), 'export const value = 2;\n');
     assert.equal(readFileSync(join(execution, 'source', 'app.js'), 'utf8'),
       'export const value = 1;\n');
-    assert.equal(readFileSync(join(prepared.directory, 'level-l1-source', 'app.js'), 'utf8'),
-      'export const value = 1;\n');
     assert.equal(existsSync(join(prepared.directory, 'process.stdout.log')), false);
-    assert.equal(prepareGrantWorkspace(root, execution, input.attemptId, input.grantId, 1).created,
+    assert.equal(prepareGrantWorkspace(root, execution, input.attemptId, input.grantId).created,
       false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('campaign strike grant derives exact state, owner, checkpoint, and continuation marker', () => {
+test('campaign repair grant derives exact state, owner, and continuation marker', () => {
   const campaign = campaignFixture();
   const calls: {
     inspect: number;
     released: boolean;
     written: { path: string; plan: unknown; state: unknown } | null;
   } = { inspect: 0, released: false, written: null };
-  const result = grantCampaignDependencyStrikes('campaign-output', input, {
+  const result = grantCampaignDependencyRepairs('campaign-output', input, {
     inspect: () => { calls.inspect += 1; return structuredClone(campaign); },
     acquire: (_root, plan) => { assert.equal(plan.contentSha256, 'a'.repeat(64)); return 'lock'; },
     release: lock => { assert.equal(lock, 'lock'); calls.released = true; },
@@ -117,9 +114,8 @@ test('campaign strike grant derives exact state, owner, checkpoint, and continua
     },
     grantState: (_path, options) => {
       assert.deepEqual(options.grant, {
-        grantId: input.grantId, level: 1, nodeIds: ['accounts'], strikes: 2,
+        grantId: input.grantId, level: 1, nodeIds: ['accounts'], repairs: 2,
       });
-      assert.deepEqual(options.checkpoint, { artifact: 'level-l1-checkpoint.json' });
       assert.equal(options.expectedStateSha256, 'b'.repeat(64));
       return { stateSha256: 'd'.repeat(64) };
     },
@@ -127,7 +123,7 @@ test('campaign strike grant derives exact state, owner, checkpoint, and continua
       assert.equal(state.status, 'completed');
       assert.equal(attemptId, input.attemptId);
       assert.deepEqual(marker, { grantId: input.grantId, level: 1,
-        nodeIds: ['accounts'], strikes: 2, stateSha256: 'd'.repeat(64),
+        nodeIds: ['accounts'], repairs: 2, stateSha256: 'd'.repeat(64),
         resumeFrom: 'continuations/campaign-r1-c1-a1-postgres/operator-grant-1' });
       assert.equal(options.now, '2026-08-28T12:00:00.000Z');
       return { status: 'prepared' };
@@ -143,26 +139,26 @@ test('campaign strike grant derives exact state, owner, checkpoint, and continua
   assert.equal(result.scheduled, true);
 });
 
-test('campaign strike grant is idempotent only for the exact recorded marker', () => {
-  const marker = { grantId: input.grantId, level: 1, nodeIds: ['accounts'], strikes: 2,
+test('campaign repair grant is idempotent only for the exact recorded marker', () => {
+  const marker = { grantId: input.grantId, level: 1, nodeIds: ['accounts'], repairs: 2,
     stateSha256: 'd'.repeat(64),
     resumeFrom: 'continuations/campaign-r1-c1-a1-postgres/operator-grant-1',
     scheduledAt: '2026-08-28T12:00:00.000Z' };
   const campaign = campaignFixture({ marker, campaignStatus: 'prepared' });
   let touched = false;
-  const result = grantCampaignDependencyStrikes('campaign-output', input, {
+  const result = grantCampaignDependencyRepairs('campaign-output', input, {
     inspect: () => structuredClone(campaign),
     acquire: () => 'lock', release: () => {},
     readState: () => ({ stateSha256: marker.stateSha256,
       state: { grants: [{ grantId: input.grantId, level: 1,
-        nodeIds: ['accounts'], strikes: 2 }] } }),
+        nodeIds: ['accounts'], repairs: 2 }] } }),
     grantState: () => { touched = true; return { stateSha256: 'e'.repeat(64) }; },
     schedule: () => { touched = true; }, writeState: () => { touched = true; },
   });
   assert.equal(result.stateSha256, marker.stateSha256);
   assert.equal(touched, false);
-  assert.throws(() => grantCampaignDependencyStrikes('campaign-output', {
-    ...input, strikes: 3,
+  assert.throws(() => grantCampaignDependencyRepairs('campaign-output', {
+    ...input, repairs: 3,
   }, { inspect: () => structuredClone(campaign), acquire: () => 'lock', release: () => {} }),
   /different continuation/);
 });

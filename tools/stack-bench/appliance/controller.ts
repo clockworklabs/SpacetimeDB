@@ -111,7 +111,7 @@ function help(): void {
     + '  campaign report <dir>         regenerate deterministic JSON and static HTML\n'
     + '  dashboard [--port N]          serve the local operator dashboard\n'
     + '  repair status <run> --level N inspect whether a failed level can continue\n'
-    + '  repair grant <run> --level N --rounds N  add one finite repair budget\n'
+    + '  repair grant <run> --level N --repairs N  add one finite repair budget\n'
     + '  run <exact run options>        execute and retain one requested run\n'
     + '  verify-release <manifest>      verify candidate files or a qualified signed release\n'
     + '  recover <private-state>        retry authenticated cleanup or retain quarantine\n'

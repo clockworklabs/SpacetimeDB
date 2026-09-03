@@ -30,7 +30,9 @@ interface DefinitionFixture {
   state: string;
   title: string;
   policy: string;
-  strikes: { default: number; levels: Record<string, number> };
+  repair: { selection: 'feature'; budget: { perFeature: number } };
+  unchangedFailureLimit: number;
+  workSelection: 'progressive';
   nodes: DefinitionNode[];
   questlines: Array<{ id: string; title: string; nodes: string[] }>;
 }
@@ -46,14 +48,16 @@ function resolveWorkRecipeAction(binding: RecipeBinding,
 }
 
 const definition = (): DefinitionFixture => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   kind: 'progression-mode',
   id: 'ecommerce-dependency',
   version: '1.0.0',
   state: 'draft',
   title: 'Ecommerce dependency fixture',
   policy: 'dependency-graph',
-  strikes: { default: 2, levels: {} },
+  repair: { selection: 'feature', budget: { perFeature: 2 } },
+  unchangedFailureLimit: 3,
+  workSelection: 'progressive',
   nodes: [{
     id: 'accounts',
     title: 'Accounts',

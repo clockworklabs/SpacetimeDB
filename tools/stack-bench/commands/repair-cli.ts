@@ -28,7 +28,7 @@ export interface RepairGrantArgs {
   command: 'grant';
   parent: string;
   level: number;
-  rounds: number;
+  repairs: number;
   maxBudgetUsd?: number;
   timeoutMinutes: number;
 }
@@ -43,21 +43,21 @@ export function parseRepairArgs(argv: string[]): RepairArgs {
     return { command, parent: resolve(parent), level };
   }
   if (command !== 'grant' || !parent) {
-    throw new Error('usage: repair status <run-dir> --level <N> | repair grant <run-dir> --level <N> --rounds <N> [--max-budget-usd <N>] [--timeout-minutes <N>]');
+    throw new Error('usage: repair status <run-dir> --level <N> | repair grant <run-dir> --level <N> --repairs <N> [--max-budget-usd <N>] [--timeout-minutes <N>]');
   }
-  const values: { level?: number; rounds?: number; maxBudgetUsd?: number;
+  const values: { level?: number; repairs?: number; maxBudgetUsd?: number;
     timeoutMinutes: number } = { timeoutMinutes: 120 };
   const seen = new Set<string>();
   for (let index = 0; index < rest.length; index += 2) {
     const flag = rest[index];
-    if (!flag || !['--level', '--rounds', '--max-budget-usd', '--timeout-minutes'].includes(flag)
+    if (!flag || !['--level', '--repairs', '--max-budget-usd', '--timeout-minutes'].includes(flag)
       || index + 1 >= rest.length || seen.has(flag)) {
       throw new Error(`invalid or duplicate repair option ${String(flag)}`);
     }
     seen.add(flag);
     const value = Number(rest[index + 1]);
     if (flag === '--level') values.level = value;
-    else if (flag === '--rounds') values.rounds = value;
+    else if (flag === '--repairs') values.repairs = value;
     else if (flag === '--max-budget-usd') values.maxBudgetUsd = value;
     else values.timeoutMinutes = value;
   }
@@ -65,9 +65,9 @@ export function parseRepairArgs(argv: string[]): RepairArgs {
   if (level === undefined || !Number.isSafeInteger(level) || level < 1) {
     throw new Error('--level must be a positive integer');
   }
-  const rounds = values.rounds;
-  if (rounds === undefined || !Number.isSafeInteger(rounds) || rounds < 1 || rounds > 20) {
-    throw new Error('--rounds must be an integer from 1 through 20');
+  const repairs = values.repairs;
+  if (repairs === undefined || !Number.isSafeInteger(repairs) || repairs < 1) {
+    throw new Error('--repairs must be a positive safe integer');
   }
   if (values.maxBudgetUsd !== undefined
     && (!Number.isFinite(values.maxBudgetUsd) || values.maxBudgetUsd <= 0)) {
@@ -78,7 +78,7 @@ export function parseRepairArgs(argv: string[]): RepairArgs {
     throw new Error('--timeout-minutes must be from 10 through 480');
   }
   return { command, parent: resolve(parent), level,
-    rounds, timeoutMinutes: values.timeoutMinutes,
+    repairs, timeoutMinutes: values.timeoutMinutes,
     ...(values.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: values.maxBudgetUsd }) };
 }
 
@@ -87,7 +87,7 @@ export function repairStatus(parent: string, level: number): Record<string, unkn
     const inspected = inspectRepairParent(parent, level);
     return { eligible: true, parentRunId: inspected.parent.id, level,
       score: inspected.level.score, max: inspected.level.max,
-      roundsUsed: inspected.cumulativeRoundsBefore,
+      used: inspected.cumulativeRepairsBefore,
       checkpointSha256: inspected.checkpoint.payload.source.sha256 };
   } catch (error) {
     return { eligible: false, level,
@@ -107,7 +107,7 @@ interface RepairContinuationPayload {
   outcome?: unknown;
   continuation?: {
     parentRunId?: string;
-    roundsGranted?: number;
+    repairsGranted?: number;
     level?: number;
     [key: string]: unknown;
   };
@@ -117,7 +117,7 @@ interface RepairContinuationPayload {
 export async function executeRepairGrant(args: RepairGrantArgs,
   { execute = runBounded, rescue = rescueSupervisedLease, uuid = randomUUID,
     env = process.env }: RepairExecutionDependencies = {}) {
-  const resolved = createRepairGrant(args.parent, { level: args.level, rounds: args.rounds });
+  const resolved = createRepairGrant(args.parent, { level: args.level, repairs: args.repairs });
   const lock = acquireCampaignLock(join(resolved.root, '.repair-control'), {
     id: `repair-l${args.level}`,
     contentSha256: resolved.checkpoint.payload.source.sha256,
@@ -133,7 +133,7 @@ export async function executeRepairGrant(args: RepairGrantArgs,
     const argv = [BENCH,
       '--repair-from', resolved.root,
       '--repair-level', String(args.level),
-      '--fix-rounds', String(args.rounds),
+      '--repairs', String(args.repairs),
       '--out', output,
       '--no-media'];
     if (args.maxBudgetUsd !== undefined) {
@@ -169,8 +169,8 @@ export async function executeRepairGrant(args: RepairGrantArgs,
         agentAdapter: resolved.parentArtifact.identities.agentAdapter,
         stackAdapter: resolved.parentArtifact.identities.stackAdapter,
       }),
-      payload: { schemaVersion: 1, parentRunId: resolved.parent.id,
-        level: args.level, roundsGranted: args.rounds,
+      payload: { schemaVersion: 2, parentRunId: resolved.parent.id,
+        level: args.level, repairsGranted: args.repairs,
         exitCode: processResult.code ?? null, signal: processResult.signal ?? null,
         timedOut: processResult.timedOut, streams },
     });
@@ -186,7 +186,7 @@ export async function executeRepairGrant(args: RepairGrantArgs,
       { expectedKind: 'repair_continuation' });
     if (run.attempt.parentId !== resolved.parent.id
       || run.payload.continuation?.parentRunId !== resolved.parent.id
-      || run.payload.continuation?.roundsGranted !== args.rounds
+      || run.payload.continuation?.repairsGranted !== args.repairs
       || run.payload.continuation?.level !== args.level) {
       throw new Error('repair continuation result does not match its grant');
     }

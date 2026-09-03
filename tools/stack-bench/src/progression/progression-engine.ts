@@ -15,17 +15,10 @@ export interface ProgressionTerminalAction extends Record<string, unknown> {
 export interface ProgressionWorkAction extends Record<string, unknown> {
   type: 'build' | 'repair';
   level: number;
-  strikes: {
-    scope: 'feature' | 'depth' | 'banked';
-    maxRemaining: number;
-    nodes: Array<{
-      nodeId: string;
-      initialBudget: number;
-      granted: number;
-      budget: number;
-      used: number;
-      remaining: number;
-    }>;
+  repair: {
+    nodeIds: string[];
+    remaining: number | null;
+    grantId?: string;
   };
   prompt: unknown;
   grading: unknown;
@@ -47,7 +40,7 @@ export interface ProgressionPolicy<
   promptSelection(state: TState): unknown;
   gradingSelection(state: TState): TGradingSelection;
   recordResult(state: TState, result: unknown): TState;
-  grantStrikes(state: TState, grant: unknown): TState;
+  grantRepairs(state: TState, grant: unknown): TState;
   replay(definition: unknown, events: unknown[]): TState;
   nextAction(state: TState): TAction;
   score(state: TState): TScore;
@@ -64,7 +57,7 @@ export type ProgressionEngine<
 
 const POLICY_METHODS = Object.freeze([
   'compile', 'initialize', 'activeNodes', 'promptSelection', 'gradingSelection',
-  'recordResult', 'grantStrikes', 'replay', 'nextAction', 'score',
+  'recordResult', 'grantRepairs', 'replay', 'nextAction', 'score',
 ] as const satisfies ReadonlyArray<keyof Omit<ProgressionPolicy, 'id'>>);
 
 function hasProperties(value: unknown): value is Record<string, unknown> {
@@ -118,8 +111,8 @@ export function createProgressionEngine(policies: unknown): Readonly<Progression
     gradingSelection: (state: unknown) => statePolicy(state).gradingSelection(state),
     recordResult: (state: unknown, result: unknown) =>
       statePolicy(state).recordResult(state, result),
-    grantStrikes: (state: unknown, grant: unknown) =>
-      statePolicy(state).grantStrikes(state, grant),
+    grantRepairs: (state: unknown, grant: unknown) =>
+      statePolicy(state).grantRepairs(state, grant),
     replay: (definition: unknown, events: unknown[]) =>
       definitionPolicy(definition).replay(definition, events),
     nextAction: (state: unknown) => statePolicy(state).nextAction(state),

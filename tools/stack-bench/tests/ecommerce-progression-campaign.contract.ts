@@ -73,6 +73,7 @@ test('sequential mode can run a prefix of the same ecommerce feature catalog', (
     const manifest = JSON.parse(readFileSync(campaignPath, 'utf8'));
     manifest.id = 'ecommerce-sequential-prefix-proof';
     manifest.mode = { id: 'sequential', version: '1.0.0' };
+    manifest.repair = { selection: 'batch', budget: { total: 1 } };
     manifest.levels = [1, 2, 3];
     manifest.selection.levels = manifest.selection.levels.slice(0, 3);
     const path = join(directory, 'campaign.json');
@@ -109,8 +110,8 @@ test('dependency mode stops at the selected catalog prefix', () => {
     const plan = compileCampaignFile(sourcePath);
     assert(plan.dependencyPolicy);
     assert.deepEqual(plan.dependencyPolicy.definition.levels, [1, 2, 3]);
-    assert.deepEqual(Object.keys(plan.dependencyPolicy.definition.strikes.levels),
-      ['1', '2', '3']);
+    assert.deepEqual(plan.dependencyPolicy.definition.repair,
+      { selection: 'feature', budget: { total: 0 } });
 
     const planPath = join(directory, 'plan.json');
     writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });

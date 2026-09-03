@@ -13,6 +13,7 @@ import { readCampaignState } from '../src/campaigns/campaign-scheduler.js';
 import { campaignFacts, inspectCampaignAttempt } from '../src/campaigns/campaign-inspection.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { CAMPAIGN_FILE } from '../src/campaigns/campaign-path.js';
+import { repairBudgetLimit } from '../src/progression/repair-plan.js';
 
 export const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;
@@ -215,9 +216,9 @@ function matches(text: string, pattern: RegExp): Array<RegExpMatchArray & { inde
   return [...text.matchAll(pattern)].map(match => Object.assign(match, { index: match.index ?? 0 }));
 }
 
-export function parseRunProgress(log: string, { fixRounds = 0, running = true, status = null,
+export function parseRunProgress(log: string, { repairs = 0, running = true, status = null,
   dependency = false }: {
-  fixRounds?: number;
+  repairs?: number;
   running?: boolean;
   status?: string | null;
   dependency?: boolean;
@@ -225,7 +226,7 @@ export function parseRunProgress(log: string, { fixRounds = 0, running = true, s
   const totals = matches(log, /^\s*TOTAL\b.*?(\d+)\/(\d+)\s*$/gm)
     .map(match => ({ index: match.index, score: Number(match[1]), max: Number(match[2]) }));
   const roundMarkers = matches(log,
-    /^--- (?:feature repair|repair round) (\d+)\/(\d+)(?:: (.+))? ---$/gm)
+    /^--- (?:feature )?repair (\d+)\/(\d+)(?:: (.+))? ---$/gm)
     .map(match => ({ index: match.index, round: Number(match[1]), budget: Number(match[2]),
       target: match[3] ?? null }));
   const grading = matches(log, /^===\s+[^\n]*?-l(\d+)(?:-(?:first|fix(\d+)))?\s+\([^\n]+\)\s*===$/gm)
@@ -240,7 +241,7 @@ export function parseRunProgress(log: string, { fixRounds = 0, running = true, s
     : running ? 'Building the generated app' : 'Finished';
   const level = latestGrading?.level ?? null;
   const round = latestRound?.round ?? latestGrading?.round ?? 0;
-  const budget = latestRound?.budget ?? fixRounds;
+  const budget = latestRound?.budget ?? repairs;
   const target = latestRound?.target ? ` for ${latestRound.target}` : '';
   const stage = (value: number): string => dependency ? `depth ${value}` : `L${value}`;
   if (latestIndex === latestGrading?.index) {
@@ -274,7 +275,7 @@ export function parseRunProgress(log: string, { fixRounds = 0, running = true, s
 }
 
 function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptState,
-  campaignDirectory: string, fixRounds: number, { includeLog = false }: {
+  campaignDirectory: string, repairs: number, { includeLog = false }: {
     includeLog?: boolean;
   } = {}) {
   const inspected = inspectCampaignAttempt(plan, attempt, campaignDirectory);
@@ -290,7 +291,7 @@ function summarizeAttempt(plan: CompiledCampaignPlan, attempt: CampaignAttemptSt
     // been silent for a long time is wedged in a way no score can show.
     if (existsSync(logPath)) logUpdatedAt = new Date(statSync(logPath).mtimeMs).toISOString();
   }
-  const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running',
+  const progress = parseRunProgress(log, { repairs, running: attempt.status === 'running',
     status: attempt.status, dependency: plan.definition.mode.id === 'dependency' });
   if (inspected.result?.score) progress.latestScore = inspected.result.score;
   return {
@@ -315,7 +316,10 @@ export function summarizeCampaign(directory: string, {
   const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   let attempts = includeAttempts
     ? state.attempts.map(attempt => summarizeAttempt(plan, attempt, directory,
-      plan.definition.budgets.fixRounds, { includeLog: includeLogs }))
+      repairBudgetLimit(plan.definition.repair, {
+        features: plan.featureCatalog?.definition.nodes.length ?? 1,
+        depths: plan.definition.levels.length,
+      }), { includeLog: includeLogs }))
     : [];
   const interrupted = state.status === 'running' && controllerActive !== null
     && !controllerActive(directory, plan);
@@ -444,6 +448,7 @@ export interface DashboardPlan {
   attempts?: number;
   parallelism?: number;
   budgets?: CompiledCampaignPlan['definition']['budgets'];
+  repairBudget?: number;
   sha256?: string;
   file: string;
   error?: string;
@@ -462,6 +467,10 @@ export function discoverPlans(plansRoot: string): DashboardPlan[] {
         track: plan.definition.track, levels: plan.definition.levels,
         stacks: plan.stacks.map(stack => stack.id), attempts: plan.summary.attempts,
         parallelism: plan.summary.parallelism, budgets: plan.definition.budgets,
+        repairBudget: repairBudgetLimit(plan.definition.repair, {
+          features: plan.featureCatalog?.definition.nodes.length ?? 1,
+          depths: plan.definition.levels.length,
+        }),
         sha256: plan.contentSha256, file: entry.name });
     } catch (error) {
       plans.push({ id: entry.name.slice(0, -5), title: entry.name, state: 'invalid',

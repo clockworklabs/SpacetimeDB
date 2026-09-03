@@ -29,7 +29,7 @@ test('a level checkpoint preserves only source and binds it to the parent run', 
       track: 'ecommerce',
       backend: 'postgres',
       level: 1,
-      repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
+      repair: { status: 'budget-exhausted', limit: 3, used: 3,
         stopReason: 'budget-exhausted' },
       outcome: { kind: 'app_failure', failed: 1 },
       selectionSha256: 'a'.repeat(64),
@@ -58,12 +58,12 @@ test('source checkpoint artifacts reject paths and repair accounting that cannot
       kind: 'source_checkpoint',
       id: 'wrong-path',
       payload: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         track: 'ecommerce',
         backend: 'postgres',
         level: 1,
         source: { directory: '../outside', sha256: 'a'.repeat(64), files: 1 },
-        repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
+        repair: { status: 'budget-exhausted', limit: 3, used: 3,
           stopReason: 'budget-exhausted' },
         outcome: { kind: 'app_failure' },
         selectionSha256: null,
@@ -76,24 +76,23 @@ test('source checkpoint artifacts reject paths and repair accounting that cannot
       track: 'ecommerce',
       backend: 'postgres',
       level: 1,
-      repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 4,
+      repair: { status: 'budget-exhausted', limit: 3, used: 4,
         stopReason: 'budget-exhausted' },
       outcome: { kind: 'app_failure' },
-    }), /roundsUsed exceeds its budget/);
+    }), /used exceeds its budget/);
     assert.throws(() => preserveLevelCheckpoint({
       appDir: app,
-      outputDir: join(root, 'feature-strikes'),
+      outputDir: join(root, 'feature-repairs'),
       runId: 'run-parent',
       track: 'ecommerce',
       backend: 'postgres',
       level: 1,
-      repair: { status: 'budget-exhausted', budgetRounds: 2, roundsUsed: 2,
-        stopReason: 'budget-exhausted', strikeScope: 'feature', nodeStrikes: [
-          { nodeId: 'accounts', initialBudget: 3, granted: 0, budget: 3, used: 2, remaining: 2,
-            exhaustionReason: null },
+      repair: { status: 'budget-exhausted', limit: 2, used: 2,
+        stopReason: 'budget-exhausted', nodeRepairs: [
+          { nodeId: 'accounts', used: -1, exhaustionReason: null },
         ] },
       outcome: { kind: 'app_failure' },
-    }), /nodeStrikes\[0\] is invalid/);
+    }), /nodeRepairs\[0\] is invalid/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

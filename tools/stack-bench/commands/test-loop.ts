@@ -28,8 +28,8 @@ interface LoopSession extends CostSession {
 }
 
 interface LoopLevel extends RepairLevel {
-  buildSession?: LoopSession;
-  fixSessions?: LoopSession[];
+  buildSessions?: LoopSession[];
+  repairSessions?: LoopSession[];
   resumeSession?: LoopSession;
   contractPass?: boolean;
   stalled?: boolean;
@@ -57,8 +57,8 @@ interface GradePayload { features?: GradeFeature[]; }
 interface SourceCheckpointPayload { source: LevelCheckpoint; }
 interface RepairContinuation {
   baseline?: { reproduced?: boolean; score?: number; sourceSha256?: string };
-  cumulativeRoundsBefore?: number;
-  cumulativeRoundsAfter?: number;
+  cumulativeRepairsBefore?: number;
+  cumulativeRepairsAfter?: number;
   resumeSetup?: { sourceVerified?: boolean };
 }
 interface RepairContinuationPayload extends LoopRun { continuation?: RepairContinuation; }
@@ -99,17 +99,17 @@ function runBench(extra: string[] = []): string {
 }
 
 const invalidRounds = spawnSync('node', [compiledEntrypoint('commands', 'bench.js'), '--backend', 'stub',
-  '--fix-rounds', '1.5'],
+  '--repairs', '1.5'],
   { encoding: 'utf8' });
 check('fractional correction budgets are rejected before a run starts',
   invalidRounds.status !== 0
-    && /--fix-rounds must be an integer from 0 through 20/.test(invalidRounds.stderr));
+    && /--repairs must be a non-negative safe integer/.test(invalidRounds.stderr));
 
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(APP, { recursive: true });
 
-console.log('\nLoop test — one fix round available');
-const out = runBench(['--fix-rounds', '1']);
+console.log('\nLoop test — one repair available');
+const out = runBench(['--repairs', '1']);
 const runPath = join(WORK, ARTIFACT_FILE.run);
 
 check(`the benchmark run produced ${ARTIFACT_FILE.run}`, existsSync(runPath));
@@ -175,9 +175,9 @@ check('backend lease was released',
   ['released', 'stopped'].includes(run.backendLease?.state ?? '')
     && (run.backendLease?.resources?.locks?.every(lock => lock.releasedAt) ?? false),
   JSON.stringify(run.backendLease?.state));
-check('a fix round ran', level?.fixRounds === 1, `fixRounds=${level?.fixRounds}`);
+check('a repair ran', level?.repairs === 1, `repairs=${level?.repairs}`);
 check('successful repair is explicit', level?.repair?.status === 'corrected'
-  && level.repair.budgetRounds === 1 && level.repair.roundsUsed === 1
+  && level.repair.limit === 1 && level.repair.used === 1
   && level.repair.stopReason === 'passed',
   JSON.stringify(level?.repair));
 const reportPath = join(APP, CODING_CONTAINER_BUG_REPORT_FILE);
@@ -192,13 +192,14 @@ check('behavioural findings do not leak selectors or timings',
   !/data-(?:role|testid)|locator|within \d+ms/.test(behaviourSection));
 check('missing interfaces are reported separately', /## Application interface/.test(report));
 check('build and fix costs are both recorded',
-  (level?.buildCostUsd ?? 0) > 0 && (level?.fixCostUsd ?? 0) > 0,
-  `build=${level?.buildCostUsd} fix=${level?.fixCostUsd}`);
+  (level?.buildCostUsd ?? 0) > 0 && (level?.repairCostUsd ?? 0) > 0,
+  `build=${level?.buildCostUsd} fix=${level?.repairCostUsd}`);
 check('build and fix sessions remain individually auditable',
-  level?.buildSession?.sessionId === 'stub-build'
-    && level?.fixSessions?.length === 1
-    && level.fixSessions[0]?.sessionId === 'stub-fix',
-  JSON.stringify({ build: level?.buildSession, fixes: level?.fixSessions }));
+  level?.buildSessions?.length === 1
+    && level.buildSessions[0]?.sessionId === 'stub-build'
+    && level?.repairSessions?.length === 1
+    && level.repairSessions[0]?.sessionId === 'stub-fix',
+  JSON.stringify({ builds: level?.buildSessions, fixes: level?.repairSessions }));
 check('level session totals include the build and fix',
   level?.sessionTotals?.sessions === 2
     && level.sessionTotals.tokens === 2000
@@ -220,25 +221,25 @@ check('the fix improved the contract lint',
     || level?.contractPass === true,
   'expected the broken fixture to fail the lint and the fixed one to pass');
 
-console.log('\nLoop test — zero fix rounds allowed');
+console.log('\nLoop test — zero repairs allowed');
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(APP, { recursive: true });
-runBench(['--fix-rounds', '0']);
+runBench(['--repairs', '0']);
 const capped = readArtifactPayload<LoopRun>(runPath);
-check('no fix ran when the cap is zero', capped.levels?.[0]?.fixRounds === 0);
+check('no fix ran when the cap is zero', capped.levels?.[0]?.repairs === 0);
 check('no bug report was written when no fix is allowed',
   !existsSync(join(APP, CODING_CONTAINER_BUG_REPORT_FILE)));
 
 console.log('\nLoop test - flat corrections exhaust their declared budget');
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(APP, { recursive: true });
-runBench(['--fix-rounds', '2', '--model', 'deterministic-stall']);
+runBench(['--repairs', '2', '--model', 'deterministic-stall']);
 const exhausted = readArtifactPayload<LoopRun>(runPath);
 const exhaustedLevel = exhausted.levels?.[0];
-check('both correction rounds ran after the first flat result', exhaustedLevel?.fixRounds === 2,
-  `fixRounds=${exhaustedLevel?.fixRounds}`);
+check('both correction rounds ran after the first flat result', exhaustedLevel?.repairs === 2,
+  `repairs=${exhaustedLevel?.repairs}`);
 check('an unresolved app records budget exhaustion', exhaustedLevel?.repair?.status === 'budget-exhausted'
-  && exhaustedLevel.repair.budgetRounds === 2 && exhaustedLevel.repair.roundsUsed === 2
+  && exhaustedLevel.repair.limit === 2 && exhaustedLevel.repair.used === 2
   && exhaustedLevel.repair.stopReason === 'budget-exhausted'
   && exhaustedLevel.stalled === true && exhausted.outcome?.kind === 'app_failure',
   JSON.stringify({ repair: exhaustedLevel?.repair, outcome: exhausted.outcome }));
@@ -246,17 +247,17 @@ check('an unresolved app records budget exhaustion', exhaustedLevel?.repair?.sta
 console.log('\nLoop test - a later finite grant continues the exact exhausted source');
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(APP, { recursive: true });
-runBench(['--fix-rounds', '2', '--model', 'deterministic-deferred']);
+runBench(['--repairs', '2', '--model', 'deterministic-deferred']);
 const parentBefore = readFileSync(runPath, 'utf8');
 const deferred = readArtifactPayload<LoopRun>(runPath);
 check('the deferred parent exhausted its original two-round budget',
   deferred.levels?.[0]?.repair?.status === 'budget-exhausted'
-    && deferred.levels[0].repair.roundsUsed === 2,
+    && deferred.levels[0].repair.used === 2,
   JSON.stringify(deferred.levels?.[0]?.repair));
 let continuationOutput = '';
 try {
   continuationOutput = execFileSync('node', [join(ROOT, 'dist', 'commands', 'repair-cli.js'), 'grant', WORK,
-    '--level', '1', '--rounds', '2', '--timeout-minutes', '10'], {
+    '--level', '1', '--repairs', '2', '--timeout-minutes', '10'], {
     encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: BENCH_TIMEOUT_MS,
   });
 } catch (error: unknown) {
@@ -277,7 +278,7 @@ if (continuationDirectory && continuationPath && existsSync(continuationPath)) {
   const continuedLevel = continuation.levels?.[0];
   const continuationDetails = continuation.continuation;
   const deferredLevel = deferred.levels?.[0];
-  check('continuation reproduced the exact failed baseline before spending a repair round',
+  check('continuation reproduced the exact failed baseline before spending a repair',
     continuationDetails?.baseline?.reproduced === true
       && continuationDetails.baseline.score === deferredLevel?.score
       && continuationDetails.baseline.sourceSha256 === deferredLevel?.checkpoint?.sha256,
@@ -285,17 +286,17 @@ if (continuationDirectory && continuationPath && existsSync(continuationPath)) {
   check('continuation reached correctness inside its finite added budget',
     continuation.outcome?.kind === 'passed'
       && continuedLevel?.repair?.status === 'corrected'
-      && continuedLevel.repair.roundsUsed === 1
-      && continuationDetails?.cumulativeRoundsBefore === 2
-      && continuationDetails?.cumulativeRoundsAfter === 3,
+      && continuedLevel.repair.used === 1
+      && continuationDetails?.cumulativeRepairsBefore === 2
+      && continuationDetails?.cumulativeRepairsAfter === 3,
     JSON.stringify({ repair: continuedLevel?.repair, continuation: continuationDetails }));
-  check('resume setup is visible, separately costed, and does not consume a repair round',
+  check('resume setup is visible, separately costed, and does not consume a repair',
     continuationDetails?.resumeSetup?.sourceVerified === true
       && continuedLevel?.resumeSession?.sessionId === 'stub-resume'
       && (continuedLevel?.resumeCostUsd ?? 0) > 0
-      && continuedLevel.fixRounds === 1,
+      && continuedLevel.repairs === 1,
     JSON.stringify({ setup: continuationDetails?.resumeSetup,
-      resume: continuedLevel?.resumeSession, fixes: continuedLevel?.fixRounds }));
+      resume: continuedLevel?.resumeSession, fixes: continuedLevel?.repairs }));
   check('continuation process outcome is retained as a typed child artifact',
     readArtifact(join(continuationDirectory, ARTIFACT_FILE.process),
       { expectedKind: 'repair_process' }).attempt.parentId === deferred.id);

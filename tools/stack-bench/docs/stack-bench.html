@@ -1234,7 +1234,7 @@
     <line class="choice-rule" x1="30" y1="274" x2="350" y2="274"/>
 
     <circle class="choice-dot" cx="38" cy="306" r="3"/>
-    <text class="choice-name" x="58" y="303">Strikes</text>
+    <text class="choice-name" x="58" y="303">Repairs</text>
     <text class="choice-detail" x="58" y="320">limit for each feature</text>
 
     <path class="feed" d="M260 62 H392 Q430 62 455 105 L482 151"/>
@@ -1312,7 +1312,7 @@
     <text x="785" y="80">next level opens</text>
 
     <polygon class="n p-dec2" points="435,206 500,172 565,206 500,240"/>
-    <text class="nl p-dec2" text-anchor="middle" x="500" y="210">strikes left?</text>
+    <text class="nl p-dec2" text-anchor="middle" x="500" y="210">repairs left?</text>
 
     <rect class="n p-fix" x="215" y="180" width="170" height="52"/>
     <text class="nl p-fix" x="235" y="204">repair</text>
@@ -1342,11 +1342,11 @@
   </svg>
   <div class="state r d3">
     <div class="st">level<span class="sv"><span class="v-a1">L1</span><span class="v-a2 good">L2</span></span></div>
-    <div class="st">feature strikes<span class="sv"><span class="v-k1">0 of 3</span><span class="v-k2">1 of 3</span></span></div>
+    <div class="st">feature repairs<span class="sv"><span class="v-k1">0 of 3</span><span class="v-k2">1 of 3</span></span></div>
     <div class="st">features passed<span class="sv"><span class="v-u1">2 of 12</span><span class="v-u2 good">4 of 12</span></span></div>
     <div class="st">cost<span class="sv"><span class="v-c0">$0.00</span><span class="v-c1">$3.20</span><span class="v-c2">$6.40</span></span></div>
   </div>
-  <p class="supp r d4">Each failed feature has its own strike limit. By default, a repair request contains one feature. Provider and test-system failures spend no strikes.</p>
+  <p class="supp r d4">Each failed feature has its own repair limit. A repair request contains one feature. A completed coding repair uses one repair, even if grading later fails. Provider errors and interrupted coding use none.</p>
 </section>
 
 <!-- 4 the dependency graph -->

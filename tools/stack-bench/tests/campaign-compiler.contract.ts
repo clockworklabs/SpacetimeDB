@@ -38,7 +38,10 @@ interface TestCampaignDefinition {
   state: string;
   title: string;
   track: string;
-  mode: { id: string; version: string; strikes?: { default?: number; levels: Record<string, number> } };
+  mode: { id: string; version: string; workSelection?: 'feature' | 'progressive' | 'all-at-once' };
+  repair: { selection: 'feature' | 'batch'; budget: {
+    total?: number; perFeature?: number; perDepth?: { count: number; carry: boolean };
+  } };
   levels?: number[];
   selection: {
     packs?: string[];
@@ -51,7 +54,7 @@ interface TestCampaignDefinition {
   repetitions: number;
   ordering: { method: string; seed: string };
   parallelism?: number;
-  budgets: { fixRounds: number; attemptTimeoutMinutes: number; maxCostUsdPerAttempt: number | null };
+  budgets: { attemptTimeoutMinutes: number; maxCostUsdPerAttempt: number | null };
   attemptPolicy: { retries: number; retryOn: string[]; excludeFromAnalysis: string[] };
   runtime: { releaseManifestSha256: string | null; controllerImage: string | null;
     buildImage: string | null; platform: string };
@@ -72,6 +75,7 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
     title: 'Ecommerce L1 comparison',
     track: 'ecommerce',
     mode: { id: 'sequential', version: '1.0.0' },
+    repair: { selection: 'batch', budget: { total: 3 } },
     levels: [1],
     selection: { packs: [], checks: [] },
     stacks: [
@@ -84,7 +88,7 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
       guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.0.0' }],
     repetitions: 3,
     ordering: { method: 'balanced-rotation', seed: 'published-seed-1' },
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
+    budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
     attemptPolicy: { retries: 1, retryOn: ['harness_failure', 'inconclusive'],
       excludeFromAnalysis: ['contaminated', 'harness_failure', 'inconclusive', 'ungraded'] },
     runtime: { releaseManifestSha256: null, controllerImage: null, buildImage: null,
@@ -196,8 +200,8 @@ function multiLevelDefinition(levels: number[]): TestCampaignDefinition {
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '3.2.0',
-    strikes: { default: 2, levels: {} } };
+  value.mode = { id: 'dependency', version: '4.0.0' };
+  value.repair = { selection: 'feature', budget: { perFeature: 2 } };
   delete value.levels;
   delete value.selection.levels![0]!.features;
   delete value.selection.levels![0]!.checks;
@@ -247,8 +251,8 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.equal(plan.definition.featureCatalog, undefined);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce-dependency');
   assert.equal(plan.featureCatalog.identity.version, '1.0.0');
-  assert.equal(plan.dependencyPolicy.definition.repairSelection, 'feature');
-  assert.equal(plan.dependencyPolicy.definition.version, '3.2.0');
+  assert.equal(plan.dependencyPolicy.definition.repair.selection, 'feature');
+  assert.equal(plan.dependencyPolicy.definition.version, '4.0.0');
   assert.match(plan.featureCatalog.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.dependencyPolicy)
@@ -259,6 +263,21 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
   assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
     /levels.*feature catalog/);
+});
+
+test('campaign repair plans are required and match the run mode', () => {
+  assert.throws(() => validateCampaignDefinition({
+    ...dependencyDefinition(), repair: undefined,
+  }), /repair must be an object/);
+  assert.throws(() => validateCampaignDefinition({
+    ...definition(), repair: { selection: 'feature', budget: { total: 1 } },
+  }), /sequential mode requires batch selection/);
+  assert.throws(() => validateCampaignDefinition({
+    ...definition(), repair: { selection: 'batch', budget: { perFeature: 1 } },
+  }), /sequential mode requires batch selection and one total budget/);
+  assert.throws(() => validateCampaignDefinition({
+    ...definition(), repair: { selection: 'batch', budget: { perDepth: { count: 1, carry: true } } },
+  }), /sequential mode requires batch selection and one total budget/);
 });
 
 test('dependency catalog references use the shared semantic-version parser', () => {
@@ -320,7 +339,7 @@ test('campaign graph version must match its recipe calibration', () => {
     return calibration;
   };
   assert.throws(() => compile(value, { calibrationResolver }),
-    /L1 calibration qualifies ecommerce\.questlines@1\.1\.0, not ecommerce\.questlines@2\.0\.1/);
+    /L1 calibration qualifies ecommerce\.questlines@1\.1\.0, not ecommerce\.questlines@2\.0\.2/);
 });
 
 test('sequential campaigns can use the same feature catalog without dependency gating', () => {
@@ -328,6 +347,7 @@ test('sequential campaigns can use the same feature catalog without dependency g
   assert(dependencyPlan.featureCatalog);
   const definition = dependencyDefinition();
   definition.mode = { id: 'sequential', version: '1.0.0' };
+  definition.repair = { selection: 'batch', budget: { total: 2 } };
   const plan = compile(definition);
   assert(plan.featureCatalog);
   assert.equal(plan.attempts[0]!.dependencyPolicy, undefined);
@@ -337,10 +357,10 @@ test('sequential campaigns can use the same feature catalog without dependency g
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
 });
 
-test('strike changes affect dependency policy but not the shared feature catalog', () => {
+test('repair changes affect dependency policy but not the shared feature catalog', () => {
   const first = compile(dependencyDefinition());
   const changed = dependencyDefinition();
-  changed.mode.strikes!.default = 5;
+  changed.repair.budget.perFeature = 5;
   const second = compile(changed);
   assert(first.featureCatalog && first.dependencyPolicy);
   assert(second.featureCatalog && second.dependencyPolicy);
@@ -408,11 +428,28 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
   }
 });
 
+test('campaign-bound feature budgets are not limited by the direct CLI repair cap', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-large-repair-budget-'));
+  try {
+    const definition = dependencyDefinition();
+    definition.repair.budget.perFeature = 100;
+    const plan = compile(definition);
+    const planPath = join(root, 'plan.json');
+    writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
+    const argv = attemptArgv(plan, plan.attempts[0]!, join(root, 'result'), 0, planPath);
+    const args = parseBenchArguments(['node', ...argv]);
+    assert.equal(args.repairs, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('sequential bench input uses the catalog for selection without live gating', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-catalog-'));
   try {
     const definition = dependencyDefinition();
     definition.mode = { id: 'sequential', version: '1.0.0' };
+    definition.repair = { selection: 'batch', budget: { total: 2 } };
     const plan = compile(definition);
     assert(plan.featureCatalog);
     const planPath = join(root, 'plan.json');
@@ -607,7 +644,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '3.2.0', strikes: { default: 3, levels: {} },
+    id: 'dependency', version: '4.0.0',
   } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',
@@ -650,12 +687,12 @@ test('frozen campaigns require exact runtime images', () => {
     } } };
   const frozen = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     agents: claudeAgent, pricing: claudePricing,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+    budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(frozen.state, 'frozen');
   const internal = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime: {
     ...runtime, releaseManifestSha256: null,
   }, agents: claudeAgent, pricing: claudePricing,
-  budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+  budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(internal.runtime.releaseManifestSha256, null);
 });
 
@@ -674,7 +711,7 @@ test('frozen campaigns accept a resolved qualification result for every selected
   const l1l2 = multiLevelDefinition([1, 2]);
   Object.assign(l1l2, { state: 'frozen', runtime,
     agents: claudeAgent, pricing: claudePricing,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
+    budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
   const compiled = compile(l1l2, qualifiedCompilerOptions);
   assert.equal(compiled.state, 'frozen');
   assert.deepEqual(compiled.bindings.map(binding => binding.level), [1, 2]);
@@ -686,7 +723,7 @@ test('frozen campaigns record a build image that has not been qualified', () => 
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
   const frozen = definition({ state: 'frozen', levels: [1], runtime,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
+    budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
   const compiled = compile(frozen, qualifiedCompilerOptions);
   const grading = campaignGradingQualification(compiled, qualifiedCompilerOptions);
   assert.equal(grading.levels[0]!.status, 'pending');
@@ -778,7 +815,7 @@ test('frozen manifest validation does not hard-code an agent provider', () => {
     buildImage: `registry.example/stack-bench-build@${QUALIFIED_BUILD_IMAGE}`,
     platform: 'linux/amd64' };
   const validated = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+    budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(validated.agents[0]!.adapter, 'deterministic');
   assert.equal(compile(validated, qualifiedCompilerOptions).agents[0]!.adapter, 'deterministic');
 });

@@ -17,12 +17,12 @@ import { inspectCampaign } from './campaign-runner.js';
 import { scheduleDependencyContinuation, writeCampaignState }
   from './campaign-scheduler.js';
 
-export interface CampaignDependencyStrikeGrant {
+export interface CampaignDependencyRepairGrant {
   attemptId: string;
   grantId: string;
   level: number;
   nodeIds: string[];
-  strikes: number;
+  repairs: number;
 }
 
 export interface GrantWorkspace {
@@ -31,7 +31,7 @@ export interface GrantWorkspace {
   created: boolean;
 }
 
-interface GrantContinuation extends Omit<CampaignDependencyStrikeGrant, 'attemptId'> {
+interface GrantContinuation extends Omit<CampaignDependencyRepairGrant, 'attemptId'> {
   stateSha256: string;
   resumeFrom: string;
   scheduledAt?: string;
@@ -75,7 +75,7 @@ interface GrantCampaignSnapshot {
 interface StoredProgressionState {
   state: {
     phase?: string;
-    grants: Array<Omit<CampaignDependencyStrikeGrant, 'attemptId'>>;
+    grants: Array<Omit<CampaignDependencyRepairGrant, 'attemptId'>>;
   };
   stateSha256: string;
 }
@@ -85,8 +85,7 @@ interface ProgressionContextOptions extends Record<string, unknown> {
 }
 
 interface ProgressionGrantOptions extends ProgressionContextOptions {
-  grant: Omit<CampaignDependencyStrikeGrant, 'attemptId'>;
-  checkpoint: { artifact: string };
+  grant: Omit<CampaignDependencyRepairGrant, 'attemptId'>;
   expectedStateSha256: string;
 }
 
@@ -136,12 +135,9 @@ function rejectSymlinks(path: string, label: string): void {
 }
 
 export function prepareGrantWorkspace(root: string, executionDirectory: string,
-  attemptId: string, grantId: string, level: number): GrantWorkspace {
+  attemptId: string, grantId: string): GrantWorkspace {
   if (!SAFE_ID.test(attemptId) || !SAFE_ID.test(grantId)) {
     throw new Error('grant workspace requires safe attempt and grant ids');
-  }
-  if (!Number.isSafeInteger(level) || level < 1) {
-    throw new Error('grant workspace requires a positive level');
   }
   const execution = lstatSync(executionDirectory);
   if (execution.isSymbolicLink() || !execution.isDirectory()) {
@@ -155,8 +151,7 @@ export function prepareGrantWorkspace(root: string, executionDirectory: string,
   }
   mkdirSync(dirname(target), { recursive: true });
   const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
-  const required = new Set(['source', ARTIFACT_FILE.progressionState, ARTIFACT_FILE.run, 'progression',
-    `level-l${level}-checkpoint.json`, `level-l${level}-source`]);
+  const required = new Set(['source', ARTIFACT_FILE.progressionState, ARTIFACT_FILE.run, 'progression']);
   for (const name of required) {
     const source = join(executionDirectory, name);
     if (!existsSync(source)) throw new Error(`completed campaign execution has no ${name}`);
@@ -178,44 +173,44 @@ export function prepareGrantWorkspace(root: string, executionDirectory: string,
   return { directory: target, relativePath, created: true };
 }
 
-function request(input: unknown): CampaignDependencyStrikeGrant {
+function request(input: unknown): CampaignDependencyRepairGrant {
   const value = structuredClone(input);
   if (!isRecord(value)) {
-    throw new Error('dependency strike grant must be an object');
+    throw new Error('dependency repair grant must be an object');
   }
-  const fields = new Set(['attemptId', 'grantId', 'level', 'nodeIds', 'strikes']);
+  const fields = new Set(['attemptId', 'grantId', 'level', 'nodeIds', 'repairs']);
   for (const key of Object.keys(value)) {
-    if (!fields.has(key)) throw new Error(`dependency strike grant.${key} is unknown`);
+    if (!fields.has(key)) throw new Error(`dependency repair grant.${key} is unknown`);
   }
   for (const field of ['attemptId', 'grantId']) {
     if (typeof value[field] !== 'string' || !SAFE_ID.test(value[field])) {
-      throw new Error(`dependency strike grant.${field} is required`);
+      throw new Error(`dependency repair grant.${field} is required`);
     }
   }
   if (typeof value.level !== 'number' || !Number.isSafeInteger(value.level) || value.level < 1) {
-    throw new Error('dependency strike grant.level must be a positive integer');
+    throw new Error('dependency repair grant.level must be a positive integer');
   }
-  if (typeof value.strikes !== 'number' || !Number.isSafeInteger(value.strikes)
-    || value.strikes < 1 || value.strikes > 20) {
-    throw new Error('dependency strike grant.strikes must be from 1 through 20');
+  if (typeof value.repairs !== 'number' || !Number.isSafeInteger(value.repairs)
+    || value.repairs < 1) {
+    throw new Error('dependency repair grant.repairs must be a positive safe integer');
   }
   if (!Array.isArray(value.nodeIds) || value.nodeIds.length === 0
     || value.nodeIds.some(nodeId => typeof nodeId !== 'string' || !FEATURE_ID.test(nodeId))) {
-    throw new Error('dependency strike grant.nodeIds must be a non-empty feature list');
+    throw new Error('dependency repair grant.nodeIds must be a non-empty feature list');
   }
   const nodeIds = [...new Set(value.nodeIds as string[])].sort();
   if (nodeIds.length !== (value.nodeIds as string[]).length) {
-    throw new Error('dependency strike grant.nodeIds cannot contain duplicates');
+    throw new Error('dependency repair grant.nodeIds cannot contain duplicates');
   }
   return { attemptId: value.attemptId as string, grantId: value.grantId as string,
-    level: value.level, nodeIds, strikes: value.strikes };
+    level: value.level, nodeIds, repairs: value.repairs };
 }
 
 function sameGrant(left: unknown, right: unknown): boolean {
   return canonicalDefinitionJson(left) === canonicalDefinitionJson(right);
 }
 
-export function grantCampaignDependencyStrikes(directory: string, input: unknown, {
+export function grantCampaignDependencyRepairs(directory: string, input: unknown, {
   inspect = inspectCampaign,
   readState = (path: string, options: ProgressionContextOptions): StoredProgressionState =>
     readProgressionState(path, options),
@@ -229,7 +224,7 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
 }: GrantOptions = {}): {
     attemptId: string;
     execution: string;
-    grant: Omit<CampaignDependencyStrikeGrant, 'attemptId'>;
+    grant: Omit<CampaignDependencyRepairGrant, 'attemptId'>;
     grantWorkspace: string;
     stateSha256: string;
     scheduled: true;
@@ -241,11 +236,11 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
   try {
     const campaign = inspect(root, { requireCurrentInputs: false });
     if (campaign.plan.contentSha256 !== initial.plan.contentSha256) {
-      throw new Error('campaign plan changed before the dependency strike grant');
+      throw new Error('campaign plan changed before the dependency repair grant');
     }
     if (campaign.plan.definition.mode?.id !== 'dependency'
       || !campaign.plan.featureCatalog || !campaign.plan.dependencyPolicy) {
-      throw new Error('strike grants require one stored dependency campaign');
+      throw new Error('repair grants require one stored dependency campaign');
     }
     const attempt = campaign.state.attempts.find(item => item.plan.id === desired.attemptId);
     if (!attempt) throw new Error(`campaign attempt ${desired.attemptId} does not exist`);
@@ -254,20 +249,19 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
     const marker = execution.continuation;
     if (marker !== undefined) {
       const markedGrant = { grantId: marker.grantId, level: marker.level,
-        nodeIds: marker.nodeIds, strikes: marker.strikes };
+        nodeIds: marker.nodeIds, repairs: marker.repairs };
       if (!sameGrant(markedGrant, {
         grantId: desired.grantId, level: desired.level,
-        nodeIds: desired.nodeIds, strikes: desired.strikes,
+        nodeIds: desired.nodeIds, repairs: desired.repairs,
       })) throw new Error(`campaign attempt ${desired.attemptId} has a different continuation`);
     } else if (campaign.state.status !== 'completed' || attempt.status !== 'completed'
       || execution.status !== 'completed') {
-      throw new Error('strike grants require one unextended completed campaign attempt');
+      throw new Error('repair grants require one unextended completed campaign attempt');
     }
 
     const executionDirectory = childPath(root, execution.output, 'campaign execution');
     const workspace = marker === undefined
-      ? prepareWorkspace(root, executionDirectory, desired.attemptId, desired.grantId,
-        desired.level)
+      ? prepareWorkspace(root, executionDirectory, desired.attemptId, desired.grantId)
       : {
           directory: childPath(root, marker.resumeFrom, 'grant workspace'),
           relativePath: marker.resumeFrom,
@@ -285,7 +279,7 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
       requireCurrentEngine: true,
     });
     const grant = { grantId: desired.grantId, level: desired.level,
-      nodeIds: desired.nodeIds, strikes: desired.strikes };
+      nodeIds: desired.nodeIds, repairs: desired.repairs };
     const priorGrant = stored.state.grants.find(item => item.grantId === desired.grantId);
     if (marker !== undefined) {
       if (!priorGrant || !sameGrant(priorGrant, grant)
@@ -298,14 +292,13 @@ export function grantCampaignDependencyStrikes(directory: string, input: unknown
     }
     let granted;
     if (stored.state.phase === 'terminal') {
-      if (priorGrant) throw new Error(`duplicate dependency strike grant ${desired.grantId}`);
+      if (priorGrant) throw new Error(`duplicate dependency repair grant ${desired.grantId}`);
       granted = grantState(statePath, {
         progression,
         featureCatalogIdentity: campaign.plan.featureCatalog.identity,
         dependencyPolicyIdentity: campaign.plan.dependencyPolicy.identity,
         owner,
         grant,
-        checkpoint: { artifact: `level-l${desired.level}-checkpoint.json` },
         expectedStateSha256: stored.stateSha256,
       });
     } else {

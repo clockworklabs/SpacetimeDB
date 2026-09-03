@@ -7,8 +7,9 @@ import test from 'node:test';
 import { emptyArtifactIdentities, writeRunJson } from '../src/evidence/artifacts.js';
 import { compareRepairBaseline, createRepairGrant, inspectRepairParent }
   from '../src/runtime/repair-grant.js';
-import type { RepairBudget, RepairOutcome, RepairSelection }
+import type { RepairOutcome, RepairSelection }
   from '../src/runtime/repair-grant.js';
+import type { RunRepairRecord } from '../src/evidence/benchmark-run.js';
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 
 interface FixtureSelection extends RepairSelection {
@@ -18,7 +19,7 @@ interface FixtureSelection extends RepairSelection {
 }
 
 interface FixtureOverrides {
-  repair?: RepairBudget;
+  repair?: RunRepairRecord;
   outcome?: RepairOutcome;
   selection?: FixtureSelection;
   identities?: unknown;
@@ -30,8 +31,8 @@ function parentFixture(root: string, overrides: FixtureOverrides = {}) {
   mkdirSync(app, { recursive: true });
   writeFileSync(join(app, 'app.js'), 'export const broken = true;\n');
   const id = 'parent-run';
-  const repair = overrides.repair ?? { status: 'budget-exhausted', budgetRounds: 3,
-    roundsUsed: 3, stopReason: 'budget-exhausted' };
+  const repair = overrides.repair ?? { status: 'budget-exhausted', limit: 3,
+    used: 3, stopReason: 'budget-exhausted' };
   const outcome = overrides.outcome ?? { kind: 'app_failure', phase: 'grading', reason: null,
     appFailures: ['feature/failure'], inconclusive: [], harnessFailures: [] };
   const selection = overrides.selection ?? { sha256: 'c'.repeat(64), scoredPoints: 2,
@@ -43,12 +44,12 @@ function parentFixture(root: string, overrides: FixtureOverrides = {}) {
   const checkpoint = preserveLevelCheckpoint({ appDir: app, outputDir: root, runId: id,
     identities, track: 'loop', backend: 'stub', level: 1, repair, outcome,
     selectionSha256: selection.sha256 });
-  const level = { level: 1, graded: true, score: 1, max: 2, fixRounds: repair.roundsUsed,
-    repair, outcome, selection, checkpoint, buildCostUsd: 2, fixCostUsd: 0.5, durationSec: 60 };
-  const downstream = { level: 2, graded: true, score: 4, max: 4, fixRounds: 0,
-    repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: 'not-needed' },
+  const level = { level: 1, graded: true, score: 1, max: 2, repairs: repair.used,
+    repair, outcome, selection, checkpoint, buildCostUsd: 2, repairCostUsd: 0.5, durationSec: 60 };
+  const downstream = { level: 2, graded: true, score: 4, max: 4, repairs: 0,
+    repair: { status: 'not-needed', limit: 3, used: 0, stopReason: 'not-needed' },
     outcome: { kind: 'passed', phase: 'grading', reason: null, appFailures: [], inconclusive: [],
-      harnessFailures: [] }, buildCostUsd: 99, fixCostUsd: 0, durationSec: 100 };
+      harnessFailures: [] }, buildCostUsd: 99, repairCostUsd: 0, durationSec: 100 };
   writeRunJson(join(root, 'run.json'), {
     id,
     kind: 'benchmark_run',
@@ -61,7 +62,7 @@ function parentFixture(root: string, overrides: FixtureOverrides = {}) {
     runtime: { buildImage: 'test-build-image', url: 'http://localhost:1234' },
     backendLease: { runIndex: 0 },
     levels: [level, downstream], contaminated: false,
-    totals: { score: 5, max: 6, fixRounds: repair.roundsUsed, costUsd: 101.5, durationSec: 160 },
+    totals: { score: 5, max: 6, repairs: repair.used, costUsd: 101.5, durationSec: 160 },
     outcome: { kind: outcome.kind, levels: { 1: outcome, 2: downstream.outcome } },
   });
   return { app, level, checkpoint };
@@ -71,12 +72,12 @@ test('a finite grant is derived only from the exact exhausted parent checkpoint'
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-grant-'));
   try {
     const fixture = parentFixture(root);
-    const resolved = createRepairGrant(root, { level: 1, rounds: 4 });
+    const resolved = createRepairGrant(root, { level: 1, repairs: 4 });
     assert.equal(resolved.parent.id, 'parent-run');
     assert.equal(resolved.sourcePath, join(root, fixture.checkpoint.directory));
-    assert.equal(resolved.grant.roundsGranted, 4);
-    assert.equal(resolved.grant.cumulativeRoundsBefore, 3);
-    assert.equal(resolved.grant.cumulativeRoundsAfter, 3);
+    assert.equal(resolved.grant.repairsGranted, 4);
+    assert.equal(resolved.grant.cumulativeRepairsBefore, 3);
+    assert.equal(resolved.grant.cumulativeRepairsAfter, 3);
     assert.equal(resolved.configuration.agentAdapter, 'deterministic');
     assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1@2.5.0');
     assert.equal(resolved.configuration.runIndex, 0);
@@ -92,11 +93,11 @@ test('a finite grant can continue an explicitly paused checkpoint', () => {
   try {
     for (const stopReason of ['repeated-findings', 'no-source-change']) {
       rmSync(root, { recursive: true, force: true });
-      parentFixture(root, { repair: { status: 'incomplete', budgetRounds: 10,
-        roundsUsed: 4, stopReason } });
-      const resolved = createRepairGrant(root, { level: 1, rounds: 3 });
-      assert.equal(resolved.grant.roundsGranted, 3);
-      assert.equal(resolved.grant.cumulativeRoundsBefore, 4);
+      parentFixture(root, { repair: { status: 'incomplete', limit: 10,
+        used: 4, stopReason } });
+      const resolved = createRepairGrant(root, { level: 1, repairs: 3 });
+      assert.equal(resolved.grant.repairsGranted, 3);
+      assert.equal(resolved.grant.cumulativeRepairsBefore, 4);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -104,8 +105,8 @@ test('a finite grant can continue an explicitly paused checkpoint', () => {
 test('a no-source-change pause can occur on the final budgeted round', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-no-change-'));
   try {
-    parentFixture(root, { repair: { status: 'incomplete', budgetRounds: 3,
-      roundsUsed: 3, stopReason: 'no-source-change' } });
+    parentFixture(root, { repair: { status: 'incomplete', limit: 3,
+      used: 3, stopReason: 'no-source-change' } });
     assert.doesNotThrow(() => inspectRepairParent(root, 1));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -119,8 +120,8 @@ test('repair grants reject incomplete evidence, remaining budget, and changed so
       appFailures: ['failure'], inconclusive: ['missing'], harnessFailures: [] } });
     assert.throws(() => inspectRepairParent(incompleteRoot, 1), /complete conclusive measurement/);
 
-    parentFixture(remainingRoot, { repair: { status: 'incomplete', budgetRounds: 3,
-      roundsUsed: 2, stopReason: 'agent-session-failure' } });
+    parentFixture(remainingRoot, { repair: { status: 'incomplete', limit: 3,
+      used: 2, stopReason: 'agent-session-failure' } });
     assert.throws(() => inspectRepairParent(remainingRoot, 1), /did not exhaust or pause/);
 
     const changed = parentFixture(changedRoot);
@@ -138,17 +139,17 @@ test('generic repair grants reject dependency campaigns', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-dependency-'));
   try {
     parentFixture(root, { mode: { id: 'dependency', version: '3.2.0' } });
-    assert.throws(() => createRepairGrant(root, { level: 1, rounds: 2 }),
+    assert.throws(() => createRepairGrant(root, { level: 1, repairs: 2 }),
       /do not support dependency campaigns/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('repair grant rounds are finite and explicitly bounded', () => {
+test('repair grants are finite and explicitly bounded', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-rounds-'));
   try {
     parentFixture(root);
-    for (const rounds of [0, 21, 1.5]) {
-      assert.throws(() => createRepairGrant(root, { level: 1, rounds }), /integer from 1 through 20/);
+    for (const repairs of [0, 1.5]) {
+      assert.throws(() => createRepairGrant(root, { level: 1, repairs }), /positive safe integer/);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

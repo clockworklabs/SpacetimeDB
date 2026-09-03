@@ -1,13 +1,13 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "kind": "campaign-manifest",
   "id": "dependency-model-free-proof",
   "version": "1.0.0",
   "state": "draft",
   "title": "Internal dependency campaign proof",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "3.2.0", "workSelection": "progressive",
-    "strikes": { "default": 3, "levels": {} } },
+  "mode": { "id": "dependency", "version": "4.0.0", "workSelection": "progressive" },
+  "repair": { "selection": "feature", "budget": { "total": 2, "perFeature": 1 } },
   "selection": {
     "levels": [
       {
@@ -93,7 +93,6 @@
     "seed": "internal-model-free-proof"
   },
   "budgets": {
-    "fixRounds": 2,
     "attemptTimeoutMinutes": 10,
     "maxCostUsdPerAttempt": null
   },

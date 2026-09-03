@@ -126,7 +126,7 @@ export function preserveLevelCheckpoint({ appDir, outputDir, runId, identities,
     timestamps: { startedAt: now, completedAt: now },
     identities,
     payload: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       track,
       backend,
       level,

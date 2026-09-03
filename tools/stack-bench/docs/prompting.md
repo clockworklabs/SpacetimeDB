@@ -17,7 +17,7 @@ Each request is assembled from these owners:
 | API reference | Supplies selected SDK material, including SpacetimeDB skills | Guidance profile |
 | Starting data | Gives the fixed catalog for a new app | Fixture |
 | Application interface | Names the controls or operations needed for reliable use | Feature contracts |
-| Repair report | Describes conclusive application failures from the last grade | Repair policy |
+| Repair report | Describes conclusive application failures from the last grade | Condition repair profile |
 
 The recipe and selected packs own the text. The prompt builder orders that text
 and adds the small controller contract, such as the application directory,
@@ -55,7 +55,7 @@ The web application must listen on 0.0.0.0.
 This is an abridged example. The exact request is composed from versioned files
 and bound to the campaign by hashes.
 
-The coding agent does not receive:
+The new-build request does not include:
 
 - grader source or scenario files;
 - check names, point values, expected scores, or comparison results;

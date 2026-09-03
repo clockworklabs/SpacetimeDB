@@ -31,10 +31,8 @@ interface RunOutcome {
   appFailures?: Array<string | CheckFailure>;
 }
 
-interface RunStrikes {
+interface RunNodeRepairs {
   used?: number;
-  budget?: number;
-  granted?: number;
 }
 
 interface RunLevel {
@@ -44,9 +42,9 @@ interface RunLevel {
   graded?: boolean;
   durationSec?: number | null;
   buildCostUsd?: number | null;
-  fixCostUsd?: number | null;
+  repairCostUsd?: number | null;
   firstBuild?: Score & { outcome?: RunOutcome; missed?: Array<string | CheckFailure> };
-  repair?: { roundsUsed?: number; status?: string | null; nodeStrikes?: RunStrikes[] };
+  repair?: { used?: number; status?: string | null; nodeRepairs?: RunNodeRepairs[] };
   regression?: { score?: number | null; max?: number | null } | null;
   resumedRepair?: unknown;
   outcome?: RunOutcome;
@@ -69,7 +67,7 @@ export interface CampaignRunLevelResult {
   firstScore: Score | null;
   firstAbort: { phase: string; reason: string | null } | null;
   finalScore: Score | null;
-  roundsUsed: number;
+  used: number;
   repairStatus: string | null;
   outcome: string | null;
   durationSec: number | null;
@@ -77,7 +75,7 @@ export interface CampaignRunLevelResult {
   failures: string[];
   // Checks that passed and then failed: the regression suite's missing points.
   regressions: number;
-  strikes: { used: number; budget: number } | null;
+  repairs: { used: number } | null;
   continued: boolean;
 }
 
@@ -126,18 +124,16 @@ function readCampaignRunResult(path: string, plan: CompiledCampaignPlan,
           ? { score: level.firstBuild.score, max: level.firstBuild.max } : null,
         firstAbort: firstGradeAbort(level.firstBuild),
         finalScore: level.graded ? { score: level.score, max: level.max } : null,
-        roundsUsed: level.repair?.roundsUsed ?? 0,
+        used: level.repair?.used ?? 0,
         repairStatus: level.repair?.status ?? null,
         outcome: level.outcome?.kind ?? null,
         durationSec: level.durationSec ?? null,
-        costUsd: level.buildCostUsd == null && level.fixCostUsd == null
-          ? null : (level.buildCostUsd ?? 0) + (level.fixCostUsd ?? 0),
+        costUsd: level.buildCostUsd == null && level.repairCostUsd == null
+          ? null : (level.buildCostUsd ?? 0) + (level.repairCostUsd ?? 0),
         regressions: level.regression
           ? Math.max(0, (level.regression.max ?? 0) - (level.regression.score ?? 0)) : 0,
-        strikes: level.repair?.nodeStrikes
-          ? level.repair.nodeStrikes.reduce<{ used: number; budget: number }>((total, node) => ({
-            used: total.used + (node.used ?? 0), budget: total.budget + (node.budget ?? 0) }),
-          { used: 0, budget: 0 })
+        repairs: level.repair?.nodeRepairs
+          ? { used: level.repair.nodeRepairs.reduce((total, node) => total + (node.used ?? 0), 0) }
           : null,
         continued: level.resumedRepair !== undefined && level.resumedRepair !== null,
         failures: (level.outcome?.appFailures
@@ -180,7 +176,7 @@ export interface DependencyProgressNode {
   dependencies: string[];
   blockedBy: string[];
   status: string;
-  strikes: { budget: number; used: number; remaining: number };
+  repairs: { used: number };
   exhaustionReason: unknown;
   checks: { passed: number; failed: number; total: number };
 }
@@ -252,8 +248,8 @@ function dependencyHistory(state: DependencyState): {
   let replay = progressionEngine.initialize(state.definition);
   let repairAttempts = 0;
   for (const event of state.events as DependencyEvent[]) {
-    if (event.type === 'strikes-granted') {
-      replay = progressionEngine.grantStrikes(replay, event.grant);
+    if (event.type === 'repairs-granted') {
+      replay = progressionEngine.grantRepairs(replay, event.grant);
       continue;
     }
     const action = progressionEngine.nextAction(replay);
@@ -329,7 +325,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
           return parent?.status === 'failed' || parent?.status === 'blocked';
         }),
         status: node.status,
-        strikes: { ...node.strikes, remaining: node.strikes.budget - node.strikes.used },
+        repairs: { ...node.repairs },
         exhaustionReason: node.exhaustionReason,
         checks: {
           passed: checks.filter(value => value === 'pass').length,
@@ -339,7 +335,7 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
       };
     });
     const action = progressionEngine.nextAction(state);
-    const strikes = action.type === 'terminal' ? null : action.strikes;
+    const repair = action.type === 'terminal' ? null : action.repair;
     const prompt = action.type === 'terminal' ? null : action.prompt as DependencyPromptSelection;
     const currentIds = new Set(prompt?.nodeIds ?? []);
     const activeDepths = [...new Set(nodes.filter(node => currentIds.has(node.id))
@@ -349,8 +345,8 @@ export function dependencyProgress(plan: CompiledCampaignPlan, attempt: Campaign
       activeDepths,
       attempts: {
         total: state.attempts.length,
-        maxRemaining: strikes?.maxRemaining ?? 0,
-        features: strikes?.nodes ?? [],
+        maxRemaining: repair?.remaining ?? 0,
+        features: repair?.nodeIds.map(nodeId => ({ nodeId })) ?? [],
       },
       work: {
         current: nodes.filter(node => currentIds.has(node.id)),

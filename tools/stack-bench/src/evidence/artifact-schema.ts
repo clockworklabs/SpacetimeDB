@@ -126,7 +126,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   progression_state: new Set(['schemaVersion', 'owner', 'featureCatalog', 'dependencyPolicy',
     'events', 'resume', 'stateSha256']),
   repair_continuation: new Set([...BENCHMARK_RUN_PAYLOAD_FIELDS, 'continuation']),
-  repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'roundsGranted',
+  repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'repairsGranted',
     'exitCode', 'signal', 'timedOut', 'streams']),
   reference_build: new Set(['isolation', 'image', 'fixtures', 'ok']),
   reference_qualification: new Set(['fixture', 'fixtureSha256', 'requiredRepetitions', 'isolation',
@@ -360,7 +360,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
   }
   if (kind === 'progression_state') {
-    if (payload.schemaVersion !== 3) fail('progression_state payload.schemaVersion must be 3');
+    if (payload.schemaVersion !== 4) fail('progression_state payload.schemaVersion must be 4');
     objectWhenPresent('owner');
     objectWhenPresent('featureCatalog');
     objectWhenPresent('dependencyPolicy');
@@ -397,39 +397,39 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     const continuation = objectWhenPresent('continuation');
     if (continuation === undefined) fail('repair_continuation payload.continuation is required');
     const fields = new Set(['schemaVersion', 'rootRunId', 'parentRunId', 'level', 'grantIndex',
-      'roundsGranted', 'cumulativeRoundsBefore', 'cumulativeRoundsAfter', 'parentCheckpointSha256',
+      'repairsGranted', 'cumulativeRepairsBefore', 'cumulativeRepairsAfter', 'parentCheckpointSha256',
       'baseline', 'resumeSetup', 'downstreamLevelsToRerun', 'cumulativeCostBeforeUsd',
       'cumulativeCostAfterUsd', 'cumulativeDurationBeforeSec', 'cumulativeDurationAfterSec']);
     for (const key of Object.keys(continuation)) {
       if (!fields.has(key)) fail(`repair_continuation payload.continuation.${key} is unknown`);
     }
-    if (continuation.schemaVersion !== 1) {
-      fail('repair_continuation payload.continuation.schemaVersion must be 1');
+    if (continuation.schemaVersion !== 2) {
+      fail('repair_continuation payload.continuation.schemaVersion must be 2');
     }
     for (const field of ['rootRunId', 'parentRunId']) {
       if (typeof continuation[field] !== 'string' || !continuation[field]) {
         fail(`repair_continuation payload.continuation.${field} is required`);
       }
     }
-    for (const field of ['level', 'grantIndex', 'roundsGranted', 'cumulativeRoundsBefore',
-      'cumulativeRoundsAfter']) {
+    for (const field of ['level', 'grantIndex', 'repairsGranted', 'cumulativeRepairsBefore',
+      'cumulativeRepairsAfter']) {
       if (!isSafeInteger(continuation[field]) || continuation[field] < 0) {
         fail(`repair_continuation payload.continuation.${field} must be a non-negative integer`);
       }
     }
     const level = continuation.level;
     const grantIndex = continuation.grantIndex;
-    const roundsGranted = continuation.roundsGranted;
-    const cumulativeRoundsBefore = continuation.cumulativeRoundsBefore;
-    const cumulativeRoundsAfter = continuation.cumulativeRoundsAfter;
-    if (!isSafeInteger(level) || !isSafeInteger(grantIndex) || !isSafeInteger(roundsGranted)
-      || !isSafeInteger(cumulativeRoundsBefore) || !isSafeInteger(cumulativeRoundsAfter)) {
-      fail('repair_continuation payload.continuation round accounting is invalid');
+    const repairsGranted = continuation.repairsGranted;
+    const cumulativeRepairsBefore = continuation.cumulativeRepairsBefore;
+    const cumulativeRepairsAfter = continuation.cumulativeRepairsAfter;
+    if (!isSafeInteger(level) || !isSafeInteger(grantIndex) || !isSafeInteger(repairsGranted)
+      || !isSafeInteger(cumulativeRepairsBefore) || !isSafeInteger(cumulativeRepairsAfter)) {
+      fail('repair_continuation payload.continuation repair accounting is invalid');
     }
-    if (level < 1 || grantIndex < 1 || roundsGranted < 1
-      || cumulativeRoundsAfter < cumulativeRoundsBefore
-      || cumulativeRoundsAfter > cumulativeRoundsBefore + roundsGranted) {
-      fail('repair_continuation payload.continuation round accounting is invalid');
+    if (level < 1 || grantIndex < 1 || repairsGranted < 1
+      || cumulativeRepairsAfter < cumulativeRepairsBefore
+      || cumulativeRepairsAfter > cumulativeRepairsBefore + repairsGranted) {
+      fail('repair_continuation payload.continuation repair accounting is invalid');
     }
     if (!isHash(continuation.parentCheckpointSha256)) {
       fail('repair_continuation payload.continuation.parentCheckpointSha256 is invalid');
@@ -533,11 +533,11 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
   }
   if (kind === 'repair_process') {
-    if (payload.schemaVersion !== 1) fail('repair_process payload.schemaVersion must be 1');
+    if (payload.schemaVersion !== 2) fail('repair_process payload.schemaVersion must be 2');
     if (typeof payload.parentRunId !== 'string' || !payload.parentRunId) {
       fail('repair_process payload.parentRunId is required');
     }
-    for (const field of ['level', 'roundsGranted']) {
+    for (const field of ['level', 'repairsGranted']) {
       if (!isSafeInteger(payload[field]) || payload[field] < 1) {
         fail(`repair_process payload.${field} must be a positive integer`);
       }
@@ -728,7 +728,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
   }
   if (kind === 'source_checkpoint') {
-    if (payload.schemaVersion !== 2) fail('source_checkpoint payload.schemaVersion must be 2');
+    if (payload.schemaVersion !== 3) fail('source_checkpoint payload.schemaVersion must be 3');
     for (const field of ['track', 'backend']) {
       if (typeof payload[field] !== 'string' || !payload[field]) {
         fail(`source_checkpoint payload.${field} must be a non-empty string`);
@@ -754,14 +754,14 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     }
     const repair = objectWhenPresent('repair');
     if (repair === undefined) fail('source_checkpoint payload.repair is required');
-    const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stallLimitRounds',
-      'stopReason', 'strikeScope', 'nodeStrikes']);
+    const repairFields = new Set(['status', 'limit', 'used', 'stallLimitRounds',
+      'stopReason', 'nodeRepairs']);
     for (const key of Object.keys(repair)) {
       if (!repairFields.has(key)) fail(`source_checkpoint payload.repair.${key} is unknown`);
     }
     if (!['ungraded', 'not-needed', 'corrected', 'budget-exhausted', 'incomplete']
       .includes(String(repair.status))) fail('source_checkpoint payload.repair.status is invalid');
-    for (const field of ['budgetRounds', 'roundsUsed']) {
+    for (const field of ['limit', 'used']) {
       if (!isSafeInteger(repair[field]) || repair[field] < 0) {
         fail(`source_checkpoint payload.repair.${field} must be a non-negative integer`);
       }
@@ -770,39 +770,31 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
       && (!isSafeInteger(repair.stallLimitRounds) || repair.stallLimitRounds < 0)) {
       fail('source_checkpoint payload.repair.stallLimitRounds must be a non-negative integer');
     }
-    if (!isSafeInteger(repair.roundsUsed) || !isSafeInteger(repair.budgetRounds)) {
-      fail('source_checkpoint payload.repair rounds must be non-negative integers');
+    if (!isSafeInteger(repair.used) || !isSafeInteger(repair.limit)) {
+      fail('source_checkpoint payload.repair counts must be non-negative integers');
     }
-    if (repair.roundsUsed > repair.budgetRounds) {
-      fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');
+    if (repair.used > repair.limit) {
+      fail('source_checkpoint payload.repair.used exceeds its budget');
     }
-    if (repair.strikeScope !== undefined || repair.nodeStrikes !== undefined) {
-      if (!['feature', 'depth', 'banked'].includes(String(repair.strikeScope))
-        || !Array.isArray(repair.nodeStrikes)) {
-        fail('source_checkpoint payload.repair feature strikes are invalid');
+    if (repair.nodeRepairs !== undefined) {
+      if (!Array.isArray(repair.nodeRepairs)) {
+        fail('source_checkpoint payload.repair node repairs are invalid');
       }
       const ids = new Set<string>();
       let prior: string | null = null;
-      for (const [index, counter] of repair.nodeStrikes.entries()) {
-        if (!isObject(counter)) fail(`source_checkpoint payload.repair.nodeStrikes[${index}] is invalid`);
-        const fields = new Set(['nodeId', 'initialBudget', 'granted', 'budget', 'used',
-          'remaining', 'exhaustionReason']);
+      for (const [index, counter] of repair.nodeRepairs.entries()) {
+        if (!isObject(counter)) fail(`source_checkpoint payload.repair.nodeRepairs[${index}] is invalid`);
+        const fields = new Set(['nodeId', 'used', 'exhaustionReason']);
         for (const key of Object.keys(counter)) {
-          if (!fields.has(key)) fail(`source_checkpoint payload.repair.nodeStrikes[${index}].${key} is unknown`);
+          if (!fields.has(key)) fail(`source_checkpoint payload.repair.nodeRepairs[${index}].${key} is unknown`);
         }
         if (typeof counter.nodeId !== 'string' || !counter.nodeId || ids.has(counter.nodeId)
           || (prior !== null && prior.localeCompare(counter.nodeId) >= 0)
-          || !isSafeInteger(counter.initialBudget) || counter.initialBudget < 1
-          || !isSafeInteger(counter.granted) || counter.granted < 0
-          || !isSafeInteger(counter.budget) || counter.budget < 1
-          || counter.budget !== counter.initialBudget + counter.granted
           || !isSafeInteger(counter.used) || counter.used < 0
-          || counter.used > counter.budget
-          || counter.remaining !== counter.budget - counter.used
           || (counter.exhaustionReason !== null
             && (typeof counter.exhaustionReason !== 'string'
-              || !['strikes-exhausted', 'repeated-findings'].includes(counter.exhaustionReason)))) {
-          fail(`source_checkpoint payload.repair.nodeStrikes[${index}] is invalid`);
+              || !['repair-budget-exhausted', 'repeated-findings'].includes(counter.exhaustionReason)))) {
+          fail(`source_checkpoint payload.repair.nodeRepairs[${index}] is invalid`);
         }
         ids.add(counter.nodeId);
         prior = counter.nodeId;

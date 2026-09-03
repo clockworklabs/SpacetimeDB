@@ -26,12 +26,12 @@ test('campaign CLI separates read-only, execution, and status commands', () => {
   assert.equal(parseCampaignArgs(argv('inspect', './results')).command, 'inspect');
   assert.equal(parseCampaignArgs(argv('report', './results')).command, 'report');
   assert.equal(parseCampaignArgs(argv('audit', './results')).command, 'audit');
-  assert.deepEqual(parseCampaignArgs(argv('grant-strikes', './results',
+  assert.deepEqual(parseCampaignArgs(argv('grant-repairs', './results',
     '--attempt', 'campaign-r1', '--grant-id', 'grant-1', '--level', '3',
-    '--feature', 'orders', '--feature', 'inventory', '--strikes', '2')), {
-    command: 'grant-strikes', directory: resolve('./results'),
+    '--feature', 'orders', '--feature', 'inventory', '--repairs', '2')), {
+    command: 'grant-repairs', directory: resolve('./results'),
     attemptId: 'campaign-r1', grantId: 'grant-1', level: 3,
-    nodeIds: ['orders', 'inventory'], strikes: 2,
+    nodeIds: ['orders', 'inventory'], repairs: 2,
   });
   assert.deepEqual(parseCampaignArgs(argv('extend', './depth-3.json', '--from', './depth-2',
     '--depth', '2', '--out', './depth-3')), {
@@ -44,8 +44,8 @@ test('campaign CLI separates read-only, execution, and status commands', () => {
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json', '--out', './a', '--out', './b')),
     /usage/);
   assert.throws(() => parseCampaignArgs(argv('status', './results', '--json')), /usage/);
-  assert.throws(() => parseCampaignArgs(argv('grant-strikes', './results',
-    '--attempt', 'campaign-r1', '--level', '3', '--feature', 'orders', '--strikes', '2')),
+  assert.throws(() => parseCampaignArgs(argv('grant-repairs', './results',
+    '--attempt', 'campaign-r1', '--level', '3', '--feature', 'orders', '--repairs', '2')),
   /requires --attempt, --grant-id/);
 });
 

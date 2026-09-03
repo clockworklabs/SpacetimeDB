@@ -3,15 +3,13 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import type { RecipeBinding } from '../composition/recipe-release.js';
-import { ARTIFACT_FILE, artifactPayload, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
+import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
 import type { GradeBundlePayload, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
-import { classifyBundle } from '../evidence/outcomes.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
 import { hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.js';
-import { preserveLevelCheckpoint } from '../runtime/source-checkpoint.js';
 import { replayDependencyMode } from './dependency-mode.js';
 import type { DependencyScore } from './dependency-score.js';
 import { gradeBundleToProgressionResult } from './grade-bundle-result.js';
@@ -56,6 +54,7 @@ interface CodingFailureResult {
   outcome: 'inconclusive';
   category: 'provider_failure' | 'harness_failure' | 'interrupted' | 'inconclusive_evidence';
   reason: string;
+  repair?: { nodeIds: string[]; depth: number; grantId?: string };
 }
 
 interface CodingFailure {
@@ -67,9 +66,9 @@ interface RecordOptions {
   selected: ProgressionRecipeAction | null;
   bundle: unknown;
   level: number;
-  repair: unknown;
   failure?: CodingFailure | null;
   repairRegression?: ProgressionRepairRegression | null;
+  completedRepair?: boolean;
 }
 
 export interface LiveProgressionStatus {
@@ -179,7 +178,7 @@ export function createLiveProgressionExecution(
   const featureCatalogIdentity = options.featureCatalogIdentity;
   const dependencyPolicyIdentity = options.dependencyPolicyIdentity;
   const owner = workspaceOwner(options.owner);
-  const { statePath, runId, outputDir, appDir, track, backend, identities,
+  const { statePath, runId, outputDir, appDir,
     recipeBindings, getRunArtifact, onState } = options;
   const resumeFrom = options.resumeFrom ?? null;
   const stateRoot = dirname(resolve(statePath));
@@ -251,7 +250,7 @@ export function createLiveProgressionExecution(
       { expectedKind: 'benchmark_run' });
     const runOwner = artifact.payload.progressionOwner;
     const lastEvent = stored.state.events.at(-1);
-    const runState = lastEvent?.type === 'strikes-granted'
+    const runState = lastEvent?.type === 'repairs-granted'
       ? replayDependencyMode(stored.state.definition, stored.state.events.slice(0, -1))
       : stored.state;
     const engine = artifact.identities.engine;
@@ -386,10 +385,15 @@ export function createLiveProgressionExecution(
     const selected = resolveProgressionRecipeAction(binding, activeState);
     return selected;
   };
-  const record = ({ selected, bundle, level, repair, failure = null, repairRegression = null }:
+  const record = ({ selected, bundle, failure = null, repairRegression = null,
+    completedRepair = false }:
   RecordOptions): ProgressionAction | null => {
     if (!selected || !('grader' in selected)) return null;
     const activeState = currentState();
+    const action = progressionEngine.nextAction(activeState);
+    if (completedRepair && action.type !== 'repair') {
+      throw new Error('completed repair does not match the current progression action');
+    }
     const sequence = activeState.attempts.length + 1;
     const evidenceDirectory = join(outputDir, 'progression',
       `attempt-${String(sequence).padStart(3, '0')}`);
@@ -401,9 +405,10 @@ export function createLiveProgressionExecution(
       });
     }
 
-    let result: (ProgressionGradeResult & {
+    let result: (ProgressionGradeResult | CodingFailureResult) & {
       repairRegression?: ProgressionRepairRegression;
-    }) | CodingFailureResult;
+      completedRepair?: true;
+    };
     if (failure) {
       const category = failureCategory(failure.kind) ? failure.kind : 'harness_failure';
       result = {
@@ -446,20 +451,9 @@ export function createLiveProgressionExecution(
       result = repairRegression && gradedResult.outcome === 'conclusive'
         ? { ...gradedResult, repairRegression: structuredClone(repairRegression) }
         : gradedResult;
-      if (result.outcome === 'conclusive') {
-        preserveLevelCheckpoint({
-          appDir,
-          outputDir,
-          runId,
-          identities,
-          track,
-          backend,
-          level,
-          repair,
-          outcome: classifyBundle(artifactPayload(persistedBundle)),
-          selectionSha256: selected.grader.selectionSha256,
-        });
-      }
+    }
+    if (completedRepair && action.type === 'repair') {
+      result = { ...result, completedRepair: true };
     }
     state = progressionEngine.recordResult(activeState, result);
     persist({ captureSource: result.outcome === 'conclusive' });

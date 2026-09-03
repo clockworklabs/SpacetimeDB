@@ -54,7 +54,7 @@ import { mutationControlArgv, mutationControlTimeoutMs, pristineMutationBaseline
   from '../src/evidence/mutation-control.js';
 import type { MutationControlArgs } from '../src/evidence/mutation-control.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
-import { dependencyRepairBudget, dependencyStrikeRecords }
+import { dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
 import { DEPENDENCY_MODE_VERSION } from '../src/progression/dependency-definition.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
@@ -77,7 +77,7 @@ import type { ValidatedAgentResult } from '../src/agents/agent-result-contract.j
 import type { Track } from '../src/composition/tracks.js';
 import type { RunOutcome } from '../src/evidence/outcomes.js';
 import type { GradeBundlePayload, BenchmarkRunRecord, RunLevelRecord,
-  RunContinuation, RunTotals } from '../src/evidence/benchmark-run.js';
+  RunContinuation, RunSessionRecord, RunTotals } from '../src/evidence/benchmark-run.js';
 import { addCostUsd, finalizeRunTotals, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
@@ -231,7 +231,7 @@ function repairReportArgs(value: ProgressionRecipeAction | null): string[] {
 
 function repairOwnerNodeIds(value: ProgressionRecipeAction | null): string[] {
   if (!value || !isProgressionWorkRecipeAction(value) || value.action.type !== 'repair') return [];
-  return value.action.strikes.nodes.map(node => node.nodeId).sort();
+  return [...value.action.repair.nodeIds].sort();
 }
 
 function savedRepairRegression(state: ProgressionState | null,
@@ -267,6 +267,89 @@ function repairOutcome(outcome: RunOutcome): RepairOutcome {
 function progressionFailure(outcome: RunOutcome): ProgressionFailure {
   return { kind: outcome.kind, ...(outcome.reason === null || outcome.reason === undefined
     ? {} : { reason: outcome.reason }) };
+}
+
+function featureCheckKeys(selected: ProgressionWorkRecipeAction,
+  state: ProgressionState): string[] {
+  if (!object(selected.action.prompt) || !Array.isArray(selected.action.prompt.nodeIds)) {
+    throw new Error('feature action has no prompt nodes');
+  }
+  const selectedNodes = new Set(selected.action.prompt.nodeIds);
+  return state.definition.nodes
+    .filter(node => selectedNodes.has(node.id))
+    .flatMap(node => node.gradingChecks
+      .filter(check => check.role === 'feature')
+      .map(check => check.id));
+}
+
+function bundlePassedChecks(bundle: GradeBundlePayload | null): Set<string> {
+  return new Set(Object.values(bundle?.suites ?? {}).flatMap(suite =>
+    (suite?.features ?? []).flatMap(feature =>
+      (feature.criteria ?? []).flatMap(criterion =>
+        typeof criterion.stableKey === 'string'
+          && evidencePassed(criterionEvidence(criterion)) ? [criterion.stableKey] : []))));
+}
+
+function featureCandidateAccepted(selected: ProgressionWorkRecipeAction,
+  state: ProgressionState, candidate: GradeBundlePayload | null): boolean {
+  if (!levelGradeIsUsable(classifyBundle(candidate))) return false;
+  const passed = bundlePassedChecks(candidate);
+  if (!featureCheckKeys(selected, state).every(check => passed.has(check))) return false;
+  return state.definition.nodes.every(node => node.gradingChecks.every(check =>
+    state.nodes[node.id]?.checks[check.id] !== 'pass' || passed.has(check.id)));
+}
+
+function featureActionNeedsCoding(selected: ProgressionWorkRecipeAction,
+  state: ProgressionState): boolean {
+  if (selected.action.type === 'repair') return true;
+  if (!object(selected.action.prompt) || !Array.isArray(selected.action.prompt.nodeIds)) {
+    throw new Error('feature action has no prompt nodes');
+  }
+  return selected.action.prompt.nodeIds.some(nodeId => {
+    const node = state.nodes[String(nodeId)];
+    return node?.status === 'active'
+      && Object.values(node.checks).every(outcome => outcome === null);
+  });
+}
+
+function mergeFeatureLevelRecord(previous: RunLevelRecord | null,
+  current: RunLevelRecord): RunLevelRecord {
+  if (!previous) return current;
+  const buildSessions: RunSessionRecord[] = [
+    ...(previous.buildSessions ?? []),
+    ...(current.buildSessions ?? []),
+  ];
+  const repairSessions = [...(previous.repairSessions ?? []), ...(current.repairSessions ?? [])];
+  const sessionTotals = summarizeSessions([...buildSessions, ...repairSessions]);
+  const repairs = (previous.repairs ?? 0) + (current.repairs ?? 0);
+  const repair = current.repair ? {
+    ...current.repair,
+    limit: Math.max(previous.repair?.limit ?? 0,
+      (previous.repairs ?? 0) + current.repair.limit),
+    used: repairs,
+  } : previous.repair;
+  const merged: RunLevelRecord = {
+    ...previous,
+    ...current,
+    buildSessions,
+    buildCostUsd: addCostUsd(previous.buildCostUsd, current.buildCostUsd),
+    repairSessions,
+    repairCostUsd: addCostUsd(previous.repairCostUsd, current.repairCostUsd),
+    repairHistory: [...(previous.repairHistory ?? []), ...(current.repairHistory ?? [])],
+    repairs,
+    repair,
+    sessionTotals,
+    tokens: sessionTotals.tokens,
+    usage: sessionTotals.usage,
+    turns: sessionTotals.turns,
+    promptBytes: sessionTotals.promptBytes,
+    tokensPerTurn: sessionTotals.turns
+      ? Math.round(sessionTotals.tokens / sessionTotals.turns) : null,
+    thinking: sessionTotals.thinking,
+    costUsd: addCostUsd(previous.costUsd, current.costUsd),
+    durationSec: (previous.durationSec ?? 0) + (current.durationSec ?? 0),
+  };
+  return merged;
 }
 
 function mutationControlArgs(args: BenchArgs): MutationControlArgs {
@@ -611,7 +694,7 @@ async function main() {
       throw new Error('--repair-from requires a positive --repair-level');
     }
     repairGrant = createRepairGrant(args.repairFrom,
-      { level: repairLevel, rounds: args.fixRounds });
+      { level: repairLevel, repairs: args.repairs });
     const config = repairGrant.configuration;
     if (config.buildImage && process.env.STACK_BENCH_IMAGE
       && config.buildImage !== process.env.STACK_BENCH_IMAGE) {
@@ -1133,21 +1216,36 @@ async function main() {
 
   const progressionBundles = new Map<number, GradeBundlePayload>();
   const recordProgressionGrade = (input: Parameters<NonNullable<typeof progressionExecution>['record']>[0]) => {
-    if (input.bundle && input.selected && isProgressionWorkRecipeAction(input.selected)) {
+    const next = progressionExecution?.record(input) ?? null;
+    const last = progressionExecution?.state?.attempts.at(-1) ?? null;
+    if (input.bundle && input.selected && isProgressionWorkRecipeAction(input.selected)
+      && last?.outcome === 'conclusive') {
       progressionBundles.set(input.selected.action.level, input.bundle as GradeBundlePayload);
     }
-    return progressionExecution?.record(input) ?? null;
+    return next;
+  };
+
+  const appendLevelRecord = (record: RunLevelRecord): void => {
+    if (args.dependencyPolicy?.definition.workSelection !== 'feature') {
+      run.levels.push(record);
+      return;
+    }
+    const index = run.levels.findIndex(candidate => candidate.level === record.level);
+    if (index < 0) run.levels.push(record);
+    else run.levels[index] = mergeFeatureLevelRecord(run.levels[index] ?? null, record);
   };
 
   let runCostComplete = true;
 
-  const runAgentForLevel = async (mode: AgentMode, level: number): Promise<ValidatedAgentResult> => {
+  const runAgentForLevel = async (mode: AgentMode, level: number,
+    onFailure?: () => Promise<void>): Promise<ValidatedAgentResult> => {
     try {
       clearPrivateGradingEvidence(appDir);
       const result = await runAgent(args, agentAdapter, mode, level, appDir);
       if (result.costComplete !== true) runCostComplete = false;
       return result;
     } catch (error) {
+      await onFailure?.();
       const reason = errorMessage(error).split(/\r?\n/)[0] ?? 'agent execution failed';
       run.outcome = { kind: 'harness_failure', phase: `agent-${mode}`,
         reason, appFailures: [], inconclusive: [], harnessFailures: [reason] };
@@ -1171,7 +1269,7 @@ async function main() {
   // though no score may be used.
   const abortUnusableSession = (whichSession: string, audit: ContaminationAudit,
     levelRecord: UnknownRecord & { level: number },
-    selected: ProgressionRecipeAction | null) => {
+    selected: ProgressionRecipeAction | null, completedRepair = false) => {
     const reason = audit.evidence.join('; ');
     const outcome: RunOutcome = { kind: audit.kind === 'harness_failure' ? 'harness_failure' : 'ungraded',
       phase: 'contamination-audit', reason,
@@ -1182,12 +1280,11 @@ async function main() {
       detectedAt: whichSession };
     const record: RunLevelRecord = { ...levelRecord, error: reason, outcome,
       level: levelRecord.level, graded: false, score: null, max: null, selection: null };
-    run.levels.push(record);
+    appendLevelRecord(record);
     if (progressionExecution) {
       recordProgressionGrade({ selected, bundle: null, level: levelRecord.level,
         failure: progressionFailure(outcome),
-        repair: { status: 'ungraded', budgetRounds: 0, roundsUsed: 0,
-          stopReason: audit.kind === 'harness_failure' ? 'audit-failure' : 'contaminated' } });
+        completedRepair });
       run.progressionStatus = progressionExecution!.status();
     }
     run.validation.ladder.stoppedAfterLevel = run.levels.at(-2)?.level ?? null;
@@ -1211,7 +1308,8 @@ async function main() {
     process.exit(4);
   };
 
-  for (const level of args.levelList) {
+  for (let levelIndex = 0; levelIndex < args.levelList.length; levelIndex += 1) {
+    const level = args.levelList[levelIndex]!;
     const t0 = Date.now();
     const continuing = Boolean(args.repairGrant);
     console.log(`\n================ ${args.backend} — level ${level} ================`);
@@ -1222,6 +1320,88 @@ async function main() {
       && progressionSelection?.action.level !== level) continue;
     const applicationControl = materializeCodingOutput
       ? restartSpecFor(args, appDir, track) : null;
+    const featureActionSequence = args.dependencyPolicy?.definition.workSelection === 'feature'
+      ? requireProgressionState(progressionExecution?.state ?? null).attempts.length + 1 : null;
+    const featureActionSuffix = featureActionSequence === null
+      ? '' : `-action${String(featureActionSequence).padStart(3, '0')}`;
+    const restoreFeatureAcceptedSource = async (): Promise<void> => {
+      if (featureActionSequence === null) return;
+      const source = join(outputDir, 'source');
+      if (applicationControl) {
+        try {
+          await materializeAcceptedSource(source, appDir, applicationControl);
+        } catch {
+          resetAppToSource(source, appDir);
+        }
+      } else resetAppToSource(source, appDir);
+    };
+    if (featureActionSequence !== null && progressionSelection
+      && isProgressionWorkRecipeAction(progressionSelection)
+      && !featureActionNeedsCoding(progressionSelection,
+        requireProgressionState(progressionExecution?.state ?? null))) {
+      await restoreFeatureAcceptedSource();
+      const bundle = grade(args, appDir, url,
+        `${args.backend}-l${level}${featureActionSuffix}-regrade`, level, track, runId);
+      const outcome = classifyBundle(bundle);
+      const repair = { status: levelGradeIsUsable(outcome) ? 'not-needed' as const : 'ungraded' as const,
+        limit: 0, used: 0, stopReason: 'test-system-regrade' };
+      let next = recordProgressionGrade({ selected: progressionSelection, bundle,
+        level });
+      let finalOutcome = outcome;
+      const currentState = requireProgressionState(progressionExecution?.state ?? null);
+      if (next?.type === 'build' && next.level === level
+        && !featureActionNeedsCoding(progressionSelection, currentState)) {
+        const reason = 'accepted source still has incomplete test-system evidence after regrade';
+        finalOutcome = { kind: 'harness_failure', phase: 'feature-regrade', reason,
+          appFailures: [], inconclusive: [], harnessFailures: [reason] };
+        next = recordProgressionGrade({ selected: progressionSelection, bundle: null,
+          level, failure: progressionFailure(finalOutcome) });
+      }
+      const state = requireProgressionState(progressionExecution?.state ?? null);
+      const graded = levelGradeIsUsable(finalOutcome)
+        && state.attempts.at(-1)?.outcome === 'conclusive';
+      let checkpoint = null;
+      if (graded && (state.phase === 'terminal' || state.level > level)) {
+        checkpoint = preserveLevelCheckpoint({ appDir, outputDir, runId,
+          identities: run.identities, track: args.track, backend: args.backend, level,
+          repair, outcome: finalOutcome,
+          selectionSha256: bundle?.selection?.sha256 ?? null });
+      }
+      appendLevelRecord({ level, graded,
+        score: graded ? bundle?.totals?.score ?? null : null,
+        max: graded ? bundle?.totals?.max ?? null : null,
+        selection: graded ? bundle?.selection ?? null : null,
+        regression: bundle?.totals?.regression ?? null,
+        contractPass: bundle?.totals?.contractPass ?? null,
+        code: bundle?.code ?? null,
+        repair,
+        checkpoint,
+        sessionTotals: summarizeSessions([]),
+        costUsd: 0,
+        repairs: 0,
+        durationSec: Math.round((Date.now() - t0) / 1000),
+        outcome: finalOutcome });
+      if (graded && (state.phase === 'terminal' || state.level > level)
+        && !run.validation.ladder.completedLevels.includes(level)) {
+        run.validation.ladder.completedLevels.push(level);
+      }
+      run.progressionStatus = progressionExecution!.status();
+      writeRunJson(join(outputDir, ARTIFACT_FILE.run), run);
+      if (state.phase === 'terminal') break;
+      if (state.attempts.at(-1)?.outcome === 'inconclusive') {
+        run.validation.ladder.stoppedAfterLevel = level;
+        run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
+        break;
+      }
+      if (next?.type !== 'terminal' && next?.level === level) {
+        levelIndex -= 1;
+        continue;
+      }
+      if (next?.type !== 'terminal' && next && next.level < level) {
+        throw new Error(`dependency progression moved backward from L${level}`);
+      }
+      continue;
+    }
     if (args.seedThrough !== undefined && level <= args.seedThrough) {
       if (!progressionSelection || !isProgressionWorkRecipeAction(progressionSelection)
         || progressionSelection.action.level !== level || !args.seedFrom || !run.progressionSeed) {
@@ -1240,16 +1420,13 @@ async function main() {
       const bundle = grade(args, appDir, url, `${args.backend}-extension-l${level}`,
         level, track, runId, { applicationFailure });
       const outcome = applicationFailure ?? classifyBundle(bundle);
-      const next = recordProgressionGrade({ selected: progressionSelection, bundle, level,
-        repair: { status: outcome.kind === 'passed' ? 'not-needed' : 'incomplete',
-          budgetRounds: 0, roundsUsed: 0,
-          stopReason: outcome.kind === 'passed' ? 'not-needed' : 'extension-validation-failed' } });
+      const next = recordProgressionGrade({ selected: progressionSelection, bundle, level });
       const progressionState = requireProgressionState(progressionExecution?.state ?? null);
       const progressionAttempt = progressionState.attempts.at(-1) ?? null;
       const graded = levelGradeIsUsable(outcome, progressionAttempt);
       const passed = graded && outcome.kind === 'passed';
       const repair = { status: passed ? 'not-needed' as const : 'incomplete' as const,
-        budgetRounds: 0, roundsUsed: 0,
+        limit: 0, used: 0,
         stopReason: passed ? 'not-needed' : 'extension-validation-failed' };
       let checkpoint = null;
       try {
@@ -1260,7 +1437,7 @@ async function main() {
         throw new Error(`could not preserve extension depth ${level}: ${errorMessage(error)}`);
       }
       const source = hashAppSource(appDir);
-      run.levels.push({ level, graded,
+      appendLevelRecord({ level, graded,
         score: graded ? bundle?.totals?.score ?? null : null,
         max: graded ? bundle?.totals?.max ?? null : null,
         selection: bundle?.selection ?? null,
@@ -1273,11 +1450,13 @@ async function main() {
         checkpoint,
         sessionTotals: summarizeSessions([]),
         costUsd: 0,
-        fixRounds: 0,
+        repairs: 0,
         durationSec: Math.round((Date.now() - t0) / 1000),
         outcome });
       if (progressionAttempt?.outcome === 'conclusive') {
-        run.validation.ladder.completedLevels.push(level);
+        if (!run.validation.ladder.completedLevels.includes(level)) {
+          run.validation.ladder.completedLevels.push(level);
+        }
       }
       run.progressionStatus = progressionExecution!.status();
       if (passed) run.progressionSeed.validatedDepths.push(level);
@@ -1298,26 +1477,26 @@ async function main() {
     const resumedRegression = resumedRepair
       ? savedRepairRegression(progressionExecution?.state ?? null, progressionSelection) : null;
     const resumedRegressionReport = resumedRegression
-      ? join(args.out, 'repair-reports', `rejected-regression-l${level}-resume.md`) : null;
-    const priorRepairRounds = resumedRepair
+      ? join(args.out, 'repair-reports',
+        `rejected-regression-l${level}${featureActionSuffix}-resume.md`) : null;
+    const priorRepairs = resumedRepair
       ? progressionStart.priorRun?.payload.levels?.find(item => item.level === level)
-        ?.repair?.roundsUsed ?? 0
-      : 0;
+        ?.repair?.used ?? 0
+      : args.progression ? 0 : run.levels.reduce((sum, item) => sum + (item.repairs ?? 0), 0);
     const repairBudgetFor = (selected: ProgressionRecipeAction | null,
-      completedRepairRounds: number, initialGradePending = false) => selected
+      completedRepairs: number) => selected
       && isProgressionWorkRecipeAction(selected)
-      ? dependencyRepairBudget(selected.action, completedRepairRounds, initialGradePending)
-      : args.fixRounds;
-    const levelStrikeNodeIds = new Set(progressionSelection?.action.strikes.nodes
-      .map(node => node.nodeId) ?? []);
-    let progressionRepairBudgetRounds = repairBudgetFor(
-      progressionSelection, priorRepairRounds, !resumedRepair);
+      ? dependencyRepairBudget(selected.action, completedRepairs)
+      : args.repairs;
+    const levelRepairNodeIds = new Set(progressionSelection?.action.repair.nodeIds ?? []);
+    let progressionRepairLimit = repairBudgetFor(
+      progressionSelection, priorRepairs);
     const trackProgressionBudget = (selected: ProgressionRecipeAction | null,
-      completedRepairRounds: number) => {
+      completedRepairs: number) => {
       if (!selected || !isProgressionWorkRecipeAction(selected)) return;
-      selected.action.strikes.nodes.forEach(node => levelStrikeNodeIds.add(node.nodeId));
-      progressionRepairBudgetRounds = Math.max(
-        progressionRepairBudgetRounds, repairBudgetFor(selected, completedRepairRounds));
+      selected.action.repair.nodeIds.forEach(nodeId => levelRepairNodeIds.add(nodeId));
+      progressionRepairLimit = Math.max(
+        progressionRepairLimit, repairBudgetFor(selected, completedRepairs));
     };
     if (resumedRepair) {
       let reportFailure: string | null = null;
@@ -1328,7 +1507,7 @@ async function main() {
         }
         sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
           '--history-json', '[]', '--archive', join(args.out, 'repair-reports',
-            `bug-report-l${level}-resume.md`),
+            `bug-report-l${level}${featureActionSuffix}-resume.md`),
           ...(resumedRegressionReport ? ['--prior-regression', resumedRegressionReport] : []),
           ...repairReportArgs(progressionSelection)],
         { stdio: 'pipe' });
@@ -1342,16 +1521,13 @@ async function main() {
           appFailures: [], inconclusive: [], harnessFailures: [reportFailure],
         };
         recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
-          failure: progressionFailure(outcome), repair: {
-            status: 'ungraded', budgetRounds: progressionRepairBudgetRounds,
-            roundsUsed: priorRepairRounds, stopReason: 'repair-report',
-          } });
-        run.levels.push({ level, graded: false, score: null, max: null,
+          failure: progressionFailure(outcome) });
+        appendLevelRecord({ level, graded: false, score: null, max: null,
           selection: null, error: reportFailure, outcome,
-          repair: { status: 'ungraded', budgetRounds: progressionRepairBudgetRounds,
-            roundsUsed: priorRepairRounds, stopReason: 'repair-report' },
-          fixCostUsd: 0, fixSessions: [], fixRounds: 0, priorRepairRounds,
-          cumulativeFixRounds: priorRepairRounds, sessionTotals: summarizeSessions([]),
+          repair: { status: 'ungraded', limit: progressionRepairLimit,
+            used: priorRepairs, stopReason: 'repair-report' },
+          repairCostUsd: 0, repairSessions: [], repairs: 0, priorRepairs,
+          cumulativeRepairs: priorRepairs, sessionTotals: summarizeSessions([]),
           costUsd: 0, durationSec: Math.round((Date.now() - t0) / 1000) });
         run.validation.ladder.stoppedAfterLevel = level;
         run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
@@ -1363,22 +1539,23 @@ async function main() {
     const firstMode = resumedRepair ? 'fix'
       : continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
     const build = await runAgentForLevel(
-      resumedRepair || run.levels.length === 0 ? firstMode : 'upgrade', level);
+      resumedRepair || run.levels.length === 0 ? firstMode : 'upgrade', level,
+      featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
     const buildLeak = auditContamination(appDir);
     if (buildLeak) {
       const buildSession = runSessionRecord(build,
-        resumedRepair ? priorRepairRounds + 1 : null);
+        resumedRepair ? priorRepairs + 1 : null);
       const sessionTotals = summarizeSessions([buildSession]);
       abortUnusableSession(`level ${level} ${firstMode}`, buildLeak, {
         level, graded: false, score: null, max: null, selection: null,
         ...(resumedRepair
-          ? { fixCostUsd: build.costUsd, fixSessions: [buildSession], fixRounds: 1,
-            priorRepairRounds, cumulativeFixRounds: priorRepairRounds + 1 }
+          ? { repairCostUsd: build.costUsd, repairSessions: [buildSession], repairs: 1,
+            priorRepairs, cumulativeRepairs: priorRepairs + 1 }
           : continuing
           ? { resumeCostUsd: build.costUsd, resumeSession: buildSession }
-          : { buildCostUsd: build.costUsd, buildSession }),
+          : { buildCostUsd: build.costUsd, buildSessions: [buildSession] }),
         sessionTotals, costUsd: build.costUsd, durationMs: Date.now() - t0,
-      }, progressionSelection);
+      }, progressionSelection, resumedRepair);
     }
     // Record the session setup needed to compare runs.
     run.setup ??= build.setup;
@@ -1394,20 +1571,19 @@ async function main() {
     // that is a harness failure, not a result for this backend.
     const buildFailure = agentSessionFailure(build);
     if (buildFailure) {
+      await restoreFeatureAcceptedSource();
       console.log(`  ABORTED: ${buildFailure.reason}. Details will be kept in ${join(args.out, ARTIFACT_FILE.run)}`);
       const failedSession = runSessionRecord(build);
       if (progressionExecution) {
         recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
-          failure: buildFailure,
-          repair: { status: 'ungraded', budgetRounds: 0, roundsUsed: 0,
-            stopReason: 'agent-session-failure' } });
+          failure: buildFailure });
       }
-      run.levels.push({ level, graded: false, score: null, max: null,
+      appendLevelRecord({ level, graded: false, score: null, max: null,
         selection: null, error: buildFailure.reason,
         outcome: buildFailure,
         ...(continuing
           ? { resumeSession: failedSession, resumeCostUsd: build.costUsd }
-          : { buildSession: failedSession, buildCostUsd: build.costUsd }),
+          : { buildSessions: [failedSession], buildCostUsd: build.costUsd }),
         sessionTotals: summarizeSessions([build]),
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
@@ -1426,6 +1602,14 @@ async function main() {
       }
       return grade(args, appDir, url, label, level, track, runId,
         { applicationFailure: failure });
+    };
+    const archiveCandidateGrade = (label: string): void => {
+      const gradingDirectory = join(appDir, 'stack-bench');
+      if (!existsSync(gradingDirectory)) return;
+      cpSync(gradingDirectory, join(outputDir, 'candidate-grades', label), {
+        recursive: true,
+        filter: source => !/[\\/]media([\\/]|$)/.test(source),
+      });
     };
     const restoreAcceptedRepair = async (sourcePath: string, gradingPath: string): Promise<void> => {
       if (applicationControl) await materializeAcceptedSource(sourcePath, appDir, applicationControl);
@@ -1446,17 +1630,19 @@ async function main() {
       continuation.resumeSetup.sourceVerified = true;
     }
     if (args.referenceMutationOnly) {
-      run.levels.push({ level, score: null, max: null, graded: false, contractPass: null,
+      appendLevelRecord({ level, score: null, max: null, graded: false, contractPass: null,
         selection: null,
         outcome: { kind: 'ungraded', phase: 'reference-mutation-only',
           reason: 'the parent qualification owns the full clean grade',
           appFailures: [], inconclusive: [], harnessFailures: [] },
-        buildSession: runSessionRecord(build),
+        buildSessions: [runSessionRecord(build)],
         buildCostUsd: build.costUsd, sessionTotals: summarizeSessions([build]),
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
     }
-    const firstBuildDirectory = continuing ? `baseline-l${level}` : `first-build-l${level}`;
+    const firstBuildDirectory = continuing
+      ? `baseline-l${level}${featureActionSuffix}`
+      : `first-build-l${level}${featureActionSuffix}`;
     const firstBuildPath = join(args.out, firstBuildDirectory);
     let firstBuildSource = null;
     let materializationOutcome: RunOutcome | null = null;
@@ -1480,7 +1666,7 @@ async function main() {
         ? `  !! ${materializationOutcome.reason}`
         : `  !! could not bind the first-build source: ${errorMessage(error).split('\n')[0]}`);
     }
-    const firstBuildLabel = `${args.backend}-l${level}`;
+    const firstBuildLabel = `${args.backend}-l${level}${featureActionSuffix}`;
     let bundle = firstBuildSource
       ? grade(args, appDir, url, firstBuildLabel, level, track, runId,
         { applicationFailure: materializationOutcome }) : null;
@@ -1490,7 +1676,7 @@ async function main() {
     } | null = null;
 
     // What the model built BEFORE being handed the answers. Every backend can
-    // reach the same total given enough fix rounds, so the post-fix score stops
+    // reach the same total given enough repairs, so the post-fix score stops
     // discriminating — what it got right unaided is the comparison that survives.
     const firstBuild: FirstBuildRecord = {
       score: bundle?.totals?.score ?? null,
@@ -1539,7 +1725,8 @@ async function main() {
 
     const selectedObservedChecks = checksForGrade(args.recipeTasks?.get(level), 'observed');
     if (!continuing && !resumedRepair && selectedObservedChecks.length) {
-      const observationOut = join(args.out, `first-build-l${level}-observed`);
+      const observationOut = join(args.out,
+        `first-build-l${level}${featureActionSuffix}-observed`);
       let observationBundle = null;
       let observationOutcome;
       if (!firstBuildSource) {
@@ -1564,15 +1751,37 @@ async function main() {
         scoreContribution: false,
         repairVisible: false,
         artifact: observationBundle
-          ? `first-build-l${level}-observed/${ARTIFACT_FILE.gradeBundle}` : null,
+          ? `first-build-l${level}${featureActionSuffix}-observed/${ARTIFACT_FILE.gradeBundle}` : null,
         outcome: observationOutcome,
       };
+    }
+
+    let initialProgressionFailure: ProgressionFailure | null = null;
+    if (featureActionSequence !== null && progressionSelection
+      && isProgressionWorkRecipeAction(progressionSelection)) {
+      const candidateOutcome = classifyBundle(bundle);
+      archiveCandidateGrade(`l${level}${featureActionSuffix}`);
+      if (!levelGradeIsUsable(candidateOutcome)) {
+        await restoreFeatureAcceptedSource();
+        initialProgressionFailure = progressionFailure(candidateOutcome);
+      } else if (!featureCandidateAccepted(progressionSelection,
+        requireProgressionState(progressionExecution?.state ?? null),
+        bundle)) {
+        bundle = await gradeAcceptedSource(join(outputDir, 'source'),
+          `${args.backend}-l${level}${featureActionSuffix}-restored`,
+        );
+        const restoredOutcome = classifyBundle(bundle);
+        if (!levelGradeIsUsable(restoredOutcome)) {
+          initialProgressionFailure = progressionFailure(restoredOutcome);
+        }
+      }
     }
 
     // Preserve the first source and scored grading before repair overwrites the
     // app. Observed evidence remains in its own source-bound result directory.
     const acceptedGradingDirectory = continuing
-      ? `baseline-l${level}-grading` : `first-build-l${level}-grading`;
+      ? `baseline-l${level}${featureActionSuffix}-grading`
+      : `first-build-l${level}${featureActionSuffix}-grading`;
     try {
       const gradingFrom = join(appDir, 'stack-bench');
       if (existsSync(gradingFrom)) {
@@ -1589,10 +1798,10 @@ async function main() {
       console.log(`  !! could not keep the first build: ${errorMessage(e).split('\n')[0]}`);
     }
 
-    let fixRounds = resumedRepair ? 1 : 0;
-    let fixCost = resumedRepair ? build.costUsd : 0;
-    const fixSessions = resumedRepair
-      ? [runSessionRecord(build, priorRepairRounds + 1)] : [];
+    let repairs = resumedRepair ? 1 : 0;
+    let repairCost = resumedRepair ? build.costUsd : 0;
+    const repairSessions = resumedRepair
+      ? [runSessionRecord(build, priorRepairs + 1)] : [];
     const repairHistory: ReturnType<typeof repairHistoryEntry>[] = [];
     let priorRegressionReport = resumedRegressionReport;
     let priorRegressionOwner = repairOwnerNodeIds(progressionSelection).join('\n') || null;
@@ -1605,7 +1814,7 @@ async function main() {
       if (args.maxStalledRepairs === 0
         || repairProgress.stalledRounds < args.maxStalledRepairs) return false;
       repairStopReason = 'repeated-findings';
-      console.log(`    pausing after ${repairProgress.stalledRounds} repair rounds `
+      console.log(`    pausing after ${repairProgress.stalledRounds} repairs `
         + 'with the same failed checks and no score gain');
       return true;
     };
@@ -1622,25 +1831,18 @@ async function main() {
 
     let progressionNext = recordProgressionGrade({
       selected: progressionSelection,
-      bundle,
+      bundle: initialProgressionFailure ? null : bundle,
       level,
-      repair: {
-        status: !initialGradeUsable ? 'ungraded'
-          : resumedRepair ? (initialBundleOutcome.kind === 'passed' ? 'corrected' : 'incomplete')
-          : initialBundleOutcome.kind === 'passed' ? 'not-needed' : 'incomplete',
-        budgetRounds: progressionSelection
-          ? progressionRepairBudgetRounds : args.fixRounds,
-        roundsUsed: priorRepairRounds + (resumedRepair ? 1 : 0),
-        ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
-        stopReason: !initialGradeUsable ? 'initial-grading-failed'
-          : initialBundleOutcome.kind === 'passed' ? 'not-needed' : null,
-      },
+      failure: initialProgressionFailure,
+      completedRepair: resumedRepair,
     });
     const progressionMayRepair = () => !args.progression
       || progressionNext?.type === 'repair';
-    const recordRepairProgression = ({ failure = null, repairRegression = null }: {
+    const recordRepairProgression = ({ failure = null, repairRegression = null,
+      completedRepair = false }: {
       failure?: ProgressionFailure | null;
       repairRegression?: ProgressionRepairRegression | null;
+      completedRepair?: boolean;
     } = {}) => {
       progressionNext = recordProgressionGrade({
         selected: progressionSelection,
@@ -1648,27 +1850,21 @@ async function main() {
         level,
         failure,
         repairRegression,
-        repair: {
-          status: failure ? 'ungraded'
-            : classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
-          budgetRounds: progressionSelection
-            ? progressionRepairBudgetRounds : args.fixRounds,
-          roundsUsed: priorRepairRounds + fixRounds,
-          ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
-          stopReason: null,
-        },
+        completedRepair,
       });
       return progressionMayRepair();
     };
     const recordRepairHarnessFailure = (phase: string, reason: string,
-      failedBundle: GradeBundlePayload | null = null): void => {
+      failedBundle: GradeBundlePayload | null = null, completedRepair = false): void => {
       const failure: RunOutcome = {
         kind: 'harness_failure', phase, reason,
         appFailures: [], inconclusive: [], harnessFailures: [reason],
       };
       bundle = failedBundle ? { ...failedBundle, outcome: failure } : { outcome: failure };
       repairStopReason = phase;
-      if (args.progression) recordRepairProgression({ failure: progressionFailure(failure) });
+      if (args.progression) recordRepairProgression({
+        failure: progressionFailure(failure), completedRepair,
+      });
     };
     const restoreProgressionGrade = (accepted: GradeBundlePayload | null,
       label: string): boolean => {
@@ -1682,7 +1878,7 @@ async function main() {
       const outcome = classifyBundle(bundle);
       if (levelGradeIsUsable(outcome)) return true;
       recordRepairHarnessFailure('repair-restore-grading',
-        outcome.reason ?? 'restored source did not produce a reliable grade', bundle);
+        outcome.reason ?? 'restored source did not produce a reliable grade', bundle, true);
       return false;
     };
     const writeRepairReport = (results: string | null = null):
@@ -1692,7 +1888,7 @@ async function main() {
           ...(results ? ['--results', results] : []),
           '--history-json', JSON.stringify(repairHistory),
           '--archive', join(outputDir, 'repair-reports',
-            `bug-report-l${level}-round${fixRounds + 1}.md`),
+            `bug-report-l${level}${featureActionSuffix}-round${repairs + 1}.md`),
           ...(priorRegressionReport ? ['--prior-regression', priorRegressionReport] : []),
           ...repairReportArgs(progressionSelection)], { stdio: 'pipe' });
         return { status: 0 };
@@ -1721,7 +1917,7 @@ async function main() {
     while (levelGradeIsUsable(classifyBundle(bundle), args.progression
       ? requireProgressionState(progressionExecution?.state ?? null).attempts.at(-1) ?? null
       : null) && progressionMayRepair()
-      && (args.progression || fixRounds < args.fixRounds)) {
+      && (args.progression || priorRepairs + repairs < args.repairs)) {
       let reportReady = false;
       const acceptedBundle = bundle;
       let repairBaselineBundle = bundle;
@@ -1732,7 +1928,7 @@ async function main() {
           priorRegressionReport = null;
           priorRegressionOwner = repairOwner;
         }
-        trackProgressionBudget(progressionSelection, priorRepairRounds + fixRounds);
+        trackProgressionBudget(progressionSelection, priorRepairs + repairs);
         if (progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
           && bundle?.selection?.sha256 !== progressionSelection.grader.selectionSha256) {
           const sequence = requireProgressionState(progressionExecution?.state ?? null).attempts.length + 1;
@@ -1751,7 +1947,8 @@ async function main() {
             if (!binding) throw new Error(`L${level} has no recipe binding`);
             const targetTask = resolveProgressionRepairTarget(binding,
               requireProgressionState(progressionExecution?.state ?? null));
-            repairResults = join(outputDir, 'repair-grades', `round-${fixRounds + 1}`);
+            repairResults = join(outputDir, 'repair-grades',
+              `l${level}${featureActionSuffix}-round-${repairs + 1}`);
             repairBaselineBundle = grade(args, appDir, url,
               `${args.backend}-l${level}-repair-target${sequence}`,
               level, track, runId, { out: repairResults, recipeTask: targetTask });
@@ -1816,62 +2013,68 @@ async function main() {
         rmSync(gradingSnapshot, { recursive: true, force: true });
       };
       try {
-      fixRounds += 1;
       const displayedRepairBudget = args.progression
-        ? progressionRepairBudgetRounds
-        : args.fixRounds;
-      if (args.dependencyPolicy?.definition.repairSelection === 'feature'
+        ? progressionRepairLimit
+        : args.repairs;
+      if (args.dependencyPolicy?.definition.repair.selection === 'feature'
         && progressionSelection && isProgressionWorkRecipeAction(progressionSelection)) {
-        const [strike] = progressionSelection.action.strikes.nodes;
+        const [nodeId] = progressionSelection.action.repair.nodeIds;
         const node = requireProgressionState(progressionExecution?.state ?? null).definition.nodes
-          .find(candidate => candidate.id === strike?.nodeId);
-        if (!strike || !node) {
+          .find(candidate => candidate.id === nodeId);
+        if (!nodeId || !node) {
           throw new Error('feature repair has no selected feature');
         }
-        console.log(`--- feature repair ${strike.used}/${strike.budget - 1}: ${node.title} ---`);
+        const used = requireProgressionState(progressionExecution?.state ?? null)
+          .nodes[nodeId]?.repairs.used ?? 0;
+        console.log(`--- feature repair ${used + 1}: ${node.title} ---`);
       } else {
-        console.log(`--- repair round ${fixRounds}/${displayedRepairBudget} ---`);
+        console.log(`--- repair ${priorRepairs + repairs + 1}/${displayedRepairBudget} ---`);
       }
-      const fix = await runAgentForLevel('fix', level);
-      fixCost += fix.costUsd;
-      fixSessions.push(runSessionRecord(fix, priorRepairRounds + fixRounds));
+      const fix = await runAgentForLevel('fix', level,
+        featureActionSequence === null ? undefined : restoreFeatureAcceptedSource);
+      repairCost += fix.costUsd;
+      repairSessions.push(runSessionRecord(fix, priorRepairs + repairs + 1));
 
       const fixFailure = agentSessionFailure(fix);
       if (fixFailure) {
+        if (featureActionSequence !== null) {
+          await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        }
         console.log(`    coding session failed: ${fixFailure.reason}; stopping repairs`);
         bundle = { outcome: fixFailure };
-        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+        repairHistory.push(repairHistoryEntry(repairs + 1, beforeBundle, bundle,
           'agent session failed'));
         repairStopReason = 'agent-session-failure';
         recordRepairProgression({ failure: progressionFailure(fixFailure) });
         break;
       }
+      repairs += 1;
 
       // Reject contaminated repairs before spending time on grading.
       const fixLeak = auditContamination(appDir);
       if (fixLeak) {
         const buildSession = runSessionRecord(build);
-        const sessions = resumedRepair ? fixSessions : [buildSession, ...fixSessions];
+        const sessions = resumedRepair ? repairSessions : [buildSession, ...repairSessions];
         const sessionTotals = summarizeSessions(sessions);
         cleanupRepairSnapshots();
-        abortUnusableSession(`repair round ${fixRounds}`, fixLeak, {
+        abortUnusableSession(`repair ${repairs}`, fixLeak, {
           level, graded: false, score: null, max: null,
           selection: bundle?.selection ?? null,
           ...(resumedRepair
             ? { resumedRepair: firstBuild }
             : continuing
             ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
-            : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
-          fixCostUsd: addCostUsd(fixCost), fixSessions, fixRounds,
-          ...(resumedRepair ? { priorRepairRounds,
-            cumulativeFixRounds: priorRepairRounds + fixRounds } : {}),
-          repair: { status: 'ungraded', budgetRounds: displayedRepairBudget,
-            roundsUsed: priorRepairRounds + fixRounds,
+            : { firstBuild, buildCostUsd: build.costUsd, buildSessions: [buildSession] }),
+          repairCostUsd: addCostUsd(repairCost), repairSessions, repairs,
+          ...(resumedRepair ? { priorRepairs,
+            cumulativeRepairs: priorRepairs + repairs } : {}),
+          repair: { status: 'ungraded', limit: displayedRepairBudget,
+            used: priorRepairs + repairs,
             stopReason: fixLeak.kind === 'harness_failure' ? 'audit-failure' : 'contaminated' },
           sessionTotals,
-          costUsd: resumedRepair ? addCostUsd(fixCost) : addCostUsd(build.costUsd, fixCost),
+          costUsd: resumedRepair ? addCostUsd(repairCost) : addCostUsd(build.costUsd, repairCost),
           durationMs: Date.now() - t0,
-        }, progressionSelection);
+        }, progressionSelection, true);
       }
       if (hashAppSource(appDir).sha256 === acceptedSource.sha256) {
         clearPrivateGradingEvidence(appDir);
@@ -1882,11 +2085,11 @@ async function main() {
         console.log(`    ${reason}; ${args.progression
           ? 'counting the failed attempt'
           : 'pausing before another paid round'}`);
-        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, beforeBundle, reason));
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, beforeBundle, reason));
         if (args.progression) {
           if (!restoreProgressionGrade(acceptedBundle,
-            `${args.backend}-l${level}-unchanged${fixRounds}`)) break;
-          if (!recordRepairProgression()) break;
+            `${args.backend}-l${level}-unchanged${repairs}`)) break;
+          if (!recordRepairProgression({ completedRepair: true })) break;
           continue;
         }
         repairStopReason = 'no-source-change';
@@ -1896,11 +2099,11 @@ async function main() {
       snapshotSource(appDir, repairedSource);
       try {
         bundle = await gradeAcceptedSource(repairedSource,
-          `${args.backend}-l${level}-fix${fixRounds}`);
+          `${args.backend}-l${level}-fix${repairs}`);
         if (!levelGradeIsUsable(classifyBundle(bundle))) {
           console.log('    repair grade did not complete; retrying the same source once');
           bundle = await gradeAcceptedSource(repairedSource,
-            `${args.backend}-l${level}-fix${fixRounds}-retry`);
+            `${args.backend}-l${level}-fix${repairs}-retry`);
         }
       } finally {
         rmSync(repairedSource, { recursive: true, force: true });
@@ -1910,12 +2113,28 @@ async function main() {
       if (!levelGradeIsUsable(repairedOutcome)) {
         const reason = repairedOutcome.reason
           ?? 'the repaired source did not produce a reliable grade';
-        console.log(`    repair grade failed: ${reason}; restoring the accepted source without spending a strike`);
+        console.log(`    repair grade failed: ${reason}; restoring the accepted source`);
         await restoreAcceptedRepair(snapshot, gradingSnapshot);
-        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
-          'not counted because grading failed'));
-        recordRepairHarnessFailure('repair-grading', reason, bundle);
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
+          'repair completed; grading failed'));
+        recordRepairHarnessFailure('repair-grading', reason, bundle, true);
         break;
+      }
+
+      if (featureActionSequence !== null && progressionSelection
+        && isProgressionWorkRecipeAction(progressionSelection)
+        && !featureCandidateAccepted(progressionSelection,
+          requireProgressionState(progressionExecution?.state ?? null), bundle)) {
+        const rejectedBundle = bundle;
+        archiveCandidateGrade(`l${level}${featureActionSuffix}-repair${repairs}`);
+        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        if (!restoreProgressionGrade(acceptedBundle,
+          `${args.backend}-l${level}${featureActionSuffix}-rollback${repairs}`)) break;
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, rejectedBundle,
+          'rolled back because the feature still failed or earlier behavior regressed'));
+        if (!recordRepairProgression({ completedRepair: true })) break;
+        if (pauseForRepeatedFindings()) break;
+        continue;
       }
 
       const after = bundle?.totals?.score ?? 0;
@@ -1929,11 +2148,11 @@ async function main() {
         console.log(afterMax > 0
           ? `    application setup is now gradeable (${after}/${afterMax}); keeping this repair`
           : '    application setup is still failing; keeping the attempted repair for the next round');
-        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
           afterMax > 0
             ? 'kept because the app became gradeable'
             : 'kept to continue repairing application setup'));
-        if (!recordRepairProgression()) break;
+        if (!recordRepairProgression({ completedRepair: true })) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
@@ -1941,10 +2160,10 @@ async function main() {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
         await restoreAcceptedRepair(snapshot, gradingSnapshot);
         if (!restoreProgressionGrade(acceptedBundle,
-          `${args.backend}-l${level}-rollback${fixRounds}`)) break;
-        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+          `${args.backend}-l${level}-rollback${repairs}`)) break;
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
           'rolled back because the result could not be compared'));
-        if (!recordRepairProgression()) break;
+        if (!recordRepairProgression({ completedRepair: true })) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
@@ -1967,7 +2186,7 @@ async function main() {
         try {
           if (shared.regressions.length) {
             const path = join(outputDir, 'repair-reports',
-              `rejected-regression-l${level}-round${fixRounds}.md`);
+              `rejected-regression-l${level}${featureActionSuffix}-round${repairs}.md`);
             sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
               '--out', path, '--checks-json', JSON.stringify(shared.regressions),
               '--regression-context'], { stdio: 'pipe' });
@@ -1984,29 +2203,30 @@ async function main() {
           await restoreAcceptedRepair(snapshot, gradingSnapshot);
         }
         if (regressionReportFailure) {
-          repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
-            'not counted because regression reporting failed'));
-          recordRepairHarnessFailure('repair-regression-report', regressionReportFailure);
+          repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
+            'repair completed; regression reporting failed'));
+          recordRepairHarnessFailure('repair-regression-report', regressionReportFailure,
+            null, true);
           break;
         }
         if (!restoreProgressionGrade(acceptedBundle,
-          `${args.backend}-l${level}-rollback${fixRounds}`)) break;
+          `${args.backend}-l${level}-rollback${repairs}`)) break;
         regressed = true;
-        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+        repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
           'rolled back because earlier behavior regressed'));
-        if (!recordRepairProgression({ repairRegression })) break;
+        if (!recordRepairProgression({ repairRegression, completedRepair: true })) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
       priorRegressionReport = null;
       if (shared.after === shared.before) {
-        const remaining = displayedRepairBudget - fixRounds;
+        const remaining = displayedRepairBudget - repairs;
         console.log(`    ${formatRepairProgress(shared, { before, beforeMax, after, afterMax })}; `
-          + (remaining > 0 ? `${remaining} repair round(s) remain` : 'repair budget exhausted'));
+          + (remaining > 0 ? `${remaining} repair(s) remain` : 'repair budget exhausted'));
       }
-      repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+      repairHistory.push(repairHistoryEntry(repairs, beforeBundle, bundle,
         shared.after === shared.before ? 'kept with no score gain' : 'kept'));
-      if (!recordRepairProgression()) break;
+      if (!recordRepairProgression({ completedRepair: true })) break;
       if (pauseForRepeatedFindings()) break;
       } finally {
         cleanupRepairSnapshots();
@@ -2028,19 +2248,19 @@ async function main() {
     const graded = levelGradeIsUsable(finalBundleOutcome,
       args.progression ? progressionAttempt : null);
     const finalTotals = graded ? levelBundle?.totals ?? null : null;
-    const nodeStrikes = progressionState
-      ? dependencyStrikeRecords(progressionState, level, levelStrikeNodeIds)
+    const nodeRepairs = progressionState
+      ? dependencyRepairRecords(progressionState, level, levelRepairNodeIds)
       : null;
-    const repairBudgetRounds = progressionExecution
-      ? Math.max(priorRepairRounds + fixRounds, progressionRepairBudgetRounds)
-      : args.fixRounds;
+    const repairLimit = progressionExecution
+      ? Math.max(priorRepairs + repairs, progressionRepairLimit)
+      : args.repairs;
     const repairBudgetExhausted = progressionExecution
       ? finalBundleOutcome.kind === 'app_failure'
         && progressionNext?.type !== 'repair'
-      : fixRounds >= args.fixRounds;
+      : repairs >= args.repairs;
     const repairStatus: RepairStatus = repairStopReason === 'no-source-change' ? 'incomplete'
       : !graded ? 'ungraded'
-      : finalBundleOutcome.kind === 'passed' ? (fixRounds > 0 ? 'corrected' : 'not-needed')
+      : finalBundleOutcome.kind === 'passed' ? (repairs > 0 ? 'corrected' : 'not-needed')
         : repairBudgetExhausted ? 'budget-exhausted' : 'incomplete';
     const stopReasons: Record<RepairStatus, string | null> = {
       'not-needed': 'not-needed',
@@ -2052,16 +2272,15 @@ async function main() {
     const stopReason = repairStopReason ?? stopReasons[repairStatus];
     const repair = {
       status: repairStatus,
-      budgetRounds: repairBudgetRounds,
-      roundsUsed: priorRepairRounds + fixRounds,
+      limit: repairLimit,
+      used: priorRepairs + repairs,
       ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
-      ...(nodeStrikes ? {
-        strikeScope: progressionState?.definition.strikePolicy,
-        nodeStrikes,
-      } : {}),
+      ...(nodeRepairs ? { nodeRepairs } : {}),
     };
     const latestProgressionAttempt = progressionState?.attempts.at(-1) ?? null;
+    const featureDepthContinues = featureActionSequence !== null
+      && progressionState?.phase === 'active' && progressionState.level === level;
     if (progressionState && latestProgressionAttempt && latestProgressionAttempt.level !== level) {
       const prior = run.levels.find(item => item.level === latestProgressionAttempt.level);
       const latestBundle = progressionBundles.get(latestProgressionAttempt.level);
@@ -2076,8 +2295,8 @@ async function main() {
         prior.contractPass = latestBundle.totals?.contractPass ?? null;
         prior.code = latestBundle.code ?? null;
         prior.repair = { ...repair,
-          nodeStrikes: dependencyStrikeRecords(
-            progressionState, latestProgressionAttempt.level, levelStrikeNodeIds),
+          nodeRepairs: dependencyRepairRecords(
+            progressionState, latestProgressionAttempt.level, levelRepairNodeIds),
         };
         prior.stalled = repairStatus === 'budget-exhausted';
         prior.outcome = latestOutcome;
@@ -2085,10 +2304,11 @@ async function main() {
     }
     if (continuing) {
       const continuation = requireContinuation(run);
-      continuation.cumulativeRoundsAfter = continuation.cumulativeRoundsBefore + fixRounds;
+      continuation.cumulativeRepairsAfter = continuation.cumulativeRepairsBefore + repairs;
     }
     let checkpoint = null;
-    if (graded && (!latestProgressionAttempt || latestProgressionAttempt.level === level)) {
+    if (graded && !featureDepthContinues
+      && (!latestProgressionAttempt || latestProgressionAttempt.level === level)) {
       try {
         checkpoint = preserveLevelCheckpoint({
           appDir,
@@ -2112,9 +2332,9 @@ async function main() {
         `Score is unknown, not zero; re-grade this level before using the run.`);
     }
     const buildSession = runSessionRecord(build);
-    const sessionTotals = summarizeSessions(resumedRepair ? fixSessions
-      : [buildSession, ...fixSessions]);
-    run.levels.push({
+    const sessionTotals = summarizeSessions(resumedRepair ? repairSessions
+      : [buildSession, ...repairSessions]);
+    appendLevelRecord({
       level,
       graded,
       score: finalTotals?.score ?? null,
@@ -2126,11 +2346,13 @@ async function main() {
         ? { resumedRepair: firstBuild }
         : continuing
         ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
-        : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
+        : featureActionSequence !== null
+        ? { buildCostUsd: build.costUsd, buildSessions: [buildSession] }
+        : { firstBuild, buildCostUsd: build.costUsd, buildSessions: [buildSession] }),
       contractPass: levelBundle?.totals?.contractPass ?? null,
       code: levelBundle?.code ?? null,
-      fixCostUsd: addCostUsd(fixCost),
-      fixSessions,
+      repairCostUsd: addCostUsd(repairCost),
+      repairSessions,
       repairHistory,
       sessionTotals,
       tokens: sessionTotals.tokens,
@@ -2141,9 +2363,9 @@ async function main() {
         ? Math.round(sessionTotals.tokens / sessionTotals.turns) : null,
       // Record actual reasoning because the provider default is not pinned.
       thinking: sessionTotals.thinking,
-      fixRounds,
-      ...(resumedRepair ? { priorRepairRounds,
-        cumulativeFixRounds: priorRepairRounds + fixRounds } : {}),
+      repairs,
+      ...(resumedRepair ? { priorRepairs,
+        cumulativeRepairs: priorRepairs + repairs } : {}),
       repair,
       checkpoint,
       // Keep the summary flag derived from the typed status so the two cannot drift.
@@ -2155,7 +2377,9 @@ async function main() {
     });
     if (!args.progression || requireProgressionState(progressionExecution?.state ?? null).attempts
       .some(attempt => attempt.level === level && attempt.outcome === 'conclusive')) {
-      run.validation.ladder.completedLevels.push(level);
+      if (!featureDepthContinues && !run.validation.ladder.completedLevels.includes(level)) {
+        run.validation.ladder.completedLevels.push(level);
+      }
     }
     writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
     const blockedLevels = args.levelList.filter(candidate => candidate > level);
@@ -2174,7 +2398,11 @@ async function main() {
           writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
           break;
         }
-        throw new Error(`dependency progression did not leave L${level} after its strike budget`);
+        if (featureActionSequence !== null && progressionState.level === level) {
+          levelIndex -= 1;
+          continue;
+        }
+        throw new Error(`dependency progression did not leave L${level} after its repair budget`);
       }
       continue;
     }
@@ -2184,7 +2412,7 @@ async function main() {
       writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
       console.log(`  ladder paused after L${level}: L${level} must pass before `
         + `${blockedLevels.map(candidate => `L${candidate}`).join(', ')} can start`);
-      console.log('  inspect the failures, then explicitly grant more repair rounds or correct the benchmark');
+      console.log('  inspect the failures, then explicitly grant more repairs or correct the benchmark');
       break;
     }
   }
@@ -2277,7 +2505,7 @@ async function main() {
   }
   const totals = requireRunTotals(run);
   console.log(`  TOTAL ${totals.score}/${totals.max}  ` +
-    `$${totals.costUsd}  ${totals.fixRounds} repair round(s)  ${totals.durationSec}s`);
+    `$${totals.costUsd}  ${totals.repairs} repair(s)  ${totals.durationSec}s`);
   console.log(`  ${join(outputDir, ARTIFACT_FILE.run)}`);
 
   teardown();

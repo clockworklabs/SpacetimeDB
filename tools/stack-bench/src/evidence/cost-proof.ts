@@ -17,9 +17,9 @@ export interface CostSession {
 
 export interface CostLevel {
   level: number;
-  buildSession?: CostSession;
+  buildSessions?: CostSession[];
   resumeSession?: CostSession;
-  fixSessions?: CostSession[];
+  repairSessions?: CostSession[];
 }
 
 export interface CostRun {
@@ -79,9 +79,9 @@ function sessionRows(run: CostRun): SessionCostRow[] {
       throw new Error(`levels[${levelIndex}].level must be a positive integer`);
     }
     const groups: Array<[CostLedgerRow['kind'], CostSession[]]> = [
-      ['build', level.buildSession ? [level.buildSession] : []],
+      ['build', level.buildSessions ?? []],
       ['resume', level.resumeSession ? [level.resumeSession] : []],
-      ['repair', level.fixSessions ?? []],
+      ['repair', level.repairSessions ?? []],
     ];
     for (const [kind, sessions] of groups) {
       for (const [index, session] of sessions.entries()) {

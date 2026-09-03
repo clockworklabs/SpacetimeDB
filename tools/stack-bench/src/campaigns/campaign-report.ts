@@ -65,8 +65,8 @@ interface RunLevel extends Omit<Partial<RunLevelRecord>,
   };
   score?: number;
   max?: number;
-  fixCostUsd?: number;
-  fixRounds?: number;
+  repairCostUsd?: number;
+  repairs?: number;
   repair?: unknown;
   outcome?: RunOutcome;
   selection?: RunSelection;
@@ -295,9 +295,9 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
   const correctionNeeded = completeFirstBuild
     ? levels.some(level => level.firstBuild!.score! < level.firstBuild!.max!) : null;
   const completeCorrectionSpend = correctionNeeded === true
-    && levels.every(level => number(level.fixCostUsd) !== null);
+    && levels.every(level => number(level.repairCostUsd) !== null);
   const correctionSpendUsd = completeCorrectionSpend
-    ? Number(levels.reduce((total, level) => total + level.fixCostUsd!, 0).toFixed(6)) : null;
+    ? Number(levels.reduce((total, level) => total + level.repairCostUsd!, 0).toFixed(6)) : null;
   const correctionSuccessRate = correctionNeeded !== true ? null
     : run.outcome?.kind === 'passed' ? 1
       : run.outcome?.kind === 'app_failure' ? 0 : null;
@@ -332,7 +332,7 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
       : progressionCoverage,
     totalCostUsd: run.totals?.costComplete === true ? number(run.totals?.costUsd) : null,
     totalDurationMs: number(run.totals?.durationSec) === null ? null : run.totals!.durationSec! * 1000,
-    fixRounds: number(run.totals?.fixRounds),
+    repairs: number(run.totals?.repairs),
     correctionSuccessRate,
     correctionCostUsd: correctionSuccessRate === 1 ? correctionSpendUsd : null,
     correctionSpendUsd,

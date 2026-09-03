@@ -6,19 +6,13 @@ import type { Artifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { hashDirectory } from '../evidence/provenance.js';
 import type { LevelCheckpoint } from './source-checkpoint.js';
+import type { RunRepairRecord } from '../evidence/benchmark-run.js';
 
 export interface RepairOutcome extends Record<string, unknown> {
   kind: string;
   appFailures?: string[];
   inconclusive?: unknown[];
   harnessFailures?: unknown[];
-}
-
-export interface RepairBudget extends Record<string, unknown> {
-  status: string;
-  budgetRounds: number;
-  roundsUsed: number;
-  stopReason?: string | null;
 }
 
 export interface RepairSelection extends Record<string, unknown> {
@@ -30,22 +24,22 @@ export interface RepairSelection extends Record<string, unknown> {
 export interface RepairLevel extends Record<string, unknown> {
   level: number;
   outcome: RepairOutcome;
-  repair: RepairBudget;
-  fixRounds: number;
+  repair: RunRepairRecord;
+  repairs: number;
   score: number;
   max: number;
   selection?: RepairSelection;
   checkpoint?: LevelCheckpoint;
   buildCostUsd?: number;
   resumeCostUsd?: number;
-  fixCostUsd?: number;
+  repairCostUsd?: number;
   durationSec?: number;
 }
 
 interface RepairContinuation extends Record<string, unknown> {
   rootRunId: string;
   grantIndex: number;
-  cumulativeRoundsAfter: number;
+  cumulativeRepairsAfter: number;
   downstreamLevelsToRerun: number[];
   cumulativeCostAfterUsd: number;
   cumulativeDurationAfterSec: number;
@@ -119,7 +113,7 @@ export interface InspectedRepairParent {
   sourcePath: string;
   rootRunId: string;
   grantIndex: number;
-  cumulativeRoundsBefore: number;
+  cumulativeRepairsBefore: number;
   downstreamLevelsToRerun: number[];
   cumulativeCostBeforeUsd: number;
   cumulativeDurationBeforeSec: number;
@@ -127,14 +121,14 @@ export interface InspectedRepairParent {
 }
 
 export interface RepairGrant extends Record<string, unknown> {
-  schemaVersion: 1;
+  schemaVersion: 2;
   rootRunId: string;
   parentRunId: string;
   level: number;
   grantIndex: number;
-  roundsGranted: number;
-  cumulativeRoundsBefore: number;
-  cumulativeRoundsAfter: number;
+  repairsGranted: number;
+  cumulativeRepairsBefore: number;
+  cumulativeRepairsAfter: number;
   parentCheckpointSha256: string;
   downstreamLevelsToRerun: number[];
   cumulativeCostBeforeUsd: number;
@@ -199,17 +193,20 @@ function requireCompletedFailure(level: RepairLevel | undefined,
     throw new Error(`L${level.level} does not have complete conclusive measurement`);
   }
   const exhausted = level.repair?.status === 'budget-exhausted'
-    && level.repair?.roundsUsed === level.repair?.budgetRounds;
+    && level.repair?.used === level.repair?.limit;
   const paused = level.repair?.status === 'incomplete'
-    && level.repair?.roundsUsed > 0
+    && level.repair?.used > 0
     && (level.repair?.stopReason === 'no-source-change'
-      ? level.repair.roundsUsed <= level.repair.budgetRounds
+      ? level.repair.used <= level.repair.limit
       : level.repair?.stopReason === 'repeated-findings'
-        && level.repair.roundsUsed < level.repair.budgetRounds);
+        && level.repair.used < level.repair.limit);
+  const cumulativeRepairs = parent.levels
+    .filter(candidate => candidate.level <= level.level)
+    .reduce((total, candidate) => total + candidate.repairs, 0);
   if ((!exhausted && !paused)
-    || !Number.isSafeInteger(level.repair?.budgetRounds)
-    || level.repair.budgetRounds < 0
-    || level.fixRounds !== level.repair.roundsUsed) {
+    || !Number.isSafeInteger(level.repair?.limit)
+    || level.repair.limit < 0
+    || level.repair.used !== cumulativeRepairs) {
     throw new Error(`L${level.level} did not exhaust or pause one coherent repair budget`);
   }
   if (!Number.isSafeInteger(level.score) || !Number.isSafeInteger(level.max)
@@ -285,8 +282,8 @@ export function inspectRepairParent(parentDirectory: string,
   const continuation = parent.kind === 'repair_continuation' ? continuationFor(parent) : null;
   const rootRunId = continuation ? continuation.rootRunId : parent.id;
   const grantIndex = continuation ? continuation.grantIndex + 1 : 1;
-  const cumulativeRoundsBefore = continuation
-    ? continuation.cumulativeRoundsAfter : level.repair.roundsUsed;
+  const cumulativeRepairsBefore = continuation
+    ? continuation.cumulativeRepairsAfter : level.repair.used;
   const downstreamLevelsToRerun = continuation
     ? continuation.downstreamLevelsToRerun
     : parent.levels.map(item => item.level).filter(item => item > levelNumber).sort((a, b) => a - b);
@@ -320,7 +317,7 @@ export function inspectRepairParent(parentDirectory: string,
     sourcePath,
     rootRunId,
     grantIndex,
-    cumulativeRoundsBefore,
+    cumulativeRepairsBefore,
     downstreamLevelsToRerun,
     cumulativeCostBeforeUsd,
     cumulativeDurationBeforeSec,
@@ -344,22 +341,22 @@ export function inspectRepairParent(parentDirectory: string,
 }
 
 export function createRepairGrant(parentDirectory: string,
-  { level, rounds }: { level: number; rounds: number }): RepairGrantResolution {
-  if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 20) {
-    throw new Error('repair grant rounds must be an integer from 1 through 20');
+  { level, repairs }: { level: number; repairs: number }): RepairGrantResolution {
+  if (!Number.isSafeInteger(repairs) || repairs < 1) {
+    throw new Error('repair grant must contain a positive safe integer of repairs');
   }
   const inspected = inspectRepairParent(parentDirectory, level);
   return {
     ...inspected,
     grant: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       rootRunId: inspected.rootRunId,
       parentRunId: inspected.parent.id,
       level,
       grantIndex: inspected.grantIndex,
-      roundsGranted: rounds,
-      cumulativeRoundsBefore: inspected.cumulativeRoundsBefore,
-      cumulativeRoundsAfter: inspected.cumulativeRoundsBefore,
+      repairsGranted: repairs,
+      cumulativeRepairsBefore: inspected.cumulativeRepairsBefore,
+      cumulativeRepairsAfter: inspected.cumulativeRepairsBefore,
       parentCheckpointSha256: inspected.checkpoint.payload.source.sha256,
       downstreamLevelsToRerun: inspected.downstreamLevelsToRerun,
       cumulativeCostBeforeUsd: inspected.cumulativeCostBeforeUsd,

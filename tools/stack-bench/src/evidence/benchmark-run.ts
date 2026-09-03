@@ -87,17 +87,12 @@ export interface RunSessionRecord {
 
 export interface RunRepairRecord {
   status: string;
-  budgetRounds: number;
-  roundsUsed: number;
+  limit: number;
+  used: number;
   stopReason: string | null;
-  strikeScope?: 'feature' | 'depth' | 'banked';
-  nodeStrikes?: Array<{
+  nodeRepairs?: Array<{
     nodeId: string;
-    initialBudget: number;
-    granted: number;
-    budget: number;
     used: number;
-    remaining: number;
     exhaustionReason: string | null;
   }>;
 }
@@ -116,14 +111,14 @@ export interface RunLevelRecord {
   resumedRepair?: UnknownRecord;
   regression?: { score?: number | null; max?: number | null } | null;
   contractPass?: boolean | null;
-  buildSession?: RunSessionRecord;
+  buildSessions?: RunSessionRecord[];
   resumeSession?: RunSessionRecord;
-  fixSessions?: RunSessionRecord[];
+  repairSessions?: RunSessionRecord[];
   buildCostUsd?: number;
   resumeCostUsd?: number;
-  fixCostUsd?: number;
+  repairCostUsd?: number;
   costUsd?: number;
-  fixRounds?: number;
+  repairs?: number;
   durationMs?: number;
   durationSec?: number;
   sessionTotals?: SessionMetricsSummary;
@@ -142,8 +137,8 @@ export interface RunLevelRecord {
   promptBytes?: number;
   tokensPerTurn?: number | null;
   thinking?: SessionMetricsSummary['thinking'];
-  priorRepairRounds?: number;
-  cumulativeFixRounds?: number;
+  priorRepairs?: number;
+  cumulativeRepairs?: number;
   repair?: RunRepairRecord;
   checkpoint?: LevelCheckpoint | null;
   stalled?: boolean;
@@ -155,7 +150,7 @@ export interface RunTotals {
   max: number;
   costUsd: number | null;
   costComplete: boolean;
-  fixRounds: number;
+  repairs: number;
   sessions: number;
   tokens: number;
   outputTokens: number;
@@ -203,10 +198,10 @@ export interface RunProgressionStatus {
 }
 
 export interface RunContinuation {
-  cumulativeRoundsBefore: number;
+  cumulativeRepairsBefore: number;
   cumulativeCostBeforeUsd: number;
   cumulativeDurationBeforeSec: number;
-  cumulativeRoundsAfter?: number;
+  cumulativeRepairsAfter?: number;
   cumulativeCostAfterUsd?: number | null;
   cumulativeDurationAfterSec?: number;
   resumeSetup?: UnknownRecord | null;
@@ -299,8 +294,8 @@ interface RunTotalsLevel {
   max?: number | null;
   buildCostUsd?: number | null;
   resumeCostUsd?: number | null;
-  fixCostUsd?: number | null;
-  fixRounds?: number | null;
+  repairCostUsd?: number | null;
+  repairs?: number | null;
   sessionTotals?: {
     sessions?: number;
     tokens?: number;
@@ -329,7 +324,7 @@ export function finalizeRunTotals(
   const currentLevels = run.levels.filter(level => !inherited.has(level.level));
   const currentExecutionCostUsd = addCostUsd(currentLevels.reduce((n, level) => n
     + (level.buildCostUsd ?? level.resumeCostUsd ?? 0)
-    + (level.fixCostUsd ?? 0), 0));
+    + (level.repairCostUsd ?? 0), 0));
   const priorExecutionCostUsd = run.progressionResume?.priorTotals?.costUsd ?? null;
   const cumulativeCostUsd = run.progressionResume
     ? (typeof priorExecutionCostUsd === 'number'
@@ -352,7 +347,7 @@ export function finalizeRunTotals(
         && run.progressionResume.priorTotals?.costComplete !== false)),
     ...(run.progressionResume ? { priorExecutionCostUsd, currentExecutionCostUsd,
       cumulativeCostUsd } : {}),
-    fixRounds: run.levels.reduce((n, level) => n + (level.fixRounds ?? 0), 0),
+    repairs: run.levels.reduce((n, level) => n + (level.repairs ?? 0), 0),
     sessions: run.levels.reduce((n, level) => n + (level.sessionTotals?.sessions ?? 0), 0),
     tokens: run.levels.reduce((n, level) => n + (level.sessionTotals?.tokens ?? 0), 0),
     outputTokens: run.levels.reduce((n, level) => n + (level.sessionTotals?.outputTokens ?? 0), 0),

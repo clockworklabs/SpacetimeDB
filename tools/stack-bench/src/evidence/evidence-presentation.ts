@@ -38,10 +38,10 @@ interface LevelSummaryInput {
   max?: number | null;
   firstBuild?: RunLevelRecord['firstBuild'];
   baseline?: RunLevelRecord['baseline'];
-  fixRounds?: number;
+  repairs?: number;
   buildCostUsd?: number;
   resumeCostUsd?: number;
-  fixCostUsd?: number;
+  repairCostUsd?: number;
   durationSec?: number;
   durationMs?: number;
   error?: string;
@@ -53,14 +53,14 @@ export function formatLevelSummary(level: LevelSummaryInput): string {
     ? `${level.firstBuild.score}/${level.firstBuild.max} unaided -> `
     : level.baseline?.score != null ? `${level.baseline.score}/${level.baseline.max} resumed -> ` : '';
   const score = level.graded ? `${starting}${level.score}/${level.max}` : 'NOT GRADED';
-  const repairs = Number.isInteger(level.fixRounds) ? level.fixRounds : 0;
+  const repairs = Number.isInteger(level.repairs) ? level.repairs : 0;
   const repairLabel = `${repairs} ${repairs === 1 ? 'repair' : 'repairs'}`;
-  const totalCost = (level.buildCostUsd ?? level.resumeCostUsd ?? 0) + (level.fixCostUsd ?? 0);
+  const totalCost = (level.buildCostUsd ?? level.resumeCostUsd ?? 0) + (level.repairCostUsd ?? 0);
   const durationSec = Number.isFinite(level.durationSec)
     ? level.durationSec : Math.round((level.durationMs ?? 0) / 1000);
   const status = level.error
     ? `stopped: ${level.error.replaceAll('-', ' ')}`
     : level.repair?.status?.replaceAll('-', ' ') ?? 'complete';
   return `L${level.level}: ${score} | ${repairLabel} | $${totalCost.toFixed(2)} total`
-    + ` ($${(level.fixCostUsd ?? 0).toFixed(2)} repairs) | ${status} | ${durationSec}s`;
+    + ` ($${(level.repairCostUsd ?? 0).toFixed(2)} repairs) | ${status} | ${durationSec}s`;
 }

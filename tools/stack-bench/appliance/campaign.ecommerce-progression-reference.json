@@ -1,15 +1,13 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "kind": "campaign-manifest",
   "id": "ecommerce-progression-reference",
   "version": "2.0.1",
   "state": "draft",
   "title": "Ecommerce progression reference pilot",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "3.2.0", "workSelection": "progressive",
-    "repairSelection": "feature",
-    "strikePolicy": "feature",
-    "strikes": { "default": 1, "levels": {} } },
+  "mode": { "id": "dependency", "version": "4.0.0", "workSelection": "progressive" },
+  "repair": { "selection": "feature", "budget": { "total": 0 } },
   "levels": [1, 2, 3, 4, 5, 6],
   "featureCatalog": "ecommerce.questlines@2.0.2",
   "selection": {
@@ -49,7 +47,6 @@
     "seed": "ecommerce-progression-reference-1"
   },
   "budgets": {
-    "fixRounds": 0,
     "attemptTimeoutMinutes": 180,
     "maxCostUsdPerAttempt": null
   },

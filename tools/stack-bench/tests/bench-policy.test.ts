@@ -21,7 +21,7 @@ import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, sourceBound
   from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource }
   from '../src/runtime/source-materialization.js';
-import { dependencyRepairBudget, dependencyStrikeRecords }
+import { dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
@@ -188,10 +188,10 @@ test('a missing first-build source is a harness failure', () => {
   });
 });
 
-test('direct runs default to ten repair rounds while an explicit budget still wins', () => {
-  assert.equal(parseBenchArguments(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);
+test('direct runs default to ten repairs while an explicit budget still wins', () => {
+  assert.equal(parseBenchArguments(['node', 'bench', '--backend', 'postgres']).repairs, 10);
   assert.equal(parseBenchArguments(['node', 'bench', '--backend', 'postgres',
-    '--fix-rounds', '4']).fixRounds, 4);
+    '--repairs', '4']).repairs, 4);
 });
 
 test('bench arguments reject partial and out-of-range run indexes', () => {
@@ -217,13 +217,12 @@ test('progression level usability follows its stricter evidence result', () => {
   assert.equal(levelGradeIsUsable({ kind: 'app_failure' }, { outcome: 'conclusive' }), true);
 });
 
-test('dependency repair accounting uses repair rounds, not grading observations', () => {
-  const action = { strikes: { scope: 'feature', maxRemaining: 3 } };
-  assert.equal(dependencyRepairBudget(action, 0, true), 2);
+test('dependency repair accounting uses repairs, not grading observations', () => {
+  const action = { type: 'repair', repair: { remaining: 3 } };
   assert.equal(dependencyRepairBudget(action, 0), 3);
   assert.equal(dependencyRepairBudget(action, 1), 4);
-  assert.throws(() => dependencyRepairBudget({ strikes: { scope: 'level', maxRemaining: 3 } }, 0),
-    /valid strike action/);
+  assert.throws(() => dependencyRepairBudget({ type: 'build', repair: { remaining: null } }, 0),
+    /valid repair action/);
 
   const state = {
     definition: { nodes: [
@@ -232,21 +231,18 @@ test('dependency repair accounting uses repair rounds, not grading observations'
       { id: 'recovery', level: 2 },
     ] },
     nodes: {
-      accounts: { strikes: { initialBudget: 3, granted: 0, budget: 3, used: 1 },
+      accounts: { repairs: { used: 1 },
         exhaustedAtLevel: null, exhaustionReason: null },
-      catalog: { strikes: { initialBudget: 3, granted: 2, budget: 5, used: 5 },
-        exhaustedAtLevel: 1, exhaustionReason: 'strikes-exhausted' },
-      recovery: { strikes: { initialBudget: 2, granted: 0, budget: 2, used: 1 },
+      catalog: { repairs: { used: 5 },
+        exhaustedAtLevel: 1, exhaustionReason: 'repair-budget-exhausted' },
+      recovery: { repairs: { used: 1 },
         exhaustedAtLevel: null, exhaustionReason: null },
     },
   };
-  assert.deepEqual(dependencyStrikeRecords(state, 1, ['recovery']), [
-    { nodeId: 'accounts', initialBudget: 3, granted: 0, budget: 3, used: 1,
-      remaining: 2, exhaustionReason: null },
-    { nodeId: 'catalog', initialBudget: 3, granted: 2, budget: 5, used: 5,
-      remaining: 0, exhaustionReason: 'strikes-exhausted' },
-    { nodeId: 'recovery', initialBudget: 2, granted: 0, budget: 2, used: 1,
-      remaining: 1, exhaustionReason: null },
+  assert.deepEqual(dependencyRepairRecords(state, 1, ['recovery']), [
+    { nodeId: 'accounts', used: 1, exhaustionReason: null },
+    { nodeId: 'catalog', used: 5, exhaustionReason: 'repair-budget-exhausted' },
+    { nodeId: 'recovery', used: 1, exhaustionReason: null },
   ]);
 });
 
@@ -254,7 +250,7 @@ test('resumed dependency costs separate prior, current, and cumulative execution
   const run: RunTotalsInput = { levels: [
     { level: 1, graded: true, score: 1, max: 1, buildCostUsd: 4,
       sessionTotals: { sessions: 1, tokens: 10, outputTokens: 2, turns: 1, durationMs: 100 } },
-    { level: 2, graded: true, score: 1, max: 1, fixCostUsd: 2,
+    { level: 2, graded: true, score: 1, max: 1, repairCostUsd: 2,
       sessionTotals: { sessions: 1, tokens: 5, outputTokens: 1, turns: 1, durationMs: 50 } },
   ], progressionResume: { inheritedLevels: [1],
     priorTotals: { costUsd: 4, costComplete: true } } };
@@ -352,7 +348,7 @@ test('mutation shard coordinates are paired', () => {
 test('mutation-only execution is restricted to model-free reference runs', () => {
   assert.throws(() => parseBenchArguments(['node', 'bench', '--backend', 'postgres',
     '--reference-mutation-only']), /requires a mutation-bound reference fixture/);
-  const args = parseBenchArguments(['node', 'bench', '--backend', 'postgres', '--fix-rounds', '0',
+  const args = parseBenchArguments(['node', 'bench', '--backend', 'postgres', '--repairs', '0',
     '--agent-adapter', 'reference-fixture', '--app', 'fixture', '--mutations', 'mutations.json',
     '--reference-mutation-only', '--mutation-baseline-bundle', 'baseline.json']);
   assert.equal(args.referenceMutationOnly, true);

@@ -26,6 +26,7 @@ import type { ProgressionRecipeAction, ProgressionRecipeSelections }
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionNodeState } from '../src/progression/progression-state.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
+import type { RepairPlan } from '../src/progression/repair-plan.js';
 
 interface FixtureDependency {
   id: string;
@@ -56,8 +57,8 @@ interface FixtureDefinition {
   state: string;
   title: string;
   policy: string;
-  strikes: { default: number; levels: Record<string, number> };
-  repairSelection?: 'feature' | 'batch';
+  repair: RepairPlan;
+  workSelection?: 'feature' | 'progressive' | 'all-at-once';
   nodes: FixtureNode[];
   questlines: FixtureQuestline[];
 }
@@ -95,14 +96,15 @@ function workAction(action: ProgressionRecipeAction['action']): ProgressionWorkA
 }
 
 const definition = (): FixtureDefinition => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   kind: 'progression-mode',
   id: 'live-fixture',
   version: '1.0.0',
   state: 'draft',
   title: 'Live fixture',
   policy: 'dependency-graph',
-  strikes: { default: 2, levels: {} },
+  repair: { selection: 'feature', budget: { perFeature: 2 } },
+  workSelection: 'progressive',
   nodes: [{
     id: 'accounts',
     title: 'Accounts',
@@ -117,18 +119,16 @@ const definition = (): FixtureDefinition => ({
 });
 const splitIdentities = (progression: ProgressionInput) => {
   const progressionDefinition = progression.definition as typeof progression.definition & {
-    repairSelection?: 'feature' | 'batch';
-    strikePolicy?: 'feature' | 'depth' | 'banked';
-    workSelection?: 'progressive' | 'all-at-once';
+    repair?: RepairPlan;
+    workSelection?: 'feature' | 'progressive' | 'all-at-once';
   };
-  const { policy: _policy, strikes, unchangedFailureLimit: _limit,
-    repairSelection, strikePolicy, workSelection,
+  const { policy: _policy, repair, unchangedFailureLimit: _limit, workSelection,
     ...catalogDefinition } = progressionDefinition;
-  assert(strikes);
+  assert(repair);
   const featureCatalog = compileFeatureCatalogInput({ ...catalogDefinition,
     schemaVersion: 1, kind: 'feature-catalog' });
-  const dependencyPolicy = compileDependencyPolicyInput({ levels: strikes.levels }, featureCatalog,
-    { repairSelection, strikePolicy, workSelection });
+  const dependencyPolicy = compileDependencyPolicyInput(repair, featureCatalog,
+    { workSelection });
   return { featureCatalog, dependencyPolicy,
     featureCatalogIdentity: featureCatalog.identity,
     dependencyPolicyIdentity: dependencyPolicy.identity };
@@ -149,7 +149,7 @@ const setupEvidence = () => createCheckEvidence({
   completedAtMs: 2,
 });
 
-test('live progression binds, records, checkpoints, and persists one exact action', () => {
+test('live progression binds and persists one exact accepted action', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-live-progression-'));
   try {
     const appDir = join(root, 'app');
@@ -242,25 +242,15 @@ test('live progression binds, records, checkpoints, and persists one exact actio
 
     const next = execution.record({ selected,
       bundle: { ...grade, totals: { score: 0, max: 1, regression: null },
-        outcome: { kind: 'app_failure' } }, level: 1,
-      repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
-        stopReason: 'not-needed', strikeScope: 'feature', nodeStrikes: [
-          { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
-            remaining: 2, exhaustionReason: null },
-        ] } });
+        outcome: { kind: 'app_failure' } }, level: 1 });
     assert(next);
     assert.equal(next.type, 'terminal');
     assert.equal(nodeState(executionState(execution), 'accounts').status, 'passed');
     assert.equal(latestStatus(states).score.questlineAveragePercentage, 100);
     assert(existsSync(join(outputDir, 'progression-state.json')));
     assert(existsSync(join(outputDir, 'progression', 'attempt-001', 'bundle.json')));
-    assert(existsSync(join(outputDir, 'level-l1-checkpoint.json')));
+    assert(!existsSync(join(outputDir, 'level-l1-checkpoint.json')));
     assert(existsSync(join(outputDir, 'source', 'index.js')));
-    const checkpoint = JSON.parse(readFileSync(
-      join(outputDir, 'level-l1-checkpoint.json'), 'utf8')) as {
-        payload: { outcome: { kind: string } };
-      };
-    assert.equal(checkpoint.payload.outcome.kind, 'passed');
     assert.doesNotThrow(() => createArtifact({
       ...runArtifact,
       attempt: { id: 'run-1', parentId: owner.attempt.id },
@@ -300,8 +290,9 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       featureCatalog: split.featureCatalog,
       dependencyPolicy: split.dependencyPolicy,
       definition: { track: owner.attempt.track, selection: { levels: [] },
-        runtime: { buildImage: null }, budgets: { fixRounds: 1,
-          maxCostUsdPerAttempt: null } },
+        runtime: { buildImage: null },
+        repair: { selection: 'feature' as const, budget: { perFeature: 2 } },
+        budgets: { maxCostUsdPerAttempt: null } },
       agents: [{ adapter: owner.attempt.agentAdapter, model: owner.attempt.model,
         costLimit: 'non-billable', identity: agentIdentity }],
       stacks: [{ id: owner.attempt.stack,
@@ -324,7 +315,12 @@ test('live progression binds, records, checkpoints, and persists one exact actio
         validation: { ladder: { policy: 'dependency-graph', requestedLevels: [1],
           completedLevels: [1], stoppedAfterLevel: null, blockedLevels: [] } },
         levels: [{ level: 1, selection: selected.grader.selection,
-          graded: true, score: 1, max: 1, outcome: { kind: 'passed' } }],
+          graded: true, score: 1, max: 1, repairs: 0,
+          repair: { status: 'not-needed', limit: 0, used: 0,
+            stopReason: 'not-needed', nodeRepairs: [
+              { nodeId: 'accounts', used: 0, exhaustionReason: null },
+            ] },
+          outcome: { kind: 'passed' } }],
         totals: { score: 1, max: 1, costUsd: 0 },
         outcome: { kind: 'passed' },
       },
@@ -339,12 +335,19 @@ test('live progression binds, records, checkpoints, and persists one exact actio
       ...completedRun,
       progressionStatus: { ...completedRun.progressionStatus, attempts: 0 },
     }, { resultDir: outputDir }), /progressionStatus/);
+    assert.throws(() => validateCampaignRun(plan, attempt, {
+      ...completedRun,
+      levels: completedRun.levels?.map(level => ({ ...level,
+        repair: { ...level.repair, nodeRepairs: level.repair?.nodeRepairs?.map(node => ({
+          ...node, used: node.nodeId === 'accounts' ? 1 : node.used,
+        })) } })),
+    }, { resultDir: outputDir }), /levels\.L1\.repair\.nodeRepairs/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('live progression records provider interruptions without consuming a strike', () => {
+test('live progression records provider interruptions without consuming a repair', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-live-provider-failure-'));
   try {
     const appDir = join(root, 'app');
@@ -379,16 +382,14 @@ test('live progression records provider interruptions without consuming a strike
     execution.initialize();
     const selected = workSelection(execution.bind());
     execution.record({ selected, bundle: null, level: 1,
-      failure: { kind: 'provider_failure', reason: 'provider-connection-error' },
-      repair: { status: 'ungraded', budgetRounds: 1, roundsUsed: 0,
-        stopReason: 'agent-session-failure' } });
+      failure: { kind: 'provider_failure', reason: 'provider-connection-error' } });
     const state = executionState(execution);
     const attempt = state.attempts[0];
     assert(attempt);
     assert.equal(state.attempts.length, 1);
     assert.equal(attempt.outcome, 'inconclusive');
     assert.equal(attempt.category, 'provider_failure');
-    assert.equal(nodeState(state, 'accounts').strikes.used, 0);
+    assert.equal(nodeState(state, 'accounts').repairs.used, 0);
     assert.equal(existsSync(join(outputDir, 'progression', 'attempt-001')), false);
     assert.equal(existsSync(join(outputDir, 'progression-state.json')), true);
   } finally {
@@ -482,14 +483,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
         sha256: recipe.contentSha256 }, stackAdapter: { id: owner.attempt.stack } }),
       payload: grade,
     });
-    const next = first.record({ selected, bundle: grade, level: 1,
-      repair: { status: 'not-needed', budgetRounds: 1, roundsUsed: 0,
-        stopReason: 'not-needed', strikeScope: 'feature', nodeStrikes: [
-          { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 0,
-            remaining: 2, exhaustionReason: null },
-          { nodeId: 'catalog', initialBudget: 2, granted: 0, budget: 2, used: 0,
-            remaining: 2, exhaustionReason: null },
-        ] } });
+    const next = first.record({ selected, bundle: grade, level: 1 });
     assert(next);
     assert.equal(next.level, 2);
     writeArtifact(join(firstOutput, 'run.json'), {
@@ -544,7 +538,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
     }
     writeFileSync(join(firstApp, 'index.js'), 'export const broken = true;\n');
     const input = definition();
-    input.strikes.default = 3;
+    input.repair.budget.perFeature = 3;
     const progression = compileProgressionInput(input);
     const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
@@ -591,12 +585,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
         sha256: recipe.contentSha256 }, stackAdapter: { id: owner.attempt.stack } }),
       payload: grade,
     });
-    const next = first.record({ selected, bundle: grade, level: 1,
-      repair: { status: 'incomplete', budgetRounds: 1, roundsUsed: 0,
-        stopReason: null, strikeScope: 'feature', nodeStrikes: [
-          { nodeId: 'accounts', initialBudget: 2, granted: 0, budget: 2, used: 1,
-            remaining: 1, exhaustionReason: null },
-        ] } });
+    const next = first.record({ selected, bundle: grade, level: 1 });
     assert(next);
     assert.equal(next.type, 'repair');
     const repairSelected = workSelection(first.bind());
@@ -613,8 +602,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
       payload: repairGrade,
     });
     const afterRegression = first.record({ selected: repairSelected, bundle: repairGrade, level: 1,
-      repair: { status: 'incomplete', budgetRounds: 2, roundsUsed: 1,
-        stopReason: null, strikeScope: 'feature', nodeStrikes: [] },
+      completedRepair: true,
       repairRegression: { ownerNodeIds: ['accounts'],
         report: '# Previous repair regression\n\nThe earlier account behavior stopped working.\n' } });
     assert(afterRegression);

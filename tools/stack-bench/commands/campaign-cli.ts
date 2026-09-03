@@ -9,7 +9,7 @@ import { executeCampaign, inspectCampaign, reconcileCampaign }
   from '../src/campaigns/campaign-runner.js';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.js';
 import { generateCampaignReport } from '../src/campaigns/campaign-report.js';
-import { grantCampaignDependencyStrikes }
+import { grantCampaignDependencyRepairs }
   from '../src/campaigns/campaign-progression-grant.js';
 import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';
@@ -69,8 +69,8 @@ export type CampaignArgs =
   | { command: 'inspect'; directory: string }
   | { command: 'report'; directory: string }
   | { command: 'audit'; directory: string }
-  | { command: 'grant-strikes'; directory: string; attemptId: string; grantId: string;
-    level: number; nodeIds: string[]; strikes: number }
+  | { command: 'grant-repairs'; directory: string; attemptId: string; grantId: string;
+    level: number; nodeIds: string[]; repairs: number }
   | { command: 'extend'; path: string; parentDirectory: string; fromDepth: number;
     directory: string }
   | { command: 'trial'; path: string; directory: string }
@@ -145,34 +145,34 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
   if (isOneOf(command, ['inspect', 'report', 'audit']) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
-  if (command === 'grant-strikes' && path) {
-    const values: { attemptId?: string; grantId?: string; level?: number; strikes?: number;
+  if (command === 'grant-repairs' && path) {
+    const values: { attemptId?: string; grantId?: string; level?: number; repairs?: number;
       nodeIds: string[] } = { nodeIds: [] };
     const seen = new Set<string>();
     for (let index = 0; index < rest.length; index += 2) {
       const flag = rest[index];
       const value = rest[index + 1];
       if (flag === undefined || value === undefined
-        || !['--attempt', '--grant-id', '--level', '--feature', '--strikes'].includes(flag)
+        || !['--attempt', '--grant-id', '--level', '--feature', '--repairs'].includes(flag)
         || (flag !== '--feature' && seen.has(flag))) {
-        throw new Error(`invalid or duplicate grant-strikes option ${String(flag)}`);
+        throw new Error(`invalid or duplicate grant-repairs option ${String(flag)}`);
       }
       seen.add(flag);
       if (flag === '--attempt') values.attemptId = value;
       else if (flag === '--grant-id') values.grantId = value;
       else if (flag === '--level') values.level = Number(value);
-      else if (flag === '--strikes') values.strikes = Number(value);
+      else if (flag === '--repairs') values.repairs = Number(value);
       else values.nodeIds.push(value);
     }
     if (!values.attemptId || !values.grantId || typeof values.level !== 'number'
-      || !Number.isSafeInteger(values.level) || typeof values.strikes !== 'number'
-      || !Number.isSafeInteger(values.strikes) || values.nodeIds.length === 0) {
-      throw new Error('grant-strikes requires --attempt, --grant-id, --level, '
-        + 'one or more --feature values, and --strikes');
+      || !Number.isSafeInteger(values.level) || typeof values.repairs !== 'number'
+      || !Number.isSafeInteger(values.repairs) || values.nodeIds.length === 0) {
+      throw new Error('grant-repairs requires --attempt, --grant-id, --level, '
+        + 'one or more --feature values, and --repairs');
     }
     return { command, directory: resolve(path), attemptId: values.attemptId,
       grantId: values.grantId, level: values.level, nodeIds: values.nodeIds,
-      strikes: values.strikes };
+      repairs: values.repairs };
   }
   if (command === 'extend' && path && rest.length === 6
     && rest[0] === '--from' && rest[2] === '--depth' && rest[4] === '--out') {
@@ -191,8 +191,8 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
     + '| trial|run|resume|reconcile <campaign.json> --out <directory> '
     + '| extend <campaign.json> --from <campaign-directory> --depth <N> --out <directory> '
     + '| status <directory> [--full] | inspect|report|audit <directory> '
-    + '| grant-strikes <directory> --attempt <id> --grant-id <id> --level <N> '
-    + '--feature <id> [--feature <id> ...] --strikes <N>');
+    + '| grant-repairs <directory> --attempt <id> --grant-id <id> --level <N> '
+    + '--feature <id> [--feature <id> ...] --repairs <N>');
 }
 
 async function main() {
@@ -227,13 +227,13 @@ async function main() {
     if (!report.ok) process.exitCode = 1;
     return;
   }
-  if (args.command === 'grant-strikes') {
-    console.log(JSON.stringify(grantCampaignDependencyStrikes(args.directory, {
+  if (args.command === 'grant-repairs') {
+    console.log(JSON.stringify(grantCampaignDependencyRepairs(args.directory, {
       attemptId: args.attemptId,
       grantId: args.grantId,
       level: args.level,
       nodeIds: args.nodeIds,
-      strikes: args.strikes,
+      repairs: args.repairs,
     }), null, 2));
     return;
   }

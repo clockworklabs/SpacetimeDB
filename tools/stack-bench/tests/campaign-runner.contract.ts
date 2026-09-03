@@ -74,7 +74,7 @@ interface MutableLevel extends UnknownRecord {
   selection?: MutableSelection;
   score?: number | null;
   max?: number | null;
-  fixRounds?: number;
+  repairs?: number;
   graded?: boolean;
   error?: string;
   contractPass?: boolean | null;
@@ -83,8 +83,8 @@ interface MutableLevel extends UnknownRecord {
     observations?: UnknownRecord & { sourceSha256: string; selectionSha256: string;
       selectedChecks: string[]; reportedChecks: string[]; passedPoints: number;
       observedPoints: number; scoreContribution: boolean; repairVisible: boolean } };
-  buildSession?: UnknownRecord & { costReceipts?: unknown[] };
-  repair?: { status: string; budgetRounds: number; roundsUsed: number;
+  buildSessions?: Array<UnknownRecord & { costReceipts?: unknown[] }>;
+  repair?: { status: string; limit: number; used: number;
     stopReason: string | null };
   outcome?: MutableOutcome;
 }
@@ -207,8 +207,8 @@ test('campaign retry budget subtracts every prior execution cost', () => {
     const receipt = { complete: true, reconciled: true, error: null, costUsd: 3.25 };
     writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: 'prior-run',
       payload: { totals: { costUsd: 3.25, costComplete: true },
-        levels: [{ level: 1, buildSession: { costUsd: 3.25, costComplete: true,
-          costReceipts: [{ invocation: 1, receipt }] } }] } });
+        levels: [{ level: 1, buildSessions: [{ costUsd: 3.25, costComplete: true,
+          costReceipts: [{ invocation: 1, receipt }] }] }] } });
     const campaign = { definition: { budgets: { maxCostUsdPerAttempt: 10 } } };
     const claim = { attempt: { id: 'one' }, priorOutputs: ['attempts/one/execution-1'] };
     assert.equal(remainingAttemptCostBudget(campaign, claim, root), 6.75);
@@ -302,9 +302,9 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
     validation: { ladder: { policy: 'pass-before-next-level', requestedLevels: [1, 2],
       completedLevels: [1], stoppedAfterLevel: 1, blockedLevels: [2] } },
     levels: [{ level: 1, selection: plannedSelection(attempt, 1),
-      graded: true, score: 57, max: 58, fixRounds: 3,
+      graded: true, score: 57, max: 58, repairs: 3,
       firstBuild: { score: 31, max: 58, outcome: appFailure },
-      repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
+      repair: { status: 'budget-exhausted', limit: 3, used: 3,
         stopReason: 'budget-exhausted' }, outcome: appFailure }],
     outcome: { kind: 'app_failure', levels: { 1: appFailure } } };
   assert.equal(validateCampaignRun(plan, attempt, gated,
@@ -358,8 +358,8 @@ test('paid campaign validation requires cost evidence unless the agent failed', 
     runtime: { buildImage: 'test-build-image' },
     totals: { costUsd: 1.25, costComplete: true },
     levels: [{ level: 1, selection: plannedSelection(attempt, 1),
-      buildSession: { costUsd: 1.25, costComplete: true,
-        costReceipts: [{ invocation: 1, receipt }] } }],
+      buildSessions: [{ costUsd: 1.25, costComplete: true,
+        costReceipts: [{ invocation: 1, receipt }] }] }],
     outcome: { kind: 'harness_failure', reason: 'provider-session-error' },
   };
 
@@ -373,16 +373,16 @@ test('paid campaign validation requires cost evidence unless the agent failed', 
   }, { buildImage: 'test-build-image' }), /totals\.costComplete.*costEvidence/);
   assert.throws(() => validateCampaignRun(plan, attempt, {
     ...run, outcome: { kind: 'app_failure', reason: 'app is incomplete' },
-    levels: [{ ...run.levels[0]!, buildSession: {
-      ...run.levels[0]!.buildSession, costReceipts: [],
-    } }],
+    levels: [{ ...run.levels[0]!, buildSessions: [{
+      ...run.levels[0]!.buildSessions?.[0], costReceipts: [],
+    }] }],
   }, { buildImage: 'test-build-image' }), /costEvidence/);
   assert.throws(() => validateCampaignRun(plan, attempt, {
     ...run, outcome: { kind: 'app_failure', reason: 'app is incomplete' },
-    levels: [{ ...run.levels[0]!, buildSession: {
-      ...run.levels[0]!.buildSession, costReceipts: [{ invocation: 1,
+    levels: [{ ...run.levels[0]!, buildSessions: [{
+      ...run.levels[0]!.buildSessions?.[0], costReceipts: [{ invocation: 1,
         receipt: { ...receipt, reconciled: false, error: 'not reconciled' } }],
-    } }],
+    }] }],
   }, { buildImage: 'test-build-image' }), /costEvidence/);
 });
 
@@ -527,26 +527,26 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 0, max: 58, fixRounds: 1,
+  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 0, max: 58, repairs: 1,
     firstBuild: { score: 0, max: 58, outcome: { kind: 'app_failure' } },
-    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1, stopReason: null },
+    repair: { status: 'incomplete', limit: 3, used: 1, stopReason: null },
     outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.repair/);
   run.levels[0] = { ...run.levels[0]!,
-    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1,
+    repair: { status: 'incomplete', limit: 3, used: 1,
       stopReason: 'repeated-findings' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   run.levels[0] = { ...run.levels[0]!,
-    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1,
+    repair: { status: 'incomplete', limit: 3, used: 1,
       stopReason: 'no-source-change' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  run.levels[0] = { ...run.levels[0]!, fixRounds: 3,
-    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 3,
+  run.levels[0] = { ...run.levels[0]!, repairs: 3,
+    repair: { status: 'incomplete', limit: 3, used: 3,
       stopReason: 'no-source-change' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  run.levels[0] = { ...run.levels[0]!, fixRounds: 3,
-    repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
+  run.levels[0] = { ...run.levels[0]!, repairs: 3,
+    repair: { status: 'budget-exhausted', limit: 3, used: 3, stopReason: null } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   run.levels[0] = { ...run.levels[0]!, score: 58 };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
@@ -565,7 +565,7 @@ test('campaign validation accepts an explicit repeated-findings pause but reject
     /levels\.L1\.score/,
     'test-development evidence cannot turn a perfect scored result into an application failure');
   run.levels[0] = { ...run.levels[0]!, score: 0, outcome: { kind: 'passed' },
-    repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
+    repair: { status: 'corrected', limit: 3, used: 3, stopReason: null } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /outcome\.kind/);
 });
@@ -585,9 +585,9 @@ test('campaign validation requires complete first-build and final measurement co
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
   levels: [{ level: 1, graded: true, selection: plannedSelection(attempt, 1),
-    score: 58, max: 58, fixRounds: 0,
+    score: 58, max: 58, repairs: 0,
     firstBuild: { score: 58, max: 58, outcome },
-    repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+    repair: { status: 'not-needed', limit: 3, used: 0, stopReason: null },
     outcome }], outcome: { kind: 'passed' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   const missingPackage = mkdtempSync(join(tmpdir(), 'stack-bench-missing-package-'));
@@ -630,9 +630,9 @@ test('campaign validation requires complete first-build and final measurement co
     inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] };
   inconclusiveFinal.outcome = { kind: 'app_failure' };
   inconclusiveFinal.levels[0]!.score = 57;
-  inconclusiveFinal.levels[0]!.fixRounds = 3;
-  inconclusiveFinal.levels[0]!.repair = { status: 'budget-exhausted', budgetRounds: 3,
-    roundsUsed: 3, stopReason: null };
+  inconclusiveFinal.levels[0]!.repairs = 3;
+  inconclusiveFinal.levels[0]!.repair = { status: 'budget-exhausted', limit: 3,
+    used: 3, stopReason: null };
   assert.throws(() => validateCampaignRun(plan, attempt, inconclusiveFinal,
     { buildImage: 'test-build-image' }), /final\.outcome\.inconclusive/);
 });
@@ -671,7 +671,7 @@ test('campaign validation binds observed-only evidence to its exact first-build 
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, score: 0, max: 2, fixRounds: 3,
+  levels: [{ level: 1, score: 0, max: 2, repairs: 3,
     selection: { schemaVersion: 3, sha256: selectionSha256, scoredPoints: 2,
       specifications,
       scoredChecks, observedChecks },
@@ -682,7 +682,7 @@ test('campaign validation binds observed-only evidence to its exact first-build 
       scoreContribution: false, repairVisible: false,
       artifact: 'first-build-l1-observed/bundle.json', outcome: { kind: 'passed' },
     } },
-    repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
+    repair: { status: 'budget-exhausted', limit: 3, used: 3,
       stopReason: null }, outcome: { kind: 'app_failure' } }],
   outcome: { kind: 'app_failure' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
@@ -857,9 +857,9 @@ test('model-free campaign execution checkpoints an authorized retry and every co
           const selection = plannedSelection(attempt, level);
           const max = selection.scoredPoints;
           const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-          return { level, graded: true, selection, score: max, max, fixRounds: 0,
+          return { level, graded: true, selection, score: max, max, repairs: 0,
             firstBuild: { score: max, max, outcome },
-            repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+            repair: { status: 'not-needed', limit: 3, used: 0, stopReason: null },
             outcome };
         });
         writeFakePackageEvidence(output, levels.at(-1)!);
@@ -953,9 +953,9 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
           const selection = plannedSelection(attempt, level);
           const max = selection.scoredPoints;
           const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-          return { level, graded: true, selection, score: max, max, fixRounds: 0,
+          return { level, graded: true, selection, score: max, max, repairs: 0,
             firstBuild: { score: max, max, outcome },
-            repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+            repair: { status: 'not-needed', limit: 3, used: 0, stopReason: null },
             outcome };
         });
         writeFakePackageEvidence(output, levels.at(-1)!);

@@ -1,10 +1,6 @@
 import {
-  DEFAULT_DEPENDENCY_REPAIR_SELECTION,
-  DEFAULT_DEPENDENCY_STRIKE_POLICY,
   DEFAULT_DEPENDENCY_WORK_SELECTION,
   DEPENDENCY_MODE_VERSION,
-  isDependencyRepairSelection,
-  isDependencyStrikePolicy,
   isDependencyWorkSelection,
 } from '../progression/dependency-definition.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
@@ -30,13 +26,6 @@ export interface CampaignModeRegistry {
 
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
-const positiveInteger = (value: unknown, at: string): number => {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
-    fail(`${at} must be a positive integer`);
-  }
-  return value;
-};
-
 function fail(message: string): never {
   throw new Error(`invalid campaign mode: ${message}`);
 }
@@ -87,41 +76,15 @@ const dependencyMode = {
   id: 'dependency',
   version: DEPENDENCY_MODE_VERSION,
   validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
-    const fields = new Set(['id', 'version', 'strikes', 'repairSelection', 'strikePolicy',
-      'workSelection']);
+    const fields = new Set(['id', 'version', 'workSelection']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
     }
-    if (!object(value.strikes)) fail(`${at}.strikes must be an object`);
-    const strikeFields = new Set(['default', 'levels']);
-    for (const key of Object.keys(value.strikes)) {
-      if (!strikeFields.has(key)) fail(`${at}.strikes.${key} is unknown`);
-    }
-    const levels = value.strikes.levels ?? {};
-    if (!object(levels)) fail(`${at}.strikes.levels must be an object`);
-    const normalizedLevels: Record<string, number> = {};
-    for (const [level, budget] of Object.entries(levels)) {
-      if (!/^[1-9]\d*$/.test(level)) fail(`${at}.strikes.levels.${level} has an invalid level`);
-      normalizedLevels[level] = positiveInteger(budget, `${at}.strikes.levels.${level}`);
-    }
-    const repairSelection = value.repairSelection ?? DEFAULT_DEPENDENCY_REPAIR_SELECTION;
-    if (!isDependencyRepairSelection(repairSelection)) {
-      fail(`${at}.repairSelection must be "feature" or "batch"`);
-    }
-    const strikePolicy = value.strikePolicy ?? DEFAULT_DEPENDENCY_STRIKE_POLICY;
-    if (!isDependencyStrikePolicy(strikePolicy)) {
-      fail(`${at}.strikePolicy must be "feature", "depth", or "banked"`);
-    }
     const workSelection = value.workSelection ?? DEFAULT_DEPENDENCY_WORK_SELECTION;
     if (!isDependencyWorkSelection(workSelection)) {
-      fail(`${at}.workSelection must be "progressive" or "all-at-once"`);
+      fail(`${at}.workSelection must be "feature", "progressive", or "all-at-once"`);
     }
-    return { id: value.id, version: value.version, repairSelection, strikePolicy, workSelection,
-      strikes: {
-      ...(value.strikes.default === undefined ? {}
-        : { default: positiveInteger(value.strikes.default, `${at}.strikes.default`) }),
-      levels: normalizedLevels,
-    } };
+    return { id: value.id, version: value.version, workSelection };
   },
 };
 

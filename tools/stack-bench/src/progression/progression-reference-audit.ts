@@ -245,8 +245,8 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
   const coveredCheckIds = new Set<string>();
 
   for (const event of stored.state.events) {
-    if (event.type === 'strikes-granted') {
-      state = progressionEngine.grantStrikes(state, event.grant);
+    if (event.type === 'repairs-granted') {
+      state = progressionEngine.grantRepairs(state, event.grant);
       grants.push(structuredClone(event.grant));
       continue;
     }
@@ -288,8 +288,13 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
         sequence: attemptSequence,
       },
     );
-    const recordedGrade = savedResult.repairRegression === undefined
-      ? converted : { ...converted, repairRegression: savedResult.repairRegression };
+    const recordedGrade = {
+      ...converted,
+      ...(savedResult.repairRegression === undefined
+        ? {} : { repairRegression: savedResult.repairRegression }),
+      ...(savedResult.completedRepair === undefined
+        ? {} : { completedRepair: savedResult.completedRepair }),
+    };
     if (!same(recordedGrade, savedResult)) {
       throw new Error(`progression attempt ${attemptSequence} recorded result differs from its grade bundle`);
     }

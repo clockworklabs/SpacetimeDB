@@ -16,15 +16,15 @@ import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
-  DEPENDENCY_MODE_VERSION,
-  DEFAULT_DEPENDENCY_REPAIR_SELECTION, DEFAULT_UNCHANGED_FAILURE_LIMIT,
-  DEFAULT_DEPENDENCY_STRIKE_POLICY,
+  DEPENDENCY_MODE_VERSION, DEFAULT_UNCHANGED_FAILURE_LIMIT,
   DEFAULT_DEPENDENCY_WORK_SELECTION,
   DEPENDENCY_MODE_SCHEMA_VERSION, FEATURE_CATALOG_SCHEMA_VERSION,
-  isDependencyRepairSelection, isDependencyStrikePolicy, isDependencyWorkSelection }
+  isDependencyWorkSelection }
   from './dependency-definition.js';
-import type { DependencyRepairSelection, DependencyStrikePolicy, DependencyWorkSelection }
+import type { DependencyWorkSelection }
   from './dependency-definition.js';
+import { validateRepairPlan } from './repair-plan.js';
+import type { RepairPlan } from './repair-plan.js';
 import { progressionEngine } from './progression-engine.js';
 import { isProgressionIdentifier, parseVersionedProgressionId }
   from './progression-identifiers.js';
@@ -64,9 +64,8 @@ export interface CompiledProgressionDefinition {
   nodes: CompiledProgressionNode[];
   questlines: CompiledProgressionQuestline[];
   policy?: string;
-  strikes?: { levels: Record<string, number> };
+  repair?: RepairPlan;
   unchangedFailureLimit?: number;
-  strikePolicy?: DependencyStrikePolicy;
   workSelection?: DependencyWorkSelection;
 }
 
@@ -88,10 +87,8 @@ export interface CompiledDependencyPolicyDefinition extends Record<string, unkno
   id: string;
   version: string;
   levels: number[];
-  strikes: { levels: Record<string, number> };
+  repair: RepairPlan;
   unchangedFailureLimit: number;
-  repairSelection: DependencyRepairSelection;
-  strikePolicy: DependencyStrikePolicy;
   workSelection: DependencyWorkSelection;
 }
 
@@ -554,11 +551,9 @@ export function selectFeatureCatalogLevels(featureCatalog: unknown,
   );
 }
 
-function compileDependencyPolicyForCatalog(strikes: unknown, catalog: ProgressionInput,
+function compileDependencyPolicyForCatalog(repair: unknown, catalog: ProgressionInput,
   selectedLevels: number[],
   unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT,
-  repairSelection: DependencyRepairSelection = DEFAULT_DEPENDENCY_REPAIR_SELECTION,
-  strikePolicy: DependencyStrikePolicy = DEFAULT_DEPENDENCY_STRIKE_POLICY,
   workSelection: DependencyWorkSelection = DEFAULT_DEPENDENCY_WORK_SELECTION,
 ): ProgressionInput<CompiledDependencyPolicyDefinition> {
   const selected = selectedCatalogDefinition(catalog, selectedLevels);
@@ -567,10 +562,8 @@ function compileDependencyPolicyForCatalog(strikes: unknown, catalog: Progressio
     schemaVersion: DEPENDENCY_MODE_SCHEMA_VERSION,
     kind: 'progression-mode',
     policy: DEPENDENCY_MODE_POLICY,
-    strikes,
+    repair,
     unchangedFailureLimit,
-    repairSelection,
-    strikePolicy,
     workSelection,
   });
   const definition = canonicalizeDefinition({
@@ -579,10 +572,8 @@ function compileDependencyPolicyForCatalog(strikes: unknown, catalog: Progressio
     id: DEPENDENCY_MODE_POLICY,
     version: DEPENDENCY_MODE_VERSION,
     levels: selected.levels,
-    strikes: runtimeDefinition.strikes,
+    repair: runtimeDefinition.repair,
     unchangedFailureLimit: runtimeDefinition.unchangedFailureLimit,
-    repairSelection: runtimeDefinition.repairSelection,
-    strikePolicy: runtimeDefinition.strikePolicy,
     workSelection: runtimeDefinition.workSelection,
   }) as CompiledDependencyPolicyDefinition;
   return canonicalizeDefinition({
@@ -592,23 +583,19 @@ function compileDependencyPolicyForCatalog(strikes: unknown, catalog: Progressio
   }) as unknown as ProgressionInput<CompiledDependencyPolicyDefinition>;
 }
 
-export function compileDependencyPolicyInput(strikes: unknown, featureCatalog: unknown, {
+export function compileDependencyPolicyInput(repair: unknown, featureCatalog: unknown, {
   selectedLevels, unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT,
-  repairSelection = DEFAULT_DEPENDENCY_REPAIR_SELECTION,
-  strikePolicy = DEFAULT_DEPENDENCY_STRIKE_POLICY,
   workSelection = DEFAULT_DEPENDENCY_WORK_SELECTION,
 }: {
   selectedLevels?: number[];
   unchangedFailureLimit?: number;
-  repairSelection?: DependencyRepairSelection;
-  strikePolicy?: DependencyStrikePolicy;
   workSelection?: DependencyWorkSelection;
 } = {}): ProgressionInput<CompiledDependencyPolicyDefinition> {
   const catalog = validateFeatureCatalogInput(featureCatalog);
   const levels = selectedLevels
     ?? [...new Set(catalog.definition.nodes.map(node => node.level))].sort((left, right) => left - right);
-  return compileDependencyPolicyForCatalog(strikes, catalog, levels, unchangedFailureLimit,
-    repairSelection, strikePolicy, workSelection);
+  return compileDependencyPolicyForCatalog(repair, catalog, levels, unchangedFailureLimit,
+    workSelection);
 }
 
 function validateDependencyPolicyForCatalog(input: unknown,
@@ -618,7 +605,7 @@ function validateDependencyPolicyForCatalog(input: unknown,
   for (const key of Object.keys(input)) {
     if (!fields.has(key)) throw new Error(`dependency policy input.${key} is unknown`);
   }
-  if (!object(input.definition) || !object(input.definition.strikes)) {
+  if (!object(input.definition) || !object(input.definition.repair)) {
     throw new Error('dependency policy input definition is incomplete');
   }
   if (!Array.isArray(input.definition.levels)
@@ -626,20 +613,12 @@ function validateDependencyPolicyForCatalog(input: unknown,
     throw new Error('dependency policy input levels are invalid');
   }
   const levels = input.definition.levels as number[];
-  if (!isDependencyRepairSelection(input.definition.repairSelection)) {
-    throw new Error('dependency policy input repairSelection is invalid');
-  }
-  if (!isDependencyStrikePolicy(input.definition.strikePolicy)) {
-    throw new Error('dependency policy input strikePolicy is invalid');
-  }
+  validateRepairPlan(input.definition.repair, 'dependency policy input definition.repair');
   if (!isDependencyWorkSelection(input.definition.workSelection)) {
     throw new Error('dependency policy input workSelection is invalid');
   }
-  const compiled = compileDependencyPolicyForCatalog({
-    levels: input.definition.strikes.levels ?? {},
-  }, catalog, levels,
+  const compiled = compileDependencyPolicyForCatalog(input.definition.repair, catalog, levels,
   input.definition.unchangedFailureLimit as number | undefined,
-  input.definition.repairSelection, input.definition.strikePolicy,
   input.definition.workSelection);
   if (canonicalDefinitionJson(input) !== canonicalDefinitionJson(compiled)) {
     throw new Error('dependency policy identity does not match its compiled definition');
@@ -662,10 +641,8 @@ export function dependencyRuntimeDefinition(featureCatalog: unknown,
     schemaVersion: DEPENDENCY_MODE_SCHEMA_VERSION,
     kind: 'progression-mode',
     policy: policy.definition.id,
-    strikes: { levels: policy.definition.strikes.levels },
+    repair: policy.definition.repair,
     unchangedFailureLimit: policy.definition.unchangedFailureLimit,
-    repairSelection: policy.definition.repairSelection,
-    strikePolicy: policy.definition.strikePolicy,
     workSelection: policy.definition.workSelection,
   });
 }

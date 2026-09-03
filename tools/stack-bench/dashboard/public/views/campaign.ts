@@ -50,10 +50,9 @@ function facts(sheet: CampaignSheet): string {
   if (dependency) {
     cells.push(['Work', fact.workSelection ?? DASH, ''],
       ['Repair', fact.repairSelection ?? DASH, ''],
-      ['Strikes', fact.strikes === null ? DASH
-        : `${fact.strikes} per ${fact.strikePolicy ?? 'feature'}`, '']);
+      ['Repair budget', String(fact.repairBudget), '']);
   } else {
-    cells.push(['Repairs', `${fact.fixRounds} rounds per level`, '']);
+    cells.push(['Repair budget', String(fact.repairBudget), '']);
   }
   cells.push(['Repetitions', String(sheet.repetitions), ''],
     ['Agent', fact.agent ?? DASH, ''], ['Model', fact.model ?? DASH, ''],
@@ -138,7 +137,7 @@ function replay(progression: CampaignProgression, cursor: number): string {
     ['Stack', esc(stackLabel(selected.stack))], ['Action', esc(selected.step.action)],
     ['Feature', selected.step.targets.length === 1
       ? esc(title(selected.step.targets[0] ?? '')) : `${selected.step.targets.length} features`],
-    ['Score', pct(selected.step.score)], ['Strike', num(selected.step.strikes)]]
+    ['Score', pct(selected.step.score)], ['Repairs', num(selected.step.repairs)]]
     .map(([label, value]) => `<div class="ev"><span class="label">${label}</span>`
       + `<span class="v">${value}</span></div>`).join('') : '';
   // Drawn as one SVG per stack: the dashboard's policy allows no inline style,

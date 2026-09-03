@@ -32,8 +32,8 @@ function run(id: string, attempt: { id: string; condition?: CampaignAttemptPlan[
   { score?: number; max?: number; first?: number; cost?: number; durationSec?: number } = {},
 ): BenchmarkRun {
   const passed = score === max;
-  const fixRounds = passed ? (score === first ? 0 : 1) : 3;
-  const status = passed ? (fixRounds ? 'corrected' : 'not-needed') : 'budget-exhausted';
+  const repairs = passed ? (score === first ? 0 : 1) : 3;
+  const status = passed ? (repairs ? 'corrected' : 'not-needed') : 'budget-exhausted';
   const outcome = { kind: passed ? 'passed' : 'app_failure' };
   // A valid run artifact carries the exact planned selection for each level.
   const selection = structuredClone(attempt.condition?.requested?.levels
@@ -41,9 +41,9 @@ function run(id: string, attempt: { id: string; condition?: CampaignAttemptPlan[
   return { id, parentAttemptId: attempt.id, outcome,
     levels: [{ level: 1, ...(selection ? { selection } : {}),
       firstBuild: { score: first, max, outcome }, score, max,
-      fixCostUsd: fixRounds ? cost / 2 : 0, fixRounds,
-      repair: { status, budgetRounds: 3, roundsUsed: fixRounds, stopReason: null }, outcome }],
-    totals: { score, max, costUsd: cost, costComplete: true, durationSec, fixRounds } };
+      repairCostUsd: repairs ? cost / 2 : 0, repairs,
+      repair: { status, limit: 3, used: repairs, stopReason: null }, outcome }],
+    totals: { score, max, costUsd: cost, costComplete: true, durationSec, repairs } };
 }
 
 function writeFakePackageEvidence(output: string, level: NonNullable<BenchmarkRun['levels']>[number]): void {
@@ -135,19 +135,19 @@ test('report read model keeps invalid evidence separate and computes declared di
 
 test('correction metrics separate successful cost from unresolved spend', () => {
   const corrected = campaignRunMetrics({ outcome: { kind: 'passed' },
-    levels: [{ firstBuild: { score: 5, max: 10 }, fixCostUsd: 1.25 }], totals: {} });
+    levels: [{ firstBuild: { score: 5, max: 10 }, repairCostUsd: 1.25 }], totals: {} });
   assert.equal(corrected.correctionSuccessRate, 1);
   assert.equal(corrected.correctionCostUsd, 1.25);
   assert.equal(corrected.correctionSpendUsd, 1.25);
 
   const unresolved = campaignRunMetrics({ outcome: { kind: 'app_failure' },
-    levels: [{ firstBuild: { score: 5, max: 10 }, fixCostUsd: 2 }], totals: {} });
+    levels: [{ firstBuild: { score: 5, max: 10 }, repairCostUsd: 2 }], totals: {} });
   assert.equal(unresolved.correctionSuccessRate, 0);
   assert.equal(unresolved.correctionCostUsd, null);
   assert.equal(unresolved.correctionSpendUsd, 2);
 
   const unaided = campaignRunMetrics({ outcome: { kind: 'passed' },
-    levels: [{ firstBuild: { score: 10, max: 10 }, fixCostUsd: 0 }], totals: {} });
+    levels: [{ firstBuild: { score: 10, max: 10 }, repairCostUsd: 0 }], totals: {} });
   assert.equal(unaided.correctionSuccessRate, null);
   assert.equal(unaided.correctionCostUsd, null);
   assert.equal(unaided.correctionSpendUsd, null);
@@ -191,7 +191,7 @@ test('score rates keep inconclusive points separate from measurement coverage', 
     criterionId: '203b', points: 1 }] };
   const metrics = campaignRunMetrics({ outcome: inconclusive, levels: [{
     firstBuild: { score: 8, max: 9, outcome: inconclusive },
-    score: 9, max: 9, selection, outcome: inconclusive, fixCostUsd: 1,
+    score: 9, max: 9, selection, outcome: inconclusive, repairCostUsd: 1,
   }], totals: { score: 9, max: 9 } });
   assert.equal(metrics.firstBuildScoreRate, 0.888889);
   assert.equal(metrics.finalScoreRate, 1);

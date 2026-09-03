@@ -95,6 +95,16 @@ parallelism, pricing, controller image, and build image. When the run starts,
 Stack Bench records these settings with the results. This prevents settings
 from changing during a campaign.
 
+The manifest also defines how repair work is selected and limited:
+
+```json
+"repair": { "selection": "feature", "budget": { "perFeature": 1 } }
+```
+
+Dependency mode supports `feature` or `batch` selection and total, per-feature,
+or per-depth limits. When limits are combined, the tightest remaining limit
+wins. Sequential mode requires `batch` selection and one `total` limit.
+
 The plan, dashboard, and report show qualification status. Publish scores as
 verified comparison data only after every selected level is qualified.
 
@@ -150,12 +160,12 @@ campaign reconcile <campaign.json> --out <campaign-directory>
 Reconciliation changes state only when private supervisor evidence proves that
 the exact owned resources are clean.
 
-Dependency campaigns can grant more strikes to selected exhausted features:
+Dependency campaigns can grant more repairs to selected exhausted features:
 
 ```sh
-campaign grant-strikes <campaign-directory> \
+campaign grant-repairs <campaign-directory> \
   --attempt <attempt-id> --grant-id <unique-id> --level <N> \
-  --feature <feature-id> --strikes <N>
+  --feature <feature-id> --repairs <N>
 ```
 
 The grant creates a linked continuation. It does not rewrite the completed

@@ -23,7 +23,7 @@ import type {
 } from './progression-engine.js';
 import type {
   ProgressionEvent,
-  ProgressionGrant,
+  ProgressionRepairGrant,
   ProgressionNodeState,
   ProgressionRepairRegression,
   ProgressionState,
@@ -86,6 +86,7 @@ interface ResultBase extends Record<string, unknown> {
   selectionSha256?: string;
   evidence?: SourceEvidence;
   repairRegression?: ProgressionRepairRegression;
+  completedRepair?: true;
 }
 
 export interface ConclusiveResult extends ResultBase {
@@ -106,7 +107,7 @@ interface InconclusiveResult extends ResultBase {
 
 export type DependencyResult = ConclusiveResult | InconclusiveResult;
 
-export type DependencyStrikeGrant = ProgressionGrant;
+export type DependencyRepairGrant = ProgressionRepairGrant;
 
 interface AttemptRecordedEvent extends ProgressionEvent {
   sequence: number;
@@ -115,48 +116,45 @@ interface AttemptRecordedEvent extends ProgressionEvent {
   grant?: never;
 }
 
-interface StrikesGrantedEvent extends ProgressionEvent {
+interface RepairsGrantedEvent extends ProgressionEvent {
   sequence: number;
-  type: 'strikes-granted';
+  type: 'repairs-granted';
   result?: never;
-  grant: DependencyStrikeGrant;
+  grant: DependencyRepairGrant;
 }
 
-export type DependencyEvent = AttemptRecordedEvent | StrikesGrantedEvent;
+export type DependencyEvent = AttemptRecordedEvent | RepairsGrantedEvent;
 
 export interface DependencyState extends ProgressionState {
   definition: CompiledDependencyDefinition;
   events: DependencyEvent[];
-  grants: DependencyStrikeGrant[];
+  grants: DependencyRepairGrant[];
 }
 
 export function dependencyRepairBudget(
   action: unknown,
-  completedRepairRounds: number,
-  initialGradePending = false,
+  completedRepairs: number,
 ): number {
-  if (!object(action) || action.type === 'terminal' || !object(action.strikes)
-    || !['feature', 'depth', 'banked'].includes(String(action.strikes.scope))
-    || !Number.isSafeInteger(action.strikes.maxRemaining)
-    || Number(action.strikes.maxRemaining) < 0
-    || !Number.isSafeInteger(completedRepairRounds) || completedRepairRounds < 0) {
-    throw new Error('dependency repair budget requires one valid strike action');
+  if (!object(action) || action.type === 'terminal' || !object(action.repair)
+    || !Number.isSafeInteger(action.repair.remaining)
+    || Number(action.repair.remaining) < 0
+    || !Number.isSafeInteger(completedRepairs) || completedRepairs < 0) {
+    throw new Error('dependency repair budget requires one valid repair action');
   }
-  return Math.max(0, completedRepairRounds + Number(action.strikes.maxRemaining)
-    - (initialGradePending ? 1 : 0));
+  return completedRepairs + Number(action.repair.remaining);
 }
 
-interface DependencyStrikeState {
+interface DependencyRepairState {
   definition: { nodes: Array<{ id: string; level: number }> };
   nodes: Record<string, {
-    strikes: { initialBudget: number; granted: number; budget: number; used: number };
+    repairs: { used: number };
     exhaustedAtLevel: number | null;
     exhaustionReason: string | null;
   }>;
 }
 
-export function dependencyStrikeRecords(
-  state: DependencyStrikeState,
+export function dependencyRepairRecords(
+  state: DependencyRepairState,
   level: number,
   includedNodeIds: ReadonlySet<string> | readonly string[] = [],
 ) {
@@ -169,11 +167,7 @@ export function dependencyStrikeRecords(
       const nodeState = state.nodes[node.id];
       if (!nodeState) throw new Error(`progression state is missing node ${node.id}`);
       return { nodeId: node.id,
-        initialBudget: nodeState.strikes.initialBudget,
-        granted: nodeState.strikes.granted,
-        budget: nodeState.strikes.budget,
-        used: nodeState.strikes.used,
-        remaining: nodeState.strikes.budget - nodeState.strikes.used,
+        used: nodeState.repairs.used,
         exhaustionReason: nodeState.exhaustionReason };
     })
     .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
@@ -237,45 +231,61 @@ function isUsable(status: ProgressionNodeState['status']): boolean {
   return status === 'working' || status === 'passed';
 }
 
-function canRepair(node: ProgressionNodeState, unchangedFailureLimit: number): boolean {
-  return node.strikes.used < node.strikes.budget
-    && node.unchangedFailure.count < unchangedFailureLimit;
+interface RepairAllowance {
+  remaining: number;
+  grantId?: string;
 }
 
-function strikeBudget(definition: CompiledDependencyDefinition, level: number): number {
-  const levels = Object.entries(definition.strikes.levels)
-    .map(([key, budget]) => [Number(key), budget] as const);
-  if (definition.strikePolicy === 'banked') {
-    return levels.filter(([candidate]) => candidate <= level)
-      .reduce((total, [, budget]) => total + budget, 0);
+function baseRepairRemaining(state: DependencyState, nodeIds: readonly string[], depth: number): number {
+  const repairs = state.attempts.filter(attempt => attempt.repair && !attempt.repair.grantId);
+  const limits: number[] = [];
+  const budget = state.definition.repair.budget;
+  if (budget.total !== undefined) limits.push(budget.total - repairs.length);
+  if (budget.perFeature !== undefined) {
+    for (const nodeId of nodeIds) {
+      limits.push(budget.perFeature - repairs.filter(attempt =>
+        attempt.repair?.nodeIds.includes(nodeId)).length);
+    }
   }
-  const budget = definition.strikes.levels[String(level)];
-  if (budget === undefined) throw new Error(`missing strike budget for level ${level}`);
-  return budget;
+  if (budget.perDepth !== undefined) {
+    const used = repairs.filter(attempt => budget.perDepth?.carry
+      ? (attempt.repair?.depth ?? 0) <= depth
+      : attempt.repair?.depth === depth).length;
+    const available = budget.perDepth.carry
+      ? budget.perDepth.count * new Set(state.definition.nodes
+        .filter(node => node.level <= depth).map(node => node.level)).size
+      : budget.perDepth.count;
+    limits.push(available - used);
+  }
+  return Math.max(0, Math.min(...limits));
 }
 
-function spendStrike(state: DependencyState, failedNodeIds: ReadonlySet<string>): void {
-  if (failedNodeIds.size === 0) return;
-  if (state.definition.strikePolicy === 'feature') {
-    failedNodeIds.forEach(nodeId => { getNodeState(state, nodeId).strikes.used += 1; });
-    return;
-  }
-  const failedLevels = [...new Set([...failedNodeIds].map(nodeId =>
-    getDefinitionNode(state.definition, nodeId).level))];
-  const chargedLevels = state.definition.strikePolicy === 'banked'
-    ? [Math.min(...failedLevels)] : failedLevels;
-  for (const chargedLevel of chargedLevels) {
-    state.definition.nodes
-      .filter(node => state.definition.strikePolicy === 'banked'
-        ? node.level >= chargedLevel : node.level === chargedLevel)
-      .forEach(node => { getNodeState(state, node.id).strikes.used += 1; });
-  }
+function repairAllowance(state: DependencyState, nodeIds: readonly string[], depth: number):
+RepairAllowance {
+  const remaining = baseRepairRemaining(state, nodeIds, depth);
+  if (remaining > 0) return { remaining };
+  const grant = state.grants.find(candidate => candidate.level === depth
+    && nodeIds.every(nodeId => candidate.nodeIds.includes(nodeId))
+    && state.attempts.filter(attempt => attempt.repair?.grantId === candidate.grantId).length
+      < candidate.repairs);
+  if (!grant) return { remaining: 0 };
+  const used = state.attempts.filter(attempt => attempt.repair?.grantId === grant.grantId).length;
+  return { remaining: grant.repairs - used, grantId: grant.grantId };
+}
+
+function canRepair(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return repairAllowance(state, [node.id], state.level).remaining > 0
+    && getNodeState(state, node.id).unchangedFailure.count
+      < state.definition.unchangedFailureLimit;
+}
+
+function recordRepair(state: DependencyState,
+  repair: NonNullable<ProgressionState['attempts'][number]['repair']>): void {
+  for (const nodeId of repair.nodeIds) getNodeState(state, nodeId).repairs.used += 1;
 }
 
 function hasRepairableFailure(state: DependencyState, node: CompiledProgressionNode): boolean {
-  const nodeState = getNodeState(state, node.id);
-  return hasFailedCheck(state, node) && canRepair(nodeState,
-    state.definition.unchangedFailureLimit);
+  return hasFailedCheck(state, node) && canRepair(state, node);
 }
 
 function hasTestSystemCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
@@ -304,14 +314,16 @@ function selectedPromptNodeIds(state: DependencyState): string[] {
   const failed = nodeIds.filter(nodeId =>
     Object.values(getNodeState(state, nodeId).checks).includes('fail'));
   if (failed.length > 0 && hasConclusiveAttempt(state)) {
-    return state.definition.repairSelection === 'batch' ? failed : [failed[0]!];
+    return state.definition.repair.selection === 'batch' ? failed : [failed[0]!];
   }
   const newWork = nodeIds.filter(nodeId => {
     const node = getNodeState(state, nodeId);
     return node.status === 'active'
       && Object.values(node.checks).every(outcome => outcome === null);
   });
-  if (newWork.length > 0) return newWork;
+  if (newWork.length > 0) {
+    return state.definition.workSelection === 'feature' ? [newWork[0]!] : newWork;
+  }
   return nodeIds;
 }
 
@@ -410,14 +422,14 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
   if (nodeState.status === 'locked' && Object.values(nodeState.checks).every(value => value === null)) {
     return;
   }
-  if (state.definition.workSelection === 'progressive' && node.dependencies.some(parentId => {
+  if (state.definition.workSelection !== 'all-at-once' && node.dependencies.some(parentId => {
     const status = getNodeState(state, parentId).status;
     return status === 'failed' || status === 'blocked';
   })) {
     nodeState.status = 'blocked';
     return;
   }
-  if (state.definition.workSelection === 'progressive'
+  if (state.definition.workSelection !== 'all-at-once'
     && node.dependencies.some(parentId => !isUsable(getNodeState(state, parentId).status))) {
     nodeState.status = 'locked';
     return;
@@ -427,10 +439,12 @@ function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode)
   if (featureChecksPass(state, node)) {
     nodeState.status = allChecksPass(state, node) ? 'passed' : 'working';
   } else if (hasFailedFeatureCheck(state, node)
-    && nodeState.strikes.used >= nodeState.strikes.budget) {
+    && !canRepair(state, node)) {
     nodeState.status = 'failed';
     nodeState.exhaustedAtLevel = state.level;
-    nodeState.exhaustionReason = 'strikes-exhausted';
+    nodeState.exhaustionReason = nodeState.unchangedFailure.count
+      >= state.definition.unchangedFailureLimit
+      ? 'repeated-findings' : 'repair-budget-exhausted';
   } else {
     nodeState.status = 'active';
   }
@@ -458,7 +472,7 @@ function blockBrokenDescendants(state: DependencyState): void {
 }
 
 function openLevel(state: DependencyState, level: number): void {
-  let changed = state.definition.workSelection === 'progressive';
+  let changed = state.definition.workSelection !== 'all-at-once';
   while (changed) {
     changed = false;
     for (const node of state.definition.nodes) {
@@ -510,13 +524,12 @@ function initialDependencyState(definition: CompiledDependencyDefinition): Depen
     terminalOutcome: null,
     level: 1,
     nodes: Object.fromEntries(definition.nodes.map(node => {
-      const budget = strikeBudget(definition, node.level);
       return [node.id, {
         status: definition.workSelection === 'all-at-once' ? 'active' : 'locked',
         exhaustedAtLevel: null,
         exhaustionReason: null,
         unchangedFailure: { fingerprint: null, count: 0 },
-        strikes: { initialBudget: budget, granted: 0, budget, used: 0 },
+        repairs: { used: 0 },
         checks: Object.fromEntries(node.gradingChecks.map(check => [check.id, null])),
       }];
     })),
@@ -552,7 +565,8 @@ function assertState(input: unknown,
         && !Number.isInteger(state.terminalOutcome.blockedLevel)))) {
     throw new Error('terminal dependency mode state requires a valid outcome');
   }
-  if (!Number.isInteger(state.level) || !definition.strikes.levels[String(state.level)]) {
+  const validLevels = new Set(definition.nodes.map(node => node.level));
+  if (!Number.isInteger(state.level) || !validLevels.has(state.level)) {
     throw new Error('invalid dependency mode state level');
   }
   const expectedNodeIds = new Set(definition.nodes.map(node => node.id));
@@ -564,23 +578,18 @@ function assertState(input: unknown,
   for (const node of definition.nodes) {
     const nodeState = getNodeState(state, node.id);
     const unchangedFailure = nodeState?.unchangedFailure;
-    const strikes = nodeState?.strikes;
-    const initialBudget = strikeBudget(definition, node.level);
     if (!object(nodeState) || !NODE_STATUSES.has(nodeState.status) || !object(nodeState.checks)
       || !object(unchangedFailure)
-      || !object(strikes) || strikes.initialBudget !== initialBudget
-      || !Number.isSafeInteger(strikes.granted) || strikes.granted < 0
-      || strikes.budget !== initialBudget + strikes.granted
-      || !Number.isSafeInteger(strikes.used) || strikes.used < 0
-      || strikes.used > strikes.budget
+      || !object(nodeState.repairs)
+      || !Number.isSafeInteger(nodeState.repairs.used) || nodeState.repairs.used < 0
       || !Number.isSafeInteger(unchangedFailure.count) || unchangedFailure.count < 0
       || (unchangedFailure.fingerprint !== null && !HASH.test(unchangedFailure.fingerprint))
       || (unchangedFailure.count === 0) !== (unchangedFailure.fingerprint === null)
       || (nodeState.exhaustionReason !== null
-        && !['strikes-exhausted', 'repeated-findings'].includes(nodeState.exhaustionReason))
+        && !['repair-budget-exhausted', 'repeated-findings'].includes(nodeState.exhaustionReason))
       || (nodeState.exhaustedAtLevel !== null
         && (!Number.isInteger(nodeState.exhaustedAtLevel)
-          || !definition.strikes.levels[String(nodeState.exhaustedAtLevel)]))
+          || !validLevels.has(nodeState.exhaustedAtLevel)))
       || (nodeState.status === 'failed') !== (nodeState.exhaustedAtLevel !== null)
       || (nodeState.status === 'failed') !== (nodeState.exhaustionReason !== null)) {
       throw new Error(`invalid dependency mode state for node ${node.id}`);
@@ -599,7 +608,7 @@ function assertState(input: unknown,
   state.attempts.forEach((attempt, index) => {
     if (!object(attempt) || typeof attempt.attemptId !== 'string' || !attempt.attemptId
       || attemptIds.has(attempt.attemptId) || !Number.isInteger(attempt.level)
-      || !definition.strikes.levels[String(attempt.level)]
+      || !validLevels.has(attempt.level)
       || !['conclusive', 'inconclusive'].includes(attempt.outcome)
       || (attempt.sourceSha256 !== undefined && !HASH.test(attempt.sourceSha256))
       || (attempt.selectionSha256 !== undefined && !HASH.test(attempt.selectionSha256))
@@ -612,6 +621,17 @@ function assertState(input: unknown,
         && attempt.outcome !== 'conclusive')) {
       throw new Error(`invalid dependency mode attempt at index ${index}`);
     }
+    if (attempt.repair !== undefined) {
+      if (!object(attempt.repair) || !Array.isArray(attempt.repair.nodeIds)
+        || attempt.repair.nodeIds.length === 0
+        || new Set(attempt.repair.nodeIds).size !== attempt.repair.nodeIds.length
+        || attempt.repair.nodeIds.some(nodeId => !expectedNodeIds.has(nodeId))
+        || !validLevels.has(attempt.repair.depth)
+        || (attempt.repair.grantId !== undefined
+          && (typeof attempt.repair.grantId !== 'string' || !attempt.repair.grantId))) {
+        throw new Error(`invalid dependency mode repair at attempt ${index}`);
+      }
+    }
     if (attempt.applicationFailure !== undefined) {
       validateApplicationFailure(attempt.applicationFailure,
         `attempts[${index}].applicationFailure`);
@@ -620,6 +640,13 @@ function assertState(input: unknown,
       `attempts[${index}].evidence`);
     attemptIds.add(attempt.attemptId);
   });
+  for (const node of definition.nodes) {
+    const expectedRepairs = state.attempts.filter(attempt =>
+      attempt.repair?.nodeIds.includes(node.id)).length;
+    if (getNodeState(state, node.id).repairs.used !== expectedRepairs) {
+      throw new Error(`dependency mode repair count disagrees for node ${node.id}`);
+    }
+  }
   if (!Array.isArray(state.grants) || !Array.isArray(state.events)) {
     throw new Error('invalid dependency mode continuation history');
   }
@@ -719,7 +746,7 @@ function stopUnchangedFeatures(state: DependencyState, promptedNodeIds: Readonly
   }
 
   // A dependent feature is blocked by a failed prerequisite. It does not
-  // spend a strike or become eligible for a continuation grant of its own.
+  // use repair budget or become eligible for a continuation grant of its own.
   blockBrokenDescendants(state);
 }
 
@@ -729,6 +756,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
   strictObject(result, 'result', new Set([
     'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
     'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure', 'repairRegression',
+    'completedRepair',
   ]));
   nonEmptyString(result.attemptId, 'result.attemptId');
   if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
@@ -753,11 +781,22 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
   if (!['conclusive', 'inconclusive'].includes(result.outcome)) {
     throw new Error('result.outcome must be conclusive or inconclusive');
   }
+  const currentAction = nextDependencyAction(inputState);
+  if (result.completedRepair !== undefined && result.completedRepair !== true) {
+    throw new Error('result.completedRepair must be true when present');
+  }
+  if (result.completedRepair && currentAction.type !== 'repair') {
+    throw new Error('only a repair action can record a completed repair');
+  }
+  const repair = result.completedRepair && currentAction.type === 'repair' ? {
+    nodeIds: [...currentAction.repair.nodeIds],
+    depth: currentAction.level,
+    ...(currentAction.repair.grantId ? { grantId: currentAction.repair.grantId } : {}),
+  } : undefined;
   if (result.repairRegression !== undefined) {
     const regression = result.repairRegression;
-    const action = nextDependencyAction(inputState);
     strictObject(regression, 'result.repairRegression', new Set(['ownerNodeIds', 'report']));
-    if (action.type !== 'repair' || result.outcome !== 'conclusive'
+    if (currentAction.type !== 'repair' || result.outcome !== 'conclusive'
       || !Array.isArray(regression.ownerNodeIds)
       || regression.ownerNodeIds.length === 0
       || regression.ownerNodeIds.some(nodeId => typeof nodeId !== 'string' || !nodeId)
@@ -785,7 +824,19 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
       ...(result.runId ? { runId: result.runId } : {}),
       ...(result.evidence ? { evidence: result.evidence } : {}),
       ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
-      ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
+      ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
+      ...(repair ? { repair } : {}) });
+    if (repair) {
+      recordRepair(state, repair);
+      repair.nodeIds.forEach(nodeId =>
+        updateNodeStatus(state, getDefinitionNode(state.definition, nodeId)));
+      for (const node of state.definition.nodes) {
+        if (!repair.nodeIds.includes(node.id) && hasFailedFeatureCheck(state, node)) {
+          updateNodeStatus(state, node);
+        }
+      }
+      openLevel(state, repair.depth);
+    }
     return state;
   }
   if (result.reason !== undefined || result.category !== undefined) {
@@ -816,7 +867,17 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
     if (!hasFailedCheck || !['active', 'working', 'passed'].includes(nodeState.status)) continue;
     failedPromptNodeIds.add(nodeId);
   }
-  spendStrike(state, failedPromptNodeIds);
+  state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome,
+    ...(result.runId ? { runId: result.runId } : {}),
+    ...(result.evidence ? { evidence: result.evidence } : {}),
+    ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
+    ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
+    ...(repair ? { repair } : {}),
+    ...(result.repairRegression
+      ? { repairRegression: structuredClone(result.repairRegression) } : {}),
+    ...(result.applicationFailure
+      ? { applicationFailure: structuredClone(result.applicationFailure) } : {}) });
+  if (repair) recordRepair(state, repair);
   for (const nodeId of selectedNodeIds) {
     const node = getDefinitionNode(state.definition, nodeId);
     const outcomes = actual.get(nodeId);
@@ -827,72 +888,48 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
       getNodeState(state, nodeId).unchangedFailure = { fingerprint: null, count: 0 };
     }
   }
-  if (state.definition.strikePolicy !== 'feature') {
+  if (repair) {
     for (const node of state.definition.nodes) {
-      if (!selectedNodeIds.includes(node.id) && hasFailedCheck(state, node)) {
+      if (!selectedNodeIds.includes(node.id) && hasFailedFeatureCheck(state, node)) {
         updateNodeStatus(state, node);
       }
     }
   }
   blockBrokenDescendants(state);
-  state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome,
-    ...(result.runId ? { runId: result.runId } : {}),
-    ...(result.evidence ? { evidence: result.evidence } : {}),
-    ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
-    ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
-    ...(result.repairRegression
-      ? { repairRegression: structuredClone(result.repairRegression) } : {}),
-    ...(result.applicationFailure
-      ? { applicationFailure: structuredClone(result.applicationFailure) } : {}) });
-
-  stopUnchangedFeatures(state, failedPromptNodeIds);
+  if (repair) stopUnchangedFeatures(state, failedPromptNodeIds);
   openLevel(state, state.level);
   return state;
 }
 
-function applyStrikeGrant(inputState: DependencyState,
-  inputGrant: DependencyStrikeGrant): DependencyState {
-  if (inputState.phase !== 'terminal') throw new Error('strikes can be granted only after progression terminates');
-  const grant = structuredClone(inputGrant) as DependencyStrikeGrant;
-  strictObject(grant, 'grant', new Set(['grantId', 'level', 'nodeIds', 'strikes']));
+function applyRepairGrant(inputState: DependencyState,
+  inputGrant: DependencyRepairGrant): DependencyState {
+  if (inputState.phase !== 'terminal') throw new Error('repairs can be granted only after progression terminates');
+  const grant = structuredClone(inputGrant) as DependencyRepairGrant;
+  strictObject(grant, 'grant', new Set(['grantId', 'level', 'nodeIds', 'repairs']));
   nonEmptyString(grant.grantId, 'grant.grantId');
   positiveInteger(grant.level, 'grant.level');
   grant.nodeIds = uniqueStrings(grant.nodeIds, 'grant.nodeIds').sort();
-  positiveInteger(grant.strikes, 'grant.strikes');
+  positiveInteger(grant.repairs, 'grant.repairs');
   if (inputState.grants.some(item => item.grantId === grant.grantId)) {
     throw new Error(`duplicate grant id ${grant.grantId}`);
   }
   const nodesById = new Map(inputState.definition.nodes.map(node => [node.id, node]));
   const eligible = grant.nodeIds.map(nodeId => nodesById.get(nodeId));
   if (eligible.some(node => !node
-    || (inputState.definition.strikePolicy !== 'feature' && node.level !== grant.level)
-    || (getNodeState(inputState, node.id).status !== 'failed'
-      && !(getNodeState(inputState, node.id).status === 'working'
-        && !hasRepairableFailure(inputState, node))))) {
+    || getNodeState(inputState, node.id).status !== 'failed'
+    || getNodeState(inputState, node.id).exhaustedAtLevel !== grant.level)) {
     throw new Error(`grant level ${grant.level} includes a feature without an exhausted repair budget`);
   }
-  const sharedLevel = inputState.definition.strikePolicy === 'feature'
-    ? grant.level : eligible[0]?.level ?? grant.level;
-  const grantedNodes = inputState.definition.strikePolicy === 'feature'
-    ? eligible.filter((node): node is CompiledProgressionNode => node !== undefined)
-    : inputState.definition.nodes.filter(node => inputState.definition.strikePolicy === 'banked'
-      ? node.level >= sharedLevel : node.level === sharedLevel);
-  for (const node of grantedNodes) {
-    if (!node) continue;
-    if (!Number.isSafeInteger(getNodeState(inputState, node.id).strikes.budget + grant.strikes)) {
-      throw new Error(`grant for feature ${node.id} exceeds the safe strike limit`);
-    }
-  }
+  const grantedNodes = eligible.filter((node): node is CompiledProgressionNode => node !== undefined);
   const state = structuredClone(inputState) as DependencyState;
   state.level = grant.level;
   state.phase = 'active';
   state.terminalOutcome = null;
+  state.grants.push(grant);
   const reopenDescendants = new Set<string>();
   for (const node of grantedNodes) {
     const nodeState = getNodeState(state, node.id);
     if (nodeState.status === 'failed') reopenDescendants.add(node.id);
-    nodeState.strikes.granted += grant.strikes;
-    nodeState.strikes.budget += grant.strikes;
     nodeState.exhaustedAtLevel = null;
     nodeState.exhaustionReason = null;
     nodeState.unchangedFailure = { fingerprint: null, count: 0 };
@@ -910,21 +947,14 @@ function applyStrikeGrant(inputState: DependencyState,
     }
   }
   for (const node of state.definition.nodes.filter(node =>
-    !reopenDescendants.has(node.id) && node.level >= grant.level && affected.has(node.id))) {
+    !reopenDescendants.has(node.id) && affected.has(node.id))) {
     const nodeState = getNodeState(state, node.id);
     nodeState.checks = Object.fromEntries(node.gradingChecks.map(check => [check.id, null]));
-    if (nodeState.strikes.used >= nodeState.strikes.budget) {
-      nodeState.status = 'failed';
-      nodeState.exhaustedAtLevel = node.level;
-      nodeState.exhaustionReason = 'strikes-exhausted';
-    } else {
-      nodeState.status = node.level === grant.level ? 'active' : 'locked';
-      nodeState.exhaustedAtLevel = null;
-      nodeState.exhaustionReason = null;
-    }
+    nodeState.status = 'locked';
+    nodeState.exhaustedAtLevel = null;
+    nodeState.exhaustionReason = null;
   }
   blockBrokenDescendants(state);
-  state.grants.push(grant);
   openLevel(state, grant.level);
   return state;
 }
@@ -936,7 +966,7 @@ function validateEvent(event: unknown, index: number): asserts event is Dependen
     if (event.result === undefined || event.grant !== undefined) {
       throw new Error(`attempt event ${event.sequence} must contain only a result`);
     }
-  } else if (event.type === 'strikes-granted') {
+  } else if (event.type === 'repairs-granted') {
     if (event.grant === undefined || event.result !== undefined) {
       throw new Error(`grant event ${event.sequence} must contain only a grant`);
     }
@@ -955,7 +985,7 @@ export function replayDependencyMode(inputDefinition: unknown,
     validateEvent(event, index);
     state = event.type === 'attempt-recorded'
       ? applyDependencyResult(state, event.result)
-      : applyStrikeGrant(state, event.grant);
+      : applyRepairGrant(state, event.grant);
     state.events.push(event);
   });
   assertState(state, definition);
@@ -972,12 +1002,12 @@ export function recordDependencyResult(inputState: ProgressionState,
   return next;
 }
 
-export function grantDependencyStrikes(inputState: ProgressionState,
+export function grantDependencyRepairs(inputState: ProgressionState,
   inputGrant: unknown): DependencyState {
   const state = asDependencyState(inputState);
   const event: DependencyEvent = { sequence: state.events.length + 1,
-    type: 'strikes-granted', grant: structuredClone(inputGrant) as DependencyStrikeGrant };
-  const next = applyStrikeGrant(state, event.grant);
+    type: 'repairs-granted', grant: structuredClone(inputGrant) as DependencyRepairGrant };
+  const next = applyRepairGrant(state, event.grant);
   next.events.push(event);
   return next;
 }
@@ -990,20 +1020,18 @@ export function nextDependencyAction(inputState: ProgressionState): ProgressionA
   }
   const prompt = selectedPromptWork(state);
   const grading = selectedGradingWork(state);
-  const repair = prompt.nodeIds.some(nodeId =>
+  const repairing = prompt.nodeIds.some(nodeId =>
     Object.values(getNodeState(state, nodeId).checks).includes('fail'));
   const featureIds = prompt.nodeIds;
-  const nodes = featureIds.map(nodeId => {
-    const counter = getNodeState(state, nodeId).strikes;
-    return { nodeId, ...counter, remaining: counter.budget - counter.used };
-  });
-  const maxRemaining = Math.max(0, ...nodes.map(node => node.remaining));
-  const actionLevel = state.definition.workSelection === 'all-at-once' ? state.level
+  const actionLevel = repairing || state.definition.workSelection === 'all-at-once' ? state.level
     : Math.max(...featureIds.map(nodeId => getDefinitionNode(state.definition, nodeId).level));
+  const allowance = repairing
+    ? repairAllowance(state, featureIds, actionLevel)
+    : { remaining: 0 };
   return {
-    type: repair ? 'repair' : 'build',
+    type: repairing ? 'repair' : 'build',
     level: actionLevel,
-    strikes: { scope: state.definition.strikePolicy, maxRemaining, nodes },
+    repair: { nodeIds: repairing ? [...featureIds] : [], ...allowance },
     prompt,
     grading,
   };
@@ -1033,7 +1061,7 @@ export const dependencyModePolicy: Readonly<ProgressionPolicy<
   promptSelection,
   gradingSelection,
   recordResult: recordDependencyResult,
-  grantStrikes: grantDependencyStrikes,
+  grantRepairs: grantDependencyRepairs,
   replay: replayDependencyMode,
   nextAction: nextDependencyAction,
   score: scoreDependencyMode,

@@ -503,7 +503,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
     const env = { ...process.env, STACK_BENCH_SUPERVISOR_STATE: supervisorState,
       ...supervisorEnv };
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
-      '--levels', String(args.level), '--run-index', String(args.runIndex), '--fix-rounds', '0',
+      '--levels', String(args.level), '--run-index', String(args.runIndex), '--repairs', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--no-media'];
     benchArgs.push('--recipe', `${context.binding.release.id}@${context.binding.release.version}`);
     benchArgs.push(...referenceQualificationSelectionArgs(context.binding,

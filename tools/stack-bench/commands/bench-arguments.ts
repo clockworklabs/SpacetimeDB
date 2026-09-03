@@ -20,6 +20,7 @@ import { parseGuidanceMode } from '../src/campaigns/condition-compiler.js';
 import type { GuidanceMode } from '../src/campaigns/condition-compiler.js';
 import { validateCampaignExtensionSeed } from '../src/campaigns/campaign-scheduler.js';
 import type { CampaignExtensionSeed } from '../src/campaigns/campaign-scheduler.js';
+import { repairBudgetLimit } from '../src/progression/repair-plan.js';
 
 type StudyCondition = CampaignAttemptPlan['condition'];
 type UnknownRecord = Record<string, unknown>;
@@ -33,7 +34,7 @@ export interface BenchArguments {
   model: string | null;
   agentAdapter: string;
   pricing?: PricingAuthority | null;
-  fixRounds: number;
+  repairs: number;
   maxStalledRepairs: number;
   maxBudgetUsd?: number;
   runIndex: number;
@@ -100,7 +101,7 @@ interface BenchCliOptions extends Partial<BenchArguments> {
 function parseCli(argv: readonly string[]): BenchCliOptions {
   const strings = ['backend', 'track', 'levels', 'campaign-file', 'campaign-attempt-id',
     'campaign-admission-id', 'progression-resume-from', 'recipe', 'model', 'pricing-json',
-    'fix-rounds', 'max-stalled-repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
+    'repairs', 'max-stalled-repairs', 'max-budget-usd', 'run-index', 'out', 'app', 'url',
     'agent-adapter', 'guidance', 'task-mode', 'skills', 'mutations',
     'mutation-shard-index', 'mutation-shard-count', 'mutation-resume-from',
     'mutation-checkpoint-out', 'mutation-baseline-bundle',
@@ -126,7 +127,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
     const value = parsed[key] as string[] | undefined;
     if (value) parsed[key] = value.flatMap(item => item.split(',').filter(Boolean));
   }
-  for (const key of ['fixRounds', 'maxStalledRepairs', 'maxBudgetUsd', 'mutationShardIndex',
+  for (const key of ['repairs', 'maxStalledRepairs', 'maxBudgetUsd', 'mutationShardIndex',
     'mutationShardCount', 'mutationMaxRuntimeMinutes', 'repairLevel', 'seedThrough']) {
     if (typeof parsed[key] === 'string') parsed[key] = Number(parsed[key]);
   }
@@ -147,7 +148,7 @@ function parseCli(argv: readonly string[]): BenchCliOptions {
 
 export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   const args: BenchArguments = { model: null, agentAdapter: 'claude-code',
-    fixRounds: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
+    repairs: 10, runIndex: 0, levels: '1', levelsProvided: false, media: true,
     levelList: [], maxStalledRepairs: 3, guidance: 'prescribed', track: DEFAULT_TRACK,
     packIds: [], checkKeys: [], featureIds: [], requestedSpecifications: [],
     expectedSpecifications: [], observedSpecifications: [],
@@ -183,7 +184,7 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
     throw new Error('--mutation-max-runtime-minutes must be from 1 through 120');
   }
   if (args.referenceMutationOnly && (!args.mutations || args.agentAdapter !== 'reference-fixture'
-      || args.fixRounds !== 0 || !args.app || args.campaignFile)) {
+      || args.repairs !== 0 || !args.app || args.campaignFile)) {
     throw new Error('--reference-mutation-only requires a mutation-bound reference fixture run');
   }
   if (args.mutationBaselineBundle && !args.referenceMutationOnly) {
@@ -255,8 +256,8 @@ export function parseBenchArguments(argv: readonly string[]): BenchArguments {
   if (args.recipe && args.levelList.length !== 1) {
     throw new Error('--recipe requires exactly one requested level');
   }
-  if (!Number.isInteger(args.fixRounds) || args.fixRounds < 0 || args.fixRounds > 20) {
-    throw new Error('--fix-rounds must be an integer from 0 through 20');
+  if (!Number.isSafeInteger(args.repairs) || args.repairs < 0) {
+    throw new Error('--repairs must be a non-negative safe integer');
   }
   if (!Number.isInteger(args.maxStalledRepairs) || args.maxStalledRepairs < 0
     || args.maxStalledRepairs > 20) {
@@ -299,7 +300,8 @@ function bindCampaign(args: BenchArguments): void {
     attempt.condition.guidance.documents[attempt.stack]);
   args.packIds = structuredClone(plan.definition.selection.packs ?? []);
   args.checkKeys = structuredClone(plan.definition.selection.checks ?? []);
-  args.fixRounds = plan.definition.budgets.fixRounds;
+  args.repairs = attempt.mode.id === 'dependency'
+    ? 0 : repairBudgetLimit(plan.definition.repair);
   args.maxBudgetUsd ??= plannedBudget ?? undefined;
   args.parentAttemptId = attempt.id;
   args.media = false;

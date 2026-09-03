@@ -34,11 +34,11 @@ function session(marker: string,
     provenance: null, providerMetadata: null, costComplete };
 }
 
-type SessionLocation = 'buildSession' | 'fixSessions';
+type SessionLocation = 'buildSessions' | 'repairSessions';
 
 interface SessionArtifactLevel {
-  buildSession?: RunSessionRecord;
-  fixSessions?: RunSessionRecord[];
+  buildSessions?: RunSessionRecord[];
+  repairSessions?: RunSessionRecord[];
   resumedRepair?: Record<string, unknown>;
   outcome?: { kind: string; phase?: string };
 }
@@ -55,22 +55,22 @@ interface SessionCase {
 
 const cases: readonly SessionCase[] = [
   { name: 'successful build', marker: 'build',
-    level: source => ({ buildSession: runSessionRecord(source) }),
-    location: 'buildSession' },
+    level: source => ({ buildSessions: [runSessionRecord(source)] }),
+    location: 'buildSessions' },
   { name: 'failed build', marker: 'failed-build', costComplete: false,
     level: source => ({ outcome: { kind: 'harness_failure' },
-      buildSession: runSessionRecord(source) }),
-    location: 'buildSession' },
+      buildSessions: [runSessionRecord(source)] }),
+    location: 'buildSessions' },
   { name: 'normal repair', marker: 'repair', round: 1,
-    level: source => ({ fixSessions: [runSessionRecord(source, 1)] }),
-    location: 'fixSessions' },
+    level: source => ({ repairSessions: [runSessionRecord(source, 1)] }),
+    location: 'repairSessions' },
   { name: 'resumed repair', marker: 'resumed-repair', round: 4,
-    level: source => ({ resumedRepair: {}, fixSessions: [runSessionRecord(source, 4)] }),
-    location: 'fixSessions' },
+    level: source => ({ resumedRepair: {}, repairSessions: [runSessionRecord(source, 4)] }),
+    location: 'repairSessions' },
   { name: 'model-free early exit', marker: 'model-free', billable: false,
     level: source => ({ outcome: { kind: 'ungraded', phase: 'reference-mutation-only' },
-      buildSession: runSessionRecord(source) }),
-    location: 'buildSession' },
+      buildSessions: [runSessionRecord(source)] }),
+    location: 'buildSessions' },
 ];
 
 interface StoredSession {
@@ -89,9 +89,8 @@ function storedSession(run: unknown, location: SessionLocation): StoredSession {
     throw new Error('run artifact is missing its first level');
   }
   const level = run.levels[0];
-  const candidate = location === 'buildSession'
-    ? level.buildSession
-    : Array.isArray(level.fixSessions) ? level.fixSessions[0] : undefined;
+  const sessions = level[location];
+  const candidate = Array.isArray(sessions) ? sessions[0] : undefined;
   if (!object(candidate) || !Array.isArray(candidate.costReceipts)
     || typeof candidate.costComplete !== 'boolean') {
     throw new Error(`run artifact is missing ${location} cost data`);

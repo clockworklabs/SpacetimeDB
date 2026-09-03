@@ -246,7 +246,8 @@ test('one progression catalog binds every node and selects only current work', (
   assert(definition.nodes.flatMap(node => node.gradingChecks)
     .every(check => release.checkCatalog.some(item => item.stableKey === check.id)));
 
-  const policy = compileDependencyPolicyInput({ default: 3, levels: {} }, input);
+  const policy = compileDependencyPolicyInput({ selection: 'feature',
+    budget: { perFeature: 3 } }, input);
   let state = progressionEngine.initialize(dependencyRuntimeDefinition(input, policy));
   const first = resolveProgressionRecipeAction(firstBinding.binding, state);
   if (first.action.type === 'terminal') throw new Error('L1 must produce work');
@@ -318,9 +319,8 @@ test('one progression catalog binds every node and selects only current work', (
 test('all-at-once composes every selected feature into one fresh request', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   const catalog = compileFeatureCatalogInput(definition);
-  const policy = compileDependencyPolicyInput({ default: 1, levels: {} }, catalog, {
-    workSelection: 'all-at-once', repairSelection: 'batch',
-  });
+  const policy = compileDependencyPolicyInput({ selection: 'batch', budget: { total: 1 } },
+    catalog, { workSelection: 'all-at-once' });
   const state = progressionEngine.initialize(dependencyRuntimeDefinition(catalog, policy));
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 6,
     'ecommerce.progression-catalog@2.0.2');

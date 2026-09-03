@@ -53,12 +53,12 @@ test('dashboard run progress reports only completed grades while the next repair
   const progress = parseRunProgress(`
 === postgres-l1-first (postgres) ===
   TOTAL      ... 31/58
---- repair round 1/3 ---
+--- repair 1/3 ---
 === postgres-l1-fix1 (postgres) ===
   TOTAL      ... 41/58
---- repair round 2/3 ---
+--- repair 2/3 ---
 === postgres-l1-fix2 (postgres) ===
-`, { fixRounds: 3 });
+`, { repairs: 3 });
   assert.deepEqual(progress.firstScore, { score: 31, max: 58 });
   assert.deepEqual(progress.latestScore, { score: 41, max: 58 });
   assert.equal(progress.completedGrades, 2);
@@ -81,13 +81,13 @@ test('dashboard follows the actual level when a completed L1 advances to the fir
   const progress = parseRunProgress(`
 === spacetime-l1 (spacetime) ===
   TOTAL      ... 52/58
---- repair round 1/10 ---
+--- repair 1/10 ---
 === spacetime-l1-fix1 (spacetime) ===
   TOTAL      ... 58/58
 === spacetime-l2 (spacetime) ===
   TOTAL      ... 52/59
---- repair round 1/10 ---
-`, { fixRounds: 10 });
+--- repair 1/10 ---
+`, { repairs: 10 });
   assert.equal(progress.level, 2);
   assert.equal(progress.phase, 'Repairing L2 · round 1 of 10');
   assert.deepEqual(progress.firstScore, { score: 52, max: 58 });
@@ -100,7 +100,7 @@ test('dashboard reports a dependency repair by feature instead of the level sess
   TOTAL      ... 26/43
 --- feature repair 1/1: Customer recommendations ---
 === mongodb-l3-fix3 (mongodb) ===
-`, { fixRounds: 3 });
+`, { repairs: 3 });
   assert.equal(progress.phase,
     'Grading L3 after repair 1 of 1 for Customer recommendations');
   assert.deepEqual(progress.repair, { round: 1, budget: 1 });
@@ -185,19 +185,14 @@ test('dashboard reports dependency work from the validated persisted state', t =
     { firstTryPercentage: 0, repairAttempts: 0 });
   assert(firstAttempt.dependency.work.current.some(node => node.id === 'accounts'));
   assert.deepEqual(firstAttempt.dependency.attempts,
-    { total: 0, maxRemaining: 1, features: [
-      { nodeId: 'accounts', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
-      { nodeId: 'catalog', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
-      { nodeId: 'staff-access', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
-      { nodeId: 'support-intake', initialBudget: 1, granted: 0, budget: 1, used: 0, remaining: 1 },
-    ] });
+    { total: 0, maxRemaining: 0, features: [] });
   assert.ok(summary.package);
   assert(summary.package.executions[0]?.artifacts
     .some(item => item.path.endsWith('/progression-state.json')));
 });
 
 test('a prepared attempt is waiting rather than finished', () => {
-  const progress = parseRunProgress('', { fixRounds: 10, running: false, status: 'pending' });
+  const progress = parseRunProgress('', { repairs: 10, running: false, status: 'pending' });
   assert.equal(progress.phase, 'Waiting to start');
   assert.equal(progress.completedGrades, 0);
   assert.equal(progress.latestScore, null);
@@ -231,7 +226,7 @@ test('dashboard marks a current-schema campaign as interrupted when its controll
   const output = join(root, claimed.claim.output);
   mkdirSync(output, { recursive: true });
   writeFileSync(join(output, 'process.stdout.log'),
-    '=== postgres-l1-first (postgres) ===\n  TOTAL ... 31/58\n--- repair round 1/3 ---\n');
+    '=== postgres-l1-first (postgres) ===\n  TOTAL ... 31/58\n--- repair 1/3 ---\n');
 
   const summary = summarizeCampaign(root);
   assert.equal(summary.status, 'running');
@@ -636,7 +631,7 @@ test('the overview stays a summary and the sheet stays one campaign at appliance
 
   const sheet = campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive });
   assert.equal(sheet.mode, 'sequential');
-  assert.equal(sheet.facts.fixRounds, 3);
+  assert.equal(sheet.facts.repairBudget, 3);
   assert.equal(sheet.facts.timeLimitMinutes, 240);
   assert.equal(sheet.stacks.length, 3);
   const stack = sheet.stacks[0];
@@ -769,8 +764,7 @@ test('the sheet reports dependency submodes and questlines in definition order',
   assert.equal(sheet.mode, 'dependency');
   assert.equal(sheet.facts.workSelection, 'progressive');
   assert.equal(sheet.facts.repairSelection, 'feature');
-  assert.equal(sheet.facts.strikePolicy, 'feature');
-  assert.equal(sheet.facts.strikes, 1);
+  assert.equal(sheet.facts.repairBudget, 0);
   assert.equal(sheet.facts.guidance, attemptPlan.guidance);
   const stack = sheet.stacks.find(item => item.questlines !== null);
   assert.ok(stack?.questlines);
@@ -780,7 +774,7 @@ test('the sheet reports dependency submodes and questlines in definition order',
   assert.ok(questline);
   assert.ok(questline.nodes.length > 0);
   assert.ok(questline.nodes.every(node => typeof node.status === 'string'));
-  assert.ok(stack.repairs.budget > 0);
+  assert.equal(stack.repairs.budget, 0);
   assert.equal(stack.regressions, 0);
   const bytes = Buffer.byteLength(JSON.stringify(sheet));
   assert.ok(bytes < 60 * 1024, `dependency sheet is ${bytes} bytes`);
@@ -999,7 +993,7 @@ test('the progression view replays the graph once per stack within its budget', 
   assert.ok(track.steps.length > 0);
   assert.ok(track.steps.every(step => step.statuses.length === view.nodes.length));
   assert.ok(track.steps.some(step => step.action === 'build'));
-  assert.ok(track.steps.some(step => step.action === 'repair'));
+  assert.equal(track.steps.some(step => step.action === 'repair'), false);
   assert.ok(track.steps.at(-1)?.statuses.includes('passed'));
   assert.equal(campaignProgression(resultsRoot, 'progression-run'), view);
   const bytes = Buffer.byteLength(JSON.stringify(view));
@@ -1028,11 +1022,11 @@ const DATA_HOLDERS = new Set(['v', 'big', 'phase', 'who', 'q', 'pct', 'd', 'h', 
   'group', 'b', 'live-head', 'facts', 'chart', 'sum', 'views', 'err', 'grade-key']);
 const LABELS = new Set(['Campaign', 'Shape', 'Status', 'SpacetimeDB', 'PostgreSQL', 'MongoDB',
   'Stacks', 'Attempts', 'Parallel', 'State', 'Run name', 'Secret',
-  'Updated', 'Mode', 'Depth', 'Levels', 'Work', 'Repair', 'Repairs', 'Strikes', 'Repetitions',
+  'Updated', 'Mode', 'Depth', 'Levels', 'Work', 'Repair', 'Repairs', 'Repair budget', 'Repetitions',
   'Agent', 'Model', 'Guidance', 'Recipe', 'Recipes', 'Time limit', 'Spend limit', 'Controller',
   'Plan', 'Grading', 'Scope', 'Continued', 'Score', 'Unaided', 'Regressions', 'Time', 'Spend',
   'Climb', 'Attempt', 'Questline average', 'Evidence', 'Completed', 'Excluded', 'Check', 'Proves',
-  'Grades', 'Now', 'Step', 'Stack', 'Action', 'Feature', 'Strike']);
+  'Grades', 'Now', 'Step', 'Stack', 'Action', 'Feature']);
 const STATUS_WORDS = ['running', 'completed', 'ready', 'needs attention', 'unreadable', 'queued'];
 const BANNED = [/\bfirst try\b/i, /\bfirst build\b/i, /\binitial\b/i, /\bbefore repairs\b/i,
   /\bverdict\b/i, /\bcontrol room\b/i];
