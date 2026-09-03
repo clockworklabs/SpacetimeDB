@@ -83,7 +83,7 @@
       "id": "model-free",
       "version": "1.0.0",
       "guidanceProfile": "model-free-stub@1.1.0",
-      "repairPolicy": "scored-only@1.0.0"
+      "repairPolicy": "scored-only@1.1.0"
     }
   ],
   "repetitions": 1,

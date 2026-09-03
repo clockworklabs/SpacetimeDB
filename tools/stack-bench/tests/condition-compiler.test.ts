@@ -8,7 +8,7 @@ import { resolveGuidanceProfile, resolveStudyConditions,
   validateConditionReference } from '../src/campaigns/condition-compiler.js';
 
 const prescribed = { id: 'prescribed', version: '1.0.0',
-  guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.0.0' };
+  guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.1.0' };
 const requested = { track: 'example', levels: [{ level: 1,
   recipe: { id: 'example.l1', version: '1.0.0', contentSha256: 'a'.repeat(64),
     meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64) },
@@ -58,6 +58,7 @@ test('the prescribed condition binds independent guidance, repair, and document 
   assert.match(spacetimeSkills.sha256, /^[a-f0-9]{64}$/);
   assert.equal(condition.repair.scoredEvidence, true);
   assert.equal(condition.repair.observedEvidence, false);
+  assert.equal(condition.repair.scenarioValues, 'withheld');
   assert.deepEqual(condition.requested, requested);
   const requestedLevel = requested.levels[0];
   assert.ok(requestedLevel);
@@ -70,7 +71,7 @@ test('the prescribed condition binds independent guidance, repair, and document 
 
 test('packaged neutral guidance exists symmetrically without architecture advice', () => {
   const neutral = { id: 'neutral', version: '1.0.0', guidanceProfile: 'neutral@1.8.0',
-    repairPolicy: 'scored-only@1.0.0' };
+    repairPolicy: 'scored-only@1.1.0' };
   const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
     { requested });
   assert.equal(condition.guidance.state, 'qualified');
@@ -94,7 +95,7 @@ test('neutral guidance uses current stack documents, skills, and credential alia
 
 test('expected modular specifications are scored under the ordinary repair policy', () => {
   const selected = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.8.0',
-    repairPolicy: 'scored-only@1.0.0' };
+    repairPolicy: 'scored-only@1.1.0' };
   const [condition] = resolveStudyConditions([selected], ['mongodb', 'postgres', 'spacetime'],
     { requested: modularRequested });
   const selectedLevel = condition.requested.levels[0];
@@ -141,7 +142,7 @@ function customCondition({ guidance = {}, repair = {} } = {}) {
     skills: { fake: [] }, ...guidance });
   writeJson(join(catalogRoot, 'repair.json'), { schemaVersion: 1, kind: 'repair-policy',
     id: 'scored', version: '1.0.0', state: 'qualified', scoredEvidence: true,
-    observedEvidence: false, ...repair });
+    observedEvidence: false, scenarioValues: 'withheld', ...repair });
   const ref = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.4.0',
     repairPolicy: 'scored@1.0.0' };
   return { root, catalogPath: join(catalogRoot, 'catalog.json'), ref };
@@ -167,12 +168,12 @@ test('neutral guidance cannot smuggle design advice or omit a selected stack doc
 
 test('observed-only evidence can never enter repairs and scored evidence remains available', () => {
   for (const overrides of [{ repair: { observedEvidence: true } },
-    { repair: { scoredEvidence: false } }]) {
+    { repair: { scoredEvidence: false } }, { repair: { scenarioValues: 'disclosed' } }]) {
     const fixture = customCondition(overrides);
     try {
       assert.throws(() => resolveStudyConditions([fixture.ref], ['fake'], {
         stackBenchRoot: fixture.root, catalogPath: fixture.catalogPath, requested,
-      }), /observedEvidence|scoredEvidence/);
+      }), /observedEvidence|scoredEvidence|scenarioValues/);
     } finally { rmSync(fixture.root, { recursive: true, force: true }); }
   }
 });

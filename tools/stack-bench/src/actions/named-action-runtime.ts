@@ -68,7 +68,8 @@ export function namedActionRequest(named: NamedActionsCapability, action: NamedA
   try { return named.request(action, input); }
   catch (error) {
     if (errorField(error, 'code') === 'invalid_named_action_input') {
-      fail(String(errorField(error, 'message') ?? 'invalid named action input'));
+      fail('interface-invalid', { action: action.id ?? '', attribute: 'input',
+        detail: String(errorField(error, 'message') ?? 'invalid named action input') });
     }
     throw error;
   }

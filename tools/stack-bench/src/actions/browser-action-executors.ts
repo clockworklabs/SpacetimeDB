@@ -2,7 +2,8 @@ import { actionImplementation, ActionApplicationFailure } from './action-contrac
 import type {
   ActionImplementation,
 } from './action-contract.js';
-import { actorFor, fail, pad } from './actor-action-runtime.js';
+import { actorFor, fail, inconclusive, pad } from './actor-action-runtime.js';
+import { finding, renderFinding } from './action-findings.js';
 import { settledLocatorCount } from '../evidence/browser-evidence.js';
 import { harnessBrowserFailure } from '../evidence/harness-errors.js';
 
@@ -242,15 +243,12 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
     : undefined;
-  const where = scope ? ` inside ${browser.testId(scope.testid)} "${scope.contains}"` : '';
   const loc = actor.loc(input.testid, { contains, scope });
 
   if (input.absent) {
     const deadline = Date.now() + within;
     while (Date.now() <= deadline) {
-      if (await loc.isVisible()) {
-        fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''}${where} became visible during the ${within}ms observation window`);
-      }
+      if (await loc.isVisible()) fail('control-present', { control: input.testid });
       await browser.sleep(250, signal);
     }
     return { absent: true };
@@ -261,9 +259,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       if (harnessBrowserFailure(error)) throw error;
       return false;
     });
-  if (!visible) {
-    fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''}${where} not visible within ${within}ms`);
-  }
+  if (!visible) fail('control-missing', { control: input.testid });
 
   if (input.count !== undefined) {
     const all = scope
@@ -274,8 +270,7 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
         : actor.page.locator(browser.testId(input.testid)));
     const count = visible ? await all.filter({ visible: true }).count() : 0;
     if (input.count !== undefined && count !== input.count) {
-      fail(`expected exactly ${input.count} ${browser.testId(input.testid)}`
-        + `${contains ? ` containing "${contains}"` : ''}, found ${count}`);
+      fail('count-mismatch', { control: input.testid, expected: input.count, observed: count });
     }
   }
   if (!visible) return { visible: false };
@@ -290,21 +285,15 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
       await browser.sleep(250, signal);
       value = await read();
     }
-    if (value !== input.value) {
-      fail(`${browser.testId(input.testid)} expected${input.attribute
-        ? ` ${input.attribute}` : ' value'} "${input.value}", got "${value}"`);
-    }
+    if (value !== input.value) fail('value-mismatch', { control: input.testid });
   }
   if (input.notContains) {
     const text = (await loc.innerText()) || '';
-    if (text.includes(input.notContains)) {
-      fail(`${browser.testId(input.testid)} unexpectedly contains "${input.notContains}" `
-        + `(text: "${text.trim().slice(0, 80)}")`);
-    }
+    if (text.includes(input.notContains)) fail('text-unexpected', { control: input.testid });
   }
   if (input.nonEmpty) {
     const text = (await readValue(loc)).trim();
-    if (!text) fail(`${browser.testId(input.testid)} is visible but empty`);
+    if (!text) fail('control-empty', { control: input.testid });
   }
   return { visible: true, ...(input.value === undefined ? {} : {
     ...(input.attribute ? { attribute: input.attribute } : {}), value: input.value,
@@ -323,10 +312,7 @@ async function waitUntilAbsent({ input, capabilities }: BrowserArguments<CommonI
       if (harnessBrowserFailure(error)) throw error;
       return false;
     });
-  if (!hidden) {
-    fail(`${browser.testId(input.testid)}${contains ? ` containing "${contains}"` : ''} `
-      + `still visible after ${within}ms`);
-  }
+  if (!hidden) fail('control-present', { control: input.testid });
   return { absent: true };
 }
 
@@ -345,8 +331,7 @@ async function expectElementCount({ input, capabilities, signal }:
       input.contains ? { hasText: input.contains } : {}).filter({ visible: true }).count();
     if (count === input.equals) return { count };
     if (Date.now() > deadline) {
-      fail(`expected exactly ${input.equals} ${browser.testId(input.testid)}`
-        + `${input.contains ? ` containing "${input.contains}"` : ''}, saw ${count} (after ${within}ms)`);
+      fail('count-mismatch', { control: input.testid, expected: input.equals, observed: count });
     }
     await browser.sleep(400, signal);
   }
@@ -369,10 +354,7 @@ async function expectSequence({ input, capabilities, signal }: BrowserArguments<
       && seen.every((value, index) => value === browser.expand(input.equals[index]))) {
       return { values: seen };
     }
-    if (Date.now() > deadline) {
-      fail(`expected ${browser.testId(input.testid)} sequence ${JSON.stringify(input.equals)}, `
-        + `saw ${JSON.stringify(seen)} (after ${within}ms)`);
-    }
+    if (Date.now() > deadline) fail('order-mismatch', { control: input.testid });
     await browser.sleep(250, signal);
   }
 }
@@ -395,7 +377,7 @@ async function expectUnavailable({ input, capabilities, signal }:
       const disabled = await loc.isDisabled();
       const ariaDisabled = await loc.getAttribute('aria-disabled');
       if (!disabled && ariaDisabled !== 'true') {
-        fail(`${browser.testId(input.testid)} became available to ${input.actor} during the ${within}ms observation window`);
+        fail('control-available', { control: input.testid, actor: input.actor });
       }
       reason = 'disabled';
     } else reason = 'absent';
@@ -420,8 +402,7 @@ async function expectAllPresent({ input, capabilities, signal }:
     const duplicated = counts.filter(count => count > 1).length;
     if (!missing && !duplicated) return { missing, duplicated };
     if (Date.now() > deadline) {
-      fail(`of ${input.count} "${input.prefix}" messages: ${missing} missing, `
-        + `${duplicated} duplicated (after ${within}ms)`);
+      fail('entries-missing', { expected: input.count, missing, duplicated });
     }
     await browser.sleep(500, signal);
   }
@@ -438,10 +419,7 @@ async function expectStable({ input, capabilities, signal }: BrowserArguments<St
     await browser.sleep(input.intervalMs ?? 700, signal);
   }
   const distinct = [...new Set(seen)];
-  if (distinct.length > 1) {
-    fail(`${browser.testId(input.testid)} changed while idle: `
-      + distinct.map(text => JSON.stringify(text.slice(0, 50))).join(' then '));
-  }
+  if (distinct.length > 1) fail('value-unstable', { control: input.testid });
   return { samples: seen };
 }
 
@@ -454,11 +432,7 @@ async function recordNumber({ input, capabilities }: BrowserArguments<RecordNumb
   const loc = actor.loc(input.testid, { contains: browser.expand(input.contains), scope });
   await loc.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   const value = parseRenderedNumber(await readValue(loc));
-  if (value === null) {
-    throw new ActionApplicationFailure(
-      `${browser.testId(input.testid)} has no number to record`,
-    );
-  }
+  if (value === null) fail('number-missing', { control: input.testid });
   browser.recorded.set(input.as, value);
   return { key: input.as, value };
 }
@@ -472,19 +446,18 @@ async function expectNumber({ input, capabilities, signal }:
   const scope = input.in
     ? { testid: input.in.testid, contains: browser.expand(input.in.contains) }
     : undefined;
-  const where = scope ? ` inside ${browser.testId(scope.testid)} "${scope.contains}"` : '';
   const loc = actor.loc(input.testid, { contains, scope });
   await loc.waitFor({ state: 'visible', timeout: within }).catch(error => {
     if (harnessBrowserFailure(error)) throw error;
-    fail(`${browser.testId(input.testid)}${where} not visible within ${within}ms`);
+    fail('control-missing', { control: input.testid });
   });
 
   let equals = input.equals;
   if (input.relativeTo !== undefined) {
     const base = browser.recorded.get(input.relativeTo);
-    if (base === undefined) {
-      throw new ActionApplicationFailure(`no number recorded as "${input.relativeTo}"`);
-    }
+    // A scenario that compares against a number it never recorded is not
+    // measuring the application.
+    if (base === undefined) inconclusive('assertion-without-action', { action: 'recordNumber' });
     equals = base + (input.plus ?? 0);
   }
   const matches = (number: number): boolean => (equals === undefined || number === equals)
@@ -499,16 +472,11 @@ async function expectNumber({ input, capabilities, signal }:
     if (Date.now() > deadline) break;
     await browser.sleep(250, signal);
   }
-  const wanted = [
-    equals !== undefined
-      ? `exactly ${equals}${input.relativeTo !== undefined
-        ? ` (${input.relativeTo} + ${input.plus ?? 0})` : ''}`
-      : null,
-    input.atLeast !== undefined ? `at least ${input.atLeast}` : null,
-    input.atMost !== undefined ? `at most ${input.atMost}` : null,
-  ].filter(Boolean).join(' and ') || 'a number';
-  fail(`${browser.testId(input.testid)}${where} reads ${last === null ? 'no number' : last}, `
-    + `expected ${wanted}`);
+  fail('number-mismatch', { control: input.testid, observed: last, expected: {
+    ...(equals === undefined ? {} : { equals }),
+    ...(input.atLeast === undefined ? {} : { atLeast: input.atLeast }),
+    ...(input.atMost === undefined ? {} : { atMost: input.atMost }),
+  } });
 }
 
 async function expectOrderMatches({ input, capabilities }:
@@ -531,12 +499,7 @@ async function expectOrderMatches({ input, capabilities }:
     const otherSequence = sequences[other];
     if (!otherSequence) throw new TypeError(`no sequence recorded for actor "${other}"`);
     if (firstSequence.join('|') !== otherSequence.join('|')) {
-      const differentAt = firstSequence.findIndex(
-        (value, index) => value !== otherSequence[index],
-      );
-      fail(`message order differs between ${first} and ${other} at position ${differentAt}: `
-        + `${first} saw ${firstSequence.slice(Math.max(0, differentAt - 1), differentAt + 2).join(',')} / `
-        + `${other} saw ${otherSequence.slice(Math.max(0, differentAt - 1), differentAt + 2).join(',')}`);
+      fail('order-mismatch', { control: 'message-item', actors: [first, other] });
     }
   }
   return { sequences };
@@ -567,12 +530,8 @@ async function expectAgreement({ input, capabilities, signal }:
       .map(([name]) => name);
     if (!missing.length && new Set(Object.values(seen)).size === 1) return { seen };
     if (Date.now() > deadline) {
-      if (missing.length) {
-        fail(`${browser.testId(input.testid)} is missing or unreadable for ${missing.join(', ')}`);
-      }
-      fail(`clients disagree on ${browser.testId(input.testid)}: `
-        + Object.entries(seen).map(([name, value]) =>
-          `${name} sees ${JSON.stringify(value.slice(0, 40))}`).join(', '));
+      if (missing.length) fail('control-unreadable', { control: input.testid, actors: missing });
+      fail('clients-disagree', { control: input.testid, actors: input.actors });
     }
     await browser.sleep(500, signal);
   }
@@ -599,17 +558,13 @@ async function expectActorsWith({ input, capabilities }:
   }));
 
   const held = counts.filter(([, count]) => count > 0);
-  const detail = counts.map(([name, count]) => `${name}=${count}`).join(' ');
   if (input.equals !== undefined && held.length !== input.equals) {
-    fail(`expected exactly ${input.equals} actor(s) with ${browser.testId(input.testid)}`
-      + `${contains ? ` containing "${contains}"` : ''}, found ${held.length} (${detail})`);
+    fail('actors-with-control', { control: input.testid, expected: input.equals, observed: held.length });
   }
   if (input.maxEach !== undefined) {
     const maxEach = input.maxEach;
-    const greedy = counts.filter(([, count]) => count > maxEach);
-    if (greedy.length) {
-      fail(`${greedy.map(([name, count]) => `${name} has ${count}`).join(', ')} `
-        + `— no actor may hold more than ${input.maxEach} (${detail})`);
+    if (counts.some(([, count]) => count > maxEach)) {
+      fail('too-many-per-actor', { control: input.testid, maxEach });
     }
   }
   return { counts: Object.fromEntries(counts) };
@@ -630,6 +585,19 @@ function isExpectedBrowserFailure(error: unknown): boolean {
     || /^(?:locator|page|keyboard|browserContext)\./i.test(message);
 }
 
+// The one place raw browser text is read: a Playwright error becomes a
+// finding by its shape. The text itself travels only as human detail.
+export function pageFailure(message: string): ActionApplicationFailure {
+  const control = message.match(/data-testid="([^"]+)"/)?.[1];
+  const named = control ? { control } : {};
+  const value = /Page crashed/i.test(message) ? finding('page-crashed', { detail: message })
+    : /selectOption/i.test(message) ? finding('choice-missing', { ...named, detail: message })
+    : /intercepts pointer events/i.test(message) ? finding('control-blocked', { ...named, detail: message })
+    : /timeout/i.test(message) ? finding('page-timeout', { ...named, detail: message })
+    : finding('page-error', { ...named, detail: message });
+  return new ActionApplicationFailure(renderFinding(value), { finding: value });
+}
+
 export function browserApplicationBoundary<Arguments, Result>(
   implementation: (arguments_: Arguments) => Result | Promise<Result>,
 ): (arguments_: Arguments) => Promise<Result> {
@@ -638,9 +606,7 @@ export function browserApplicationBoundary<Arguments, Result>(
       return await implementation(args);
     } catch (error) {
       if (errorField(error, 'classification') || harnessBrowserFailure(error)) throw error;
-      if (isExpectedBrowserFailure(error)) {
-        throw new ActionApplicationFailure(String(errorField(error, 'message') ?? error));
-      }
+      if (isExpectedBrowserFailure(error)) throw pageFailure(String(errorField(error, 'message') ?? error));
       throw error;
     }
   };

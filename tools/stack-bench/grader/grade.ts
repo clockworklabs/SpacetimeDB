@@ -14,6 +14,8 @@ import { harnessBrowserFailure, harnessProcessFailure,
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
 import { materializeScenarioCredentials } from '../src/composition/credential-aliases.js';
 import { loadTrack } from '../src/composition/tracks.js';
+import { isFinding } from '../src/actions/action-findings.js';
+import type { Finding } from '../src/actions/action-findings.js';
 import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
 import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.js';
@@ -130,6 +132,7 @@ type CheckFailure = {
   code: string;
   actor: string | null;
   summary: string | null;
+  finding: Finding | null;
   observation: unknown;
   expected: unknown;
   retryable: boolean;
@@ -142,6 +145,10 @@ function errorMessage(error: unknown): string {
 function actionFailure(error: unknown): ActionFailure | null {
   return error instanceof Error ? error as ActionFailure : null;
 }
+// The sentence the coding agent was given for this behaviour travels with the
+// grade, so a repair report can repeat it instead of describing the check.
+const authored = (criterion: { statedBy?: string }): { statedBy?: string } =>
+  criterion.statedBy ? { statedBy: criterion.statedBy } : {};
 const DEFAULT_WITHIN = 5000;
 const SETUP_WITHIN = 20000;
 // Keep the cause when Playwright prefixes it with locator retry details.
@@ -230,6 +237,7 @@ const MAX_CONSOLE_ERRORS = 200;
 // whose endpoints are named differently (`writeUrlPattern`).
 const DEFAULT_WRITE_URL = '\\/api\\/|\\/rooms|\\/messages';
 let WRITE_URL_RE = new RegExp(DEFAULT_WRITE_URL);
+
 
 class Actor {
   readonly name: string;
@@ -554,6 +562,7 @@ function classifyCheckFailure(error: unknown, fallbackActor: string | null = nul
       code: actionEvidence.code,
       actor: actionError?.actionActor ?? fallbackActor,
       summary: actionEvidence.summary ?? `${actionEvidence.action.id} did not complete`,
+      finding: actionEvidence.finding,
       observation: actionEvidence.observation,
       expected: actionEvidence.expected,
       retryable: actionEvidence.retryable,
@@ -561,18 +570,19 @@ function classifyCheckFailure(error: unknown, fallbackActor: string | null = nul
   }
   const processFailure = harnessProcessFailure(error);
   if (processFailure) return { status: 'harness_failure', code: 'process_failure', actor: fallbackActor,
-    summary: processFailure, observation: null, expected: null, retryable: false };
+    summary: processFailure, finding: null, observation: null, expected: null, retryable: false };
   const browserFailure = harnessBrowserFailure(error);
   if (browserFailure) return { status: 'harness_failure', code: 'browser_failure', actor: fallbackActor,
-    summary: browserFailure, observation: null, expected: null, retryable: false };
+    summary: browserFailure, finding: null, observation: null, expected: null, retryable: false };
   if (error instanceof ActionApplicationFailure) {
     return { status: 'failed', code: 'application_failure', actor: fallbackActor,
-      summary: error.message, observation: error.details.observation ?? null,
+      summary: error.message, finding: isFinding(error.details.finding) ? error.details.finding : null,
+      observation: error.details.observation ?? null,
       expected: error.details.expected ?? null, retryable: false };
   }
   return { status: 'harness_failure', code: 'unclassified_exception', actor: fallbackActor,
     summary: errorMessage(error ?? 'unknown grader failure'),
-    observation: null, expected: null, retryable: false };
+    finding: null, observation: null, expected: null, retryable: false };
 }
 
 function buildCheckEvidence({ ctx, phase, startedAtMs, failure = null, actor = null, summary = null,
@@ -583,7 +593,7 @@ function buildCheckEvidence({ ctx, phase, startedAtMs, failure = null, actor = n
     sensitivity?: readonly string[] | null;
   }): CheckEvidence {
   const classified: CheckFailure = failure ? classifyCheckFailure(failure, actor) : {
-    status: 'passed', code: 'completed', actor: null, summary: null,
+    status: 'passed', code: 'completed', actor: null, summary: null, finding: null,
     observation: null, expected: null, retryable: false,
   };
   const completedAtMs = Math.max(startedAtMs, evidenceNowMs());
@@ -711,7 +721,8 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       const points = criterion.points ?? 1;
       const evidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: initializationStartedAtMs,
         failure: error, summary: `browser setup failed: ${reason}`, actions: [] });
-      result.criteria.push({ id: criterion.id, desc: criterion.desc, points, evidence });
+      result.criteria.push({ id: criterion.id, desc: criterion.desc, points, evidence,
+        ...authored(criterion) });
       result.inconclusive = [...(result.inconclusive ?? []),
         { id: criterion.id, points, status: evidence.status, code: evidence.code,
           phase: evidence.phase, summary: evidence.summary }];
@@ -756,7 +767,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
       const evidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs,
         failure: err, summary: base, actions: [], sensitivity: result.setupEvidence.sensitivity,
         attachments: [{ kind: 'check-evidence', ref: 'feature.setupEvidence' }, ...screenshots] });
-      const recorded = { id: c.id, desc: c.desc, points, evidence };
+      const recorded = { id: c.id, desc: c.desc, points, evidence, ...authored(c) };
       result.criteria.push(recorded);
       if (!evidenceIsMeasured(evidence)) {
         result.inconclusive = [...(result.inconclusive ?? []),
@@ -812,7 +823,7 @@ async function gradeFeature(browser: Browser, feature: CompiledFeature, args: Gr
     const evidence = buildCheckEvidence({ ctx, phase: 'assertion', startedAtMs: criterionStartedAtMs,
       failure, actor: activeActor, summary: detail, attachments: criterionScreenshots });
     result.criteria.push({ id: criterion.id, desc: criterion.desc, points: criterion.points,
-      evidence,
+      evidence, ...authored(criterion),
       ...(ctx.serverCheck ? { serverCheck: ctx.serverCheck } : {}) });
     if (evidencePassed(evidence)) result.score += criterion.points;
     else if (!evidenceIsMeasured(evidence)) {

@@ -110,13 +110,13 @@ test('concurrent replay refuses to invent contention when fewer than two writes 
   const result = await run({ do: 'replayConcurrently', actors: ['a', 'b'],
     settleMs: 0 }, services(new Map([['a', actor], ['b', actor]])));
   assert.equal(result.status, 'inconclusive');
-  assert.match(result.summary ?? '', /fewer than two/);
+  assert.match(result.summary ?? '', /never contended/);
 });
 
 test('lifecycle operations distinguish missing control, unsafe refusal, and success', async () => {
   const missing = await run({ do: 'restartBackend', settleMs: 0 }, services());
   assert.equal(missing.status, 'inconclusive');
-  assert.match(missing.summary ?? '', /no backend control/);
+  assert.match(missing.summary ?? '', /no control over the database runtime/);
 
   const refusedError = Object.assign(new Error('refused'), { status: 3 });
   const refusedCapability = createLifecycleCapability({ restartSpec,
@@ -125,7 +125,7 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   const refused = await run({ do: 'restartBackend', settleMs: 0 },
     services(new Map(), { backendLifecycle: refusedCapability }));
   assert.equal(refused.status, 'inconclusive');
-  assert.match(refused.summary ?? '', /benchmark-owned instance/);
+  assert.match(refused.summary ?? '', /was refused on this host/);
 
   const calls: Array<readonly [unknown, string]> = [];
   const successful = createLifecycleCapability({ restartSpec,
@@ -144,7 +144,7 @@ test('a generated app server timing out is an application failure, not a harness
   const appResult = await run({ do: 'startAppServer', settleMs: 0 },
     services(new Map(), { applicationLifecycle }));
   assert.equal(appResult.status, 'failed');
-  assert.match(appResult.summary ?? '', /could not start the app server/);
+  assert.match(appResult.summary ?? '', /application server could not start/);
 
   const backendLifecycle = createLifecycleCapability({ restartSpec,
     target: 'backend-runtime', sleep,
@@ -188,7 +188,7 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
   const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
   assert.equal(failed.status, 'inconclusive');
-  assert.match(failed.summary ?? '', /could not locate one relational stock row/);
+  assert.match(failed.summary ?? '', /direct database write did not complete/);
 });
 
 test('database-write setup limitations are inconclusive and preserve their diagnostic', async () => {
@@ -207,8 +207,9 @@ test('database-write setup limitations are inconclusive and preserve their diagn
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
   assert.equal(result.status, 'inconclusive');
-  assert.match(result.summary ?? '', /singular collections `item`, `warehouse`, and `stock`/);
-  assert.match(result.summary ?? '', /MISSING/);
+  assert.match(result.summary ?? '', /direct database write did not complete/);
+  assert.equal(result.finding?.kind, 'database-write-failed');
+  assert.match(String(result.finding?.fields.detail), /MISSING/);
 });
 
 test('direct database writes target the container selected by the run lease', async () => {

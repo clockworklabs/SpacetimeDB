@@ -1,9 +1,8 @@
 import {
   evidenceDisposition,
-  evidenceIsRepairable,
   type CheckEvidence,
 } from './check-evidence.js';
-import { humaniseDiagnostic, sanitiseDiagnostic } from './diagnostic-sanitizer.js';
+import { sanitiseDiagnostic } from './diagnostic-sanitizer.js';
 import type { RunLevelRecord } from './benchmark-run.js';
 
 export function evidenceStatusLabel(evidence: CheckEvidence): string {
@@ -22,13 +21,6 @@ export function renderEvidenceConsoleLine(
   const label = evidenceStatusLabel(evidence);
   const summary = includeSummary ? sanitiseDiagnostic(evidence.summary, 600) : '';
   return `${label} ${subject}${summary ? `: ${summary}` : ''}`;
-}
-
-export function renderRepairDiagnostic(evidence: CheckEvidence): string {
-  if (!evidenceIsRepairable(evidence)) {
-    throw new Error(`cannot render a repair diagnostic for ${evidenceStatusLabel(evidence)} evidence`);
-  }
-  return humaniseDiagnostic(evidence.summary);
 }
 
 interface LevelSummaryInput {

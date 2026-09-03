@@ -7,6 +7,6 @@
     "neutral@1.8.0": "guidance/neutral-1.8.0.json"
   },
   "repairPolicies": {
-    "scored-only@1.0.0": "repairs/scored-only.json"
+    "scored-only@1.1.0": "repairs/scored-only.json"
   }
 }

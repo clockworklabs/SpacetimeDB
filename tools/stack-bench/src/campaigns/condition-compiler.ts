@@ -67,6 +67,7 @@ export interface ResolvedGuidanceProfile {
 interface RepairProfile extends IdentityProfile {
   scoredEvidence: boolean;
   observedEvidence: boolean;
+  scenarioValues: unknown;
 }
 
 interface ConditionSpecifications {
@@ -121,7 +122,7 @@ export interface ResolvedStudyCondition {
   requested: RequestedScope;
   guidance: ResolvedGuidanceProfile;
   repair: { id: string; version: string; sha256: string; state: 'draft' | 'qualified';
-    scoredEvidence: true; observedEvidence: false };
+    scoredEvidence: true; observedEvidence: false; scenarioValues: 'withheld' };
   sha256: string;
 }
 
@@ -298,7 +299,7 @@ export function resolveDefaultGuidanceForStack(mode: string,
 
 function resolveRepair(catalog: Catalog, reference: string): ResolvedStudyCondition['repair'] {
   const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state',
-    'scoredEvidence', 'observedEvidence']);
+    'scoredEvidence', 'observedEvidence', 'scenarioValues']);
   const { profile } = loadProfile<RepairProfile>(catalog, 'repairPolicies', reference,
     'repair-policy', fields);
   if (typeof profile.scoredEvidence !== 'boolean' || typeof profile.observedEvidence !== 'boolean') {
@@ -308,7 +309,13 @@ function resolveRepair(catalog: Catalog, reference: string): ResolvedStudyCondit
     fail(`${reference}.scoredEvidence`, 'must be true until no-evidence repair is implemented');
   }
   if (profile.observedEvidence) fail(`${reference}.observedEvidence`, 'must be false');
-  return { ...identity(profile, null), scoredEvidence: true, observedEvidence: false };
+  // Scenario-chosen values never reach the coding agent; a report describes
+  // the behaviour that failed, not the probe that found it.
+  if (profile.scenarioValues !== 'withheld') {
+    fail(`${reference}.scenarioValues`, 'must be withheld');
+  }
+  return { ...identity(profile, null), scoredEvidence: true, observedEvidence: false,
+    scenarioValues: 'withheld' };
 }
 
 export function validateConditionReference(input: unknown, at = 'condition'): ConditionReference {

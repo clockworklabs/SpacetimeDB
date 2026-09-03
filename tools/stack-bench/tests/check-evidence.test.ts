@@ -17,7 +17,6 @@ import {
 import {
   evidenceStatusLabel,
   renderEvidenceConsoleLine,
-  renderRepairDiagnostic,
 } from '../src/evidence/evidence-presentation.js';
 
 type EvidenceInput = Parameters<typeof createCheckEvidence>[0];
@@ -90,7 +89,6 @@ test('all semantic helpers and renderers obey typed status, never diagnostic wor
   assert.equal(evidenceIsRepairable(misleading), true);
   assert.equal(evidenceStatusLabel(misleading), 'FAIL');
   assert.match(renderEvidenceConsoleLine(misleading, 'feature/check'), /^FAIL feature\/check/);
-  assert.match(renderRepairDiagnostic(misleading), /PASS: everything is wonderful/);
 
   const unavailable = evidence({ status: 'harness_failure', code: 'browser_failure',
     summary: 'FAILED: blame the generated app' });
@@ -98,7 +96,6 @@ test('all semantic helpers and renderers obey typed status, never diagnostic wor
   assert.equal(evidenceIsMeasured(unavailable), false);
   assert.equal(evidenceIsRepairable(unavailable), false);
   assert.equal(evidenceStatusLabel(unavailable), 'HARNESS FAILURE');
-  assert.throws(() => renderRepairDiagnostic(unavailable), /cannot render a repair diagnostic/);
 });
 
 test('unknown status cannot fall through to a default classification', () => {

@@ -1,4 +1,6 @@
 import { ActionApplicationFailure, ActionInconclusive } from './action-contract.js';
+import { finding, renderFinding } from './action-findings.js';
+import type { FailedFindingKind, FindingFields, InconclusiveFindingKind } from './action-findings.js';
 
 export type UnknownRecord = Record<string, unknown>;
 export type HeaderRecord = Record<string, string>;
@@ -123,12 +125,17 @@ export interface ActorActionArguments<Input, Capabilities extends ActorCapabilit
   readonly signal: AbortSignal;
 }
 
-export function fail(message: string): never {
-  throw new ActionApplicationFailure(message);
+// The only ways an executor fails: a finding from the catalog. The error
+// message is the rendered finding, so every reader shows the same sentence.
+export function fail<K extends FailedFindingKind>(kind: K, fields: FindingFields[K]): never {
+  const value = finding(kind, fields);
+  throw new ActionApplicationFailure(renderFinding(value), { finding: value });
 }
 
-export function inconclusive(message: string): never {
-  throw new ActionInconclusive(message);
+export function inconclusive<K extends InconclusiveFindingKind>(kind: K,
+  fields: FindingFields[K]): never {
+  const value = finding(kind, fields);
+  throw new ActionInconclusive(renderFinding(value), { finding: value });
 }
 
 export function actorFor<T>(

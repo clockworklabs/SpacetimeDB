@@ -1122,7 +1122,9 @@ function statusCells(html: string): string[] {
 // Where the stacks are columns or rows they run in one order; the crumbs, the
 // attempt title and the replay's selected event name a single stack.
 function stackOrder(html: string): string[] {
-  const single = new Set(['crumbs', 'title', 'ev', 'figs']);
+  // A live lane names only the stacks with a running attempt, so lanes are a
+  // subset of the order rather than a place where the order could be broken.
+  const single = new Set(['crumbs', 'title', 'ev', 'figs', 'who']);
   return markupText(html)
     .filter(node => ['SpacetimeDB', 'PostgreSQL', 'MongoDB'].includes(node.text)
       && !node.path.some(entry => entry.classes.some(value => single.has(value))))

@@ -173,7 +173,7 @@ test('an observation mismatch is application evidence, not a harness crash', asy
     notContains: 'private value' }, services(actor));
   assert.equal(result.status, 'failed');
   assert.equal(result.code, 'application_failure');
-  assert.match(result.summary ?? '', /unexpectedly contains/);
+  assert.match(result.summary ?? '', /shows text that must not appear/);
 });
 
 test('a visible but blank field does not satisfy a non-empty assertion', async () => {
@@ -188,7 +188,7 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
     services(actor));
   assert.equal(blank.status, 'failed');
   assert.equal(blank.code, 'application_failure');
-  assert.match(blank.summary ?? '', /visible but empty/);
+  assert.match(blank.summary ?? '', /control is empty/);
 
   rendered = 'East';
   const populated = await run({ do: 'expect', actor: 'a', testid: 'warehouse', nonEmpty: true },
@@ -202,7 +202,7 @@ test('absence checks do not pass before a late element appears', async () => {
   const result = await run({ do: 'expect', actor: 'a', testid: 'private-row',
     absent: true, within: 100 }, services(actor));
   assert.equal(result.status, 'failed');
-  assert.match(result.summary ?? '', /became visible/);
+  assert.match(result.summary ?? '', /was shown when it must not be/);
 });
 
 test('waitUntilAbsent waits for a visible element to leave', async () => {
@@ -227,7 +227,7 @@ test('unavailable checks do not pass before a control becomes enabled', async ()
   const result = await run({ do: 'expectUnavailable', actor: 'a', testid: 'admin',
     within: 100 }, services(actor));
   assert.equal(result.status, 'failed');
-  assert.match(result.summary ?? '', /became available/);
+  assert.match(result.summary ?? '', /stayed available to/);
 });
 
 test('missing values do not satisfy agreement across actors', async () => {

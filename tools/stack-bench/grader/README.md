@@ -24,6 +24,12 @@ Authorization and replay checks pass only when the requested call ran and
 produced verifiable evidence. Visible UI behavior cannot replace missing server
 evidence.
 
+An action never fails with a sentence. It fails with a finding from the closed
+catalog in `src/actions/action-findings.ts`: a kind and its fields, where a
+field is a contract control name, an action id, an actor label, a number, a
+count, or an HTTP status. Every reader renders the finding from its one
+template. Raw diagnostics travel in a `detail` field that is never rendered.
+
 ## Scenario ownership
 
 Scenario JSON contains actors, setup steps, actions, and scored checks. The

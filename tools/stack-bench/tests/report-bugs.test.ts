@@ -8,8 +8,8 @@ import test from 'node:test';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { parseReportBugsArgs } from '../commands/report-bugs.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
+import { finding } from '../src/actions/action-findings.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { hashAppSource } from '../src/runtime/source-snapshot.js';
 
 const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
 
@@ -31,13 +31,14 @@ interface WriteGradeOptions {
   file?: string;
   url?: string;
   consoleErrors?: string[];
+  statedBy?: string;
   evidence?: ReturnType<typeof createCheckEvidence>;
 }
 
 function writeGrade(app: string, status: EvidenceStatus, summary: string,
   { grading = join(app, 'stack-bench'), feature = 'Accounts', points = 1,
     criterion = 'owner', stableKey = criterion, file = 'grading-features.json',
-    url = 'http://app', consoleErrors = [], evidence: suppliedEvidence }:
+    url = 'http://app', consoleErrors = [], statedBy, evidence: suppliedEvidence }:
     WriteGradeOptions = {}): void {
   mkdirSync(grading, { recursive: true });
   const setupEvidence = createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
@@ -54,7 +55,7 @@ function writeGrade(app: string, status: EvidenceStatus, summary: string,
       features: [{ id: 1, name: feature, score: status === 'passed' ? points : 0,
         max: status === 'inconclusive' || status === 'harness_failure' ? 0 : points,
         setupEvidence, consoleErrors, criteria: [{ id: criterion, stableKey,
-          desc: `Expected ${criterion}`, points, evidence }] }],
+          desc: `Expected ${criterion}`, ...(statedBy ? { statedBy } : {}), points, evidence }] }],
     },
   });
 }
@@ -72,8 +73,9 @@ test('repair report selection follows typed evidence even when prose claims the 
     writeGrade(failedApp, 'failed', 'INCONCLUSIVE: this wording must not suppress repair');
     const reported = spawnSync(process.execPath, [CLI, '--app', failedApp], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
-    assert.match(readFileSync(join(failedApp, 'BUG_REPORT.md'), 'utf8'),
-      /INCONCLUSIVE: this wording must not suppress repair/);
+    const repair = readFileSync(join(failedApp, 'BUG_REPORT.md'), 'utf8');
+    assert.match(repair, /Actual:\*\* the application did not do this/);
+    assert.doesNotMatch(repair, /INCONCLUSIVE: this wording/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -83,14 +85,15 @@ test('repair feedback includes actionable runtime evidence without private artif
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-diagnostics-'));
   try {
     const app = join(root, 'app');
+    const total = finding('number-mismatch', { control: 'cart-total', observed: 9, expected: { equals: 12 } });
     const evidence = createCheckEvidence({
       status: 'failed', code: 'test_result', phase: 'assertion', actor: 'buyer',
       summary: 'cart total was wrong', observation: { value: 9 }, expected: { value: 12 },
-      startedAtMs: 3, completedAtMs: 4,
+      finding: total, startedAtMs: 3, completedAtMs: 4,
       actions: [{ actor: 'buyer', evidence: {
-        schemaVersion: 1, action: { id: 'expectNumber', version: '1.0.0' },
+        schemaVersion: 2, action: { id: 'expectNumber', version: '1.0.0' },
         status: 'failed', type: 'browser-number', code: 'application_failure', phase: 'execute',
-        summary: 'cart total was wrong', observation: { value: 9 }, expected: { value: 12 },
+        summary: 'cart total was wrong', finding: total, observation: { value: 9 }, expected: { value: 12 },
         retryable: false, timing: { startedAtMs: 3, completedAtMs: 4, durationMs: 1,
           deadlineMs: 5_000 }, attachments: [], sensitivity: [],
       } }],
@@ -98,6 +101,7 @@ test('repair feedback includes actionable runtime evidence without private artif
     });
     writeGrade(app, 'failed', 'cart total was wrong', {
       feature: 'Cart', criterion: 'total', stableKey: 'private.check.cart.total',
+      statedBy: 'the cart total equals the sum of its lines',
       url: 'http://app/cart', consoleErrors: ['POST /api/cart returned HTTP 500'], evidence,
     });
 
@@ -105,8 +109,9 @@ test('repair feedback includes actionable runtime evidence without private artif
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /Actor\/session:\*\* buyer/);
-    assert.match(repair, /Expected:\*\* 12/);
-    assert.match(repair, /Actual:\*\* 9/);
+    assert.match(repair, /Expected:\*\* the cart total equals the sum of its lines/);
+    assert.match(repair, /Actual:\*\* the cart-total control reads 9, expected exactly 12/);
+    assert.doesNotMatch(repair, /cart total was wrong/);
     assert.doesNotMatch(repair, /Application URL|http:\/\//);
     assert.doesNotMatch(repair, /failure-buyer\.png/);
     assert.match(repair, /Console or network errors:[\s\S]*HTTP 500/);
@@ -122,13 +127,14 @@ test('repair feedback describes behavior instead of browser commands', () => {
     const app = join(root, 'app');
     const detail = `locator.selectOption: Timeout 5000ms exceeded.\n`
       + `waiting for locator('[data-testid="notification-frequency"]')`;
+    const choice = finding('choice-missing', { control: 'notification-frequency', detail });
     const evidence = createCheckEvidence({
       status: 'failed', code: 'test_result', phase: 'assertion', summary: detail,
-      observation: detail, startedAtMs: 3, completedAtMs: 4,
+      finding: choice, observation: detail, startedAtMs: 3, completedAtMs: 4,
       actions: [{ actor: 'owner', evidence: {
-        schemaVersion: 1, action: { id: 'fill', version: '1.0.0' },
+        schemaVersion: 2, action: { id: 'fill', version: '1.0.0' },
         status: 'failed', type: 'browser-interaction-evidence', code: 'application_failure',
-        phase: 'execute', summary: detail, observation: null, expected: null,
+        phase: 'execute', summary: detail, finding: choice, observation: null, expected: null,
         retryable: false, timing: { startedAtMs: 3, completedAtMs: 4,
           durationMs: 1, deadlineMs: 60_000 }, attachments: [], sensitivity: [],
       } }],
@@ -138,7 +144,7 @@ test('repair feedback describes behavior instead of browser commands', () => {
     const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /notification frequency control did not offer the requested choice/);
+    assert.match(repair, /Actual:\*\* the notification-frequency control did not offer the required choice/);
     assert.match(repair, /Failed action:\*\* Select the requested choice/);
     assert.doesNotMatch(repair, /locator|selectOption|data-(?:role|testid)|Timeout|5000ms|http:\/\//);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -148,7 +154,7 @@ test('repair feedback refuses internal evaluation language', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-disclosure-'));
   try {
     const app = join(root, 'app');
-    writeGrade(app, 'failed', 'the Stack Bench test failed');
+    writeGrade(app, 'failed', 'x', { statedBy: 'the Stack Bench test failed' });
     const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
     assert.equal(reported.status, 2);
     assert.match(reported.stderr, /contains internal language/);
@@ -205,59 +211,10 @@ test('repair feedback includes failures caused by the rejected prior repair', ()
       '--prior-regression', regression], { encoding: 'utf8' });
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
-    assert.match(repair, /checkout still fails/);
+    assert.match(repair, /Actual:\*\* the application did not do this/);
     assert.match(repair, /Previous repair regression/);
     assert.match(repair, /Accounts/);
     assert.match(repair, /owner was signed out/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('a vague-only report does not authorize a paid repair', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-vague-repair-'));
-  try {
-    const app = join(root, 'app');
-    writeGrade(app, 'failed', '');
-    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
-    assert.equal(reported.status, 4, reported.stderr);
-    assert.match(reported.stdout, /No actionable failures/);
-    assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
-    assert.equal(existsSync(join(app, 'stack-bench', 'bug-report-quality.json')), true);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('a vague regression remains visible beside an actionable current failure', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-vague-regression-'));
-  try {
-    const app = join(root, 'app');
-    writeGrade(app, 'failed', 'the feature could not be reached at all');
-    const out = join(root, 'regression.md');
-    const reported = spawnSync(process.execPath,
-      [CLI, '--app', app, '--out', out, '--regression-context'], { encoding: 'utf8' });
-    assert.equal(reported.status, 0, reported.stderr);
-    assert.match(readFileSync(out, 'utf8'), /feature could not be reached at all/);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('repair metadata stays in the harness evidence directory and does not change source identity', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-metadata-'));
-  try {
-    const app = join(root, 'app');
-    mkdirSync(app, { recursive: true });
-    writeGrade(app, 'failed', 'the owner check still failed');
-    const before = hashAppSource(app).sha256;
-
-    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
-
-    assert.equal(reported.status, 0, reported.stderr);
-    assert.equal(existsSync(join(app, 'bug-report-quality.json')), false);
-    assert.equal(existsSync(join(app, 'stack-bench', 'bug-report-quality.json')), true);
-    assert.equal(hashAppSource(app).sha256, before);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -277,7 +234,7 @@ test('expected failures enter repairs while observed-only failures stay isolated
     assert.equal(reported.status, 0, reported.stderr);
     const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
     assert.match(repair, /State durability/);
-    assert.match(repair, /durability was expected but state was lost/);
+    assert.match(repair, /Expected:\*\* Expected owner/);
     assert.doesNotMatch(repair, /observed-only failure must not enter repair|Observed behavior/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -412,6 +369,42 @@ test('repair feedback states clean authority without exposing scoring history', 
     assert.doesNotMatch(repair, /Round|4\/6|accounts\/owner|score/i);
     assert.match(repair, /existing local state/);
     assert.equal(readFileSync(archive, 'utf8'), repair);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('repair feedback is assembled from the authored sentence, the finding, and console errors only', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-sources-'));
+  try {
+    const app = join(root, 'app');
+    const delivered = finding('message-delivered', { actor: 'other' });
+    const evidence = createCheckEvidence({
+      status: 'failed', code: 'test_result', phase: 'assertion', actor: 'other',
+      summary: '"support-secret-619" was delivered to other', finding: delivered,
+      observation: 'other received support-secret-619 in the ticket list',
+      expected: 'no message containing support-secret-619 reaches other',
+      startedAtMs: 3, completedAtMs: 4,
+      actions: [{ actor: 'other', evidence: {
+        schemaVersion: 2, action: { id: 'expectNotReceived', version: '1.0.0' },
+        status: 'failed', type: 'transport-evidence', code: 'application_failure', phase: 'execute',
+        summary: '"support-secret-619" was delivered to other', finding: delivered,
+        observation: 'other received support-secret-619', expected: null,
+        retryable: false, timing: { startedAtMs: 3, completedAtMs: 4, durationMs: 1,
+          deadlineMs: 5_000 }, attachments: [], sensitivity: [],
+      } }],
+    });
+    writeGrade(app, 'failed', 'unused', { feature: 'Support message privacy', criterion: '619a',
+      statedBy: 'a support message is visible only to its customer and to staff',
+      consoleErrors: ['POST /api/support returned 500'], evidence });
+
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+    assert.doesNotMatch(repair, /support-secret-619|ticket list|was delivered to other"/);
+    assert.match(repair, /Expected:\*\* a support message is visible only to its customer and to staff/);
+    assert.match(repair, /Actual:\*\* a private message was delivered to other, who is not a participant/);
+    assert.match(repair, /Console or network errors:[\s\S]*POST \/api\/support returned 500/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

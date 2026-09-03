@@ -1,4 +1,5 @@
 import { actionImplementation } from './action-contract.js';
+import type { Operation } from './action-findings.js';
 import {
   actorFor,
   fail,
@@ -70,48 +71,47 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
   const named = capabilities['named-actions'];
   const transport = transportFor(capabilities);
   const action = input.namedAction ?? named.resolve(input.action);
-  if (!action) inconclusive(`the track names no action "${input.action}", so nothing could be issued`);
+  if (!action) inconclusive('unknown-action', { action: input.action });
   if (!Array.isArray(action.params) || action.params.length === 0) {
-    inconclusive(`action "${input.action}" does not declare named input parameters`);
+    inconclusive('action-without-parameters', { action: input.action });
   }
 
   const target = source.loc(input.input.testid, { contains: input.input.contains });
   await target.waitFor({ state: 'attached', timeout: transport.defaultWithin });
   const raw = await target.getAttribute(input.input.attribute);
   if (raw === null || raw === '') {
-    fail(`${input.input.testid} exposes no ${input.input.attribute} value for action "${input.action}"`);
+    fail('interface-missing', { control: input.input.testid, attribute: input.input.attribute,
+      action: input.action });
   }
+  const invalid = (detail: string): never => fail('interface-invalid',
+    { action: input.action, attribute: input.input.attribute, detail });
   let values: unknown;
   try { values = JSON.parse(raw); }
-  catch { fail(`${input.input.attribute} must contain a JSON object for action "${input.action}"`); }
-  if (!values || typeof values !== 'object' || Array.isArray(values)) {
-    fail(`${input.input.attribute} must contain a JSON object for action "${input.action}"`);
-  }
+  catch { invalid('not JSON'); }
+  if (!values || typeof values !== 'object' || Array.isArray(values)) invalid('not an object');
   const supplied = values as Record<string, unknown>;
   const expected = action.params.map(param => param.name);
   const unexpected = Object.keys(supplied).filter(name => !expected.includes(name));
   if (unexpected.length) {
-    fail(`${input.input.attribute} for action "${input.action}" contains unexpected `
-      + `${unexpected.sort().join(', ')}`);
+    fail('interface-invalid', { action: input.action, attribute: input.input.attribute,
+      unexpected: unexpected.sort() });
   }
   const defaults = action.args ?? [];
   const actionValues = Object.fromEntries(expected.map((name, index) =>
     [name, Object.hasOwn(supplied, name) ? supplied[name] : defaults[index]]));
   const missing = expected.filter(name => actionValues[name] === undefined);
   if (missing.length) {
-    fail(`${input.input.attribute} for action "${input.action}" is missing ${missing.join(', ')}`);
+    fail('interface-invalid', { action: input.action, attribute: input.input.attribute, missing });
   }
 
   let credentials: HeaderRecord = {};
   if ((input.authentication ?? 'actor') === 'actor') {
     const actorCredentials = capturedCredentials(caller) ?? await browserCredentials(caller);
-    if (!actorCredentials) {
-      inconclusive(`no session found in ${caller.name}'s browser, so action "${input.action}" could not be issued as them`);
-    }
+    if (!actorCredentials) inconclusive('no-session', { actor: caller.name, action: input.action });
     credentials = actorCredentials;
   }
   const request = namedActionRequest(named, action, { values: actionValues });
-  if (!request?.url) inconclusive(`could not resolve where to send action "${input.action}" for this backend`);
+  if (!request?.url) inconclusive('unresolved-action', { action: input.action });
   const response = await named.fetch(request.url, {
     method: request.method ?? 'POST',
     headers: { 'Content-Type': 'application/json', ...credentials },
@@ -133,40 +133,35 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     status: caller.actionCall.status };
 }
 
-function missingOperationHint(call: ActionCall): string {
-  if (call.status !== 404 || !call.operation) return '';
-  const identities = [
-    call.operation.reducer ? `SpacetimeDB reducer \`${call.operation.reducer}\`` : null,
-    call.operation.path ? `\`${call.operation.method} ${call.operation.path}\`` : null,
-  ].filter(Boolean).join(' or ');
-  return identities
-    ? ` — the public application interface calls ${identities}, which must exist and apply the ordinary rules to this caller`
-    : '';
+// A 404 names the operation the application interface promised; any other
+// status is the application's own answer.
+function missingOperation(call: ActionCall): Operation | null {
+  if (call.status !== 404 || !call.operation) return null;
+  return { reducer: call.operation.reducer, path: call.operation.path, method: call.operation.method };
 }
 
 async function expectActionOutcome({ input, capabilities }: NamedTransportArguments<OutcomeInput>) {
   const actor = actorFor(capabilities, input.actor);
   const transport = transportFor(capabilities);
   const call = actor.actionCall;
-  if (!call) fail('no callAction ran before this assertion');
+  if (!call) inconclusive('assertion-without-action', { action: 'callAction' });
+  const status = call.status || null;
   if (input.outcome === 'accepted') {
     if (!call.accepted) {
-      fail(`server did not accept action "${call.action}" as ${actor.name} `
-        + `(${call.status ? `HTTP ${call.status}` : 'no server response'})`
-        + missingOperationHint(call));
+      fail('call-refused', { action: call.action, actor: actor.name, status,
+        operation: missingOperation(call) });
     }
   } else if (input.outcome === 'validation-refused') {
     if (call.accepted) {
-      fail(`server accepted invalid action "${call.action}" as ${actor.name}`);
+      fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'validation-refused' });
     }
     if (![400, 409, 422].includes(call.status) && call.applicationRejected !== true) {
-      fail(`action "${call.action}" failed with ${call.status ? `HTTP ${call.status}` : 'no server response'}; `
-        + 'that does not prove the server rejected invalid input'
-        + missingOperationHint(call));
+      fail('call-error', { action: call.action, actor: actor.name, status,
+        required: 'validation-refused', operation: missingOperation(call) });
     }
   } else {
     if (call.accepted) {
-      fail(`server accepted action "${call.action}" as ${actor.name}, who is not allowed to do it`);
+      fail('call-accepted', { action: call.action, actor: actor.name, status, required: 'refused' });
     }
     const routeProof = input.routeProvenBy === undefined ? null
       : actorFor(capabilities, input.routeProvenBy).actionCall;
@@ -175,9 +170,8 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
     const deliberateRefusal = call.status === 401 || call.status === 403
       || provenPrivateNotFound || call.applicationRejected === true;
     if (!deliberateRefusal) {
-      fail(`action "${call.action}" failed with ${call.status ? `HTTP ${call.status}` : 'no server response'}; `
-        + 'that does not prove the server refused the caller'
-        + missingOperationHint(call));
+      fail('call-error', { action: call.action, actor: actor.name, status,
+        required: 'refused', operation: missingOperation(call) });
     }
   }
   transport.verification.verified(
@@ -190,19 +184,17 @@ async function expectActionOutcome({ input, capabilities }: NamedTransportArgume
 async function callConcurrently({ input, capabilities, signal }: NamedArguments<ConcurrentCallInput>) {
   const named = capabilities['named-actions'];
   const action = named.resolve(input.action);
-  if (!action) inconclusive(`the track names no action "${input.action}", so nothing could be issued`);
+  if (!action) inconclusive('unknown-action', { action: input.action });
   const prepared: Array<{ name: string; credentials: HeaderRecord }> = [];
   for (const name of input.actors) {
     const actor = actorFor(capabilities, name);
     const credentials = capturedCredentials(actor) ?? await browserCredentials(actor);
-    if (!credentials) {
-      inconclusive(`no session found in ${name}'s browser, so the action could not be issued as them`);
-    }
+    if (!credentials) inconclusive('no-session', { actor: name, action: input.action });
     prepared.push({ name, credentials });
   }
   const request = named.request(action, input);
   const requestUrl = request?.url;
-  if (!requestUrl) inconclusive('could not resolve where to send the action for this backend');
+  if (!requestUrl) inconclusive('unresolved-action', { action: input.action });
   const started = named.now();
   const outcomes = await Promise.all(prepared.map(preparedActor =>
     named.fetch(requestUrl, {
@@ -222,12 +214,12 @@ async function callConcurrently({ input, capabilities, signal }: NamedArguments<
 
 async function expectCallOutcomes({ input, capabilities }: NamedArguments<ConcurrentOutcomeInput>) {
   const result = capabilities['named-actions'].lastCalls.get();
-  if (!result) fail('no callConcurrently ran before this assertion');
+  if (!result) inconclusive('assertion-without-action', { action: 'callConcurrently' });
   const accepted = result.outcomes.filter(outcome => outcome.ok).length;
   if (input.accepted !== undefined && accepted !== input.accepted) {
-    const detail = result.outcomes.map(outcome => `${outcome.name}:${outcome.status}`).join(' ');
-    fail(`${accepted} of ${result.fired} concurrent "${result.action}" requests were accepted, expected exactly `
-      + `${input.accepted} (${detail}) — issued within ${result.ms}ms`);
+    fail('concurrent-calls-mismatch', { action: result.action, expected: input.accepted, accepted,
+      fired: result.fired,
+      detail: `${result.outcomes.map(outcome => `${outcome.name}:${outcome.status}`).join(' ')} within ${result.ms}ms` });
   }
   return { accepted, fired: result.fired, outcomes: result.outcomes };
 }

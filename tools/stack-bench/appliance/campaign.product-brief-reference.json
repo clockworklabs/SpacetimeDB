@@ -43,7 +43,7 @@
       "id": "product-brief-quality",
       "version": "1.2.0",
       "guidanceProfile": "neutral@1.8.0",
-      "repairPolicy": "scored-only@1.0.0",
+      "repairPolicy": "scored-only@1.1.0",
       "specifications": {
         "levels": [
           {

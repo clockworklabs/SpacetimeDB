@@ -373,7 +373,6 @@ test('a new grade removes every prior grade output but keeps operator records', 
     writeFileSync(join(root, 'grader-features.stderr.log'), 'old');
     writeFileSync(join(root, 'grading-account-create@L1.json'), 'stale earlier level');
     writeFileSync(join(root, 'grader-account-create@L1.stdout.log'), 'stale earlier level');
-    writeFileSync(join(root, 'bug-report-quality.json'), 'stale repair metadata');
     writeFileSync(join(root, 'operator-notes.txt'), 'keep');
     clearPreviousGradeOutputs(root);
     assert.equal(existsSync(join(root, 'bundle.json')), false);
@@ -382,7 +381,6 @@ test('a new grade removes every prior grade output but keeps operator records', 
     assert.equal(existsSync(join(root, 'grader-features.stderr.log')), false);
     assert.equal(existsSync(join(root, 'grading-account-create@L1.json')), false);
     assert.equal(existsSync(join(root, 'grader-account-create@L1.stdout.log')), false);
-    assert.equal(existsSync(join(root, 'bug-report-quality.json')), false);
     assert.equal(existsSync(join(root, 'failure-media')), false);
     assert.equal(existsSync(join(root, 'database-provenance')), false);
     assert.equal(readFileSync(join(root, 'operator-notes.txt'), 'utf8'), 'keep');

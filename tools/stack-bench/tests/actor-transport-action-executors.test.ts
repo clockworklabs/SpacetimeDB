@@ -198,10 +198,10 @@ test('named action input uses declared defaults and a missing route is not mista
     input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, missing);
   const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, missing);
   assert.equal(checked.status, 'failed');
-  assert.match(checked.summary ?? '', /does not prove/);
+  assert.match(checked.summary ?? '', /instead of refusing the caller/);
   // A 404 names the operation the application interface requires, so a repair
   // round can create the missing endpoint instead of chasing authorization.
-  assert.match(checked.summary ?? '', /reducer `admin_restock`/);
+  assert.match(checked.summary ?? '', /the admin_restock reducer/);
   assert.match(checked.summary ?? '', /POST \/api\/admin\/restock/);
 
   const privateResource = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
@@ -225,7 +225,7 @@ test('generic client errors do not prove a named action was refused for authoriz
     const checked = await run({ do: 'expectActionOutcome', actor: 'customer',
       outcome: 'refused' }, provided);
     assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /does not prove/);
+    assert.match(checked.summary ?? '', /instead of refusing the caller/);
   }
 });
 
@@ -259,11 +259,12 @@ test('an invalid Spacetime u64 input fails before transport and cannot prove ref
     input: { testid: 'item-card', attribute: 'data-buy-input' },
     authentication: 'none', settleMs: 0 }, provided);
   assert.equal(called.status, 'failed');
-  assert.match(called.summary ?? '', /invalid u64 value/);
+  assert.match(called.summary ?? '', /input for the buy action is not valid/);
   assert.equal(requests, 0);
 
   const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, provided);
-  assert.equal(checked.status, 'failed');
+  // An assertion whose action never ran measures the scenario, not the app.
+  assert.equal(checked.status, 'inconclusive');
   assert.match(checked.summary ?? '', /no callAction ran/);
 });
 
@@ -396,7 +397,7 @@ test('an unreplayable WebSocket write cannot earn server-side forgery credit', a
 
   const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
   assert.equal(checked.status, 'inconclusive');
-  assert.match(checked.summary ?? '', /could not verify the server-side forgery refusal/);
+  assert.match(checked.summary ?? '', /could not verify the forgery refusal/);
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['unverified']);
 });
 
@@ -410,7 +411,7 @@ test('missing transport evidence cannot earn server-side forgery credit', async 
 
   const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
   assert.equal(checked.status, 'inconclusive');
-  assert.match(checked.summary ?? '', /could not verify the server-side forgery refusal/);
+  assert.match(checked.summary ?? '', /could not verify the forgery refusal/);
 });
 
 test('a negative delivery check observes its full window before passing', async () => {
@@ -479,7 +480,7 @@ test('replay retargeting maps nested entity ids by field and relationship depth'
 
   const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
   assert.equal(rejected.status, 'failed');
-  assert.match(rejected.summary ?? '', /server ACCEPTED/);
+  assert.match(rejected.summary ?? '', /who must be refused, was accepted/);
 });
 
 test('replay decodes Socket.IO entities and uses the target actor browser cookie', async () => {
@@ -616,7 +617,7 @@ test('named replay can replace a declared literal without an undeclared UI attri
 
 test('a missing or malformed declared replay target is an application failure', async () => {
   for (const [value, message] of [[null, /exposes no data-entity-id/],
-    ['not-an-id', /is not a safe integer/]] as const) {
+    ['not-an-id', /data-entity-id for the ship action is not valid/]] as const) {
     const source = { name: 'staff', writes: [], received: [],
       loc: () => ({ waitFor: async () => undefined, getAttribute: async () => value }) };
     const customer = { name: 'customer', writes: [], received: [] };
@@ -642,7 +643,7 @@ test('only an explicit authorization response proves a replay refusal', async ()
     const provided = services(new Map<string, unknown>([['customer', actor]]));
     const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
     assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /does not prove an authorization refusal/);
+    assert.match(checked.summary ?? '', /instead of a refusal/);
     assert.equal(provided.verification.length, 0);
   }
 });
@@ -665,7 +666,7 @@ test('only an explicit authorization response proves a forged-write refusal', as
     const provided = services(new Map<string, unknown>([['attacker', actor]]));
     const checked = await run({ do: 'expectForgeryRejected', actor: 'attacker' }, provided);
     assert.equal(checked.status, 'failed');
-    assert.match(checked.summary ?? '', /does not prove an authorization refusal/);
+    assert.match(checked.summary ?? '', /instead of a refusal/);
     assert.equal(provided.verification.length, 0);
   }
 });
@@ -685,7 +686,7 @@ test('a missing numeric literal makes the server-side replay check inconclusive'
   const replayed = await run({ do: 'replayAs', actor: 'buyer', from: 'buyer', match: 'buy',
     swap: { find: '449', with: '1' }, settleMs: 0 }, provided);
   assert.equal(replayed.status, 'inconclusive');
-  assert.match(replayed.summary ?? '', /could not issue the server-side replay/);
+  assert.match(replayed.summary ?? '', /could not issue the replay as/);
   assert.equal(requests.length, 0);
 });
 
@@ -719,7 +720,7 @@ test('named calls preserve actor credentials, result state, and application asse
   assert.equal(accepted.status, 'passed');
   const mismatch = await run({ do: 'expectCallOutcomes', accepted: 1 }, provided);
   assert.equal(mismatch.status, 'failed');
-  assert.match(mismatch.summary ?? '', /expected exactly 1/);
+  assert.match(mismatch.summary ?? '', /calls were accepted, expected 1/);
 });
 
 test('named calls accept opaque bearer tokens stored under an explicit token key', async () => {
@@ -767,12 +768,12 @@ test('missing named actions and application roots stay inconclusive', async () =
     action: 'missing', settleMs: 0 },
   services(new Map<string, unknown>([['a', actor], ['b', actor]]), { actions: [] }));
   assert.equal(missingAction.status, 'inconclusive');
-  assert.match(missingAction.summary ?? '', /track names no action/);
+  assert.match(missingAction.summary ?? '', /track names no missing action/);
 
   const missingRoot = await run({ do: 'runScript', script: 'backoffice.mjs', args: [] },
     services(new Map<string, unknown>()));
   assert.equal(missingRoot.status, 'inconclusive');
-  assert.match(missingRoot.summary ?? '', /app directory/);
+  assert.match(missingRoot.summary ?? '', /application directory is unknown/);
 });
 
 test('an application-owned script timeout is a scored application failure', async () => {

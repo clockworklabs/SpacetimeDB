@@ -1,4 +1,6 @@
 import { evidenceNowMs } from '../evidence/evidence-timing.js';
+import { isFinding } from './action-findings.js';
+import type { Finding } from './action-findings.js';
 
 type UnknownRecord = Record<string, unknown>;
 type ActionStatus = 'passed' | 'failed' | 'inconclusive' | 'harness_failure';
@@ -66,6 +68,9 @@ export interface ActionEvidence {
   readonly code: string;
   readonly phase: 'execute';
   readonly summary: string | null;
+  // The typed finding behind a failed or inconclusive action; null when the
+  // action passed or the harness itself failed.
+  readonly finding: Finding | null;
   readonly observation: unknown;
   readonly expected: unknown;
   readonly retryable: boolean;
@@ -79,7 +84,7 @@ export interface ActionEvidence {
   readonly sensitivity: readonly string[];
 }
 
-export const ACTION_EVIDENCE_SCHEMA_VERSION = 1;
+export const ACTION_EVIDENCE_SCHEMA_VERSION = 2;
 
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -188,6 +193,7 @@ function evidence(
     code,
     phase: 'execute',
     summary: summary == null ? null : String(summary).slice(0, 2_000),
+    finding: isFinding(details.finding) ? details.finding : null,
     observation: details.observation ?? null,
     expected: details.expected ?? null,
     retryable: details.retryable === true,

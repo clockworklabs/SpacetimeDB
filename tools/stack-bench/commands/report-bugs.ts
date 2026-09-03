@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 // Turns grading results into a behavioral BUG_REPORT.md for the fix agent.
-// Internal selector mechanics, local topology and raw paths are removed.
-// Public control names remain because the agent already received them.
+//
+// Every line the agent reads comes from one of three sources: the sentence
+// the agent was already given for the behavior (`statedBy`, else the
+// criterion's description), the rendered finding from the catalog, or the
+// application's own console errors. Harness prose never enters the report.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
-import { sanitiseConsoleError,
-  humaniseDiagnostic, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
-import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
-  writeArtifact } from '../src/evidence/artifacts.js';
+import { renderFinding } from '../src/actions/action-findings.js';
+import type { Finding } from '../src/actions/action-findings.js';
+import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.js';
+import { ARTIFACT_FILE, readArtifactPayload } from '../src/evidence/artifacts.js';
 import { criterionEvidence, evidenceIsRepairable } from '../src/evidence/check-evidence.js';
-import { renderRepairDiagnostic } from '../src/evidence/evidence-presentation.js';
 import { assertAgentVisibleText } from '../src/composition/agent-visible-contract.js';
 import { CODING_CONTAINER_BUG_REPORT_FILE, CODING_CONTAINER_START_SCRIPT }
   from '../src/runtime/coding-container-policy.js';
-import type { ActionEvidence } from '../src/actions/action-contract.js';
 
 interface RepairHistoryEntry {
   round?: number;
@@ -54,6 +55,7 @@ interface Criterion {
   id?: string;
   stableKey?: string;
   desc?: string;
+  statedBy?: string;
   points?: number;
   evidence?: unknown;
 }
@@ -91,14 +93,13 @@ interface RepairBug {
   observed: string;
   consoleErrors: string[];
   contract: boolean;
-  vague: boolean;
 }
 
-function failedAction(action: string | undefined, detail: unknown): string | null {
+// The public verb for the step that failed. Control and action names are the
+// agent's own vocabulary; nothing else about the step is repeated.
+function failedAction(action: string | undefined, finding: Finding | null): string | null {
   if (action === 'fill') {
-    return /selectOption/i.test(String(detail ?? ''))
-      ? 'Select the requested choice'
-      : 'Enter the requested value';
+    return finding?.kind === 'choice-missing' ? 'Select the requested choice' : 'Enter the requested value';
   }
   if (action === 'click') return 'Use the requested control';
   if (action === 'signIn') return 'Sign in';
@@ -107,12 +108,14 @@ function failedAction(action: string | undefined, detail: unknown): string | nul
   return null;
 }
 
-function repairValue(value: unknown, fallback: string): string {
-  if (value === null || value === undefined) return fallback;
-  if (typeof value === 'object' && !Array.isArray(value)
-    && Object.keys(value).length === 1 && 'value' in value) value = value.value;
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return sanitiseDiagnostic(text, 500) || fallback;
+// What the application did, from the finding alone. A failure without a
+// finding (the feature's setup failed before this behavior was reached)
+// says so and nothing more.
+function observed(finding: Finding | null, phase: string): string {
+  if (finding) return renderFinding(finding);
+  return phase === 'setup'
+    ? 'the application did not reach this behavior; an earlier step of the same feature failed'
+    : 'the application did not do this';
 }
 
 export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
@@ -171,16 +174,10 @@ function priorRegressionSection(path: string): string[] {
   ];
 }
 
-const VAGUE = new Set([
-  'it did not behave as described',
-  'the feature could not be reached at all',
-  'the app did not respond in time',
-]);
 export function createBugReport(args: ReportBugsArgs): number {
   const resultsDir = resolve(args.results);
   if (!existsSync(resultsDir)) throw new Error(`No grading results in ${resultsDir}`);
 
-  let vagueBugs = 0;
   const bugs: RepairBug[] = [];
   const selectedChecks = args.checks === null ? null : new Set(args.checks);
   const selectedControls = args.controls === null ? null : new Set(args.controls);
@@ -195,32 +192,19 @@ export function createBugReport(args: ReportBugsArgs): number {
         if (!(Number(criterion.points) > 0)) continue;
         const evidence = criterionEvidence(criterion);
         if (!evidenceIsRepairable(evidence)) continue;
-        const observed = renderRepairDiagnostic(evidence);
         const actionEntry = evidence.actions.at(-1);
-        const actionEvidence = actionEntry?.evidence as ActionEvidence | undefined;
-        const safeDetails = evidence.sensitivity.length === 0
-          && (actionEvidence?.sensitivity.length ?? 0) === 0;
-        const fallbackExpected = sanitiseDiagnostic(
-          criterion.desc ?? 'the requested behavior', 300);
-        const expected = safeDetails
-          ? repairValue(actionEvidence?.expected ?? evidence.expected, fallbackExpected)
-          : fallbackExpected;
-        const rawActual = actionEvidence?.observation ?? evidence.observation;
-        const actual = safeDetails
-          ? typeof rawActual === 'string' ? humaniseDiagnostic(rawActual)
-            : repairValue(rawActual, observed)
-          : observed;
-        const vague = VAGUE.has(actual);
-        if (vague) vagueBugs += 1;
+        const actionId = actionEntry && typeof actionEntry.evidence === 'object' && actionEntry.evidence
+          ? String((actionEntry.evidence as { action?: { id?: string } }).action?.id ?? '') : undefined;
+        const expected = (criterion.statedBy ?? criterion.desc ?? '').trim() || 'the requested behavior';
         bugs.push({
           area: sanitiseDiagnostic(feature.name, 120),
           actor: sanitiseDiagnostic(actionEntry?.actor ?? evidence.actor, 120) || null,
-          action: failedAction(actionEvidence?.action.id, actionEvidence?.summary),
+          action: failedAction(actionId, evidence.finding),
           expected,
-          observed: actual,
+          observed: observed(evidence.finding, evidence.phase),
           consoleErrors: (feature.consoleErrors ?? []).slice(0, 3)
             .map(sanitiseConsoleError).filter(Boolean),
-          contract: false, vague,
+          contract: false,
         });
       }
     }
@@ -240,7 +224,7 @@ export function createBugReport(args: ReportBugsArgs): number {
         expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use the "${result.id}" application interface`,
         observed: sanitiseDiagnostic(result.detail
           ?? `no visible element with id="${result.id}" was found after a clean reset`, 500),
-        consoleErrors: [], contract: true, vague: false,
+        consoleErrors: [], contract: true,
       });
     }
   }
@@ -263,7 +247,7 @@ export function createBugReport(args: ReportBugsArgs): number {
         expected,
         observed: sanitiseDiagnostic(bundle.outcome.reason, 500),
         consoleErrors: [],
-        contract: false, vague: false,
+        contract: false,
       });
     }
   }
@@ -273,9 +257,8 @@ export function createBugReport(args: ReportBugsArgs): number {
     return 3;
   }
 
-  const repairBugs = args.regressionContext ? bugs : bugs.filter(bug => !bug.vague);
-  const behavioral = repairBugs.filter(bug => !bug.contract);
-  const contractFailures = repairBugs.filter(bug => bug.contract);
+  const behavioral = bugs.filter(bug => !bug.contract);
+  const contractFailures = bugs.filter(bug => bug.contract);
   const lines = args.regressionContext ? [] : [
     '# Bug Report',
     '',
@@ -321,32 +304,13 @@ export function createBugReport(args: ReportBugsArgs): number {
 
   if (args.priorRegression) lines.push(...priorRegressionSection(args.priorRegression));
 
-  const vaguePct = Math.round((vagueBugs / bugs.length) * 100);
-  try {
-    const bundle = existsSync(bundlePath) ? readArtifact(bundlePath, { expectedKind: 'grade_bundle' }) : null;
-    const parentId = bundle?.attempt.id ?? null;
-    writeArtifact(join(resultsDir, 'bug-report-quality.json'), {
-      kind: 'bug_report_quality', id: `${parentId ?? 'bugs'}-bug-report-quality`,
-      attempt: { id: `${parentId ?? 'bugs'}-bug-report-quality`, parentId },
-      identities: bundle?.identities ?? emptyArtifactIdentities(),
-      payload: { bugs: bugs.length, vague: vagueBugs, vaguePct },
-    });
-  } catch { /* Quality metadata must not block the repair decision. */ }
-
-  console.log(`  diagnostic quality: ${repairBugs.length}/${bugs.length} actionable, ${vagueBugs} vague (${vaguePct}%)`);
-  if (repairBugs.length === 0) {
-    rmSync(args.out, { force: true });
-    console.log('No actionable failures. A paid repair was not started.');
-    return 4;
-  }
-
   const reportText = assertAgentVisibleText(lines.join('\n'));
   writeFileSync(args.out, reportText);
   if (args.archive) {
     mkdirSync(dirname(args.archive), { recursive: true });
     writeFileSync(args.archive, reportText);
   }
-  console.log(`Wrote ${repairBugs.length} bug(s) to ${args.out}`);
+  console.log(`Wrote ${bugs.length} bug(s) to ${args.out}`);
   return 0;
 }
 

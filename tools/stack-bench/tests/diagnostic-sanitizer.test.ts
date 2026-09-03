@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  humaniseDiagnostic,
   redactCredentials,
   sanitiseConsoleError,
   sanitiseDiagnostic,
@@ -40,45 +39,4 @@ test('credential redaction covers provider environment and JSON spellings', () =
   const result = redactCredentials(input);
   assert.doesNotMatch(result, /provider-value|subscription-value|json-value|oauth-value|database-password/);
   assert.equal(result.match(/\[redacted credential\]/g)?.length, 5);
-});
-
-test('humanisation keeps useful behaviour while hiding the implementation', () => {
-  assert.equal(humaniseDiagnostic('[data-testid="toast"] not visible within 5000ms'),
-    'the required toast did not appear');
-  assert.equal(humaniseDiagnostic('[data-role="item-card"],#item-card not visible within 5000ms'),
-    'the required item card did not appear');
-  assert.equal(humaniseDiagnostic('signup-username not visible within 5000ms'),
-    'signup-username not visible in time');
-  assert.equal(humaniseDiagnostic('ACCEPTED a write with a tampered ownerId'),
-    'the server accepted a request that claimed to be from a different user');
-  assert.equal(humaniseDiagnostic('setup failed: waiting for [data-testid="current-user"]'),
-    'signing in never completed, so nothing behind it could be reached');
-  assert.equal(humaniseDiagnostic(`locator.click: Timeout 5000ms exceeded.\n`
-    + `waiting for locator('[data-testid="profile-link"],#profile-link')`),
-  'the profile link control did not become usable');
-  assert.equal(humaniseDiagnostic(`locator.selectOption: Timeout 5000ms exceeded.\n`
-    + `waiting for locator('[data-testid="notification-frequency"]')`),
-  'the notification frequency control did not offer the requested choice');
-  assert.equal(humaniseDiagnostic('control,#notification-enabled expected data-state "on", got "off"'),
-    'the notification enabled control showed "off" instead of "on"');
-  assert.equal(humaniseDiagnostic(
-    '[data-testid="notification-order"],#notification-order expected data-state "on", got "off"'),
-  'the notification order control showed "off" instead of "on"');
-  assert.equal(humaniseDiagnostic('the control,#support-assignee expected value "staff", got "1"'),
-    'the support assignee control showed "1" instead of "staff"');
-  assert.equal(humaniseDiagnostic('expected the control,#item-name sequence ["A","B"], saw ["B"] (in time)'),
-    'the item name list showed ["B"] instead of ["A","B"]');
-  assert.equal(humaniseDiagnostic('the control,#buy-now became available to visitor during the observation window'),
-    'the buy now control was available when it should not have been');
-  assert.equal(humaniseDiagnostic('the control,#recommended-item containing "Headphones" became visible during the observation window'),
-    'the recommended item control showed "Headphones" when it should not have');
-  assert.equal(humaniseDiagnostic(
-    'expected exactly 1 [data-testid="item-card"],#item-card containing "Coffee Grinder", saw 2 (after 10000ms)'),
-  'found 2 matching entries for "Coffee Grinder"; expected 1');
-  assert.equal(humaniseDiagnostic(
-    '[data-testid="recommendation-rank"],#recommendation-rank inside [data-testid="recommended-item"],#recommended-item "Gaming Mouse" reads 6, expected exactly 1'),
-  'the recommendation rank for "Gaming Mouse" showed 6 instead of 1');
-  assert.equal(humaniseDiagnostic(
-    '[data-testid="recommended-item"],#recommended-item containing "Headphones" still visible after 10000ms'),
-  'the recommended item for "Headphones" was still visible');
 });

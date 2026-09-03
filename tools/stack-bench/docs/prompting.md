@@ -207,6 +207,15 @@ The real report also identifies the affected product area and includes the
 current feature text and application interface. Provider failures, harness
 failures, and interrupted work do not become application bug reports.
 
+Every line of the report comes from one of three sources: the sentence the
+request already gave the agent for that behavior, a finding from the
+grader's closed catalog rendered as one sentence (a control that did not
+appear, a number that read 9 instead of 12, a request that was accepted
+when it had to be refused), and the application's own console errors.
+The grader never writes prose into the report, and the values a scenario
+chose to probe a behavior are never among a finding's fields. A repair
+fixes the behavior, not the probe.
+
 ## Authoring rules
 
 - Put product asks in feature prompts.

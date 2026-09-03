@@ -79,7 +79,7 @@ const ID_KEY = /"(_?id|[A-Za-z][A-Za-z0-9_]*_?id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})
 
 function replayUnavailable(actor: Actor, reason: string): never {
   actor.replay = { inconclusive: true, reason };
-  inconclusive(`could not issue the server-side replay: ${reason}`);
+  inconclusive('replay-unavailable', { actor: actor.name, detail: reason });
 }
 const tokenRe = (token: string): RegExp => new RegExp(
   `(?<![A-Za-z0-9_-])${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'g');
@@ -270,16 +270,16 @@ async function expectForgeryRejected({ input, capabilities }: TransportArguments
   const actor = actorFor(capabilities, input.actor);
   const transport = transportFor(capabilities);
   const forge = actor.forge;
-  if (!forge) fail('no forgeWrite ran before this assertion');
+  if (!forge) inconclusive('assertion-without-action', { action: 'forgeWrite' });
   if (forge.inconclusive) {
     transport.verification.unverified(`${actor.name}: ${forge.reason}`);
-    inconclusive(`could not verify the server-side forgery refusal: ${forge.reason}`);
+    inconclusive('forgery-unverifiable', { actor: actor.name, detail: forge.reason });
   }
   if (forge.accepted) {
-    fail(`server ACCEPTED a write with a tampered "${forge.tamperedField}" (HTTP ${forge.status}) — the client chooses who it is`);
+    fail('forgery-accepted', { field: forge.tamperedField ?? 'identity', status: forge.status ?? null });
   }
   if (forge.status !== 401 && forge.status !== 403) {
-    fail(`the forged request failed with ${forge.status ? `HTTP ${forge.status}` : 'no server response'} — this does not prove an authorization refusal`);
+    fail('forgery-error', { status: forge.status ?? null });
   }
   transport.verification.verified(
     `${actor.name}: server refused the tampered "${forge.tamperedField}" (HTTP ${forge.status})`);
@@ -304,7 +304,8 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
         const rawValue = await target.getAttribute(input.namedTarget.attribute);
         if (rawValue === null || rawValue === '') {
-          fail(`${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay`);
+          fail('interface-missing', { control: input.namedTarget.testid,
+            attribute: input.namedTarget.attribute, action: action.id ?? 'replay' });
         }
         let value: string | number = rawValue;
         if (input.swap) {
@@ -314,7 +315,8 @@ async function replayAs({ input, capabilities, signal }: ReplayArguments) {
         if (input.namedTarget.valueType === 'number') {
           value = Number(value);
           if (!Number.isSafeInteger(value)) {
-            fail(`${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"`);
+            fail('interface-invalid', { action: action.id ?? 'replay',
+              attribute: input.namedTarget.attribute, detail: 'not a safe integer' });
           }
         }
         args[0] = value;
@@ -416,20 +418,20 @@ async function expectReplayRejected({ input, capabilities }:
   const actor = actorFor(capabilities, input.actor);
   const transport = transportFor(capabilities);
   const replay = actor.replay;
-  if (!replay) fail('no replayAs ran before this assertion');
+  if (!replay) inconclusive('assertion-without-action', { action: 'replayAs' });
   if (replay.inconclusive) {
     transport.verification.unverified(`${actor.name}: ${replay.reason}`);
-    inconclusive(`could not verify the server-side replay refusal: ${replay.reason}`);
+    inconclusive('replay-unavailable', { actor: actor.name, detail: replay.reason ?? '' });
   }
+  const named = replay.namedAction ? { action: replay.namedAction } : {};
   if (replay.accepted) {
-    fail(`server ACCEPTED ${replay.method} ${replay.url} from ${actor.name}, who is not allowed to do it (HTTP ${replay.status}) — the check is in the interface, not the server`);
+    fail('replay-accepted', { actor: actor.name, status: replay.status ?? null, ...named });
   }
   const replayStatus = replay.status;
   if (replayStatus !== 401 && replayStatus !== 403
     && !(replayStatus === 404 && input.allowNotFound === true)
     && replay.applicationRejected !== true) {
-    fail(`the ${replay.namedAction ? `named action "${replay.namedAction}"` : 'replayed request'} failed with `
-      + `${replay.status ? `HTTP ${replay.status}` : 'no server response'} — this does not prove an authorization refusal`);
+    fail('replay-error', { status: replay.status ?? null, ...named });
   }
   transport.verification.verified(
     `${actor.name}: server refused ${replay.method} ${replay.url} (HTTP ${replay.status})`);
@@ -442,9 +444,7 @@ async function expectReceived({ input, capabilities, signal }: TransportArgument
   const needle = transport.expand(input.contains);
   const deadline = Date.now() + (input.within ?? transport.defaultWithin);
   while (!actor.wasSent(needle) && Date.now() < deadline) await transport.sleep(250, signal);
-  if (!actor.wasSent(needle)) {
-    inconclusive(`the harness could not observe "${needle}" reaching ${actor.name}`);
-  }
+  if (!actor.wasSent(needle)) inconclusive('not-observed', { actor: actor.name });
   return { received: true, contains: needle };
 }
 
@@ -453,9 +453,7 @@ async function expectNotReceived({ input, capabilities, signal }: TransportArgum
   const transport = transportFor(capabilities);
   const needle = transport.expand(input.contains);
   await transport.sleep(input.within ?? transport.defaultWithin, signal);
-  if (actor.wasSent(needle)) {
-    fail(`"${needle}" was delivered to ${actor.name}, who is not a participant — the server sends private data to everyone and relies on the client to hide it`);
-  }
+  if (actor.wasSent(needle)) fail('message-delivered', { actor: actor.name });
   return { received: false, contains: needle };
 }
 

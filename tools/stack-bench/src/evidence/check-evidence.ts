@@ -1,7 +1,9 @@
+import { findingSchema } from '../actions/action-findings.js';
+import type { Finding } from '../actions/action-findings.js';
 import { z } from 'zod';
 import { formatZodError } from '../zod-error.js';
 
-export const CHECK_EVIDENCE_SCHEMA_VERSION = 1;
+export const CHECK_EVIDENCE_SCHEMA_VERSION = 2;
 
 export const CHECK_EVIDENCE_STATUSES = Object.freeze([
   'passed',
@@ -47,12 +49,15 @@ export interface CheckEvidenceAttachment {
 }
 
 export interface CheckEvidence {
-  schemaVersion: 1;
+  schemaVersion: 2;
   status: CheckEvidenceStatus;
   code: string;
   phase: CheckEvidencePhase;
   actor: string | null;
   summary: string | null;
+  // The typed finding behind a failed or inconclusive check, from its
+  // failing action; null when the check passed or the harness failed.
+  finding: Finding | null;
   observation: unknown;
   expected: unknown;
   retryable: boolean;
@@ -76,6 +81,7 @@ export interface CreateCheckEvidenceInput {
   actions?: readonly CheckEvidenceActionEntry[];
   attachments?: readonly CheckEvidenceAttachment[];
   sensitivity?: readonly string[];
+  finding?: Finding | null;
 }
 
 // This is the single semantic interpretation of a check/action status. Keep
@@ -110,13 +116,14 @@ const timingSchema = z.strictObject({
 });
 const actionTimingSchema = timingSchema.extend({ deadlineMs: z.number().finite().nonnegative() });
 const actionEvidenceSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   action: z.strictObject({ id: nonEmptyStringSchema, version: nonEmptyStringSchema }),
   status: z.enum(CHECK_EVIDENCE_STATUSES),
   type: nonEmptyStringSchema,
   code: nonEmptyStringSchema,
   phase: nonEmptyStringSchema,
   summary: z.string().nullable(),
+  finding: findingSchema.nullable(),
   observation: z.unknown(),
   expected: z.unknown(),
   retryable: z.boolean(),
@@ -131,6 +138,7 @@ const checkEvidenceSchema = z.strictObject({
   phase: z.enum(CHECK_EVIDENCE_PHASES),
   actor: nonEmptyStringSchema.nullable(),
   summary: z.string().nullable(),
+  finding: findingSchema.nullable(),
   observation: z.unknown(),
   expected: z.unknown(),
   retryable: z.boolean(),
@@ -214,6 +222,7 @@ export function createCheckEvidence({
   summary = null,
   observation = null,
   expected = null,
+  finding = null,
   retryable = false,
   startedAtMs,
   completedAtMs,
@@ -228,6 +237,7 @@ export function createCheckEvidence({
     phase,
     actor,
     summary: summary == null ? null : String(summary).slice(0, 2_000),
+    finding,
     observation,
     expected,
     retryable,

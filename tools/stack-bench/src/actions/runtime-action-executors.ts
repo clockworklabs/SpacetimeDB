@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
-import { actionImplementation } from './action-contract.js';
+import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
+import { finding, isFinding } from './action-findings.js';
 import type {
   ActionImplementation,
 } from './action-contract.js';
@@ -155,6 +156,7 @@ interface ProcessErrorShape {
 interface NestedActionEvidence {
   readonly status?: unknown;
   readonly summary?: string | null;
+  readonly finding?: unknown;
 }
 
 const errorShape = (error: unknown): ProcessErrorShape =>
@@ -187,9 +189,15 @@ async function dispatchNested(
     const disposition = typeof status === 'string'
       ? evidenceDisposition(status as CheckEvidenceStatus)
       : null;
-    if (disposition?.applicationFailure) fail(evidence?.summary ?? `${step.do} failed`);
+    // A nested step's own finding is the finding; the wrapper adds nothing.
+    const nested = isFinding(evidence?.finding) ? evidence.finding : null;
+    if (disposition?.applicationFailure) {
+      throw new ActionApplicationFailure(evidence?.summary ?? `${step.do} failed`,
+        { finding: nested ?? finding('action-failed', { action: step.do }) });
+    }
     if (disposition?.outcomeKind === 'inconclusive') {
-      inconclusive(evidence?.summary ?? `${step.do} was inconclusive`);
+      throw new ActionInconclusive(evidence?.summary ?? `${step.do} was inconclusive`,
+        { finding: nested ?? finding('invalid-input', { detail: `${step.do} was inconclusive` }) });
     }
     throw error;
   }
@@ -214,9 +222,8 @@ async function replayConcurrently(
   }).filter((candidate): candidate is { actor: Actor; write: CapturedWrite } =>
     candidate.write !== null && candidate.write !== undefined);
   if (pending.length < 2) {
-    inconclusive(`fewer than two ${input.match ? `"${input.match}" ` : ''}write requests were captured, `
-      + 'so nothing was contended. This backend may not write over HTTP, or the request carried no JSON body '
-      + '(only bodied writes reach lastWrites — pass `match` to select by URL instead).');
+    inconclusive('nothing-contended', { detail: `${pending.length} write request(s) captured; `
+      + 'this backend may not write over HTTP, or the request carried no JSON body' });
   }
   const replies = await Promise.all(pending.map(({ actor, write }) =>
     actor.page.request.fetch(write.url, {
@@ -227,8 +234,8 @@ async function replayConcurrently(
       `error: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
   const answered = replies.filter(status => typeof status === 'number');
   if (answered.length < 2) {
-    inconclusive(`only ${answered.length} of ${pending.length} replayed ${input.match ?? 'write'} requests `
-      + `reached the server (responses: ${replies.join(', ')}), so the two never contended.`);
+    inconclusive('nothing-contended', { detail: `${answered.length} of ${pending.length} replayed requests `
+      + `reached the server (responses: ${replies.join(', ')})` });
   }
   await concurrency.sleep(input.settleMs ?? 3000, signal);
   return { attempted: pending.length, answered: answered.length, replies };
@@ -256,7 +263,7 @@ async function clickConcurrently(
     }
   }))).filter(Boolean);
   if (notReady.length) {
-    fail(`${concurrency.testId(input.testid)} never became clickable for ${notReady.join(', ')}`);
+    fail('control-not-ready', { control: input.testid, actors: notReady.map(String) });
   }
   const outcomes = await Promise.all(resolved.map(({ target, locator }) =>
     locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
@@ -264,9 +271,8 @@ async function clickConcurrently(
         `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
   const failed = outcomes.filter(Boolean);
   if (failed.length) {
-    fail(`${failed.length} of ${targets.length} concurrent clicks on `
-      + `${concurrency.testId(input.testid)} failed to dispatch — `
-      + failed.join(' | '));
+    fail('clicks-failed', { control: input.testid, failed: failed.length, total: targets.length,
+      detail: failed.join(' | ') });
   }
   await concurrency.sleep(input.settleMs ?? 3000, signal);
   return { dispatched: targets.length };
@@ -317,7 +323,7 @@ async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetSt
     result = await capabilities['database-write'].setStock(input);
   } catch (error) {
     if (errorShape(error).classification || harnessProcessFailure(error)) throw error;
-    inconclusive(`the grader could not update application stock: ${databaseWriteFailureDetail(error)}`);
+    inconclusive('database-write-failed', { detail: databaseWriteFailureDetail(error) });
   }
   await capabilities.clock.sleep(input.settleMs, signal);
   return result;
@@ -372,27 +378,20 @@ export function createLifecycleCapability({ restartSpec, target,
   return Object.freeze({
     async operate(mode: 'restart' | 'start' | 'stop', settleMs: number, signal: AbortSignal) {
       if (!restartSpec) {
-        inconclusive(application
-          ? 'no backend control supplied, cannot control the app server'
-          : 'no backend control supplied, backend was never restarted');
+        inconclusive('no-backend-control', { target });
         return;
       }
       try {
         await control(restartSpec, mode, { signal });
       } catch (error) {
         const value = errorShape(error);
-        if (value.status === 3) {
-          inconclusive(application
-            ? 'app-server control refused on this host'
-            : 'backend restart refused — no benchmark-owned instance available');
-        }
+        if (value.status === 3) inconclusive('control-refused', { target });
         // A generated app which cannot complete its own start/stop operation
         // has failed the application contract. Backend-control timeouts and
         // failures to launch the harness command still provide no app evidence.
         if (harnessProcessFailure(error) && !(application && value.code === 'ETIMEDOUT')) throw error;
-        fail(application
-          ? `could not ${mode} the app server: ${String(value.stdout || value.message || '').trim().slice(-160)}`
-          : `backend restart failed: ${String(value.stdout || value.message || '').trim().slice(-200)}`);
+        fail('app-control-failed', { mode, target,
+          detail: String(value.stdout || value.message || '').trim().slice(-200) });
       }
       await sleep(settleMs, signal);
     },
@@ -423,10 +422,12 @@ export function createDatabaseWriteCapability({ backend, spacetime, databaseLeas
       const item = expand(input.item);
       const warehouse = expand(input.warehouse);
       const quantity = Number(input.quantity);
-      if (!Number.isInteger(quantity)) fail(`dbSetStock: quantity must be a whole number, got ${input.quantity}`);
+      if (!Number.isInteger(quantity)) {
+        inconclusive('invalid-input', { detail: `dbSetStock quantity ${input.quantity} is not a whole number` });
+      }
       const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
       if (!adapter || !('databaseWrite' in adapter)) {
-        return inconclusive(`direct stock writes do not support backend ${backend ?? '<unset>'}`);
+        return inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
       }
       if (adapter.id === 'spacetime') {
         return adapter.databaseWrite.setStock({ item, warehouse, quantity, spacetime: spacetime ?? undefined, exec });

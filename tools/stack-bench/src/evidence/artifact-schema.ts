@@ -600,6 +600,10 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
         if (criterion.evidence === undefined) fail(`${criterionAt}.evidence is required`);
         try { validateCheckEvidence(criterion.evidence, { at: `${criterionAt}.evidence` }); }
         catch (error) { fail(errorMessage(error)); }
+        if (criterion.statedBy !== undefined
+          && (typeof criterion.statedBy !== 'string' || !criterion.statedBy.trim())) {
+          fail(`${criterionAt}.statedBy must be a non-empty string when present`);
+        }
       });
     });
   };
@@ -925,6 +929,8 @@ export interface GradeArtifactCriterion {
   stableKey: string | null;
   evidence: CheckEvidence;
   serverCheck?: string;
+  // The sentence the coding agent was given for this behaviour.
+  statedBy?: string;
 }
 
 export interface GradeArtifactFeature {

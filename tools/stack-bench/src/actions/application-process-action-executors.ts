@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 
-import { actionImplementation, ActionApplicationFailure,
-  ActionInconclusive } from './action-contract.js';
+import { actionImplementation } from './action-contract.js';
+import { fail, inconclusive } from './actor-action-runtime.js';
 import type { ActionImplementation } from './action-contract.js';
 import { harnessProcessFailure } from '../evidence/harness-errors.js';
 
@@ -67,17 +67,15 @@ async function runScript({
   const files = capabilities['application-files'];
   const subprocess = capabilities.subprocess;
   const action = input;
-  if (!files.root) throw new ActionInconclusive('grader was not told the app directory (--app)');
+  if (!files.root) inconclusive('app-directory-unknown', {});
 
   const root = realpathSync(files.root);
   const unresolved = resolve(root, action.script);
   if (!inside(root, unresolved) || !existsSync(unresolved)) {
-    throw new ActionApplicationFailure(`${action.script} is not a script inside the application directory`);
+    fail('script-invalid', { script: action.script });
   }
   const path = realpathSync(unresolved);
-  if (!inside(root, path)) {
-    throw new ActionApplicationFailure(`${action.script} resolves outside the application directory`);
-  }
+  if (!inside(root, path)) fail('script-invalid', { script: action.script });
 
   try {
     await executeNodeScript(path, (action.args ?? []).map(files.expand), root,
@@ -87,8 +85,8 @@ async function runScript({
     const timedOut = field(error, 'killed') === true || field(error, 'code') === 'ETIMEDOUT';
     if (!timedOut && harnessProcessFailure(error)) throw error;
     const output = String(field(error, 'stdout') ?? '') + String(field(error, 'stderr') ?? '');
-    throw new ActionApplicationFailure(`${action.script} failed: ${output.trim().slice(-200)
-      || String(field(error, 'message') ?? error)}`);
+    fail('script-failed', { script: action.script,
+      detail: output.trim().slice(-200) || String(field(error, 'message') ?? error) });
   }
   await subprocess.sleep(action.settleMs ?? 3000, signal);
   return { script: action.script, completed: true };

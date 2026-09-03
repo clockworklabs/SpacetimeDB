@@ -86,7 +86,7 @@ function definition(overrides: Partial<TestCampaignDefinition> = {}): TestCampai
     ],
     agents: [{ adapter: 'deterministic', adapterVersion: '1.3.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
-      guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.0.0' }],
+      guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.1.0' }],
     repetitions: 3,
     ordering: { method: 'balanced-rotation', seed: 'published-seed-1' },
     budgets: { attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
@@ -608,7 +608,7 @@ test('balanced rotation covers every stack-agent condition and rotates the globa
 
 test('guidance conditions are an independent campaign axis with stack-specific API material', () => {
   const conditions = [...definition().conditions, { id: 'neutral', version: '1.0.0',
-    guidanceProfile: 'neutral@1.8.0', repairPolicy: 'scored-only@1.0.0' }];
+    guidanceProfile: 'neutral@1.8.0', repairPolicy: 'scored-only@1.1.0' }];
   const plan = compile(definition({ conditions, repetitions: 1 }));
   assert.equal(plan.summary.attempts, 6);
   assert.equal(new Set(plan.attempts.map(attempt =>
@@ -716,7 +716,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     /recipe has no check/);
   assert.throws(() => compile(definition({ conditions: [{
     id: 'bad', version: '1.0.0', guidanceProfile: 'missing@1.0.0',
-    repairPolicy: 'scored-only@1.0.0',
+    repairPolicy: 'scored-only@1.1.0',
   }] })), /missing@1.0.0|catalog/);
   assert.throws(() => validateCampaignDefinition(definition({ runtime: {
     releaseManifestSha256: null, controllerImage: 'stack-bench:latest', buildImage: null,
@@ -889,7 +889,7 @@ test('a campaign does not compile while a selected stack cannot measure a select
   assert.throws(() => compile({ ...example,
     stacks: [{ id: 'stub', adapterVersion: '1.1.0' }],
     conditions: [{ id: 'model-free', version: '1.0.0', guidanceProfile: 'model-free-stub@1.1.0',
-      repairPolicy: 'scored-only@1.0.0', specifications: example.conditions[0]!.specifications }],
+      repairPolicy: 'scored-only@1.1.0', specifications: example.conditions[0]!.specifications }],
   }), /invalid campaign at stacks: L1 selects checks a stack cannot measure: stub cannot measure ecommerce\.spec\.concurrency-safety\.last-unit\.201a: dbSetStock needs the database-write capability, which stub does not provide/);
 });
 

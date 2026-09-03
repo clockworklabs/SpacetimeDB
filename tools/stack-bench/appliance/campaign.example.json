@@ -43,7 +43,7 @@
       "id": "prescribed",
       "version": "1.1.0",
       "guidanceProfile": "prescribed@1.2.0",
-      "repairPolicy": "scored-only@1.0.0",
+      "repairPolicy": "scored-only@1.1.0",
       "specifications": {
         "levels": [
           {
