@@ -1050,9 +1050,9 @@ Native events are simple, idiomatic, and should be your default choice unless pr
 If your client frequently adds and removes many row callbacks, the cost of native multicast delegate updates can become noticeable. For those cases, the SDK can use a custom event listener backend instead:
 
 ```csharp
-using SpacetimeDB.EventHandling;
+using SpacetimeDB;
 
-Backend.UseCustomListeners();
+SpacetimeDB.EventHandling.Backend.UseCustomListeners();
 
 var conn = DbConnection.Builder()
     .WithUri("http://localhost:3000")
@@ -1069,10 +1069,9 @@ Reducer result events, such as `conn.Reducers.OnSendMessage`, are always regular
 If your project includes [Sappy](https://github.com/clockworklabs/SappyEvents/), the SDK can use Sappy-backed listener storage:
 
 ```csharp
-using SpacetimeDB.EventHandling;
 using SpacetimeDB.SappyIntegration;
 
-Backend.UseCustomListeners(new SappyEventListenersFactory());
+SpacetimeDB.EventHandling.Backend.UseCustomListeners(new SappyEventListenersFactory());
 ```
 
 Use the Sappy backend only in projects that already reference Sappy. It is intended for applications that have standardized on Sappy's event/listener model; it is not required for normal C# or Unity clients.
