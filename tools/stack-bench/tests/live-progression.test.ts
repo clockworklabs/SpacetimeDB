@@ -26,7 +26,7 @@ import type { ProgressionRecipeAction, ProgressionRecipeSelections }
 import type { ProgressionState } from '../src/progression/progression-state.js';
 import type { ProgressionNodeState } from '../src/progression/progression-state.js';
 import { validateCampaignRun } from '../src/campaigns/campaign-run-validation.js';
-import type { RepairPlan } from '../src/progression/repair-plan.js';
+import type { RepairPlanInput } from '../src/progression/repair-plan.js';
 
 interface FixtureDependency {
   id: string;
@@ -57,7 +57,7 @@ interface FixtureDefinition {
   state: string;
   title: string;
   policy: string;
-  repair: RepairPlan;
+  repair: RepairPlanInput;
   workSelection?: 'feature' | 'progressive' | 'all-at-once';
   nodes: FixtureNode[];
   questlines: FixtureQuestline[];
@@ -119,7 +119,7 @@ const definition = (): FixtureDefinition => ({
 });
 const splitIdentities = (progression: ProgressionInput) => {
   const progressionDefinition = progression.definition as typeof progression.definition & {
-    repair?: RepairPlan;
+    repair?: RepairPlanInput;
     workSelection?: 'feature' | 'progressive' | 'all-at-once';
   };
   const { policy: _policy, repair, unchangedFailureLimit: _limit, workSelection,
@@ -291,7 +291,8 @@ test('live progression binds and persists one exact accepted action', () => {
       dependencyPolicy: split.dependencyPolicy,
       definition: { track: owner.attempt.track, selection: { levels: [] },
         runtime: { buildImage: null },
-        repair: { selection: 'feature' as const, budget: { perFeature: 2 } },
+        repair: { selection: 'feature' as const, budget: { perFeature: 2 },
+          order: 'declared' as const },
         budgets: { maxCostUsdPerAttempt: null } },
       agents: [{ adapter: owner.attempt.agentAdapter, model: owner.attempt.model,
         costLimit: 'non-billable', identity: agentIdentity }],

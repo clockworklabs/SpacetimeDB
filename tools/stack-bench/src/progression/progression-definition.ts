@@ -88,6 +88,9 @@ export interface CompiledDependencyPolicyDefinition extends Record<string, unkno
   version: string;
   levels: number[];
   repair: RepairPlan;
+  // The exact order failed features are repaired in, by depth. Declared
+  // order repeats the catalog; a shuffled order is the frozen permutation.
+  nodeOrder: string[];
   unchangedFailureLimit: number;
   workSelection: DependencyWorkSelection;
 }
@@ -551,18 +554,62 @@ export function selectFeatureCatalogLevels(featureCatalog: unknown,
   );
 }
 
+// The repair order is the selected catalog's order, or a permutation of it
+// that keeps dependency depth order. A declared plan must repeat the catalog;
+// a shuffled plan must supply the permutation the campaign drew for it.
+function repairNodeOrder(definition: CompiledProgressionDefinition,
+  order: RepairPlan['order'], nodeOrder: unknown): string[] {
+  const declared = definition.nodes.map(node => node.id);
+  if (nodeOrder === undefined) {
+    if (order === 'shuffled') throw new Error('a shuffled repair order requires its node order');
+    return declared;
+  }
+  if (!Array.isArray(nodeOrder) || nodeOrder.some(id => typeof id !== 'string')
+    || nodeOrder.length !== declared.length || new Set(nodeOrder).size !== nodeOrder.length
+    || nodeOrder.some(id => !declared.includes(id))) {
+    throw new Error('dependency policy node order must be a permutation of the selected features');
+  }
+  const ids = nodeOrder as string[];
+  const levelOf = new Map(definition.nodes.map(node => [node.id, node.level]));
+  if (ids.some((id, index) => index > 0
+    && (levelOf.get(id) ?? 0) < (levelOf.get(ids[index - 1]!) ?? 0))) {
+    throw new Error('dependency policy node order must keep dependency depth order');
+  }
+  if (order === 'declared' && canonicalDefinitionJson(ids) !== canonicalDefinitionJson(declared)) {
+    throw new Error('a declared repair order must match the feature catalog order');
+  }
+  return [...ids];
+}
+
+function orderNodes(definition: CompiledProgressionDefinition,
+  nodeOrder: readonly string[]): CompiledProgressionDefinition {
+  const byId = new Map(definition.nodes.map(node => [node.id, node]));
+  const nodes = nodeOrder.map(id => {
+    const node = byId.get(id);
+    if (!node) throw new Error(`dependency policy node order names unknown feature ${id}`);
+    return node;
+  });
+  // Questline membership follows node order, so it is re-derived here.
+  const questlines = definition.questlines.map(questline => ({ ...questline,
+    nodes: nodes.filter(node => node.questline === questline.id).map(node => node.id) }));
+  return { ...definition, nodes, questlines };
+}
+
 function compileDependencyPolicyForCatalog(repair: unknown, catalog: ProgressionInput,
   selectedLevels: number[],
   unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT,
   workSelection: DependencyWorkSelection = DEFAULT_DEPENDENCY_WORK_SELECTION,
+  nodeOrder?: unknown,
 ): ProgressionInput<CompiledDependencyPolicyDefinition> {
   const selected = selectedCatalogDefinition(catalog, selectedLevels);
+  const plan = validateRepairPlan(repair, 'dependency policy repair');
+  const order = repairNodeOrder(selected.definition, plan.order, nodeOrder);
   const runtimeDefinition = compileDependencyMode({
-    ...selected.definition,
+    ...orderNodes(selected.definition, order),
     schemaVersion: DEPENDENCY_MODE_SCHEMA_VERSION,
     kind: 'progression-mode',
     policy: DEPENDENCY_MODE_POLICY,
-    repair,
+    repair: plan,
     unchangedFailureLimit,
     workSelection,
   });
@@ -573,6 +620,7 @@ function compileDependencyPolicyForCatalog(repair: unknown, catalog: Progression
     version: DEPENDENCY_MODE_VERSION,
     levels: selected.levels,
     repair: runtimeDefinition.repair,
+    nodeOrder: order,
     unchangedFailureLimit: runtimeDefinition.unchangedFailureLimit,
     workSelection: runtimeDefinition.workSelection,
   }) as CompiledDependencyPolicyDefinition;
@@ -585,17 +633,18 @@ function compileDependencyPolicyForCatalog(repair: unknown, catalog: Progression
 
 export function compileDependencyPolicyInput(repair: unknown, featureCatalog: unknown, {
   selectedLevels, unchangedFailureLimit = DEFAULT_UNCHANGED_FAILURE_LIMIT,
-  workSelection = DEFAULT_DEPENDENCY_WORK_SELECTION,
+  workSelection = DEFAULT_DEPENDENCY_WORK_SELECTION, nodeOrder,
 }: {
   selectedLevels?: number[];
   unchangedFailureLimit?: number;
   workSelection?: DependencyWorkSelection;
+  nodeOrder?: string[];
 } = {}): ProgressionInput<CompiledDependencyPolicyDefinition> {
   const catalog = validateFeatureCatalogInput(featureCatalog);
   const levels = selectedLevels
     ?? [...new Set(catalog.definition.nodes.map(node => node.level))].sort((left, right) => left - right);
   return compileDependencyPolicyForCatalog(repair, catalog, levels, unchangedFailureLimit,
-    workSelection);
+    workSelection, nodeOrder);
 }
 
 function validateDependencyPolicyForCatalog(input: unknown,
@@ -619,7 +668,7 @@ function validateDependencyPolicyForCatalog(input: unknown,
   }
   const compiled = compileDependencyPolicyForCatalog(input.definition.repair, catalog, levels,
   input.definition.unchangedFailureLimit as number | undefined,
-  input.definition.workSelection);
+  input.definition.workSelection, input.definition.nodeOrder);
   if (canonicalDefinitionJson(input) !== canonicalDefinitionJson(compiled)) {
     throw new Error('dependency policy identity does not match its compiled definition');
   }
@@ -637,7 +686,7 @@ export function dependencyRuntimeDefinition(featureCatalog: unknown,
   const policy = validateDependencyPolicyForCatalog(dependencyPolicy, catalog);
   const selected = selectedCatalogDefinition(catalog, policy.definition.levels);
   return compileDependencyMode({
-    ...selected.definition,
+    ...orderNodes(selected.definition, policy.definition.nodeOrder),
     schemaVersion: DEPENDENCY_MODE_SCHEMA_VERSION,
     kind: 'progression-mode',
     policy: policy.definition.id,

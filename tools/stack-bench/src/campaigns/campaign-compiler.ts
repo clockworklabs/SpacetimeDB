@@ -443,6 +443,9 @@ export function validateCampaignDefinition(input: unknown,
       || Object.keys(value.repair.budget).some(key => key !== 'total'))) {
     fail(`${source}.repair`, 'sequential mode requires batch selection and one total budget');
   }
+  if (value.mode.id === 'sequential' && value.repair.order !== 'declared') {
+    fail(`${source}.repair.order`, 'sequential mode has no feature order to shuffle');
+  }
   if (value.mode.id === 'dependency' && value.featureCatalog === undefined) {
     fail(`${source}.featureCatalog`, 'is required for dependency mode');
   }
@@ -1006,8 +1009,41 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     ? compileDependencyPolicyInput(definition.repair, featureCatalog!, {
       selectedLevels: definition.levels,
       workSelection: definition.mode.workSelection,
+      ...(definition.repair.order === 'shuffled'
+        ? { nodeOrder: shuffledRepairOrder(featureCatalog!, definition.ordering.seed) } : {}),
     }) : null;
   return { bindings, grading, stacks, agents, conditions, featureCatalog, dependencyPolicy };
+}
+
+// A shuffled repair order is drawn once per campaign from its ordering seed,
+// within each dependency depth, and frozen in the dependency policy, so every
+// stack in the campaign repairs in the same order and the permutation is part
+// of the plan's identity. The catalog itself, and its qualification, are
+// unchanged.
+function shuffledRepairOrder(catalog: FeatureCatalogInput, seed: string): string[] {
+  const nodes = catalog.definition.nodes;
+  const levels = [...new Set(nodes.map(node => node.level))].sort((left, right) => left - right);
+  return levels.flatMap(level => {
+    const group = nodes.filter(node => node.level === level).map(node => node.id);
+    const random = seededRandom(`${seed}\0repair-order\0${level}`);
+    for (let index = group.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(random() * (index + 1));
+      [group[index], group[swap]] = [group[swap]!, group[index]!];
+    }
+    return group;
+  });
+}
+
+// mulberry32 seeded from the first 32 bits of the seed's SHA-256: small,
+// dependency-free, and identical on every platform.
+function seededRandom(seed: string): () => number {
+  let state = Number.parseInt(sha256(seed).slice(0, 8), 16) >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = Math.imul(state ^ (state >>> 15), 1 | state);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 export function campaignGradingQualification(plan: CompiledCampaignPlan,

@@ -21,9 +21,23 @@ export interface RepairBudget extends Record<string, unknown> {
   perDepth?: { count: number; carry: boolean };
 }
 
+// The order failed features are repaired in within a dependency depth:
+// the catalog's declared order, or a permutation drawn once per campaign
+// from its ordering seed and shared by every stack in that campaign.
+export const REPAIR_ORDERS = ['declared', 'shuffled'] as const;
+
+export type RepairOrder = typeof REPAIR_ORDERS[number];
+
+export interface RepairPlanInput {
+  selection: RepairSelection;
+  budget: RepairBudget;
+  order?: RepairOrder;
+}
+
 export interface RepairPlan extends Record<string, unknown> {
   selection: RepairSelection;
   budget: RepairBudget;
+  order: RepairOrder;
 }
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -39,10 +53,14 @@ function integer(value: unknown, at: string): number {
 export function validateRepairPlan(input: unknown, at = 'repair'): RepairPlan {
   if (!object(input)) throw new Error(`${at} must be an object`);
   for (const key of Object.keys(input)) {
-    if (!['selection', 'budget'].includes(key)) throw new Error(`${at}.${key} is unknown`);
+    if (!['selection', 'budget', 'order'].includes(key)) throw new Error(`${at}.${key} is unknown`);
   }
   if (!REPAIR_SELECTIONS.includes(input.selection as RepairSelection)) {
     throw new Error(`${at}.selection must be "feature" or "batch"`);
+  }
+  const order = input.order === undefined ? 'declared' : input.order;
+  if (!REPAIR_ORDERS.includes(order as RepairOrder)) {
+    throw new Error(`${at}.order must be "declared" or "shuffled"`);
   }
   if (!object(input.budget)) throw new Error(`${at}.budget must be an object`);
   const budgetKeys = Object.keys(input.budget);
@@ -77,7 +95,7 @@ export function validateRepairPlan(input: unknown, at = 'repair'): RepairPlan {
     };
   }
   if (Object.keys(budget).length === 0) throw new Error(`${at}.budget must contain a limit`);
-  return { selection: input.selection as RepairSelection, budget };
+  return { selection: input.selection as RepairSelection, budget, order: order as RepairOrder };
 }
 
 export function repairBudgetLimit(plan: RepairPlan,

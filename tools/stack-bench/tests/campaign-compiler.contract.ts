@@ -17,6 +17,7 @@ import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
 import { sha256 } from '../src/evidence/provenance.js';
+import { validateDependencyPolicyInput } from '../src/progression/progression-definition.js';
 
 const APPLIANCE_ROOT = resolve(STACK_BENCH_ROOT, 'appliance');
 
@@ -200,7 +201,7 @@ function multiLevelDefinition(levels: number[]): TestCampaignDefinition {
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '4.1.0' };
+  value.mode = { id: 'dependency', version: '4.2.0' };
   value.repair = { selection: 'feature', budget: { perFeature: 2 } };
   delete value.levels;
   delete value.selection.levels![0]!.features;
@@ -252,7 +253,7 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce-dependency');
   assert.equal(plan.featureCatalog.identity.version, '1.0.0');
   assert.equal(plan.dependencyPolicy.definition.repair.selection, 'feature');
-  assert.equal(plan.dependencyPolicy.definition.version, '4.1.0');
+  assert.equal(plan.dependencyPolicy.definition.version, '4.2.0');
   assert.match(plan.featureCatalog.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.dependencyPolicy)
@@ -287,6 +288,44 @@ test('dependency catalog references use the shared semantic-version parser', () 
   assert.equal(validateCampaignDefinition(value).featureCatalog, value.featureCatalog);
   value.featureCatalog = 'ecommerce:questlines@1.0.0';
   assert.throws(() => validateCampaignDefinition(value), /exact id@version reference/);
+});
+
+test('a shuffled repair order is drawn once per campaign, frozen in the policy, and shared by every stack', () => {
+  const declaredManifest = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
+    'campaign.ecommerce-progression-reference.json'), 'utf8'));
+  const declared = compile(declaredManifest);
+  const shuffledManifest = structuredClone(declaredManifest);
+  shuffledManifest.repair.order = 'shuffled';
+  const shuffled = compile(shuffledManifest);
+  assert(declared.featureCatalog && declared.dependencyPolicy
+    && shuffled.featureCatalog && shuffled.dependencyPolicy);
+  const declaredOrder = declared.dependencyPolicy.definition.nodeOrder;
+  const shuffledOrder = shuffled.dependencyPolicy.definition.nodeOrder;
+  const levelOf = new Map(declared.featureCatalog.definition.nodes
+    .map(node => [node.id, node.level]));
+  // Same features, same depth grouping, different order within a depth.
+  assert.deepEqual([...shuffledOrder].sort(), [...declaredOrder].sort());
+  assert.deepEqual(shuffledOrder.map(id => levelOf.get(id)), declaredOrder.map(id => levelOf.get(id)));
+  assert.notDeepEqual(shuffledOrder, declaredOrder);
+  assert.equal(shuffled.dependencyPolicy.definition.repair.order, 'shuffled');
+  // The catalog and its qualification are untouched; the policy carries the order.
+  assert.equal(shuffled.featureCatalog.identity.sha256, declared.featureCatalog.identity.sha256);
+  assert.notEqual(shuffled.dependencyPolicy.identity.sha256, declared.dependencyPolicy.identity.sha256);
+  assert(shuffled.attempts.every(attempt =>
+    canonicalDefinitionJson(attempt.dependencyPolicy)
+      === canonicalDefinitionJson(shuffled.dependencyPolicy!.identity)));
+  // The seed decides the order, so the same plan compiles to the same order.
+  assert.deepEqual(compile(structuredClone(shuffledManifest)).dependencyPolicy?.definition.nodeOrder,
+    shuffledOrder);
+  const reseeded = structuredClone(shuffledManifest);
+  reseeded.ordering.seed = `${reseeded.ordering.seed}-2`;
+  assert.notDeepEqual(compile(reseeded).dependencyPolicy?.definition.nodeOrder, shuffledOrder);
+  // The frozen policy validates against the catalog it was drawn from.
+  assert.deepEqual(validateDependencyPolicyInput(shuffled.dependencyPolicy, shuffled.featureCatalog),
+    shuffled.dependencyPolicy);
+  assert.throws(() => validateCampaignDefinition({
+    ...definition(), repair: { selection: 'batch', budget: { total: 1 }, order: 'shuffled' },
+  }), /sequential mode has no feature order to shuffle/);
 });
 
 test('dependency campaign plans bind only the selected feature catalog levels', () => {
@@ -644,7 +683,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '4.1.0',
+    id: 'dependency', version: '4.2.0',
   } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',

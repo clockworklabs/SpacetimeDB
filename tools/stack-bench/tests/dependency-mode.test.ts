@@ -10,7 +10,7 @@ import { compileDependencyPolicyInput, compileFeatureCatalogInput }
 import { createProgressionEngine, progressionEngine, type ProgressionWorkAction }
   from '../src/progression/progression-engine.js';
 import type { ProgressionState } from '../src/progression/progression-state.js';
-import type { RepairPlan } from '../src/progression/repair-plan.js';
+import type { RepairPlanInput } from '../src/progression/repair-plan.js';
 
 type Outcome = 'pass' | 'fail' | 'not-run';
 type Outcomes = Record<string, Outcome | Record<string, Outcome>>;
@@ -33,7 +33,7 @@ interface FixtureDefinition {
   state: string;
   title: string;
   policy: string;
-  repair: RepairPlan;
+  repair: RepairPlanInput;
   unchangedFailureLimit: number;
   workSelection: 'feature' | 'progressive' | 'all-at-once';
   nodes: FixtureNode[];
@@ -123,7 +123,8 @@ test('the graph compiles by depth, then declared order, and the order is identit
     'catalog', 'accounts', 'search', 'ownership', 'recommendations', 'recovery',
   ]);
   assert.deepEqual(compiled.questlines.map(item => item.id), ['discovery', 'identity']);
-  assert.deepEqual(compiled.repair, { selection: 'feature', budget: { total: 4, perFeature: 1 } });
+  assert.deepEqual(compiled.repair,
+    { selection: 'feature', budget: { total: 4, perFeature: 1 }, order: 'declared' });
   const { policy: _policy, repair, unchangedFailureLimit: _limit,
     workSelection: _workSelection, ...catalogDefinition } = compiled;
   const catalog = compileFeatureCatalogInput({
@@ -131,7 +132,7 @@ test('the graph compiles by depth, then declared order, and the order is identit
   });
   const first = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 2 });
   const second = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 3 });
-  assert.equal(first.definition.version, '4.1.0');
+  assert.equal(first.definition.version, '4.2.0');
   assert.notEqual(first.identity.sha256, second.identity.sha256);
   // Declared order is repair priority, so it is part of the catalog identity
   // that every campaign binds; reordering the catalog is a new identity.
@@ -156,6 +157,7 @@ test('invalid graphs and repair plans fail before execution', async t => {
     }, /contain a limit/],
     ['negative budget', value => { value.repair.budget.total = -1; }, /non-negative safe integer/],
     ['bad selection', value => { value.repair.selection = 'other' as 'feature'; }, /feature.*batch/],
+    ['bad order', value => { value.repair.order = 'random' as 'declared'; }, /declared.*shuffled/],
     ['bad work selection', value => {
       value.workSelection = 'other' as 'feature';
     }, /feature.*progressive.*all-at-once/],

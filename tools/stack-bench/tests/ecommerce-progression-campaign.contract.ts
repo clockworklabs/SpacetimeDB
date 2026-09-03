@@ -111,7 +111,9 @@ test('dependency mode stops at the selected catalog prefix', () => {
     assert(plan.dependencyPolicy);
     assert.deepEqual(plan.dependencyPolicy.definition.levels, [1, 2, 3]);
     assert.deepEqual(plan.dependencyPolicy.definition.repair,
-      { selection: 'feature', budget: { total: 0 } });
+      { selection: 'feature', budget: { total: 0 }, order: 'declared' });
+    assert.deepEqual(plan.dependencyPolicy.definition.nodeOrder,
+      plan.featureCatalog?.definition.nodes.map(node => node.id));
 
     const planPath = join(directory, 'plan.json');
     writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });

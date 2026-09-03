@@ -208,6 +208,49 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
   }
 });
 
+test('a shuffled repair order runs in the frozen order the plan drew', { timeout: 300_000 }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-shuffled-live-'));
+  try {
+    const campaign = JSON.parse(readFileSync(CAMPAIGN, 'utf8')) as {
+      repair: { order?: string };
+      ordering: { seed: string };
+    };
+    campaign.repair.order = 'shuffled';
+    // This seed draws the catalog roots in reverse, so the run proves the
+    // permutation reaches the runtime rather than repeating declared order.
+    campaign.ordering.seed = 'internal-shuffled-proof-3';
+    const campaignPath = join(root, 'campaign.json');
+    const output = join(root, 'results');
+    writeFileSync(campaignPath, `${JSON.stringify(campaign, null, 2)}\n`);
+    const result = spawnSync(process.execPath, [CLI, 'trial', campaignPath, '--out', output], {
+      cwd: STACK_BENCH_ROOT,
+      encoding: 'utf8',
+      timeout: 240_000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const { plan, state } = readCampaignState(output);
+    assert(plan.featureCatalog && plan.dependencyPolicy);
+    assert.equal(plan.dependencyPolicy.definition.repair.order, 'shuffled');
+    assert.deepEqual(plan.dependencyPolicy.definition.nodeOrder, ['catalog', 'accounts']);
+    const runtimeDefinition = dependencyRuntimeDefinition(plan.featureCatalog, plan.dependencyPolicy);
+    assert.deepEqual(runtimeDefinition.nodes.map(node => node.id), ['catalog', 'accounts']);
+    const execution = state.attempts[0]?.executions[0];
+    assert(execution);
+    assert.equal(execution.outcome, 'app_failure');
+    const progression = readArtifact<ProgressionStatePayload>(
+      join(output, execution.output, 'progression-state.json'), { expectedKind: 'progression_state' });
+    const replayed = replayDependencyMode(runtimeDefinition, progression.payload.events);
+    assert.equal(replayed.phase, 'terminal');
+    // Catalog fails first, so it is the first feature repaired.
+    assert.deepEqual(replayed.attempts.filter(attempt => attempt.repair)
+      .map(attempt => attempt.repair?.nodeIds), [['catalog'], ['accounts']]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('feature work runs same-depth features and writes one depth record', { timeout: 300_000 }, () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-feature-live-'));
   try {

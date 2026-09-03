@@ -264,7 +264,7 @@ test('preflight validates each sequential catalog level without cumulative scope
     );
     manifest.id = 'sequential-preflight-proof';
     manifest.mode = { id: 'sequential', version: '1.0.0' };
-    manifest.repair = { selection: 'batch', budget: { total: 0 } };
+    manifest.repair = { selection: 'batch', budget: { total: 0 }, order: 'declared' };
     manifest.levels = [1, 2];
     assert.ok(manifest.selection.levels, 'campaign must select progression levels');
     manifest.selection.levels = manifest.selection.levels.slice(0, 2);

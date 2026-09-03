@@ -45,7 +45,7 @@ const progression = () => compileProgressionInput({
 const stateIdentities = Object.freeze({
   featureCatalogIdentity: { id: 'persisted-runner', version: '1.0.0',
     sha256: 'c'.repeat(64), state: 'draft' },
-  dependencyPolicyIdentity: { id: 'dependency-graph', version: '4.1.0',
+  dependencyPolicyIdentity: { id: 'dependency-graph', version: '4.2.0',
     sha256: 'd'.repeat(64) },
 });
 const owner = () => ({ schemaVersion: 1,
