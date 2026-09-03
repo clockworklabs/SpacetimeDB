@@ -60,7 +60,7 @@ concurrency:
 jobs:
   validate-release-invoker:
     name: Validate release invoker
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     steps:
       - name: Reject direct public release invocations
         env:
@@ -80,7 +80,7 @@ jobs:
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
     needs: validate-release-invoker
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -109,7 +109,7 @@ jobs:
 
   release-crates:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
@@ -151,7 +151,7 @@ jobs:
 
   release-csharp:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
@@ -230,7 +230,7 @@ jobs:
 
   release-cpp:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_cpp }}
     env:
       CARGO_TERM_COLOR: always
@@ -286,7 +286,7 @@ jobs:
 
   release-npm:
     needs: build-cargo-release
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
@@ -339,7 +339,7 @@ jobs:
 
   release-docker:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -380,7 +380,7 @@ jobs:
 
   update-mirror-latest-version:
     needs: validate-release-invoker
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
     steps:
@@ -422,7 +422,7 @@ jobs:
       - release-npm
       - release-docker
       - update-mirror-latest-version
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     if: >-
       ${{
         always()
