@@ -251,7 +251,7 @@ is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
 json5 = "0.4"
-jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 junction = "1"
 lazy_static = "1.4.0"
 lean_string = "0.5.1"
