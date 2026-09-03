@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-roles", "version": "1.0.1", "state": "draft", "moduleType": "feature",
-  "title": "Staff roles", "description": "Role assignment and staff permission boundaries.",
+  "title": "Staff roles", "description": "Role assignment for staff accounts.",
   "requiresPacks": ["ecommerce.progression.staff-access@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.staff-roles", "path": "prompts/modular/staff-roles-1.0.0.md", "order": 1250, "modes": ["upgrade"] }],
     "contracts": [{ "id": "ecommerce.progression.staff-role-hooks", "path": "contracts/staff-roles-1.0.md", "order": 1960, "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "roles", "stableId": "staff-roles", "source": "scenarios/progression-staff-roles-1.0.1.json", "feature": 621, "criteria": ["621a", "621b"], "role": "feature" }]
+  "checks": [{ "id": "assignment", "stableId": "staff-roles", "source": "scenarios/progression-staff-roles-1.0.1.json", "feature": 621, "criteria": ["621c"], "role": "feature" }]
 }

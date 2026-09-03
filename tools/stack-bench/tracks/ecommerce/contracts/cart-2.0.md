@@ -7,8 +7,7 @@ quantity, and `cart-total` for the numeric total. Use `cart-remove` to remove a 
 
 Put `data-buy-input` on each `item-card`. Its value is a JSON object containing that item's
 server identifier, for example `{"itemId":42}`. Put `data-cart-input` on each `cart-item`.
-Its value contains the item identifier and the invalid quantity `-3`, for example
-`{"itemId":42,"quantity":-3}`. The cart quantity action must reject this value.
+Its value contains the item identifier, for example `{"itemId":42}`.
 
 Expose the same add and quantity-update operations used by the cart controls.
 
@@ -23,4 +22,4 @@ Use the `update_cart_quantity` reducer with the item identifier and quantity.
 <!-- /interface -->
 
 Use `checkout-submit` to check out. Use `orders-toggle` to open order history and `order-item`
-for each order created by checkout. Cart state must remain correct after reconnect and reload.
+for each order created by checkout.

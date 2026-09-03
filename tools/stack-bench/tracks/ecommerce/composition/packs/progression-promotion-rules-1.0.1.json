@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.progression.promotion-rules",
   "version": "1.0.1",
-  "state": "qualified",
+  "state": "draft",
   "moduleType": "feature",
   "title": "Promotion rules",
   "description": "Staff-managed bounded promotion codes.",
@@ -52,16 +52,6 @@
       "feature": 620,
       "criteria": [
         "620a"
-      ],
-      "role": "feature"
-    },
-    {
-      "id": "access",
-      "stableId": "promotion-rule-access",
-      "source": "scenarios/progression-promotion-rules-1.0.0.json",
-      "feature": 620,
-      "criteria": [
-        "620b"
       ],
       "role": "feature"
     }

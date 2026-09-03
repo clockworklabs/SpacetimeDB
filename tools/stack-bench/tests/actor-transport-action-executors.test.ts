@@ -160,7 +160,7 @@ test('one named server action maps DOM input symmetrically and verifies its outc
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
 });
 
-test('named action input is exact and a missing route is not mistaken for a refusal', async () => {
+test('named action input uses declared defaults and a missing route is not mistaken for a refusal', async () => {
   const actor = (input: UnknownRecord) => ({
     name: 'customer',
     loc: () => ({ waitFor: async () => {}, getAttribute: async () => JSON.stringify(input) }),
@@ -170,14 +170,23 @@ test('named action input is exact and a missing route is not mistaken for a refu
     params: [{ name: 'itemId', in: 'body' }, { name: 'warehouseId', in: 'body' },
       { name: 'quantity', in: 'body' }],
   };
-  const malformed = services(new Map<string, unknown>([
+  const withDefault = services(new Map<string, unknown>([
     ['customer', actor({ itemId: 1, warehouseId: 2 })],
-  ]),
-    { actions: [action] });
+  ]), { actions: [action], fetchImpl: async (_url, options) => {
+    assert.deepEqual(JSON.parse(String(options.body)), { itemId: 1, warehouseId: 2, quantity: 1 });
+    return namedResponse(200, true);
+  } });
+  const calledWithDefault = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, withDefault);
+  assert.equal(calledWithDefault.status, 'passed');
+
+  const unexpected = services(new Map<string, unknown>([
+    ['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3, extra: true })],
+  ]), { actions: [action] });
   const rejectedInput = await run({ do: 'callAction', actor: 'customer', action: 'restock',
-    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, malformed);
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, unexpected);
   assert.equal(rejectedInput.status, 'failed');
-  assert.match(rejectedInput.summary ?? '', /must contain exactly/);
+  assert.match(rejectedInput.summary ?? '', /unexpected extra/);
 
   const route = { name: 'route', actionCall: { action: 'restock', accepted: true, status: 200 } };
   const missing = services(new Map<string, unknown>([

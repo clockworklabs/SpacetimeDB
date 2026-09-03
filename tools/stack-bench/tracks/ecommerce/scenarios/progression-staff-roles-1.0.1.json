@@ -9,19 +9,29 @@
       "id": 621,
       "name": "Staff roles",
       "actors": ["admin", "replayAdmin", "staff"],
-      "setup": [],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "expect", "actor": "admin", "testid": "admin-link", "within": 6000 },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
+        { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } }
+      ],
       "criteria": [
         {
-          "id": "621a",
+          "id": "621c",
           "desc": "an administrator can assign a staff role",
-          "points": 2,
+          "points": 1,
           "statedBy": "An administrator can assign a role to an existing staff account.",
           "steps": [
-            { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-            { "do": "expect", "actor": "admin", "testid": "admin-link", "within": 6000 },
-            { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
-            { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
+            { "do": "expect", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "value": "inventory", "within": 10000 }
+          ]
+        },
+        {
+          "id": "621a",
+          "desc": "an assigned staff role survives a reload",
+          "points": 2,
+          "statedBy": "Assigned staff roles persist.",
+          "steps": [
             { "do": "reload", "actor": "admin", "settleMs": 2500 },
             { "do": "expect", "actor": "admin", "testid": "admin-link", "within": 6000 },
             { "do": "click", "actor": "admin", "testid": "admin-link" },

@@ -1,7 +1,7 @@
 ## Staff access controls
 
 Use the existing account sign-in controls. Use `staff-link` for the staff area and `admin-link`
-for the administrator area. Show neither link to customers.
+for the administrator area.
 
 Use these provided accounts:
 

@@ -16,9 +16,9 @@
       "criteria": [
         {
           "id": "103a",
-          "desc": "a valid direct restock works for an administrator but is refused for staff",
-          "points": 2,
-          "statedBy": "the server refuses warehouse writes from a non-admin account",
+          "desc": "an administrator can restock a warehouse",
+          "points": 1,
+          "statedBy": "An administrator can add units to a selected item and warehouse.",
           "steps": [
             { "do": "click", "actor": "admin", "testid": "admin-link" },
             { "do": "recordNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-before-control" },
@@ -42,8 +42,37 @@
             },
             { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-control", "plus": 1 },
-            { "do": "recordNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-after-control" },
+            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-control", "plus": 1 }
+          ]
+        },
+        {
+          "id": "103b",
+          "desc": "the server refuses a warehouse write from staff",
+          "points": 2,
+          "statedBy": "Only administrators can change warehouse stock.",
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            {
+              "do": "callAction",
+              "actor": "admin",
+              "action": "restock",
+              "namedAction": {
+                "id": "restock",
+                "path": "/api/admin/restock",
+                "reducer": "admin_restock",
+                "args": [0, 0, 1],
+                "params": [
+                  { "name": "itemId", "in": "body", "wireType": "u64" },
+                  { "name": "warehouseId", "in": "body", "wireType": "u64" },
+                  { "name": "quantity", "in": "body" }
+                ]
+              },
+              "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" },
+              "settleMs": 2000
+            },
+            { "do": "expectActionOutcome", "actor": "admin", "outcome": "accepted" },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "recordNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-before-refusal" },
             {
               "do": "callAction",
               "actor": "staff",
@@ -65,7 +94,7 @@
             },
             { "do": "expectActionOutcome", "actor": "staff", "outcome": "refused" },
             { "do": "reload", "actor": "staff", "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-after-control", "plus": 0 }
+            { "do": "expectNumber", "actor": "staff", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-refusal", "plus": 0 }
           ]
         }
       ]

@@ -60,7 +60,9 @@
         "ecommerce.progression.customer-profile@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.customer-profile@1.0.0#profile"
+        "ecommerce.progression.customer-profile@1.0.0#profile",
+        "ecommerce.spec.access-control@2.0.1#customer-profile-privacy",
+        "ecommerce.spec.state-durability@2.0.1#customer-profile-reload"
       ],
       "dependencies": [
         {
@@ -148,17 +150,15 @@
       "featureRefs": [
         "ecommerce.feature.warehouse-admin@1.2.1"
       ],
-      "promptModules": [
-        "ecommerce.spec.external-data-sync@1.2.0"
-      ],
       "gradingGroups": [
-        "ecommerce.feature.warehouse-admin@1.2.1#access-boundary",
         "ecommerce.feature.warehouse-admin@1.2.1#warehouse-view",
-        "ecommerce.feature.warehouse-admin@1.2.1#warehouse-stock",
         "ecommerce.feature.warehouse-admin@1.2.1#admin-write",
+        "ecommerce.spec.access-control@2.0.1#warehouse-area-boundary",
+        "ecommerce.spec.access-control@2.0.1#warehouse-write-boundary",
         "ecommerce.spec.external-data-sync@1.2.0#external-live",
         "ecommerce.spec.external-data-sync@1.2.0#external-reconnect",
-        "ecommerce.spec.external-data-sync@1.2.0#external-server-restart"
+        "ecommerce.spec.external-data-sync@1.2.0#external-server-restart",
+        "ecommerce.spec.live-state@2.0.0#warehouse-stock"
       ],
       "dependencies": [
         {
@@ -201,13 +201,13 @@
         "ecommerce.progression.fulfilment-queue@1.0.1"
       ],
       "gradingGroups": [
-        "ecommerce.progression.fulfilment-queue@1.0.1#fulfilment-access",
-        "ecommerce.progression.fulfilment-queue@1.0.1#fulfilment-live",
         "ecommerce.progression.fulfilment-queue@1.0.1#fulfilment-ship",
         "ecommerce.progression.fulfilment-queue@1.0.1#fulfilment-warehouse",
         "ecommerce.progression.operations-access-specifications@1.0.0#operator-authorization-direct",
+        "ecommerce.spec.access-control@2.0.1#fulfilment-area-boundary",
         "ecommerce.spec.concurrency-safety@2.0.1#last-unit",
-        "ecommerce.spec.concurrency-safety@2.0.1#restock-race"
+        "ecommerce.spec.concurrency-safety@2.0.1#restock-race",
+        "ecommerce.spec.live-state@2.0.0#fulfilment-queue"
       ],
       "dependencies": [
         {
@@ -228,11 +228,12 @@
         "ecommerce.l2.stock-transfers-features@1.0.1"
       ],
       "gradingGroups": [
-        "ecommerce.l2.stock-transfers-features@1.0.1#warehouse-transfer-corrected",
-        "ecommerce.l2.stock-transfers-features@1.0.1#warehouse-transfer-independent",
+        "ecommerce.l2.stock-transfers-features@1.0.1#transfer",
         "ecommerce.progression.inventory-conservation-specifications@1.0.0#stock-conservation-contention",
         "ecommerce.progression.inventory-conservation-specifications@1.0.0#stock-conservation-directional",
-        "ecommerce.progression.operations-access-specifications@1.0.0#operator-transfer-authorization"
+        "ecommerce.progression.operations-access-specifications@1.0.0#operator-transfer-authorization",
+        "ecommerce.spec.live-state@2.0.0#stock-transfers",
+        "ecommerce.spec.transactional-integrity@1.4.0#stock-transfer-overdraw"
       ],
       "dependencies": [
         {
@@ -296,7 +297,8 @@
         "ecommerce.l2.inventory-dashboard@2.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.l2.inventory-dashboard@2.0.0#low-stock"
+        "ecommerce.l2.inventory-dashboard@2.0.0#low-stock",
+        "ecommerce.spec.live-state@2.0.0#inventory-dashboard"
       ],
       "dependencies": [
         {
@@ -315,6 +317,7 @@
       "gradingGroups": [
         "ecommerce.l2.sales-dashboard@2.0.0#category-totals",
         "ecommerce.l2.sales-dashboard@2.0.0#best-sellers",
+        "ecommerce.spec.live-state@2.0.0#sales-dashboard",
         "ecommerce.spec.transactional-integrity@1.4.0#books-balance"
       ],
       "dependencies": [
@@ -466,7 +469,8 @@
         "ecommerce.progression.staff-access@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.staff-access@1.0.0#staff-boundary"
+        "ecommerce.progression.staff-access@1.0.0#staff-sign-in",
+        "ecommerce.spec.access-control@2.0.1#staff-area-boundary"
       ],
       "dependencies": []
     },
@@ -478,7 +482,9 @@
         "ecommerce.progression.staff-roles@1.0.1"
       ],
       "gradingGroups": [
-        "ecommerce.progression.staff-roles@1.0.1#roles"
+        "ecommerce.progression.staff-roles@1.0.1#assignment",
+        "ecommerce.spec.access-control@2.0.1#staff-role-boundary",
+        "ecommerce.spec.state-durability@2.0.1#staff-role-reload"
       ],
       "dependencies": [
         {
@@ -551,9 +557,10 @@
         "ecommerce.progression.support-history@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.support-history@1.0.0#persistence",
-        "ecommerce.progression.support-history@1.0.0#privacy",
-        "ecommerce.progression.support-privacy-specifications@1.0.0#private-message-delivery"
+        "ecommerce.progression.support-history@1.0.0#history",
+        "ecommerce.progression.support-privacy-specifications@1.0.0#private-message-delivery",
+        "ecommerce.spec.access-control@2.0.1#support-history-privacy",
+        "ecommerce.spec.state-durability@2.0.1#support-history-reload"
       ],
       "dependencies": [
         {
@@ -575,7 +582,7 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.promotion-rules@1.0.1#values",
-        "ecommerce.progression.promotion-rules@1.0.1#access"
+        "ecommerce.spec.access-control@2.0.1#promotion-management-boundary"
       ],
       "dependencies": [
         {
@@ -596,8 +603,9 @@
         "ecommerce.progression.notification-preferences@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.notification-preferences@1.0.0#persistence",
-        "ecommerce.progression.notification-preferences@1.0.0#privacy"
+        "ecommerce.progression.notification-preferences@1.0.0#preferences",
+        "ecommerce.spec.access-control@2.0.1#notification-preferences-privacy",
+        "ecommerce.spec.state-durability@2.0.1#notification-preferences-reload"
       ],
       "dependencies": [
         {
@@ -654,8 +662,9 @@
         "ecommerce.progression.managed-support@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.managed-support@1.0.0#shared-state",
-        "ecommerce.progression.managed-support@1.0.0#privacy"
+        "ecommerce.progression.managed-support@1.0.0#case-updates",
+        "ecommerce.spec.access-control@2.0.1#managed-support-privacy",
+        "ecommerce.spec.live-state@2.0.0#managed-support"
       ],
       "dependencies": [
         {
@@ -700,7 +709,8 @@
       ],
       "gradingGroups": [
         "ecommerce.progression.stock-alerts@1.0.1#delivery",
-        "ecommerce.progression.stock-alerts@1.0.1#privacy"
+        "ecommerce.spec.access-control@2.0.1#stock-alert-privacy",
+        "ecommerce.spec.transactional-integrity@1.4.0#stock-alert-deduplication"
       ],
       "dependencies": [
         {

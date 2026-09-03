@@ -22,9 +22,12 @@
           "statedBy": "Remove a shipped order from every open queue and update the customer's order history without a reload",
           "steps": [
             { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
             { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
             { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
             { "do": "waitUntilAbsent", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 },
+            { "do": "reload", "actor": "customer", "settleMs": 2000 },
             { "do": "click", "actor": "customer", "testid": "orders-toggle" },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 }
           ]

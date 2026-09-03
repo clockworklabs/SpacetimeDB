@@ -3,10 +3,10 @@
   "kind": "test-pack",
   "id": "ecommerce.progression.stock-alerts",
   "version": "1.0.1",
-  "state": "qualified",
+  "state": "draft",
   "moduleType": "feature",
   "title": "Stock alerts",
-  "description": "Private one-time alerts when stock returns.",
+  "description": "Customer alerts when stock returns.",
   "requiresPacks": [
     "ecommerce.progression.notification-preferences@1.0.0",
     "ecommerce.feature.warehouse-admin@1.2.1"
@@ -52,17 +52,7 @@
       "source": "scenarios/progression-stock-alerts-1.0.0.json",
       "feature": 631,
       "criteria": [
-        "631a"
-      ],
-      "role": "feature"
-    },
-    {
-      "id": "privacy",
-      "stableId": "stock-alert-privacy",
-      "source": "scenarios/progression-stock-alerts-1.0.0.json",
-      "feature": 631,
-      "criteria": [
-        "631b"
+        "631c"
       ],
       "role": "feature"
     }

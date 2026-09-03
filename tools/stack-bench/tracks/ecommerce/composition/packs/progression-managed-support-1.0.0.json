@@ -3,10 +3,10 @@
   "kind": "test-pack",
   "id": "ecommerce.progression.managed-support",
   "version": "1.0.0",
-  "state": "qualified",
+  "state": "draft",
   "moduleType": "feature",
   "title": "Managed support cases",
-  "description": "Shared support cases with live updates and account privacy.",
+  "description": "Customer and staff support case updates.",
   "requiresPacks": [
     "ecommerce.progression.support-history@1.0.0",
     "ecommerce.progression.support-triage@1.0.0"
@@ -35,19 +35,11 @@
   },
   "checks": [
     {
-      "id": "shared-state",
-      "stableId": "managed-support-shared",
+      "id": "case-updates",
+      "stableId": "managed-support",
       "source": "scenarios/progression-managed-support-shared-1.0.0.json",
       "feature": 613,
-      "criteria": ["613a"],
-      "role": "feature"
-    },
-    {
-      "id": "privacy",
-      "stableId": "managed-support-privacy",
-      "source": "scenarios/progression-managed-support-privacy-1.0.0.json",
-      "feature": 613,
-      "criteria": ["613b"],
+      "criteria": ["613c"],
       "role": "feature"
     }
   ]

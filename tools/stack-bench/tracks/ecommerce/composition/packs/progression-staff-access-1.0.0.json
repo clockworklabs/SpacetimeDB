@@ -1,11 +1,11 @@
 {
-  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-access", "version": "1.0.0", "state": "qualified", "moduleType": "feature",
-  "title": "Staff access", "description": "Staff sign-in and customer access boundaries.",
+  "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-access", "version": "1.0.0", "state": "draft", "moduleType": "feature",
+  "title": "Staff access", "description": "Staff and administrator sign-in.",
   "requiresPacks": [], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.staff-access", "path": "prompts/modular/staff-access-1.0.0.md", "order": 1100, "modes": ["fresh", "upgrade"] }],
     "contracts": [{ "id": "ecommerce.progression.staff-access-hooks", "path": "contracts/staff-access-1.0.md", "order": 1900, "modes": ["fresh", "upgrade"] }]
   },
-  "checks": [{ "id": "staff-boundary", "stableId": "staff-access", "source": "scenarios/progression-staff-access-1.0.0.json", "feature": 601, "criteria": ["601a", "601b"], "role": "feature" }]
+  "checks": [{ "id": "staff-sign-in", "stableId": "staff-access", "source": "scenarios/progression-staff-access-1.0.0.json", "feature": 601, "criteria": ["601a"], "role": "feature" }]
 }

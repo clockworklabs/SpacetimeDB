@@ -4,10 +4,10 @@
   "id": "ecommerce.l2.sales-dashboard",
   "stableId": "ecommerce.inventory-operations",
   "version": "2.0.0",
-  "state": "qualified",
+  "state": "draft",
   "moduleType": "feature",
   "title": "Sales dashboard",
-  "description": "Live category totals and best sellers.",
+  "description": "Category totals and best sellers.",
   "requiresPacks": [
     "ecommerce.feature.purchasing@1.2.1"
   ],
@@ -51,7 +51,7 @@
       "source": "scenarios/02-operational-category-totals-1.0.0.json",
       "feature": 5,
       "criteria": [
-        "5b"
+        "5f"
       ],
       "role": "feature"
     },

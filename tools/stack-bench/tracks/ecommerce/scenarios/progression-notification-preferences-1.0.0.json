@@ -18,6 +18,15 @@
       ],
       "criteria": [
         {
+          "id": "630c",
+          "desc": "the customer can save a notification choice",
+          "points": 1,
+          "statedBy": "Signed-in customers can turn order and stock notifications on or off.",
+          "steps": [
+            { "do": "expect", "actor": "owner", "testid": "notification-order", "attribute": "data-state", "value": "on" }
+          ]
+        },
+        {
           "id": "630a",
           "desc": "the owner's notification choice survives a reload",
           "points": 2,

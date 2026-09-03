@@ -23,6 +23,17 @@
       ],
       "criteria": [
         {
+          "id": "631c",
+          "desc": "restored stock sends the requested alert",
+          "points": 1,
+          "statedBy": "Show an alert when stock returns.",
+          "steps": [
+            { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" },
+            { "do": "expect", "actor": "subscriber", "testid": "notification-item", "contains": "Air Purifier", "within": 10000 },
+            { "do": "click", "actor": "subscriber", "testid": "notifications-toggle" }
+          ]
+        },
+        {
           "id": "631a",
           "desc": "restored stock sends one alert and later restocks do not duplicate it",
           "points": 2,

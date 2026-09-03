@@ -26,6 +26,15 @@
       ],
       "criteria": [
         {
+          "id": "5e",
+          "desc": "the dashboard lists a current low-stock item",
+          "points": 1,
+          "statedBy": "It lists items with 10 units or fewer, most urgent first.",
+          "steps": [
+            { "do": "expect", "actor": "admin", "testid": "low-stock-item", "contains": "Air Purifier", "within": 8000 }
+          ]
+        },
+        {
           "id": "5a",
           "desc": "an item falling to ten units or fewer joins the low-stock list, live",
           "points": 3,

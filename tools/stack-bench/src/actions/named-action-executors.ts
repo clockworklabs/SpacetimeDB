@@ -81,17 +81,25 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
   if (raw === null || raw === '') {
     fail(`${input.input.testid} exposes no ${input.input.attribute} value for action "${input.action}"`);
   }
-  let values;
+  let values: unknown;
   try { values = JSON.parse(raw); }
   catch { fail(`${input.input.attribute} must contain a JSON object for action "${input.action}"`); }
   if (!values || typeof values !== 'object' || Array.isArray(values)) {
     fail(`${input.input.attribute} must contain a JSON object for action "${input.action}"`);
   }
-  const expected = action.params.map(param => param.name).sort();
-  const actual = Object.keys(values).sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    fail(`${input.input.attribute} for action "${input.action}" must contain exactly `
-      + `${expected.join(', ') || '(no values)'}; found ${actual.join(', ') || '(none)'}`);
+  const supplied = values as Record<string, unknown>;
+  const expected = action.params.map(param => param.name);
+  const unexpected = Object.keys(supplied).filter(name => !expected.includes(name));
+  if (unexpected.length) {
+    fail(`${input.input.attribute} for action "${input.action}" contains unexpected `
+      + `${unexpected.sort().join(', ')}`);
+  }
+  const defaults = action.args ?? [];
+  const actionValues = Object.fromEntries(expected.map((name, index) =>
+    [name, Object.hasOwn(supplied, name) ? supplied[name] : defaults[index]]));
+  const missing = expected.filter(name => actionValues[name] === undefined);
+  if (missing.length) {
+    fail(`${input.input.attribute} for action "${input.action}" is missing ${missing.join(', ')}`);
   }
 
   let credentials: HeaderRecord = {};
@@ -102,7 +110,7 @@ async function callAction({ input, capabilities, signal }: NamedTransportArgumen
     }
     credentials = actorCredentials;
   }
-  const request = namedActionRequest(named, action, { values });
+  const request = namedActionRequest(named, action, { values: actionValues });
   if (!request?.url) inconclusive(`could not resolve where to send action "${input.action}" for this backend`);
   const response = await named.fetch(request.url, {
     method: request.method ?? 'POST',

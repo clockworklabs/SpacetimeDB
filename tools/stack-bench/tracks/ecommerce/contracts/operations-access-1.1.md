@@ -2,7 +2,7 @@
 
 | Element ID | Required element |
 | --- | --- |
-| `staff-link` | Opens the fulfilment area. Show it to staff and administrators. Do not show it to customers. |
+| `staff-link` | Opens the fulfilment area. |
 | `queue-depth` | Shows the number of pending orders. |
 | `queue-item` | Shows one pending order and names its items. |
 | `queue-warehouse` | Shows the selected warehouse inside its `queue-item`. |

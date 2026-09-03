@@ -22,6 +22,27 @@
       ],
       "criteria": [
         {
+          "id": "613c",
+          "desc": "staff can update a support case and the customer can reply",
+          "points": 1,
+          "statedBy": "Customers and staff can exchange replies and update the status of a support case.",
+          "steps": [
+            { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "in progress" },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "fill", "actor": "staff", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "Case received." },
+            { "do": "click", "actor": "staff", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "reload", "actor": "owner", "settleMs": 2000 },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "in progress" },
+            { "do": "expect", "actor": "owner", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Case received." },
+            { "do": "fill", "actor": "owner", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "Thank you." },
+            { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Thank you." }
+          ]
+        },
+        {
           "id": "613a",
           "desc": "the customer and staff see the same replies and status live",
           "points": 2,

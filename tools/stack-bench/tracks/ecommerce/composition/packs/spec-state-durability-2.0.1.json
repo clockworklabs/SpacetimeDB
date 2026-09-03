@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.spec.state-durability",
   "version": "2.0.1",
-  "state": "qualified",
+  "state": "draft",
   "title": "State durability",
   "moduleType": "specification",
   "description": "Session and account-state continuity across reload and reconnect.",
@@ -121,6 +121,42 @@
         "ecommerce.feature.accounts",
         "ecommerce.feature.checkout"
       ]
+    },
+    {
+      "id": "customer-profile-reload",
+      "source": "scenarios/progression-customer-profile-1.0.0.json",
+      "feature": 620,
+      "criteria": ["620a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.customer-profile"]
+    },
+    {
+      "id": "notification-preferences-reload",
+      "source": "scenarios/progression-notification-preferences-1.0.0.json",
+      "feature": 630,
+      "criteria": ["630a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.notification-preferences"]
+    },
+    {
+      "id": "staff-role-reload",
+      "source": "scenarios/progression-staff-roles-1.0.1.json",
+      "feature": 621,
+      "criteria": ["621a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.staff-roles"]
+    },
+    {
+      "id": "support-history-reload",
+      "source": "scenarios/progression-support-history-1.0.0.json",
+      "feature": 612,
+      "criteria": ["612a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.support-history"]
     }
   ]
 }

@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.spec.live-state",
   "version": "2.0.0",
-  "state": "qualified",
+  "state": "draft",
   "title": "Live state",
   "moduleType": "specification",
   "description": "Cross-client updates and reconnect convergence without reload.",
@@ -162,6 +162,60 @@
       "requiresFeatures": [
         "ecommerce.feature.reviews"
       ]
+    },
+    {
+      "id": "warehouse-stock",
+      "source": "scenarios/01-warehouse-stock-live-staff-1.0.0.json",
+      "feature": 7,
+      "criteria": ["7c"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.feature.catalog-items", "ecommerce.feature.warehouse-admin"]
+    },
+    {
+      "id": "fulfilment-queue",
+      "source": "scenarios/02-fulfilment-live-1.0.0.json",
+      "feature": 1,
+      "criteria": ["1a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.fulfilment-queue"]
+    },
+    {
+      "id": "inventory-dashboard",
+      "source": "scenarios/02-low-stock-1.4.0.json",
+      "feature": 5,
+      "criteria": ["5a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.l2.inventory-dashboard", "ecommerce.feature.purchasing"]
+    },
+    {
+      "id": "sales-dashboard",
+      "source": "scenarios/02-operational-category-totals-1.0.0.json",
+      "feature": 5,
+      "criteria": ["5b"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.l2.sales-dashboard", "ecommerce.feature.purchasing"]
+    },
+    {
+      "id": "stock-transfers",
+      "source": "scenarios/02-transfer-totals-1.4.0.json",
+      "feature": 2,
+      "criteria": ["2b"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.l2.stock-transfers-features"]
+    },
+    {
+      "id": "managed-support",
+      "source": "scenarios/progression-managed-support-shared-1.0.0.json",
+      "feature": 613,
+      "criteria": ["613a"],
+      "role": "guarantee",
+      "observations": ["requested", "unmentioned"],
+      "requiresFeatures": ["ecommerce.progression.managed-support"]
     }
   ]
 }

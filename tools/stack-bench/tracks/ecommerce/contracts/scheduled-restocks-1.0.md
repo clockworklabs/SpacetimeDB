@@ -7,8 +7,6 @@ Set its `data-action-input` to a JSON object with `item`, `warehouse`, `quantity
 `pending-restock-remaining` for its remaining seconds, `pending-restock-cancel` to cancel it,
 and `stock-ledger-entry` for a completed stock movement.
 
-The schedule and cancel actions use the same authorization and stock rules as the application.
-
 <!-- interface:http -->
 Expose `POST /api/admin/scheduled-restocks` and `DELETE /api/admin/scheduled-restocks/:id`.
 <!-- /interface -->

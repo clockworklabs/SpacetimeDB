@@ -21,6 +21,16 @@
       ],
       "criteria": [
         {
+          "id": "612c",
+          "desc": "the customer can view their support ticket history",
+          "points": 1,
+          "statedBy": "Signed-in customers can see their support ticket history.",
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket" }
+          ]
+        },
+        {
           "id": "612a",
           "desc": "the owner sees the ticket after reload",
           "points": 2,

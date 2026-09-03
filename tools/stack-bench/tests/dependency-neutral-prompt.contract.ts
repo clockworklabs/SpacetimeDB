@@ -7,7 +7,6 @@ import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import type { ResolvedGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { sha256 } from '../src/evidence/provenance.js';
 import { resolveFeatureCatalog } from '../src/progression/feature-catalog-selection.js';
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
@@ -19,25 +18,15 @@ const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.js');
 const STACKS = ['mongodb', 'postgres', 'spacetime'] as const;
 const EVALUATION_LANGUAGE =
   /\b(?:benchmark|harness|grader|graded|grading|scored|scoring|tests?|testing|evaluation|criterion|testids?)\b|stackbench|Stack Bench|external client|run configuration/i;
+const UNSTATED_QUALITY_LANGUAGE = [
+  /\b(?:reload|reconnect|live)\b/i,
+  /\b(?:another customer|another account)\b/i,
+  /\b(?:changes nothing|without (?:a )?reload)\b/i,
+  /\benforce (?:this|the) rule on the server\b/i,
+  /\binvalid quantity\b|`-3`/i,
+];
 type Stack = typeof STACKS[number];
 type Level = 1 | 2 | 3;
-const EXPECTED = {
-  1: {
-    mongodb: ['43b2438c31a8c1da3052feb563cccc823fc15727ffe94325548c4e7515eba2bf', 6356],
-    postgres: ['7dccffc833832c919d587b4a68f48dc3801762b2cd6ea36fc3ec589637f996b1', 6398],
-    spacetime: ['c199a6798889c2e5af5c386df8fc8c6e56395c53a8d01427fc81d19abdfa8c70', 26563],
-  },
-  2: {
-    mongodb: ['e48b7f4693f7a677fd9765df0528fbba0b3dae6b76e86092c292d9af13f685bb', 8721],
-    postgres: ['04ebec3ff71be76dfbb3d30ecdd7b1ad8fc960b71b619cf1565ee0b996f7bc88', 8763],
-    spacetime: ['597617697a3b938810c541ee7db5cc5e32347cea25e60fd82b044bd541bc78fd', 28955],
-  },
-  3: {
-    mongodb: ['97d8f23a845f6a5e52845708bcce9671f1f71bedda0e1fab7c37af99308318b3', 10527],
-    postgres: ['e9b158b62db1c4158e92b6f38161097b45868960d8e9556e1f823b41a6dbfb01', 10569],
-    spacetime: ['250b869ccf51e8cd661033eb373443b7c889d94a47c5efbd4278fa7893a885f2', 30639],
-  },
-} satisfies Record<Level, Record<Stack, readonly [string, number]>>;
 
 test('agent contract validation leaves product language unchanged', () => {
   assert.equal(agentVisibleContractText('Use this application action. Keep the contest action.'),
@@ -78,7 +67,7 @@ function renderPrompt({ level, stack, task, guidance }: {
 
 test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.1', track);
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.2', track);
   const guidance = resolveGuidanceProfile('neutral@1.8.0', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime?.ids ?? []);
@@ -87,20 +76,24 @@ test('neutral dependency prompts include only selected product and stack contrac
   assert.match(spacetimeReference, /SenderError/);
   assert.match(spacetimeReference, /clientVisibilityFilter/);
   assert.match(spacetimeReference, /DbConnection\.builder\(\).*withToken.*subscriptionBuilder/s);
-  const actual = {} as Record<Level, Record<Stack, readonly [string, number]>>;
   for (const level of [1, 2, 3] as const) {
-    actual[level] = {} as Record<Stack, readonly [string, number]>;
-    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-depth3@2.0.1');
+    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-depth3@2.0.2');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
       { cumulative: true });
     assert.deepEqual(selected.agent.request.selection.requested.specifications, {
-      requested: level === 2 ? ['ecommerce.spec.external-data-sync@1.2.0'] : [],
+      requested: [],
       expected: [],
       observed: [],
     });
+    assert(selected.grader.request.selection.requested.specifications.expected.length > 0);
+    const moduleTypes = new Map(binding.release.components.packs
+      .map(pack => [pack.id, pack.moduleType]));
+    for (const check of selected.grader.selection.scoredChecks) {
+      assert.equal(check.treatment,
+        moduleTypes.get(check.packId ?? '') === 'specification' ? 'expected' : 'requested');
+    }
     for (const stack of STACKS) {
       const prompt = renderPrompt({ level, stack, task: selected.agent.request, guidance });
-      actual[level][stack] = [sha256(prompt), Buffer.byteLength(prompt)];
       assert.doesNotMatch(prompt,
         new RegExp(`${EVALUATION_LANGUAGE.source}|Branding & Styling|App title:|<!-- /?interface`, 'i'));
       assert.doesNotMatch(prompt, /\blevel\s+\d+\b/i);
@@ -111,6 +104,10 @@ test('neutral dependency prompts include only selected product and stack contrac
       assert.notEqual(markerIndex, -1);
       const applicationRequest = prompt.slice(markerIndex);
       assert.match(applicationRequest, /## Application interface/);
+      for (const language of UNSTATED_QUALITY_LANGUAGE) {
+        assert.doesNotMatch(applicationRequest, language);
+      }
+      assert.doesNotMatch(applicationRequest, /## External data synchronization/);
       const startingCatalog = JSON.stringify({
         warehouses: binding.plan.fixture.warehouses,
         items: binding.plan.fixture.items,
@@ -133,7 +130,6 @@ test('neutral dependency prompts include only selected product and stack contrac
       }
     }
   }
-  assert.deepEqual(actual, EXPECTED);
 });
 
 test('direct neutral guidance uses the current stack access documents', () => {
