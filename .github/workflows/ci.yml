@@ -95,7 +95,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -325,7 +325,7 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -410,7 +410,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -595,7 +595,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -765,7 +765,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -966,7 +966,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
