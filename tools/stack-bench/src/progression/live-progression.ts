@@ -30,6 +30,7 @@ import {
 } from './progression-state.js';
 import type {
   ProgressionOwner,
+  ProgressionRepairRegression,
   ProgressionResumeBinding,
   ProgressionState,
 } from './progression-state.js';
@@ -68,6 +69,7 @@ interface RecordOptions {
   level: number;
   repair: unknown;
   failure?: CodingFailure | null;
+  repairRegression?: ProgressionRepairRegression | null;
 }
 
 export interface LiveProgressionStatus {
@@ -384,7 +386,7 @@ export function createLiveProgressionExecution(
     const selected = resolveProgressionRecipeAction(binding, activeState);
     return selected;
   };
-  const record = ({ selected, bundle, level, repair, failure = null }:
+  const record = ({ selected, bundle, level, repair, failure = null, repairRegression = null }:
   RecordOptions): ProgressionAction | null => {
     if (!selected || !('grader' in selected)) return null;
     const activeState = currentState();
@@ -399,7 +401,9 @@ export function createLiveProgressionExecution(
       });
     }
 
-    let result: ProgressionGradeResult | CodingFailureResult;
+    let result: (ProgressionGradeResult & {
+      repairRegression?: ProgressionRepairRegression;
+    }) | CodingFailureResult;
     if (failure) {
       const category = failureCategory(failure.kind) ? failure.kind : 'harness_failure';
       result = {
@@ -421,7 +425,7 @@ export function createLiveProgressionExecution(
       const recipe = selected.grader.request.recipe;
       const persistedBundle = readArtifact<GradeBundlePayload>(
         join(evidenceDirectory, ARTIFACT_FILE.gradeBundle), { expectedKind: 'grade_bundle' });
-      result = gradeBundleToProgressionResult(
+      const gradedResult = gradeBundleToProgressionResult(
         persistedBundle,
         selected.action,
         {
@@ -439,6 +443,9 @@ export function createLiveProgressionExecution(
           },
         },
       );
+      result = repairRegression && gradedResult.outcome === 'conclusive'
+        ? { ...gradedResult, repairRegression: structuredClone(repairRegression) }
+        : gradedResult;
       if (result.outcome === 'conclusive') {
         preserveLevelCheckpoint({
           appDir,

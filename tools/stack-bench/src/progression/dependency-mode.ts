@@ -25,6 +25,7 @@ import type {
   ProgressionEvent,
   ProgressionGrant,
   ProgressionNodeState,
+  ProgressionRepairRegression,
   ProgressionState,
   ProgressionTerminalOutcome,
 } from './progression-state.js';
@@ -84,6 +85,7 @@ interface ResultBase extends Record<string, unknown> {
   sourceSha256?: string;
   selectionSha256?: string;
   evidence?: SourceEvidence;
+  repairRegression?: ProgressionRepairRegression;
 }
 
 export interface ConclusiveResult extends ResultBase {
@@ -726,7 +728,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
   const result = structuredClone(inputResult) as DependencyResult;
   strictObject(result, 'result', new Set([
     'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
-    'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure',
+    'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure', 'repairRegression',
   ]));
   nonEmptyString(result.attemptId, 'result.attemptId');
   if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
@@ -750,6 +752,24 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
   }
   if (!['conclusive', 'inconclusive'].includes(result.outcome)) {
     throw new Error('result.outcome must be conclusive or inconclusive');
+  }
+  if (result.repairRegression !== undefined) {
+    const regression = result.repairRegression;
+    const action = nextDependencyAction(inputState);
+    strictObject(regression, 'result.repairRegression', new Set(['ownerNodeIds', 'report']));
+    if (action.type !== 'repair' || result.outcome !== 'conclusive'
+      || !Array.isArray(regression.ownerNodeIds)
+      || regression.ownerNodeIds.length === 0
+      || regression.ownerNodeIds.some(nodeId => typeof nodeId !== 'string' || !nodeId)
+      || new Set(regression.ownerNodeIds).size !== regression.ownerNodeIds.length
+      || typeof regression.report !== 'string' || !regression.report.trim()
+      || regression.report.length > 20_000) {
+      throw new Error('result.repairRegression is invalid');
+    }
+    const expectedOwners = selectedPromptNodeIds(inputState).sort();
+    if (JSON.stringify([...regression.ownerNodeIds].sort()) !== JSON.stringify(expectedOwners)) {
+      throw new Error('result.repairRegression does not belong to the current repair');
+    }
   }
   const state = structuredClone(inputState) as DependencyState;
   if (result.outcome === 'inconclusive') {
@@ -820,6 +840,8 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
     ...(result.evidence ? { evidence: result.evidence } : {}),
     ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
     ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
+    ...(result.repairRegression
+      ? { repairRegression: structuredClone(result.repairRegression) } : {}),
     ...(result.applicationFailure
       ? { applicationFailure: structuredClone(result.applicationFailure) } : {}) });
 

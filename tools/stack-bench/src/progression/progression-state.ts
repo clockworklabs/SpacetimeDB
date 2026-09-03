@@ -68,6 +68,12 @@ export interface ProgressionAttempt {
   selectionSha256?: string;
   evidence?: ProgressionEvidence;
   applicationFailure?: { phase: string; reason: string };
+  repairRegression?: ProgressionRepairRegression;
+}
+
+export interface ProgressionRepairRegression extends Record<string, unknown> {
+  ownerNodeIds: string[];
+  report: string;
 }
 
 export interface ProgressionEvidence extends Record<string, unknown> {
@@ -85,7 +91,8 @@ export interface ProgressionTerminalOutcome {
 
 export interface ProgressionEvent extends Record<string, unknown> {
   type: string;
-  result?: { attemptId: string; [key: string]: unknown };
+  result?: { attemptId: string; repairRegression?: ProgressionRepairRegression;
+    [key: string]: unknown };
   grant?: Record<string, unknown>;
 }
 

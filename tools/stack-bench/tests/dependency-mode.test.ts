@@ -319,6 +319,34 @@ test('feature repairs isolate prompt work, strikes, and repeated-failure trackin
   assert.deepEqual(dependencyPrompt(state).nodeIds, ['ownership', 'search']);
 });
 
+test('repair regression feedback stays with its feature through state replay', () => {
+  const value = fixture();
+  value.strikes.default = 3;
+  let state = progressionEngine.initialize(value);
+  state = progressionEngine.recordResult(state, conclusive(state, 'initial', {
+    accounts: 'pass', catalog: 'fail',
+  }));
+  const result = {
+    ...conclusive(state, 'catalog-regression', { catalog: 'fail' }),
+    repairRegression: {
+      ownerNodeIds: ['catalog'],
+      report: '# Previous repair regression\n\nThe account flow stopped working.\n',
+    },
+  };
+  state = progressionEngine.recordResult(state, result);
+  assert.deepEqual(state.attempts.at(-1)?.repairRegression, result.repairRegression);
+  assert.equal(state.nodes.accounts!.strikes.used, 0);
+  assert.equal(state.nodes.catalog!.strikes.used, 2);
+  assert.deepEqual(progressionEngine.replay(state.definition, state.events), state);
+  let invalidState = progressionEngine.initialize(value);
+  invalidState = progressionEngine.recordResult(invalidState,
+    conclusive(invalidState, 'initial-invalid-owner', { accounts: 'pass', catalog: 'fail' }));
+  assert.throws(() => progressionEngine.recordResult(invalidState, {
+    ...conclusive(invalidState, 'invalid-owner', { catalog: 'fail' }),
+    repairRegression: { ...result.repairRegression, ownerNodeIds: ['accounts'] },
+  }), /does not belong to the current repair/);
+});
+
 test('batch repairs keep all failed features in one repair action', () => {
   const value = fixture();
   value.repairSelection = 'batch';

@@ -81,7 +81,8 @@ import { addCostUsd, finalizeRunTotals, runSessionRecord }
   from '../src/evidence/benchmark-run.js';
 import { formatLevelSummary } from '../src/evidence/evidence-presentation.js';
 import type { ProgressionAction } from '../src/progression/progression-engine.js';
-import type { ProgressionState } from '../src/progression/progression-state.js';
+import type { ProgressionRepairRegression, ProgressionState }
+  from '../src/progression/progression-state.js';
 import type { ProgressionRecipeAction, ProgressionRecipeSelections }
   from '../src/progression/progression-recipe-selection.js';
 import type { BackendLease } from '../src/runtime/backend-lease.js';
@@ -218,6 +219,20 @@ function repairReportArgs(value: ProgressionRecipeAction | null): string[] {
   const interfaces = contractInterfaceNames(value.agent.task.contractText);
   return ['--checks-json', JSON.stringify(checks),
     '--controls-json', JSON.stringify(interfaces)];
+}
+
+function repairOwnerNodeIds(value: ProgressionRecipeAction | null): string[] {
+  if (!value || !isProgressionWorkRecipeAction(value) || value.action.type !== 'repair') return [];
+  return value.action.strikes.nodes.map(node => node.nodeId).sort();
+}
+
+function savedRepairRegression(state: ProgressionState | null,
+  selected: ProgressionRecipeAction | null): ProgressionRepairRegression | null {
+  const saved = state?.attempts.at(-1)?.repairRegression;
+  if (!saved) return null;
+  const owners = repairOwnerNodeIds(selected);
+  return JSON.stringify([...saved.ownerNodeIds].sort()) === JSON.stringify(owners)
+    ? structuredClone(saved) : null;
 }
 
 function requireProgressionState(state: ProgressionState | null): ProgressionState {
@@ -1271,6 +1286,10 @@ async function main() {
     }
     const resumedRepair = progressionStart?.resumed === true
       && progressionStart.action.type === 'repair';
+    const resumedRegression = resumedRepair
+      ? savedRepairRegression(progressionExecution?.state ?? null, progressionSelection) : null;
+    const resumedRegressionReport = resumedRegression
+      ? join(args.out, 'repair-reports', `rejected-regression-l${level}-resume.md`) : null;
     const priorRepairRounds = resumedRepair
       ? progressionStart.priorRun?.payload.levels?.find(item => item.level === level)
         ?.repair?.roundsUsed ?? 0
@@ -1292,10 +1311,44 @@ async function main() {
         progressionRepairBudgetRounds, repairBudgetFor(selected, completedRepairRounds));
     };
     if (resumedRepair) {
-      sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
-        '--history-json', '[]', '--archive', join(args.out, 'repair-reports',
-          `bug-report-l${level}-resume.md`), ...repairReportArgs(progressionSelection)],
-      { stdio: 'pipe' });
+      let reportFailure: string | null = null;
+      try {
+        if (resumedRegressionReport && resumedRegression) {
+          mkdirSync(dirname(resumedRegressionReport), { recursive: true });
+          writeFileSync(resumedRegressionReport, resumedRegression.report);
+        }
+        sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
+          '--history-json', '[]', '--archive', join(args.out, 'repair-reports',
+            `bug-report-l${level}-resume.md`),
+          ...(resumedRegressionReport ? ['--prior-regression', resumedRegressionReport] : []),
+          ...repairReportArgs(progressionSelection)],
+        { stdio: 'pipe' });
+      } catch (error) {
+        reportFailure = errorMessage(error).split(/\r?\n/)[0]
+          ?? 'repair report generation failed';
+      }
+      if (reportFailure) {
+        const outcome: RunOutcome = {
+          kind: 'harness_failure', phase: 'repair-report', reason: reportFailure,
+          appFailures: [], inconclusive: [], harnessFailures: [reportFailure],
+        };
+        recordProgressionGrade({ selected: progressionSelection, bundle: null, level,
+          failure: progressionFailure(outcome), repair: {
+            status: 'ungraded', budgetRounds: progressionRepairBudgetRounds,
+            roundsUsed: priorRepairRounds, stopReason: 'repair-report',
+          } });
+        run.levels.push({ level, graded: false, score: null, max: null,
+          selection: null, error: reportFailure, outcome,
+          repair: { status: 'ungraded', budgetRounds: progressionRepairBudgetRounds,
+            roundsUsed: priorRepairRounds, stopReason: 'repair-report' },
+          fixCostUsd: 0, fixSessions: [], fixRounds: 0, priorRepairRounds,
+          cumulativeFixRounds: priorRepairRounds, sessionTotals: summarizeSessions([]),
+          costUsd: 0, durationSec: Math.round((Date.now() - t0) / 1000) });
+        run.validation.ladder.stoppedAfterLevel = level;
+        run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
+        writeRunJson(join(args.out, ARTIFACT_FILE.run), run);
+        break;
+      }
     }
 
     const firstMode = resumedRepair ? 'fix'
@@ -1526,8 +1579,8 @@ async function main() {
     const fixSessions = resumedRepair
       ? [runSessionRecord(build, priorRepairRounds + 1)] : [];
     const repairHistory: ReturnType<typeof repairHistoryEntry>[] = [];
-    let priorRegressionReport: string | null = null;
-    let priorRegressionOwner: string | null = null;
+    let priorRegressionReport = resumedRegressionReport;
+    let priorRegressionOwner = repairOwnerNodeIds(progressionSelection).join('\n') || null;
     let regressed = false;
     let repairStopReason: string | null = null;
     let repairProgress = repairProgressState(null, bundle);
@@ -1570,12 +1623,16 @@ async function main() {
     });
     const progressionMayRepair = () => !args.progression
       || progressionNext?.type === 'repair';
-    const recordRepairProgression = ({ failure = null }: { failure?: ProgressionFailure | null } = {}) => {
+    const recordRepairProgression = ({ failure = null, repairRegression = null }: {
+      failure?: ProgressionFailure | null;
+      repairRegression?: ProgressionRepairRegression | null;
+    } = {}) => {
       progressionNext = recordProgressionGrade({
         selected: progressionSelection,
         bundle: failure ? null : bundle,
         level,
         failure,
+        repairRegression,
         repair: {
           status: failure ? 'ungraded'
             : classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
@@ -1588,7 +1645,17 @@ async function main() {
       });
       return progressionMayRepair();
     };
-    const writeRepairReport = (): 0 | 3 | 4 => {
+    const recordRepairHarnessFailure = (phase: string, reason: string,
+      failedBundle: GradeBundlePayload | null = null): void => {
+      const failure: RunOutcome = {
+        kind: 'harness_failure', phase, reason,
+        appFailures: [], inconclusive: [], harnessFailures: [reason],
+      };
+      bundle = failedBundle ? { ...failedBundle, outcome: failure } : { outcome: failure };
+      repairStopReason = phase;
+      if (args.progression) recordRepairProgression({ failure: progressionFailure(failure) });
+    };
+    const writeRepairReport = (): { status: 0 | 3 | 4 } | { status: 'failed'; reason: string } => {
       try {
         sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
           '--history-json', JSON.stringify(repairHistory),
@@ -1596,11 +1663,12 @@ async function main() {
             `bug-report-l${level}-round${fixRounds + 1}.md`),
           ...(priorRegressionReport ? ['--prior-regression', priorRegressionReport] : []),
           ...repairReportArgs(progressionSelection)], { stdio: 'pipe' });
-        return 0;
+        return { status: 0 };
       } catch (error) {
         const failure = commandFailure(error);
-        if (failure.status === 3 || failure.status === 4) return failure.status;
-        throw failure;
+        if (failure.status === 3 || failure.status === 4) return { status: failure.status };
+        return { status: 'failed', reason: errorMessage(failure).split(/\r?\n/)[0]
+          ?? 'repair report generation failed' };
       }
     };
     const recordMissingRepairFeedback = (status: 3 | 4): void => {
@@ -1625,9 +1693,7 @@ async function main() {
       let reportReady = false;
       if (args.progression) {
         progressionSelection = bindProgressionAction(level);
-        const repairOwner = progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
-          ? progressionSelection.action.strikes.nodes.map(node => node.nodeId).sort().join('\n')
-          : null;
+        const repairOwner = repairOwnerNodeIds(progressionSelection).join('\n') || null;
         if (repairOwner !== priorRegressionOwner) {
           priorRegressionReport = null;
           priorRegressionOwner = repairOwner;
@@ -1655,21 +1721,29 @@ async function main() {
             repairStopReason = 'refresh-grading-failed';
             break;
           }
-          const refreshReportStatus = writeRepairReport();
-          if (refreshReportStatus === 3) {
+          const refreshReport = writeRepairReport();
+          if (refreshReport.status === 'failed') {
+            recordRepairHarnessFailure('repair-report', refreshReport.reason);
+            break;
+          }
+          if (refreshReport.status === 3) {
             recordRepairProgression();
             continue;
           }
-          if (refreshReportStatus === 4) {
-            recordMissingRepairFeedback(refreshReportStatus);
+          if (refreshReport.status === 4) {
+            recordMissingRepairFeedback(refreshReport.status);
             break;
           }
           reportReady = true;
         }
       }
-      const reportStatus = reportReady ? 0 : writeRepairReport();
-      if (reportStatus !== 0) {
-        recordMissingRepairFeedback(reportStatus);
+      const report = reportReady ? { status: 0 as const } : writeRepairReport();
+      if (report.status === 'failed') {
+        recordRepairHarnessFailure('repair-report', report.reason);
+        break;
+      }
+      if (report.status !== 0) {
+        recordMissingRepairFeedback(report.status);
         break;
       }
 
@@ -1769,8 +1843,25 @@ async function main() {
       try {
         bundle = await gradeAcceptedSource(repairedSource,
           `${args.backend}-l${level}-fix${fixRounds}`);
+        if (!levelGradeIsUsable(classifyBundle(bundle))) {
+          console.log('    repair grade did not complete; retrying the same source once');
+          bundle = await gradeAcceptedSource(repairedSource,
+            `${args.backend}-l${level}-fix${fixRounds}-retry`);
+        }
       } finally {
         rmSync(repairedSource, { recursive: true, force: true });
+      }
+
+      const repairedOutcome = classifyBundle(bundle);
+      if (!levelGradeIsUsable(repairedOutcome)) {
+        const reason = repairedOutcome.reason
+          ?? 'the repaired source did not produce a reliable grade';
+        console.log(`    repair grade failed: ${reason}; restoring the accepted source without spending a strike`);
+        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+          'not counted because grading failed'));
+        recordRepairHarnessFailure('repair-grading', reason, bundle);
+        break;
       }
 
       const after = bundle?.totals?.score ?? 0;
@@ -1814,6 +1905,8 @@ async function main() {
         } else {
           console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back this fix`);
         }
+        let repairRegression: ProgressionRepairRegression | null = null;
+        let regressionReportFailure: string | null = null;
         try {
           if (shared.regressions.length) {
             const path = join(outputDir, 'repair-reports',
@@ -1821,16 +1914,29 @@ async function main() {
             sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
               '--out', path, '--checks-json', JSON.stringify(shared.regressions),
               '--regression-context'], { stdio: 'pipe' });
+            repairRegression = {
+              ownerNodeIds: repairOwnerNodeIds(progressionSelection),
+              report: readFileSync(path, 'utf8'),
+            };
             priorRegressionReport = path;
           }
+        } catch (error) {
+          regressionReportFailure = errorMessage(error).split(/\r?\n/)[0]
+            ?? 'regression report generation failed';
         } finally {
           await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        }
+        if (regressionReportFailure) {
+          repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+            'not counted because regression reporting failed'));
+          recordRepairHarnessFailure('repair-regression-report', regressionReportFailure);
+          break;
         }
         bundle = beforeBundle;
         regressed = true;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because earlier behavior regressed'));
-        if (!recordRepairProgression()) break;
+        if (!recordRepairProgression({ repairRegression })) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
@@ -1924,7 +2030,7 @@ async function main() {
       continuation.cumulativeRoundsAfter = continuation.cumulativeRoundsBefore + fixRounds;
     }
     let checkpoint = null;
-    if (!latestProgressionAttempt || latestProgressionAttempt.level === level) {
+    if (graded && (!latestProgressionAttempt || latestProgressionAttempt.level === level)) {
       try {
         checkpoint = preserveLevelCheckpoint({
           appDir,

@@ -18,6 +18,8 @@ import type { ProgressionInput } from '../src/progression/progression-definition
 import { createLiveProgressionExecution, type LiveProgressionExecution,
   type LiveProgressionStatus }
   from '../src/progression/live-progression.js';
+import { auditProgressionReferenceRun }
+  from '../src/progression/progression-reference-audit.js';
 import type { ProgressionWorkAction } from '../src/progression/progression-engine.js';
 import type { ProgressionRecipeAction, ProgressionRecipeSelections }
   from '../src/progression/progression-recipe-selection.js';
@@ -530,7 +532,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
   }
 });
 
-test('an interrupted repair resumes as repair with its exact failed evidence', () => {
+test('an interrupted repair resumes with its failed evidence and regression feedback', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-live-repair-resume-'));
   try {
     const firstOutput = join(root, 'execution-1');
@@ -541,7 +543,9 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
       mkdirSync(path, { recursive: true });
     }
     writeFileSync(join(firstApp, 'index.js'), 'export const broken = true;\n');
-    const progression = compileProgressionInput(definition());
+    const input = definition();
+    input.strikes.default = 3;
+    const progression = compileProgressionInput(input);
     const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
       'ecommerce.sequential-l1@2.5.0');
@@ -595,9 +599,32 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
         ] } });
     assert(next);
     assert.equal(next.type, 'repair');
+    const repairSelected = workSelection(first.bind());
+    const repairRecipe = repairSelected.grader.request.recipe;
+    const repairGrade = { ...grade, selection: {
+      ...grade.selection, sha256: repairSelected.grader.selectionSha256,
+    } };
+    writeArtifact(join(firstApp, 'stack-bench', 'bundle.json'), {
+      kind: 'grade_bundle', id: 'grade-regression',
+      attempt: { id: 'grade-regression', parentId: 'run-1' },
+      identities: emptyArtifactIdentities({ recipe: { id: repairRecipe.id,
+        version: repairRecipe.version, sha256: repairRecipe.contentSha256 },
+      stackAdapter: { id: owner.attempt.stack } }),
+      payload: repairGrade,
+    });
+    const afterRegression = first.record({ selected: repairSelected, bundle: repairGrade, level: 1,
+      repair: { status: 'incomplete', budgetRounds: 2, roundsUsed: 1,
+        stopReason: null, strikeScope: 'feature', nodeStrikes: [] },
+      repairRegression: { ownerNodeIds: ['accounts'],
+        report: '# Previous repair regression\n\nThe earlier account behavior stopped working.\n' } });
+    assert(afterRegression);
+    assert.equal(afterRegression.type, 'repair');
     writeArtifact(join(firstOutput, 'run.json'), { ...runArtifact,
       payload: { ...runArtifact.payload, progressionStatus: first.status(),
         totals: { costUsd: 1.25, costComplete: true }, levels: [] } });
+    const audit = auditProgressionReferenceRun({ outputDir: firstOutput, progression,
+      ...split, owner, recipeBindings: new Map([[1, binding]]), release: binding.release });
+    assert.equal(audit.actions.length, 2);
 
     const resumed = createLiveProgressionExecution({ progression, ...split, owner,
       statePath: join(secondOutput, 'progression-state.json'), runId: 'run-2',
@@ -610,12 +637,15 @@ test('an interrupted repair resumes as repair with its exact failed evidence', (
     const restored = resumed.initialize();
     assert.equal(restored.action.type, 'repair');
     assert.equal(restored.action.level, 1);
-    assert.equal(executionState(resumed).attempts.length, 1);
+    assert.equal(executionState(resumed).attempts.length, 2);
+    assert.deepEqual(executionState(resumed).attempts.at(-1)?.repairRegression,
+      { ownerNodeIds: ['accounts'],
+        report: '# Previous repair regression\n\nThe earlier account behavior stopped working.\n' });
     assert.equal(readFileSync(join(secondApp, 'index.js'), 'utf8'),
       'export const broken = true;\n');
     assert(existsSync(join(secondApp, 'stack-bench', 'bundle.json')));
     assert.equal(existsSync(join(secondApp, 'stack-bench', 'stale.json')), false);
-    assert(existsSync(join(secondOutput, 'progression', 'attempt-001', 'bundle.json')));
+    assert(existsSync(join(secondOutput, 'progression', 'attempt-002', 'bundle.json')));
     assert(restored.priorRun);
     const totals = restored.priorRun.payload.totals;
     assert(object(totals));

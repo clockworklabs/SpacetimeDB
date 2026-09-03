@@ -71,6 +71,8 @@ interface AuditAction {
   nodes?: unknown;
 }
 
+type RecordedResult = NonNullable<ProgressionEvent['result']> & { sourceSha256: string };
+
 export interface ProgressionReferenceAuditReport {
   ok: boolean;
   progression: ProgressionInput['identity'];
@@ -206,9 +208,7 @@ function auditWorkSelection(action: ProgressionWorkAction): AuditWorkSelection {
   };
 }
 
-function recordedResult(event: ProgressionEvent): Record<string, unknown> & {
-  sourceSha256: string;
-} {
+function recordedResult(event: ProgressionEvent): RecordedResult {
   if (!object(event.result) || typeof event.result.sourceSha256 !== 'string'
     || !HASH.test(event.result.sourceSha256)) {
     throw new Error('progression reference audit recorded result is invalid');
@@ -288,7 +288,9 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
         sequence: attemptSequence,
       },
     );
-    if (!same(converted, savedResult)) {
+    const recordedGrade = savedResult.repairRegression === undefined
+      ? converted : { ...converted, repairRegression: savedResult.repairRegression };
+    if (!same(recordedGrade, savedResult)) {
       throw new Error(`progression attempt ${attemptSequence} recorded result differs from its grade bundle`);
     }
     const passed = converted.outcome === 'conclusive'
@@ -313,7 +315,7 @@ export function auditProgressionReferenceRun({ outputDir, progression, featureCa
       ...(converted.outcome === 'conclusive'
         ? { nodes: structuredClone(converted.nodes) } : {}),
     });
-    state = progressionEngine.recordResult(state, converted);
+    state = progressionEngine.recordResult(state, recordedGrade);
   }
 
   if (!same(state, stored.state)) {
