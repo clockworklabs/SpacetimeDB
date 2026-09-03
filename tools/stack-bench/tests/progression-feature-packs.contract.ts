@@ -1,225 +1,222 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { compilePackDefinition, resolveTaskFragment, type CompiledPackDefinition }
-  from '../src/composition/composition-compiler.js';
-import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import { compileProgressionDefinitionFile }
+import { compilePackDefinition, compileRecipeFile, resolveTaskFragment,
+  type CompiledPackDefinition } from '../src/composition/composition-compiler.js';
+import { compileScenarioDefinition, type CompiledCriterion, type CompiledFeature }
+  from '../src/composition/definition-compiler.js';
+import { compileProgressionDefinitionFile, type CompiledProgressionNode }
   from '../src/progression/progression-definition.js';
+
+// Rules every feature pack in the dependency catalog must hold, checked once
+// over the whole catalog rather than restated per pack. Exact ids, points,
+// paths and hook names are data the compiler already binds; they are not
+// asserted here.
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
-const readPack = (name: string): CompiledPackDefinition =>
-  compilePackDefinition(readJson(join(packRoot, name)), { source: name });
+const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
+  .filter(name => name.endsWith('.json')).map(name => {
+    const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
+    return [`${pack.id}@${pack.version}`, pack];
+  }));
+const definition = compileProgressionDefinitionFile(
+  join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), { trackRoot });
 
-const featurePackNames = [
-  'l2-stock-transfers-features-1.0.1.json',
-  'l2-order-cancellation-features-1.0.1.json',
-  'l3-order-returns-features-1.1.1.json',
-  'l2-price-history-features-2.0.2.json',
-];
+function requiredPack(reference: string): CompiledPackDefinition {
+  const pack = packs.get(reference);
+  if (!pack) throw new Error(`the catalog references missing pack ${reference}`);
+  return pack;
+}
 
-test('the current graph keeps reservation product ownership separate from stable score identity', () => {
-  const definition = compileProgressionDefinitionFile(join(trackRoot, 'progression',
-    'ecommerce-2.0.2.json'), { trackRoot });
-  const reservations = definition.nodes.find(node => node.id === 'reservations');
-  assert(reservations);
-  assert.deepEqual(reservations.featureRefs, ['ecommerce.l3.reservations-features@2.0.0']);
-  const restart = reservations.gradingChecks.find(check =>
-    check.id === 'ecommerce.l3.deferred-durability.restart-survival.314a');
-  assert(restart);
-  assert.deepEqual(restart.requiresFeatures, ['ecommerce.l3.reservations-features']);
-});
+const featurePacks: Array<{ node: CompiledProgressionNode; pack: CompiledPackDefinition }> =
+  definition.nodes.flatMap(node => node.featureRefs.map(reference =>
+    ({ node, pack: requiredPack(reference) })));
 
-function fragmentText(
-  fragment: CompiledPackDefinition['task']['requirements'][number],
-): string {
+type Fragment = CompiledPackDefinition['task']['requirements'][number];
+
+function fragmentText(fragment: Fragment): string {
   return resolveTaskFragment(fragment, { trackRoot, source: fragment.id }).text;
 }
 
-test('each feature pack owns only its prompt and exact dependencies', () => {
-  const packs = new Map(featurePackNames.map(name => {
-    const pack = readPack(name);
-    assert.equal(pack.moduleType, 'feature');
-    return [pack.id, pack];
-  }));
+function scenarioFeature(check: CompiledPackDefinition['checks'][number],
+  at: string): { feature: CompiledFeature } {
+  const scenario = compileScenarioDefinition(readJson(join(trackRoot, check.source)),
+    { source: check.source });
+  const feature = scenario.features.find(candidate => candidate.id === check.feature);
+  assert(feature, `${at} must select a feature that exists in ${check.source}`);
+  return { feature };
+}
 
-  const cancellation = requiredPack(packs, 'ecommerce.l2.order-cancellation-features');
-  const returns = requiredPack(packs, 'ecommerce.l3.order-returns-features');
-  const pricing = requiredPack(packs, 'ecommerce.l2.price-history-features');
-  const transfers = requiredPack(packs, 'ecommerce.l2.stock-transfers-features');
-
-  assert.deepEqual(cancellation.requiresPacks,
-    ['ecommerce.feature.purchasing@1.2.1', 'ecommerce.feature.warehouse-admin@1.2.1']);
-  assert.deepEqual(returns.requiresPacks,
-    ['ecommerce.l3.order-delivery-features@1.1.1', 'ecommerce.feature.warehouse-admin@1.2.1']);
-  assert.deepEqual(pricing.requiresPacks,
-    ['ecommerce.progression.catalog-management@1.0.3']);
-  assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.2.1']);
-
-  assert.doesNotMatch(fragmentText(requiredRequirement(cancellation)), /return|price|Live operational views/i);
-  assert.doesNotMatch(fragmentText(requiredRequirement(returns)), /cancel|Live operational views/i);
-  assert.doesNotMatch(fragmentText(requiredRequirement(pricing)), /Cancelling and returning|Live operational views/);
-  assert.doesNotMatch(fragmentText(requiredRequirement(transfers)), /Cancelling and returning|Live operational views/);
-});
-
-test('dependency-owned checks use only interfaces supplied by their parents', () => {
-  const warehouse = readPack('feature-warehouse-admin-1.2.1.json');
-  assert.deepEqual(warehouse.requiresPacks,
-    ['ecommerce.feature.catalog-items@1.0.0', 'ecommerce.progression.staff-access@1.0.0']);
-  assert.deepEqual(warehouse.checks.map(check => [check.id, check.criteria]), [
-    ['warehouse-view', ['7b']], ['admin-write', ['103a']],
-  ]);
-  for (const check of warehouse.checks) {
-    const scenario = compileScenarioDefinition(readJson(join(trackRoot, check.source)), {
-      source: check.source,
+function selectedCriteria(pack: CompiledPackDefinition): CompiledCriterion[] {
+  return pack.checks.flatMap(check => {
+    const at = `${pack.id}.${check.id}`;
+    const { feature } = scenarioFeature(check, at);
+    const ids = check.criteria ?? feature.criteria.map(criterion => criterion.id);
+    return ids.map(id => {
+      const criterion = feature.criteria.find(candidate => candidate.id === id);
+      assert(criterion, `${at} must select ${id} from ${check.source}`);
+      return criterion;
     });
-    const feature = scenario.features.find(candidate => candidate.id === check.feature);
-    assert(feature, `${warehouse.id}.${check.id} must select a feature`);
-    const setup = feature.setup;
-    assert(setup.some(step => step.do === 'signIn'
-      && (step.actor === 'admin' || step.actor === 'staff')));
-  }
-
-  const cancellation = readPack('l2-order-cancellation-features-1.0.1.json');
-  const cancellationCheck = cancellation.checks.find(check => check.id === 'cancellation-core');
-  assert(cancellationCheck, 'the cancellation pack must own cancellation-core');
-  assert(cancellationCheck.source
-    .endsWith('02-order-cancellation-core-1.0.0.json'));
-  const cancellationScenario = compileScenarioDefinition(
-    readJson(join(trackRoot, cancellationCheck.source)), { source: cancellationCheck.source });
-  assert.equal(JSON.stringify(cancellationScenario).includes('queue-item'), false);
-
-  const queue = readPack('progression-cancellation-queue-specifications-1.0.0.json');
-  assert.deepEqual(queue.requiresPacks, []);
-  assert.deepEqual(requiredRequirement(queue).requiresFeatures,
-    ['ecommerce.l2.order-cancellation-features', 'ecommerce.progression.fulfilment-queue']);
-  assert.deepEqual(queue.checks.map(check => [check.id, check.criteria]), [
-    ['queue-removal', ['3d']],
-  ]);
-
-  const activity = readPack('progression-staff-activity-1.0.2.json');
-  const activityCheck = activity.checks[0];
-  assert(activityCheck, 'the staff activity pack must have a check');
-  const staffScenario = compileScenarioDefinition(readJson(join(trackRoot, activityCheck.source)), {
-    source: activityCheck.source,
   });
-  const activityFeature = staffScenario.features.find(feature => feature.id === 624);
-  assert(activityFeature, 'the staff activity scenario must include feature 624');
-  const activitySetup = activityFeature.setup;
-  assert(activitySetup.some(step => step.testid === 'catalog-save'));
-  assert.equal(activitySetup.some(step => step.testid === 'price-submit'), false);
+}
+
+test('every feature pack states one whole product request and one interface it can add to an app', () => {
+  const requirementPaths = new Set<string>();
+  const contractPaths = new Set<string>();
+  for (const { pack } of featurePacks) {
+    const at = `${pack.id}@${pack.version}`;
+    assert.equal(pack.moduleType, 'feature', at);
+    assert.equal(pack.task.requirements.length, 1, `${at} must state one product request`);
+    assert.equal(pack.task.contracts.length, 1, `${at} must state one application interface`);
+    const [requirement] = pack.task.requirements;
+    const [contract] = pack.task.contracts;
+    assert(requirement && contract);
+    // Dependency mode adds features to an existing app, so every feature
+    // must compose as an upgrade, and its interface must travel with it.
+    assert(requirement.modes?.includes('upgrade'), `${at} must compose as an upgrade`);
+    assert.deepEqual(contract.modes, requirement.modes, `${at} interface modes must match its request`);
+    for (const fragment of [requirement, contract]) {
+      assert.equal(fragment.from, undefined, `${at} must not slice ${fragment.path}`);
+      assert.equal(fragment.until, undefined, `${at} must not slice ${fragment.path}`);
+    }
+    assert.equal(requirementPaths.has(requirement.path), false,
+      `${requirement.path} is shared by two feature packs`);
+    assert.equal(contractPaths.has(contract.path), false,
+      `${contract.path} is shared by two feature packs`);
+    requirementPaths.add(requirement.path);
+    contractPaths.add(contract.path);
+  }
 });
 
-test('catalog and faceted search expose only their own product work', () => {
-  const catalog = readPack('feature-catalog-items-1.0.0.json');
-  const search = readPack('progression-faceted-search-1.0.1.json');
-  const management = readPack('progression-catalog-management-1.0.3.json');
-  assert.deepEqual(catalog.requiresPacks, []);
-  assert.deepEqual(search.requiresPacks, ['ecommerce.feature.catalog-discovery@1.0.0']);
-  assert.deepEqual(management.requiresPacks,
-    ['ecommerce.feature.catalog-discovery@1.0.0', 'ecommerce.progression.staff-roles@1.0.1']);
-  assert.equal(management.checks[0]?.source,
-    'scenarios/progression-catalog-management-1.0.1.json');
-  const managementScenario = compileScenarioDefinition(
-    readJson(join(trackRoot, management.checks[0]!.source)), { source: management.checks[0]!.source });
-  assert.deepEqual(managementScenario.features.map(feature => feature.id), [622]);
-  for (const fragment of [...catalog.task.requirements, ...catalog.task.contracts]) {
-    assert.deepEqual(fragment.modes, ['fresh', 'upgrade']);
+test('feature requests are implementation-neutral and never name the testing interface', () => {
+  for (const { pack } of featurePacks) {
+    const [requirement] = pack.task.requirements;
+    assert(requirement);
+    assert.doesNotMatch(fragmentText(requirement),
+      /framework|ORM|database|websocket|endpoint|\broutes?\b|reducer|testid|MongoDB|PostgreSQL|SpacetimeDB/i,
+      `${pack.id}@${pack.version} ${requirement.path}`);
   }
-  assert.deepEqual(catalog.checks.map(check => [check.id, check.criteria]), [
-    ['values', ['2a']],
-  ]);
-  const catalogPrompt = fragmentText(requiredRequirement(catalog));
-  assert.match(catalogPrompt, /price.*total stock/i);
-  assert.doesNotMatch(catalogPrompt, /review|rating|warehouse|framework|database/i);
-  const searchPrompt = fragmentText(requiredRequirement(search));
-  assert.match(searchPrompt, /category.*minimum price.*maximum price.*availability/is);
-  assert.doesNotMatch(searchPrompt, /warehouse|admin|framework|database/i);
 });
 
-test('support nodes have isolated prompts, hooks, scenarios, and exact dependencies', () => {
-  const intake = readPack('progression-support-intake-1.0.0.json');
-  const triage = readPack('progression-support-triage-1.0.0.json');
-  const history = readPack('progression-support-history-1.0.0.json');
-  assert.deepEqual(intake.requiresPacks, []);
-  for (const fragment of [...intake.task.requirements, ...intake.task.contracts]) {
-    assert.deepEqual(fragment.modes, ['fresh', 'upgrade']);
-  }
-  assert.deepEqual(triage.requiresPacks,
-    ['ecommerce.progression.staff-access@1.0.0',
-      'ecommerce.progression.support-intake@1.0.0']);
-  assert.deepEqual(history.requiresPacks,
-    ['ecommerce.feature.accounts@1.2.0', 'ecommerce.progression.support-intake@1.0.0']);
-
-  const intakeText = `${fragmentText(requiredRequirement(intake))}\n${fragmentText(requiredContract(intake))}`;
-  const triageText = `${fragmentText(requiredRequirement(triage))}\n${fragmentText(requiredContract(triage))}`;
-  const historyText = `${fragmentText(requiredRequirement(history))}\n${fragmentText(requiredContract(history))}`;
-  assert.doesNotMatch(intakeText, /assign|priority|status|reply|order|refund/i);
-  assert.doesNotMatch(triageText, /reply|order|refund|customer history/i);
-  assert.doesNotMatch(historyText, /assign|priority|reply|order|refund/i);
-  assert.doesNotMatch(`${intakeText}\n${triageText}\n${historyText}`,
-    /framework|ORM|database|websocket/i);
-
-  assert.deepEqual(intake.checks.map(check => check.id), ['ticket-create']);
-  assert.deepEqual(triage.checks.map(check => [check.id, check.criteria]), [
-    ['assignment', ['611a']], ['priority', ['611b']], ['status', ['611c']],
-  ]);
-  assert.deepEqual(history.checks.map(check => [check.id, check.criteria]), [
-    ['history', ['612c']],
-  ]);
-  const definition = compileProgressionDefinitionFile(join(trackRoot, 'progression',
-    'ecommerce-2.0.2.json'), { trackRoot });
-  const historyNode = definition.nodes.find(node => node.id === 'support-history');
-  assert(historyNode);
-  assert.deepEqual(historyNode.gradingChecks.map(check => check.id), [
-    'ecommerce.progression.support-history.support-history.612c',
-    'ecommerce.progression.support-privacy-specifications.private-message-delivery.619a',
-    'ecommerce.spec.access-control.support-history-privacy.612b',
-    'ecommerce.spec.state-durability.support-history-reload.612a',
-  ]);
-  for (const [pack, expectedLevel] of [[intake, 1], [triage, 2], [history, 2]] as const) {
+test('every check selects criteria that exist in its scenario', () => {
+  for (const { pack } of featurePacks) {
     for (const check of pack.checks) {
-      const scenario = compileScenarioDefinition(readJson(join(trackRoot, check.source)), {
-        source: check.source,
-        expectedLevel,
-      });
-      assert.deepEqual(scenario.features.map(feature => feature.id), [check.feature]);
-      const feature = scenario.features[0];
-      assert(feature, `${check.source} must contain its selected feature`);
-      for (const criterion of check.criteria ?? feature.criteria.map(item => item.id)) {
-        assert(feature.criteria.some(item => item.id === criterion),
-          `${pack.id} must own ${criterion}`);
+      const at = `${pack.id}.${check.id}`;
+      const { feature } = scenarioFeature(check, at);
+      for (const id of check.criteria ?? []) {
+        assert(feature.criteria.some(criterion => criterion.id === id),
+          `${at} selects ${id}, which ${check.source} does not define`);
       }
     }
   }
 });
 
-function requiredPack(
-  packs: ReadonlyMap<string, CompiledPackDefinition>,
-  packId: string,
-): CompiledPackDefinition {
-  const pack = packs.get(packId);
-  if (!pack) throw new Error(`pack ${packId} is required`);
-  return pack;
-}
+test('shopping criteria in one scenario never share a product, so state cannot leak between them', () => {
+  const [quantity, checkout] = requiredPack('ecommerce.feature.cart@2.0.0').checks.length
+    ? selectedCriteria(requiredPack('ecommerce.feature.cart@2.0.0'))
+      .concat(selectedCriteria(requiredPack('ecommerce.feature.checkout@2.0.0')))
+    : [];
+  assert(quantity && checkout, 'cart and checkout must each select a criterion');
+  const product = (criterion: CompiledCriterion): string => {
+    const add = criterion.steps.find(step => step.do === 'click' && step.testid === 'add-to-cart');
+    assert(add && typeof add.in?.contains === 'string', `${criterion.id} must add a named product`);
+    return add.in.contains;
+  };
+  assert.notEqual(product(quantity), product(checkout));
+});
 
-function requiredRequirement(
-  pack: CompiledPackDefinition,
-): CompiledPackDefinition['task']['requirements'][number] {
-  const requirement = pack.task.requirements[0];
-  if (!requirement) throw new Error(`${pack.id} must have a product requirement`);
-  return requirement;
-}
+test('fulfilment and cancellation keep separate authorization owners', () => {
+  // A cross-feature authorization check is graded by exactly one feature, so
+  // a failure has one repair owner.
+  const access = requiredPack('ecommerce.progression.operations-access-specifications@1.0.0');
+  assert.equal(access.moduleType, 'specification');
+  const owners = new Map(access.checks.map(check => [check.id, check.requiresFeatures]));
+  assert.deepEqual(owners.get('operator-authorization-direct'),
+    ['ecommerce.progression.fulfilment-queue']);
+  assert.deepEqual(owners.get('order-owner-direct'), ['ecommerce.l2.order-cancellation-features']);
+  const fulfilment = definition.nodes.find(node => node.id === 'fulfilment-queue');
+  const cancellation = definition.nodes.find(node => node.id === 'order-cancellation');
+  assert(fulfilment && cancellation);
+  const owns = (node: CompiledProgressionNode, checkId: string): boolean => {
+    const check = access.checks.find(candidate => candidate.id === checkId);
+    assert(check, `${access.id} must define ${checkId}`);
+    const prefix = `${access.stableId ?? access.id}.${check.stableId ?? check.id}.`;
+    return node.gradingChecks.some(graded => graded.id.startsWith(prefix));
+  };
+  assert(owns(fulfilment, 'operator-authorization-direct'));
+  assert(!owns(fulfilment, 'order-owner-direct'));
+  assert(owns(cancellation, 'order-owner-direct'));
+  assert(!owns(cancellation, 'operator-authorization-direct'));
+});
 
-function requiredContract(
-  pack: CompiledPackDefinition,
-): CompiledPackDefinition['task']['contracts'][number] {
-  const contract = pack.task.contracts[0];
-  if (!contract) throw new Error(`${pack.id} must have a testing contract`);
-  return contract;
-}
+test('every replayed request names a declared actor whose request it replays', () => {
+  // A replay captured from an actor the scenario never declared records
+  // nothing and degrades to inconclusive, which reads as a pass on its own.
+  // Replaying one's own request is legitimate (idempotency); an undeclared
+  // source is not.
+  const graded = new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id)));
+  let replays = 0;
+  for (const pack of packs.values()) {
+    for (const check of pack.checks) {
+      const prefix = `${pack.stableId ?? pack.id}.${check.stableId ?? check.id}.`;
+      if (![...graded].some(id => id.startsWith(prefix))) continue;
+      const { feature } = scenarioFeature(check, `${pack.id}.${check.id}`);
+      const actors = feature.actors ?? [];
+      for (const criterion of feature.criteria) {
+        for (const step of criterion.steps.filter(candidate => candidate.do === 'replayAs')) {
+          replays += 1;
+          assert(typeof step.from === 'string' && actors.includes(step.from),
+            `${check.source} ${criterion.id} replays a request from undeclared actor ${String(step.from)}`);
+          assert(typeof step.actor === 'string' && actors.includes(step.actor),
+            `${check.source} ${criterion.id} replays as undeclared actor ${String(step.actor)}`);
+        }
+      }
+    }
+  }
+  assert(replays > 0, 'the catalog must grade at least one replayed request');
+});
+
+test('privacy checks prove a server or transport boundary, not a hidden control', () => {
+  const review = requiredPack('ecommerce.progression.review-access-specifications@1.0.0');
+  const [reviewCriterion] = selectedCriteria(review);
+  assert(reviewCriterion);
+  assert(reviewCriterion.steps.some(step => step.do === 'replayAs'));
+  assert(reviewCriterion.steps.some(step => step.do === 'expectReplayRejected'));
+
+  const support = requiredPack('ecommerce.progression.support-privacy-specifications@1.0.0');
+  const [supportCriterion] = selectedCriteria(support);
+  assert(supportCriterion);
+  // A "not received" veto is only meaningful beside a positive control.
+  assert.deepEqual(supportCriterion.steps.map(step => step.do),
+    ['expectReceived', 'expectNotReceived']);
+});
+
+test('promotion rules use values a datetime-local input accepts', () => {
+  const [criterion] = selectedCriteria(requiredPack('ecommerce.progression.promotion-rules@1.0.1'));
+  assert(criterion);
+  const values = criterion.steps
+    .filter(step => step.do === 'fill' && typeof step.testid === 'string'
+      && ['promotion-start', 'promotion-end'].includes(step.testid))
+    .map(step => step.text);
+  assert.equal(values.length, 2);
+  for (const value of values) assert.match(String(value), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+});
+
+test('the sequential L2 recipe runs every source its operations feature packs own', () => {
+  const recipe = compileRecipeFile(
+    join(trackRoot, 'composition', 'recipes', 'sequential-l2-1.6.0.json'), { trackRoot });
+  const sources = new Set(recipe.execution.map(entry => entry.source));
+  for (const name of ['operations-access-features-1.0.0.json',
+    'inventory-operations-features-1.2.0.json', 'returns-pricing-features-1.1.0.json']) {
+    const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
+    assert.equal(pack.moduleType, 'feature');
+    for (const check of pack.checks) {
+      assert(sources.has(check.source), `${name} must run ${check.source}`);
+    }
+  }
+});

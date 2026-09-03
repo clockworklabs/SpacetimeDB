@@ -43,6 +43,7 @@ Run the smallest check that covers the change:
 |---|---|
 | TypeScript | `npm run typecheck` and the focused compiled test |
 | Unit tests | `npm test` |
+| Dashboard read model, routes, and pages | `npm run test:dashboard` |
 | Repository contracts | `npm run test:contracts` |
 | Mutation definitions and anchors | `npm run test:mutation-definitions` |
 | Browser, process, and Docker integration | `npm run test:integration` |
@@ -61,10 +62,12 @@ npm run typecheck
 npm run test:all
 ```
 
-Use `npm test` while changing code. Run `npm run test:contracts` when tracks,
-prompts, reference applications, repository policies, or campaign definitions
-change. `npm run test:all` runs both tiers after one build. Docker and
-qualification checks remain separate.
+Use `npm test` while changing code. Run `npm run test:dashboard` when the
+dashboard read model, routes, or pages change; it writes thirty campaigns of
+fixture evidence and stays out of the unit tier. Run `npm run test:contracts`
+when tracks, prompts, reference applications, repository policies, or campaign
+definitions change. `npm run test:all` runs the unit, dashboard, and contract
+tiers after one build. Docker and qualification checks remain separate.
 Mutation-definition tests are model-free. Run them when reference source, grading
 checks, or mutation manifests change. They do not run during ordinary unit work.
 

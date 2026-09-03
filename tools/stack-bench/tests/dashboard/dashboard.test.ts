@@ -7,37 +7,64 @@ import type { AddressInfo } from 'node:net';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after, before } from 'node:test';
 
-import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
+import { emptyArtifactIdentities, writeArtifact } from '../../src/evidence/artifacts.js';
+import { compileCampaignFile } from '../../src/campaigns/campaign-compiler.js';
+import type { CompiledCampaignPlan } from '../../src/campaigns/campaign-compiler.js';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution }
-  from '../src/campaigns/campaign-scheduler.js';
-import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
+  from '../../src/campaigns/campaign-scheduler.js';
+import { canonicalDefinitionJson } from '../../src/composition/definition-plan.js';
 import { attemptChecks, attemptLogSlice, attemptPackage, campaignProgression, campaignSheet,
-  overviewSummary } from '../dashboard/dashboard-views.js';
+  overviewSummary } from '../../dashboard/dashboard-views.js';
 import { parseRunProgress,
   discoverCampaigns, discoverPlans, readCampaignArtifactBody, readJsonLines,
   resolveCampaignArtifact, summarizeCampaign,
-} from '../dashboard/dashboard-model.js';
+} from '../../dashboard/dashboard-model.js';
 import { campaignFacts, firstGradeAbort, inspectCampaignSummary }
-  from '../src/campaigns/campaign-inspection.js';
-import { attemptExcluded } from '../dashboard/public/metrics.js';
-import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.js';
-import type { DashboardOperation, LaunchInput } from '../dashboard/dashboard-server.js';
-import { sha256 } from '../src/evidence/provenance.js';
-import { progressionEngine } from '../src/progression/progression-engine.js';
+  from '../../src/campaigns/campaign-inspection.js';
+import { attemptExcluded } from '../../dashboard/public/metrics.js';
+import { createDashboardServer, parseDashboardArgs } from '../../dashboard/dashboard-server.js';
+import type { DashboardOperation, LaunchInput } from '../../dashboard/dashboard-server.js';
+import { sha256 } from '../../src/evidence/provenance.js';
+import { progressionEngine } from '../../src/progression/progression-engine.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
-  from '../src/progression/progression-definition.js';
-import { writeProgressionState } from '../src/progression/progression-state.js';
-import { attemptPage } from '../dashboard/public/views/attempt.js';
-import { campaignPage } from '../dashboard/public/views/campaign.js';
-import { campaignsPage } from '../dashboard/public/views/campaigns.js';
-import { afterRun, plansPage, runName, topbar } from '../dashboard/public/views/plans.js';
+  from '../../src/progression/progression-definition.js';
+import { writeProgressionState } from '../../src/progression/progression-state.js';
+import { attemptPage } from '../../dashboard/public/views/attempt.js';
+import { campaignPage } from '../../dashboard/public/views/campaign.js';
+import { campaignsPage } from '../../dashboard/public/views/campaigns.js';
+import { afterRun, plansPage, runName, topbar } from '../../dashboard/public/views/plans.js';
 
-import { DEPENDENCY_CAMPAIGN, EXAMPLE_CAMPAIGN, FIXTURE_CAMPAIGNS,
+import { DEPENDENCY_CAMPAIGN, EXAMPLE_CAMPAIGN,
   dependencyProgressionEvidence, writeCampaign, writeDependencyResults, writeFixtureResults,
-  writePlanFixtures, writeRunEvidence } from './fixtures/dashboard-fixture.js';
+  writePlanFixtures, writeRunEvidence } from '../fixtures/dashboard-fixture.js';
+
+// The two campaign plans compile in seconds; every test works on a clone of
+// one compile. Fixture results are written once: a completed root, which
+// also holds a dependency campaign and the plan files, and a running root.
+// Tests read them; the one test that touches a timestamp leaves the evidence
+// readable for the tests that follow.
+let examplePlanCache: CompiledCampaignPlan | null = null;
+const examplePlan = (): CompiledCampaignPlan =>
+  structuredClone(examplePlanCache ??= compileCampaignFile(EXAMPLE_CAMPAIGN));
+let dependencyPlanCache: CompiledCampaignPlan | null = null;
+const dependencyPlan = (): CompiledCampaignPlan =>
+  structuredClone(dependencyPlanCache ??= compileCampaignFile(DEPENDENCY_CAMPAIGN));
+const shared = { completed: '', running: '' };
+
+before(() => {
+  shared.completed = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-completed-'));
+  writeFixtureResults(shared.completed);
+  writeDependencyResults(shared.completed, 'progression-run');
+  writePlanFixtures(join(shared.completed, 'plans'));
+  shared.running = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-running-'));
+  writeFixtureResults(shared.running, { running: true });
+});
+
+after(() => {
+  for (const root of Object.values(shared)) rmSync(root, { recursive: true, force: true });
+});
 
 async function listenOrigin(server: Server): Promise<string> {
   await new Promise<void>((resolveListen, reject) => {
@@ -139,7 +166,7 @@ test('an aborted first grade is classified, not treated as a scored zero', () =>
 });
 
 test('campaign facts surface the identity an operator otherwise reads plan.json for', () => {
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   const facts = campaignFacts(plan);
   assert.deepEqual(facts.agents, plan.agents.map(agent => ({ adapter: agent.adapter,
     version: agent.adapterVersion, model: agent.model })));
@@ -157,7 +184,7 @@ test('campaign facts surface the identity an operator otherwise reads plan.json 
 test('dashboard reports dependency work from the validated persisted state', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-dependency-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const plan = dependencyPlan();
   const now = '2026-08-25T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -227,7 +254,7 @@ test('dashboard CLI is deliberately loopback-only', () => {
 test('dashboard marks a current-schema campaign as interrupted when its controller stops', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-interrupted-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -260,7 +287,7 @@ test('dashboard marks a current-schema campaign as interrupted when its controll
 test('dashboard keeps frozen campaign evidence readable after the controller is upgraded', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-frozen-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const currentPlan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const currentPlan = examplePlan();
   const state = createCampaignState(currentPlan, { now: '2026-08-18T12:00:00.000Z' });
   const frozenPlan = structuredClone(currentPlan);
   frozenPlan.identities.engine.sha256 = 'f'.repeat(64);
@@ -288,7 +315,7 @@ test('dashboard keeps frozen campaign evidence readable after the controller is 
 test('dashboard rejects a run artifact that does not belong to its frozen attempt', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-run-identity-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -324,7 +351,7 @@ test('dashboard overview defers historical evidence validation until the sheet i
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
   const key = 'historical-run';
   const campaign = join(resultsRoot, 'campaigns', key);
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   let state = createCampaignState(plan, { now: '2026-08-18T12:00:00.000Z' });
   let firstClaim = null;
   for (;;) {
@@ -365,7 +392,7 @@ test('the attempt package exposes the evidence but not arbitrary campaign files'
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-package-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
   const campaign = join(resultsRoot, 'campaigns', 'evidence-run');
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -447,7 +474,7 @@ test('dashboard serves real state and protects campaign launch with a separate o
       return [...latest.values()];
     },
   };
-  const storedPlan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const storedPlan = dependencyPlan();
   const frozenPlan = { id: storedPlan.id, version: storedPlan.version, title: storedPlan.title,
     state: 'frozen', mode: 'dependency', track: storedPlan.definition.track,
     levels: storedPlan.definition.levels, stacks: storedPlan.stacks.map(stack => stack.id),
@@ -617,16 +644,13 @@ test('host development mode is read-only even with a valid browser request', asy
   assert.equal(response.status, 503);
 });
 
-test('the overview stays a summary and the sheet stays one campaign at appliance scale', t => {
-  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-scale-'));
-  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  writeFixtureResults(resultsRoot);
+test('the overview stays a summary and the sheet stays one campaign at appliance scale', () => {
+  const resultsRoot = shared.completed;
   const campaignsRoot = join(resultsRoot, 'campaigns');
   const controllerActive = (): boolean => true;
 
   const overview = overviewSummary(campaignsRoot, { controllerActive });
-  assert.equal(overview.length, FIXTURE_CAMPAIGNS);
-  const first = overview[0];
+  const first = overview.find(campaign => campaign.key === 'fixture-run-0');
   assert.ok(first && 'scores' in first);
   assert.equal(Object.keys(first.scores).length, 3);
   assert.equal(first.attempts.total, 9);
@@ -657,10 +681,8 @@ test('the overview stays a summary and the sheet stays one campaign at appliance
   assert.ok(sheetBytes < 60 * 1024, `campaign sheet is ${sheetBytes} bytes`);
 });
 
-test('a liveness probe that cannot answer still reads the campaign', t => {
-  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-liveness-'));
-  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  writeFixtureResults(resultsRoot, { running: true });
+test('a liveness probe that cannot answer still reads the campaign', () => {
+  const resultsRoot = shared.running;
   const controllerActive = (): boolean => {
     throw new Error('failed to connect to the docker API at unix:///var/run/docker.sock');
   };
@@ -672,10 +694,8 @@ test('a liveness probe that cannot answer still reads the campaign', t => {
   assert.equal(campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive }).status, 'running');
 });
 
-test('the overview caches a running campaign until its evidence changes', t => {
-  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-cache-'));
-  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  writeFixtureResults(resultsRoot, { running: true });
+test('the overview caches a running campaign until its evidence changes', () => {
+  const resultsRoot = shared.running;
   const campaignsRoot = join(resultsRoot, 'campaigns');
   const controllerActive = (): boolean => true;
 
@@ -702,7 +722,7 @@ test('the overview caches a running campaign until its evidence changes', t => {
 test('attempt evidence is fetched per attempt, not per campaign', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-attempt-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -745,7 +765,7 @@ test('attempt evidence is fetched per attempt, not per campaign', t => {
 test('the sheet reports dependency submodes and questlines in definition order', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-sheet-dependency-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const plan = dependencyPlan();
   const now = '2026-08-25T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -791,7 +811,7 @@ test('the sheet reports dependency submodes and questlines in definition order',
 });
 
 function writeSingleAttemptCampaign(resultsRoot: string, key: string): string {
-  const plan = compileCampaignFile(EXAMPLE_CAMPAIGN);
+  const plan = examplePlan();
   const now = '2026-08-18T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -811,7 +831,7 @@ function writeSingleAttemptCampaign(resultsRoot: string, key: string): string {
 test('the sheet says a dependency campaign that stopped between executions can resume', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-resume-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const plan = dependencyPlan();
   const now = '2026-08-25T12:00:00.000Z';
   const claimed = claimNextAttempt(createCampaignState(plan, { now }),
     { now, admissionId: 'admission-1' });
@@ -831,8 +851,7 @@ test('the sheet says a dependency campaign that stopped between executions can r
   writeCampaign(join(resultsRoot, 'campaigns', 'fresh-run'), plan, createCampaignState(plan, { now }));
   assert.equal(campaignSheet(resultsRoot, 'fresh-run', { controllerActive: () => false })
     .resumable, false);
-  writeFixtureResults(resultsRoot);
-  assert.equal(campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive: () => false })
+  assert.equal(campaignSheet(shared.completed, 'fixture-run-0', { controllerActive: () => false })
     .resumable, false);
 });
 
@@ -961,7 +980,7 @@ test('the event stream reports a campaign write and the log bytes that follow it
 test('the progression view replays the graph once per stack within its budget', t => {
   const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-progression-'));
   t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  const plan = compileCampaignFile(DEPENDENCY_CAMPAIGN);
+  const plan = dependencyPlan();
   assert.ok(plan.featureCatalog && plan.dependencyPolicy);
   const now = '2026-08-25T12:00:00.000Z';
   const directory = join(resultsRoot, 'campaigns', 'progression-run');
@@ -1110,12 +1129,8 @@ function stackOrder(html: string): string[] {
     .map(node => node.text);
 }
 
-test('the client renders each page as data, labels and controls only', t => {
-  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-render-'));
-  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
-  writeFixtureResults(resultsRoot);
-  writeDependencyResults(resultsRoot, 'progression-run');
-
+test('the client renders each page as data, labels and controls only', () => {
+  const resultsRoot = shared.completed;
   const controllerActive = (): boolean => true;
   const overview = overviewSummary(join(resultsRoot, 'campaigns'), { controllerActive });
   const sequential = campaignSheet(resultsRoot, 'fixture-run-0', { controllerActive });
@@ -1128,9 +1143,7 @@ test('the client renders each page as data, labels and controls only', t => {
   screenshotEvidence.executions[0]?.visuals.push({ id: 'screenshot-id',
     path: 'grading/failure-media/example.png', name: 'Example failure', kind: 'visual',
     contentType: 'image/png', size: 8 });
-  const plansRoot = join(resultsRoot, 'plans');
-  writePlanFixtures(plansRoot);
-  const plans = discoverPlans(plansRoot);
+  const plans = discoverPlans(join(resultsRoot, 'plans'));
   const runForm = { planId: plans.find(plan => plan.state === 'frozen')?.id ?? '',
     outputName: 'ecommerce-20260902-1504', secret: '',
     error: 'That run output already exists.' };

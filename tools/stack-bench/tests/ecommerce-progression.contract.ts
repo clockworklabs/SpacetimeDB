@@ -10,7 +10,8 @@ import { compilePackDefinition, compileRecipeFile, type CompiledPackDefinition }
 import { loadTrack } from '../src/composition/tracks.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import { compileProgressionDefinitionFile,
+import { buildRecipeRelease, type RecipeBinding } from '../src/composition/recipe-release.js';
+import { compileProgressionDefinition, compileProgressionDefinitionFile,
   compileDependencyPolicyInput, compileFeatureCatalogInput,
   dependencyRuntimeDefinition, type CompiledProgressionNode }
   from '../src/progression/progression-definition.js';
@@ -347,6 +348,139 @@ test('the current campaign binds the full graph to one catalog across six levels
   assert(condition, 'the campaign must have a condition');
   assert(condition.requested.levels.every(level =>
     typeof level.task.mode === 'string' && ['fresh', 'upgrade'].includes(level.task.mode)));
+});
+
+test('every feature and grading check binds to the progression recipe', () => {
+  const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.2.json');
+  const plan = compileRecipeFile(recipePath, { trackRoot });
+  const release = buildRecipeRelease(recipePath, { trackRoot });
+  const binding: RecipeBinding = {
+    alias: 'ecommerce.progression-catalog@2.0.2',
+    status: 'draft',
+    catalog: { id: plan.recipe.id, version: plan.recipe.version, state: 'draft',
+      title: plan.recipe.title, path: recipePath, sha256: release.contentSha256 },
+    recipePath, plan, release, execution: [],
+  };
+  const levels = [...new Set(definition.nodes.map(node => node.level))].sort((a, b) => a - b);
+  validateProgressionRecipeBindings(compileFeatureCatalogInput(definition),
+    levels.map(level => ({ level, binding })), { levels });
+
+  const owned = new Set(definition.nodes.flatMap(node =>
+    node.gradingChecks.map(check => check.id)));
+  const unowned = plan.checks.filter(check => !owned.has(check.stableKey));
+  assert.deepEqual(unowned.map(check => [check.stableKey, check.points]), [
+    ['ecommerce.spec.external-data-sync.external-stock.901b', 0],
+    ['ecommerce.spec.concurrency-safety.restock-race.202-control', 0],
+  ], 'only zero-point controls may sit outside feature scoring');
+});
+
+test('every feature pack declares a bounded, testable product contract', () => {
+  const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  const plan = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
+    'progression-catalog-2.0.2.json'), { trackRoot });
+  const featurePacks = plan.packs.filter(pack => pack.moduleType === 'feature');
+  assert.equal(featurePacks.length, definition.nodes.length,
+    'each graph node must own one feature pack');
+  for (const pack of featurePacks) {
+    const at = `${pack.id}@${pack.version}`;
+    assert(pack.capabilities.length > 0, `${at} must declare its required capabilities`);
+    assert(pack.evidence.length > 0, `${at} must declare its required evidence`);
+    assert.equal(pack.budget.status, 'bounded', `${at} must have a bounded runtime`);
+    assert(pack.budget.maxRuntimeMs > 0, `${at} must have a positive runtime limit`);
+  }
+});
+
+test('cross-feature grading requirements stay separate from product dependencies', () => {
+  // A check may need a feature outside its node's ancestry; that is declared
+  // grading scope, never a product edge, and the list is held explicit so it
+  // cannot grow unnoticed.
+  const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  const nodes = new Map(definition.nodes.map(node => [node.id, node]));
+  const ownerByFeature = new Map(definition.nodes.flatMap(node => node.featureRefs
+    .map(ref => [ref.replace(/@.*$/, ''), node.id] as const)));
+  const ancestors = (nodeId: string, found = new Set([nodeId])): Set<string> => {
+    for (const dependency of nodes.get(nodeId)?.dependencies ?? []) {
+      if (!found.has(dependency)) {
+        found.add(dependency);
+        ancestors(dependency, found);
+      }
+    }
+    return found;
+  };
+  const deferred = definition.nodes.flatMap(node => {
+    const productAncestors = ancestors(node.id);
+    return node.gradingChecks.flatMap(check => (check.requiresFeatures ?? []).flatMap(feature => {
+      const owner = ownerByFeature.get(feature);
+      return owner && !productAncestors.has(owner) ? [`${node.id}:${check.id}:${owner}`] : [];
+    }));
+  }).sort();
+  assert.deepEqual(deferred, [
+    'automatic-reorder:ecommerce.progression.automatic-reorder.automatic-reorder.502a:purchasing',
+    'automatic-reorder:ecommerce.progression.automatic-reorder.automatic-reorder.502b:purchasing',
+    'inventory-dashboard:ecommerce.inventory-operations.operational-views.5e:purchasing',
+    'inventory-dashboard:ecommerce.spec.live-state.inventory-dashboard.5a:purchasing',
+    'price-history:ecommerce.returns-pricing.price-history.4a:purchasing',
+    'price-history:ecommerce.returns-pricing.price-history.4c:checkout',
+    'sales-dashboard:ecommerce.spec.transactional-integrity.books-balance.107a:warehouse-admin',
+    'sales-dashboard:ecommerce.spec.transactional-integrity.books-balance.107b:warehouse-admin',
+    'stock-transfers:ecommerce.inventory-operations.stock-conservation.202d:purchasing',
+  ]);
+});
+
+interface AuthoredNode {
+  id: string;
+  featureRefs: string[];
+  gradingGroups: string[];
+  dependencies: Array<{ id: string; reason: string }>;
+}
+
+const authoredDefinition = (): { nodes: AuthoredNode[] } =>
+  JSON.parse(readFileSync(definitionPath, 'utf8')) as { nodes: AuthoredNode[] };
+
+test('the authored graph rejects test-driven edges, missing packs, and stray ownership', async t => {
+  const cases: Array<[string, (input: { nodes: AuthoredNode[] }) => void, RegExp]> = [
+    ['a test-driven product edge', input => {
+      const dashboard = input.nodes.find(node => node.id === 'inventory-dashboard');
+      assert.ok(dashboard);
+      dashboard.dependencies.push({ id: 'purchasing', reason: 'A grading scenario uses purchase data.' });
+    }, /inventory-dashboard\.dependencies: must equal minimal product dependencies: warehouse-admin/],
+    ['a missing product dependency', input => {
+      const purchasing = input.nodes.find(node => node.id === 'purchasing');
+      assert.ok(purchasing);
+      purchasing.dependencies = purchasing.dependencies.filter(dependency => dependency.id !== 'accounts');
+    }, /purchasing\.dependencies: must equal minimal product dependencies: accounts, catalog/],
+    ['an unnecessary product dependency', input => {
+      const reviews = input.nodes.find(node => node.id === 'reviews');
+      assert.ok(reviews);
+      reviews.dependencies.push({ id: 'accounts', reason: 'A grading scenario uses a customer.' });
+    }, /reviews\.dependencies: must equal minimal product dependencies: purchasing/],
+    ['a missing feature pack', input => {
+      input.nodes[0]!.featureRefs = ['ecommerce.missing@1.0.0'];
+    }, /missing pack/],
+    ['a missing grading group', input => {
+      input.nodes[0]!.gradingGroups[0] = 'ecommerce.feature.accounts@1.1.0#missing';
+    }, /missing group/],
+    ['feature checks omitted from their owner', input => {
+      input.nodes[0]!.gradingGroups = input.nodes[0]!.gradingGroups
+        .filter(reference => !reference.endsWith('#account-create'));
+    }, /must own feature group/],
+    ['a group owned twice', input => {
+      input.nodes[1]!.gradingGroups.push(input.nodes[0]!.gradingGroups[0]!);
+    }, /already owned/],
+    ['a feature reference whose version differs from its grading group', input => {
+      const reviews = input.nodes.find(node => node.id === 'reviews');
+      assert.ok(reviews);
+      reviews.featureRefs = ['ecommerce.feature.reviews@1.1.0'];
+    }, /must own feature group ecommerce\.feature\.reviews@1\.1\.0#reviews/],
+  ];
+  for (const [name, mutate, expected] of cases) {
+    await t.test(name, () => {
+      const input = authoredDefinition();
+      mutate(input);
+      assert.throws(() => compileProgressionDefinition(input, { trackRoot }), expected);
+    });
+  }
 });
 
 function requiredNode(

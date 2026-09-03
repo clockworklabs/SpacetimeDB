@@ -13,11 +13,15 @@ import { isExactImageReference } from '../src/runtime/container-image.js';
 import { createArtifact, validateArtifact } from '../src/evidence/artifacts.js';
 import { compileCampaignFile, validateCampaignDefinition }
   from '../src/campaigns/campaign-compiler.js';
+import { preflightResourceFloors } from '../src/composition/product-config.js';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
 const EXACT_IMAGE = `registry.example/stack-bench/build@${IMAGE_ID}`;
 const progressionCampaign = join(STACK_BENCH_ROOT, 'appliance',
   'campaign.ecommerce-progression-reference.json');
+let progressionPlanCache: ReturnType<typeof compileCampaignFile> | null = null;
+const progressionPlan = (): ReturnType<typeof compileCampaignFile> =>
+  structuredClone(progressionPlanCache ??= compileCampaignFile(progressionCampaign));
 
 type DockerCommand = (file: string, args: string[]) => string;
 
@@ -191,13 +195,16 @@ test('preflight reserves capacity for all concurrent build containers', () => {
       statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
       pidsOnPort: () => [], probePort: () => ({ free: true }),
     });
+    // The host offers less than the floors the product configuration sets for
+    // three concurrent attempts, so both checks fail and name the floor.
+    const floors = preflightResourceFloors(3);
     assert.equal(report.request.parallelism, 3);
     assert.equal(requiredCheck(report, 'docker.cpu').status, 'fail');
     assert.match(requiredCheck(report, 'docker.cpu').remediation ?? '',
-      /at least 10 CPUs/);
+      new RegExp(`at least ${floors.cpuCount} CPUs`));
     assert.equal(requiredCheck(report, 'docker.memory').status, 'fail');
     assert.match(requiredCheck(report, 'docker.memory').remediation ?? '',
-      /at least 20\.0 GiB/);
+      new RegExp(`at least ${(floors.memoryBytes / 1024 ** 3).toFixed(1)} GiB`));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -228,7 +235,7 @@ test('an admitted campaign smoke skips only the duplicate container run', () => 
 test('preflight validates campaign-owned dependency selections through the progression graph', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-progression-'));
   try {
-    const plan = compileCampaignFile(progressionCampaign);
+    const plan = progressionPlan();
     const report = runPreflight({
       backends: ['mongodb'],
       track: plan.definition.track,

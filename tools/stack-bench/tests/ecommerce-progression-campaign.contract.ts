@@ -24,6 +24,10 @@ import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistr
 
 const root = STACK_BENCH_ROOT;
 const campaignPath = join(root, 'appliance', 'campaign.ecommerce-progression-reference.json');
+// One compile of the reference campaign, cloned for each test that reads it.
+let referencePlanCache: ReturnType<typeof compileCampaignFile> | null = null;
+const referencePlan = (): ReturnType<typeof compileCampaignFile> =>
+  structuredClone(referencePlanCache ??= compileCampaignFile(campaignPath));
 
 type UnknownRecord = Record<string, unknown>;
 const record = (value: unknown): value is UnknownRecord =>
@@ -52,7 +56,7 @@ function sourceText(directory: string): string {
 }
 
 test('the ecommerce reference pilot resolves the exact L1-L6 progression inputs', () => {
-  const plan = compileCampaignFile(campaignPath);
+  const plan = referencePlan();
   assert(plan.featureCatalog);
   assert(plan.dependencyPolicy);
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5, 6]);
@@ -201,7 +205,7 @@ test('the model-free reference adapter can advance through progression levels', 
 test('campaign admission sends the exact catalog, mode, and default build image to preflight', () => {
   const output = mkdtempSync(join(tmpdir(), 'stack-bench-progression-admission-'));
   try {
-    const plan = compileCampaignFile(campaignPath);
+    const plan = referencePlan();
     const featureCatalog = plan.featureCatalog;
     assert(featureCatalog);
     const calls: CampaignAdmissionPreflightRequest[] = [];

@@ -116,6 +116,29 @@ function compile(value: unknown, options: CompilerOptions = {}) {
   finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+// The reference progression campaign takes seconds to compile. Tests that
+// only read it share one compile and work on a clone.
+type CompiledPlan = ReturnType<typeof compileCampaignFile>;
+interface ReferenceManifest {
+  levels: number[];
+  selection: { levels: Array<{ level: number }> };
+  repair: { order?: string };
+  ordering: { seed: string };
+}
+const referenceManifest = (): ReferenceManifest =>
+  JSON.parse(readFileSync(join(APPLIANCE_ROOT,
+    'campaign.ecommerce-progression-reference.json'), 'utf8')) as ReferenceManifest;
+let referencePlanCache: CompiledPlan | null = null;
+const referencePlan = (): CompiledPlan =>
+  structuredClone(referencePlanCache ??= compile(referenceManifest()));
+let depthThreePlanCache: CompiledPlan | null = null;
+const referencePlanThroughDepthThree = (): CompiledPlan => structuredClone(depthThreePlanCache ??= (() => {
+  const value = referenceManifest();
+  value.levels = [1, 2, 3];
+  value.selection.levels = value.selection.levels.filter(entry => entry.level <= 3);
+  return compile(value);
+})());
+
 const QUALIFIED_BUILD_IMAGE = `sha256:${'d'.repeat(64)}`;
 
 const resolvedQualification: CalibrationResolver = release => {
@@ -291,10 +314,8 @@ test('dependency catalog references use the shared semantic-version parser', () 
 });
 
 test('a shuffled repair order is drawn once per campaign, frozen in the policy, and shared by every stack', () => {
-  const declaredManifest = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
-    'campaign.ecommerce-progression-reference.json'), 'utf8'));
-  const declared = compile(declaredManifest);
-  const shuffledManifest = structuredClone(declaredManifest);
+  const declared = referencePlan();
+  const shuffledManifest = referenceManifest();
   shuffledManifest.repair.order = 'shuffled';
   const shuffled = compile(shuffledManifest);
   assert(declared.featureCatalog && declared.dependencyPolicy
@@ -329,11 +350,7 @@ test('a shuffled repair order is drawn once per campaign, frozen in the policy, 
 });
 
 test('dependency campaign plans bind only the selected feature catalog levels', () => {
-  const value = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
-    'campaign.ecommerce-progression-reference.json'), 'utf8'));
-  value.levels = [1, 2, 3];
-  value.selection.levels = value.selection.levels.filter((entry: { level: number }) => entry.level <= 3);
-  const plan = compile(value);
+  const plan = referencePlanThroughDepthThree();
   assert(plan.featureCatalog && plan.dependencyPolicy);
 
   assert.deepEqual([...new Set(plan.featureCatalog.definition.nodes.map(node => node.level))],
@@ -349,11 +366,7 @@ test('dependency campaign plans bind only the selected feature catalog levels', 
 });
 
 test('campaign identity ignores feature catalog root governance text', () => {
-  const value = JSON.parse(readFileSync(join(APPLIANCE_ROOT,
-    'campaign.ecommerce-progression-reference.json'), 'utf8'));
-  value.levels = [1, 2, 3];
-  value.selection.levels = value.selection.levels.filter((entry: { level: number }) => entry.level <= 3);
-  const plan = compile(value);
+  const plan = referencePlanThroughDepthThree();
   assert(plan.featureCatalog);
   const renamed = structuredClone(plan);
   assert(renamed.featureCatalog);

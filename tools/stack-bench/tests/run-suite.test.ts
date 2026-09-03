@@ -56,6 +56,22 @@ function promoteSequentialL1(root: string): void {
   const recipe = readJsonRecord(recipePath);
   recipe.state = 'qualified';
   writeFileSync(recipePath, `${JSON.stringify(recipe, null, 2)}\n`);
+  // A qualified recipe may select only qualified inputs, so its fixture and
+  // packs are promoted with it in this copy of the track.
+  const fixture = recipe.fixture;
+  if (!isRecord(fixture) || typeof fixture.path !== 'string') {
+    throw new Error('L1 recipe must select a fixture');
+  }
+  const components = [fixture.path, ...recordArray(recipe, 'packs').map(pack => {
+    if (typeof pack.path !== 'string') throw new Error('L1 recipe packs must have paths');
+    return pack.path;
+  })];
+  for (const relative of components) {
+    const path = join(root, 'composition', 'recipes', relative);
+    const value = readJsonRecord(path);
+    value.state = 'qualified';
+    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  }
 }
 
 function sequentialL2Track() {

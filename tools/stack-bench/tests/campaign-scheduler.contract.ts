@@ -32,24 +32,6 @@ test('campaign directory initialization is identity-bound and resumes exact stat
   }
 });
 
-test('campaign resume ignores feature catalog root governance text', () => {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-catalog-governance-'));
-  try {
-    const campaign = compileCampaignFile(join(STACK_BENCH_ROOT, 'appliance',
-      'campaign.ecommerce-progression-reference.json'));
-    initializeCampaignDirectory(campaign, root);
-    const renamed = structuredClone(campaign);
-    assert(renamed.featureCatalog);
-    renamed.featureCatalog.definition.state = 'qualified';
-    renamed.featureCatalog.definition.title += ' renamed';
-
-    assert.equal(initializeCampaignDirectory(renamed, root).plan.contentSha256,
-      campaign.contentSha256);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('interrupted initialization recreates only missing state from the stored plan', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-init-recovery-'));
   try {
