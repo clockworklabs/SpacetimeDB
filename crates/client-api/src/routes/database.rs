@@ -1606,6 +1606,42 @@ where
     }
 }
 
+/// Counts a response's headers and body into `spacetime_http_response_size_bytes_total`,
+/// attributed to `database_identity`
+pub(crate) fn count_response_egress(
+    database_identity: Identity,
+    response: axum::response::Response,
+) -> axum::response::Response {
+    let (parts, body) = response.into_parts();
+
+    // Count the number of bytes used by the headers.
+    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
+    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
+    // N.b. headers installed by other middleware may or may not be counted here,
+    // depending on the order in which the middleware applies.
+    let header_bytes: usize = parts
+        .headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
+        .sum();
+
+    let counter = DB_METRICS
+        .http_response_size_bytes
+        .with_label_values(&database_identity);
+    counter.inc_by(header_bytes as u64);
+
+    // `/logs?follow=true` can stream indefinitely.
+    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
+    let body = body.map_frame(move |frame| {
+        if let Some(data) = frame.data_ref() {
+            counter.inc_by(data.len() as u64);
+        }
+        frame
+    });
+
+    axum::response::Response::from_parts(parts, Body::new(body))
+}
+
 /// Resolves an existing database, attaches it as [`ResolvedDatabase`],
 /// and counts response bytes in the metric `spacetime_http_response_size_bytes_total`.
 ///
@@ -1634,34 +1670,8 @@ where
     request.extensions_mut().insert(ResolvedDatabase(database.clone()));
 
     let response = next.run(request).await;
-    let (parts, body) = response.into_parts();
 
-    // Count the number of bytes used by the headers.
-    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
-    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
-    // N.b. headers installed by other middleware may or may not be counted here,
-    // depending on the order in which the middleware applies.
-    let header_bytes: usize = parts
-        .headers
-        .iter()
-        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
-        .sum();
-
-    let counter = DB_METRICS
-        .http_response_size_bytes
-        .with_label_values(&database.database_identity);
-    counter.inc_by(header_bytes as u64);
-
-    // `/logs?follow=true` can stream indefinitely.
-    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
-    let body = body.map_frame(move |frame| {
-        if let Some(data) = frame.data_ref() {
-            counter.inc_by(data.len() as u64);
-        }
-        frame
-    });
-
-    Ok(axum::response::Response::from_parts(parts, Body::new(body)))
+    Ok(count_response_egress(database.database_identity, response))
 }
 
 #[cfg(test)]
@@ -1669,6 +1679,7 @@ mod tests {
     use super::*;
     use crate::auth::JwtAuthProvider;
     use crate::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
+    use crate::routes::{identity::IdentityRoutes, router_with_root_routes, RootRoutes};
     use crate::{
         Action, Authorization, ControlStateReadAccess, ControlStateWriteAccess, MaybeMisdirected, Unauthorized,
     };
@@ -2360,6 +2371,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn count_response_egress_counts_headers_and_body() {
+        let database_identity = test_identity(21);
+        remove_http_response_size_metric(database_identity);
+
+        let response = ([(http::header::CONTENT_TYPE, "application/json")], r#"{"ok":true}"#).into_response();
+        let counted = count_response_egress(database_identity, response);
+
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64
+        );
+
+        let body = counted.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body, r#"{"ok":true}"#);
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64 + r#"{"ok":true}"#.len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
     async fn mcp_handshake_returns_not_found_for_an_unknown_database() {
         let state = DummyState::new();
         let app = DatabaseRoutes::<DummyState> {
@@ -2418,5 +2452,80 @@ mod tests {
         );
 
         remove_http_response_size_metric(database_identity);
+    }
+
+    fn root_router(root_routes: RootRoutes<DummyState>) -> axum::Router {
+        let state = DummyState::new();
+        router_with_root_routes(
+            &state,
+            DatabaseRoutes::default(),
+            IdentityRoutes::default(),
+            root_routes,
+            axum::Router::new(),
+        )
+        .with_state(state)
+    }
+
+    fn post_mcp_root(body: &'static str) -> Request<Body> {
+        Request::builder()
+            .method(http::Method::POST)
+            .uri("/v1/mcp")
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn default_root_routes_serve_the_real_handlers() {
+        let app = root_router(RootRoutes::default());
+
+        let response = app
+            .clone()
+            .oneshot(post_mcp_root(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(std::str::from_utf8(&body).unwrap().contains("pong"));
+
+        let response = app
+            .oneshot(Request::builder().uri("/v1/ping").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_substituted_root_mcp_route_replaces_the_default_handler() {
+        let app = root_router(RootRoutes {
+            mcp_post: axum::routing::post(|| async { "substituted" }),
+            ..Default::default()
+        });
+
+        let response = app.oneshot(post_mcp_root("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "substituted");
+    }
+
+    #[tokio::test]
+    async fn the_auth_middleware_runs_before_substituted_root_layers() {
+        let app = root_router(RootRoutes {
+            mcp_post: axum::routing::post(|| async { "substituted" }).layer(axum::middleware::from_fn(
+                |request: axum::extract::Request, next: axum::middleware::Next| async move {
+                    if request.extensions().get::<crate::auth::SpacetimeAuth>().is_none() {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    next.run(request).await
+                },
+            )),
+            ..Default::default()
+        });
+
+        let response = app.oneshot(post_mcp_root("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

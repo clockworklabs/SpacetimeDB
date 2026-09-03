@@ -133,11 +133,15 @@ if [[ "$SUITE" == "http-handlers" ]]; then
 else
     declare -a CASE_NAMES=(
         "ok_multi_column_range_prefixes"
+        "ok_autoinc_same_line"
         "error_multi_column_range_not_terminal"
     )
 
     CASE_EXPECTATION["ok_multi_column_range_prefixes"]="success"
     CASE_SOURCE["ok_multi_column_range_prefixes"]="$SCRIPT_DIR/cases/indexes/ok_multi_column_range_prefixes.cpp"
+
+    CASE_EXPECTATION["ok_autoinc_same_line"]="success"
+    CASE_SOURCE["ok_autoinc_same_line"]="$SCRIPT_DIR/cases/indexes/ok_autoinc_same_line.cpp"
 
     CASE_EXPECTATION["error_multi_column_range_not_terminal"]="failure"
     CASE_MARKER["error_multi_column_range_not_terminal"]="Range<T> in a multi-column index filter must be the final supplied element"
