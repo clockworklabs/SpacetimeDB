@@ -10,7 +10,7 @@ on:
 jobs:
   upload-assets:
     # This only downloads existing artifacts and attaches them to a GitHub release.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     permissions:
       contents: write  # needed to modify releases
 

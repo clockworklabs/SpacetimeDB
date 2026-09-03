@@ -28,7 +28,7 @@ jobs:
     if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     # This builds small workflow helpers, dispatches private CI, and waits for its result.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     env:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate

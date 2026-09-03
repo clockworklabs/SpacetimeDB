@@ -25,7 +25,7 @@ jobs:
   merge_queue_noop:
     name: Merge queue no-op/reuse
     # This compares git trees and builds only the small workflow-coordinator helper.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     permissions:
       actions: write
       contents: read
@@ -586,7 +586,7 @@ jobs:
           - name: Windows 3/4
           - name: Windows 4/4
     # These no-op jobs only preserve required smoketest check names after CI reuse.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
@@ -817,7 +817,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
     # This builds a small CI helper and checks changed paths and GitHub reviews.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     permissions:
       contents: read
       pull-requests: read
@@ -853,7 +853,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
     # This reuses prebuilt core binaries and builds only the small module fixture.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -878,7 +878,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
     # This builds a small CI helper and validates package metadata without compiling the workspace.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     permissions: read-all
     env:
       RUST_BACKTRACE: full
@@ -907,7 +907,7 @@ jobs:
       matrix:
         include:
           # The Linux update-flow test uses released artifacts and builds only its small CI driver.
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux-small }
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux-small-staging }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
@@ -957,7 +957,7 @@ jobs:
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
     # These no-op jobs only preserve required update-flow check names after CI reuse.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - name: Skip duplicate merge queue update test
         run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
@@ -1061,7 +1061,7 @@ jobs:
     name: Check CLI docs
     permissions: read-all
     # This builds a small CI helper and regenerates documentation, not core server packages.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -1328,7 +1328,7 @@ jobs:
     permissions:
       contents: read
     # This reuses prebuilt server artifacts and only builds the lightweight Godot SDK fixture.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       ARTIFACT_SUFFIX: linux
@@ -1436,7 +1436,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     # This reuses prebuilt server artifacts and only builds and tests the C# SDK fixtures.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -1560,7 +1560,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
     # This builds a small CI helper and checks symlink policy without building SpacetimeDB.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     permissions:
       contents: read
     env:
@@ -1602,7 +1602,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
     # This builds a tiny source-scanning helper and does not compile or run smoketests.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     permissions:
       contents: read
     env:
@@ -1637,7 +1637,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
     # This builds the documentation site and a small CI wrapper, not the core Rust workspace.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     env:
       RUST_BACKTRACE: full
     steps:
@@ -1673,7 +1673,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
     # This reuses prebuilt core binaries and builds only TypeScript SDK test fixtures.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full

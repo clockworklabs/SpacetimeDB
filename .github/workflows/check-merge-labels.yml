@@ -11,7 +11,7 @@ jobs:
   label_checks:
     name: Check merge labels
     # This only inspects event labels and performs no checkout or build.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'do not merge')
         run: |

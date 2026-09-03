@@ -32,7 +32,7 @@ jobs:
   retry-cla:
     name: Retry CLA Assistant if it is the only blocker
     # This builds a small CI helper and only queries or retries CLA checks.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
 
     steps:
       - name: Check out trusted base code
