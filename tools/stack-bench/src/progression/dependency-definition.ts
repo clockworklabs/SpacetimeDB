@@ -16,9 +16,9 @@ import {
 import { validateRepairPlan } from './repair-plan.js';
 import type { RepairPlan } from './repair-plan.js';
 
-export const DEPENDENCY_MODE_SCHEMA_VERSION = 6;
+export const DEPENDENCY_MODE_SCHEMA_VERSION = 7;
 export const DEPENDENCY_MODE_POLICY = 'dependency-graph';
-export const DEPENDENCY_MODE_VERSION = '4.2.0';
+export const DEPENDENCY_MODE_VERSION = '4.3.0';
 export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
 export const DEFAULT_UNCHANGED_FAILURE_LIMIT = 3;
 export const DEFAULT_DEPENDENCY_WORK_SELECTION = 'progressive';

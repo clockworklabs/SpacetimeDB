@@ -47,7 +47,9 @@ const HASH = /^[a-f0-9]{64}$/;
 const NODE_STATUSES = new Set(['locked', 'active', 'working', 'passed', 'failed', 'blocked'] as const);
 const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed'] as const);
 type CheckOutcome = 'pass' | 'fail' | 'not-run';
-type StoredCheckOutcome = Exclude<CheckOutcome, 'not-run'> | 'test-system' | null;
+// A check that has not been measured yet stays null; an application abort
+// leaves non-current checks at their prior value.
+type StoredCheckOutcome = Exclude<CheckOutcome, 'not-run'> | null;
 
 interface SourceEvidence extends Record<string, unknown> {
   kind: 'grade_bundle';
@@ -307,10 +309,6 @@ function hasRepairableFailure(state: DependencyState, node: CompiledProgressionN
   return hasFailedCheck(state, node) && canRepair(state, node);
 }
 
-function hasTestSystemCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
-  return Object.values(getNodeState(state, node.id).checks).includes('test-system');
-}
-
 // Compiled node order: dependency depth, then declared catalog order.
 function compiledOrder(state: DependencyState, nodeId: string): number {
   const index = state.definition.nodes.findIndex(node => node.id === nodeId);
@@ -323,7 +321,7 @@ function currentPromptNodeIds(state: DependencyState): string[] {
   return state.definition.nodes.filter(node =>
     getNodeState(state, node.id).status === 'active'
       || (getNodeState(state, node.id).status === 'working'
-        && (hasRepairableFailure(state, node) || hasTestSystemCheck(state, node))))
+        && hasRepairableFailure(state, node)))
     .map(node => node.id);
 }
 
@@ -618,7 +616,7 @@ function assertState(input: unknown,
     if (actualChecks.length !== expectedChecks.size
       || actualChecks.some(checkId => !expectedChecks.has(checkId))
       || actualChecks.some(checkId =>
-        ![null, 'pass', 'fail', 'test-system'].includes(nodeState.checks[checkId] ?? null))) {
+        ![null, 'pass', 'fail'].includes(nodeState.checks[checkId] ?? null))) {
       throw new Error(`invalid dependency mode check state for node ${node.id}`);
     }
   }
@@ -873,7 +871,7 @@ function applyDependencyResult(inputState: DependencyState, inputResult: Depende
       const outcome = outcomes.get(check.id);
       const prior = getNodeState(state, nodeId).checks[check.id] ?? null;
       if (outcome === undefined) return [check.id, prior];
-      return [check.id, outcome === 'not-run' ? (prior ?? 'test-system') : outcome];
+      return [check.id, outcome === 'not-run' ? prior : outcome];
     })) as Record<string, StoredCheckOutcome>;
   }
   const failedPromptNodeIds = new Set<string>();

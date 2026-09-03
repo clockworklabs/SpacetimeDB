@@ -19,7 +19,6 @@ interface PointTotals {
   passedPoints: number;
   failedPoints: number;
   blockedPoints: number;
-  testSystemPoints: number;
   gradedPoints: number;
   ungradedPoints: number;
   availablePoints: number;
@@ -65,13 +64,10 @@ function nodePoints(state: ScoringState, nodeId: string): PointTotals {
     total + (!blocked && checks[check.id] === 'fail' ? check.points : 0), 0);
   const blockedPoints = blocked
     ? node.gradingChecks.reduce((total, check) => total + check.points, 0) : 0;
-  const testSystemPoints = node.gradingChecks.reduce((total, check) =>
-    total + (!blocked && checks[check.id] === 'test-system' ? check.points : 0), 0);
   const gradedPoints = passedPoints + failedPoints;
   const availablePoints = node.gradingChecks.reduce((total, check) => total + check.points, 0);
-  return { passedPoints, failedPoints, gradedPoints,
-    blockedPoints, testSystemPoints,
-    ungradedPoints: availablePoints - gradedPoints - blockedPoints - testSystemPoints,
+  return { passedPoints, failedPoints, gradedPoints, blockedPoints,
+    ungradedPoints: availablePoints - gradedPoints - blockedPoints,
     availablePoints };
 }
 
@@ -79,7 +75,6 @@ function addPoints(total: PointTotals, points: PointTotals): PointTotals {
   total.passedPoints += points.passedPoints;
   total.failedPoints += points.failedPoints;
   total.blockedPoints += points.blockedPoints;
-  total.testSystemPoints += points.testSystemPoints;
   total.gradedPoints += points.gradedPoints;
   total.ungradedPoints += points.ungradedPoints;
   total.availablePoints += points.availablePoints;
@@ -90,7 +85,6 @@ const emptyPoints = (): PointTotals => ({
   passedPoints: 0,
   failedPoints: 0,
   blockedPoints: 0,
-  testSystemPoints: 0,
   gradedPoints: 0,
   ungradedPoints: 0,
   availablePoints: 0,

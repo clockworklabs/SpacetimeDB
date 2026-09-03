@@ -224,7 +224,7 @@ function multiLevelDefinition(levels: number[]): TestCampaignDefinition {
 
 function dependencyDefinition() {
   const value = modularDefinition();
-  value.mode = { id: 'dependency', version: '4.2.0' };
+  value.mode = { id: 'dependency', version: '4.3.0' };
   value.repair = { selection: 'feature', budget: { perFeature: 2 } };
   delete value.levels;
   delete value.selection.levels![0]!.features;
@@ -276,7 +276,7 @@ test('dependency campaigns bind separate catalog and policy identities in every 
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce-dependency');
   assert.equal(plan.featureCatalog.identity.version, '1.0.0');
   assert.equal(plan.dependencyPolicy.definition.repair.selection, 'feature');
-  assert.equal(plan.dependencyPolicy.definition.version, '4.2.0');
+  assert.equal(plan.dependencyPolicy.definition.version, '4.3.0');
   assert.match(plan.featureCatalog.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
     canonicalDefinitionJson(attempt.dependencyPolicy)
@@ -696,7 +696,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     id: 'unknown', version: '1.0.0',
   } }), /unknown unknown@1\.0\.0/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
-    id: 'dependency', version: '4.2.0',
+    id: 'dependency', version: '4.3.0',
   } }), /featureCatalog.*required/);
   assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
     id: 'sequential', version: '1.0.0', graph: 'not-allowed',

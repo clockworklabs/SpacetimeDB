@@ -96,7 +96,7 @@ function workAction(action: ProgressionRecipeAction['action']): ProgressionWorkA
 }
 
 const definition = (): FixtureDefinition => ({
-  schemaVersion: 6,
+  schemaVersion: 7,
   kind: 'progression-mode',
   id: 'live-fixture',
   version: '1.0.0',

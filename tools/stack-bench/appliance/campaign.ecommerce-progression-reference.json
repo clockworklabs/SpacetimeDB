@@ -6,7 +6,7 @@
   "state": "draft",
   "title": "Ecommerce progression reference pilot",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "4.2.0", "workSelection": "progressive" },
+  "mode": { "id": "dependency", "version": "4.3.0", "workSelection": "progressive" },
   "repair": { "selection": "feature", "budget": { "total": 0 } },
   "levels": [1, 2, 3, 4, 5, 6],
   "featureCatalog": "ecommerce.questlines@2.0.2",

@@ -1345,14 +1345,14 @@ async function main() {
         `${args.backend}-l${level}${featureActionSuffix}-regrade`, level, track, runId);
       const outcome = classifyBundle(bundle);
       const repair = { status: levelGradeIsUsable(outcome) ? 'not-needed' as const : 'ungraded' as const,
-        limit: 0, used: 0, stopReason: 'test-system-regrade' };
+        limit: 0, used: 0, stopReason: 'accepted-source-regrade' };
       let next = recordProgressionGrade({ selected: progressionSelection, bundle,
         level });
       let finalOutcome = outcome;
       const currentState = requireProgressionState(progressionExecution?.state ?? null);
       if (next?.type === 'build' && next.level === level
         && !featureActionNeedsCoding(progressionSelection, currentState)) {
-        const reason = 'accepted source still has incomplete test-system evidence after regrade';
+        const reason = 'accepted source still has ungraded checks after regrade';
         finalOutcome = { kind: 'harness_failure', phase: 'feature-regrade', reason,
           appFailures: [], inconclusive: [], harnessFailures: [reason] };
         next = recordProgressionGrade({ selected: progressionSelection, bundle: null,

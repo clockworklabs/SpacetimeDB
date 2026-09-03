@@ -48,7 +48,7 @@ function resolveWorkRecipeAction(binding: RecipeBinding,
 }
 
 const definition = (): DefinitionFixture => ({
-  schemaVersion: 6,
+  schemaVersion: 7,
   kind: 'progression-mode',
   id: 'ecommerce-dependency',
   version: '1.0.0',

@@ -15,19 +15,19 @@ test('the campaign mode registry requires an exact supported mode', () => {
     id: 'sequential', version: '1.0.0', extra: true,
   }), /extra is unknown/);
   assert.deepEqual(CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '4.2.0',
-  }), { id: 'dependency', version: '4.2.0', workSelection: 'progressive' });
+    id: 'dependency', version: '4.3.0',
+  }), { id: 'dependency', version: '4.3.0', workSelection: 'progressive' });
   assert.equal(CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '4.2.0', workSelection: 'feature',
+    id: 'dependency', version: '4.3.0', workSelection: 'feature',
   }).workSelection, 'feature');
   assert.equal(CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '4.2.0', workSelection: 'all-at-once',
+    id: 'dependency', version: '4.3.0', workSelection: 'all-at-once',
   }).workSelection, 'all-at-once');
   assert.throws(() => CAMPAIGN_MODE_REGISTRY.validate({
     id: 'dependency', version: '3.2.0',
   }), /unknown dependency@3\.2\.0/);
   assert.throws(() => CAMPAIGN_MODE_REGISTRY.validate({
-    id: 'dependency', version: '4.2.0', repairSelection: 'feature',
+    id: 'dependency', version: '4.3.0', repairSelection: 'feature',
   }), /repairSelection is unknown/);
 });
 

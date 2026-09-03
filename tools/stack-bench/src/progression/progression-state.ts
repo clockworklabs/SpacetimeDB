@@ -55,7 +55,7 @@ export interface ProgressionNodeState {
   exhaustionReason: RepairExhaustionReason | null;
   unchangedFailure: { fingerprint: string | null; count: number };
   repairs: { used: number };
-  checks: Record<string, 'pass' | 'fail' | 'test-system' | null>;
+  checks: Record<string, 'pass' | 'fail' | null>;
 }
 
 export interface ProgressionAttempt {

@@ -52,7 +52,7 @@ const node = (id: string, dependencies: string[], questline: string,
 });
 
 const fixture = (): FixtureDefinition => ({
-  schemaVersion: 6,
+  schemaVersion: 7,
   kind: 'progression-mode',
   id: 'storefront-paths',
   version: '1.0.0',
@@ -132,7 +132,7 @@ test('the graph compiles by depth, then declared order, and the order is identit
   });
   const first = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 2 });
   const second = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 3 });
-  assert.equal(first.definition.version, '4.2.0');
+  assert.equal(first.definition.version, '4.3.0');
   assert.notEqual(first.identity.sha256, second.identity.sha256);
   // Declared order is repair priority, so it is part of the catalog identity
   // that every campaign binds; reordering the catalog is a new identity.
@@ -427,7 +427,7 @@ test('repeated failures stop their branch while unmeasured work remains build wo
   state = progressionEngine.recordResult(state, repairedGrade(state, 'unchanged', {
     catalog: 'fail',
   }));
-  assert(Object.values(state.nodes.accounts!.checks).every(outcome => outcome === 'test-system'));
+  assert(Object.values(state.nodes.accounts!.checks).every(outcome => outcome === null));
   assert.equal(state.nodes.accounts!.repairs.used, 0);
   assert.equal(state.nodes.catalog!.unchangedFailure.count, 2);
   assert.equal(state.nodes.catalog!.exhaustionReason, 'repeated-findings');
