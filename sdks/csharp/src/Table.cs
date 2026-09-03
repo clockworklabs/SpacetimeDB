@@ -575,7 +575,7 @@ namespace SpacetimeDB
 
             public IEventListeners<RowEventHandler> Listeners => _indexedListeners ?? throw new InvalidOperationException(
                 "This event is using native C# event dispatch and does not expose indexed listeners. " +
-                "Use SpacetimeDB.EventHandling.EventListenersProvider.UseBasicEventListeners() or a custom listener factory before creating table handles."
+                "Use SpacetimeDB.EventHandling.Backend.UseCustomListeners() before creating table handles."
             );
 
             public CustomRowEventHandler()
@@ -631,7 +631,7 @@ namespace SpacetimeDB
 
             public IEventListeners<UpdateEventHandler> Listeners => _indexedListeners ?? throw new InvalidOperationException(
                 "This event is using native C# event dispatch and does not expose indexed listeners. " +
-                "Use SpacetimeDB.EventHandling.EventListenersProvider.UseBasicEventListeners() or a custom listener factory before creating table handles."
+                "Use SpacetimeDB.EventHandling.Backend.UseCustomListeners() before creating table handles."
             );
 
             public CustomUpdateEventHandler()

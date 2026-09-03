@@ -5,6 +5,7 @@ using SpacetimeDB.EventHandling;
 using SpacetimeDB.Types;
 using ExampleDataInsertHandler = SpacetimeDB.RemoteTableHandleBase<SpacetimeDB.Types.EventContext, SpacetimeDB.Types.ExampleData>.RowEventHandler;
 #if SAPPY
+using Sappy;
 using SpacetimeDB.SappyIntegration;
 #endif
 
@@ -269,6 +270,9 @@ internal sealed class BenchmarkRunner : IDisposable
     private readonly Scenario _scenario;
     private readonly ExampleDataInsertHandler[] _listeners;
     private readonly Listener[] _listenerTargets;
+#if SAPPY
+    private readonly SapTarget<ExampleDataInsertHandler>[]? _sapTargets;
+#endif
     private readonly object _lock = new();
     private DbConnection _conn = null!;
     private SubscriptionHandle? _subscription;
@@ -287,6 +291,12 @@ internal sealed class BenchmarkRunner : IDisposable
         _scenario = scenario;
         _listeners = new ExampleDataInsertHandler[scenario.Subscriptions];
         _listenerTargets = new Listener[scenario.Subscriptions];
+#if SAPPY
+        if (backend == BackendKind.Sappy)
+        {
+            _sapTargets = new SapTarget<ExampleDataInsertHandler>[scenario.Subscriptions];
+        }
+#endif
 
         var idBase = unchecked((uint)HashCode.Combine(Environment.ProcessId, DateTime.UtcNow.Ticks, backend, scenario.Name));
         _nextId = idBase == 0 ? 1 : idBase;
@@ -295,6 +305,12 @@ internal sealed class BenchmarkRunner : IDisposable
         {
             _listenerTargets[i] = new Listener(this);
             _listeners[i] = _listenerTargets[i].OnExampleDataInsert;
+#if SAPPY
+            if (_sapTargets != null)
+            {
+                _sapTargets[i] = _listenerTargets[i].Sappy.OnExampleDataInsert;
+            }
+#endif
         }
     }
 
@@ -305,9 +321,9 @@ internal sealed class BenchmarkRunner : IDisposable
 
         var subscribe = Time(() =>
         {
-            foreach (var listener in _listeners)
+            for (var i = 0; i < _listeners.Length; i++)
             {
-                _conn.Db.ExampleData.OnInsert += listener;
+                AddListener(i);
             }
         });
 
@@ -317,7 +333,7 @@ internal sealed class BenchmarkRunner : IDisposable
         {
             for (var i = 0; i < _scenario.Unsubscriptions; i++)
             {
-                _conn.Db.ExampleData.OnInsert -= _listeners[i];
+                RemoveListener(i);
             }
         });
 
@@ -325,7 +341,7 @@ internal sealed class BenchmarkRunner : IDisposable
         {
             for (var i = 0; i < _scenario.Resubscriptions; i++)
             {
-                _conn.Db.ExampleData.OnInsert += _listeners[i];
+                AddListener(i);
             }
         });
 
@@ -340,6 +356,30 @@ internal sealed class BenchmarkRunner : IDisposable
             secondUpdates,
             Interlocked.Read(ref _listenerCalls)
         );
+    }
+
+    private void AddListener(int index)
+    {
+#if SAPPY
+        if (_backend == BackendKind.Sappy)
+        {
+            _conn.Db.ExampleData.OnInsertListeners.AddSapTarget(_sapTargets![index]);
+            return;
+        }
+#endif
+        _conn.Db.ExampleData.OnInsert += _listeners[index];
+    }
+
+    private void RemoveListener(int index)
+    {
+#if SAPPY
+        if (_backend == BackendKind.Sappy)
+        {
+            _conn.Db.ExampleData.OnInsertListeners.RemoveSapTarget(_sapTargets![index]);
+            return;
+        }
+#endif
+        _conn.Db.ExampleData.OnInsert -= _listeners[index];
     }
 
     private void Connect()
@@ -475,7 +515,7 @@ internal sealed class BenchmarkRunner : IDisposable
         _conn?.Disconnect();
     }
 
-    private sealed class Listener
+    private sealed partial class Listener
     {
         private readonly BenchmarkRunner _runner;
 
@@ -484,6 +524,9 @@ internal sealed class BenchmarkRunner : IDisposable
             _runner = runner;
         }
 
+#if SAPPY
+        [SapTarget(typeof(ExampleDataInsertHandler))]
+#endif
         public void OnExampleDataInsert(EventContext ctx, ExampleData row)
         {
             _runner.RecordInsert();

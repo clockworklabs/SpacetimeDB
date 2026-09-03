@@ -1066,16 +1066,6 @@ The default custom backend keeps listeners in an indexed collection. It is usefu
 
 Reducer result events, such as `conn.Reducers.OnSendMessage`, are always regular C# events.
 
-You can also provide your own listener implementation:
-
-```csharp
-using SpacetimeDB.EventHandling;
-
-Backend.UseCustomListeners(new MyEventListenersFactory());
-```
-
-The factory must implement `IEventListenersFactory` and return an `IEventListeners<T>` for each delegate type.
-
 If your project includes [Sappy](https://github.com/clockworklabs/SappyEvents/), the SDK can use Sappy-backed listener storage:
 
 ```csharp
@@ -1086,6 +1076,15 @@ Backend.UseCustomListeners(new SappyEventListenersFactory());
 ```
 
 Use the Sappy backend only in projects that already reference Sappy. It is intended for applications that have standardized on Sappy's event/listener model; it is not required for normal C# or Unity clients.
+
+For Sappy-backed table callbacks, register and unregister generated Sappy targets through the listener accessors instead of using normal C# event syntax:
+
+```csharp
+conn.Db.User.OnInsertListeners.AddSapTarget(Sappy.OnUserInsert);
+conn.Db.User.OnInsertListeners.RemoveSapTarget(Sappy.OnUserInsert);
+```
+
+Use the matching listener accessor for each row callback: `OnInsertListeners`, `OnDeleteListeners`, and `OnUpdateListeners`. This lets Sappy manage the callback target directly, which is required for the Sappy backend to behave correctly and avoid unnecessary delegate-management overhead.
 
 ### Unique constraint index access
 
