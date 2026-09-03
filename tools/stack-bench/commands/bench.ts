@@ -47,7 +47,8 @@ import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
 import { contractInterfaceNames } from '../src/composition/agent-visible-contract.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
-  repairHistoryEntry, repairProgressState, restorePrivateGradingEvidence }
+  repairHistoryEntry, repairProgressState, repairRegressionDecision,
+  restorePrivateGradingEvidence }
   from '../src/evidence/repair-evidence.js';
 import { mutationControlArgv, mutationControlTimeoutMs, pristineMutationBaselinePath }
   from '../src/evidence/mutation-control.js';
@@ -57,7 +58,7 @@ import { dependencyRepairBudget, dependencyStrikeRecords }
   from '../src/progression/dependency-mode.js';
 import { DEPENDENCY_MODE_VERSION } from '../src/progression/dependency-definition.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
-  validateProgressionCampaignLevelScope }
+  resolveProgressionRepairTarget, validateProgressionCampaignLevelScope }
   from '../src/progression/progression-recipe-selection.js';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.js';
@@ -99,7 +100,8 @@ type LeakAuditEntry = { hits: Array<{ kind: string; path: string }> };
 type CommandFailure = Error & { stdout?: string | Buffer; stderr?: string | Buffer;
   status?: number | null; signal?: NodeJS.Signals | null };
 type GradeOptions = { observation?: 'scored' | 'observed'; out?: string | null;
-  sourceSha256?: string | null; applicationFailure?: RunOutcome | null };
+  sourceSha256?: string | null; applicationFailure?: RunOutcome | null;
+  recipeTask?: GradeRecipeTask };
 type MutationControlResult = UnknownRecord & { ok: boolean; artifact?: string;
   skipped?: boolean; processError?: string | null; outcome: RunOutcome | null };
 type RecipeTask = (BoundRecipeTaskRequestResult | ProgressionRecipeSelections['grader']) & { agentRequest?: UnknownRecord;
@@ -196,7 +198,7 @@ function isProgressionWorkRecipeAction(value: ProgressionRecipeAction):
   return value.action.type !== 'terminal';
 }
 
-function repairReportArgs(value: ProgressionRecipeAction | null): string[] {
+function repairCheckKeys(value: ProgressionRecipeAction | null): string[] {
   if (!value || !isProgressionWorkRecipeAction(value) || value.action.type !== 'repair') return [];
   if (!object(value.action.prompt) || !Array.isArray(value.action.prompt.nodeIds)
     || !object(value.action.grading) || !Array.isArray(value.action.grading.checks)) {
@@ -216,6 +218,12 @@ function repairReportArgs(value: ProgressionRecipeAction | null): string[] {
     return promptNodeIds.has(check.nodeId) ? [check.id] : [];
   });
   if (checks.length === 0) throw new Error('dependency repair action selects no repair checks');
+  return checks;
+}
+
+function repairReportArgs(value: ProgressionRecipeAction | null): string[] {
+  const checks = repairCheckKeys(value);
+  if (!value || !isProgressionWorkRecipeAction(value) || checks.length === 0) return [];
   const interfaces = contractInterfaceNames(value.agent.task.contractText);
   return ['--checks-json', JSON.stringify(checks),
     '--controls-json', JSON.stringify(interfaces)];
@@ -471,12 +479,13 @@ export function gradeArgv(
   level: number,
   track: Track,
   parentAttemptId: string,
-  { observation = 'scored', out = null, sourceSha256 = null,
-    applicationFailure = null }: GradeOptions = {},
+  options: GradeOptions = {},
 ): string[] {
+  const { observation = 'scored', out = null, sourceSha256 = null,
+    applicationFailure = null } = options;
   if (!args.backend) throw new Error('grading requires a backend');
   const restartSpec = restartSpecFor(args, appDir, track);
-  const task = args.recipeTasks?.get(level);
+  const task = options.recipeTask ?? args.recipeTasks?.get(level);
   return [compiledEntrypoint('commands', 'run-suite.js'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
@@ -520,7 +529,7 @@ function grade(
   });
   const bundle = join(out ?? join(appDir, 'stack-bench'), ARTIFACT_FILE.gradeBundle);
   rmSync(bundle, { force: true });
-  const task = args.recipeTasks?.get(level);
+  const task = options.recipeTask ?? args.recipeTasks?.get(level);
   const currentChecks = checksForGrade(task, options.observation);
   const regressionChecks = options.observation === 'observed' || args.progression
     ? []
@@ -1475,6 +1484,10 @@ async function main() {
     let bundle = firstBuildSource
       ? grade(args, appDir, url, firstBuildLabel, level, track, runId,
         { applicationFailure: materializationOutcome }) : null;
+    let reusableRepairEvidence: {
+      bundle: GradeBundlePayload;
+      results: string;
+    } | null = null;
 
     // What the model built BEFORE being handed the answers. Every backend can
     // reach the same total given enough fix rounds, so the post-fix score stops
@@ -1563,10 +1576,12 @@ async function main() {
     try {
       const gradingFrom = join(appDir, 'stack-bench');
       if (existsSync(gradingFrom)) {
-        cpSync(gradingFrom, join(args.out, acceptedGradingDirectory), {
+        const gradingTo = join(args.out, acceptedGradingDirectory);
+        cpSync(gradingFrom, gradingTo, {
           recursive: true,
           filter: src => !/[\\/]media([\\/]|$)/.test(src),
         });
+        if (bundle) reusableRepairEvidence = { bundle, results: gradingTo };
         console.log(`  kept the ${continuing ? 'continuation baseline' : 'unaided'} grading at ${join(args.out, acceptedGradingDirectory)}`);
       }
     } catch (e) {
@@ -1655,9 +1670,26 @@ async function main() {
       repairStopReason = phase;
       if (args.progression) recordRepairProgression({ failure: progressionFailure(failure) });
     };
-    const writeRepairReport = (): { status: 0 | 3 | 4 } | { status: 'failed'; reason: string } => {
+    const restoreProgressionGrade = (accepted: GradeBundlePayload | null,
+      label: string): boolean => {
+      const expected = progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
+        ? progressionSelection.grader.selectionSha256 : null;
+      if (!expected || accepted?.selection?.sha256 === expected) {
+        bundle = accepted;
+        return true;
+      }
+      bundle = grade(args, appDir, url, label, level, track, runId);
+      const outcome = classifyBundle(bundle);
+      if (levelGradeIsUsable(outcome)) return true;
+      recordRepairHarnessFailure('repair-restore-grading',
+        outcome.reason ?? 'restored source did not produce a reliable grade', bundle);
+      return false;
+    };
+    const writeRepairReport = (results: string | null = null):
+      { status: 0 | 3 | 4 } | { status: 'failed'; reason: string } => {
       try {
         sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
+          ...(results ? ['--results', results] : []),
           '--history-json', JSON.stringify(repairHistory),
           '--archive', join(outputDir, 'repair-reports',
             `bug-report-l${level}-round${fixRounds + 1}.md`),
@@ -1691,6 +1723,8 @@ async function main() {
       : null) && progressionMayRepair()
       && (args.progression || fixRounds < args.fixRounds)) {
       let reportReady = false;
+      const acceptedBundle = bundle;
+      let repairBaselineBundle = bundle;
       if (args.progression) {
         progressionSelection = bindProgressionAction(level);
         const repairOwner = repairOwnerNodeIds(progressionSelection).join('\n') || null;
@@ -1702,31 +1736,49 @@ async function main() {
         if (progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
           && bundle?.selection?.sha256 !== progressionSelection.grader.selectionSha256) {
           const sequence = requireProgressionState(progressionExecution?.state ?? null).attempts.length + 1;
-          bundle = grade(args, appDir, url,
-            `${args.backend}-l${level}-repair-baseline${sequence}`, level, track, runId);
-          const refreshOutcome = classifyBundle(bundle);
+          const targetChecks = repairCheckKeys(progressionSelection);
+          const sourceSha256 = hashAppSource(appDir).sha256;
+          const hasCurrentTargetEvidence = bundle?.source?.sha256 === sourceSha256
+            && targetChecks.every(check => bundle?.selection?.reportedChecks?.includes(check));
+          const reusable = reusableRepairEvidence?.bundle.source?.sha256 === sourceSha256
+            && targetChecks.every(check =>
+              reusableRepairEvidence?.bundle.selection?.reportedChecks?.includes(check))
+            ? reusableRepairEvidence : null;
+          let repairResults = hasCurrentTargetEvidence ? null : reusable?.results ?? null;
+          if (reusable && !hasCurrentTargetEvidence) repairBaselineBundle = reusable.bundle;
+          if (!hasCurrentTargetEvidence && !reusable) {
+            const binding = args.recipeBindings.get(level);
+            if (!binding) throw new Error(`L${level} has no recipe binding`);
+            const targetTask = resolveProgressionRepairTarget(binding,
+              requireProgressionState(progressionExecution?.state ?? null));
+            repairResults = join(outputDir, 'repair-grades', `round-${fixRounds + 1}`);
+            repairBaselineBundle = grade(args, appDir, url,
+              `${args.backend}-l${level}-repair-target${sequence}`,
+              level, track, runId, { out: repairResults, recipeTask: targetTask });
+          }
+          const refreshOutcome = classifyBundle(repairBaselineBundle);
           const refreshUsable = levelGradeIsUsable(refreshOutcome);
           if (!refreshUsable) {
-            recordProgressionGrade({
-              selected: progressionSelection,
-              bundle,
-              level,
-              repair: {
-                status: 'ungraded',
-                budgetRounds: progressionRepairBudgetRounds,
-                roundsUsed: priorRepairRounds + fixRounds,
-                stopReason: 'refresh-grading-failed',
-              },
-            });
-            repairStopReason = 'refresh-grading-failed';
+            recordRepairHarnessFailure('refresh-grading-failed',
+              refreshOutcome.reason ?? 'repair target did not produce a reliable grade',
+              repairBaselineBundle);
             break;
           }
-          const refreshReport = writeRepairReport();
+          const refreshReport = writeRepairReport(repairResults);
           if (refreshReport.status === 'failed') {
             recordRepairHarnessFailure('repair-report', refreshReport.reason);
             break;
           }
           if (refreshReport.status === 3) {
+            bundle = grade(args, appDir, url,
+              `${args.backend}-l${level}-repair-refresh${sequence}`,
+              level, track, runId);
+            if (!levelGradeIsUsable(classifyBundle(bundle))) {
+              recordRepairHarnessFailure('refresh-grading-failed',
+                classifyBundle(bundle).reason ?? 'repair refresh did not produce a reliable grade',
+                bundle);
+              break;
+            }
             recordRepairProgression();
             continue;
           }
@@ -1747,9 +1799,9 @@ async function main() {
         break;
       }
 
-      const before = bundle?.totals?.score ?? 0;
-      const beforeMax = bundle?.totals?.max ?? 0;
-      const beforeBundle = bundle;
+      const before = repairBaselineBundle?.totals?.score ?? 0;
+      const beforeMax = repairBaselineBundle?.totals?.max ?? 0;
+      const beforeBundle = repairBaselineBundle;
       // Keep the accepted source outside paths visible to the coding session.
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       const gradingSnapshot = `${snapshot}-grading`;
@@ -1832,6 +1884,8 @@ async function main() {
           : 'pausing before another paid round'}`);
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, beforeBundle, reason));
         if (args.progression) {
+          if (!restoreProgressionGrade(acceptedBundle,
+            `${args.backend}-l${level}-unchanged${fixRounds}`)) break;
           if (!recordRepairProgression()) break;
           continue;
         }
@@ -1867,7 +1921,9 @@ async function main() {
       const after = bundle?.totals?.score ?? 0;
       const afterMax = bundle?.totals?.max ?? 0;
       // Lost or inconclusive evidence cannot hide a repair regression.
-      const decision = repairEvidenceDecision(beforeBundle, bundle);
+      let decision = repairEvidenceDecision(beforeBundle, bundle);
+      const regressionDecision = repairRegressionDecision(acceptedBundle, bundle);
+      if (regressionDecision.action === 'rollback-regression') decision = regressionDecision;
       const shared = decision.shared;
       if (decision.action === 'keep-setup-repair') {
         console.log(afterMax > 0
@@ -1884,7 +1940,8 @@ async function main() {
       if (decision.action === 'rollback-no-comparison') {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
         await restoreAcceptedRepair(snapshot, gradingSnapshot);
-        bundle = beforeBundle;
+        if (!restoreProgressionGrade(acceptedBundle,
+          `${args.backend}-l${level}-rollback${fixRounds}`)) break;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because the result could not be compared'));
         if (!recordRepairProgression()) break;
@@ -1932,7 +1989,8 @@ async function main() {
           recordRepairHarnessFailure('repair-regression-report', regressionReportFailure);
           break;
         }
-        bundle = beforeBundle;
+        if (!restoreProgressionGrade(acceptedBundle,
+          `${args.backend}-l${level}-rollback${fixRounds}`)) break;
         regressed = true;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because earlier behavior regressed'));

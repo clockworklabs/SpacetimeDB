@@ -30,6 +30,7 @@ interface RepairHistoryEntry {
 
 interface ReportBugsArgs {
   app: string;
+  results: string;
   out: string;
   archive?: string;
   history: RepairHistoryEntry[];
@@ -41,6 +42,7 @@ interface ReportBugsArgs {
 
 interface ParsedArgs {
   app?: string;
+  results?: string;
   out?: string;
   archive?: string;
   history?: unknown;
@@ -115,19 +117,22 @@ function repairValue(value: unknown, fallback: string): string {
 
 export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
   const { values } = parseNodeArgs({ args: argv.slice(2), options: {
-    app: { type: 'string' }, out: { type: 'string' }, archive: { type: 'string' },
+    app: { type: 'string' }, results: { type: 'string' }, out: { type: 'string' },
+    archive: { type: 'string' },
     'history-json': { type: 'string' }, 'checks-json': { type: 'string' },
     'controls-json': { type: 'string' },
     'prior-regression': { type: 'string' },
     'regression-context': { type: 'boolean' },
   } });
-  const args: ParsedArgs = { app: values.app, out: values.out, archive: values.archive,
+  const args: ParsedArgs = { app: values.app, results: values.results, out: values.out,
+    archive: values.archive,
     history: values['history-json'] === undefined ? undefined : JSON.parse(values['history-json']),
     checks: values['checks-json'] === undefined ? undefined : JSON.parse(values['checks-json']),
     controls: values['controls-json'] === undefined ? undefined : JSON.parse(values['controls-json']) };
   if (!args.app) {
     throw new Error('Usage: report-bugs --app <dir> [--out <file>]');
   }
+  args.results ??= join(args.app, 'stack-bench');
   args.out ??= join(args.app, CODING_CONTAINER_BUG_REPORT_FILE);
   args.history ??= [];
   if (!Array.isArray(args.history)) throw new Error('--history-json must contain an array');
@@ -143,7 +148,7 @@ export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
     || new Set(args.controls).size !== args.controls.length)) {
     throw new Error('--controls-json must contain distinct non-empty strings');
   }
-  return { app: args.app, out: args.out, archive: args.archive,
+  return { app: args.app, results: args.results, out: args.out, archive: args.archive,
     history: args.history as RepairHistoryEntry[], checks: args.checks as string[] | null,
     controls: args.controls as string[] | null,
     priorRegression: values['prior-regression'] ?? null,
@@ -172,7 +177,7 @@ const VAGUE = new Set([
   'the app did not respond in time',
 ]);
 export function createBugReport(args: ReportBugsArgs): number {
-  const resultsDir = join(args.app, 'stack-bench');
+  const resultsDir = resolve(args.results);
   if (!existsSync(resultsDir)) throw new Error(`No grading results in ${resultsDir}`);
 
   let vagueBugs = 0;

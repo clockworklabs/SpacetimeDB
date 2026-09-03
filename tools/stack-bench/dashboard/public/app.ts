@@ -260,6 +260,17 @@ function subscribe(): void {
 document.addEventListener('click', event => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
     || event.shiftKey || event.altKey) return;
+  const shot = (event.target as Element | null)?.closest<HTMLElement>('[data-shot]');
+  if (shot) {
+    const dialog = document.querySelector<HTMLDialogElement>('.lightbox');
+    const image = dialog?.querySelector('img');
+    if (!dialog || !image) return;
+    image.src = shot.dataset.shot ?? '';
+    image.alt = shot.dataset.shotName ?? '';
+    dialog.showModal();
+    return;
+  }
+  if (event.target instanceof HTMLDialogElement) event.target.close();
   const link = (event.target as Element | null)?.closest('a');
   const href = link?.getAttribute('href') ?? '';
   if (!href || href.startsWith('/api/') || !/^[/?]/.test(href)) return;

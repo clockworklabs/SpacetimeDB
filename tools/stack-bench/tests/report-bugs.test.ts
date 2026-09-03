@@ -6,11 +6,19 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { writeArtifact } from '../src/evidence/artifacts.js';
+import { parseReportBugsArgs } from '../commands/report-bugs.js';
 import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 
 const CLI = join(STACK_BENCH_ROOT, 'dist', 'commands', 'report-bugs.js');
+
+test('repair reports can read an isolated grading directory', () => {
+  const args = parseReportBugsArgs(['node', 'report-bugs', '--app', '/app',
+    '--results', '/results']);
+  assert.equal(args.results, '/results');
+  assert.equal(args.out, join('/app', 'BUG_REPORT.md'));
+});
 
 type EvidenceStatus = 'passed' | 'failed' | 'inconclusive' | 'harness_failure';
 

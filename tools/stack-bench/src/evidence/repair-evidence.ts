@@ -80,6 +80,7 @@ const APPLICATION_SETUP_PHASES = new Set([
 
 interface RepairEvidenceBundle extends EvidenceBundle {
   outcome?: { kind?: string; phase?: string } | null;
+  selection?: { checks?: Array<{ stableKey?: string }> } | null;
 }
 
 export interface RepairEvidenceDecision {
@@ -109,4 +110,20 @@ export function repairEvidenceDecision(
     action: evidenceRegressed || shared.after < shared.before ? 'rollback-regression' : 'keep',
     shared,
   };
+}
+
+export function repairRegressionDecision(
+  acceptedBundle: RepairEvidenceBundle | null | undefined,
+  repairedBundle: RepairEvidenceBundle | null | undefined,
+): RepairEvidenceDecision {
+  const selected = repairedBundle?.selection?.checks;
+  const selectedKeys = Array.isArray(selected)
+    ? new Set(selected.flatMap(check => typeof check.stableKey === 'string'
+      ? [check.stableKey] : [])) : null;
+  const shared = compareCriterionEvidence(acceptedBundle, repairedBundle,
+    { onlyPreviousPasses: true, previousStableKeys: selectedKeys });
+  const regressed = shared.lostEvidence.length > 0
+    || shared.definitionChanges.length > 0
+    || shared.regressions.length > 0;
+  return { action: regressed ? 'rollback-regression' : 'keep', shared };
 }

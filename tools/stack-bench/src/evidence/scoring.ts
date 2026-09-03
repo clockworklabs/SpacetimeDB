@@ -85,6 +85,10 @@ function criterionIndex(bundle: EvidenceBundle | null | undefined): Map<string, 
 export function compareCriterionEvidence(
   before: EvidenceBundle | null | undefined,
   after: EvidenceBundle | null | undefined,
+  { onlyPreviousPasses = false, previousStableKeys = null }: {
+    onlyPreviousPasses?: boolean;
+    previousStableKeys?: ReadonlySet<string> | null;
+  } = {},
 ): CriterionEvidenceComparison {
   const previous = criterionIndex(before);
   const current = criterionIndex(after);
@@ -98,6 +102,8 @@ export function compareCriterionEvidence(
   const regressions: string[] = [];
 
   for (const [key, was] of previous) {
+    if (onlyPreviousPasses && !was.passed) continue;
+    if (previousStableKeys && !previousStableKeys.has(was.stableKey)) continue;
     const now = current.get(key);
     if (!was.measured) {
       if (now && now.measured) newlyConclusive.push(key);

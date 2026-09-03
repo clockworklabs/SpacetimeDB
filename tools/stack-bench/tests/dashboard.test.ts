@@ -22,6 +22,7 @@ import { parseRunProgress,
 } from '../dashboard/dashboard-model.js';
 import { campaignFacts, firstGradeAbort, inspectCampaignSummary }
   from '../src/campaigns/campaign-inspection.js';
+import { attemptExcluded } from '../dashboard/public/metrics.js';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.js';
 import type { DashboardOperation, LaunchInput } from '../dashboard/dashboard-server.js';
 import { sha256 } from '../src/evidence/provenance.js';
@@ -345,6 +346,14 @@ test('dashboard overview defers historical evidence validation until the sheet i
   const excluded = sheet.stacks.flatMap(stack => stack.attempts)
     .map(attempt => attempt.excluded);
   assert.ok(excluded.includes('result could not be read'));
+});
+
+test('dashboard keeps the recorded invalidation reason when the result is unreadable', () => {
+  assert.equal(attemptExcluded({
+    id: 'failed-attempt', stack: 'mongodb', status: 'invalid',
+    execution: { outcome: 'harness_failure', reason: 'disk filled while saving the run' },
+    result: { unreadable: 'partial run is invalid' }, dependency: null,
+  }), 'disk filled while saving the run');
 });
 
 test('the attempt package exposes the evidence but not arbitrary campaign files', async t => {
@@ -1016,7 +1025,7 @@ const CONTROL_TAGS = new Set(['a', 'button', 'select', 'summary']);
 const LABEL_HOLDERS = new Set(['label', 'k', 'th']);
 const DATA_HOLDERS = new Set(['v', 'big', 'phase', 'who', 'q', 'pct', 'd', 'h', 'shape', 'when',
   'stack', 'name', 'state', 'ev', 'band', 'log', 'links', 'files-list', 'title', 'crumbs', 'text',
-  'group', 'b', 'live-head', 'facts', 'chart', 'sum', 'views', 'err']);
+  'group', 'b', 'live-head', 'facts', 'chart', 'sum', 'views', 'err', 'grade-key']);
 const LABELS = new Set(['Campaign', 'Shape', 'Status', 'SpacetimeDB', 'PostgreSQL', 'MongoDB',
   'Stacks', 'Attempts', 'Parallel', 'State', 'Run name', 'Secret',
   'Updated', 'Mode', 'Depth', 'Levels', 'Work', 'Repair', 'Repairs', 'Strikes', 'Repetitions',
@@ -1111,6 +1120,10 @@ test('the client renders each page as data, labels and controls only', t => {
   assert.ok(progression);
   const attempt = sequential.stacks[0]?.attempts[0];
   assert.ok(attempt);
+  const screenshotEvidence = attemptPackage(resultsRoot, 'fixture-run-0', attempt.id);
+  screenshotEvidence.executions[0]?.visuals.push({ id: 'screenshot-id',
+    path: 'grading/failure-media/example.png', name: 'Example failure', kind: 'visual',
+    contentType: 'image/png', size: 8 });
   const plansRoot = join(resultsRoot, 'plans');
   writePlanFixtures(plansRoot);
   const plans = discoverPlans(plansRoot);
@@ -1134,6 +1147,8 @@ test('the client renders each page as data, labels and controls only', t => {
     ['attempt', attemptPage({ sheet: sequential, attemptId: attempt.id, tab: 'checks',
       checks: attemptChecks(resultsRoot, 'fixture-run-0', attempt.id),
       evidence: attemptPackage(resultsRoot, 'fixture-run-0', attempt.id), log: '' })],
+    ['attempt screenshots', attemptPage({ sheet: sequential, attemptId: attempt.id,
+      tab: 'screenshots', checks: null, evidence: screenshotEvidence, log: '' })],
   ];
 
   for (const [name, html] of pages) {
@@ -1154,6 +1169,9 @@ test('the client renders each page as data, labels and controls only', t => {
   }
   const campaigns = pages[0]![1];
   assert.ok(statusCells(campaigns).length > 0);
+  const screenshots = pages.find(([name]) => name === 'attempt screenshots')?.[1] ?? '';
+  assert.match(screenshots, /<button type="button" data-shot="[^"]+"/);
+  assert.match(screenshots, /<dialog class="lightbox">/);
   for (const path of statusCells(campaigns)) {
     assert.match(path, /state/, 'a status word sits outside the Status column');
   }

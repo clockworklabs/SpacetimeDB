@@ -48,7 +48,10 @@ function checksTable(checks: AttemptChecks | null): string {
         + `${check.history.map(outcome => GLYPH[outcome] ?? GLYPH['not-run']).join('')}`
         + '</td></tr>').join('');
   }).join('');
-  return '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Proves</th>'
+  return '<div class="grade-key">Each mark is one grading pass, from left to right. '
+    + '<span class="p">✓ Pass</span><span class="f">✕ Fail</span>'
+    + '<span class="x">· Not run</span></div>'
+    + '<div class="wrap"><table class="checks"><thead><tr><th>Check</th><th>Proves</th>'
     + `<th>Grades</th></tr></thead><tbody>${groups}</tbody></table></div>`;
 }
 
@@ -58,9 +61,12 @@ function artifacts(evidence: AttemptPackage | null, key: string, visual: boolean
   const link = (id: string): string =>
     `/api/campaigns/${encodeURIComponent(key)}/artifacts/${encodeURIComponent(id)}`;
   if (visual) {
-    return `<div class="shots">${items.map(item =>
-      `<a href="${link(item.id)}"><img src="${link(item.id)}" alt="${esc(item.name)}"></a>`)
-      .join('')}</div>`;
+    return `<div class="shots">${items.map(item => {
+      const source = link(item.id);
+      return `<button type="button" data-shot="${source}" data-shot-name="${esc(item.name)}">`
+        + `<img src="${source}" alt="${esc(item.name)}"></button>`;
+    }).join('')}</div><dialog class="lightbox"><form method="dialog">`
+      + '<button type="submit">Close</button></form><img alt=""></dialog>';
   }
   return `<div class="files-list">${items.map(item =>
     `<a href="${link(item.id)}">${esc(item.path)}</a>`).join('')}</div>`;
@@ -96,6 +102,9 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
   const panel = tab === 'checks' ? checksTable(checks)
     : tab === 'log' ? `<pre class="log">${esc(log)}</pre>`
       : artifacts(evidence, sheet.key, tab === 'screenshots');
+  const issue = attempt.excluded
+    ? `<div class="issue"><span class="label">Why this run was excluded</span>`
+      + `<p>${esc(attempt.excluded)}</p></div>` : '';
   return `<div class="page">${crumbs(name)}`
     + `<div class="title"><h2>${esc(stackLabel(stack.stack))} `
     + `<span>rep ${attempt.repetition}</span></h2></div>`
@@ -105,6 +114,6 @@ export function attemptPage({ sheet, attemptId, tab, checks, evidence, log }: At
     + figure('Time', duration(attempt.timeSec))
     + figure('Spend', money(attempt.spendUsd))
     + figure('Now', esc(phrase(attempt)), attempt.stalling ? 'now warn' : 'now')
-    + `</div>${bigClimb(attempt.climb, stage) || `<p class="v">${DASH}</p>`}`
+    + `</div>${issue}${bigClimb(attempt.climb, stage) || `<p class="v">${DASH}</p>`}`
     + `<div class="tabs">${tabs}</div>${panel}</div>`;
 }

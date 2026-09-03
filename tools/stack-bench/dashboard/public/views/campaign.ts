@@ -212,6 +212,15 @@ export function campaignPage(input: CampaignPageInput): string {
     return `<div class="links">${['screenshots', 'files', 'log'].map(tab =>
       `<a href="${base}?tab=${tab}">${tab}</a>`).join('')}</div>`;
   });
+  const issues = stacks.some(stack => stack.attempts.some(attempt => attempt.excluded))
+    ? row('Excluded because', stack => {
+      const excluded = stack.attempts.filter(attempt => attempt.excluded);
+      return excluded.length ? `<div class="reasons">${excluded.map(attempt => {
+        const href = `/c/${encodeURIComponent(sheet.key)}/a/${encodeURIComponent(attempt.id)}`;
+        return `<div><a href="${href}">rep ${attempt.repetition}</a>`
+          + `<span title="${esc(attempt.excluded)}">${esc(attempt.excluded)}</span></div>`;
+      }).join('')}</div>` : value(DASH);
+    }) : '';
   return `<div class="page"><div class="crumbs"><a href="/">Campaigns</a> / `
     + `<b>${esc(sheet.key)}</b></div>`
     + `<div class="title"><h2>${esc(sheet.title)}</h2></div>${facts(sheet)}`
@@ -229,5 +238,5 @@ export function campaignPage(input: CampaignPageInput): string {
       return `<div><span class="phase${attempt?.stalling ? ' warn' : ''}">`
         + `${attempt ? esc(phrase(attempt)) : DASH}</span></div>`;
     })
-    + repetitions + board(input, stacks) + evidence + '</div></div>';
+    + issues + repetitions + board(input, stacks) + evidence + '</div></div>';
 }

@@ -141,6 +141,10 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .sheet .chart .climb { height: 44px; }
 .sheet .phase { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .phase.warn { color: var(--yellow); }
+.sheet .reasons { display: grid; gap: 5px; width: 100%; padding: 8px 0; }
+.sheet .reasons div { display: flex; gap: 8px; min-width: 0; }
+.sheet .reasons a { color: var(--yellow); white-space: nowrap; }
+.sheet .reasons span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .q { min-height: 32px; }
 .sheet .q.k { text-transform: none; letter-spacing: 0; font: 12.5px var(--sans); color: var(--n3); }
 .sheet .q .pct { margin-left: auto; color: var(--n4); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
@@ -195,6 +199,8 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .figs b.prov { color: var(--yellow); }
 .figs b.now { font: 500 15px/30px var(--sans); }
 .figs b.now.warn { color: var(--yellow); }
+.issue { margin: 0 0 20px; padding: 12px 14px; border-left: 2px solid var(--yellow); background: var(--yellow-10); }
+.issue p { margin: 6px 0 0; color: var(--n2); }
 .bigclimb { display: block; width: 100%; height: 170px; margin-bottom: 20px; }
 .bigclimb text { font: 10.5px var(--mono); fill: var(--n4); }
 .bigclimb .l { stroke: var(--green); stroke-width: 2; fill: none; stroke-linejoin: round; }
@@ -218,8 +224,18 @@ table.plans td.name { color: var(--n1); font-weight: 600; }
 .checks .h .f { color: var(--red); }
 .checks .h .x { color: var(--n5); }
 .checks tr.group td { color: var(--n1); font-weight: 600; background: var(--shade6); }
+.grade-key { display: flex; gap: 18px; padding: 10px 14px; color: var(--n4); font: 12px var(--mono); }
+.grade-key .p { color: var(--green); }
+.grade-key .f { color: var(--red); }
+.grade-key .x { color: var(--n4); }
 .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; padding: 14px 0; }
+.shots button { padding: 0; border: 0; background: none; cursor: zoom-in; }
 .shots img { width: 100%; border: 1px solid var(--shade4); border-radius: 4px; }
+.lightbox { width: min(94vw, 1500px); max-height: 94vh; padding: 42px 12px 12px; border: 1px solid var(--shade1); border-radius: 4px; background: var(--shade8); }
+.lightbox::backdrop { background: #000c; }
+.lightbox form { position: absolute; top: 8px; right: 10px; }
+.lightbox button { border: 0; background: none; color: var(--n2); cursor: pointer; }
+.lightbox img { display: block; max-width: 100%; max-height: calc(94vh - 54px); margin: auto; }
 .files-list { display: grid; gap: 6px; padding: 14px 0; }
 .files-list a { color: var(--n2); font: 12px var(--mono); text-decoration: none; }
 .log { margin: 14px 0 0; padding: 14px 16px; max-height: 520px; overflow: auto; background: var(--shade8); color: var(--n3); font: 12px/1.7 var(--mono); border-radius: 4px; }

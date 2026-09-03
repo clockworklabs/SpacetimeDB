@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from 'node:child_process';
-import type { ExecFileSyncOptionsWithStringEncoding, SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import type { ExecFileException, ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { parseArgs as parseNodeArgs } from 'node:util';
+import { parseArgs as parseNodeArgs, promisify } from 'node:util';
+import { chromium } from 'playwright';
+import type { BrowserServer } from 'playwright';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
 import { controlBackendRuntime, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
@@ -84,6 +86,7 @@ type RunArguments = {
   applicationFailure?: ApplicationFailure;
   parentAttemptId?: string;
   databaseLease?: BackendLease | null;
+  browserWsEndpoint?: string;
   selection?: Selection | null;
   bundleArtifactId: string;
 };
@@ -104,9 +107,6 @@ type DatabaseProvenance = { ok: boolean; reason: string; url?: string };
 type GradeLeaseReader = typeof readBackendLease;
 type MutationDirectoryEntry = { name: string; isDirectory(): boolean; isFile(): boolean };
 type MutationDirectoryReader = (path: string, options: { withFileTypes: true }) => readonly MutationDirectoryEntry[];
-type GraderChildResult = { status: number | null; signal: string | null; stdout?: unknown; stderr?: unknown;
-  error?: Error };
-type GraderChildExecutor = (command: string, argv: readonly string[], options: SpawnSyncOptionsWithStringEncoding) => GraderChildResult;
 type ProbeResponse = { ok: boolean; status: number };
 type ApplicationFetch = (url: string, init: { signal: AbortSignal }) => Promise<ProbeResponse>;
 type DatabaseProvenanceDefinition = Track['databaseProvenance'];
@@ -205,12 +205,8 @@ export function clearPreviousGradeOutputs(output: string): void {
   }
 }
 
-export function runGraderChild(argv: string[], output: string, suiteId: string, {
-  execute = spawnSync,
-}: { execute?: GraderChildExecutor } = {}) {
-  const options: SpawnSyncOptionsWithStringEncoding = { encoding: 'utf8', cwd: ROOT, timeout: COMMAND_TIMEOUT_MS,
-    maxBuffer: 64 * 1024 * 1024 };
-  const result = execute(process.execPath, argv, options);
+function recordGraderChildResult(output: string, suiteId: string,
+  result: { stdout?: unknown; stderr?: unknown; failure?: Error | null }) {
   const stdout = redactCredentials(String(result.stdout ?? ''));
   const stderr = redactCredentials(String(result.stderr ?? ''));
   const safeId = String(suiteId).replace(/[^A-Za-z0-9._-]/g, '_');
@@ -218,12 +214,25 @@ export function runGraderChild(argv: string[], output: string, suiteId: string, 
   const stderrName = `grader-${safeId}.stderr.log`;
   writeFileSync(join(output, stdoutName), stdout);
   writeFileSync(join(output, stderrName), stderr);
-  let failure = result.error ?? null;
-  if (!failure && result.status !== 0) {
-    failure = new Error(`grader exited ${result.status ?? result.signal ?? 'without status'}`);
-  }
-  if (failure) Object.assign(failure, { stdout, stderr, status: result.status, signal: result.signal });
+  const failure = result.failure ?? null;
+  if (failure) Object.assign(failure, { stdout, stderr });
   return { stdout, stderr, failure, stdoutName, stderrName };
+}
+
+const execFileAsync = promisify(execFile);
+
+export async function runGraderChild(argv: string[], output: string, suiteId: string) {
+  try {
+    const result = await execFileAsync(process.execPath, argv, { encoding: 'utf8', cwd: ROOT,
+      timeout: COMMAND_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+    return recordGraderChildResult(output, suiteId, result);
+  } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    const processFailure = error as ExecFileException & { stdout?: unknown; stderr?: unknown };
+    return recordGraderChildResult(output, suiteId, {
+      stdout: processFailure.stdout, stderr: processFailure.stderr, failure,
+    });
+  }
 }
 
 function gradeLeaseInput(backend: string, env: NodeJS.ProcessEnv): { path: string;
@@ -662,11 +671,11 @@ function checkActions(args: RunArguments): ActionsPayload | null {
   return r;
 }
 
-function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
+async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
   recipeBinding: RecipeBinding | null, bundleArtifactId: string, selectedChecks: RecipeCheck[] = [],
   { recordSelection = true, captureMedia = true, outputDirectory = args.out }: {
     recordSelection?: boolean; captureMedia?: boolean; outputDirectory?: string;
-  } = {}): GradePayload {
+  } = {}): Promise<GradePayload> {
   process.stdout.write(`  ${suite.id.padEnd(10)} ... `);
   mkdirSync(outputDirectory, { recursive: true });
   const out = join(outputDirectory, `grading-${suite.id}.json`);
@@ -697,7 +706,8 @@ function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track,
   if (args.app) argv.push('--app', args.app);
   if (captureMedia && args.media) argv.push('--media', join(outputDirectory, 'media'), '--trace');
   else if (captureMedia) argv.push('--failure-media', join(outputDirectory, 'failure-media'));
-  const child = runGraderChild(argv, outputDirectory, suite.id);
+  if (args.browserWsEndpoint) argv.push('--browser-ws-endpoint', args.browserWsEndpoint);
+  const child = await runGraderChild(argv, outputDirectory, suite.id);
   const { stdout, failure } = child;
   if (!existsSync(out)) {
     console.log('NO REPORT');
@@ -1045,52 +1055,65 @@ async function main() {
   // Keep current-level score separate from earlier guarantee regressions.
   let total = 0, max = 0, regTotal = 0, regMax = 0;
   const dirty = false;
-  for (const suite of declaredSuites) {
-    const selectedChecks = selection?.checks.filter(check => check.executionId === suite.id) ?? [];
-    if (selection && selectedChecks.length === 0) {
-      console.log(`  ${suite.id.padEnd(10)} ... not selected`);
-      continue;
+  let browserServer: BrowserServer | null = null;
+  try {
+    if (declaredSuites.some(suite => !selection
+      || selection.checks.some(check => check.executionId === suite.id))) {
+      browserServer = await chromium.launchServer({ headless: true });
+      args.browserWsEndpoint = browserServer.wsEndpoint();
     }
-    if (!(await freshen())) {
-      bundle.error = freshenFailureMessage();
-      console.log(`  ${suite.id}: SKIPPED (${bundle.error})`);
-      markRemainingNotRun(`run aborted: ${bundle.error}`);
-      bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
-      if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
-      writeBundle();
-      console.log(`\nABORTED: ${bundle.error}`);
-      process.exit(1);
-    }
-    if (bundle.selection) {
-      bundle.selection.attemptedChecks.push(...selectedChecks.map(check => check.stableKey));
-    }
-    let r;
-    try {
-      r = gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks);
-    } catch (error) {
-      markRemainingNotRun(`run aborted after ${suite.id} grader failure`);
-      bundle.error = error instanceof Error ? error.message : String(error);
-      bundle.outcome = { kind: 'harness_failure', phase: `grade:${suite.id}`, reason: bundle.error };
-      writeBundle();
-      console.log(`\nABORTED: ${bundle.error}`);
-      process.exit(1);
-    }
-    bundle.suites[suite.id] = r;
-    if (bundle.selection) bundle.selection.reportedChecks.push(...selectedChecks.map(check => check.stableKey));
-    if (selection) {
-      bundle.packRuntime = aggregatePackRuntime(
-        Object.values(bundle.suites).filter(isGradePayload),
-        selectedPackDefinitions);
-      const exceeded = exceededPackBudgets(bundle.packRuntime);
-      if (exceeded.length) {
-        // Runtime budgets qualify references; generated apps still receive a complete grade.
-        console.log(`  runtime    ... ${exceeded.map(pack =>
-          `${pack.id} ${pack.measuredRuntimeMs}ms > ${pack.budget.maxRuntimeMs}ms`)
-          .join(', ')} [recorded; grading continues]`);
+    for (const suite of declaredSuites) {
+      const selectedChecks = selection?.checks.filter(check => check.executionId === suite.id) ?? [];
+      if (selection && selectedChecks.length === 0) {
+        console.log(`  ${suite.id.padEnd(10)} ... not selected`);
+        continue;
       }
+      if (!(await freshen())) {
+        bundle.error = freshenFailureMessage();
+        console.log(`  ${suite.id}: SKIPPED (${bundle.error})`);
+        markRemainingNotRun(`run aborted: ${bundle.error}`);
+        bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
+        if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
+        writeBundle();
+        console.log(`\nABORTED: ${bundle.error}`);
+        throw new Error(bundle.error);
+      }
+      if (bundle.selection) {
+        bundle.selection.attemptedChecks.push(...selectedChecks.map(check => check.stableKey));
+      }
+      let r;
+      try {
+        r = await gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selectedChecks);
+      } catch (error) {
+        markRemainingNotRun(`run aborted after ${suite.id} grader failure`);
+        bundle.error = error instanceof Error ? error.message : String(error);
+        bundle.outcome = { kind: 'harness_failure', phase: `grade:${suite.id}`, reason: bundle.error };
+        writeBundle();
+        console.log(`\nABORTED: ${bundle.error}`);
+        throw error;
+      }
+      bundle.suites[suite.id] = r;
+      if (bundle.selection) {
+        bundle.selection.reportedChecks.push(...selectedChecks.map(check => check.stableKey));
+      }
+      if (selection) {
+        bundle.packRuntime = aggregatePackRuntime(
+          Object.values(bundle.suites).filter(isGradePayload),
+          selectedPackDefinitions);
+        const exceeded = exceededPackBudgets(bundle.packRuntime);
+        if (exceeded.length) {
+          // Runtime budgets qualify references; generated apps still receive a complete grade.
+          console.log(`  runtime    ... ${exceeded.map(pack =>
+            `${pack.id} ${pack.measuredRuntimeMs}ms > ${pack.budget.maxRuntimeMs}ms`)
+            .join(', ')} [recorded; grading continues]`);
+        }
+      }
+      if (suite.inherited) { regTotal += r.total; regMax += r.max; }
+      else { total += r.total; max += r.max; }
     }
-    if (suite.inherited) { regTotal += r.total; regMax += r.max; }
-    else { total += r.total; max += r.max; }
+  } finally {
+    args.browserWsEndpoint = undefined;
+    await browserServer?.close();
   }
 
   bundle.totals = {

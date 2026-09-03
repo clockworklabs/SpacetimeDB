@@ -14,7 +14,8 @@ import type { RunTotalsInput } from '../src/evidence/benchmark-run.js';
 import { parseBenchArguments } from '../commands/bench-arguments.js';
 import { pristineMutationBaselinePath } from '../src/evidence/mutation-control.js';
 import { clearPrivateGradingEvidence, levelGradeIsUsable, repairEvidenceDecision,
-  repairHistoryEntry, repairProgressState, restorePrivateGradingEvidence }
+  repairHistoryEntry, repairProgressState, repairRegressionDecision,
+  restorePrivateGradingEvidence }
   from '../src/evidence/repair-evidence.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, sourceBoundFirstBuildOutcome }
   from '../src/runtime/source-checkpoint.js';
@@ -393,6 +394,24 @@ test('a repair cannot trade an earlier pass for a larger new gain', () => {
   const decision = repairEvidenceDecision(bundle('passed', 'failed'), bundle('failed', 'passed'));
   assert.equal(decision.action, 'rollback-regression');
   assert.deepEqual(decision.shared.regressions, ['check.a']);
+});
+
+test('repair regression checks require earlier passes but ignore earlier failures', () => {
+  const evidence = (status: 'passed' | 'failed') => createCheckEvidence({
+    status, code: 'test_result', phase: 'assertion', startedAtMs: 1, completedAtMs: 2,
+  });
+  const before = { suites: { features: { features: [{ id: 'work', criteria: [
+    { id: 'pass', stableKey: 'check.pass', points: 1, evidence: evidence('passed') },
+    { id: 'fail', stableKey: 'check.fail', points: 1, evidence: evidence('failed') },
+  ] }] } } };
+  const kept = { suites: { features: { features: [{ id: 'work', criteria: [
+    { id: 'pass', stableKey: 'check.pass', points: 1, evidence: evidence('passed') },
+  ] }] } } };
+  const regressed = { suites: { features: { features: [{ id: 'work', criteria: [
+    { id: 'pass', stableKey: 'check.pass', points: 1, evidence: evidence('failed') },
+  ] }] } } };
+  assert.equal(repairRegressionDecision(before, kept).action, 'keep');
+  assert.equal(repairRegressionDecision(before, regressed).action, 'rollback-regression');
 });
 
 test('repair rollback restores the accepted grading evidence without another grade', () => {

@@ -103,6 +103,7 @@ test('a real model-free campaign persists dependency repairs and evidence', { ti
     });
     assert.equal(result.error, undefined, result.error?.message);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stdout.match(/^=== stub-l1/mg)?.length, 3);
 
     const { plan, state } = readCampaignState(output);
     assert.equal(state.status, 'completed');

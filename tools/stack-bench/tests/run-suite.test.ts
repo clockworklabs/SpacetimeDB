@@ -154,20 +154,17 @@ test('child diagnostics prefer process stderr over generated command text', () =
   assert.doesNotMatch(detail, /docker exec/);
 });
 
-test('grader subprocess output is retained with credentials redacted', () => {
+test('grader subprocesses run asynchronously and retain redacted output', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grader-child-'));
   try {
-    const result = runGraderChild(['grade.mjs'], root, 'account-create', {
-      execute: () => ({ status: 1, signal: null,
-        stdout: 'starting account-create\n',
-        stderr: 'ANTHROPIC_API_KEY=should-not-leak\nError: browser closed\n' }),
-    });
+    const result = await runGraderChild(['--eval',
+      "console.log('starting account-create'); console.error('ANTHROPIC_API_KEY=should-not-leak'); process.exit(1)"],
+    root, 'account-create');
     assert(result.failure);
     assert.match(result.stderr, /\[redacted credential\]/);
     assert.doesNotMatch(result.stderr, /should-not-leak/);
     assert.equal(readFileSync(join(root, result.stdoutName), 'utf8'), 'starting account-create\n');
-    assert.equal(readFileSync(join(root, result.stderrName), 'utf8'),
-      '[redacted credential]\nError: browser closed\n');
+    assert.equal(readFileSync(join(root, result.stderrName), 'utf8'), '[redacted credential]\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

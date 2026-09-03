@@ -99,6 +99,7 @@ type GradeArgs = {
   failureMedia?: string;
   trace?: boolean;
   nullControl: boolean;
+  browserWsEndpoint?: string;
 };
 type GradeRunContext = {
   runId: string;
@@ -169,6 +170,7 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     app: { type: 'string' }, media: { type: 'string' }, 'failure-media': { type: 'string' },
     trace: { type: 'boolean' }, headed: { type: 'boolean' },
     'null-control': { type: 'boolean' },
+    'browser-ws-endpoint': { type: 'string' },
   } });
   const args: GradeArgs = { url: values.url, level: values.level === undefined ? 1 : Number(values.level),
     out: values.out, label: values.label,
@@ -183,7 +185,8 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
     selectionSha256: values['selection-sha256'], parentAttemptId: values['parent-attempt-id'],
     dbName: values['db-name'], app: values.app, media: values.media,
     failureMedia: values['failure-media'], trace: values.trace, headed: values.headed ?? false,
-    nullControl: values['null-control'] ?? false };
+    nullControl: values['null-control'] ?? false,
+    browserWsEndpoint: values['browser-ws-endpoint'] };
   if (!args.url || !args.spec) {
     throw new Error('Usage: node dist/grader/grade.js --url <app-url> --spec <scenario.json> '
       + '--level <N> [--out <file>] [--label <s>] [--feature <N>]');
@@ -202,6 +205,14 @@ export function parseGradeArgs(argv: readonly string[]): GradeArgs {
   }
   if (args.selectionSha256 && !/^[a-f0-9]{64}$/.test(args.selectionSha256)) {
     throw new Error('--selection-sha256 must be 64 lowercase hexadecimal characters');
+  }
+  if (args.browserWsEndpoint) {
+    let endpoint: URL;
+    try { endpoint = new URL(args.browserWsEndpoint); }
+    catch { throw new Error('--browser-ws-endpoint must be a valid WebSocket URL'); }
+    if (!['ws:', 'wss:'].includes(endpoint.protocol)) {
+      throw new Error('--browser-ws-endpoint must use ws or wss');
+    }
   }
   return args;
 }
@@ -902,7 +913,9 @@ async function main(): Promise<void> {
     nullControl: args.nullControl,
     appDir: args.app };
 
-  const browser = await chromium.launch({ headless: !args.headed });
+  const browser = args.browserWsEndpoint
+    ? await chromium.connect(args.browserWsEndpoint)
+    : await chromium.launch({ headless: !args.headed });
   const report: JsonRecord & CompletedGradeReport & {
     inconclusive?: Array<JsonRecord>;
     cleanupEvidence?: { status: 'harness_failure'; failures: GradeCleanupFailure[] };

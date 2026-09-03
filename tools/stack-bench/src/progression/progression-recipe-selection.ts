@@ -344,6 +344,19 @@ export function resolveProgressionRecipeAction(binding: RecipeBinding,
     workAction.grading.nodeIds, workAction.grading.checks, taskMode) };
 }
 
+export function resolveProgressionRepairTarget(binding: RecipeBinding,
+  state: ProgressionState): ProgressionRecipeSelections['grader'] {
+  const action = progressionEngine.nextAction(state);
+  if (action.type !== 'repair') throw new Error('progression has no repair target');
+  const work = asRecipeWorkAction(action);
+  const targetIds = new Set(work.prompt.nodeIds);
+  const checks = work.grading.checks.filter(check => check.nodeId
+    && targetIds.has(check.nodeId));
+  if (checks.length === 0) throw new Error('progression repair target has no checks');
+  return resolveSelections(binding, state.definition, work.prompt.nodeIds,
+    work.prompt.nodeIds, checks, 'upgrade').grader;
+}
+
 export function resolveProgressionRecipeLevelSelection(binding: RecipeBinding, input: unknown,
   level: number, { cumulative = true }: { cumulative?: boolean } = {}): ProgressionRecipeSelections {
   const { definition } = validateCatalog(input);

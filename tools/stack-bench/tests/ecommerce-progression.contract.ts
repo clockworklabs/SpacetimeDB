@@ -16,7 +16,7 @@ import { compileProgressionDefinitionFile,
   from '../src/progression/progression-definition.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import type { ProgressionWorkAction } from '../src/progression/progression-engine.js';
-import { resolveProgressionRecipeAction,
+import { resolveProgressionRecipeAction, resolveProgressionRepairTarget,
   validateProgressionRecipeBindings } from '../src/progression/progression-recipe-selection.js';
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
@@ -307,6 +307,12 @@ test('one progression catalog binds every node and selects only current work', (
     definition.nodes.filter(node => actionPromptNodeIds(next.action).includes(node.id))
       .flatMap(node => node.featureRefs)
       .map(reference => reference.slice(0, reference.lastIndexOf('@'))).sort());
+  const repairTarget = resolveProgressionRepairTarget(firstBinding.binding, state);
+  assert.deepEqual(repairTarget.request.selection.requested.features,
+    next.agent.request.selection.requested.features);
+  assert(repairTarget.checkKeys.length > 0);
+  assert(repairTarget.checkKeys.every(check => next.grader.checkKeys.includes(check)));
+  assert(repairTarget.checkKeys.length < next.grader.checkKeys.length);
 });
 
 test('all-at-once composes every selected feature into one fresh request', () => {
