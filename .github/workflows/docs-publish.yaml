@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     # This builds and uploads the documentation site, not SpacetimeDB binaries.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux-small
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
