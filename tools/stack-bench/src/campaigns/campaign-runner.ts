@@ -70,6 +70,7 @@ type ExecuteProcess = (command: string, argv: string[], options: RunBoundedOptio
 interface CampaignAdmissionAuthority {
   id: string;
   payload: { ok: boolean };
+  runIndices: number[];
 }
 
 interface CampaignInspection extends CampaignDirectory {
@@ -499,7 +500,8 @@ export async function executeCampaign(campaignFile: string, directory: string,
     let stopLaunching = signal?.aborted === true;
     while (true) {
       while (!stopLaunching && !signal?.aborted && active.size < plan.summary.parallelism) {
-        const next = claimNextAttempt(state, { admissionId: admission.id });
+        const next = claimNextAttempt(state, { admissionId: admission.id,
+          runIndices: admission.runIndices });
         state = next.state;
         if (!next.claim) break;
         const claim = next.claim;

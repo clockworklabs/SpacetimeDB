@@ -732,7 +732,7 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
   try {
     await assert.rejects(() => executeCampaign(example, root, {
       mode: 'model-free-trial',
-      admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
+      admit: () => ({ id: 'failed-admission', payload: { ok: false }, runIndices: [] }),
       execute: async () => { throw new Error('must not launch'); },
     }), /admission failed/);
 
@@ -763,7 +763,7 @@ test('failed campaign admission leaves every attempt pending and unclaimed', asy
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-admission-fail-'));
   try {
     await assert.rejects(() => executeCampaign(example, root, { mode: 'model-free-trial',
-      admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
+      admit: () => ({ id: 'failed-admission', payload: { ok: false }, runIndices: [] }),
       execute: async () => { throw new Error('must not launch'); },
     }), /admission failed/);
     const { readCampaignState } = await import('../src/campaigns/campaign-scheduler.js');
@@ -810,7 +810,7 @@ test('model-free campaign execution checkpoints an authorized retry and every co
   const planned = examplePlan();
   try {
     const state = await executeCampaign(example, root, { mode: 'model-free-trial',
-      admit: () => ({ id: 'admission-1', payload: { ok: true } }),
+      admit: () => ({ id: 'admission-1', payload: { ok: true }, runIndices: [0] }),
       execute: async (command, argv, options) => {
         assert(options.env);
         calls.push({ command, argv, options });
@@ -897,7 +897,7 @@ test('campaign cancellation stops new claims and reaches the active process tree
   try {
     const state = await executeCampaign(example, root, { mode: 'model-free-trial',
       signal: cancellation.signal,
-      admit: () => ({ id: 'cancel-admission', payload: { ok: true } }),
+      admit: () => ({ id: 'cancel-admission', payload: { ok: true }, runIndices: [0] }),
       execute: async (_command, _argv, options) => {
         calls += 1;
         assert.equal(options.signal, cancellation.signal);
@@ -933,7 +933,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
     let releaseFirstWave: (() => void) | null = null;
     const firstWave = new Promise<void>(resolve => { releaseFirstWave = resolve; });
     const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
-      admit: () => ({ id: 'parallel-admission', payload: { ok: true } }),
+      admit: () => ({ id: 'parallel-admission', payload: { ok: true }, runIndices: [3, 4, 5] }),
       execute: async (_command, argv, options) => {
         assert(options.env);
         const runIndex = Number(argv[argv.indexOf('--run-index') + 1]);
@@ -974,11 +974,11 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
         return { code: 0, timedOut: false };
       } });
     assert.equal(maxActive, 3);
-    assert.deepEqual(started.map(item => item.runIndex).sort((a, b) => a - b), [0, 1, 2]);
+    assert.deepEqual(started.map(item => item.runIndex).sort((a, b) => a - b), [3, 4, 5]);
     assert.equal(new Set(started.map(item => item.parent)).size, 3);
     assert(state.attempts.every(attempt => attempt.status === 'completed'));
-    assert(state.attempts.every(attempt => attempt.executions[0]!.runIndex >= 0
-      && attempt.executions[0]!.runIndex < 3));
+    assert(state.attempts.every(attempt => attempt.executions[0]!.runIndex >= 3
+      && attempt.executions[0]!.runIndex <= 5));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

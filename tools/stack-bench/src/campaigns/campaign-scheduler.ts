@@ -277,7 +277,7 @@ export function validateCampaignState(input: unknown): CampaignState {
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
       if (!Number.isInteger(execution.runIndex) || execution.runIndex < 0
-        || execution.runIndex >= state.maxParallel) fail(`${executionAt}.runIndex is invalid`);
+        || execution.runIndex > RUN_INDEX_CAP) fail(`${executionAt}.runIndex is invalid`);
       if (execution.ordinal !== executionIndex + 1) fail(`${executionAt}.ordinal is not contiguous`);
       if (execution.id !== `${attempt.plan.id}-execution${execution.ordinal}`) {
         fail(`${executionAt}.id does not match its attempt and ordinal`);
@@ -407,18 +407,24 @@ export function createCampaignState(plan: CompiledCampaignPlan,
   return recalculate(state, now);
 }
 
-export function claimNextAttempt(input: CampaignState, { now = new Date().toISOString(), admissionId }:
-  { now?: string; admissionId?: string } = {}): {
+export function claimNextAttempt(input: CampaignState,
+  { now = new Date().toISOString(), admissionId, runIndices }:
+  { now?: string; admissionId?: string; runIndices?: number[] } = {}): {
     state: CampaignState;
     claim: CampaignClaim | null;
     capacityFull: boolean;
   } {
   const state = structuredClone(input);
   const exactAdmissionId = string(admissionId, 'admissionId');
+  const availableSlots = runIndices
+    ?? Array.from({ length: state.maxParallel }, (_, index) => index);
+  if (availableSlots.length !== state.maxParallel
+    || new Set(availableSlots).size !== availableSlots.length
+    || availableSlots.some(index => !Number.isInteger(index) || index < 0
+      || index > RUN_INDEX_CAP)) fail('runIndices must contain one unique valid slot per worker');
   const usedSlots = new Set(state.attempts.flatMap(attempt => attempt.executions
     .filter(execution => execution.status === 'running').map(execution => execution.runIndex)));
-  const runIndex = Array.from({ length: state.maxParallel }, (_, index) => index)
-    .find(index => !usedSlots.has(index));
+  const runIndex = availableSlots.find(index => !usedSlots.has(index));
   if (runIndex === undefined) return { state, claim: null, capacityFull: true };
   const attempt = state.attempts.find(candidate => candidate.status === 'pending');
   if (!attempt) return { state, claim: null, capacityFull: false };

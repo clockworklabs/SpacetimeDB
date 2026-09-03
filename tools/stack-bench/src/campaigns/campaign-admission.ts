@@ -5,8 +5,11 @@ import { z } from 'zod';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.js';
+import { loadTrack, portsFor, RUN_INDEX_CAP } from '../composition/tracks.js';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidence/artifacts.js';
-import { runPreflight } from '../runtime/preflight.js';
+import { existingResourceLockKeys, resourceLockScope,
+  DEFAULT_SPACETIME_SERVER_URI, loopbackHttpUri } from '../runtime/backend-lease.js';
+import { probeLoopbackPort, runPreflight } from '../runtime/preflight.js';
 import type { PreflightReport } from '../runtime/preflight.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { CompiledCampaignPlan } from './campaign-compiler.js';
@@ -76,6 +79,7 @@ export interface CampaignAdmissionResult {
   id: string;
   path: string;
   payload: CampaignAdmission;
+  runIndices: number[];
 }
 
 interface CampaignAdmissionPlan {
@@ -184,13 +188,19 @@ export function validateCampaignAdmission(
     throw new Error('campaign admission conditions do not match the compiled plan');
   }
   const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
+  const runIndices = [...new Set(admission.reports.map(report => report.request.runIndex))]
+    .sort((a, b) => a - b);
+  if (runIndices.length !== plan.summary.parallelism
+    || runIndices.some(index => !Number.isInteger(index) || index < 0 || index > RUN_INDEX_CAP)) {
+    throw new Error('campaign admission run slots are incomplete or invalid');
+  }
   if (admission.reports.length !== adapters.length * plan.summary.parallelism) {
     throw new Error('campaign admission reports are incomplete');
   }
   const expectedBackends = plan.stacks.map(stack => stack.id);
   const expectedResultsDir = resolve(directory);
   for (const adapter of adapters) {
-    for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
+    for (const runIndex of runIndices) {
       const matches = admission.reports.filter(report => report.request.agentAdapter === adapter
         && report.request.runIndex === runIndex);
       if (matches.length !== 1) {
@@ -221,6 +231,30 @@ export function validateCampaignAdmission(
     throw new Error('campaign admission verdict does not match its reports');
   }
   return admission as CampaignAdmission;
+}
+
+function availableRunIndices(plan: CompiledCampaignPlan, env: NodeJS.ProcessEnv,
+  probePort: (port: number | string) => { free: boolean }): number[] {
+  const track = loadTrack(plan.definition.track);
+  const lockRoot = resourceLockScope(env).root;
+  const selected: number[] = [];
+  for (let runIndex = 0; runIndex <= RUN_INDEX_CAP; runIndex += 1) {
+    const lockKeys = plan.stacks.map(stack =>
+      `slot:${plan.definition.track}:${stack.id}:run${runIndex}`);
+    if (existingResourceLockKeys({ root: lockRoot, keys: lockKeys }).length) continue;
+    const ports = new Set(plan.stacks.flatMap(stack => {
+      const assigned = portsFor(track, stack.id, runIndex);
+      return [assigned.vite, assigned.express].filter((port): port is number =>
+        typeof port === 'number');
+    }));
+    if (plan.stacks.some(stack => stack.id === 'spacetime')) {
+      const base = loopbackHttpUri(env.STACK_BENCH_STDB_URI ?? DEFAULT_SPACETIME_SERVER_URI);
+      ports.add(Number(base.port) + runIndex);
+    }
+    if ([...ports].every(port => probePort(port).free)) selected.push(runIndex);
+    if (selected.length === plan.summary.parallelism) return selected;
+  }
+  throw new Error(`only ${selected.length} of ${plan.summary.parallelism} required run slots are free`);
 }
 
 export function readCampaignAdmission(
@@ -303,20 +337,24 @@ function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
 
 export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: string,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
-    uuid = randomUUID }: {
+    uuid = randomUUID, probePort = probeLoopbackPort }: {
       env?: NodeJS.ProcessEnv;
       preflight?: (request: CampaignAdmissionPreflightRequest,
         options?: { env: NodeJS.ProcessEnv }) => PreflightReport;
       now?: string;
       uuid?: () => string;
+      probePort?: (port: number | string) => { free: boolean };
     } = {}): CampaignAdmissionResult {
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports: PreflightReport[] = [];
   const resourceFree = campaignUsesNoExternalResources(plan);
+  const runIndices = resourceFree
+    ? Array.from({ length: plan.summary.parallelism }, (_, index) => index)
+    : availableRunIndices(plan, executionEnv, probePort);
   const guidanceModes = [...new Set(plan.conditions.map(condition => condition.guidance.mode))];
   const agentSkills = [...new Set(plan.attempts.flatMap(attempt => attempt.skills))].sort();
   for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
-    for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
+    for (const runIndex of runIndices) {
       const request: CampaignAdmissionPreflightRequest = {
         backends: plan.stacks.map(stack => stack.id),
         track: plan.definition.track,
@@ -356,7 +394,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
     identities: emptyArtifactIdentities({ experiment: {
       id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
     } }), payload });
-  return { id, path, payload };
+  return { id, path, payload, runIndices };
 }
 
 export function campaignAdmissionSmokeReuse(

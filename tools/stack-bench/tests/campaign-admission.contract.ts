@@ -26,6 +26,18 @@ const admission: CampaignAdmissionSmokeInput = {
 };
 const request: CampaignAdmissionSmokeRequest = { agentAdapter: 'claude-code', runIndex: 2,
   backend: 'postgres', image: 'stack-bench:fixed' };
+const passingPreflight = (request: CampaignAdmissionPreflightRequest) => ({
+  schemaVersion: 1 as const,
+  generatedAt: createdAt,
+  request: { backends: request.backends, track: request.track, levels: request.levelList,
+    runIndex: request.runIndex, parallelism: request.parallelism,
+    agentAdapter: request.agentAdapter,
+    packs: request.packIds, checks: request.checkKeys, image: request.image,
+    resultsDir: request.resultsDir, smoke: request.smoke },
+  ok: true,
+  summary: { passed: 1, failed: 0, warnings: 0 },
+  checks: [{ id: 'smoke.container', status: 'pass' as const, summary: 'passed' }],
+});
 
 test('campaign smoke reuse requires an exact recent passing admission', () => {
   const recent = campaignAdmissionSmokeReuse(admission, request,
@@ -75,18 +87,7 @@ test('campaign admission receives only the feature catalog levels in the compile
       env: {},
       preflight: request => {
         requests.push(request);
-        return {
-          schemaVersion: 1,
-          generatedAt: createdAt,
-          request: { backends: request.backends, track: request.track, levels: request.levelList,
-            runIndex: request.runIndex, parallelism: request.parallelism,
-            agentAdapter: request.agentAdapter,
-            packs: request.packIds, checks: request.checkKeys, image: request.image,
-            resultsDir: request.resultsDir, smoke: request.smoke },
-          ok: true,
-          summary: { passed: 1, failed: 0, warnings: 0 },
-          checks: [{ id: 'smoke.container', status: 'pass', summary: 'passed' }],
-        };
+        return passingPreflight(request);
       },
     });
 
@@ -97,6 +98,35 @@ test('campaign admission receives only the feature catalog levels in the compile
     assert(plan.featureCatalog);
     const identity = plan.featureCatalog.identity;
     assert(requests.every(request => request.featureCatalog!.identity.sha256 === identity.sha256));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('campaign admission selects a free run slot', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-free-slot-admission-'));
+  try {
+    const value = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'appliance',
+      'campaign.example.json'), 'utf8'));
+    value.repetitions = 1;
+    const campaignPath = join(root, 'campaign.json');
+    writeFileSync(campaignPath, `${JSON.stringify(value, null, 2)}\n`);
+    const plan = compileCampaignFile(campaignPath);
+    const requests: CampaignAdmissionPreflightRequest[] = [];
+    let portProbes = 0;
+    const result = runCampaignAdmission(plan, root, {
+      now: createdAt,
+      uuid: () => 'free-slot',
+      env: {},
+      probePort: () => ({ free: ++portProbes > 1 }),
+      preflight: request => {
+        requests.push(request);
+        return passingPreflight(request);
+      },
+    });
+    assert.deepEqual(result.runIndices, [1]);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.runIndex, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
