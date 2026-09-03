@@ -13,6 +13,7 @@ on:
 
 name: CI
 
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
   cancel-in-progress: true
@@ -1327,8 +1328,8 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
-    # This reuses prebuilt server artifacts and only builds the lightweight Godot SDK fixture.
-    runs-on: spacetimedb-linux-small-staging
+    # The .NET packaging, Godot project build, and integration test make this too heavy for a small runner.
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       ARTIFACT_SUFFIX: linux
@@ -1435,8 +1436,8 @@ jobs:
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    # This reuses prebuilt server artifacts and only builds and tests the C# SDK fixtures.
-    runs-on: spacetimedb-linux-small-staging
+    # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
+    runs-on: spacetimedb-linux
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -1636,8 +1637,8 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
-    # This builds the documentation site and a small CI wrapper, not the core Rust workspace.
-    runs-on: spacetimedb-linux-small-staging
+    # Building the documentation site nearly saturated a small runner and used substantial memory.
+    runs-on: spacetimedb-linux
     env:
       RUST_BACKTRACE: full
     steps:
