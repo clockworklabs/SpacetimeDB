@@ -183,8 +183,11 @@ Runs when a client establishes a connection.
 export const onConnect = spacetimedb.clientConnected((ctx) => {
   console.log(`Client connected: ${ctx.sender}`);
   
-  // ctx.connectionId is guaranteed to be defined
-  const connId = ctx.connectionId!;
+  // TypeScript exposes this as ConnectionId | null, so guard it before use.
+  const connId = ctx.connectionId;
+  if (connId === null) {
+    throw new Error('client connection ID missing');
+  }
   
   // Initialize client session
   ctx.db.sessions.insert({
@@ -277,7 +280,8 @@ SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
 
 The `client_connected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id()` is guaranteed to be present
+- Receives the connection ID for the connection being opened. In TypeScript,
+  `ctx.connectionId` is typed as nullable, so guard it before use.
 - Failure disconnects the client
 - Runs for each distinct connection (WebSocket, HTTP call)
 
@@ -292,8 +296,11 @@ Runs when a client connection terminates.
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   console.log(`Client disconnected: ${ctx.sender}`);
   
-  // ctx.connectionId is guaranteed to be defined
-  const connId = ctx.connectionId!;
+  // TypeScript exposes this as ConnectionId | null, so guard it before use.
+  const connId = ctx.connectionId;
+  if (connId === null) {
+    throw new Error('client connection ID missing');
+  }
   
   // Clean up client session
   ctx.db.sessions.connection_id.delete(connId);
@@ -369,7 +376,8 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
 
 The `client_disconnected` reducer:
 - Cannot take arguments beyond `ReducerContext`
-- `ctx.connection_id()` is guaranteed to be present
+- Receives the connection ID for the connection being closed. In TypeScript,
+  `ctx.connectionId` is typed as nullable, so guard it before use.
 - Failure is logged but doesn't prevent disconnection
 - Runs when connection ends (close, timeout, error)
 
