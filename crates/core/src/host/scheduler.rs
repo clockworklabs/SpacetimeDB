@@ -6,8 +6,11 @@ use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::anyhow;
 use core::time::Duration;
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
@@ -16,7 +19,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::{TimeDuration, Timestamp};
+use spacetimedb_lib::{Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
@@ -136,7 +139,7 @@ impl SchedulerStarter {
 
                 // This should never happen as duplicate entries should be gated by unique
                 // constraint violation in scheduled tables.
-                if key_map.insert(id, key).is_some() {
+                if key_map.insert(id, ScheduledEntry::Queued(key)).is_some() {
                     return Err(anyhow!(
                         "Duplicate key found in scheduler queue: table_id {}, schedule_id {}",
                         id.table_id,
@@ -151,6 +154,8 @@ impl SchedulerStarter {
                 rx: self.rx,
                 queue,
                 key_map,
+                active_calls: FuturesUnordered::new(),
+                database_identity: module_host.info().database_identity,
                 module_host: module_host.downgrade(),
             }
             .run(),
@@ -275,8 +280,16 @@ impl Scheduler {
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
-    key_map: FxHashMap<ScheduledFunctionId, delay_queue::Key>,
+    key_map: FxHashMap<ScheduledFunctionId, ScheduledEntry>,
+    active_calls: FuturesUnordered<ScheduledFunctionFuture>,
+    database_identity: Identity,
     module_host: WeakModuleHost,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ScheduledEntry {
+    Queued(delay_queue::Key),
+    Active(delay_queue::Key),
 }
 
 #[derive(Clone)]
@@ -298,6 +311,18 @@ pub(crate) struct ScheduledFunctionParams(QueueItem);
 enum ScheduledFunctionKind {
     Reducer,
     Procedure,
+}
+
+type ScheduledFunctionFuture = BoxFuture<'static, ScheduledFunctionCompletion>;
+
+// The outer result is from `catch_unwind`, so `Err` means the scheduled call panicked.
+// The inner result is the normal module-host call result, such as `NoSuchModule`.
+type ScheduledFunctionCallResult = std::thread::Result<Result<CallScheduledFunctionResult, CallScheduledFunctionError>>;
+
+struct ScheduledFunctionCompletion {
+    item: QueueItem,
+    key: Option<delay_queue::Key>,
+    result: ScheduledFunctionCallResult,
 }
 
 impl ScheduledFunctionParams {
@@ -328,16 +353,26 @@ spacetimedb_table::static_assert_size!(QueueItem, 64);
 
 impl SchedulerActor {
     async fn run(mut self) {
+        let mut closing = false;
+        self.update_active_calls_metric();
         loop {
+            if closing && self.active_calls.is_empty() {
+                self.update_active_calls_metric();
+                break;
+            }
+
             tokio::select! {
-                msg = self.rx.recv() => match msg {
+                msg = self.rx.recv(), if !closing => match msg {
                     Some(MsgOrExit::Msg(msg)) => self.handle_message(msg),
                     // it's fine to just drop any messages in the queue because they've
                     // already been stored in the database
-                    Some(MsgOrExit::Exit) | None => break,
+                    Some(MsgOrExit::Exit) | None => closing = true,
                 },
-                Some(scheduled) = self.queue.next() => {
-                    self.handle_queued(scheduled).await;
+                Some(scheduled) = self.queue.next(), if !closing => {
+                    self.handle_queued(scheduled);
+                },
+                Some(completion) = self.active_calls.next(), if !self.active_calls.is_empty() => {
+                    self.handle_completion(completion);
                 }
             }
         }
@@ -351,8 +386,8 @@ impl SchedulerActor {
                 effective_at,
                 real_at,
             } => {
-                // Incase of row update, remove the existing entry from queue first
-                if let Some(key) = self.key_map.get(&id) {
+                // In case of row update, remove the existing queued entry first.
+                if let Some(ScheduledEntry::Queued(key)) = self.key_map.get(&id) {
                     self.queue.remove(key);
                 }
                 let key = self.queue.insert_at(
@@ -363,7 +398,7 @@ impl SchedulerActor {
                     },
                     real_at,
                 );
-                self.key_map.insert(id, key);
+                self.key_map.insert(id, ScheduledEntry::Queued(key));
             }
             SchedulerMessage::ScheduleImmediate { function_name, args } => {
                 self.queue.insert(
@@ -374,37 +409,43 @@ impl SchedulerActor {
         }
     }
 
-    async fn handle_queued(&mut self, id: Expired<QueueItem>) {
-        let item = id.into_inner();
-        let id = match &item {
+    fn handle_queued(&mut self, expired: Expired<QueueItem>) {
+        let key = expired.key();
+        let item = expired.into_inner();
+        let item_id = match &item {
             QueueItem::Id { id, .. } => Some(*id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
         };
-        if let Some(id) = id {
-            self.key_map.remove(&id);
+        if let Some(id) = item_id {
+            match self.key_map.get(&id) {
+                Some(ScheduledEntry::Queued(queued_key)) if *queued_key == key => {
+                    self.key_map.insert(id, ScheduledEntry::Active(key));
+                }
+                _ => return,
+            }
         }
 
         let Some(module_host) = self.module_host.upgrade() else {
+            if let Some(id) = item_id {
+                self.key_map.remove(&id);
+            }
             return;
         };
 
-        let params = ScheduledFunctionParams(item.clone());
-        let result = match params.kind(module_host.info()) {
-            ScheduledFunctionKind::Procedure => {
-                panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
-                    .catch_unwind()
-                    .await
-            }
-            ScheduledFunctionKind::Reducer => {
-                panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
-                    .catch_unwind()
-                    .await
-            }
-        };
+        self.active_calls
+            .push(call_scheduled_function(module_host, item, item_id.map(|_| key)));
+        self.update_active_calls_metric();
+    }
+
+    fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) {
+        self.update_active_calls_metric();
+        let ScheduledFunctionCompletion { item, key, result } = completion;
+        let current = self.take_current_active_entry(&item, key);
+
         let result = match result {
             Ok(result) => result,
             Err(_) => {
-                log::error!("scheduled function panicked");
+                log::warn!("scheduled function panicked");
                 return;
             }
         };
@@ -419,21 +460,69 @@ impl SchedulerActor {
             Ok(CallScheduledFunctionResult {
                 reschedule: Some(Reschedule { at_ts, at_real }),
             }) => {
-                if let QueueItem::Id { id, function_name, .. } = item {
-                    // If this was repeated, we need to add it back to the queue.
-                    let key = self.queue.insert_at(
-                        QueueItem::Id {
-                            id,
-                            function_name,
-                            at: at_ts,
-                        },
-                        at_real,
-                    );
-                    self.key_map.insert(id, key);
+                if current {
+                    if let QueueItem::Id { id, function_name, .. } = item {
+                        let key = self.queue.insert_at(
+                            QueueItem::Id {
+                                id,
+                                function_name,
+                                at: at_ts,
+                            },
+                            at_real,
+                        );
+                        self.key_map.insert(id, ScheduledEntry::Queued(key));
+                    }
                 }
             }
         }
     }
+
+    fn take_current_active_entry(&mut self, item: &QueueItem, key: Option<delay_queue::Key>) -> bool {
+        let QueueItem::Id { id, .. } = item else {
+            return true;
+        };
+        let Some(key) = key else {
+            return false;
+        };
+        match self.key_map.get(id) {
+            Some(ScheduledEntry::Active(active_key)) if *active_key == key => {
+                self.key_map.remove(id);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn update_active_calls_metric(&self) {
+        WORKER_METRICS
+            .scheduler_active_scheduled_functions
+            .with_label_values(&self.database_identity)
+            .set(self.active_calls.len() as i64);
+    }
+}
+
+fn call_scheduled_function(
+    module_host: ModuleHost,
+    item: QueueItem,
+    key: Option<delay_queue::Key>,
+) -> ScheduledFunctionFuture {
+    async move {
+        let params = ScheduledFunctionParams(item.clone());
+        let result = match params.kind(module_host.info()) {
+            ScheduledFunctionKind::Procedure => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
+                    .catch_unwind()
+                    .await
+            }
+            ScheduledFunctionKind::Reducer => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
+                    .catch_unwind()
+                    .await
+            }
+        };
+        ScheduledFunctionCompletion { item, key, result }
+    }
+    .boxed()
 }
 
 #[derive(Debug)]
@@ -535,10 +624,6 @@ fn prepare_scheduled_procedure_call(
         Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
-            // This can fail because the schedule row could not be read from the datastore,
-            // the row could not be BSATN-encoded, the scheduled function no longer exists,
-            // or its arguments do not match the current function definition.
-            // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = timing
@@ -585,14 +670,8 @@ fn call_scheduled_reducer_until_done(
         Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
-            // This can fail because the schedule row could not be read from the datastore,
-            // the row could not be BSATN-encoded, the scheduled function no longer exists,
-            // or its arguments do not match the current function definition.
-            // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
-                // Prefer to reschedule interval schedules from the requested time, ignoring any delays or jitter.
-                // If you reschedule from `Timestamp::now`, delays will accumulate.
                 let reschedule_from = timing
                     .as_ref()
                     .map(|timing| timing.intended_at)
