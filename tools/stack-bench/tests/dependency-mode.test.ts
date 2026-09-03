@@ -110,13 +110,17 @@ function repairedGrade(state: ProgressionState, attemptId: string,
   return { ...grade(state, attemptId, outcomes), completedRepair: true };
 }
 
-test('the graph and repair plan compile deterministically', () => {
+test('the graph compiles by depth, then declared order, and the order is identity', () => {
+  const declared = compileDependencyMode(fixture());
+  assert.deepEqual(declared.nodes.map(item => item.id), [
+    'accounts', 'catalog', 'ownership', 'search', 'recovery', 'recommendations',
+  ]);
   const input = fixture();
   input.nodes.reverse();
   input.questlines.reverse();
   const compiled = compileDependencyMode(input);
   assert.deepEqual(compiled.nodes.map(item => item.id), [
-    'accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery',
+    'catalog', 'accounts', 'search', 'ownership', 'recommendations', 'recovery',
   ]);
   assert.deepEqual(compiled.questlines.map(item => item.id), ['discovery', 'identity']);
   assert.deepEqual(compiled.repair, { selection: 'feature', budget: { total: 4, perFeature: 1 } });
@@ -129,6 +133,14 @@ test('the graph and repair plan compile deterministically', () => {
   const second = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 3 });
   assert.equal(first.definition.version, '4.1.0');
   assert.notEqual(first.identity.sha256, second.identity.sha256);
+  // Declared order is repair priority, so it is part of the catalog identity
+  // that every campaign binds; reordering the catalog is a new identity.
+  const { policy: _p, repair: _r, unchangedFailureLimit: _l,
+    workSelection: _w, ...declaredCatalog } = declared;
+  const declaredIdentity = compileFeatureCatalogInput({
+    ...declaredCatalog, schemaVersion: 1, kind: 'feature-catalog',
+  }).identity.sha256;
+  assert.notEqual(declaredIdentity, catalog.identity.sha256);
 });
 
 test('invalid graphs and repair plans fail before execution', async t => {
@@ -448,10 +460,10 @@ test('only a completed repair can count as a repeated finding', () => {
   assert.equal(state.nodes.accounts!.exhaustionReason, 'repeated-findings');
 });
 
-test('repair order is fixed by the compiled graph, not by declared or filesystem order', () => {
-  // The queue repairs the first failed feature by graph order (level, then id)
-  // until it passes or stops, then moves to the next. Declared order is not
-  // the tie-break, and a replay of the same events reproduces the sequence.
+test('repair order follows dependency depth, then the declared catalog order', () => {
+  // The queue repairs the first failed feature by depth, then declared order,
+  // until it passes or stops, then moves to the next. Alphabetical id order
+  // is not a factor, and a replay of the same events reproduces the sequence.
   const definition = fixture();
   definition.repair.budget = { total: 4, perFeature: 5 };
   definition.unchangedFailureLimit = 3;
@@ -461,7 +473,7 @@ test('repair order is fixed by the compiled graph, not by declared or filesystem
     node('mid', [], 'identity'),
   ];
   const compiled = compileDependencyMode(definition);
-  assert.deepEqual(compiled.nodes.map(item => item.id), ['alpha', 'mid', 'zeta']);
+  assert.deepEqual(compiled.nodes.map(item => item.id), ['zeta', 'alpha', 'mid']);
   let state = progressionEngine.initialize(definition);
   state = progressionEngine.recordResult(state, grade(state, 'initial', {
     zeta: 'fail', alpha: 'fail', mid: 'fail',
@@ -473,12 +485,12 @@ test('repair order is fixed by the compiled graph, not by declared or filesystem
       zeta: 'fail', alpha: 'fail', mid: 'fail',
     }));
   }
-  assert.deepEqual(sequence, [['alpha'], ['alpha'], ['mid'], ['mid']]);
-  assert.equal(state.nodes.alpha!.exhaustionReason, 'repeated-findings');
-  // mid's second repair both reached the stall limit and spent the last
+  assert.deepEqual(sequence, [['zeta'], ['zeta'], ['alpha'], ['alpha']]);
+  assert.equal(state.nodes.zeta!.exhaustionReason, 'repeated-findings');
+  // alpha's second repair both reached the stall limit and spent the last
   // run-wide repair; the budget check runs first and names the reason.
+  assert.equal(state.nodes.alpha!.exhaustionReason, 'total-repairs-exhausted');
   assert.equal(state.nodes.mid!.exhaustionReason, 'total-repairs-exhausted');
-  assert.equal(state.nodes.zeta!.exhaustionReason, 'total-repairs-exhausted');
   const replayed = progressionEngine.replay(definition, state.events);
   assert.equal(JSON.stringify(replayed), JSON.stringify(state));
   assert.deepEqual(state.attempts.filter(attempt => attempt.repair)
@@ -546,7 +558,7 @@ test('all-at-once repairs one failure and regrades the complete graph', () => {
   definition.workSelection = 'all-at-once';
   let state = progressionEngine.initialize(definition);
   assert.deepEqual(prompt(state).nodeIds, [
-    'accounts', 'catalog', 'ownership', 'search', 'recommendations', 'recovery',
+    'accounts', 'catalog', 'ownership', 'search', 'recovery', 'recommendations',
   ]);
   assert.equal(grading(state).checks.length, 7);
   state = progressionEngine.recordResult(state, grade(state, 'initial', {

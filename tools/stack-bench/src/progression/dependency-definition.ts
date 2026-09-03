@@ -282,8 +282,10 @@ function compileGraphDefinition(input: unknown,
       fail(`${source}.nodes.${nodeId}.level`, 'does not match calculated dependency depth');
     }
   }
-  definition.nodes.sort((left, right) => (left.level ?? 0) - (right.level ?? 0)
-    || left.id.localeCompare(right.id));
+  // Compiled order is dependency depth, then the order the catalog declares.
+  // That declared order is the repair priority within a depth, so it is part
+  // of the definition's identity, and the same for every stack.
+  definition.nodes.sort((left, right) => (left.level ?? 0) - (right.level ?? 0));
   if (!Array.isArray(definition.questlines) || definition.questlines.length === 0) {
     fail(`${source}.questlines`, 'must be a non-empty array');
   }

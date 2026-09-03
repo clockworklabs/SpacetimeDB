@@ -110,6 +110,9 @@ at least one limit; each is a non-negative integer with no upper cap:
 - `perDepth`: `{ "count": N, "carry": true | false }`. Each opened depth adds
   `count` repairs; `carry` keeps unused depth repairs available later.
 
+When several features have failed, the next repair goes to the first of them
+by dependency depth, then by the order the catalog declares its features.
+That order is part of the catalog's identity and is the same for every stack.
 When limits are combined, the tightest remaining limit wins, and the result
 names which one stopped a feature: `feature-repairs-exhausted`,
 `depth-repairs-exhausted`, `total-repairs-exhausted`, or `repeated-findings`

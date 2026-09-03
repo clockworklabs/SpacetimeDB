@@ -311,17 +311,20 @@ function hasTestSystemCheck(state: DependencyState, node: CompiledProgressionNod
   return Object.values(getNodeState(state, node.id).checks).includes('test-system');
 }
 
+// Compiled node order: dependency depth, then declared catalog order.
+function compiledOrder(state: DependencyState, nodeId: string): number {
+  const index = state.definition.nodes.findIndex(node => node.id === nodeId);
+  if (index < 0) throw new Error(`unknown dependency node ${nodeId}`);
+  return index;
+}
+
 function currentPromptNodeIds(state: DependencyState): string[] {
   if (state.phase !== 'active') return [];
   return state.definition.nodes.filter(node =>
     getNodeState(state, node.id).status === 'active'
       || (getNodeState(state, node.id).status === 'working'
         && (hasRepairableFailure(state, node) || hasTestSystemCheck(state, node))))
-    .map(node => node.id).sort((left, right) => {
-    const leftNode = getDefinitionNode(state.definition, left);
-    const rightNode = getDefinitionNode(state.definition, right);
-    return leftNode.level - rightNode.level || left.localeCompare(right);
-  });
+    .map(node => node.id);
 }
 
 function hasConclusiveAttempt(state: DependencyState): boolean {
@@ -367,11 +370,8 @@ function gradingNodeIds(state: DependencyState): string[] {
     }
   };
   promptIds.forEach(includeDependencies);
-  return [...selected].sort((left, right) => {
-    const leftNode = getDefinitionNode(state.definition, left);
-    const rightNode = getDefinitionNode(state.definition, right);
-    return leftNode.level - rightNode.level || left.localeCompare(right);
-  });
+  return [...selected].sort((left, right) =>
+    compiledOrder(state, left) - compiledOrder(state, right));
 }
 
 function checkRequirementsAvailable(state: DependencyState,
