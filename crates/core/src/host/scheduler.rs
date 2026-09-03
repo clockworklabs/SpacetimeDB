@@ -139,7 +139,7 @@ impl SchedulerStarter {
 
                 // This should never happen as duplicate entries should be gated by unique
                 // constraint violation in scheduled tables.
-                if key_map.insert(id, key).is_some() {
+                if key_map.insert(id, ScheduledEntry::Queued { key }).is_some() {
                     return Err(anyhow!(
                         "Duplicate key found in scheduler queue: table_id {}, schedule_id {}",
                         id.table_id,
@@ -280,10 +280,25 @@ impl Scheduler {
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
-    key_map: FxHashMap<ScheduledFunctionId, delay_queue::Key>,
+    key_map: FxHashMap<ScheduledFunctionId, ScheduledEntry>,
     active_calls: FuturesUnordered<ScheduledFunctionFuture>,
     database_identity: Identity,
     module_host: WeakModuleHost,
+}
+
+enum ScheduledEntry {
+    // Still present in DelayQueue; row updates remove it before queuing
+    // the replacement.
+    Queued { key: delay_queue::Key },
+    // Already expired and running; keep the latest row update until completion
+    // so an older interval result cannot replace newer row state.
+    Active { pending_update: Option<ScheduleRequest> },
+}
+
+struct ScheduleRequest {
+    function_name: Arc<str>,
+    effective_at: Timestamp,
+    real_at: Instant,
 }
 
 #[derive(Clone)]
@@ -378,21 +393,14 @@ impl SchedulerActor {
                 function_name,
                 effective_at,
                 real_at,
-            } => {
-                // Incase of row update, remove the existing entry from queue first
-                if let Some(key) = self.key_map.get(&id) {
-                    self.queue.remove(key);
-                }
-                let key = self.queue.insert_at(
-                    QueueItem::Id {
-                        id,
-                        function_name,
-                        at: effective_at,
-                    },
+            } => self.handle_schedule(
+                id,
+                ScheduleRequest {
+                    function_name,
+                    effective_at,
                     real_at,
-                );
-                self.key_map.insert(id, key);
-            }
+                },
+            ),
             SchedulerMessage::ScheduleImmediate { function_name, args } => {
                 self.queue.insert(
                     QueueItem::VolatileNonatomicImmediate { function_name, args },
@@ -402,17 +410,56 @@ impl SchedulerActor {
         }
     }
 
-    fn handle_queued(&mut self, id: Expired<QueueItem>) {
-        let item = id.into_inner();
-        let id = match &item {
+    fn handle_schedule(&mut self, id: ScheduledFunctionId, schedule: ScheduleRequest) {
+        match self.key_map.remove(&id) {
+            Some(ScheduledEntry::Queued { key }) => {
+                self.queue.remove(&key);
+                self.insert_queued(id, schedule);
+            }
+            Some(ScheduledEntry::Active { .. }) => {
+                self.key_map.insert(
+                    id,
+                    ScheduledEntry::Active {
+                        pending_update: Some(schedule),
+                    },
+                );
+            }
+            None => self.insert_queued(id, schedule),
+        }
+    }
+
+    fn insert_queued(&mut self, id: ScheduledFunctionId, schedule: ScheduleRequest) {
+        let key = self.queue.insert_at(
+            QueueItem::Id {
+                id,
+                function_name: schedule.function_name,
+                at: schedule.effective_at,
+            },
+            schedule.real_at,
+        );
+        self.key_map.insert(id, ScheduledEntry::Queued { key });
+    }
+
+    fn handle_queued(&mut self, expired: Expired<QueueItem>) {
+        let key = expired.key();
+        let item = expired.into_inner();
+        let item_id = match &item {
             QueueItem::Id { id, .. } => Some(*id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
         };
-        if let Some(id) = id {
-            self.key_map.remove(&id);
+        if let Some(id) = item_id {
+            match self.key_map.get(&id) {
+                Some(ScheduledEntry::Queued { key: queued_key }) if *queued_key == key => {
+                    self.key_map.insert(id, ScheduledEntry::Active { pending_update: None });
+                }
+                _ => return,
+            }
         }
 
         let Some(module_host) = self.module_host.upgrade() else {
+            if let Some(id) = item_id {
+                self.key_map.remove(&id);
+            }
             return;
         };
 
@@ -423,6 +470,14 @@ impl SchedulerActor {
     fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) {
         self.update_active_calls_metric();
         let ScheduledFunctionCompletion { item, result } = completion;
+        let allow_interval_reschedule = match self.finish_active_call(&item) {
+            CompletionAction::AllowIntervalReschedule => true,
+            CompletionAction::QueuePendingUpdate(id, schedule) => {
+                self.insert_queued(id, schedule);
+                false
+            }
+            CompletionAction::IgnoreIntervalReschedule => false,
+        };
 
         let result = match result {
             Ok(result) => result,
@@ -442,22 +497,37 @@ impl SchedulerActor {
             Ok(CallScheduledFunctionResult {
                 reschedule: Some(Reschedule { at_ts, at_real }),
             }) => {
-                if let QueueItem::Id { id, function_name, .. } = item {
-                    // A schedule-table update may have queued a newer entry while
-                    // this call was running. Keep that newer entry authoritative.
-                    if !self.key_map.contains_key(&id) {
-                        let key = self.queue.insert_at(
-                            QueueItem::Id {
-                                id,
-                                function_name,
-                                at: at_ts,
-                            },
-                            at_real,
-                        );
-                        self.key_map.insert(id, key);
-                    }
+                if let QueueItem::Id { id, function_name, .. } = item
+                    && allow_interval_reschedule
+                {
+                    self.insert_queued(
+                        id,
+                        ScheduleRequest {
+                            function_name,
+                            effective_at: at_ts,
+                            real_at: at_real,
+                        },
+                    );
                 }
             }
+        }
+    }
+
+    // Clears the active entry and decides which schedule, if any, should be queued next.
+    fn finish_active_call(&mut self, item: &QueueItem) -> CompletionAction {
+        let QueueItem::Id { id, .. } = item else {
+            return CompletionAction::AllowIntervalReschedule;
+        };
+        match self.key_map.remove(id) {
+            Some(ScheduledEntry::Active { pending_update: None }) => CompletionAction::AllowIntervalReschedule,
+            Some(ScheduledEntry::Active {
+                pending_update: Some(schedule),
+            }) => CompletionAction::QueuePendingUpdate(*id, schedule),
+            Some(entry) => {
+                self.key_map.insert(*id, entry);
+                CompletionAction::IgnoreIntervalReschedule
+            }
+            None => CompletionAction::IgnoreIntervalReschedule,
         }
     }
 
@@ -467,6 +537,15 @@ impl SchedulerActor {
             .with_label_values(&self.database_identity)
             .set(self.active_calls.len() as i64);
     }
+}
+
+enum CompletionAction {
+    // No row update arrived while this call was active.
+    AllowIntervalReschedule,
+    // A newer row update arrived; queue it and suppress this call's interval result.
+    QueuePendingUpdate(ScheduledFunctionId, ScheduleRequest),
+    // The active entry was already removed or replaced.
+    IgnoreIntervalReschedule,
 }
 
 fn call_scheduled_function(module_host: ModuleHost, item: QueueItem) -> ScheduledFunctionFuture {
