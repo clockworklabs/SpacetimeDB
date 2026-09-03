@@ -81,7 +81,7 @@ pub(super) async fn handle_decoded_message(
                 .call_procedure_v2(procedure, args, request_id, timer, flags)
                 .await;
             if let Err(e) = res {
-                log::warn!("Procedure call failed: {e:#}");
+                log::warn!("Failed to send procedure response to client: {e:#}");
             }
             Ok(())
         }

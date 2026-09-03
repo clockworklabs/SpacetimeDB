@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines one table and two reducers for client lifecycle events.
 
 TABLE
-- event
+- event (private)
   - Fields:
     - id: bigint (u64, primary key, auto-increment)
     - kind: string

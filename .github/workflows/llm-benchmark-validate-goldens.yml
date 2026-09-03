@@ -28,6 +28,10 @@ jobs:
   validate-goldens:
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
 
     strategy:
       fail-fast: false
@@ -41,7 +45,25 @@ jobs:
           fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
+          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+
+      - name: Restore OpenSSL
+        id: cache-openssl
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.ci-cache/openssl
+          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
+
+      - name: Configure cached OpenSSL
+        if: steps.cache-openssl.outputs.cache-hit == 'true'
+        run: |
+          echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
+          echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
 
       - name: Setup .NET SDK
         if: matrix.lang == 'csharp'

@@ -558,6 +558,10 @@ namespace SpacetimeDB
                 _isConnecting = false;
                 _webglSocketId = -1;
                 _cancelConnectRequested = false;
+                if (ReferenceEquals(Instance, this))
+                {
+                    Instance = null;
+                }
                 var ex = code != (int)WebSocketCloseStatus.NormalClosure ? new Exception($"WebSocket closed with code {code}: {reason}") : null;
                 dispatchQueue.Enqueue(() => OnClose?.Invoke(ex));
             }

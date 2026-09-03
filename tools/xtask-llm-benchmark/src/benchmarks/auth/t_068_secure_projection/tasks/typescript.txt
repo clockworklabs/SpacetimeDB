@@ -1,0 +1,25 @@
+Write a SpacetimeDB backend module in TypeScript that exposes a safe per-user projection of private rows.
+
+TYPES
+- SafeNote
+  - id: u64
+  - title: string
+
+TABLE
+- secret_note (private)
+  - Fields:
+    - id: u64 (primary key)
+    - owner: Identity (btree index)
+    - title: string
+    - secretBody: string
+
+REDUCERS
+- seed_private_note()
+  - Insert id 1 for the caller
+  - Set title to "Visible title"
+  - Set secretBody to "never expose this"
+
+VIEW
+- my_safe_note (per-user, public)
+  - Return an array of SafeNote for only the caller
+  - Never expose owner or secretBody

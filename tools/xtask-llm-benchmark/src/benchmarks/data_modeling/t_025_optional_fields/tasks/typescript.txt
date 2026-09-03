@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines a table with optional (nullable) fields and a reducer that inserts rows with and without optional values.
 
 TABLES
-- player
+- player (private)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - name: string

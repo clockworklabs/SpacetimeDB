@@ -9,7 +9,6 @@ description = "The logical expression representation for the SpacetimeDB query e
 [dependencies]
 anyhow.workspace = true
 bigdecimal.workspace = true
-derive_more.workspace = true
 ethnum.workspace = true
 thiserror.workspace = true
 spacetimedb-data-structures.workspace = true
@@ -18,7 +17,6 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
-bytes.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in TypeScript that defines a procedural view using an index and additional filters.
+
+TABLE
+- content (public)
+  - Fields:
+    - id: u64 (primary key)
+    - category: string (btree index)
+    - active: boolean
+    - score: i32
+
+REDUCERS
+- seed()
+  - Insert id 1 with category "news", active true, and score 20
+  - Insert id 2 with category "news", active false, and score 20
+  - Insert id 3 with category "news", active true, and score 5
+  - Insert id 4 with category "sports", active true, and score 20
+
+VIEW
+- featured_content (anonymous procedural, public)
+  - First use the category index for "news"
+  - Then return only active rows with score at least 10

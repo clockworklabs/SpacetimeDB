@@ -119,20 +119,32 @@ pub(crate) fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCo
 }
 
 fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, String) {
-    let status_code = match e {
+    let status_code = match &e {
         ProcedureCallError::Args(_) => {
+            // TODO: Remove this host log once the error is logged to the guest log instead.
             log::debug!("Attempt to call procedure {procedure} with invalid arguments");
             StatusCode::BAD_REQUEST
         }
-        ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+        ProcedureCallError::NoSuchModule(_) => {
+            log::debug!("Attempt to call procedure {procedure} on a module that is not available");
+            StatusCode::NOT_FOUND
+        }
         ProcedureCallError::NoSuchProcedure => {
+            // TODO: Remove this host log once the error is logged to the guest log instead.
             log::debug!("Attempt to call non-existent procedure OR reducer {procedure}");
             StatusCode::NOT_FOUND
         }
-        ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
-        ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        ProcedureCallError::OutOfEnergy => {
+            // TODO: Remove this host log once the error is logged to the guest log instead.
+            log::info!("Procedure {procedure} could not run because the module is out of energy");
+            StatusCode::PAYMENT_REQUIRED
+        }
+        ProcedureCallError::InternalError(_) => {
+            // TODO: May need to split this from module errors vs host errors
+            log::info!("Internal error while invoking procedure {procedure}: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     };
-    log::error!("Error while invoking procedure {e:#}");
     (status_code, format!("{:#}", anyhow::anyhow!(e)))
 }
 
@@ -416,7 +428,7 @@ fn reducer_outcome_response(
             (StatusCode::from_u16(530).unwrap(), *errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
-            log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
+            log::info!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
             (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
     }
@@ -1539,6 +1551,7 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
+            .route("/mcp", self.mcp_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset)
@@ -1556,10 +1569,7 @@ where
         // so we don't mind that we don't measure them.
         let db_router = db_router
             .route("/", self.db_delete)
-            .route("/identity", self.identity_get)
-            // I (pgoldman 2026-08-07) am actually somewhat concerned that we do care about measuring egress for MCP requests,
-            // but the MCP handler's name resolution and error handling are significantly incompatible with the middleware.
-            .route("/mcp", self.mcp_post);
+            .route("/identity", self.identity_get);
 
         // Add the subscribe route after `resolving_egress_metrics_middleware`
         // so that its egress bytes don't get counted into `http_response_size_bytes`;
@@ -1596,6 +1606,42 @@ where
     }
 }
 
+/// Counts a response's headers and body into `spacetime_http_response_size_bytes_total`,
+/// attributed to `database_identity`
+pub(crate) fn count_response_egress(
+    database_identity: Identity,
+    response: axum::response::Response,
+) -> axum::response::Response {
+    let (parts, body) = response.into_parts();
+
+    // Count the number of bytes used by the headers.
+    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
+    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
+    // N.b. headers installed by other middleware may or may not be counted here,
+    // depending on the order in which the middleware applies.
+    let header_bytes: usize = parts
+        .headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
+        .sum();
+
+    let counter = DB_METRICS
+        .http_response_size_bytes
+        .with_label_values(&database_identity);
+    counter.inc_by(header_bytes as u64);
+
+    // `/logs?follow=true` can stream indefinitely.
+    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
+    let body = body.map_frame(move |frame| {
+        if let Some(data) = frame.data_ref() {
+            counter.inc_by(data.len() as u64);
+        }
+        frame
+    });
+
+    axum::response::Response::from_parts(parts, Body::new(body))
+}
+
 /// Resolves an existing database, attaches it as [`ResolvedDatabase`],
 /// and counts response bytes in the metric `spacetime_http_response_size_bytes_total`.
 ///
@@ -1624,34 +1670,8 @@ where
     request.extensions_mut().insert(ResolvedDatabase(database.clone()));
 
     let response = next.run(request).await;
-    let (parts, body) = response.into_parts();
 
-    // Count the number of bytes used by the headers.
-    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
-    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
-    // N.b. headers installed by other middleware may or may not be counted here,
-    // depending on the order in which the middleware applies.
-    let header_bytes: usize = parts
-        .headers
-        .iter()
-        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
-        .sum();
-
-    let counter = DB_METRICS
-        .http_response_size_bytes
-        .with_label_values(&database.database_identity);
-    counter.inc_by(header_bytes as u64);
-
-    // `/logs?follow=true` can stream indefinitely.
-    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
-    let body = body.map_frame(move |frame| {
-        if let Some(data) = frame.data_ref() {
-            counter.inc_by(data.len() as u64);
-        }
-        frame
-    });
-
-    Ok(axum::response::Response::from_parts(parts, Body::new(body)))
+    Ok(count_response_egress(database.database_identity, response))
 }
 
 #[cfg(test)]
@@ -2311,6 +2331,93 @@ mod tests {
         assert_eq!(http_response_size_metric(database_identity), 0);
 
         remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_counts_mcp() {
+        let database_identity = test_identity(20);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new().with_database(database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            mcp_post: axum::routing::post(|| async {
+                ([(http::header::CONTENT_TYPE, "application/json")], r#"{"result":{}}"#)
+            }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri(format!("/{database_identity}/mcp"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(body, r#"{"result":{}}"#);
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64 + r#"{"result":{}}"#.len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn count_response_egress_counts_headers_and_body() {
+        let database_identity = test_identity(21);
+        remove_http_response_size_metric(database_identity);
+
+        let response = ([(http::header::CONTENT_TYPE, "application/json")], r#"{"ok":true}"#).into_response();
+        let counted = count_response_egress(database_identity, response);
+
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64
+        );
+
+        let body = counted.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body, r#"{"ok":true}"#);
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64 + r#"{"ok":true}"#.len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn mcp_handshake_returns_not_found_for_an_unknown_database() {
+        let state = DummyState::new();
+        let app = DatabaseRoutes::<DummyState> {
+            mcp_post: axum::routing::post(|| async { "not reached" }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/unregistered-name/mcp")
+                    .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "`unregistered-name` not found"
+        );
     }
 
     #[tokio::test]

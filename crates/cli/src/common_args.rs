@@ -76,9 +76,23 @@ pub fn parse_optional_dotnet_version(dotnet_version: Option<&str>) -> anyhow::Re
     dotnet_version.map(parse_dotnet_version).transpose()
 }
 
+pub(crate) const NATIVEAOT_UNSUPPORTED_MESSAGE: &str =
+    "NativeAOT-LLVM in only supported on Windows and Linux (.NET 10).";
+
+pub(crate) fn nativeaot_unsupported_on_host(os: &str, dotnet_version: Option<u8>) -> bool {
+    os == "macos" || (os == "linux" && dotnet_version == Some(8))
+}
+
+pub(crate) fn ensure_nativeaot_supported_on_host(dotnet_version: Option<u8>) -> anyhow::Result<()> {
+    if nativeaot_unsupported_on_host(std::env::consts::OS, dotnet_version) {
+        anyhow::bail!(NATIVEAOT_UNSUPPORTED_MESSAGE);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_optional_dotnet_version;
+    use super::{nativeaot_unsupported_on_host, parse_optional_dotnet_version};
 
     #[test]
     fn dotnet_version_accepts_supported_sdk_majors() {
@@ -91,5 +105,18 @@ mod tests {
     fn dotnet_version_rejects_unsupported_sdk_majors() {
         assert!(parse_optional_dotnet_version(Some("9")).is_err());
         assert!(parse_optional_dotnet_version(Some("not-a-number")).is_err());
+    }
+
+    #[test]
+    fn dotnet10_nativeaot_is_only_unsupported_on_macos_hosts() {
+        assert!(nativeaot_unsupported_on_host("macos", Some(10)));
+        assert!(nativeaot_unsupported_on_host("macos", Some(8)));
+        assert!(nativeaot_unsupported_on_host("macos", None));
+        assert!(nativeaot_unsupported_on_host("linux", Some(8)));
+        assert!(!nativeaot_unsupported_on_host("linux", Some(10)));
+        assert!(!nativeaot_unsupported_on_host("linux", None));
+        assert!(!nativeaot_unsupported_on_host("windows", Some(8)));
+        assert!(!nativeaot_unsupported_on_host("windows", Some(10)));
+        assert!(!nativeaot_unsupported_on_host("windows", None));
     }
 }

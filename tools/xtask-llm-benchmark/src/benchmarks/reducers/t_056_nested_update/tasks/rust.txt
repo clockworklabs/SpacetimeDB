@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in Rust that stores and updates nested profile preferences.
+
+TYPES
+- Preferences
+  - theme: String
+  - email_notifications: bool
+  - timezone: String
+
+TABLE
+- profile (public), struct Profile
+  - Fields:
+    - id: u64 (primary key)
+    - preferences: Preferences
+
+REDUCERS
+- create_profile(id: u64, theme: String, email_notifications: bool, timezone: String)
+  - Insert a profile with all three preference fields
+- update_theme(id: u64, theme: String)
+  - Change only preferences.theme
+  - Preserve preferences.email_notifications and preferences.timezone

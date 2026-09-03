@@ -213,6 +213,7 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
+            // TODO: Review log level after configured issuers can be distinguished from arbitrary token issuers.
             log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;
@@ -265,6 +266,7 @@ impl TokenValidator for OidcTokenValidator {
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
+            // TODO: Review log level after configured issuers can be distinguished from arbitrary token issuers.
             log::warn!("Error fetching public key for issuer {raw_issuer}: {e:?}");
         }
         let keys = key_or_error?;

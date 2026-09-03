@@ -559,6 +559,28 @@ for score in ctx.db.score().by_player_and_level().filter((123u32, 5u32)) {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+// Find all scores for player 123 (prefix match)
+for (auto score : ctx.db[score_by_player_and_level].filter(uint32_t(123))) {
+    LOG_INFO("Level " + std::to_string(score.level) + ": " + std::to_string(score.points) + " points");
+}
+
+// Find scores for player 123 at levels 1-10
+for (auto score : ctx.db[score_by_player_and_level].filter(
+         std::make_tuple(uint32_t(123), range_inclusive(uint32_t(1), uint32_t(10))))) {
+    LOG_INFO("Level " + std::to_string(score.level) + ": " + std::to_string(score.points) + " points");
+}
+
+// Find the exact score for player 123 at level 5
+for (auto score : ctx.db[score_by_player_and_level].filter(
+         std::make_tuple(uint32_t(123), uint32_t(5)))) {
+    LOG_INFO("Points: " + std::to_string(score.points));
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Deleting with Indexes

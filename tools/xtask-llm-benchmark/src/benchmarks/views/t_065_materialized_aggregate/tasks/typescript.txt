@@ -1,0 +1,27 @@
+Write a SpacetimeDB backend module in TypeScript that maintains and exposes a materialized aggregate.
+
+TABLES
+- sale (public)
+  - Fields:
+    - id: u64 (primary key)
+    - category: string
+    - amount: i64
+- category_total (public)
+  - Fields:
+    - category: string (primary key)
+    - totalAmount: i64
+    - saleCount: u64
+
+REDUCERS
+- exercise()
+  - This is the only exported reducer
+  - Keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted
+  - Insert books sales with ids 1 and 2 and amounts 10 and 20
+  - Update the second books sale to 25
+  - Insert and then delete a games sale with id 3
+  - Delete the first books sale
+
+VIEW
+- category_summary (public, non-anonymous query-builder)
+  - Expose all category_total rows
+  - After exercise, the only row is books with totalAmount 25 and saleCount 1

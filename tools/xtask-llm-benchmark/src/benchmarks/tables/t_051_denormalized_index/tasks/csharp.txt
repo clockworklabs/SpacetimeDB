@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in C# that maintains an indexed denormalized category slug on products.
+
+TABLES
+- Category (public, accessor Category)
+  - Fields:
+    - Id: ulong (primary key)
+    - Slug: string
+- Product (public, accessor Product)
+  - Fields:
+    - Id: ulong (primary key)
+    - CategoryId: ulong (btree index by_category)
+    - CategorySlug: string (btree index by_category_slug)
+    - Name: string
+
+REDUCERS
+- CreateCategory(id: ulong, slug: string)
+- CreateProduct(id: ulong, categoryId: ulong, name: string)
+  - Copy the current Category Slug into CategorySlug
+- RenameCategory(id: ulong, newSlug: string)
+  - Update the Category Slug
+  - Update every related Product so CategorySlug stays synchronized

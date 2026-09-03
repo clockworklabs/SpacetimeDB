@@ -58,8 +58,10 @@ pub struct Append<T> {
 ///
 /// Usually wrapped in another error, such as [`io::Error`].
 #[derive(Debug, Error)]
-#[error("checksum mismatch")]
-pub struct ChecksumMismatch;
+#[error("commit at byte position {commit_pos}: checksum mismatch")]
+pub struct ChecksumMismatch {
+    pub(crate) commit_pos: u64,
+}
 
 #[derive(Debug, Error)]
 pub enum SegmentMetadata {

@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in Rust that deletes a logical group in scheduled batches of at most two rows.
+
+TABLES
+- work_item (public), struct WorkItem
+  - Fields:
+    - id: u64 (primary key)
+    - group_id: u64 (btree index)
+- delete_job (private, scheduled for run_delete_batch), struct DeleteJob
+  - Fields:
+    - scheduled_id: u64 (primary key, auto-increment)
+    - scheduled_at: ScheduleAt
+    - group_id: u64
+
+REDUCERS
+- seed_group(group_id: u64, count: u32)
+  - Assign deterministic unique id values to the inserted rows
+- request_delete(group_id: u64)
+- run_delete_batch(job: DeleteJob) (scheduled reducer)
+  - Delete at most two work_item rows matching the scheduled group_id
+  - If matching rows remain, enqueue another one-shot delete_job

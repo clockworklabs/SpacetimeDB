@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in TypeScript that stores and updates nested profile preferences.
+
+TYPES
+- Preferences
+  - theme: string
+  - emailNotifications: boolean
+  - timezone: string
+
+TABLE
+- profile (public)
+  - Fields:
+    - id: u64 (primary key)
+    - preferences: Preferences
+
+REDUCERS
+- create_profile(id: u64, theme: string, emailNotifications: boolean, timezone: string)
+  - Insert a profile with all three preference fields
+- update_theme(id: u64, theme: string)
+  - Change only preferences.theme
+  - Preserve preferences.emailNotifications and preferences.timezone

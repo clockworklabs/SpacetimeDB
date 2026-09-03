@@ -1,4 +1,5 @@
 use crate::bench::utils::sanitize_db_name;
+use crate::eval::spacetime_command;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::borrow::Cow;
@@ -6,11 +7,16 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    LazyLock,
-};
+use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static CLI_SESSION_TAG: LazyLock<String> = LazyLock::new(|| {
+    let started_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{}-{started_at}", std::process::id())
+});
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -126,42 +132,43 @@ fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
 
 struct CliRootDir {
     path: PathBuf,
+    remove_on_drop: bool,
 }
 
 impl CliRootDir {
     fn path(&self) -> &Path {
         &self.path
     }
+
+    fn remove(&self) -> Result<()> {
+        match fs::remove_dir_all(&self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error).with_context(|| format!("failed to remove CLI root {}", self.path.display())),
+        }
+    }
+
+    fn claim_cleanup(&mut self) {
+        self.remove_on_drop = true;
+    }
+
+    fn relinquish_cleanup(&mut self) {
+        self.remove_on_drop = false;
+    }
 }
 
 impl Drop for CliRootDir {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
-
-fn isolated_cli_root() -> Result<CliRootDir> {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    for _ in 0..16 {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
-        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{nanos}-{id}", std::process::id()));
-        match fs::create_dir(&path) {
-            Ok(()) => return Ok(CliRootDir { path }),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
+        if self.remove_on_drop
+            && let Err(error) = self.remove()
+        {
+            eprintln!("[cleanup] failed to remove CLI root {}: {error:#}", self.path.display());
         }
     }
-
-    bail!("failed to create isolated SpacetimeDB CLI root directory");
 }
 
 fn spacetime_cmd(cli_root: &CliRootDir) -> Command {
-    let mut cmd = Command::new("spacetime");
+    let mut cmd = spacetime_command();
     cmd.arg("--root-dir").arg(cli_root.path());
     cmd
 }
@@ -205,8 +212,86 @@ fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
 /* Shared                                                                     */
 /* -------------------------------------------------------------------------- */
 
+pub struct PublishedDatabase {
+    host_url: String,
+    db: String,
+    // Keep the publishing CLI session alive so deletion uses the database
+    // owner's credentials without sharing mutable CLI state across routes.
+    cli_root: CliRootDir,
+    deleted: bool,
+}
+
+impl PublishedDatabase {
+    fn new(host_url: &str, db: String, mut cli_root: CliRootDir) -> Self {
+        cli_root.claim_cleanup();
+        Self {
+            host_url: host_url.to_owned(),
+            db,
+            cli_root,
+            deleted: false,
+        }
+    }
+
+    fn delete_inner(&self) -> Result<()> {
+        let mut cmd = spacetime_cmd(&self.cli_root);
+        cmd.arg("delete")
+            .arg("-y")
+            .arg("--no-config")
+            .arg("--server")
+            .arg(&self.host_url)
+            .arg(&self.db);
+        run(&mut cmd, "spacetime delete").with_context(|| {
+            format!(
+                "failed to clean up benchmark database `{}` on {}",
+                self.db, self.host_url
+            )
+        })
+    }
+
+    pub fn delete(mut self) -> Result<()> {
+        self.delete_inner()?;
+        self.deleted = true;
+        self.cli_root.remove()?;
+        self.cli_root.relinquish_cleanup();
+        Ok(())
+    }
+
+    /// Relinquish cleanup ownership after another handle for the same database
+    /// has been created by a migration republish.
+    pub fn relinquish(mut self) {
+        self.deleted = true;
+        self.cli_root.relinquish_cleanup();
+    }
+}
+
+impl Drop for PublishedDatabase {
+    fn drop(&mut self) {
+        if !self.deleted
+            && let Err(error) = self.delete_inner()
+        {
+            eprintln!(
+                "[cleanup] failed to delete benchmark database `{}` during fallback cleanup: {error:#}",
+                self.db
+            );
+        }
+    }
+}
+
 pub trait Publisher: Send + Sync {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()>;
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase>;
+}
+
+fn database_cli_root(module_name: &str, remove_on_drop: bool) -> Result<CliRootDir> {
+    let db = sanitize_db_name(module_name);
+    let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()));
+    fs::create_dir_all(&path)?;
+    Ok(CliRootDir { path, remove_on_drop })
 }
 
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
@@ -222,20 +307,248 @@ fn signal_killed_by(_status: &std::process::ExitStatus) -> Option<i32> {
 }
 
 /// Check if the failure is a transient error that should be retried.
-/// These are resource contention issues in the dotnet WASI SDK.
+/// These are resource contention issues and diagnostic-free child-process crashes.
 fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let combined = format!("{stderr}{stdout}");
-    // "Pipe is broken" errors from WASI SDK parallel builds
+    let output = combined.to_ascii_lowercase();
+    let has_source_diagnostic = output.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("error[")
+            || line.contains(": error cs")
+            || line.contains(": error stdb")
+            || line.contains(": error il")
+            || line.starts_with("error ts")
+            || line.contains("rust-lld: error:")
+            || line.contains("lld-link: error:")
+            || line.strip_prefix("error:").is_some_and(|message| {
+                let message = message.trim_start();
+                !message.starts_with("could not compile `")
+                    && !message.starts_with("process didn't exit successfully")
+                    && !message.starts_with("command [\"cargo\", \"build\"")
+                    && !message.starts_with("command [\"dotnet\", \"publish\"")
+                    && !message.starts_with("failed to run custom build command for `")
+                    && !message.starts_with("linking with `rust-lld.exe` failed")
+            })
+    });
+    if has_source_diagnostic {
+        return false;
+    }
+
+    let has_terminal_failure = output.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("error: could not compile `")
+            || line.starts_with("failed:")
+            || line.starts_with("exception:")
+            || line.contains("build failed")
+            || line.contains("panicked at")
+    });
+    let diagnostic_free_rust_exit = (output.contains("process didn't exit successfully")
+        && output.contains("--crate-name"))
+        || output.contains("linking with `rust-lld.exe` failed: exit code: 1");
+    let wrapper_command_exit = output.contains("error: command [\"cargo\", \"build\"")
+        || output.contains("error: command [\"dotnet\", \"publish\"")
+        || (output.contains("error: failed to run custom build command for")
+            && output.contains("process didn't exit successfully"));
+    let progress_only_exit = output.trim().is_empty()
+        || output.lines().filter(|line| !line.trim().is_empty()).all(|line| {
+            let line = line.trim_start();
+            [
+                "building ",
+                "compiling ",
+                "downloaded ",
+                "downloading ",
+                "finished ",
+                "logged in with identity ",
+                "optimizing ",
+                "packages: ",
+                "progress: ",
+                "recreating ",
+                "restored ",
+                "restoring ",
+                "saving config ",
+                "warning: this login will not work for any other servers.",
+                "we have logged in directly to your target server.",
+            ]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+                || line.chars().all(|character| matches!(character, '+' | '-'))
+        });
+
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
-        // Other transient resource errors
         || combined.contains("Unable to read data from the transport connection")
-        // WASI SDK tar extraction race condition - multiple parallel builds
-        // trying to extract the same tarball simultaneously
         || (combined.contains("wasi-sdk") && combined.contains("tar"))
         || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
-        // dotnet can crash below spacetime while spacetime exits 1.
         || combined.contains("code <signal")
+        || diagnostic_free_rust_exit
+        || wrapper_command_exit
+        || (!has_terminal_failure && progress_only_exit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_transient_build_error, CliRootDir};
+    use std::fs;
+
+    #[test]
+    fn cli_root_cleans_up_when_it_owns_the_directory() {
+        let path = std::env::temp_dir().join(format!("stdb-cli-root-cleanup-test-{}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+
+        drop(CliRootDir {
+            path: path.clone(),
+            remove_on_drop: true,
+        });
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cli_root_can_relinquish_cleanup_to_a_republish() {
+        let path = std::env::temp_dir().join(format!("stdb-cli-root-republish-test-{}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+
+        drop(CliRootDir {
+            path: path.clone(),
+            remove_on_drop: false,
+        });
+
+        assert!(path.exists());
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn retries_publish_exit_without_actionable_diagnostic() {
+        assert!(is_transient_build_error(
+            "Saving config to temporary-root/config/cli.toml.",
+            "Logged in with identity c200"
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_source_compile_error() {
+        assert!(!is_transient_build_error(
+            "error: could not compile `spacetime-module`",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_partial_cargo_output_containing_error_in_crate_name() {
+        assert!(is_transient_build_error(
+            "Compiling thiserror v1.0.69\nCompiling anyhow v1.0.104",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_silent_rustc_exit() {
+        assert!(is_transient_build_error(
+            "error: could not compile `rand_core` (lib)\n\nCaused by:\n  process didn't exit successfully: `rustc --crate-name rand_core` (exit code: 1)",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_rustc_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error[E0425]: cannot find value `missing` in this scope\nerror: could not compile `spacetime-module`\n\nCaused by:\n  process didn't exit successfully: `rustc --crate-name spacetime_module` (exit code: 1)",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_silent_cargo_exit() {
+        assert!(is_transient_build_error(
+            "Error: command [\"cargo\", \"build\", \"--release\"] exited with code 1",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_rust_lld_exit_without_linker_diagnostic() {
+        assert!(is_transient_build_error(
+            "error: linking with `rust-lld.exe` failed: exit code: 1\n  = note: some arguments are omitted\n  = note:\n\nerror: could not compile `rustversion` (lib) due to 1 previous error",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_rust_lld_exit_with_linker_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error: linking with `rust-lld.exe` failed: exit code: 1\n  = note: rust-lld: error: undefined symbol: missing",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_build_script_exit_without_diagnostic() {
+        assert!(is_transient_build_error(
+            "error: failed to run custom build command for `anyhow v1.0.104`\n\nCaused by:\n  process didn't exit successfully: `target/release/build/anyhow/build-script-build` (exit code: 1)\n  --- stdout\n  cargo:rerun-if-changed=src/nightly.rs",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_build_script_exit_with_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error: failed to run custom build command for `native-dependency v1.0.0`\n\nCaused by:\n  process didn't exit successfully: `target/release/build/native-dependency/build-script-build` (exit code: 1)\n  --- stderr\n  error: required native compiler was not found",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_dotnet_linker_exit_without_source_diagnostic() {
+        assert!(is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\"] exited with code 1",
+            "Microsoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn retries_dotnet_publish_exit_without_diagnostic() {
+        assert!(is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\", \"-c\", \"Release\", \"-v\", \"quiet\"] exited with code 1",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_dotnet_publish_exit_with_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\", \"-c\", \"Release\"] exited with code 1",
+            "src/Module.cs(10,5): error CS0122: method is inaccessible due to its protection level"
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_dotnet_linker_exit_with_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\"] exited with code 1",
+            "Lib.cs(10,5): error CS0103: The name 'missing' does not exist.\nMicrosoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_permanent_package_error() {
+        assert!(!is_transient_build_error(
+            "ERR_PNPM_NO_MATCHING_VERSION No matching version found for missing-package@1.0.0",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_authentication_error() {
+        assert!(!is_transient_build_error("authentication token expired", ""));
+    }
+
+    #[test]
+    fn retries_incomplete_pnpm_progress() {
+        assert!(is_transient_build_error(
+            "",
+            "Recreating generated/node_modules\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +10\n++++++++++"
+        ));
+    }
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
@@ -342,7 +655,13 @@ impl DotnetPublisher {
 }
 
 impl Publisher for DotnetPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -354,12 +673,14 @@ impl Publisher for DotnetPublisher {
         let source = source
             .canonicalize()
             .with_context(|| format!("failed to resolve C# source path {}", source.display()))?;
-        let cli_root = isolated_cli_root()?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         let mut pubcmd = spacetime_cmd(&cli_root);
+        pubcmd.arg("publish");
+        if clear_database {
+            pubcmd.arg("-c");
+        }
         pubcmd
-            .arg("publish")
-            .arg("-c")
             .arg("-y")
             .arg("--server")
             .arg(host_url)
@@ -370,7 +691,7 @@ impl Publisher for DotnetPublisher {
         Self::configure_dotnet_env(&mut pubcmd);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }
 /* -------------------------------------------------------------------------- */
@@ -390,7 +711,13 @@ impl SpacetimeRustPublisher {
 }
 
 impl Publisher for SpacetimeRustPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -401,22 +728,26 @@ impl Publisher for SpacetimeRustPublisher {
 
         // sanitize db + server
         let db = sanitize_db_name(module_name);
-        let cli_root = isolated_cli_root()?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         // 2) Publish
-        run(
-            spacetime_cmd(&cli_root)
-                .arg("publish")
-                .arg("-c")
-                .arg("-y")
-                .arg("--server")
-                .arg(host_url)
-                .arg(&db)
-                .current_dir(source),
-            "spacetime publish",
-        )?;
+        let mut pubcmd = spacetime_cmd(&cli_root);
+        pubcmd.arg("publish");
+        if clear_database {
+            pubcmd.arg("-c");
+        }
+        pubcmd
+            .arg("-y")
+            .arg("--server")
+            .arg(host_url)
+            .arg(&db)
+            .current_dir(source);
+        if let Some(target_dir) = env::var_os("LLM_BENCH_RUST_TARGET_DIR") {
+            pubcmd.env("CARGO_TARGET_DIR", target_dir);
+        }
+        run(&mut pubcmd, "spacetime publish")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }
 
@@ -437,7 +768,13 @@ impl TypeScriptPublisher {
 }
 
 impl Publisher for TypeScriptPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -445,7 +782,7 @@ impl Publisher for TypeScriptPublisher {
 
         Self::ensure_package_json(source)?;
         let db = sanitize_db_name(module_name);
-        let cli_root = isolated_cli_root()?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         // Install dependencies (--ignore-workspace to avoid parent workspace interference).
         let nodejs_dir = configured_nodejs_dir();
@@ -520,9 +857,11 @@ impl Publisher for TypeScriptPublisher {
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
         let mut publish_cmd = spacetime_cmd(&cli_root);
+        publish_cmd.arg("publish");
+        if clear_database {
+            publish_cmd.arg("-c");
+        }
         publish_cmd
-            .arg("publish")
-            .arg("-c")
             .arg("-y")
             .arg("--server")
             .arg(host_url)
@@ -539,6 +878,6 @@ impl Publisher for TypeScriptPublisher {
         }
         run(&mut publish_cmd, "spacetime publish (typescript)")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("http-handlers")]
+    [ValidateSet("http-handlers", "indexes")]
     [string]$Suite = "http-handlers"
 )
 
@@ -98,6 +98,12 @@ $cases = switch ($Suite) {
             (New-CompileCase "error_http_router_not_a_function" "cases/http-handlers/error_http_router_not_a_function.cpp" "failure" "illegal initializer")
             (New-CompileCase "error_http_router_with_args" "cases/http-handlers/error_http_router_with_args.cpp" "failure" "too many arguments provided to function-like macro invocation")
             (New-CompileCase "error_http_router_wrong_return_type" "cases/http-handlers/error_http_router_wrong_return_type.cpp" "failure" "no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::Router'")
+        )
+    }
+    "indexes" {
+        @(
+            (New-CompileCase "ok_multi_column_range_prefixes" "cases/indexes/ok_multi_column_range_prefixes.cpp" "success")
+            (New-CompileCase "error_multi_column_range_not_terminal" "cases/indexes/error_multi_column_range_not_terminal.cpp" "failure" "Range<T> in a multi-column index filter must be the final supplied element")
         )
     }
 }

@@ -330,6 +330,7 @@ impl CompiledModule {
                 db_config: config,
                 durability: Default::default(),
                 websocket: WebSocketOptions::default(),
+                module_http: Default::default(),
                 wasm: Default::default(),
                 v8: Default::default(),
             },

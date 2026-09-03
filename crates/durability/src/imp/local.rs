@@ -335,7 +335,7 @@ where
                 clog.flush_and_sync()
             })
             .await
-            .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
+            .inspect_err(|e| log::error!("error flushing commitlog: {e:#}"))
             .inspect(|maybe_offset| {
                 if let Some(new_offset) = maybe_offset {
                     trace!("synced to offset {new_offset}");
@@ -385,6 +385,7 @@ where
             {
                 // Will print "durability actor: task was cancelled"
                 // or "durability actor: task panicked [...]"
+                // TODO: Review log level after JoinError exposes panic versus cancellation.
                 warn!("durability actor: {e}");
             }
             // Don't abort if the actor completed.

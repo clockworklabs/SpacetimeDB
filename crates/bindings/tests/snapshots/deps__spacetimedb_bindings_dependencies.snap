@@ -3,24 +3,11 @@ source: crates/bindings/tests/deps.rs
 assertion_line: 16
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 73
+total crates: 72
 spacetimedb
 ├── anyhow
 ├── bytemuck
 ├── bytes
-├── derive_more
-│   ├── convert_case
-│   ├── proc_macro2
-│   │   └── unicode_ident
-│   ├── quote
-│   │   └── proc_macro2 (*)
-│   └── syn
-│       ├── proc_macro2 (*)
-│       ├── quote (*)
-│       └── unicode_ident
-│   [build-dependencies]
-│   └── rustc_version
-│       └── semver
 ├── getrandom
 │   └── cfg_if
 ├── http
@@ -35,7 +22,6 @@ spacetimedb
 │   │   └── rand_core
 │   │       └── getrandom (*)
 │   └── rand_core (*)
-├── scoped_tls
 ├── serde_json
 │   ├── itoa
 │   ├── memchr
@@ -44,31 +30,28 @@ spacetimedb
 ├── spacetimedb_bindings_macro
 │   ├── heck
 │   ├── humantime
-│   ├── proc_macro2 (*)
-│   ├── quote (*)
-│   ├── spacetimedb_primitives
-│   │   ├── bitflags
-│   │   ├── either
-│   │   ├── enum_as_inner
-│   │   │   ├── heck
-│   │   │   ├── proc_macro2 (*)
-│   │   │   ├── quote (*)
-│   │   │   └── syn (*)
-│   │   ├── itertools
-│   │   │   └── either
-│   │   └── nohash_hasher
-│   └── syn (*)
+│   ├── proc_macro2
+│   │   └── unicode_ident
+│   ├── quote
+│   │   └── proc_macro2 (*)
+│   └── syn
+│       ├── proc_macro2 (*)
+│       ├── quote (*)
+│       └── unicode_ident
 ├── spacetimedb_bindings_sys
 │   └── spacetimedb_primitives
 │       ├── bitflags
 │       ├── either
-│       ├── enum_as_inner (*)
+│       ├── enum_as_inner
+│       │   ├── heck
+│       │   ├── proc_macro2 (*)
+│       │   ├── quote (*)
+│       │   └── syn (*)
 │       ├── itertools
 │       │   └── either
 │       └── nohash_hasher
 ├── spacetimedb_lib
 │   ├── anyhow
-│   ├── bitflags
 │   ├── blake3
 │   │   ├── arrayref
 │   │   ├── arrayvec
@@ -78,63 +61,63 @@ spacetimedb
 │   │   └── cc
 │   │       ├── find_msvc_tools
 │   │       └── shlex
-│   ├── bytes
-│   ├── chrono
-│   │   └── num_traits
-│   │       [build-dependencies]
-│   │       └── autocfg
-│   ├── derive_more (*)
-│   ├── enum_as_inner (*)
+│   ├── derive_more
+│   │   ├── convert_case
+│   │   ├── proc_macro2 (*)
+│   │   ├── quote (*)
+│   │   └── syn (*)
+│   │   [build-dependencies]
+│   │   └── rustc_version
+│   │       └── semver
 │   ├── hex
-│   ├── itertools (*)
-│   ├── log
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_primitives (*)
-│   ├── spacetimedb_sats
-│   │   ├── anyhow
-│   │   ├── arrayvec
-│   │   ├── bitflags
-│   │   ├── bytemuck
-│   │   ├── bytes
-│   │   ├── chrono (*)
-│   │   ├── decorum
-│   │   │   ├── approx
-│   │   │   │   └── num_traits (*)
-│   │   │   └── num_traits (*)
-│   │   ├── derive_more (*)
-│   │   ├── enum_as_inner (*)
-│   │   ├── ethnum
-│   │   │   └── serde
-│   │   │       └── serde_core
-│   │   ├── hex
-│   │   ├── itertools (*)
-│   │   ├── lean_string
-│   │   │   ├── castaway
-│   │   │   │   └── rustversion
-│   │   │   ├── itoa
-│   │   │   └── ryu
-│   │   ├── second_stack
-│   │   ├── sha3
-│   │   │   ├── digest
-│   │   │   │   ├── block_buffer
-│   │   │   │   │   └── generic_array
-│   │   │   │   │       └── typenum
-│   │   │   │   │       [build-dependencies]
-│   │   │   │   │       └── version_check
-│   │   │   │   └── crypto_common
-│   │   │   │       ├── generic_array (*)
-│   │   │   │       └── typenum
-│   │   │   └── keccak
-│   │   ├── smallvec
-│   │   ├── spacetimedb_bindings_macro (*)
-│   │   ├── spacetimedb_primitives (*)
-│   │   ├── thiserror
-│   │   │   └── thiserror_impl
-│   │   │       ├── proc_macro2 (*)
-│   │   │       ├── quote (*)
-│   │   │       └── syn (*)
-│   │   └── uuid
-│   └── thiserror (*)
+│   └── spacetimedb_sats
+│       ├── anyhow
+│       ├── arrayvec
+│       ├── bytemuck
+│       ├── bytes
+│       ├── chrono
+│       │   └── num_traits
+│       │       [build-dependencies]
+│       │       └── autocfg
+│       ├── decorum
+│       │   ├── approx
+│       │   │   └── num_traits (*)
+│       │   └── num_traits (*)
+│       ├── derive_more (*)
+│       ├── enum_as_inner (*)
+│       ├── ethnum
+│       │   └── serde
+│       │       └── serde_core
+│       ├── hex
+│       ├── itertools (*)
+│       ├── lean_string
+│       │   ├── castaway
+│       │   │   └── rustversion
+│       │   ├── itoa
+│       │   └── ryu
+│       ├── second_stack
+│       ├── sha3
+│       │   ├── digest
+│       │   │   ├── block_buffer
+│       │   │   │   └── generic_array
+│       │   │   │       └── typenum
+│       │   │   │       [build-dependencies]
+│       │   │   │       └── version_check
+│       │   │   └── crypto_common
+│       │   │       ├── generic_array (*)
+│       │   │       └── typenum
+│       │   └── keccak
+│       ├── smallvec
+│       ├── spacetimedb_bindings_macro (*)
+│       ├── spacetimedb_primitives (*)
+│       ├── thiserror
+│       │   └── thiserror_impl
+│       │       ├── proc_macro2 (*)
+│       │       ├── quote (*)
+│       │       └── syn (*)
+│       └── uuid
 ├── spacetimedb_primitives (*)
 └── spacetimedb_query_builder
     └── spacetimedb_lib (*)

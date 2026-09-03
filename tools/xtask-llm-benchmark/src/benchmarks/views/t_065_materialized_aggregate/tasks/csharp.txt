@@ -1,0 +1,27 @@
+Write a SpacetimeDB backend module in C# that maintains and exposes a materialized aggregate.
+
+TABLES
+- Sale (public, accessor Sale)
+  - Fields:
+    - Id: ulong (primary key)
+    - Category: string
+    - Amount: long
+- CategoryTotal (public, accessor CategoryTotal)
+  - Fields:
+    - Category: string (primary key)
+    - TotalAmount: long
+    - SaleCount: ulong
+
+REDUCERS
+- Exercise()
+  - This is the only exported reducer
+  - Keep CategoryTotal transactionally synchronized when a Sale is inserted, changed, moved between categories, or deleted
+  - Insert books Sale rows with Ids 1 and 2 and Amounts 10 and 20
+  - Update the second books Sale to 25
+  - Insert and then delete a games Sale with Id 3
+  - Delete the first books Sale
+
+VIEW
+- CategorySummary (public, non-anonymous query-builder)
+  - Expose all CategoryTotal rows
+  - After Exercise, the only row is books with TotalAmount 25 and SaleCount 1

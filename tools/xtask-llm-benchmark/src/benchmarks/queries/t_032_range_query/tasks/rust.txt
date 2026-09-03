@@ -1,14 +1,14 @@
 Write a SpacetimeDB backend module in Rust that defines a product table with a BTree-indexed price column, a result table, and a reducer that filters products within a price range and writes matches to the result table.
 
 TABLES
-- product
+- product (private)
   - Struct: Product
   - Fields:
     - id: u64 (primary key, auto_inc)
     - name: String
     - price: u32 (index btree)
 
-- price_range_result
+- price_range_result (private)
   - Struct: PriceRangeResult
   - Fields:
     - product_id: u64 (primary key)

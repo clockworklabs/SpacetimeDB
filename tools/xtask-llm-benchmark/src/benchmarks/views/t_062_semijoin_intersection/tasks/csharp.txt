@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in C# that defines a query-builder semijoin view.
+
+TABLES
+- Member (public, accessor Member)
+  - Fields:
+    - Id: ulong (primary key)
+    - Name: string
+- Eligibility (public, accessor Eligibility)
+  - Fields:
+    - Id: ulong (primary key)
+    - MemberId: ulong (btree index)
+
+REDUCERS
+- Seed()
+  - Insert Member 1 named "Ada" and Member 2 named "Grace"
+  - Insert Eligibility Id 10 for only Member 1
+
+VIEW
+- EligibleMember (public, non-anonymous query-builder)
+  - Use a semijoin
+  - Return members only when a matching Eligibility row exists

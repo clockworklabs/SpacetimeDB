@@ -37,6 +37,7 @@ where
         .nest("/energy", energy::router())
         .nest("/prometheus", prometheus::router())
         .nest("/metrics", metrics::router())
+        // the database is named in the request body, so `mcp_root` counts its own egress
         .route(
             "/mcp",
             post(mcp::mcp_root::<S>).route_layer(axum::middleware::from_fn_with_state(

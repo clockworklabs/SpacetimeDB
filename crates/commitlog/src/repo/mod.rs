@@ -57,6 +57,23 @@ pub trait SegmentLen: io::Seek {
     }
 }
 
+/// Trait to obtain the current position in a segment.
+///
+/// All types implementing [io::Seek] implement this trait, via
+/// [io::Seek::stream_position]. The trait exists so that types that can't
+/// easily implement [io::Seek] can still provide position information.
+pub trait SegmentPos {
+    /// Get the current position in the segment, like
+    /// [io::Seek::stream_position].
+    fn segment_pos(&mut self) -> io::Result<u64>;
+}
+
+impl<T: io::Seek> SegmentPos for T {
+    fn segment_pos(&mut self) -> io::Result<u64> {
+        self.stream_position()
+    }
+}
+
 pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {
     /// Whether the segment is considered immutable.
     ///
