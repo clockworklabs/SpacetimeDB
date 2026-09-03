@@ -37,6 +37,7 @@ import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.js';
 import type { Track } from '../composition/tracks.js';
 import type { ConditionReference, ResolvedStudyCondition } from './condition-compiler.js';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.js';
+import { describeStackTestabilityProblems, resolveStackTestability } from './stack-testability.js';
 import type { CampaignModeInput } from './campaign-mode.js';
 import { validateCampaignMode } from './campaign-mode.js';
 import type { DependencyWorkSelection }
@@ -173,6 +174,8 @@ interface BindingRecord {
   binding: RecipeBinding;
   calibration: ResolvedCalibration | null;
   publicBinding: PublicBinding;
+  // The checks a pack selection grades; a modular selection resolves them per condition.
+  checkKeys: string[] | null;
   qualificationStaleness: unknown[];
 }
 
@@ -849,6 +852,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
       } : null,
     };
     return { level, modular, binding, calibration, publicBinding,
+      checkKeys: selectedTask ? selectedTask.selection.checks.map(check => check.stableKey) : null,
       qualificationStaleness: calibration?.qualificationStaleness ?? [] };
   });
   const bindings = bindingRecords.map(record => record.publicBinding);
@@ -911,6 +915,18 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     if (adapter.version !== selection.adapterVersion) fail('stacks', `${adapter.id} adapter is ${adapter.version}, not ${selection.adapterVersion}`);
     return identityForStack(adapter);
   });
+  // Every check a stack will be asked to measure must resolve on that stack
+  // before the campaign can run.
+  const measurable = (level: number, plan: RecipeBinding['plan'], checkKeys: readonly string[]): void => {
+    const problems = resolveStackTestability({ plan, checkKeys, trackActions: track.actions,
+      stacks: definition.stacks.map(selection => STACK_ADAPTER_REGISTRY.get(selection.id)) });
+    if (problems.length === 0) return;
+    fail('stacks', `L${level} selects checks a stack cannot measure: `
+      + describeStackTestabilityProblems(problems).join('; '));
+  };
+  for (const record of bindingRecords) {
+    if (record.checkKeys) measurable(record.level, record.binding.plan, record.checkKeys);
+  }
   const agents = definition.agents.map(selection => {
     const adapter = AGENT_ADAPTER_REGISTRY.get(selection.adapter);
     if (!adapter) fail('agents', `has unknown adapter ${selection.adapter}`);
@@ -969,6 +985,9 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
         fail('levels', `L${record.level} did not resolve a modular recipe task`);
       }
       const modular: ModularRecipeTaskRequestResult = selected;
+      measurable(record.level, record.binding.plan,
+        [...modular.selection.scoredChecks, ...modular.selection.observedChecks]
+          .map(check => check.stableKey));
       const taskMode = requestedTaskMode(modular.request);
       return {
         level: record.level,

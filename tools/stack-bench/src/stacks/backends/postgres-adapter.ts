@@ -1,3 +1,4 @@
+import { GRADING_CAPABILITY_IDS } from '../../actions/action-contract.js';
 import { createHttpGradingContext, httpNamedActionRequest } from '../stack-grading-operations.js';
 import { captureHostedDiagnostics, activateHosted } from '../hosted-lifecycle.js';
 import { postgresConnectionUrl, postgresSetupMetadata,
@@ -20,7 +21,8 @@ const postgresAdapter = defineStackAdapter('postgres', {
   databaseWrite: { setStock: setPostgresStock },
   diagnostics: { capture: captureHostedDiagnostics },
   database: { prepare: preparePostgresDatabase, proveUse: provePostgresUse },
-  grading: { context: createHttpGradingContext },
+  grading: { context: createHttpGradingContext,
+    transport: 'http', capabilities: GRADING_CAPABILITY_IDS },
   namedAction: { request: httpNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: true, retainHostSupported: false,

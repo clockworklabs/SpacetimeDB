@@ -32,6 +32,10 @@ is not executable behavior.
 
 Actions run through capability-scoped executors. Browser, transport,
 concurrency, lifecycle, and database actions use the same typed result contract.
+Each stack adapter declares the capabilities it provides and whether named
+application actions travel as HTTP routes or reducer calls. The campaign
+compiler resolves every selected check against every selected stack and
+refuses a campaign that a stack could not measure.
 
 When authoring assertions:
 

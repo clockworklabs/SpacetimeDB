@@ -1,6 +1,14 @@
 import type { BackendLease } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
+import type { GradingCapabilityId } from '../actions/action-contract.js';
+
+// What the grader can measure on a stack: the runtime capabilities the stack
+// provides and the transport that carries named application actions.
+export interface StackGradingSupport {
+  readonly transport: 'http' | 'reducer';
+  readonly capabilities: readonly GradingCapabilityId[];
+}
 
 export interface StackPortBases {
   readonly vite: number;

@@ -1,3 +1,4 @@
+import { GRADING_CAPABILITY_IDS } from '../../actions/action-contract.js';
 import { createHttpGradingContext, httpNamedActionRequest } from '../stack-grading-operations.js';
 import { activateHosted } from '../hosted-lifecycle.js';
 import { emptySetupMetadata, noConnectionUrl,
@@ -14,7 +15,10 @@ export const stubAdapter = defineStackAdapter('stub', {
   lease: stackLeaseOperations('stub'),
   reset: { requiresReseed: false },
   database: { prepare: ({ name }: { name: string }) => name },
-  grading: { context: createHttpGradingContext },
+  // The stub has no backend to restart and no database to write to.
+  grading: { context: createHttpGradingContext, transport: 'http',
+    capabilities: GRADING_CAPABILITY_IDS.filter(capability =>
+      capability !== 'backend-lifecycle' && capability !== 'database-write') },
   namedAction: { request: httpNamedActionRequest },
   teardown: { host: stopHostedHost },
   runPolicy: { resetEnabled: false, retainHostSupported: false,

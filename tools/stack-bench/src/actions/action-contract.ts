@@ -83,13 +83,37 @@ export const ACTION_EVIDENCE_SCHEMA_VERSION = 1;
 
 const object = (value: unknown): value is UnknownRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+// Every runtime capability the grader can hand an action. A stack declares
+// which of these it provides; an action declares which it needs.
+export const GRADING_CAPABILITY_IDS = Object.freeze([
+  'actors',
+  'application-files',
+  'application-lifecycle',
+  'backend-lifecycle',
+  'browser-interaction',
+  'browser-observation',
+  'clock',
+  'concurrency',
+  'database-write',
+  'named-actions',
+  'subprocess',
+  'transport-observation',
+] as const);
+
+export type GradingCapabilityId = (typeof GRADING_CAPABILITY_IDS)[number];
+
 export function createActionRegistry(
   plugins: readonly ActionPlugin[],
   { expectedIds = null }: { expectedIds?: readonly string[] | null } = {},
 ): ActionRegistry {
   const entries = new Map<string, ActionPlugin>();
+  const known = new Set<string>(GRADING_CAPABILITY_IDS);
   for (const plugin of plugins) {
     if (entries.has(plugin.id)) throw new Error(`duplicate action registration ${plugin.id}`);
+    const unknown = plugin.capabilities.filter(capability => !known.has(capability));
+    if (unknown.length) {
+      throw new Error(`action ${plugin.id} needs unknown capabilities ${unknown.join(', ')}`);
+    }
     entries.set(plugin.id, plugin);
   }
   if (expectedIds !== null) {

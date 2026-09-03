@@ -880,6 +880,19 @@ test('the packaged model-free campaign example compiles without starting work', 
     repetitionsByStack: { mongodb: 3, postgres: 3, spacetime: 3 }, stacks: 3 });
 });
 
+test('a campaign does not compile while a selected stack cannot measure a selected check', () => {
+  const example = JSON.parse(readFileSync(join(APPLIANCE_ROOT, 'campaign.example.json'), 'utf8')) as {
+    conditions: Array<{ specifications: unknown }>;
+  };
+  // The stub provides no database writes, and the example's concurrency
+  // specification seeds stock directly.
+  assert.throws(() => compile({ ...example,
+    stacks: [{ id: 'stub', adapterVersion: '1.1.0' }],
+    conditions: [{ id: 'model-free', version: '1.0.0', guidanceProfile: 'model-free-stub@1.1.0',
+      repairPolicy: 'scored-only@1.0.0', specifications: example.conditions[0]!.specifications }],
+  }), /invalid campaign at stacks: L1 selects checks a stack cannot measure: stub cannot measure ecommerce\.spec\.concurrency-safety\.last-unit\.201a: dbSetStock needs the database-write capability, which stub does not provide/);
+});
+
 test('the packaged modular reference gate scores quality specifications without prompting them', () => {
   const plan = compileCampaignFile(join(APPLIANCE_ROOT,
     'campaign.product-brief-reference.json'));

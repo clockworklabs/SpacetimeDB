@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import { GRADING_CAPABILITY_IDS } from '../src/actions/action-contract.js';
 import { createStackAdapterRegistry } from '../src/stacks/stack-adapter-contract.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stackAdapterVersion } from '../src/stacks/stack-identities.js';
@@ -132,6 +133,29 @@ test('named actions map parameters to HTTP and SpacetimeDB requests', () => {
     input: { values: { itemId: '-1', warehouseId: '9', quantity: 3 } },
     spacetime: { uri: 'http://stdb.test', mod: 'shop' },
   }), /invalid u64 value/);
+});
+
+test('every adapter declares what the grader can measure on it', () => {
+  const known = new Set<string>(GRADING_CAPABILITY_IDS);
+  for (const id of STACK_ADAPTER_REGISTRY.ids) {
+    const { grading } = STACK_ADAPTER_REGISTRY.get(id);
+    assert.ok(['http', 'reducer'].includes(grading.transport), `${id} transport`);
+    assert.ok(grading.capabilities.every(capability => known.has(capability)), `${id} capabilities`);
+    assert.equal(new Set(grading.capabilities).size, grading.capabilities.length, `${id} duplicates`);
+  }
+  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').grading.transport, 'reducer');
+  for (const id of ['postgres', 'mongodb', 'stub'] as const) {
+    assert.equal(STACK_ADAPTER_REGISTRY.get(id).grading.transport, 'http');
+  }
+  for (const id of ['spacetime', 'postgres', 'mongodb'] as const) {
+    assert.deepEqual([...STACK_ADAPTER_REGISTRY.get(id).grading.capabilities], [...GRADING_CAPABILITY_IDS]);
+  }
+  const stub = STACK_ADAPTER_REGISTRY.get('stub');
+  const stubCapabilities: readonly string[] = stub.grading.capabilities;
+  assert.deepEqual(GRADING_CAPABILITY_IDS.filter(id => !stubCapabilities.includes(id)),
+    ['backend-lifecycle', 'database-write']);
+  assert.equal('databaseWrite' in stub, false);
+  assert.equal(stub.lifecycle.control, undefined);
 });
 
 test('registry rejects unknown, duplicate, and invalid adapter identities', () => {

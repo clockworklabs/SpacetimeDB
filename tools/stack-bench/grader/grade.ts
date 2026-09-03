@@ -43,6 +43,7 @@ import { leaseFromEnv } from '../src/runtime/backend-lease.js';
 import type { LeasedSpacetimeTarget } from '../src/runtime/spacetime-target.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
+import { transportFrameText } from './transport-frames.js';
 import type { ActionEvidence } from '../src/actions/action-contract.js';
 import type { CheckEvidence, CheckEvidenceAttachment, CheckEvidencePhase,
   CheckEvidenceStatus } from '../src/evidence/check-evidence.js';
@@ -279,9 +280,10 @@ class Actor {
           }
         } catch { /* not a socket.io event frame */ }
       });
-      // Binary frames are decoded as UTF-8 too: a binary wire format still
-      // carries message text as inline UTF-8 bytes, so a substring search finds
-      // it without the harness knowing the encoding.
+      // Binary frames are decoded as UTF-8 too, after any SpacetimeDB frame
+      // compression: a binary wire format still carries message text as
+      // inline UTF-8 bytes, so a substring search finds it without the
+      // harness knowing the encoding.
       ws.on('framereceived', f => this.record(f.payload));
     });
     page.on('request', req => {
@@ -331,7 +333,7 @@ class Actor {
     });
   }
   record(payload: string | Buffer): void {
-    const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
+    const text = transportFrameText(payload);
     if (!text) return;
     const chunk = text.slice(0, 200_000);
     this.received.push(chunk);

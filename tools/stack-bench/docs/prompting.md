@@ -217,6 +217,9 @@ failures, and interrupted work do not become application bug reports.
 - Never solve a check by adding its private input or expected implementation to
   the request.
 - Keep equivalent stacks equally informed about the product.
+- Give every replay, forgery, or direct call a named application action that
+  declares both the HTTP route and the reducer. A campaign does not compile
+  while a selected check cannot be measured on a selected stack.
 - Mark changed prompt inputs as draft until matching qualification is current.
 
 After a prompt change, run `npm run check:composition`, `npm run check:prompts`,
