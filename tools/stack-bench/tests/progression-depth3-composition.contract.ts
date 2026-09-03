@@ -14,8 +14,8 @@ import { loadReferenceRegistry, selectReferenceFixture }
 
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const RECIPE = join(TRACK, 'composition', 'recipes', 'progression-depth3-2.0.1.json');
-const PROGRESSION = join(TRACK, 'progression', 'ecommerce-2.0.1.json');
+const RECIPE = join(TRACK, 'composition', 'recipes', 'progression-depth3-2.0.2.json');
+const PROGRESSION = join(TRACK, 'progression', 'ecommerce-2.0.2.json');
 
 test('catalog fixtures, warehouse counts, and pagination agree', () => {
   const fixture = JSON.parse(readFileSync(join(TRACK,
@@ -61,9 +61,9 @@ test('the depth-3 recipe covers only the first three graph depths', () => {
   const selectedPackIds = release.components.packs.map(pack => pack.id);
 
   assert.equal(catalog.definition.nodes.length, 27);
-  assert.equal(release.components.packs.length, 40);
-  assert.equal(release.checkCatalog.length, 99);
-  assert.equal(release.scoring.points, 162);
+  assert.equal(release.components.packs.length, 42);
+  assert.equal(release.checkCatalog.length, 110);
+  assert.equal(release.scoring.points, 175);
   for (const excluded of [
     'ecommerce.l2.price-history-features',
     'ecommerce.l3.reservations-features',
@@ -75,7 +75,7 @@ test('the candidate catalog binds the same scoped recipe to L1 through L3', () =
   const track = loadTrack('ecommerce');
   for (const level of [1, 2, 3]) {
     const binding = requireRecipeRelease(track, level,
-      'ecommerce.progression-depth3@2.0.1');
+      'ecommerce.progression-depth3@2.0.2');
     assert.equal(binding.release.id, 'ecommerce.progression-depth3');
     assert.equal(binding.status, 'candidate');
   }
@@ -85,7 +85,7 @@ test('the depth-3 recipe binds one maintained reference per stack', () => {
   const registry = loadReferenceRegistry();
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     const fixture = selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 3,
-      recipe: 'ecommerce.progression-depth3@2.0.1' });
+      recipe: 'ecommerce.progression-depth3@2.0.2' });
     assert.equal(fixture.id, `ecommerce-reference-${backend}`);
   }
 });

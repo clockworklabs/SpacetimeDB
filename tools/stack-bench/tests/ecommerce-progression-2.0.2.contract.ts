@@ -12,8 +12,8 @@ import { validateProgressionRecipeBindings }
   from '../src/progression/progression-recipe-selection.js';
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
-const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.1.json');
-const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.1.json');
+const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
+const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.2.json');
 
 test('the 2.0 ecommerce catalog has clear questlines and product-only edges', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
@@ -36,7 +36,7 @@ test('the 2.0 ecommerce catalog has clear questlines and product-only edges', ()
     'staff-access',
   ]);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    146, 'every scored check has one owner');
+    157, 'every scored check has one owner');
 
   assert.deepEqual(requiredNode(byId, 'cart').dependencies, ['accounts', 'catalog']);
   assert.deepEqual(requiredNode(byId, 'catalog-discovery').dependencies, ['catalog']);
@@ -64,7 +64,7 @@ test('every 2.0 feature and grading check binds to the 2.0 recipe', () => {
   const plan = compileRecipeFile(recipePath, { trackRoot });
   const release = buildRecipeRelease(recipePath, { trackRoot });
   const binding: RecipeBinding = {
-    alias: 'ecommerce.progression-catalog@2.0.1',
+    alias: 'ecommerce.progression-catalog@2.0.2',
     status: 'draft',
     catalog: {
       id: plan.recipe.id,
@@ -143,7 +143,8 @@ test('cross-feature grading requirements stay separate from product dependencies
   assert.deepEqual(deferred, [
     'automatic-reorder:ecommerce.progression.automatic-reorder.automatic-reorder.502a:purchasing',
     'automatic-reorder:ecommerce.progression.automatic-reorder.automatic-reorder.502b:purchasing',
-    'inventory-dashboard:ecommerce.inventory-operations.operational-views.5a:purchasing',
+    'inventory-dashboard:ecommerce.inventory-operations.operational-views.5e:purchasing',
+    'inventory-dashboard:ecommerce.spec.live-state.inventory-dashboard.5a:purchasing',
     'price-history:ecommerce.returns-pricing.price-history.4a:purchasing',
     'price-history:ecommerce.returns-pricing.price-history.4c:checkout',
     'sales-dashboard:ecommerce.spec.transactional-integrity.books-balance.107a:warehouse-admin',

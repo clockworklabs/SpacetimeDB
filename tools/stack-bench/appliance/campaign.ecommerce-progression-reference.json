@@ -2,7 +2,7 @@
   "schemaVersion": 6,
   "kind": "campaign-manifest",
   "id": "ecommerce-progression-reference",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "state": "draft",
   "title": "Ecommerce progression reference pilot",
   "track": "ecommerce",
@@ -11,15 +11,15 @@
     "strikePolicy": "feature",
     "strikes": { "default": 1, "levels": {} } },
   "levels": [1, 2, 3, 4, 5, 6],
-  "featureCatalog": "ecommerce.questlines@2.0.1",
+  "featureCatalog": "ecommerce.questlines@2.0.2",
   "selection": {
     "levels": [
-      { "level": 1, "recipe": "ecommerce.progression-catalog@2.0.1" },
-      { "level": 2, "recipe": "ecommerce.progression-catalog@2.0.1" },
-      { "level": 3, "recipe": "ecommerce.progression-catalog@2.0.1" },
-      { "level": 4, "recipe": "ecommerce.progression-catalog@2.0.1" },
-      { "level": 5, "recipe": "ecommerce.progression-catalog@2.0.1" },
-      { "level": 6, "recipe": "ecommerce.progression-catalog@2.0.1" }
+      { "level": 1, "recipe": "ecommerce.progression-catalog@2.0.2" },
+      { "level": 2, "recipe": "ecommerce.progression-catalog@2.0.2" },
+      { "level": 3, "recipe": "ecommerce.progression-catalog@2.0.2" },
+      { "level": 4, "recipe": "ecommerce.progression-catalog@2.0.2" },
+      { "level": 5, "recipe": "ecommerce.progression-catalog@2.0.2" },
+      { "level": 6, "recipe": "ecommerce.progression-catalog@2.0.2" }
     ]
   },
   "stacks": [

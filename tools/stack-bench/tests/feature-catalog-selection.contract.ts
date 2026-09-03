@@ -6,9 +6,9 @@ import { resolveFeatureCatalog } from '../src/progression/feature-catalog-select
 import { compileFeatureCatalogInput } from '../src/progression/progression-definition.js';
 
 test('feature catalogs resolve by exact identity', () => {
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.1', loadTrack('ecommerce'));
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.2', loadTrack('ecommerce'));
   assert.equal(catalog.definition.id, 'ecommerce.questlines');
-  assert.equal(catalog.definition.version, '2.0.1');
+  assert.equal(catalog.definition.version, '2.0.2');
   assert.equal(catalog.definition.nodes.length, 43);
   assert.throws(() => resolveFeatureCatalog('ecommerce.questlines', loadTrack('ecommerce')),
     /exact id@version/);
@@ -17,7 +17,7 @@ test('feature catalogs resolve by exact identity', () => {
 });
 
 test('feature catalog identity excludes root governance text only', () => {
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.1', loadTrack('ecommerce'));
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.2', loadTrack('ecommerce'));
   const governance = compileFeatureCatalogInput({
     ...catalog.definition,
     state: catalog.definition.state === 'draft' ? 'qualified' : 'draft',

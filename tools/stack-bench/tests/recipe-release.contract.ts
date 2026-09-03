@@ -188,7 +188,7 @@ test('requirement edits change meaning while selector and fixture edits only cha
   const fixtureBox = copyTrack();
   try {
     const before = buildRecipeRelease(fixtureBox.recipe, { trackRoot: fixtureBox.root });
-    const fixture = join(fixtureBox.root, 'composition', 'fixtures', 'storefront-1.0.0.json');
+    const fixture = join(fixtureBox.root, 'composition', 'fixtures', 'storefront-1.0.1.json');
     editJson(fixture, value => {
       const fixtureValue = object(value, 'fixture');
       const account = object(requiredAt(array(fixtureValue.accounts, 'fixture.accounts'), 0,
@@ -308,7 +308,7 @@ test('an exact promoted release stays separate from public level defaults', () =
   const box = copyTrack();
   try {
     promoteCurrentDefaults(box.root);
-    const recipePath = join(box.root, 'composition', 'recipes', 'progression-depth3-2.0.1.json');
+    const recipePath = join(box.root, 'composition', 'recipes', 'progression-depth3-2.0.2.json');
     const recipe = object(JSON.parse(readFileSync(recipePath, 'utf8')), 'progression recipe');
     for (const packValue of array(recipe.packs, 'progression recipe.packs')) {
       const pack = object(packValue, 'progression recipe pack');
@@ -322,7 +322,7 @@ test('an exact promoted release stays separate from public level defaults', () =
         const entry = object(entryValue, 'candidate entry');
         const entryRecipe = object(entry.recipe, 'candidate entry.recipe');
         if (entryRecipe.id === 'ecommerce.progression-depth3'
-          && entryRecipe.version === '2.0.1') entry.status = 'promoted';
+          && entryRecipe.version === '2.0.2') entry.status = 'promoted';
       }
     });
     const track = loadTrack('ecommerce');
@@ -332,7 +332,7 @@ test('an exact promoted release stays separate from public level defaults', () =
     assert.equal(resolveRecipeRelease(copied, 2).release.id, 'ecommerce.sequential-l2');
     for (const level of [1, 2, 3]) {
       const exact = resolveRecipeRelease(copied, level,
-        'ecommerce.progression-depth3@2.0.1');
+        'ecommerce.progression-depth3@2.0.2');
       assert.equal(exact.status, 'promoted');
       assert.equal(exact.catalog.id, 'ecommerce.recipe-candidates');
     }

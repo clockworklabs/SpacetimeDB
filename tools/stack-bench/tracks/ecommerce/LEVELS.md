@@ -45,7 +45,7 @@ that changing status.
 ## Dependency mode
 
 Dependency mode follows the feature graph in
-`progression/ecommerce-2.0.1.json`. A feature opens only after its declared
+`progression/ecommerce-2.0.2.json`. A feature opens only after its declared
 parents pass. Failed branches can stop while unrelated branches continue.
 
 Graph depth is calculated from prerequisites. It is not the same as a sequential

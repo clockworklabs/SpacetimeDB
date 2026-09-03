@@ -12,7 +12,7 @@ import {
 
 const projectRoot = STACK_BENCH_ROOT;
 const trackRoot = join(projectRoot, 'tracks', 'ecommerce');
-const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.1.json');
+const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
 
 test('the dependency graph page is generated from the ecommerce definition', () => {
   const htmlPath = join(projectRoot, 'docs', 'dependency-graph.html');

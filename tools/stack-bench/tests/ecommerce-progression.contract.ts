@@ -21,7 +21,7 @@ import { resolveProgressionRecipeAction,
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
-const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.1.json');
+const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 
 function packChecks(pack: CompiledPackDefinition): string[] {
@@ -52,9 +52,9 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 13, 4: 9, 5: 6, 6: 1 });
   assert.equal(definition.questlines.length, 12);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    146);
+    157);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 281);
+    .reduce((total, check) => total + check.points, 0), 294);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
@@ -69,11 +69,16 @@ test('the ecommerce progression definition is complete and calculated from its d
   assert.deepEqual(requiredNode(byId, 'stock-transfers').dependencies, ['warehouse-admin']);
   assert.deepEqual(requiredNode(byId, 'catalog-management').dependencies,
     ['catalog-discovery', 'staff-roles']);
-  assert(requiredNode(byId, 'warehouse-admin').gradingChecks.every(check =>
-    !check.id.includes('spec.access-control.admin-ui')
-    && !check.id.includes('spec.access-control.admin-write')
-    && !check.id.includes('spec.live-state.warehouse-stock')
-    && !check.id.includes('spec.concurrency-safety')));
+  assert.deepEqual(requiredNode(byId, 'warehouse-admin').gradingChecks.map(check => check.id), [
+    'ecommerce.feature.warehouse-admin.admin-write.103a',
+    'ecommerce.feature.warehouse-admin.warehouse-view.7b',
+    'ecommerce.spec.access-control.warehouse-area-boundary.7a',
+    'ecommerce.spec.access-control.warehouse-write-boundary.103b',
+    'ecommerce.spec.external-data-sync.external-stock.901a',
+    'ecommerce.spec.external-data-sync.external-stock.901c',
+    'ecommerce.spec.external-data-sync.external-stock.901d',
+    'ecommerce.spec.live-state.warehouse-stock.7c',
+  ]);
   assert(requiredNode(byId, 'fulfilment-queue').gradingChecks.some(check =>
     check.id === 'ecommerce.spec.concurrency-safety.last-unit.201a'));
   assert(requiredNode(byId, 'fulfilment-queue').gradingChecks.some(check =>
@@ -115,30 +120,13 @@ test('every progression feature reference and scored check binds to repository d
   }
 
   const recipe = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
-    'progression-catalog-2.0.1.json'), {
+    'progression-catalog-2.0.2.json'), {
     trackRoot,
   });
   const actual = new Map(definition.nodes.flatMap(node => node.gradingChecks)
     .map(check => [check.id, check.points]));
-  const movedChecks = new Map([
-    ['ecommerce.spec.access-control.admin-ui.7a',
-      'ecommerce.feature.warehouse-admin.access-boundary.7a'],
-    ['ecommerce.spec.access-control.admin-write.103a',
-      'ecommerce.feature.warehouse-admin.admin-write.103a'],
-    ['ecommerce.spec.live-state.warehouse-stock.7c',
-      'ecommerce.feature.warehouse-admin.warehouse-stock.7c'],
-    ['ecommerce.operations-access.fulfilment-queue.1e',
-      'ecommerce.operations-access.operator-authorization.201c'],
-  ]);
   for (const check of recipe.checks.filter(item => item.points > 0)) {
     if (check.stableKey.startsWith('ecommerce.feature.catalog.catalog.')) continue;
-    if (movedChecks.has(check.stableKey)) {
-      const movedKey = movedChecks.get(check.stableKey);
-      assert(movedKey, `${check.stableKey} must have a moved key`);
-      assert.equal(actual.get(movedKey), check.points,
-        `progression must preserve ${check.stableKey} under its feature owner`);
-      continue;
-    }
     assert.equal(actual.get(check.stableKey), check.points,
       `progression must preserve ${check.stableKey} from the L3 candidate`);
   }
@@ -243,7 +231,7 @@ test('one progression catalog binds every node and selects only current work', (
   const track = loadTrack('ecommerce');
   const bindings = [1, 2, 3, 4, 5, 6].map(level => ({
     level,
-    binding: resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.1'),
+    binding: resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.2'),
   }));
   validateProgressionRecipeBindings(input, bindings);
   assert.equal(new Set(bindings.map(item => item.binding.release.contentSha256)).size, 1);
@@ -329,7 +317,7 @@ test('all-at-once composes every selected feature into one fresh request', () =>
   });
   const state = progressionEngine.initialize(dependencyRuntimeDefinition(catalog, policy));
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 6,
-    'ecommerce.progression-catalog@2.0.1');
+    'ecommerce.progression-catalog@2.0.2');
   const selected = resolveProgressionRecipeAction(binding, state);
   if (selected.action.type === 'terminal' || !('agent' in selected)) {
     throw new Error('all-at-once must produce one build request');

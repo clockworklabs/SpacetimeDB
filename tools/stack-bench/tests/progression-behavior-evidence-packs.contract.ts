@@ -170,7 +170,7 @@ test('personalized recommendations prove sales ordering, name ties, and isolatio
 
 test('the graph selects every behavior check and required dependency', () => {
   const definition = compileProgressionDefinitionFile(
-    join(trackRoot, 'progression', 'ecommerce-2.0.1.json'), { trackRoot });
+    join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), { trackRoot });
   const byId = new Map(definition.nodes.map(node => [node.id, node]));
 
   assert.deepEqual(requiredNode(byId, 'automatic-reorder').dependencies,

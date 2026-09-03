@@ -36,14 +36,14 @@ const setupEvidence = () => createCheckEvidence({ status: 'passed', code: 'compl
 
 const track = loadTrack('ecommerce');
 const featureCatalog = compileFeatureCatalogInput(compileProgressionDefinitionFile(
-  join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-2.0.1.json'),
+  join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-2.0.2.json'),
   { trackRoot: track.dir },
 ));
 const dependencyPolicy = compileDependencyPolicyInput({ default: 3, levels: {} }, featureCatalog);
 const progression = compileProgressionInput(dependencyRuntimeDefinition(
   featureCatalog, dependencyPolicy));
 const recipeBindings = new Map([1, 2, 3, 4, 5, 6].map(level => [level,
-  resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.1')]));
+  resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.2')]));
 const release = recipeBindings.get(6)!.release;
 
 interface ReferenceRunOptions {
@@ -147,18 +147,18 @@ test('progression reference audit replays every action and separates catalog cov
 
   assert.equal(report.ok, false);
   assert.deepEqual(report.actions.map(action => [action.level, action.checks]),
-    [[1, 9], [2, 44], [3, 97], [4, 131], [5, 144], [6, 146]]);
+    [[1, 9], [2, 50], [3, 108], [4, 142], [5, 155], [6, 157]]);
   assert.deepEqual(report.graphOwned, {
-    nodes: 43, checks: 146, points: 281,
-    coveredNodes: 43, coveredChecks: 146,
+    nodes: 43, checks: 157, points: 294,
+    coveredNodes: 43, coveredChecks: 157,
     missingNodes: [], missingChecks: [], complete: true,
   });
   assert.equal(report.finalCatalogAudit.required, true);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
-  assert.equal(report.finalCatalogAudit.checks, 148);
-  assert.equal(report.finalCatalogAudit.points, 281);
+  assert.equal(report.finalCatalogAudit.checks, 159);
+  assert.equal(report.finalCatalogAudit.points, 294);
   assert.equal(report.finalCatalogAudit.zeroPointChecks, 2);
-  assert.equal(report.finalCatalogAudit.checkKeys.length, 148);
+  assert.equal(report.finalCatalogAudit.checkKeys.length, 159);
   assert.equal(report.finalCatalogAudit.additionalChecks.length, 2);
 });
 
@@ -193,6 +193,6 @@ test('progression reference audit reports incomplete graph coverage without hidi
   assert.equal(report.graphOwned.coveredNodes, 4);
   assert.equal(report.graphOwned.coveredChecks, 9);
   assert.equal(report.graphOwned.complete, false);
-  assert.equal(report.finalCatalogAudit.checks, 148);
+  assert.equal(report.finalCatalogAudit.checks, 159);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
 });

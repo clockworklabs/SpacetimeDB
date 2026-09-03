@@ -159,7 +159,7 @@
           <li><span class="path">tracks/&lt;track&gt;/track.json</span><span>Declares levels, suites, actions, ports, restart probes, and validation status.</span></li>
           <li><span class="path">src/composition/*</span><span>Compiles packs, recipes, task fragments, selected checks, calibration, and release identities.</span></li>
           <li><span class="path">src/progression/progression-definition.ts</span><span>Compiles feature nodes from versioned packs. It assigns each scored group to one owner.</span></li>
-          <li><span class="path">tracks/ecommerce/progression/ecommerce-2.0.1.json</span><span>Current 43-node dependency catalog.</span></li>
+          <li><span class="path">tracks/ecommerce/progression/ecommerce-2.0.2.json</span><span>Current 43-node dependency catalog.</span></li>
         </ul></div>
       </details>
       <details><summary>Execution</summary>
@@ -296,7 +296,7 @@ function selectedGradingWork(state) {
     "strikePolicy": "feature",
     "strikes": { "default": 1, "levels": {} } },
   "levels": [1, 2, 3, 4, 5, 6],
-  "featureCatalog": "ecommerce.questlines@2.0.1",
+  "featureCatalog": "ecommerce.questlines@2.0.2",
   "stacks": [
     { "id": "mongodb", "adapterVersion": "1.4.0" },
     { "id": "postgres", "adapterVersion": "1.5.0" },
@@ -548,7 +548,7 @@ Grade: bundle, contract lint, actions, check evidence, screenshots</code></pre><
         <div class="card">
           <h3>Move a feature to a later level</h3>
           <ol>
-            <li>Change the node dependencies in <span class="path">progression/ecommerce-2.0.1.json</span>.</li>
+            <li>Change the node dependencies in <span class="path">progression/ecommerce-2.0.2.json</span>.</li>
             <li>Do not edit a numeric level. The compiler recalculates it from dependency depth.</li>
             <li>Keep the same feature pack and grading group IDs if their behavior did not change.</li>
             <li>Compile the graph. Check reachability, cycles, prompt mode, and ownership.</li>

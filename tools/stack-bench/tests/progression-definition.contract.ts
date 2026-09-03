@@ -7,7 +7,7 @@ import { compileProgressionDefinition } from '../src/progression/progression-def
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
-const source = join(trackRoot, 'progression', 'ecommerce-2.0.1.json');
+const source = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
 interface AuthoredNode {
   id: string;
   featureRefs: string[];
@@ -25,7 +25,7 @@ const definition = (): AuthoredDefinition =>
 test('authored progression groups compile into exact scored checks', () => {
   const compiled = compileProgressionDefinition(definition(), { trackRoot, source });
   assert.equal(compiled.nodes.length, 43);
-  assert.equal(compiled.nodes.flatMap(node => node.gradingChecks).length, 146);
+  assert.equal(compiled.nodes.flatMap(node => node.gradingChecks).length, 157);
   assert(compiled.nodes.every(node => node.promptModules.length === node.featureRefs.length));
   assert(compiled.nodes.every(node => node.gradingChecks.some(check => check.role === 'feature')));
   assert(compiled.nodes.flatMap(node => node.gradingChecks)

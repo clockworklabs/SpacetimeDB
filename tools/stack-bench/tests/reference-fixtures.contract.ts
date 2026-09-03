@@ -13,8 +13,8 @@ test('the reference registry binds its current statuses and provenance', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 3);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 0);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 0);
   const escaped = structuredClone(registry);
   const escapedFixture = escaped.fixtures[0];
@@ -42,7 +42,7 @@ test('a recipe-bound full fixture can serve only its declared progression action
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     for (const level of [1, 2, 3, 4, 5, 6]) {
       assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level,
-        recipe: 'ecommerce.progression-catalog@2.0.1' }).id,
+        recipe: 'ecommerce.progression-catalog@2.0.2' }).id,
       `ecommerce-reference-${backend}`);
     }
   }

@@ -13,7 +13,7 @@ import { loadValidatedProgressionSource } from './helpers/progression-source.js'
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
-const graphPath = join(trackRoot, 'progression', 'ecommerce-2.0.1.json');
+const graphPath = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 const readPack = (name: string): CompiledPackDefinition =>
   compilePackDefinition(readJson(join(packRoot, name)), { source: name });
@@ -36,9 +36,9 @@ function selectedCriteria(pack: CompiledPackDefinition): CompiledCriterion[] {
     assert.deepEqual(scenario.features.map(feature => feature.id), [check.feature]);
     const feature = scenario.features[0];
     assert(feature, `${check.source} must contain its selected feature`);
-    assert.equal(feature.criteria.length, 1,
-      `${check.source} must isolate one support behavior and its setup`);
     if (!check.criteria) throw new Error(`${pack.id}.${check.id} must select criteria`);
+    assert.equal(check.criteria.length, 1,
+      `${pack.id}.${check.id} must select one support behavior`);
     return check.criteria.map(id => {
       const criterion = feature.criteria.find(candidate => candidate.id === id);
       assert(criterion, `${pack.id} must own ${id}`);
@@ -65,8 +65,7 @@ test('advanced support packs have exact graph dependencies and focused ownership
   ]);
 
   assert.deepEqual(managed.checks.map(check => [check.id, check.criteria]), [
-    ['shared-state', ['613a']],
-    ['privacy', ['613b']],
+    ['case-updates', ['613c']],
   ]);
   assert.deepEqual(order.checks.map(check => [check.id, check.criteria]), [
     ['owned-order', ['614a']],
@@ -78,9 +77,9 @@ test('advanced support packs have exact graph dependencies and focused ownership
     ['access', ['615c']],
   ]);
   assert.equal(new Set([...managed.checks, ...order.checks, ...refunds.checks]
-    .map(check => check.source)).size, 7);
+    .map(check => check.source)).size, 6);
   assert.deepEqual([managed, order, refunds].map(pack =>
-    selectedCriteria(pack).reduce((total, criterion) => total + criterion.points, 0)), [3, 5, 4]);
+    selectedCriteria(pack).reduce((total, criterion) => total + criterion.points, 0)), [1, 5, 4]);
 });
 
 test('advanced support product prompts are dedicated and implementation neutral', () => {
@@ -102,7 +101,7 @@ test('advanced support product prompts are dedicated and implementation neutral'
     assert.doesNotMatch(contract.path, /business-hooks/);
   }
 
-  assert.match(fragmentText(requiredRequirement(managed)), /shared support case/i);
+  assert.match(fragmentText(requiredRequirement(managed)), /exchange replies.*update the status/is);
   assert.match(fragmentText(requiredRequirement(order)), /one of their orders/i);
   assert.match(fragmentText(requiredRequirement(refunds)), /amount paid.*only once/is);
   assert.match(fragmentText(requiredContract(managed)), /support-reply-item/);
@@ -126,8 +125,9 @@ test('the full graph binds every advanced support check to its owner', () => {
       `${nodeId} pack dependencies must match its graph parents`);
   }
   assert.deepEqual(gradingGroups('managed-support'), [
-    'ecommerce.progression.managed-support@1.0.0#shared-state',
-    'ecommerce.progression.managed-support@1.0.0#privacy',
+    'ecommerce.progression.managed-support@1.0.0#case-updates',
+    'ecommerce.spec.access-control@2.0.1#managed-support-privacy',
+    'ecommerce.spec.live-state@2.0.0#managed-support',
   ]);
   assert.deepEqual(gradingGroups('order-support'), [
     'ecommerce.progression.order-support@1.0.1#owned-order',
@@ -141,8 +141,8 @@ test('the full graph binds every advanced support check to its owner', () => {
   const supportNodes = ['managed-support', 'order-support', 'support-refunds']
     .map(nodeId => requiredNode(nodes, nodeId));
   assert.deepEqual(supportNodes.map(node => node.gradingChecks
-    .reduce((total, check) => total + check.points, 0)), [3, 5, 4]);
-  assert.deepEqual(supportNodes.map(node => node.gradingChecks.length), [2, 2, 3]);
+    .reduce((total, check) => total + check.points, 0)), [4, 5, 4]);
+  assert.deepEqual(supportNodes.map(node => node.gradingChecks.length), [3, 2, 3]);
 });
 
 function requiredNode(

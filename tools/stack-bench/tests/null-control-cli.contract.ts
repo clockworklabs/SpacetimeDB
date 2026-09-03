@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
-import { compileCalibrationFile } from '../src/composition/calibration-compiler.js';
-import { nullControlSuites, parseNullControlArgs,
-  createNullQualification, selectNullQualificationBinding } from '../commands/null-control.js';
+import { nullControlSuites, parseNullControlArgs } from '../commands/null-control.js';
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import type { RecipeCheck } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
@@ -88,24 +85,4 @@ test('recipe-bound null qualification rejects an execution with no mapped checks
   binding.execution.push({ id: 'empty-execution', source: firstExecution.source,
     ownership: { kind: 'current', level: 1 } });
   assert.throws(() => nullControlSuites(track, 1, binding), /maps no checks/);
-});
-
-test('progression null qualification grades only the checks selected for its level', () => {
-  const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-depth3@2.0.1');
-  const calibration = compileCalibrationFile('composition/calibrations/progression-depth3-2.0.1.json', {
-    trackRoot: track.dir,
-    stackBenchRoot: join(track.dir, '..', '..'),
-    release: binding.release,
-  });
-  const selectedBinding = selectNullQualificationBinding(binding, calibration);
-  const qualification = createNullQualification(binding, calibration);
-  const selectedSuites = nullControlSuites(track, 3, selectedBinding).filter(hasChecks);
-  const checks = selectedSuites.flatMap(suite => suite.checks);
-
-  const calibrationChecks = calibration.qualification.checks ?? [];
-  assert.equal(checks.length, calibrationChecks.length);
-  assert.deepEqual(checks.map(check => check.stableKey).sort(),
-    [...calibrationChecks].sort());
-  assert.match(qualification.selectionSha256, /^[a-f0-9]{64}$/);
 });

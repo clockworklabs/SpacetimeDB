@@ -16,7 +16,7 @@ const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'
 
 function selectedChecks(): PackCheck[] {
   const source = loadValidatedProgressionSource(
-    join(root, 'progression', 'ecommerce-2.0.1.json'), root);
+    join(root, 'progression', 'ecommerce-2.0.2.json'), root);
   const packRoot = join(root, 'composition', 'packs');
   const packs = new Map(readdirSync(packRoot).filter(name => name.endsWith('.json')).map(name => {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });

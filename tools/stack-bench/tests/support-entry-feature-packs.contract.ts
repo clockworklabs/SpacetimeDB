@@ -11,7 +11,7 @@ import type { CompiledPackDefinition } from '../src/composition/composition-comp
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
-const graphPath = join(trackRoot, 'progression', 'ecommerce-2.0.1.json');
+const graphPath = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 const readPack = (name: string) => compilePackDefinition(readJson(join(packRoot, name)), { source: name });
 
@@ -19,7 +19,8 @@ interface SupportCase {
   node: string;
   file: string;
   level: number;
-  points: number;
+  packPoints: number;
+  graphPoints: number;
   checks: readonly [id: string, criteria: readonly string[] | undefined][];
 }
 
@@ -28,29 +29,33 @@ const cases: readonly SupportCase[] = [
     node: 'staff-access',
     file: 'progression-staff-access-1.0.0.json',
     level: 1,
-    points: 4,
-    checks: [['staff-boundary', ['601a', '601b']]],
+    packPoints: 2,
+    graphPoints: 4,
+    checks: [['staff-sign-in', ['601a']]],
   },
   {
     node: 'support-intake',
     file: 'progression-support-intake-1.0.0.json',
     level: 1,
-    points: 2,
+    packPoints: 2,
+    graphPoints: 2,
     checks: [['ticket-create', undefined]],
   },
   {
     node: 'support-triage',
     file: 'progression-support-triage-1.0.0.json',
     level: 2,
-    points: 3,
+    packPoints: 3,
+    graphPoints: 3,
     checks: [['assignment', ['611a']], ['priority', ['611b']], ['status', ['611c']]],
   },
   {
     node: 'support-history',
     file: 'progression-support-history-1.0.0.json',
     level: 2,
-    points: 4,
-    checks: [['persistence', ['612a']], ['privacy', ['612b']]],
+    packPoints: 1,
+    graphPoints: 7,
+    checks: [['history', ['612c']]],
   },
 ];
 
@@ -84,7 +89,7 @@ test('staff entry and lower support packs preserve check identity and points', (
     const pack = readPack(entry.file);
     assert.deepEqual(pack.checks.map(check => [check.id, check.criteria]), entry.checks);
     assert.equal(packCriteria(pack, entry.level)
-      .reduce((total, criterion) => total + criterion.points, 0), entry.points);
+      .reduce((total, criterion) => total + criterion.points, 0), entry.packPoints);
   }
 });
 
@@ -149,6 +154,6 @@ test('staff entry and lower support dependencies match their graph parents', () 
       `${entry.node} pack dependencies must match its graph parents`);
     assert.equal(node.level, entry.level);
     assert.equal(node.gradingChecks.reduce((total, check) => total + check.points, 0),
-      entry.points);
+      entry.graphPoints);
   }
 });

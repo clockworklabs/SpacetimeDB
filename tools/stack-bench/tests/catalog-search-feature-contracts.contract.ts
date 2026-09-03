@@ -64,7 +64,7 @@ test('the dependency catalog has exact whole-file instructions and focused check
 test('faceted search covers every filter and stable pagination without prompt leakage', () => {
   const pack = readPack('progression-faceted-search-1.0.1.json');
   assert.deepEqual(pack.requiresPacks, ['ecommerce.feature.catalog-discovery@1.0.0']);
-  assert.deepEqual(pack.capabilities, ['browser', 'direct-database-write']);
+  assert.deepEqual(pack.capabilities, ['browser']);
   const prompt = fragmentText(requiredFragment(pack.task.requirements[0], 'the task prompt'));
   const contract = fragmentText(requiredFragment(pack.task.contracts[0], 'the task contract'));
   for (const text of ['category', 'minimum price', 'maximum price', 'availability',
@@ -91,9 +91,15 @@ test('faceted search covers every filter and stable pagination without prompt le
   assert(filterCriterion, 'the filters feature must have a criterion');
   const count = filterCriterion.steps.find(step => step.do === 'expectElementCount');
   assert.equal(count?.in?.testid, 'search-results');
-  const checks = filterCriterion.steps.filter(step => step.do === 'expect');
-  for (const item of ['Gaming Mouse', 'Desk Lamp', 'Espresso Machine',
-    'Air Purifier']) assert(checks.some(step => step.contains === item));
+  const counts = filterCriterion.steps.filter(step => step.do === 'expectElementCount');
+  assert.deepEqual(counts.map(step => [step.contains, step.equals]), [
+    ['Coffee Grinder', 1], ['Air Purifier', 1],
+  ]);
+  const absent = filterCriterion.steps.filter(step => step.do === 'expect');
+  assert.deepEqual(absent.map(step => step.contains), [
+    'USB Cable', 'Desk Lamp', 'Espresso Machine', 'Gaming Mouse',
+  ]);
+  assert(absent.every(step => step.absent === true && step.in?.testid === 'search-results'));
   const paginationSelection = selected.find(item => item.check.id === 'pagination');
   assert(paginationSelection, 'the pagination check must be selected');
   const paginationCriterion = paginationSelection.feature.criteria[0];
@@ -103,7 +109,7 @@ test('faceted search covers every filter and stable pagination without prompt le
 });
 
 test('catalog and faceted search graph nodes bind to the expected packs', () => {
-  const definition = readJson(join(trackRoot, 'progression', 'ecommerce-2.0.1.json'));
+  const definition = readJson(join(trackRoot, 'progression', 'ecommerce-2.0.2.json'));
   const catalog = progressionNode(definition, 'catalog');
   const search = progressionNode(definition, 'faceted-search');
   assert.deepEqual(catalog.featureRefs, ['ecommerce.feature.catalog-items@1.0.0']);

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 
-import { calibrationCoversAlias, calibrationQualificationIdentity,
-  calibrationQualificationRelease, canReuseQualificationScope,
+import { calibrationQualificationIdentity, calibrationQualificationRelease,
+  canReuseQualificationScope,
   compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, hasExactSelectedPackRuntime, resolveCalibrationForRelease,
   validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.js';
@@ -22,16 +22,6 @@ import { qualificationScopeIdentity } from '../src/composition/qualification-sco
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = loadTrack('ecommerce');
 const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'sequential-l1-2.5.0.json');
-const PROGRESSION_CALIBRATION = join(TRACK.dir, 'composition', 'calibrations',
-  'progression-depth3-2.0.1.json');
-
-interface PromotionCatalog {
-  entries: Array<{
-    alias: string;
-    status: string;
-    recipe: { id: string; version: string; path: string };
-  }>;
-}
 
 interface QualificationArtifactPayload {
   qualificationScope?: unknown;
@@ -89,12 +79,6 @@ function current() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
-function qualifiedProgression() {
-  const binding = resolveRecipeRelease(TRACK, 3, 'ecommerce.progression-depth3@2.0.1');
-  return { binding, plan: compileCalibrationFile(PROGRESSION_CALIBRATION,
-    { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
-}
-
 function withCurrentScope(
   artifact: QualificationArtifact,
   entry: CalibrationEvidence,
@@ -128,52 +112,6 @@ test('runtime calibration resolution exposes the pending L1 candidate', () => {
   });
   assert.equal(resolveRecipeRelease(TRACK, 2,
     'ecommerce.sequential-l2@1.6.0').release.version, '1.6.0');
-});
-
-test('runtime calibration resolution uses the requested level alias', () => {
-  const release = resolveRecipeRelease(TRACK, 3,
-    'ecommerce.progression-depth3@2.0.1').release;
-  const options = { trackRoot: TRACK.dir, stackBenchRoot: ROOT };
-  assert.equal(resolveCalibrationForRelease(release, { ...options, alias: 'L3' })?.id,
-    'ecommerce.progression-depth3-calibration');
-  assert.equal(resolveCalibrationForRelease(release, { ...options, alias: 'L2' })?.id,
-    'ecommerce.progression-depth3-calibration');
-});
-
-test('one cumulative calibration covers each current lower alias of the same recipe', () => {
-  const options = { trackRoot: TRACK.dir, stackBenchRoot: ROOT };
-  for (const level of [1, 2, 3]) {
-    const release = resolveRecipeRelease(TRACK, level,
-      'ecommerce.progression-depth3@2.0.1').release;
-    assert.equal(release.id, 'ecommerce.progression-depth3');
-    const calibration = resolveCalibrationForRelease(release,
-      { ...options, alias: `L${level}` });
-    assert.ok(calibration);
-    assert.equal(calibration.id, 'ecommerce.progression-depth3-calibration');
-    assert.equal(calibration.promotion.alias, 'L3');
-  }
-});
-
-test('cumulative aliases must name the exact calibrated recipe source', () => {
-  const release = resolveRecipeRelease(TRACK, 3,
-    'ecommerce.progression-depth3@2.0.1').release;
-  const calibration = resolveCalibrationForRelease(release,
-    { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
-  assert.ok(calibration);
-  const catalogPath = join(TRACK.dir, 'composition', 'candidates.json');
-  const catalog = JSON.parse(readFileSync(catalogPath, 'utf8')) as PromotionCatalog;
-  const l1Entry = catalog.entries.find(entry => entry.alias === 'L1'
-    && entry.recipe.id === release.id && entry.recipe.version === release.version);
-  assert.ok(l1Entry);
-  l1Entry.recipe.path = 'recipes/not-the-calibrated-recipe.json';
-  assert.throws(() => calibrationCoversAlias(calibration, release, 'L1',
-    { catalog, catalogPath, trackRoot: TRACK.dir }), /does not exist/);
-  const l3Entry = catalog.entries.find(entry => entry.alias === 'L3'
-    && entry.recipe.id === release.id && entry.recipe.version === release.version);
-  assert.ok(l3Entry);
-  l3Entry.recipe.path = 'recipes/not-the-calibrated-recipe.json';
-  assert.throws(() => calibrationCoversAlias(calibration, release, 'L3',
-    { catalog, catalogPath, trackRoot: TRACK.dir }), /does not exist/);
 });
 
 function compileChanged(change: (value: CalibrationDefinition) => void,
@@ -323,7 +261,7 @@ function qualificationNullArtifact(context: CalibrationContext): QualificationAr
         unscored: { criteria: zeroPointChecks, passed: 0, failed: zeroPointChecks,
           inconclusive: 0 } },
       criteria: scored.map(check => ({ scenario: check.source, feature: check.featureId,
-        criterion: check.criterionId, track: context.release.track, level: 3,
+        criterion: check.criterionId, track: context.release.track, level: 1,
         points: check.points, status: 'expected_fail', evidenceStatus: 'failed' })),
       runs: [],
     },
@@ -331,7 +269,7 @@ function qualificationNullArtifact(context: CalibrationContext): QualificationAr
 }
 
 test('qualification evidence is semantically bound and tampering fails closed', () => {
-  const { binding, plan } = qualifiedProgression();
+  const { binding, plan } = current();
   const referenceEntry: CalibrationEvidence = {
     kind: 'reference', stack: 'mongodb', repetition: 1,
     path: 'results/reference.json', sha256: 'test-fixture',

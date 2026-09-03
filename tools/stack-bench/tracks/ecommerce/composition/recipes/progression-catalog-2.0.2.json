@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "benchmark-recipe",
   "id": "ecommerce.progression-catalog",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "state": "draft",
   "title": "Ecommerce progression catalog",
   "track": "ecommerce",
@@ -153,9 +153,9 @@
       ]
     },
     {
-      "path": "../packs/l2-price-history-features-2.0.1.json",
+      "path": "../packs/l2-price-history-features-2.0.2.json",
       "id": "ecommerce.l2.price-history-features",
-      "version": "2.0.1",
+      "version": "2.0.2",
       "includeRoles": [
         "feature"
       ]
@@ -257,9 +257,9 @@
       ]
     },
     {
-      "path": "../packs/progression-automatic-reorder-2.0.0.json",
+      "path": "../packs/progression-automatic-reorder-2.0.1.json",
       "id": "ecommerce.progression.automatic-reorder",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "includeRoles": [
         "feature"
       ]
@@ -289,9 +289,9 @@
       ]
     },
     {
-      "path": "../packs/progression-catalog-management-1.0.2.json",
+      "path": "../packs/progression-catalog-management-1.0.3.json",
       "id": "ecommerce.progression.catalog-management",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "includeRoles": [
         "feature"
       ]
@@ -417,17 +417,17 @@
       ]
     },
     {
-      "path": "../packs/progression-staff-activity-1.0.2.json",
+      "path": "../packs/progression-staff-activity-1.0.3.json",
       "id": "ecommerce.progression.staff-activity",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "includeRoles": [
         "feature"
       ]
     },
     {
-      "path": "../packs/progression-staff-roles-1.0.0.json",
+      "path": "../packs/progression-staff-roles-1.0.1.json",
       "id": "ecommerce.progression.staff-roles",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "includeRoles": [
         "feature"
       ]
@@ -481,9 +481,9 @@
       ]
     },
     {
-      "path": "../packs/spec-access-control-2.0.0.json",
+      "path": "../packs/spec-access-control-2.0.1.json",
       "id": "ecommerce.spec.access-control",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "includeRoles": [
         "guarantee"
       ]

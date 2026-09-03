@@ -247,7 +247,7 @@
   "schemaVersion": 1,
   "definition": {
     "id": "ecommerce.questlines",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "state": "draft"
   },
   "levels": 6,
@@ -335,9 +335,9 @@
     {
       "id": "staff-access",
       "name": "Staff access",
-      "description": "Staff sign-in and customer access boundaries.",
+      "description": "Staff and administrator sign-in.",
       "level": 1,
-      "state": "qualified",
+      "state": "draft",
       "parents": [],
       "dependencyReasons": {},
       "questline": "staff-access",
@@ -365,9 +365,9 @@
     {
       "id": "customer-profile",
       "name": "Customer profile",
-      "description": "Private customer details and shipping address.",
+      "description": "Customer details and shipping address.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "accounts"
       ],
@@ -378,15 +378,15 @@
       "featureRefs": [
         "ecommerce.progression.customer-profile@1.0.0"
       ],
-      "checks": 2,
-      "points": 4
+      "checks": 3,
+      "points": 5
     },
     {
       "id": "notification-preferences",
       "name": "Notification preferences",
-      "description": "Durable account-owned notification choices.",
+      "description": "Customer notification choices.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "accounts"
       ],
@@ -397,8 +397,8 @@
       "featureRefs": [
         "ecommerce.progression.notification-preferences@1.0.0"
       ],
-      "checks": 2,
-      "points": 4
+      "checks": 3,
+      "points": 5
     },
     {
       "id": "purchasing",
@@ -464,9 +464,9 @@
     {
       "id": "support-history",
       "name": "Customer support history",
-      "description": "Durable account-owned support history.",
+      "description": "Customer support ticket history.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "accounts",
         "support-intake"
@@ -479,15 +479,15 @@
       "featureRefs": [
         "ecommerce.progression.support-history@1.0.0"
       ],
-      "checks": 2,
-      "points": 4
+      "checks": 4,
+      "points": 7
     },
     {
       "id": "warehouse-admin",
       "name": "Warehouse administration",
       "description": "Warehouse inventory, restocking, and revenue views.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "catalog",
         "staff-access"
@@ -500,15 +500,15 @@
       "featureRefs": [
         "ecommerce.feature.warehouse-admin@1.2.1"
       ],
-      "checks": 7,
-      "points": 9
+      "checks": 8,
+      "points": 10
     },
     {
       "id": "promotion-rules",
       "name": "Promotion rules",
       "description": "Staff-managed bounded promotion codes.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "catalog",
         "staff-access"
@@ -527,9 +527,9 @@
     {
       "id": "staff-roles",
       "name": "Staff roles",
-      "description": "Role assignment and staff permission boundaries.",
+      "description": "Role assignment for staff accounts.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "staff-access"
       ],
@@ -538,10 +538,10 @@
       },
       "questline": "staff-access",
       "featureRefs": [
-        "ecommerce.progression.staff-roles@1.0.0"
+        "ecommerce.progression.staff-roles@1.0.1"
       ],
-      "checks": 2,
-      "points": 4
+      "checks": 3,
+      "points": 5
     },
     {
       "id": "support-triage",
@@ -567,9 +567,9 @@
     {
       "id": "sales-dashboard",
       "name": "Sales dashboard",
-      "description": "Live category totals and best sellers.",
+      "description": "Category totals and best sellers.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "purchasing"
       ],
@@ -580,15 +580,15 @@
       "featureRefs": [
         "ecommerce.l2.sales-dashboard@2.0.0"
       ],
-      "checks": 4,
-      "points": 6
+      "checks": 5,
+      "points": 7
     },
     {
       "id": "reviews",
       "name": "Reviews",
       "description": "Item ratings and comments.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "purchasing"
       ],
@@ -597,10 +597,10 @@
       },
       "questline": "reviews",
       "featureRefs": [
-        "ecommerce.feature.reviews@1.2.1"
+        "ecommerce.feature.reviews@1.2.2"
       ],
-      "checks": 6,
-      "points": 8
+      "checks": 7,
+      "points": 10
     },
     {
       "id": "recommendations",
@@ -645,9 +645,9 @@
     {
       "id": "stock-alerts",
       "name": "Stock alerts",
-      "description": "Private one-time alerts when stock returns.",
+      "description": "Customer alerts when stock returns.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "notification-preferences",
         "warehouse-admin"
@@ -660,15 +660,15 @@
       "featureRefs": [
         "ecommerce.progression.stock-alerts@1.0.1"
       ],
-      "checks": 2,
-      "points": 3
+      "checks": 3,
+      "points": 4
     },
     {
       "id": "faceted-search",
       "name": "Faceted search",
       "description": "Combined catalogue filters with stable pagination.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "catalog-discovery"
       ],
@@ -687,7 +687,7 @@
       "name": "Fulfilment queue",
       "description": "Staff and administrator fulfilment workflows.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "purchasing",
         "warehouse-admin"
@@ -729,7 +729,7 @@
       "name": "Catalog management",
       "description": "Staff-managed products and named variants.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "catalog-discovery",
         "staff-roles"
@@ -740,7 +740,7 @@
       },
       "questline": "business-operations",
       "featureRefs": [
-        "ecommerce.progression.catalog-management@1.0.2"
+        "ecommerce.progression.catalog-management@1.0.3"
       ],
       "checks": 2,
       "points": 4
@@ -748,9 +748,9 @@
     {
       "id": "inventory-dashboard",
       "name": "Inventory dashboard",
-      "description": "A live low-stock dashboard.",
+      "description": "A low-stock dashboard.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "warehouse-admin"
       ],
@@ -761,8 +761,8 @@
       "featureRefs": [
         "ecommerce.l2.inventory-dashboard@2.0.0"
       ],
-      "checks": 1,
-      "points": 3
+      "checks": 2,
+      "points": 4
     },
     {
       "id": "scheduled-restocks",
@@ -788,7 +788,7 @@
       "name": "Stock transfers",
       "description": "Move stock between warehouses without changing the total.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "warehouse-admin"
       ],
@@ -805,9 +805,9 @@
     {
       "id": "managed-support",
       "name": "Managed support cases",
-      "description": "Shared support cases with live updates and account privacy.",
+      "description": "Customer and staff support case updates.",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "support-history",
         "support-triage"
@@ -820,8 +820,8 @@
       "featureRefs": [
         "ecommerce.progression.managed-support@1.0.0"
       ],
-      "checks": 2,
-      "points": 3
+      "checks": 3,
+      "points": 4
     },
     {
       "id": "payment-records",
@@ -942,7 +942,7 @@
       },
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.progression.automatic-reorder@2.0.0"
+        "ecommerce.progression.automatic-reorder@2.0.1"
       ],
       "checks": 3,
       "points": 7
@@ -982,7 +982,7 @@
       },
       "questline": "business-operations",
       "featureRefs": [
-        "ecommerce.progression.staff-activity@1.0.2"
+        "ecommerce.progression.staff-activity@1.0.3"
       ],
       "checks": 2,
       "points": 5
@@ -1001,7 +1001,7 @@
       },
       "questline": "catalog-discovery",
       "featureRefs": [
-        "ecommerce.l2.price-history-features@2.0.1"
+        "ecommerce.l2.price-history-features@2.0.2"
       ],
       "checks": 5,
       "points": 12

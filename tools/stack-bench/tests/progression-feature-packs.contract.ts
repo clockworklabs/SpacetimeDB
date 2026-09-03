@@ -20,12 +20,12 @@ const featurePackNames = [
   'l2-stock-transfers-features-1.0.1.json',
   'l2-order-cancellation-features-1.0.1.json',
   'l3-order-returns-features-1.1.1.json',
-  'l2-price-history-features-2.0.1.json',
+  'l2-price-history-features-2.0.2.json',
 ];
 
 test('the current graph keeps reservation product ownership separate from stable score identity', () => {
   const definition = compileProgressionDefinitionFile(join(trackRoot, 'progression',
-    'ecommerce-2.0.1.json'), { trackRoot });
+    'ecommerce-2.0.2.json'), { trackRoot });
   const reservations = definition.nodes.find(node => node.id === 'reservations');
   assert(reservations);
   assert.deepEqual(reservations.featureRefs, ['ecommerce.l3.reservations-features@2.0.0']);
@@ -58,7 +58,7 @@ test('each feature pack owns only its prompt and exact dependencies', () => {
   assert.deepEqual(returns.requiresPacks,
     ['ecommerce.l3.order-delivery-features@1.1.1', 'ecommerce.feature.warehouse-admin@1.2.1']);
   assert.deepEqual(pricing.requiresPacks,
-    ['ecommerce.progression.catalog-management@1.0.2']);
+    ['ecommerce.progression.catalog-management@1.0.3']);
   assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.2.1']);
 
   assert.doesNotMatch(fragmentText(requiredRequirement(cancellation)), /return|price|Live operational views/i);
@@ -72,8 +72,7 @@ test('dependency-owned checks use only interfaces supplied by their parents', ()
   assert.deepEqual(warehouse.requiresPacks,
     ['ecommerce.feature.catalog-items@1.0.0', 'ecommerce.progression.staff-access@1.0.0']);
   assert.deepEqual(warehouse.checks.map(check => [check.id, check.criteria]), [
-    ['access-boundary', ['7a']], ['warehouse-view', ['7b']], ['warehouse-stock', ['7c']],
-    ['admin-write', ['103a']],
+    ['warehouse-view', ['7b']], ['admin-write', ['103a']],
   ]);
   for (const check of warehouse.checks) {
     const scenario = compileScenarioDefinition(readJson(join(trackRoot, check.source)), {
@@ -119,11 +118,11 @@ test('dependency-owned checks use only interfaces supplied by their parents', ()
 test('catalog and faceted search expose only their own product work', () => {
   const catalog = readPack('feature-catalog-items-1.0.0.json');
   const search = readPack('progression-faceted-search-1.0.1.json');
-  const management = readPack('progression-catalog-management-1.0.2.json');
+  const management = readPack('progression-catalog-management-1.0.3.json');
   assert.deepEqual(catalog.requiresPacks, []);
   assert.deepEqual(search.requiresPacks, ['ecommerce.feature.catalog-discovery@1.0.0']);
   assert.deepEqual(management.requiresPacks,
-    ['ecommerce.feature.catalog-discovery@1.0.0', 'ecommerce.progression.staff-roles@1.0.0']);
+    ['ecommerce.feature.catalog-discovery@1.0.0', 'ecommerce.progression.staff-roles@1.0.1']);
   assert.equal(management.checks[0]?.source,
     'scenarios/progression-catalog-management-1.0.1.json');
   const managementScenario = compileScenarioDefinition(
@@ -171,7 +170,17 @@ test('support nodes have isolated prompts, hooks, scenarios, and exact dependenc
     ['assignment', ['611a']], ['priority', ['611b']], ['status', ['611c']],
   ]);
   assert.deepEqual(history.checks.map(check => [check.id, check.criteria]), [
-    ['persistence', ['612a']], ['privacy', ['612b']],
+    ['history', ['612c']],
+  ]);
+  const definition = compileProgressionDefinitionFile(join(trackRoot, 'progression',
+    'ecommerce-2.0.2.json'), { trackRoot });
+  const historyNode = definition.nodes.find(node => node.id === 'support-history');
+  assert(historyNode);
+  assert.deepEqual(historyNode.gradingChecks.map(check => check.id), [
+    'ecommerce.progression.support-history.support-history.612c',
+    'ecommerce.progression.support-privacy-specifications.private-message-delivery.619a',
+    'ecommerce.spec.access-control.support-history-privacy.612b',
+    'ecommerce.spec.state-durability.support-history-reload.612a',
   ]);
   for (const [pack, expectedLevel] of [[intake, 1], [triage, 2], [history, 2]] as const) {
     for (const check of pack.checks) {

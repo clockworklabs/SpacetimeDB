@@ -2,39 +2,39 @@
   "schemaVersion": 1,
   "kind": "promotion-catalog",
   "id": "ecommerce.recipe-candidates",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "state": "draft",
   "title": "Ecommerce recipe candidates",
   "entries": [
     {
       "alias": "L1",
       "status": "candidate",
-      "recipe": { "path": "recipes/progression-catalog-2.0.1.json", "id": "ecommerce.progression-catalog", "version": "2.0.1" }
+      "recipe": { "path": "recipes/progression-catalog-2.0.2.json", "id": "ecommerce.progression-catalog", "version": "2.0.2" }
     },
     {
       "alias": "L2",
       "status": "candidate",
-      "recipe": { "path": "recipes/progression-catalog-2.0.1.json", "id": "ecommerce.progression-catalog", "version": "2.0.1" }
+      "recipe": { "path": "recipes/progression-catalog-2.0.2.json", "id": "ecommerce.progression-catalog", "version": "2.0.2" }
     },
     {
       "alias": "L3",
       "status": "candidate",
-      "recipe": { "path": "recipes/progression-catalog-2.0.1.json", "id": "ecommerce.progression-catalog", "version": "2.0.1" }
+      "recipe": { "path": "recipes/progression-catalog-2.0.2.json", "id": "ecommerce.progression-catalog", "version": "2.0.2" }
     },
     {
       "alias": "L4",
       "status": "candidate",
-      "recipe": { "path": "recipes/progression-catalog-2.0.1.json", "id": "ecommerce.progression-catalog", "version": "2.0.1" }
+      "recipe": { "path": "recipes/progression-catalog-2.0.2.json", "id": "ecommerce.progression-catalog", "version": "2.0.2" }
     },
     {
       "alias": "L5",
       "status": "candidate",
-      "recipe": { "path": "recipes/progression-catalog-2.0.1.json", "id": "ecommerce.progression-catalog", "version": "2.0.1" }
+      "recipe": { "path": "recipes/progression-catalog-2.0.2.json", "id": "ecommerce.progression-catalog", "version": "2.0.2" }
     },
     {
       "alias": "L6",
       "status": "candidate",
-      "recipe": { "path": "recipes/progression-catalog-2.0.1.json", "id": "ecommerce.progression-catalog", "version": "2.0.1" }
+      "recipe": { "path": "recipes/progression-catalog-2.0.2.json", "id": "ecommerce.progression-catalog", "version": "2.0.2" }
     },
     {
       "alias": "L1",

@@ -19,7 +19,7 @@ const readPack = (name: string): CompiledPackDefinition =>
 
 const packs = {
   transfers: readPack('l2-stock-transfers-features-1.0.1.json'),
-  prices: readPack('l2-price-history-features-2.0.1.json'),
+  prices: readPack('l2-price-history-features-2.0.2.json'),
   returns: readPack('l3-order-returns-features-1.1.1.json'),
 };
 
@@ -56,7 +56,7 @@ test('inventory and order nodes use the expected direct graph parents', () => {
   assert.deepEqual(packs.transfers.requiresPacks,
     ['ecommerce.feature.warehouse-admin@1.2.1']);
   assert.deepEqual(packs.prices.requiresPacks, [
-    'ecommerce.progression.catalog-management@1.0.2',
+    'ecommerce.progression.catalog-management@1.0.3',
   ]);
   assert.deepEqual(packs.returns.requiresPacks, [
     'ecommerce.l3.order-delivery-features@1.1.1',
@@ -64,7 +64,7 @@ test('inventory and order nodes use the expected direct graph parents', () => {
   ]);
 
   const { definition } = loadValidatedProgressionSource(
-    join(trackRoot, 'progression', 'ecommerce-2.0.1.json'), trackRoot);
+    join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), trackRoot);
   const nodes = new Map(definition.nodes.map(node => [node.id, node]));
   const expectedParents = new Map([
     ['stock-transfers', ['warehouse-admin']],
@@ -123,7 +123,7 @@ test('checks preserve established points and isolate the missing return boundary
   const transfers = selectedCriteria(packs.transfers);
   const prices = selectedCriteria(packs.prices);
   const returns = selectedCriteria(packs.returns);
-  assert.equal(transfers.reduce((total, item) => total + item.criterion.points, 0), 7);
+  assert.deepEqual(transfers.map(item => [item.criterion.id, item.criterion.points]), [['2a', 3]]);
   assert.equal(prices.reduce((total, item) => total + item.criterion.points, 0), 8);
   assert.deepEqual(returns.map(item => [item.criterion.id, item.criterion.points]),
     [['3c', 3], ['3e', 1]]);
@@ -142,7 +142,7 @@ test('checks preserve established points and isolate the missing return boundary
 
 test('the graph owns every check group from these feature packs', () => {
   const { definition, gradingGroups } = loadValidatedProgressionSource(
-    join(trackRoot, 'progression', 'ecommerce-2.0.1.json'), trackRoot);
+    join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), trackRoot);
   const nodes = new Map(definition.nodes.map(node => [node.id, node]));
   const packsByNode = new Map<string, CompiledPackDefinition>([
     ['stock-transfers', packs.transfers],

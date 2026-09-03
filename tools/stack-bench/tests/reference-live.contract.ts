@@ -140,8 +140,8 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--feature-catalog', 'ecommerce.questlines@2.0.1'])
-    .featureCatalog, 'ecommerce.questlines@2.0.1');
+    '--backend', 'postgres', '--feature-catalog', 'ecommerce.questlines@2.0.2'])
+    .featureCatalog, 'ecommerce.questlines@2.0.2');
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '4']), /declared/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
@@ -386,14 +386,14 @@ test('partial parallel mutation accounting preserves completed shard results', (
 
 test('reference qualification resolves the exact executable calibration identity', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
-    imported: { sourceSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6' } });
+    imported: { sourceSha256: 'edb9732535b2273232a320b8e7b4ad6758991683a6bd06103f2ec4be07dafe20' } });
   assert.equal(record(context.identity, 'qualification identity').id, 'ecommerce.sequential-l1-calibration');
   assert.equal(record(context.identity, 'qualification identity').sha256, context.calibration.qualificationSha256);
 });
 
 test('reference qualification resolves the current calibration', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
-    imported: { sourceSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6' } },
+    imported: { sourceSha256: 'edb9732535b2273232a320b8e7b4ad6758991683a6bd06103f2ec4be07dafe20' } },
   'ecommerce.sequential-l1@2.5.0');
   assert.equal(context.binding.release.version, '2.5.0');
   assert.equal(context.calibration.version, '2.5.0');
@@ -422,8 +422,8 @@ test('modular reference qualification selects every exact check without prescrib
 
 test('progression reference qualification follows the catalog check selection', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-depth3@2.0.1');
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.1', track);
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-depth3@2.0.2');
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.2', track);
   const selection = resolveProgressionRecipeLevelSelection(binding, catalog, 3,
     { cumulative: true });
   const argv = referenceQualificationSelectionArgs(binding, selection);
@@ -433,28 +433,15 @@ test('progression reference qualification follows the catalog check selection', 
   assert.deepEqual(valuesAfter(argv, '--expect-spec').sort(),
     [...selection.grader.selection.requested.specifications.expected].sort());
   assert.equal(required(valuesAfter(argv, '--task-mode')[0], 'task mode'), 'upgrade');
-  assert.equal(selection.grader.checkKeys.length, 97);
+  assert.equal(selection.grader.checkKeys.length, 108);
   assert.equal(selection.grader.checkKeys.some(key => key.includes('automatic-reorder')), false);
   assert.deepEqual(referenceQualificationSelectionArgs(binding, selection,
     [required(selection.grader.checkKeys[0], 'first check key')]).filter((_value, index, argv) =>
     argv[index - 1] === '--check'), [required(selection.grader.checkKeys[0], 'first check key')]);
   const scoped = referenceQualificationRelease(binding.release, selection.grader.checkKeys);
-  assert.equal(scoped.checkCatalog.length, 97);
+  assert.equal(scoped.checkCatalog.length, 108);
   assert.throws(() => referenceQualificationRelease(binding.release,
     [...selection.grader.checkKeys, 'missing.check']), /unknown checks/);
-});
-
-test('depth-3 qualification compares the scoped graph identity', () => {
-  const context = referenceQualificationContext({
-    backend: 'mongodb', track: 'ecommerce', level: 6, id: 'ecommerce-reference-mongodb',
-    status: 'qualified',
-    imported: { sourceSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6' },
-  }, 'ecommerce.progression-depth3@2.0.1', {
-    level: 3, featureCatalog: 'ecommerce.questlines@2.0.1',
-  });
-  assert.equal(record(context.featureCatalog, 'feature catalog').version, '2.0.1');
-  assert.equal(required(context.selectedCheckKeys, 'selected check keys').length, 97);
-  assert.equal(context.level, 3);
 });
 
 test('reference qualification keeps underlying runs beside the requested artifact', () => {

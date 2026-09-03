@@ -14,11 +14,11 @@ function checkScenarioArgs(args: readonly string[]): void {
 }
 
 test('the progression scenarios use only their selected application interfaces', () => {
-  checkScenarioArgs(['--track', 'ecommerce', '--recipe', 'progression-catalog-2.0.1.json']);
+  checkScenarioArgs(['--track', 'ecommerce', '--recipe', 'progression-catalog-2.0.2.json']);
 });
 
 for (const recipe of [
-  'progression-depth3-2.0.1.json',
+  'progression-depth3-2.0.2.json',
   'sequential-l1-2.5.0.json',
   'sequential-l2-1.6.0.json',
   'sequential-l3-1.0.0.json',

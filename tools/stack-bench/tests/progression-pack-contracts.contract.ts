@@ -21,9 +21,9 @@ const dedicatedPacks: readonly [name: string, modes: readonly string[]][] = [
   ['feature-purchasing-1.2.1.json', ['fresh', 'upgrade']],
   ['feature-cart-2.0.0.json', ['fresh', 'upgrade']],
   ['feature-checkout-2.0.0.json', ['fresh', 'upgrade']],
-  ['progression-catalog-management-1.0.2.json', ['upgrade']],
+  ['progression-catalog-management-1.0.3.json', ['upgrade']],
   ['progression-payment-records-2.0.0.json', ['upgrade']],
-  ['progression-staff-activity-1.0.2.json', ['upgrade']],
+  ['progression-staff-activity-1.0.3.json', ['upgrade']],
   ['progression-recommendation-feedback-2.0.0.json', ['upgrade']],
   ['l2-order-cancellation-features-1.0.1.json', ['upgrade']],
   ['l3-reservations-features-2.0.0.json', ['upgrade']],
@@ -87,7 +87,7 @@ test('shopping checks preserve their focused actors and criteria', () => {
 });
 
 test('activity and cancellation checks remain bound to their dedicated scenarios', () => {
-  const activity = readPack('progression-staff-activity-1.0.2.json').checks[0];
+  const activity = readPack('progression-staff-activity-1.0.3.json').checks[0];
   assert(activity);
   const activityFeature = readScenario('progression-staff-activity-1.0.0.json', 5).features[0];
   assert(activityFeature);
@@ -112,8 +112,7 @@ test('fulfilment and cancellation checks have separate authorization owners', ()
   const feature = readPack('progression-fulfilment-queue-1.0.1.json');
   const access = readPack('progression-operations-access-specifications-1.0.0.json');
   assert.equal(feature.moduleType, 'feature');
-  assert.deepEqual(feature.checks.map(check => check.criteria), [['1a'], ['1b'], ['1c'], ['1d']]);
-  assert(!feature.checks.some(check => check.criteria?.includes('1e') === true));
+  assert.deepEqual(feature.checks.map(check => check.criteria), [['1b'], ['1c']]);
   assert.equal(access.moduleType, 'specification');
   assert.deepEqual(access.checks.map(check => check.requiresFeatures), [
     ['ecommerce.l2.stock-transfers-features'],
@@ -123,29 +122,31 @@ test('fulfilment and cancellation checks have separate authorization owners', ()
   ]);
 
   const { definition, gradingGroups } = loadValidatedProgressionSource(
-    join(root, 'progression', 'ecommerce-2.0.1.json'), root);
+    join(root, 'progression', 'ecommerce-2.0.2.json'), root);
   const fulfilment = definition.nodes.find(node => node.id === 'fulfilment-queue');
   const cancellation = definition.nodes.find(node => node.id === 'order-cancellation');
   assert(fulfilment && cancellation);
   assert.deepEqual(fulfilment.featureRefs, ['ecommerce.progression.fulfilment-queue@1.0.1']);
   assert(gradingGroups(fulfilment.id).some(group => group.endsWith('#operator-authorization-direct')));
+  assert(gradingGroups(fulfilment.id).some(group => group.endsWith('#fulfilment-area-boundary')));
+  assert(gradingGroups(fulfilment.id).some(group => group.endsWith('#fulfilment-queue')));
   assert(!gradingGroups(fulfilment.id).some(group => group.endsWith('#order-owner-direct')));
   assert(gradingGroups(cancellation.id).some(group => group.endsWith('#order-owner-direct')));
 });
 
-test('external stock checks include their database contract in the agent request', () => {
+test('external stock checks stay selectable independently from the agent request', () => {
   const pack = readPack('spec-external-data-sync-1.2.0.json');
-  assert(pack.checks.every(check => check.observations?.includes('requested')));
-  assert(pack.checks.every(check => !check.observations?.includes('unmentioned')));
+  assert(pack.checks.every(check =>
+    JSON.stringify(check.observations) === JSON.stringify(['requested', 'unmentioned'])));
   assert(pack.checks.every(check =>
     check.requiresFeatures?.length === 1
       && check.requiresFeatures[0] === 'ecommerce.feature.warehouse-admin'));
 
   const { definition } = loadValidatedProgressionSource(
-    join(root, 'progression', 'ecommerce-2.0.1.json'), root);
+    join(root, 'progression', 'ecommerce-2.0.2.json'), root);
   const warehouse = definition.nodes.find(node => node.id === 'warehouse-admin');
   assert(warehouse);
-  assert(warehouse.promptModules.includes('ecommerce.spec.external-data-sync@1.2.0'));
+  assert(!warehouse.promptModules.includes('ecommerce.spec.external-data-sync@1.2.0'));
 });
 
 test('privacy checks prove a server or transport boundary', () => {
