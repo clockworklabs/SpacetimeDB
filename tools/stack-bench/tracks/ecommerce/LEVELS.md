@@ -71,5 +71,11 @@ Every check produces `passed`, `failed`, `inconclusive`, or `harness_failure`.
 Only passed checks add points. Missing or inconclusive evidence never changes
 the declared denominator.
 
+The score is passed points over every selected point in the graph, for the
+first build and for the final result alike. The questline average, each
+questline's own percentage averaged with equal weight, is reported beside it
+as a secondary view; questlines range from 9 to 59 points, so the two can
+differ. Blocked and unfinished work stays in the denominator.
+
 See [composition/README.md](composition/README.md) for pack, recipe, and
 calibration ownership.

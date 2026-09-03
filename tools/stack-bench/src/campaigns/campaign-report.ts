@@ -83,6 +83,7 @@ export interface BenchmarkRun extends Partial<Pick<BenchmarkRunRecord,
     score?: { questlineAveragePercentage?: number | null; uniqueChecks?: {
       gradedPoints?: number;
       availablePoints?: number;
+      percentage?: number | null;
     } };
   };
 }
@@ -225,6 +226,13 @@ function formatRate(value: unknown): string {
     ? `${Number((value * 100).toFixed(2))}%` : '—';
 }
 
+function formatTokens(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '—';
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}M tokens`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k tokens`;
+  return `${Math.round(value)} tokens`;
+}
+
 function formatMetric(metric: string, value: unknown): string {
   if (metric.endsWith('Rate')) return formatRate(value);
   if (metric.endsWith('CostUsd') || metric.endsWith('SpendUsd')) return formatUsd(value);
@@ -264,15 +272,20 @@ function quantile(sorted: number[], p: number): number {
   return sorted[low]! + (sorted[high]! - sorted[low]!) * (index - low);
 }
 
+// A spread needs a sample. Below three completed attempts the centre and the
+// range are reported and the spread stays null rather than describing noise.
+const MINIMUM_SPREAD_SAMPLE = 3;
+
 function summarize(values: Array<number | null | undefined>, dispersion: string): MetricSummary {
   const present = values.filter((value): value is number => typeof value === 'number'
     && Number.isFinite(value)).sort((a, b) => a - b);
   if (!present.length) return { n: 0, center: null, spread: null, min: null, max: null };
+  const spreadable = present.length >= MINIMUM_SPREAD_SAMPLE;
   if (dispersion === 'median-iqr') return {
     n: present.length,
     center: Number(quantile(present, 0.5).toFixed(6)),
-    spread: { kind: 'iqr', q1: Number(quantile(present, 0.25).toFixed(6)),
-      q3: Number(quantile(present, 0.75).toFixed(6)) },
+    spread: spreadable ? { kind: 'iqr', q1: Number(quantile(present, 0.25).toFixed(6)),
+      q3: Number(quantile(present, 0.75).toFixed(6)) } : null,
     min: present[0]!, max: present.at(-1)!,
   };
   const center = mean(present);
@@ -280,7 +293,7 @@ function summarize(values: Array<number | null | undefined>, dispersion: string)
     ? present.reduce((total, value) => total + ((value - center) ** 2), 0) / (present.length - 1)
     : 0;
   return { n: present.length, center: Number(center.toFixed(6)),
-    spread: { kind: 'sd', value: Number(Math.sqrt(variance).toFixed(6)) },
+    spread: spreadable ? { kind: 'sd', value: Number(Math.sqrt(variance).toFixed(6)) } : null,
     min: present[0]!, max: present.at(-1)! };
 }
 
@@ -307,20 +320,33 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
   const finalMeasuredMaxima: Array<number | null> = levels.map(level => number(level.max));
   const finalDeclaredMaxima: Array<number | null> = levels.map(level => declaredMax(level.max, level.outcome,
     level.selection));
+  // Dependency mode scores passed points over every selected point in the
+  // graph, the same scale as the first build. The equal-weight questline
+  // average is a secondary view, because questlines range from 9 to 59 points.
+  const terminal = run.progressionStatus?.phase === 'terminal';
   const progressionScore = run.progressionStatus === undefined
     ? undefined
-    : run.progressionStatus?.phase === 'terminal'
-      ? number(run.progressionStatus?.score?.questlineAveragePercentage) : null;
+    : terminal ? number(run.progressionStatus?.score?.uniqueChecks?.percentage) : null;
+  const questlineAverage = run.progressionStatus === undefined
+    ? null
+    : terminal ? number(run.progressionStatus?.score?.questlineAveragePercentage) : null;
   const progressionCoverage = run.progressionStatus === undefined
     ? undefined
-    : run.progressionStatus?.phase === 'terminal'
+    : terminal
       ? ratio(number(run.progressionStatus?.score?.uniqueChecks?.gradedPoints),
         number(run.progressionStatus?.score?.uniqueChecks?.availablePoints)) : null;
+  // Time spent waiting for the provider to lift a rate limit is recorded per
+  // session and is not the stack's or the agent's to answer for.
+  const throttleWaitMs = levels.reduce((total, level) =>
+    total + (number(level.sessionTotals?.providerThrottle?.waitedMs) ?? 0), 0);
+  const durationMs = number(run.totals?.durationSec) === null
+    ? null : Math.max(0, (run.totals!.durationSec! * 1000) - throttleWaitMs);
   return {
     firstBuildScoreRate: ratio(firstScore, firstMax),
     finalScoreRate: progressionScore === undefined
       ? ratio(number(run.totals?.score), number(run.totals?.max))
       : ratio(progressionScore, 100),
+    questlineAverageRate: ratio(questlineAverage, 100),
     firstBuildCoverageRate: firstDeclaredMaxima.length
       && firstDeclaredMaxima.every(Number.isFinite)
       ? ratio(firstMax, firstDeclaredMaxima.reduce<number>((total, value) => total + (value ?? 0), 0)) : null,
@@ -331,7 +357,8 @@ export function campaignRunMetrics(run: BenchmarkRun): Record<string, number | n
           finalDeclaredMaxima.reduce<number>((total, value) => total + (value ?? 0), 0)) : null
       : progressionCoverage,
     totalCostUsd: run.totals?.costComplete === true ? number(run.totals?.costUsd) : null,
-    totalDurationMs: number(run.totals?.durationSec) === null ? null : run.totals!.durationSec! * 1000,
+    totalTokens: number(run.totals?.tokens),
+    totalDurationMs: durationMs,
     repairs: number(run.totals?.repairs),
     correctionSuccessRate,
     correctionCostUsd: correctionSuccessRate === 1 ? correctionSpendUsd : null,
@@ -696,7 +723,12 @@ export function buildCampaignReport(plan: CompiledCampaignPlan, state: CampaignS
       ...(grading.status === 'pending'
         ? ['Grading qualification is pending. Treat these scores as provisional.'] : []),
       'Statistics describe only the exact scope and conditions recorded above.',
+      'Score rates are passed points over all selected points; the questline average weighs every questline equally and is a secondary view.',
       'Score rates use measurable points; read them with coverage and the typed execution outcome.',
+      'A spread is reported only from three or more completed attempts; below that, only the centre and the range.',
+      'Usage in USD is the provider CLI token count priced at the recorded API rates. It is not an invoice.',
+      'Durations exclude time spent waiting for the provider to lift a rate limit.',
+      'Results describe one coding agent and the model ids recorded per session. They do not generalize to other agents.',
       'Observed specifications are diagnostic, contribute zero score, and are never shown to repairs.',
       'Invalid executions are reported separately and are not imputed into outcome metrics.',
       'The report makes no causal claim beyond the declared campaign design.',
@@ -727,9 +759,14 @@ export function renderCampaignHtml(report: CampaignReport,
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
     + `<td>${escape(formatMetric(report.policy.primaryMetric,
       condition.metrics[report.policy.primaryMetric]?.center))}`
+    + ` (n=${condition.metrics[report.policy.primaryMetric]?.n ?? 0})`
     + `<br><small>${coverageMetric
       ? `${escape(formatRate(condition.metrics[coverageMetric]?.center))} coverage · ` : ''}`
-    + `${escape(formatUsd(condition.metrics.totalCostUsd?.center))} normalized usage · `
+    + `${condition.metrics.questlineAverageRate?.center != null
+      ? `${escape(formatRate(condition.metrics.questlineAverageRate.center))} questline average · ` : ''}`
+    + `${escape(formatUsd(condition.metrics.totalCostUsd?.center))} API-equivalent usage`
+    + `${condition.metrics.totalTokens?.center != null
+      ? ` (${escape(formatTokens(condition.metrics.totalTokens.center))})` : ''} · `
     + `${escape(formatDurationMs(condition.metrics.totalDurationMs?.center))}</small></td></tr>`).join('');
   const treatmentRows = report.scope.conditions.flatMap(condition =>
     (condition.requested?.levels ?? []).flatMap(level => {

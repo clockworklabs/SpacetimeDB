@@ -266,26 +266,19 @@ function dependencyHistory(state: DependencyState): {
     }
     replay = progressionEngine.recordResult(replay, event.result);
   }
-  const byNode = new Map(state.definition.nodes.map(node => [node.id, node]));
-  const questlinePercentages = state.definition.questlines.map(questline => {
-    let passed = 0;
-    let available = 0;
-    for (const nodeId of questline.nodes) {
-      const node = byNode.get(nodeId);
-      if (!node) continue;
-      for (const check of node.gradingChecks) {
-        available += check.points;
-        if (firstOutcomes.get(`${nodeId}\u0000${check.id}`) === 'pass') passed += check.points;
-      }
+  // First-try points over every selected point, the same scale as the final
+  // score, so the two read side by side.
+  let passed = 0;
+  let available = 0;
+  for (const node of state.definition.nodes) {
+    for (const check of node.gradingChecks) {
+      available += check.points;
+      if (firstOutcomes.get(`${node.id}\u0000${check.id}`) === 'pass') passed += check.points;
     }
-    return available ? (passed / available) * 100 : 0;
-  });
+  }
   return {
     history: {
-      firstTryPercentage: questlinePercentages.length
-        ? questlinePercentages.reduce((sum, value) => sum + value, 0)
-          / questlinePercentages.length
-        : 0,
+      firstTryPercentage: available ? (passed / available) * 100 : 0,
       repairAttempts,
     },
     regressions: regressed.size,

@@ -348,9 +348,9 @@ const RUNTIME_FIELDS = new Set(['releaseManifestSha256', 'controllerImage', 'bui
 const RETRY_CAUSES = new Set(['provider_failure', 'harness_failure', 'inconclusive']);
 const EXCLUSION_CAUSES = new Set(['provider_failure', 'harness_failure', 'inconclusive',
   'ungraded', 'contaminated']);
-const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'totalCostUsd',
-  'totalDurationMs', 'repairs', 'correctionSuccessRate', 'correctionCostUsd',
-  'correctionSpendUsd', 'firstBuildCoverageRate', 'finalCoverageRate',
+const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'questlineAverageRate',
+  'totalCostUsd', 'totalTokens', 'totalDurationMs', 'repairs', 'correctionSuccessRate',
+  'correctionCostUsd', 'correctionSpendUsd', 'firstBuildCoverageRate', 'finalCoverageRate',
   'invalidAttemptRate']);
 const DISPERSION = new Set(['median-iqr', 'mean-sd']);
 const IMAGE_DIGEST = /^[^\s@]+@sha256:[a-f0-9]{64}$/;

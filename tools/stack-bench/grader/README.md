@@ -38,7 +38,9 @@ When authoring assertions:
 - scope repeated elements to their owning row, room, message, or user;
 - assert visible values, not the presence of an empty container;
 - require the original open page for live-update behavior;
-- use separate actors for identity boundaries.
+- use separate actors for identity boundaries;
+- say in the criterion's `note` why it carries its points when they differ
+  from the feature's other criteria.
 
 Example:
 

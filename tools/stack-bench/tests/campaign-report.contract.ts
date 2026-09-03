@@ -164,24 +164,40 @@ test('campaign metrics do not treat incomplete cost as comparable evidence', () 
   assert.equal(zero.totalCostUsd, 0);
 });
 
-test('dependency campaign final score uses the terminal questline average', () => {
+test('dependency campaign final score is passed points over all points, with the questline average beside it', () => {
   const metrics = campaignRunMetrics({
     progressionStatus: { phase: 'terminal', score: { questlineAveragePercentage: 62.5,
-      uniqueChecks: { gradedPoints: 16, availablePoints: 20 } } },
+      uniqueChecks: { gradedPoints: 16, availablePoints: 20, percentage: 70 } } },
     levels: [{ firstBuild: { score: 4, max: 10 }, score: 10, max: 10 }],
     totals: { score: 30, max: 30 },
   });
-  assert.equal(metrics.finalScoreRate, 0.625);
+  assert.equal(metrics.finalScoreRate, 0.7);
+  assert.equal(metrics.questlineAverageRate, 0.625);
   assert.equal(metrics.finalCoverageRate, 0.8);
 
   const active = campaignRunMetrics({
     progressionStatus: { phase: 'active', score: { questlineAveragePercentage: null,
-      uniqueChecks: { gradedPoints: 16, availablePoints: 20 } } },
+      uniqueChecks: { gradedPoints: 16, availablePoints: 20, percentage: null } } },
     levels: [{ firstBuild: { score: 4, max: 10 }, score: 10, max: 10 }],
     totals: { score: 30, max: 30 },
   });
   assert.equal(active.finalScoreRate, null);
+  assert.equal(active.questlineAverageRate, null);
   assert.equal(active.finalCoverageRate, null);
+});
+
+test('reported duration excludes provider throttle waits and tokens travel with usage', () => {
+  const metrics = campaignRunMetrics({
+    outcome: { kind: 'passed' },
+    levels: [{ score: 9, max: 9, sessionTotals: { sessions: 2, costUsd: 1, tokens: 2_400_000,
+      outputTokens: 1, turns: 1, durationMs: 60_000, activeDurationMs: 45_000,
+      providerThrottle: { waits: 1, waitedMs: 15_000 }, promptBytes: 0,
+      usage: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, thinking: null } }],
+    totals: { score: 9, max: 9, costUsd: 1, costComplete: true, tokens: 2_400_000,
+      durationSec: 100 },
+  });
+  assert.equal(metrics.totalDurationMs, 85_000);
+  assert.equal(metrics.totalTokens, 2_400_000);
 });
 
 test('score rates keep inconclusive points separate from measurement coverage', () => {
@@ -395,16 +411,61 @@ test('human reports format normalized usage and elapsed time for people', () => 
   state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
     { exitCode: 0, run: evidence }, { now: '2026-08-12T01:21:33.000Z' });
   const html = renderCampaignHtml(buildCampaignReport(plan, state, () => evidence));
-  assert.match(html, /\$19\.899 normalized usage/);
+  assert.match(html, /\$19\.899 API-equivalent usage/);
+  assert.doesNotMatch(html, /normalized usage/);
   assert.match(html, /1h 21m 33s/);
   assert.match(html, /First-build score/);
+  assert.match(html, /\(n=1\)/);
   assert.match(html, /100% coverage/);
   assert.doesNotMatch(html, />4893s</);
+  assert.match(html, /spread is reported only from three or more/i);
+  assert.match(html, /not an invoice/);
 
   const costPlan = structuredClone(plan);
   costPlan.definition.analysis.primaryMetric = 'totalCostUsd';
   const costHtml = renderCampaignHtml(buildCampaignReport(costPlan, state, () => evidence));
   assert.match(costHtml, /<th>totalCostUsd<\/th>/);
-  assert.match(costHtml, />\$19\.899<br><small>\$19\.899 normalized usage/);
+  assert.match(costHtml, />\$19\.899 \(n=1\)<br><small>\$19\.899 API-equivalent usage/);
   assert.doesNotMatch(costHtml, /% coverage/);
+});
+
+test('a spread needs three completed attempts', () => {
+  // Balanced rotation hands every stack and condition its k-th attempt before
+  // any receives its (k+1)-th, so completing two rounds leaves each group at
+  // n=2 and the third round takes each to n=3.
+  const plan = examplePlan();
+  let state = createCampaignState(plan, { now: created });
+  const evidence = new Map<string, ReturnType<typeof run>>();
+  const completions = new Map<string, number>();
+  const groups = plan.stacks.length * plan.conditions.length;
+  const complete = (ordinal: number) => {
+    const claimed = claimNextAttempt(state, { now: created, admissionId: `admission-${ordinal}` });
+    assert.ok(claimed.claim);
+    const { attempt } = claimed.claim;
+    const group = `${attempt.stack} ${attempt.condition.id}`;
+    const cost = (completions.get(group) ?? 0) + 1;
+    completions.set(group, cost);
+    const record = run(`run-spread-${ordinal}`, attempt, { cost });
+    evidence.set(claimed.claim.executionId, record);
+    state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+      { exitCode: 0, run: record }, { now: created });
+  };
+  const report = () => buildCampaignReport(plan, state, (_attempt, execution) => {
+    const record = evidence.get(execution.id);
+    assert.ok(record, `evidence for ${execution.id}`);
+    return record;
+  });
+
+  for (let ordinal = 0; ordinal < groups * 2; ordinal += 1) complete(ordinal);
+  for (const condition of report().conditions) {
+    assert.equal(condition.metrics.totalCostUsd?.n, 2);
+    assert.equal(condition.metrics.totalCostUsd?.spread, null);
+    assert.deepEqual([condition.metrics.totalCostUsd?.min, condition.metrics.totalCostUsd?.max], [1, 2]);
+  }
+
+  for (let ordinal = groups * 2; ordinal < groups * 3; ordinal += 1) complete(ordinal);
+  for (const condition of report().conditions) {
+    assert.equal(condition.metrics.totalCostUsd?.n, 3);
+    assert.notEqual(condition.metrics.totalCostUsd?.spread, null);
+  }
 });

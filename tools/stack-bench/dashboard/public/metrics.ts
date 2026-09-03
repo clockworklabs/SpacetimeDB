@@ -81,19 +81,21 @@ export function attemptMetrics(attempt: MetricAttempt): AttemptMetrics | null {
   const dependency = attempt.dependency;
   if (dependency) {
     const score = dependency.score;
-    if (score?.status !== 'final' || score.questlineAveragePercentage == null) return null;
-    const available = score.uniqueChecks?.availablePoints ?? 0;
+    const unique = score?.uniqueChecks;
+    if (score?.status !== 'final' || unique?.percentage == null) return null;
+    const available = unique.availablePoints ?? 0;
     return {
       first: dependency.history ? dependency.history.firstTryPercentage / 100 : null,
-      final: score.questlineAveragePercentage / 100,
+      // Passed points over every selected point in the graph, the same scale
+      // as the first build. The questline average is the sheet's secondary view.
+      final: unique.percentage / 100,
       repairs: dependency.history?.repairAttempts ?? 0,
       spend: run.costComplete === true ? attemptSpend(attempt) : null,
       duration: run.durationSec ?? null,
       scope: `dependency:${dependency.nodes.length}:${available}`,
       abortedFirst: 0,
-      // Dependency mode averages questlines equally. Raw point totals would
-      // imply check-weighted scoring, so this view reports percentages only.
-      raw: { first: null, final: null },
+      raw: { first: null, final: unique.passedPoints == null
+        ? null : { score: unique.passedPoints, max: available } },
     };
   }
   type FinalLevel = CampaignRunLevelResult & { finalScore: { score: number; max: number } };

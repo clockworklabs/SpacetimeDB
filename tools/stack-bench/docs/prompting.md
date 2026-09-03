@@ -189,7 +189,10 @@ account path.
 ## Repair requests
 
 A repair starts only after Stack Bench completes grading and records a
-conclusive application failure. The coding agent receives a plain bug report:
+conclusive application failure. A repair report can name an expected
+production behavior that the initial request withheld; that disclosure
+happens only through the repair policy, after a conclusive failure, and under
+the same rule for every stack. The coding agent receives a plain bug report:
 
 ```text
 Fix the reported application bugs.

@@ -156,19 +156,48 @@ const C_BIN = CODING_CONTAINER_SPACETIME_CLI;
 const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
   ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 
+// The provider CLI keeps one JSONL transcript per session under its project
+// directory for the application path.
+function transcriptFile(appDir: string, sessionId: string): string | null {
+  const store = join(homedir(), '.claude', 'projects');
+  if (!existsSync(store)) return null;
+  const want = resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase();
+  const dir = readdirSync(store).find(d => {
+    const n = d.toLowerCase();
+    return n === want || n === want.replace(/^-+/, '');
+  });
+  const file = dir && join(store, dir, `${sessionId}.jsonl`);
+  return file && existsSync(file) ? file : null;
+}
+
+// The model ids the provider actually served. The requested name is an alias
+// that can resolve to different snapshots over time; the transcript records
+// what answered each request.
+function transcriptModels(appDir: string, sessionIds: readonly (string | null | undefined)[]): string[] {
+  const models = new Set<string>();
+  for (const sessionId of new Set(sessionIds.filter((id): id is string => Boolean(id)))) {
+    try {
+      const file = transcriptFile(appDir, sessionId);
+      if (!file) continue;
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        if (!line.includes('"model"')) continue;
+        let record: unknown;
+        try { record = JSON.parse(line); } catch { continue; }
+        if (!isRecord(record) || !isRecord(record.message)) continue;
+        const model = stringValue(record.message.model);
+        if (model) models.add(model);
+      }
+    } catch { /* an unreadable transcript leaves the list shorter, never wrong */ }
+  }
+  return [...models].sort();
+}
+
 // The transcript exposes reasoning blocks and signature bytes, not reasoning tokens.
 function thinkingVolume(appDir: string, sessionId: string | null | undefined): ThinkingVolume | null {
   if (!sessionId) return null;
   try {
-    const store = join(homedir(), '.claude', 'projects');
-    if (!existsSync(store)) return null;
-    const want = resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase();
-    const dir = readdirSync(store).find(d => {
-      const n = d.toLowerCase();
-      return n === want || n === want.replace(/^-+/, '');
-    });
-    const file = dir && join(store, dir, `${sessionId}.jsonl`);
-    if (!file || !existsSync(file)) return null;
+    const file = transcriptFile(appDir, sessionId);
+    if (!file) return null;
 
     let blocks = 0, bytes = 0;
     for (const line of readFileSync(file, 'utf8').split('\n')) {
@@ -857,7 +886,8 @@ async function main() {
       interruptions, invocations: sessionResults.length,
       terminalRecovery: isRecord(result) ? result.terminal_recovery ?? null : null,
       credentialBroker: result.stack_bench_credential_broker ?? null,
-      sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))] },
+      sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))],
+      models: transcriptModels(args.app, sessionResults.map(item => item.session_id)) },
   };
   console.log(JSON.stringify(out));
 }
