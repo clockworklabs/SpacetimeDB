@@ -27,6 +27,39 @@ const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]
 // Commands that pull file contents into context.
 const READER = /(?:^|[;&|]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|]+)/g;
 
+// Network targets in a shell command: any URL, and a raw socket target. A
+// build legitimately reaches its own web, database, and SpacetimeDB ports;
+// every other local port belongs to another run, the controller, or the
+// dashboard. Internet targets are recorded, not judged.
+const URL_TARGET = /https?:\/\/([^\s/'"`]+)/gi;
+const SOCKET_TARGET = /(?:^|[;&|]\s*)(?:nc|ncat|netcat)\s+(?:-\S+\s+)*([\w.-]+)\s+(\d{2,5})\b/g;
+const LOCAL_HOST = /^(?:127\.\d+\.\d+\.\d+|localhost|0\.0\.0\.0|\[::1\]|host\.docker\.internal|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)$/i;
+
+export interface NetworkTarget {
+  host: string;
+  port: number | null;
+}
+
+export function networkTargetsFromBash(command: unknown): NetworkTarget[] {
+  const targets: NetworkTarget[] = [];
+  const text = String(command ?? '');
+  for (const match of text.matchAll(URL_TARGET)) {
+    const authority = (match[1] ?? '').replace(/^[^@]*@/, '');
+    const port = authority.match(/:(\d{1,5})$/)?.[1];
+    targets.push({ host: authority.replace(/:\d{1,5}$/, ''), port: port ? Number(port) : null });
+  }
+  for (const match of text.matchAll(SOCKET_TARGET)) {
+    targets.push({ host: match[1] ?? '', port: Number(match[2]) });
+  }
+  return targets;
+}
+
+const networkKind = (target: NetworkTarget, ownPorts: ReadonlySet<number>): string | null => {
+  if (!LOCAL_HOST.test(target.host)) return 'network (internet)';
+  if (target.port !== null && ownPorts.has(target.port)) return null;
+  return 'NETWORK / OTHER RUN';
+};
+
 const CLASSES: Array<readonly [RegExp, string]> = [
   [/[/\\]stack-bench(?:[/\\]|$)/, 'GRADER / TEST SPECS'],
   [/\.claude[/\\]projects.*memory|[/\\]memory[/\\].*\.md$/, 'BENCHMARK NOTES'],
@@ -76,6 +109,7 @@ interface AuditHit {
 
 interface PendingRead {
   paths: string[];
+  network: Array<{ path: string; kind: string }>;
   via: string;
 }
 
@@ -101,11 +135,13 @@ interface TranscriptContent {
   input?: { file_path?: string; path?: string; pattern?: string; command?: string };
 }
 
-export function auditTranscript(file: string, boundary: string | null): TranscriptAudit {
+export function auditTranscript(file: string, boundary: string | null,
+  { ownPorts = [] }: { ownPorts?: readonly number[] } = {}): TranscriptAudit {
+  const own = new Set(ownPorts);
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
   // Container transcripts use /app; --app is its host path.
-  const own = sessionCwd(lines);
-  const cwd = own === CODING_CONTAINER_APP_ROOT ? own : (boundary ?? own);
+  const recorded = sessionCwd(lines);
+  const cwd = recorded === CODING_CONTAINER_APP_ROOT ? recorded : (boundary ?? recorded);
   const hits: AuditHit[] = [];
   const refused: AuditHit[] = [];
   const pending = new Map<string, PendingRead>();
@@ -120,10 +156,11 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
       if (p.type === 'tool_result' && p.tool_use_id && pending.has(p.tool_use_id)) {
         const completed = pending.get(p.tool_use_id ?? '');
         if (!completed) continue;
-        const { paths, via } = completed;
+        const { paths, network, via } = completed;
         pending.delete(p.tool_use_id ?? '');
         const blocked = p.is_error === true;
         for (const n of paths) (blocked ? refused : hits).push({ path: n, via, kind: classify(n) });
+        for (const target of network) (blocked ? refused : hits).push({ ...target, via });
         continue;
       }
       if (p.type !== 'tool_use') continue;
@@ -137,6 +174,13 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
         cand.push(...found);
       }
       const paths = [];
+      const network: Array<{ path: string; kind: string }> = [];
+      if (p.name === 'Bash') {
+        for (const target of networkTargetsFromBash(p.input?.command ?? '')) {
+          const kind = networkKind(target, own);
+          if (kind) network.push({ path: `${target.host}${target.port === null ? '' : `:${target.port}`}`, kind });
+        }
+      }
       for (const raw of cand) {
         let n = norm(raw);
         if (!n || IGNORE.test(n)) continue;
@@ -152,13 +196,17 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
         if (!privateHarnessPath && cwd && (n === cwd || n.startsWith(`${cwd}/`))) continue;
         paths.push(n);
       }
-      if (paths.length && p.id && p.name) pending.set(p.id, { paths, via: p.name });
+      if ((paths.length || network.length) && p.id && p.name) {
+        pending.set(p.id, { paths, network, via: p.name });
+      }
     }
   }
   // A call whose result never arrived (session cut short) is unresolved, and
   // unresolved is not innocent: count it.
-  for (const { paths, via } of pending.values())
+  for (const { paths, network, via } of pending.values()) {
     for (const n of paths) hits.push({ path: n, via, kind: classify(n), unresolved: true });
+    for (const target of network) hits.push({ ...target, via, unresolved: true });
+  }
 
   return { file, cwd, fileTool, bashReads, hits, refused };
 }
@@ -166,7 +214,12 @@ export function auditTranscript(file: string, boundary: string | null): Transcri
 function main(): void {
   const { values } = parseArgs({ args: process.argv.slice(2), options: {
     app: { type: 'string' }, dir: { type: 'string' }, json: { type: 'boolean' },
+    'own-ports': { type: 'string' },
   } });
+  const ownPorts = (values['own-ports'] ?? '').split(',').filter(Boolean).map(Number);
+  if (ownPorts.some(port => !Number.isInteger(port) || port <= 0)) {
+    throw new Error('--own-ports must list positive integers');
+  }
   const requestedApp = values.app;
   const requestedDirectory = values.dir;
   if (requestedApp && requestedDirectory) throw new Error('--app and --dir cannot be used together');
@@ -190,7 +243,7 @@ for (const root of roots) {
       // Include transcripts from the main session and its subagents.
       if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
       if (statSync(p).size < 2000) continue;
-      results.push({ ...auditTranscript(p, appBoundary), root });
+      results.push({ ...auditTranscript(p, appBoundary, { ownPorts }), root });
     }
   }
 }

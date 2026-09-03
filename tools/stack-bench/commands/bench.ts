@@ -393,16 +393,29 @@ function snapshotSource(appDir: string, to: string): void {
   snapshotAppSource(appDir, to);
 }
 
+// The ports a build may legitimately reach: its own web, database, and
+// SpacetimeDB listeners. Every other local port belongs to another run, the
+// controller, or the dashboard.
+function runOwnPorts(track: Parameters<typeof portsFor>[0],
+  args: { backend: string; runIndex: number }): number[] {
+  const ports = portsFor(track, args.backend, args.runIndex);
+  const stdb = process.env.STACK_BENCH_STDB_URI
+    ? Number(new URL(process.env.STACK_BENCH_STDB_URI).port) : null;
+  return [ports.vite, ports.express, ports.dbPort, stdb].filter((port): port is number =>
+    typeof port === 'number' && Number.isInteger(port) && port > 0);
+}
+
 // Check contamination after every coding session. File-tool permissions do not
 // govern shell reads, so the transcript audit remains a separate hard gate.
-function auditContamination(appDir: string): ContaminationAudit | null {
-  const args = [join(ROOT, 'dist', 'commands', 'leak-audit.js'), '--app', appDir, '--json'];
+function auditContamination(appDir: string, ownPorts: readonly number[]): ContaminationAudit | null {
+  const args = [join(ROOT, 'dist', 'commands', 'leak-audit.js'), '--app', appDir, '--json',
+    '--own-ports', ownPorts.join(',')];
   let firstFailure: unknown = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const audit = sh('node', args, { stdio: 'pipe' });
       const escapes = parseLeakAudit(audit).flatMap(entry => entry.hits);
-      const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS/.test(h.kind));
+      const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS|NETWORK/.test(h.kind));
       if (firstFailure) {
         console.error(`  warning: contamination audit passed on retry after: ${auditFailureSummary(firstFailure)}`);
       }
@@ -770,6 +783,7 @@ async function main() {
   Object.assign(process.env, stackRuntime.environment);
   process.env.STACK_BENCH_NODE_BIN = process.platform === 'win32' ? 'node.exe' : process.execPath;
   const track = loadTrack(args.track);
+  const ownPorts = runOwnPorts(track, { backend: stackAdapter.id, runIndex: args.runIndex });
   // Resolve the requested scope for every level before probing the sandbox,
   // acquiring a backend lease or paying for a build. A pack that exists at L2
   // but not L1 is not a late grading surprise; it is an invalid run request.
@@ -1551,7 +1565,7 @@ async function main() {
       if (!build) throw new Error(`level ${level} has no coding session`);
       return build;
     };
-    const buildLeak = build ? auditContamination(appDir) : null;
+    const buildLeak = build ? auditContamination(appDir, ownPorts) : null;
     if (buildLeak) {
       const session = requireBuild();
       const buildSession = runSessionRecord(session,
@@ -2135,7 +2149,7 @@ async function main() {
       repairs += 1;
 
       // Reject contaminated repairs before spending time on grading.
-      const fixLeak = auditContamination(appDir);
+      const fixLeak = auditContamination(appDir, ownPorts);
       if (fixLeak) {
         const buildSession = build ? runSessionRecord(build) : null;
         const sessions = resumedRepair || !buildSession
@@ -2548,7 +2562,7 @@ async function main() {
   // Record a final transcript audit in addition to the per-session hard gates.
   // The same retry and diagnostic path is used at both gates.
   let finalAuditFailure = null;
-  const finalAudit = auditContamination(appDir);
+  const finalAudit = auditContamination(appDir, ownPorts);
   if (!finalAudit) {
     run.contaminated = false;
     run.contamination = { evidence: 'no agent access to private benchmark files detected',

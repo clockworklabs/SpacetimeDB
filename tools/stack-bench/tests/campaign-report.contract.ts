@@ -323,7 +323,7 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
   try {
     const plan = examplePlan();
     const initialized = initializeCampaignDirectory(plan, root, { now: created });
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = runCampaignAdmission(plan, root, { codingContainers: () => [],
       env: {}, now: created, uuid: () => 'report',
       preflight: request => ({ schemaVersion: 1, generatedAt: created,
         request: { backends: request.backends, track: request.track, levels: request.levelList,

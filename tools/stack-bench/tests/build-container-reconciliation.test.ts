@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { SpawnSyncReturns } from 'node:child_process';
 import test from 'node:test';
 
-import { BUILD_CONTAINER_CREATION_LABEL, removeFailedBuildContainer }
+import { BUILD_CONTAINER_CREATION_LABEL, listRunningCodingContainers, removeFailedBuildContainer }
   from '../container/reconcile-build-container.js';
 
 const ID = 'a'.repeat(64);
@@ -52,4 +52,21 @@ test('failed build-container cleanup never removes a same-name container with an
     },
   }), /creation identity does not match/);
   assert.deepEqual(calls.map(([, args]) => args[0]), ['inspect']);
+});
+
+test('running coding containers are listed by their creation label only', () => {
+  const calls: DockerCall[] = [];
+  const names = listRunningCodingContainers({
+    execute(command, args) {
+      calls.push([command, args]);
+      return dockerResult('stack-bench-build-b\nstack-bench-build-a\n\n');
+    },
+  });
+  assert.deepEqual(calls, [['docker', ['ps', '--filter', `label=${BUILD_CONTAINER_CREATION_LABEL}`,
+    '--format', '{{.Names}}']]]);
+  assert.deepEqual(names, ['stack-bench-build-a', 'stack-bench-build-b']);
+  assert.deepEqual(listRunningCodingContainers({ execute: () => dockerResult('') }), []);
+  assert.throws(() => listRunningCodingContainers({ execute: () => ({
+    ...dockerResult(''), status: 1, stderr: 'Cannot connect to the Docker daemon',
+  }) }), /cannot list coding containers: Cannot connect to the Docker daemon/);
 });

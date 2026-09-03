@@ -995,7 +995,7 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
     const results = join(root, 'results');
     writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
     const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
-      admit: (plan, directory) => runCampaignAdmission(plan, directory, {
+      admit: (plan, directory) => runCampaignAdmission(plan, directory, { codingContainers: () => [],
         env: {}, now: '2026-08-12T00:00:30.000Z', uuid: () => 'cleanup',
         preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
           request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -1031,15 +1031,17 @@ test('failed cleanup leaves supervisor authority reconcilable instead of finaliz
 test('interrupted parallel work advances only after every exact cleanup is proven', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-reconcile-'));
   try {
-    const definition = JSON.parse(readFileSync(example, 'utf8'));
+    // Coding stacks admit one run at a time; the stub starts no coding
+    // container, so it can exercise parallel scheduling.
+    const definition = JSON.parse(readFileSync(dependencyModelFree, 'utf8'));
     definition.parallelism = 2;
-    definition.repetitions = 1;
+    definition.repetitions = 2;
     const campaignPath = join(root, 'parallel.json');
     writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
     const plan = compileCampaignFile(campaignPath);
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = runCampaignAdmission(plan, root, { codingContainers: () => [],
       env: {}, now: '2026-08-12T00:00:30.000Z', uuid: () => 'reconcile',
       preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
         request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -1080,7 +1082,7 @@ test('reconciliation accepts the clean public proof left by authenticated recove
     const plan = examplePlan();
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = runCampaignAdmission(plan, root, { codingContainers: () => [],
       env: {}, now: '2026-08-12T00:00:30.000Z', uuid: () => 'recovered',
       preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
         request: { backends: request.backends, track: request.track, levels: request.levelList,
@@ -1130,7 +1132,7 @@ test('campaign admission covers every stack once per distinct agent adapter and 
   try {
     const plan = examplePlan();
     const calls: PreflightRequest[] = [];
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = runCampaignAdmission(plan, root, { codingContainers: () => [],
       env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
         calls.push(request);
@@ -1159,7 +1161,7 @@ test('campaign admission accepts a modular level selection without legacy pack f
   try {
     const plan = compileCampaignFile(productBrief);
     const calls: PreflightRequest[] = [];
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = runCampaignAdmission(plan, root, { codingContainers: () => [],
       env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
       preflight: request => {
         calls.push(request);

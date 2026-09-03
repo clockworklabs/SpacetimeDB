@@ -454,7 +454,7 @@ test('dependency bench input is bound to one fully validated campaign attempt', 
       /campaign attempts cannot override --backend/);
 
     const now = new Date().toISOString();
-    const admission = runCampaignAdmission(plan, root, {
+    const admission = runCampaignAdmission(plan, root, { codingContainers: () => [],
       now, uuid: () => 'bench-input', env: {},
       preflight: request => ({
         schemaVersion: 1,

@@ -17,6 +17,7 @@ import type { RequestedScope } from './condition-compiler.js';
 import { campaignChildPath as contained } from './campaign-path.js';
 import { campaignExecutionEnvironment, campaignSlotEnvironment } from './campaign-runtime.js';
 import { formatZodError } from '../zod-error.js';
+import { listRunningCodingContainers } from '../../container/reconcile-build-container.js';
 
 const SMOKE_REUSE_MS = 15 * 60_000;
 type UnknownRecord = Record<string, unknown>;
@@ -233,6 +234,22 @@ export function validateCampaignAdmission(
   return admission as CampaignAdmission;
 }
 
+// Until the cross-run isolation test passes, coding containers share one
+// network: one coding run at a time on the runner, across every campaign,
+// for the whole attempt from build through final grade. A stack-bench
+// coding container that is still running belongs to such an attempt.
+function refuseConcurrentCodingRuns(plan: CompiledCampaignPlan,
+  running: readonly string[]): void {
+  if (plan.summary.parallelism > 1) {
+    throw new Error(`parallelism ${plan.summary.parallelism} is refused until the cross-run `
+      + 'isolation test passes; compile the campaign with parallelism 1');
+  }
+  if (running.length) {
+    throw new Error(`another coding run is active on this runner (${running.join(', ')}); `
+      + 'one coding run at a time until the cross-run isolation test passes');
+  }
+}
+
 function availableRunIndices(plan: CompiledCampaignPlan, env: NodeJS.ProcessEnv,
   probePort: (port: number | string) => { free: boolean }): number[] {
   const track = loadTrack(plan.definition.track);
@@ -337,8 +354,10 @@ function resourceFreeAdmissionReport(request: CampaignAdmissionPreflightRequest,
 
 export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: string,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
-    uuid = randomUUID, probePort = probeLoopbackPort }: {
+    uuid = randomUUID, probePort = probeLoopbackPort,
+    codingContainers = listRunningCodingContainers }: {
       env?: NodeJS.ProcessEnv;
+      codingContainers?: () => string[];
       preflight?: (request: CampaignAdmissionPreflightRequest,
         options?: { env: NodeJS.ProcessEnv }) => PreflightReport;
       now?: string;
@@ -348,6 +367,7 @@ export function runCampaignAdmission(plan: CompiledCampaignPlan, directory: stri
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports: PreflightReport[] = [];
   const resourceFree = campaignUsesNoExternalResources(plan);
+  if (!resourceFree) refuseConcurrentCodingRuns(plan, codingContainers());
   const runIndices = resourceFree
     ? Array.from({ length: plan.summary.parallelism }, (_, index) => index)
     : availableRunIndices(plan, executionEnv, probePort);

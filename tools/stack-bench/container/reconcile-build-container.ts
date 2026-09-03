@@ -28,6 +28,21 @@ function detail(result: DockerResult): string {
     || `exit ${result.status}`).trim();
 }
 
+// The coding containers running on this Docker host, from any campaign. A
+// stopped container keeps its label but holds no application or session.
+export function listRunningCodingContainers({ dockerEnv = process.env, timeoutMs = 30_000,
+  execute = spawnSync as DockerExecute }: {
+    dockerEnv?: NodeJS.ProcessEnv; timeoutMs?: number; execute?: DockerExecute;
+  } = {}): string[] {
+  const result = execute('docker', ['ps', '--filter', `label=${BUILD_CONTAINER_CREATION_LABEL}`,
+    '--format', '{{.Names}}'], { encoding: 'utf8', env: dockerEnv, timeout: timeoutMs });
+  if (result.error || result.status !== 0) {
+    throw new Error(`cannot list coding containers: ${detail(result)}`);
+  }
+  return String(result.stdout ?? '').split(/\r?\n/).map(line => line.trim())
+    .filter(Boolean).sort();
+}
+
 export function removeFailedBuildContainer({ containerName, creationToken, createdId = null,
   dockerEnv = process.env, timeoutMs = 120_000,
   execute = spawnSync as DockerExecute }: RemoveFailedBuildContainerOptions): {

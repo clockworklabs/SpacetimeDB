@@ -69,6 +69,36 @@ test('campaign smoke reuse requires the real container smoke result', () => {
   assert.match(result.reason, /no passing container smoke/);
 });
 
+test('admission allows one coding run at a time until the isolation test passes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-single-run-admission-'));
+  try {
+    const example = JSON.parse(readFileSync(join(STACK_BENCH_ROOT, 'appliance',
+      'campaign.example.json'), 'utf8')) as { parallelism: number };
+    const campaignPath = join(root, 'campaign.json');
+    writeFileSync(campaignPath, `${JSON.stringify({ ...example, parallelism: 2 }, null, 2)}\n`);
+    const parallel = compileCampaignFile(campaignPath);
+    assert.throws(() => runCampaignAdmission(parallel, root, { codingContainers: () => [],
+      now: createdAt, uuid: () => 'parallel', env: {}, preflight: passingPreflight }),
+    /parallelism 2 is refused until the cross-run isolation test passes/);
+
+    const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'appliance', 'campaign.example.json'));
+    assert.throws(() => runCampaignAdmission(plan, root, {
+      codingContainers: () => ['stack-bench-build-other-campaign'],
+      now: createdAt, uuid: () => 'busy', env: {}, preflight: passingPreflight }),
+    /another coding run is active on this runner \(stack-bench-build-other-campaign\)/);
+
+    // A campaign that starts no coding container is not a coding run.
+    const modelFree = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests', 'fixtures',
+      'dependency-model-free-campaign.json'));
+    const admitted = runCampaignAdmission(modelFree, root, {
+      codingContainers: () => ['stack-bench-build-other-campaign'],
+      now: createdAt, uuid: () => 'model-free', env: {} });
+    assert.equal(admitted.payload.ok, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('campaign admission receives only the feature catalog levels in the compiled plan', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-scoped-admission-'));
   try {
@@ -81,7 +111,7 @@ test('campaign admission receives only the feature catalog levels in the compile
     writeFileSync(campaignPath, `${JSON.stringify(value, null, 2)}\n`);
     const plan = compileCampaignFile(campaignPath);
     const requests: CampaignAdmissionPreflightRequest[] = [];
-    const result = runCampaignAdmission(plan, root, {
+    const result = runCampaignAdmission(plan, root, { codingContainers: () => [],
       now: createdAt,
       uuid: () => 'scoped',
       env: {},
@@ -114,7 +144,7 @@ test('campaign admission selects a free run slot', () => {
     const plan = compileCampaignFile(campaignPath);
     const requests: CampaignAdmissionPreflightRequest[] = [];
     let portProbes = 0;
-    const result = runCampaignAdmission(plan, root, {
+    const result = runCampaignAdmission(plan, root, { codingContainers: () => [],
       now: createdAt,
       uuid: () => 'free-slot',
       env: {},

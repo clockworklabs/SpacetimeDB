@@ -209,7 +209,7 @@ test('campaign admission sends the exact catalog, mode, and default build image 
     const featureCatalog = plan.featureCatalog;
     assert(featureCatalog);
     const calls: CampaignAdmissionPreflightRequest[] = [];
-    const admission = runCampaignAdmission(plan, output, {
+    const admission = runCampaignAdmission(plan, output, { codingContainers: () => [],
       env: {}, now: '2026-08-25T00:00:00.000Z', uuid: () => 'test',
       preflight: request => {
         calls.push(request);
@@ -224,7 +224,8 @@ test('campaign admission sends the exact catalog, mode, and default build image 
       },
     });
     assert.equal(admission.payload.ok, true);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, plan.summary.parallelism);
+    assert.equal(plan.summary.parallelism, 1);
     assert(calls.every(call => call.image === DEFAULT_BUILD_IMAGE));
     assert(calls.every(call => {
       assert(call.featureCatalog);

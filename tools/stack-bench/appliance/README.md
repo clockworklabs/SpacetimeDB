@@ -150,6 +150,12 @@ default attempt count per stack. A stack can override it. `parallelism` limits
 simultaneous attempts. Each live attempt receives isolated ports, database
 names, locks, workspaces, and evidence paths.
 
+Coding containers share the runner's network until the cross-run isolation
+test passes. Until then admission refuses a campaign whose `parallelism` is
+above 1, and refuses to start while any coding container from another
+campaign is still running on the runner. An attempt is active from its first
+build through its final grade. Results from this period are diagnostic.
+
 The remaining `campaign` snippets are controller subcommands. Run them after
 the same Docker Compose `run --rm controller` prefix used above.
 

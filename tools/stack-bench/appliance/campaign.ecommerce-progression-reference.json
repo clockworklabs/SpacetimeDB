@@ -41,7 +41,7 @@
     }
   ],
   "repetitions": 1,
-  "parallelism": 3,
+  "parallelism": 1,
   "ordering": {
     "method": "balanced-rotation",
     "seed": "ecommerce-progression-reference-1"
