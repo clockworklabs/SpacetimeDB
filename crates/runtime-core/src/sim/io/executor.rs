@@ -414,7 +414,14 @@ impl<T> Cqe<T> {
     }
 }
 
-type SqeId = usize;
+#[derive(Clone, Copy)]
+pub struct SqeId(usize);
+
+impl SqeId {
+    fn key(&self) -> usize {
+        self.0
+    }
+}
 
 // TODO: There is no difference between fsync and fdatasync as long as we don't
 // have an API to fsync the directory of a file after it was created.
@@ -704,7 +711,7 @@ impl<UserData> Executor<UserData> {
                 }
             }
             let slot = self.in_flight.vacant_entry();
-            let (in_flight, ops) = sqe.inner.schedule(slot.key());
+            let (in_flight, ops) = sqe.inner.schedule(SqeId(slot.key()));
             self.executing.extend(ops);
             slot.insert(InFlight {
                 inner: in_flight,
@@ -746,7 +753,7 @@ impl<UserData> Executor<UserData> {
                                 results,
                             },
                         ..
-                    } = self.in_flight.get_mut(sqe).expect("invalid sqe id")
+                    } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
                     else {
                         unreachable!("invalid sqe: expected write")
                     };
@@ -770,7 +777,7 @@ impl<UserData> Executor<UserData> {
                             },
                         blocked,
                         user_data,
-                    } = self.in_flight.remove(sqe)
+                    } = self.in_flight.remove(sqe.key())
                     else {
                         unreachable!("invalid sqe: expected write")
                     };
@@ -800,7 +807,7 @@ impl<UserData> Executor<UserData> {
                                 results,
                             },
                         ..
-                    } = self.in_flight.get_mut(sqe).expect("invalid sqe id")
+                    } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
                     else {
                         unreachable!("invalid sqe: expected read")
                     };
@@ -824,7 +831,7 @@ impl<UserData> Executor<UserData> {
                             },
                         blocked,
                         user_data,
-                    } = self.in_flight.remove(sqe)
+                    } = self.in_flight.remove(sqe.key())
                     else {
                         unreachable!("invalid sqe: expected read")
                     };
@@ -845,7 +852,7 @@ impl<UserData> Executor<UserData> {
                     inner: InFlightInner::Open { sqe: Open { path } },
                     blocked,
                     user_data,
-                } = self.in_flight.remove(sqe)
+                } = self.in_flight.remove(sqe.key())
                 else {
                     unreachable!("invalid sqe: expected open")
                 };
@@ -860,7 +867,7 @@ impl<UserData> Executor<UserData> {
                     inner: InFlightInner::Create { sqe: Create { path } },
                     blocked,
                     user_data,
-                } = self.in_flight.remove(sqe)
+                } = self.in_flight.remove(sqe.key())
                 else {
                     unreachable!("invalid sqe: expected create")
                 };
@@ -880,7 +887,7 @@ impl<UserData> Executor<UserData> {
                     inner: InFlightInner::Stat { sqe: Stat { fd } },
                     blocked,
                     user_data,
-                } = self.in_flight.remove(sqe)
+                } = self.in_flight.remove(sqe.key())
                 else {
                     unreachable!("invalid sqe: expected stat")
                 };
@@ -899,7 +906,7 @@ impl<UserData> Executor<UserData> {
                         },
                     blocked,
                     user_data,
-                } = self.in_flight.remove(sqe)
+                } = self.in_flight.remove(sqe.key())
                 else {
                     unreachable!("invalid sqe: expected fallocate")
                 };
@@ -919,7 +926,7 @@ impl<UserData> Executor<UserData> {
                                 op_count,
                             },
                         ..
-                    } = self.in_flight.get_mut(sqe).expect("invalid sqe id")
+                    } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
                     else {
                         unreachable!("invalid sqe: expected fsync")
                     };
@@ -933,7 +940,7 @@ impl<UserData> Executor<UserData> {
                 };
 
                 if is_complete {
-                    let InFlight { blocked, user_data, .. } = self.in_flight.remove(sqe);
+                    let InFlight { blocked, user_data, .. } = self.in_flight.remove(sqe.key());
                     self.complete(Cqe::Fsync {
                         result: Ok(()),
                         user_data,
@@ -950,7 +957,7 @@ impl<UserData> Executor<UserData> {
                                 op_count,
                             },
                         ..
-                    } = self.in_flight.get_mut(sqe).expect("invalid sqe id")
+                    } = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id")
                     else {
                         unreachable!("invalid sqe: expected fdatasync")
                     };
@@ -962,7 +969,7 @@ impl<UserData> Executor<UserData> {
                 };
 
                 if is_complete {
-                    let InFlight { blocked, user_data, .. } = self.in_flight.remove(sqe);
+                    let InFlight { blocked, user_data, .. } = self.in_flight.remove(sqe.key());
                     self.complete(Cqe::Fdatasync {
                         result: Ok(()),
                         user_data,
@@ -975,7 +982,7 @@ impl<UserData> Executor<UserData> {
                     inner: InFlightInner::Noop,
                     blocked,
                     user_data,
-                } = self.in_flight.remove(sqe)
+                } = self.in_flight.remove(sqe.key())
                 else {
                     unreachable!("invalid sqe: expected noop")
                 };
@@ -1011,7 +1018,7 @@ impl<UserData> Executor<UserData> {
                 (LinkKind::Soft, true) | (LinkKind::Hard, _) => {
                     let (inner, ops) = next.schedule(sqe);
                     self.executing.extend(ops);
-                    let slot = self.in_flight.get_mut(sqe).expect("invalid sqe id");
+                    let slot = self.in_flight.get_mut(sqe.key()).expect("invalid sqe id");
                     *slot = InFlight {
                         inner,
                         blocked,
