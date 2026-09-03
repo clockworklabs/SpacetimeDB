@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { hostname as osHostname } from 'node:os';
 
 export const STACK_BENCH_RUNNER_PLATFORM = 'linux/amd64' as const;
 
@@ -18,18 +19,22 @@ export interface ControllerRunner {
   mode: 'appliance' | 'local-controller';
   platform: string;
   architecture: string;
+  hostname: string;
   dockerEngineVersion?: string;
   dockerOs?: string;
   dockerArchitecture?: string;
   kernelVersion?: string;
   cpuCount?: number;
   memoryBytes?: number;
+  // Every running container on the daemon, this controller included.
+  containersRunning?: number;
 }
 
 interface ControllerRunnerOptions {
   env?: NodeJS.ProcessEnv;
   platform?: string;
   architecture?: string;
+  hostname?: string;
   dockerInfo?: Record<string, unknown>;
 }
 
@@ -66,6 +71,13 @@ function stringField(value: unknown, source: string): string {
   return value;
 }
 
+function nonNegativeInteger(value: unknown, source: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Docker daemon inspection did not return a non-negative integer ${source}`);
+  }
+  return value;
+}
+
 function positiveInteger(value: unknown, source: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
     throw new Error(`Docker daemon inspection did not return a positive integer ${source}`);
@@ -74,9 +86,9 @@ function positiveInteger(value: unknown, source: string): number {
 }
 
 export function controllerRunner({ env = process.env, platform = process.platform,
-  architecture = process.arch, dockerInfo }: ControllerRunnerOptions = {}): ControllerRunner {
+  architecture = process.arch, hostname = osHostname(), dockerInfo }: ControllerRunnerOptions = {}): ControllerRunner {
   const mode = env.STACK_BENCH_APPLIANCE === '1' ? 'appliance' : 'local-controller';
-  const runner: ControllerRunner = { schemaVersion: 1, mode, platform, architecture };
+  const runner: ControllerRunner = { schemaVersion: 1, mode, platform, architecture, hostname };
   if (mode !== 'appliance') return runner;
 
   const info = dockerInfo ?? inspectDocker();
@@ -88,5 +100,6 @@ export function controllerRunner({ env = process.env, platform = process.platfor
     kernelVersion: stringField(info.KernelVersion, 'KernelVersion'),
     cpuCount: positiveInteger(info.NCPU, 'NCPU'),
     memoryBytes: positiveInteger(info.MemTotal, 'MemTotal'),
+    containersRunning: nonNegativeInteger(info.ContainersRunning, 'ContainersRunning'),
   };
 }

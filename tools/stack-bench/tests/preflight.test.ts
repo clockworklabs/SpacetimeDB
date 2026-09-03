@@ -84,7 +84,7 @@ test('preflight validates exact scope and a model-free container/result-volume s
     let smokeArgs: string[] | undefined;
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       if (args[0] === 'run') {
@@ -129,7 +129,7 @@ test('appliance preflight rejects mutable controller and build image references'
   try {
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -157,7 +157,7 @@ test('preflight does not count Docker info latency as clock skew', () => {
     ];
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo({ SystemTime: '2026-08-12T12:00:05.000Z' });
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -185,7 +185,7 @@ test('preflight reserves capacity for all concurrent build containers', () => {
   try {
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo({ NCPU: 7, MemTotal: 15 * 1024 ** 3 });
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -213,7 +213,7 @@ test('an admitted campaign smoke skips only the duplicate container run', () => 
   try {
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       if (args[0] === 'run') throw new Error('duplicate container smoke ran');
@@ -306,7 +306,7 @@ test('preflight fails before a paid run when the selected agent executable is ab
     let requestedExecutables: unknown;
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       if (args[0] === 'run') {
@@ -342,7 +342,7 @@ test('a rotating interactive credential cannot satisfy preflight', () => {
       '--results-dir', root]);
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -366,7 +366,7 @@ test('long-lived subscription token is mounted read-only and checked without exp
     let dockerArgs: string[] | undefined;
     const run: DockerCommand = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
-      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'compose') return '2.40.0'; if (args[0] === 'ps') return '';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       if (args[0] === 'run') {
@@ -495,7 +495,7 @@ test('unknown requested scope becomes a failed report instead of terminating the
   try {
     const report = runPreflight({ ...request(root), track: 'not-a-track' }, {
       run: (_file, args) => args[0] === 'info' ? dockerInfo()
-        : args[0] === 'compose' ? '2.40.0'
+        : args[0] === 'compose' ? '2.40.0' : args[0] === 'ps' ? ''
           : args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : IMAGE_ID,
       now: Date.parse('2026-08-12T12:00:00Z'), env: {}, home: root, pidsOnPort: () => [],
       probePort: () => ({ free: true }),

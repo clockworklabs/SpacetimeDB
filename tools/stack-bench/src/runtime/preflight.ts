@@ -432,6 +432,19 @@ export function runPreflight(
       add('docker.compose', 'fail', 'Docker Compose plugin is unavailable',
         'Install the Docker Compose v2 plugin.');
     }
+    // Coding containers share the runner's network with everything else on
+    // it. Another workload is a fact the evidence must carry.
+    try {
+      const coResident = run('docker', ['ps', '--format', '{{.Names}}']).split(/\r?\n/)
+        .map(name => name.trim()).filter(name => name && !name.startsWith('stack-bench'));
+      add('host.co-resident', coResident.length ? 'warn' : 'pass', coResident.length
+        ? `${coResident.length} co-resident container(s): ${coResident.slice(0, 6).join(', ')}`
+        : 'no co-resident containers',
+      coResident.length ? 'Run paid campaigns on a dedicated runner.' : null);
+    } catch (error) {
+      add('host.co-resident', 'warn', `could not list containers: ${errorMessage(error)}`,
+        'Run paid campaigns on a dedicated runner.');
+    }
     const enoughCpu = info.NCPU >= resourceFloors.cpuCount;
     add('docker.cpu', enoughCpu ? 'pass' : 'fail', `${info.NCPU} CPUs available`,
       enoughCpu ? null : `Allocate at least ${resourceFloors.cpuCount} CPUs to Docker.`);

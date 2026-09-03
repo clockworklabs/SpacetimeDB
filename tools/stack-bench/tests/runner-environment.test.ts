@@ -5,11 +5,12 @@ import { controllerRunner, missingRunnerObservation, RUNNER_OBSERVATION_FIELDS }
   from '../src/runtime/runner-environment.js';
 
 test('local controllers record only host identity', () => {
-  assert.deepEqual(controllerRunner({ env: {}, platform: 'win32', architecture: 'x64' }), {
+  assert.deepEqual(controllerRunner({ env: {}, platform: 'win32', architecture: 'x64', hostname: 'dev-box' }), {
     schemaVersion: 1,
     mode: 'local-controller',
     platform: 'win32',
     architecture: 'x64',
+    hostname: 'dev-box',
   });
 });
 
@@ -18,6 +19,7 @@ test('appliance controllers record Docker daemon observations', () => {
     env: { STACK_BENCH_APPLIANCE: '1' },
     platform: 'linux',
     architecture: 'x64',
+    hostname: 'runner-1',
     dockerInfo: {
       ServerVersion: '29.1.2',
       OSType: 'linux',
@@ -25,6 +27,7 @@ test('appliance controllers record Docker daemon observations', () => {
       KernelVersion: '6.8.0-test',
       NCPU: 8,
       MemTotal: 16_000_000_000,
+      ContainersRunning: 4,
     },
   });
   assert.deepEqual(runner, {
@@ -32,12 +35,14 @@ test('appliance controllers record Docker daemon observations', () => {
     mode: 'appliance',
     platform: 'linux',
     architecture: 'x64',
+    hostname: 'runner-1',
     dockerEngineVersion: '29.1.2',
     dockerOs: 'linux',
     dockerArchitecture: 'x86_64',
     kernelVersion: '6.8.0-test',
     cpuCount: 8,
     memoryBytes: 16_000_000_000,
+    containersRunning: 4,
   });
   assert.deepEqual(missingRunnerObservation(runner), []);
   assert.deepEqual(missingRunnerObservation(null), RUNNER_OBSERVATION_FIELDS);
