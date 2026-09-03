@@ -13,6 +13,8 @@ Use the root [README](../README.md) for the product summary.
 ## Understand the system
 
 - [System design](system-design.md): ownership, data flow, and operator loop
+- [Prompting method](prompting.md): prompt inputs, specification treatments,
+  stack guidance, and repair examples
 - [Appliance design](../appliance/DESIGN.md): security and container boundaries
 - [Grader](../grader/README.md): scoring, evidence, and grader validation
 - [Reference apps](../reference-apps/README.md): known-good grading fixtures

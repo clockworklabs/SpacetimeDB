@@ -33,6 +33,9 @@ three treatments:
 - **observed:** measured after the first build without affecting the main score
   or repair loop.
 
+See the [prompting method](../../../docs/prompting.md) for the complete request
+pipeline and examples of each treatment.
+
 ## Identity
 
 Recipes use normalized JSON. Object keys are sorted. Arrays keep their order when
