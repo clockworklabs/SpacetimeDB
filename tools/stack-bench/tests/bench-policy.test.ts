@@ -70,6 +70,7 @@ test('accepted source is materialized through the application lifecycle before g
     writeFileSync(join(source, 'index.js'), 'export const value = "accepted";\n');
     writeFileSync(join(source, 'start.sh'), '#!/bin/sh\n');
     writeFileSync(join(app, 'index.js'), 'export const value = "coding runtime";\n');
+    writeFileSync(join(app, '.server.pid'), '100\n');
     writeFileSync(join(app, 'node_modules', 'state'), 'stale\n');
     const modes: string[] = [];
     const application = { backend: 'postgres', app, port: 6573, probe: '' };
@@ -82,9 +83,11 @@ test('accepted source is materialized through the application lifecycle before g
         if (mode === 'start') {
           assert.match(readFileSync(join(app, 'index.js'), 'utf8'), /accepted/);
           assert.equal(readFileSync(join(app, 'node_modules', 'state'), 'utf8'), 'stale\n');
+          writeFileSync(join(app, '.server.pid'), '200\n');
         }
       });
     assert.deepEqual(modes, ['stop', 'start']);
+    assert.equal(readFileSync(join(app, '.server.pid'), 'utf8'), '200\n');
     assert.equal(hashAppSource(app).sha256, hashAppSource(source).sha256);
     await assert.rejects(materializeAcceptedSource(source, app, application, async (_spec, mode) => {
       if (mode === 'start') writeFileSync(join(app, 'index.js'), 'changed during start\n');

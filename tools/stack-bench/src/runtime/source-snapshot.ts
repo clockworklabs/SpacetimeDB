@@ -33,7 +33,8 @@ function assertSeparateTrees(from: string, to: string): void {
 }
 
 function preservedRuntimeFile(rel: string): boolean {
-  return ROOT_RUNTIME_FILES.has(rel.replaceAll('\\', '/'));
+  const normalized = rel.replaceAll('\\', '/');
+  return ROOT_RUNTIME_FILES.has(normalized) || normalized.endsWith('.pid');
 }
 
 const transientRuntimeFile = (rel: string): boolean => basename(rel).endsWith('.tsbuildinfo');

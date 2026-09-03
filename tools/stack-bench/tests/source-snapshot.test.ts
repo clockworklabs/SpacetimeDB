@@ -30,6 +30,7 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'ui', 'dist', 'bundle.js'), 'compiled\n');
   put(join(app, 'ui', 'src', 'module_bindings', 'index.ts'), 'generated\n');
   put(join(app, 'server.log'), 'server output\n');
+  put(join(app, '.server.pid'), '100\n');
   put(join(app, 'ui', 'vite.log'), 'client output\n');
   put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = true;\n');
   put(join(app, 'src', 'server.log'), 'model-authored input\n');
@@ -47,6 +48,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(existsSync(join(snapshot, 'ui', 'dist')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'src', 'module_bindings')), true);
   assert.equal(existsSync(join(snapshot, 'server.log')), false);
+  assert.equal(existsSync(join(snapshot, '.server.pid')), false);
   assert.equal(existsSync(join(snapshot, 'ui', 'vite.log')), true);
   assert.equal(existsSync(join(snapshot, 'src', 'stack-bench', 'runtime.ts')), true);
   assert.equal(existsSync(join(snapshot, 'src', 'server.log')), true);
@@ -61,6 +63,7 @@ test('source rollback is layout-independent and preserves watched directories an
   put(join(app, 'BUG_REPORT.md'), 'latest harness report\n');
   put(join(app, 'bug-report-quality.json'), '{"latest":true}\n');
   put(join(app, 'server.log'), 'new server output\n');
+  put(join(app, '.server.pid'), '200\n');
   put(join(app, 'ui', 'vite.log'), 'new client output\n');
 
   restoreAppSource(snapshot, app);
@@ -76,6 +79,7 @@ test('source rollback is layout-independent and preserves watched directories an
   assert.equal(readFileSync(join(app, 'BUG_REPORT.md'), 'utf8'), 'latest harness report\n');
   assert.equal(readFileSync(join(app, 'bug-report-quality.json'), 'utf8'), '{}\n');
   assert.equal(readFileSync(join(app, 'server.log'), 'utf8'), 'new server output\n');
+  assert.equal(readFileSync(join(app, '.server.pid'), 'utf8'), '200\n');
   assert.equal(readFileSync(join(app, 'ui', 'vite.log'), 'utf8'), 'client output\n');
   assert.equal(statSync(client).ino, watchedDirectoryIdentity, 'restore replaced a watched source directory');
 });
@@ -224,6 +228,7 @@ test('clean source reset removes all runtime state and preserves only root git m
     put(join(app, 'server.log'), 'runtime log\n');
     put(join(app, 'client.log'), 'runtime log\n');
     put(join(app, 'vite.log'), 'runtime log\n');
+    put(join(app, '.server.pid'), '200\n');
 
     resetAppToSource(snapshot, app);
 
@@ -235,7 +240,7 @@ test('clean source reset removes all runtime state and preserves only root git m
     for (const path of ['introduced.ts', 'node_modules', join('server', 'node_modules'),
       'dist', join('client', '.vite'), join('client', '.cache'),
       join('client', 'src', 'module_bindings'), join('server', 'tsconfig.tsbuildinfo'),
-      'stack-bench', 'BUG_REPORT.md', 'server.log', 'client.log', 'vite.log']) {
+      'stack-bench', 'BUG_REPORT.md', 'server.log', 'client.log', 'vite.log', '.server.pid']) {
       assert.equal(existsSync(join(app, path)), false, `${path} survived the clean source reset`);
     }
     if (process.platform !== 'win32') {
@@ -262,6 +267,7 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'BUG_REPORT.md'), 'private evidence\n');
     put(join(app, 'bug-report-quality.json'), '{}\n');
     put(join(app, 'server.log'), 'server output v1\n');
+    put(join(app, '.server.pid'), '100\n');
     put(join(app, 'client', 'vite.log'), 'client output v1\n');
     put(join(app, 'src', 'stack-bench', 'runtime.ts'), 'export const owned = 1;\n');
     put(join(app, 'src', 'server.log'), 'model-authored input v1\n');
@@ -273,6 +279,7 @@ test('source identity matches preserved bytes and ignores dependencies and harne
     put(join(app, 'stack-bench', 'bundle.json'), '{"changed":true}\n');
     put(join(app, 'client', 'src', 'module_bindings', 'index.ts'), 'generated v2\n');
     put(join(app, 'server.log'), 'server output v2\n');
+    put(join(app, '.server.pid'), '200\n');
     assert.equal(hashAppSource(app).sha256, first.sha256);
     put(join(app, 'client', 'vite.log'), 'client output v2\n');
     assert.notEqual(hashAppSource(app).sha256, first.sha256);

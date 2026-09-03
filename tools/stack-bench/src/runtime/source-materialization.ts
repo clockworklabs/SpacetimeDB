@@ -6,7 +6,6 @@ import type { RunOutcome } from '../evidence/outcomes.js';
 import { controlAppServer } from './backend-control.js';
 import type { RuntimeControlSpec } from './backend-control.js';
 import { hashAppSource, restoreAppSource } from './source-snapshot.js';
-import { hashDirectory } from '../evidence/provenance.js';
 import { CODING_CONTAINER_START_SCRIPT } from './coding-container-policy.js';
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -14,7 +13,7 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
 export async function materializeAcceptedSource(sourcePath: string, appDir: string,
   application: RuntimeControlSpec,
   lifecycle: typeof controlAppServer = controlAppServer): Promise<void> {
-  const accepted = hashDirectory(sourcePath);
+  const accepted = hashAppSource(sourcePath);
   await lifecycle(application, 'stop');
   restoreAppSource(sourcePath, appDir);
   if (!existsSync(join(appDir, 'start.sh'))) {
