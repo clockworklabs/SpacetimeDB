@@ -10,9 +10,15 @@ using SpacetimeDB.SappyIntegration;
 
 const string DefaultHost = "http://localhost:3000";
 const string DefaultDatabase = "event-handling-bench";
+const int DefaultWarmups = 1;
+const int DefaultIterations = 3;
+
 var host = Environment.GetEnvironmentVariable("SPACETIMEDB_SERVER_URL") ?? DefaultHost;
 var database = Environment.GetEnvironmentVariable("SPACETIMEDB_DATABASE") ?? DefaultDatabase;
 var backend = ParseBackend(Environment.GetEnvironmentVariable("SPACETIMEDB_EVENT_BACKEND") ?? "all");
+var warmups = ParseNonNegativeEnv("SPACETIMEDB_BENCHMARK_WARMUPS", DefaultWarmups);
+var iterations = ParsePositiveEnv("SPACETIMEDB_BENCHMARK_ITERATIONS", DefaultIterations);
+var summaries = new List<BenchmarkSummary>();
 
 var scenarios = new[]
 {
@@ -21,14 +27,19 @@ var scenarios = new[]
     new Scenario("many-subscriptions-many-updates", Subscriptions: 1_000, FirstUpdates: 1_000),
     new Scenario("many-subscriptions-some-updates-many-unsubscriptions", Subscriptions: 1_000, FirstUpdates: 10, Unsubscriptions: 1_000),
     new Scenario("many-subscriptions-some-updates-many-unsubscriptions-resubscriptions-some-updates", Subscriptions: 1_000, FirstUpdates: 10, Unsubscriptions: 1_000, Resubscriptions: 1_000, SecondUpdates: 10),
+    new Scenario("many-subscriptions-some-updates-many-unsubscriptions-resubscriptions-some-updates", Subscriptions: 1_000, FirstUpdates: 1_000, Unsubscriptions: 1_000, Resubscriptions: 1_000, SecondUpdates: 1_000),
 };
 
 RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
 
 Console.WriteLine($"Host: {host}");
 Console.WriteLine($"Database: {database}");
-Console.WriteLine("| Backend | Scenario | Subscriptions | First updates | Unsubscriptions | Resubscriptions | Second updates | Subscribe ms | First updates ms | Unsubscribe ms | Resubscribe ms | Second updates ms | Listener calls |");
-Console.WriteLine("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+Console.WriteLine($"Warmups: {warmups}");
+Console.WriteLine($"Iterations: {iterations}");
+Console.WriteLine();
+Console.WriteLine("Per-iteration timings:");
+Console.WriteLine("| Backend | Scenario | Iteration | Subscriptions | First updates | Unsubscriptions | Resubscriptions | Second updates | Subscribe ms | Subscribe bytes | First updates ms | First updates bytes | Unsubscribe ms | Unsubscribe bytes | Resubscribe ms | Resubscribe bytes | Second updates ms | Second updates bytes | Listener calls |");
+Console.WriteLine("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
 
 foreach (var backendKind in ExpandBackends(backend))
 {
@@ -36,13 +47,40 @@ foreach (var backendKind in ExpandBackends(backend))
 
     foreach (var scenario in scenarios)
     {
-        using var runner = new BenchmarkRunner(host, database, backendKind, scenario);
-        var result = runner.Run();
-        Console.WriteLine(
-            $"| {backendKind} | {scenario.Name} | {scenario.Subscriptions} | {scenario.FirstUpdates} | {scenario.Unsubscriptions} | {scenario.Resubscriptions} | {scenario.SecondUpdates} | " +
-            $"{result.Subscribe.TotalMilliseconds:F3} | {result.FirstUpdates.TotalMilliseconds:F3} | {result.Unsubscribe.TotalMilliseconds:F3} | {result.Resubscribe.TotalMilliseconds:F3} | {result.SecondUpdates.TotalMilliseconds:F3} | {result.ListenerCalls} |"
-        );
+        for (var i = 0; i < warmups; i++)
+        {
+            RunOne(host, database, backendKind, scenario);
+        }
+
+        var results = new BenchmarkResult[iterations];
+        for (var i = 0; i < iterations; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            results[i] = RunOne(host, database, backendKind, scenario);
+            PrintResult(backendKind, scenario, i + 1, results[i]);
+        }
+
+        summaries.Add(BenchmarkSummary.From(backendKind, scenario, results));
     }
+}
+
+Console.WriteLine();
+Console.WriteLine("Summary timings:");
+Console.WriteLine("| Backend | Scenario | Subscribe ms avg | Subscribe bytes avg | First updates ms avg | First updates bytes avg | Unsubscribe ms avg | Unsubscribe bytes avg | Resubscribe ms avg | Resubscribe bytes avg | Second updates ms avg | Second updates bytes avg |");
+Console.WriteLine("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+foreach (var summary in summaries)
+{
+    Console.WriteLine(
+        $"| {summary.Backend} | {summary.Scenario.Name} | " +
+        $"{summary.Subscribe.MeanMilliseconds:F3} | {summary.Subscribe.MeanAllocatedBytes:F0} | " +
+        $"{summary.FirstUpdates.MeanMilliseconds:F3} | {summary.FirstUpdates.MeanAllocatedBytes:F0} | " +
+        $"{summary.Unsubscribe.MeanMilliseconds:F3} | {summary.Unsubscribe.MeanAllocatedBytes:F0} | " +
+        $"{summary.Resubscribe.MeanMilliseconds:F3} | {summary.Resubscribe.MeanAllocatedBytes:F0} | " +
+        $"{summary.SecondUpdates.MeanMilliseconds:F3} | {summary.SecondUpdates.MeanAllocatedBytes:F0} |"
+    );
 }
 
 static BackendKind ParseBackend(string value) =>
@@ -65,9 +103,6 @@ static IEnumerable<BackendKind> ExpandBackends(BackendKind backend)
 
     yield return BackendKind.Native;
     yield return BackendKind.Custom;
-#if SAPPY
-    yield return BackendKind.Sappy;
-#endif
 }
 
 static void ConfigureBackend(BackendKind backend)
@@ -92,6 +127,56 @@ static void ConfigureBackend(BackendKind backend)
     }
 }
 
+static BenchmarkResult RunOne(string host, string database, BackendKind backendKind, Scenario scenario)
+{
+    using var runner = new BenchmarkRunner(host, database, backendKind, scenario);
+    return runner.Run();
+}
+
+static void PrintResult(BackendKind backendKind, Scenario scenario, int iteration, BenchmarkResult result)
+{
+    Console.WriteLine(
+        $"| {backendKind} | {scenario.Name} | {iteration} | {scenario.Subscriptions} | {scenario.FirstUpdates} | {scenario.Unsubscriptions} | {scenario.Resubscriptions} | {scenario.SecondUpdates} | " +
+        $"{result.Subscribe.Elapsed.TotalMilliseconds:F3} | {result.Subscribe.AllocatedBytes} | " +
+        $"{result.FirstUpdates.Elapsed.TotalMilliseconds:F3} | {result.FirstUpdates.AllocatedBytes} | " +
+        $"{result.Unsubscribe.Elapsed.TotalMilliseconds:F3} | {result.Unsubscribe.AllocatedBytes} | " +
+        $"{result.Resubscribe.Elapsed.TotalMilliseconds:F3} | {result.Resubscribe.AllocatedBytes} | " +
+        $"{result.SecondUpdates.Elapsed.TotalMilliseconds:F3} | {result.SecondUpdates.AllocatedBytes} | {result.ListenerCalls} |"
+    );
+}
+
+static int ParseNonNegativeEnv(string name, int defaultValue)
+{
+    var value = Environment.GetEnvironmentVariable(name);
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return defaultValue;
+    }
+
+    if (int.TryParse(value, out var parsed) && parsed >= 0)
+    {
+        return parsed;
+    }
+
+    throw new ArgumentOutOfRangeException(name, value, "Expected a non-negative integer.");
+}
+
+static int ParsePositiveEnv(string name, int defaultValue)
+{
+    var value = Environment.GetEnvironmentVariable(name);
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return defaultValue;
+    }
+
+    if (int.TryParse(value, out var parsed) && parsed > 0)
+    {
+        return parsed;
+    }
+
+    throw new ArgumentOutOfRangeException(name, value, "Expected a positive integer.");
+}
+
 internal enum BackendKind
 {
     All,
@@ -110,13 +195,65 @@ internal sealed record Scenario(
 );
 
 internal readonly record struct BenchmarkResult(
-    TimeSpan Subscribe,
-    TimeSpan FirstUpdates,
-    TimeSpan Unsubscribe,
-    TimeSpan Resubscribe,
-    TimeSpan SecondUpdates,
+    Measurement Subscribe,
+    Measurement FirstUpdates,
+    Measurement Unsubscribe,
+    Measurement Resubscribe,
+    Measurement SecondUpdates,
     long ListenerCalls
 );
+
+internal readonly record struct Measurement(TimeSpan Elapsed, long AllocatedBytes)
+{
+    public static Measurement Zero { get; } = new(TimeSpan.Zero, 0);
+}
+
+internal readonly record struct Stats(
+    double MeanMilliseconds,
+    double MinMilliseconds,
+    double MaxMilliseconds,
+    double MeanAllocatedBytes,
+    long MinAllocatedBytes,
+    long MaxAllocatedBytes
+)
+{
+    public static Stats From(IEnumerable<Measurement> values)
+    {
+        var measurements = values.ToArray();
+        var milliseconds = measurements.Select(value => value.Elapsed.TotalMilliseconds).ToArray();
+        var allocatedBytes = measurements.Select(value => value.AllocatedBytes).ToArray();
+        return new Stats(
+            milliseconds.Average(),
+            milliseconds.Min(),
+            milliseconds.Max(),
+            allocatedBytes.Average(),
+            allocatedBytes.Min(),
+            allocatedBytes.Max()
+        );
+    }
+}
+
+internal readonly record struct BenchmarkSummary(
+    BackendKind Backend,
+    Scenario Scenario,
+    Stats Subscribe,
+    Stats FirstUpdates,
+    Stats Unsubscribe,
+    Stats Resubscribe,
+    Stats SecondUpdates
+)
+{
+    public static BenchmarkSummary From(BackendKind backend, Scenario scenario, BenchmarkResult[] results) =>
+        new(
+            backend,
+            scenario,
+            Stats.From(results.Select(r => r.Subscribe)),
+            Stats.From(results.Select(r => r.FirstUpdates)),
+            Stats.From(results.Select(r => r.Unsubscribe)),
+            Stats.From(results.Select(r => r.Resubscribe)),
+            Stats.From(results.Select(r => r.SecondUpdates))
+        );
+}
 
 internal static class BenchmarkSettings
 {
@@ -193,7 +330,7 @@ internal sealed class BenchmarkRunner : IDisposable
         });
 
         var activeAfterResubscribe = _scenario.Subscriptions - _scenario.Unsubscriptions + _scenario.Resubscriptions;
-        var secondUpdates = _scenario.SecondUpdates > 0 ? TimeUpdates(_scenario.SecondUpdates, activeAfterResubscribe) : TimeSpan.Zero;
+        var secondUpdates = _scenario.SecondUpdates > 0 ? TimeUpdates(_scenario.SecondUpdates, activeAfterResubscribe) : Measurement.Zero;
 
         return new BenchmarkResult(
             subscribe,
@@ -247,11 +384,11 @@ internal sealed class BenchmarkRunner : IDisposable
         TickUntil(() => _subscriptionApplied, "subscription applied");
     }
 
-    private TimeSpan TimeUpdates(int updateCount, int activeSubscriptions)
+    private Measurement TimeUpdates(int updateCount, int activeSubscriptions)
     {
         if (updateCount <= 0)
         {
-            return TimeSpan.Zero;
+            return Measurement.Zero;
         }
 
         var expectedCalls = activeSubscriptions * updateCount;
@@ -285,12 +422,14 @@ internal sealed class BenchmarkRunner : IDisposable
         Interlocked.Increment(ref _listenerCalls);
     }
 
-    private TimeSpan Time(Action action)
+    private Measurement Time(Action action)
     {
+        var allocatedBefore = GC.GetTotalAllocatedBytes(precise: true);
         var stopwatch = Stopwatch.StartNew();
         action();
         stopwatch.Stop();
-        return stopwatch.Elapsed;
+        var allocatedAfter = GC.GetTotalAllocatedBytes(precise: true);
+        return new Measurement(stopwatch.Elapsed, allocatedAfter - allocatedBefore);
     }
 
     private void TickUntil(Func<bool> complete, string phase)
