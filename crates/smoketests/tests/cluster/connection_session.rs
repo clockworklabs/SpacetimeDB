@@ -315,6 +315,53 @@ fn test_repeated_reconnects_leave_one_live_connection() {
     });
 }
 
+/// A reconnect which repeats its predecessor's connection id still supersedes
+/// it. Connections are told apart by the server, not by the id a client sends,
+/// which a client is free to repeat.
+#[test]
+fn test_reconnect_reusing_connection_id_replaces_connection() {
+    let test = Smoketest::builder().precompiled_module("connection-session").build();
+
+    runtime().block_on(async {
+        let mut first = TestConnection::open(&test, CONNECTION_A, Some(SESSION))
+            .await
+            .expect("first connection failed");
+        wait_for_log(&test, "connected", CONNECTION_A);
+
+        // Reconnect under the same connection id as well as the same session.
+        let mut second = TestConnection::open(&test, CONNECTION_A, Some(SESSION))
+            .await
+            .expect("second connection failed");
+
+        assert!(
+            !first.is_still_served().await,
+            "the superseded connection should no longer be served"
+        );
+        assert!(
+            second.is_still_served().await,
+            "the newest connection should still be served"
+        );
+
+        // Both connections log the same id, so count the events rather than
+        // ordering them: the first connection was torn down exactly once.
+        let lines = wait_for_log(&test, "disconnected", CONNECTION_A);
+        let disconnects = lines
+            .iter()
+            .filter(|line| line.contains(&format!("disconnected {CONNECTION_A}")))
+            .count();
+        assert_eq!(disconnects, 1, "expected exactly one teardown: {lines:?}");
+
+        // Exactly one websocket client row remains for the session. The SQL
+        // query itself opens a short-lived connection, so allow for one extra.
+        let sql_out = test.sql("SELECT * FROM st_client").unwrap();
+        let row_count = sql_out.lines().filter(|line| line.contains("0x")).count();
+        assert!(
+            row_count <= 2,
+            "expected at most 2 st_client rows (the live connection and the SQL query's own), got {row_count}: {sql_out}"
+        );
+    });
+}
+
 /// A batch subscribe registers every query set atomically and answers with one
 /// result per set, in request order.
 #[test]

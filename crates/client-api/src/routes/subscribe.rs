@@ -289,27 +289,27 @@ where
         log::debug!("websocket: New client connected from {client_log_string}");
 
         // If this connection resumes a session which a live connection still
-        // holds, that connection is taken over. Stop its actor and run its
-        // module-side disconnect to completion, so the module observes
-        // `client_disconnected` for it strictly before `client_connected` for
-        // this one, and never two live connections for one session.
-        if let Some(session_id) = session_id
-            && let Some(superseded) = sessions.claim_session(client_id, session_id, None)
-        {
-            log::debug!(
-                "websocket: Connection {} supersedes {} for session {session_id}",
-                client_id.connection_id,
-                superseded.client_id.connection_id,
-            );
-            if let Some(sender) = &superseded.sender {
-                sender.kick(ClientDisconnectCause::ConnectionSuperseded);
+        // holds, that connection is taken over: its actor is stopped and its
+        // module-side disconnect runs to completion before the claim returns.
+        // So the module observes `client_disconnected` for it strictly before
+        // `client_connected` for this one, and never two live connections for
+        // one session.
+        //
+        // The claim is held until this connection is established below, so a
+        // third connection resuming the same session must wait for this handover.
+        let session_claim = match session_id {
+            Some(session_id) => {
+                let module = module_rx.borrow().clone();
+                Some(
+                    sessions
+                        .claim_session(db_identity, client_id, session_id, async |superseded| {
+                            module.disconnect_client(superseded).await
+                        })
+                        .await,
+                )
             }
-            // Awaiting this is what orders the two lifecycle reducers:
-            // both run on the module's main instance, and this one is
-            // enqueued first.
-            let module = module_rx.borrow().clone();
-            module.disconnect_client(superseded.client_id).await;
-        }
+            None => None,
+        };
 
         let connected = match ClientConnection::call_client_connected_maybe_reject(
             &mut module_rx,
@@ -340,11 +340,6 @@ where
                     }
                 };
                 record_client_rejection(db_identity, cause);
-                // The session claim is only meaningful for a connection which
-                // exists, so give it up again.
-                if let Some(session_id) = session_id {
-                    sessions.release_session(client_id, session_id);
-                }
                 return;
             }
         };
@@ -356,7 +351,9 @@ where
         // Release the session claim when the actor ends, including when it is aborted.
         let session_guard = session_id.map(|session_id| {
             let sessions = sessions.clone();
-            scopeguard::guard((), move |()| sessions.release_session(client_id, session_id))
+            scopeguard::guard((), move |()| {
+                sessions.release_session(db_identity, client_id, session_id)
+            })
         });
         let actor = |client, receiver| async move {
             let _session_guard = session_guard;
@@ -374,10 +371,10 @@ where
         )
         .await;
 
-        // Now that the actor exists, register its sender so that a later
-        // connection resuming this session can stop it.
-        if let Some(session_id) = session_id {
-            sessions.attach_sender(client_id, session_id, &client.sender());
+        // Now that the actor exists, complete the handover by registering its
+        // sender, so that a later connection resuming this session can stop it.
+        if let Some(session_claim) = session_claim {
+            session_claim.attach_sender(&client.sender());
         }
 
         // Send the client their identity token message as the first message
