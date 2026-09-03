@@ -16,8 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="../../regression-tests/client/module_bindings/**/*.cs" LinkBase="module_bindings" />
-    <Compile Include="../../regression-tests/shared/RegressionTestHarness.cs" Link="shared/RegressionTestHarness.cs" />
+    <Compile Include="../../../examples~/regression-tests/client/module_bindings/**/*.cs" LinkBase="module_bindings" />
+    <Compile Include="../../../examples~/regression-tests/shared/RegressionTestHarness.cs" Link="shared/RegressionTestHarness.cs" />
   </ItemGroup>
 
 </Project>

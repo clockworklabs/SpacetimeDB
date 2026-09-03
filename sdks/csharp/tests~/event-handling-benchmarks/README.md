@@ -6,8 +6,8 @@ It reuses the C# regression-test module and generated bindings. Publish that mod
 
 ```sh
 spacetime start
-spacetime publish event-handling-bench sdks/csharp/examples~/regression-tests/server
-dotnet run -c Release --project sdks/csharp/examples~/event-handling-benchmarks/client/client.csproj
+spacetime publish --module-path sdks/csharp/examples~/regression-tests/server event-handling-bench
+dotnet run -c Release --project sdks/csharp/tests~/event-handling-benchmarks/client/client.csproj
 ```
 
 Environment variables:
@@ -22,7 +22,7 @@ Backends:
 
 - `native`: native C# multicast delegate dispatch.
 - `custom`: SDK custom indexed listener dispatch.
-- `sappy`: Sappy-backed custom listener dispatch. This path is only run when explicitly requested and requires compiling with `SAPPY=1` in a project that references the Sappy package, such as a Unity project with the SDK and Sappy integration assemblies present.
+- `sappy`: Sappy-backed custom listener dispatch. This path is only run when explicitly requested and requires compiling with `SAPPY=1` in a project that references the Sappy package, such as a Unity project with the SDK and Sappy integration assemblies present. The Sappy benchmark registers generated Sappy targets through `OnInsertListeners` so it exercises the intended Sappy path.
 
 Scenarios:
 
@@ -31,5 +31,6 @@ Scenarios:
 - Many subscriptions, many updates.
 - Many subscriptions, some updates, many unsubscriptions.
 - Many subscriptions, some updates, many unsubscriptions, many resubscriptions, some updates.
+- Many subscriptions, many updates, many unsubscriptions, many resubscriptions, many updates.
 
 The update timings and allocation counts include reducer calls, server round trips, client frame ticks, row decoding, and listener dispatch. Allocation counts use `GC.GetTotalAllocatedBytes(precise: true)`, so they include allocations from background client work as well as main-thread dispatch. Compare native and custom runs on the same machine/server rather than treating the values as isolated in-process dispatch costs.
