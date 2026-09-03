@@ -1586,12 +1586,40 @@ async function main() {
       });
       return progressionMayRepair();
     };
+    const writeRepairReport = (): 0 | 3 | 4 => {
+      try {
+        sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
+          '--history-json', JSON.stringify(repairHistory),
+          '--archive', join(outputDir, 'repair-reports',
+            `bug-report-l${level}-round${fixRounds + 1}.md`),
+          ...repairReportArgs(progressionSelection)], { stdio: 'pipe' });
+        return 0;
+      } catch (error) {
+        const failure = commandFailure(error);
+        if (failure.status === 3 || failure.status === 4) return failure.status;
+        throw failure;
+      }
+    };
+    const recordMissingRepairFeedback = (status: 3 | 4): void => {
+      repairStopReason = 'no-actionable-findings';
+      if (!args.progression) return;
+      const reason = status === 3
+        ? 'selected repair checks contain no failures'
+        : 'selected repair checks produced no actionable findings';
+      const failure: RunOutcome = {
+        kind: 'harness_failure', phase: 'repair-report', reason,
+        appFailures: [], inconclusive: [], harnessFailures: [reason],
+      };
+      bundle = { outcome: failure };
+      recordRepairProgression({ failure: progressionFailure(failure) });
+    };
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
     while (levelGradeIsUsable(classifyBundle(bundle), args.progression
       ? requireProgressionState(progressionExecution?.state ?? null).attempts.at(-1) ?? null
       : null) && progressionMayRepair()
       && (args.progression || fixRounds < args.fixRounds)) {
+      let reportReady = false;
       if (args.progression) {
         progressionSelection = bindProgressionAction(level);
         trackProgressionBudget(progressionSelection, priorRepairRounds + fixRounds);
@@ -1601,43 +1629,37 @@ async function main() {
           bundle = grade(args, appDir, url,
             `${args.backend}-l${level}-repair-baseline${sequence}`, level, track, runId);
           const refreshOutcome = classifyBundle(bundle);
-          if (refreshOutcome.kind !== 'app_failure') {
-            const refreshFailed = refreshOutcome.kind !== 'passed';
-            progressionNext = recordProgressionGrade({
+          const refreshUsable = levelGradeIsUsable(refreshOutcome);
+          if (!refreshUsable) {
+            recordProgressionGrade({
               selected: progressionSelection,
               bundle,
               level,
               repair: {
-                status: refreshFailed ? 'ungraded' : 'corrected',
+                status: 'ungraded',
                 budgetRounds: progressionRepairBudgetRounds,
                 roundsUsed: priorRepairRounds + fixRounds,
-                stopReason: refreshFailed ? 'refresh-grading-failed' : null,
+                stopReason: 'refresh-grading-failed',
               },
             });
-            if (refreshFailed) repairStopReason = 'refresh-grading-failed';
-            if (refreshFailed || !progressionMayRepair()) break;
+            repairStopReason = 'refresh-grading-failed';
+            break;
+          }
+          const refreshReportStatus = writeRepairReport();
+          if (refreshReportStatus === 3) {
+            recordRepairProgression();
             continue;
           }
+          if (refreshReportStatus === 4) {
+            recordMissingRepairFeedback(refreshReportStatus);
+            break;
+          }
+          reportReady = true;
         }
       }
-      let wroteReport = true;
-      try {
-        sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
-          '--history-json', JSON.stringify(repairHistory),
-          '--archive', join(args.out, 'repair-reports',
-            `bug-report-l${level}-round${fixRounds + 1}.md`),
-          ...repairReportArgs(progressionSelection)], { stdio: 'pipe' });
-      } catch (error) {
-        const failure = commandFailure(error);
-        if (failure.status === 3) wroteReport = false;      // nothing failed
-        else if (failure.status === 4) {
-          wroteReport = false;
-          repairStopReason = 'no-actionable-findings';
-        }
-        else throw failure;
-      }
-      if (!wroteReport) {
-        repairStopReason = 'no-actionable-findings';
+      const reportStatus = reportReady ? 0 : writeRepairReport();
+      if (reportStatus !== 0) {
+        recordMissingRepairFeedback(reportStatus);
         break;
       }
 
@@ -1809,7 +1831,8 @@ async function main() {
     const progressionAttempt = progressionState
       ? progressionState.attempts.findLast(attempt => attempt.level === level) ?? null
       : null;
-    const levelBundle = progressionBundles.get(level) ?? bundle;
+    const levelBundle = progressionAttempt?.outcome === 'inconclusive'
+      ? bundle : progressionBundles.get(level) ?? bundle;
     const finalBundleOutcome = classifyBundle(levelBundle);
     // Progression uses stricter evidence rules than a regular scored bundle.
     // Store one answer when a selected check is not measured: the raw bundle
