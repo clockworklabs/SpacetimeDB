@@ -102,7 +102,9 @@ export function repairEvidenceDecision(
       shared,
     };
   }
-  const evidenceRegressed = shared.lostEvidence.length > 0 || shared.definitionChanges.length > 0;
+  const evidenceRegressed = shared.lostEvidence.length > 0
+    || shared.definitionChanges.length > 0
+    || shared.regressions.length > 0;
   return {
     action: evidenceRegressed || shared.after < shared.before ? 'rollback-regression' : 'keep',
     shared,

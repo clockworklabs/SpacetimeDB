@@ -24,6 +24,7 @@ import { dependencyRepairBudget, dependencyStrikeRecords }
   from '../src/progression/dependency-mode.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
+import { createCheckEvidence } from '../src/evidence/check-evidence.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
 import type { GradeBundlePayload } from '../src/evidence/benchmark-run.js';
 import { compiledEntrypoint } from '../src/package-root.js';
@@ -376,6 +377,22 @@ test('the first repair that makes an unstartable app gradeable is never rolled b
     assert.equal(repairEvidenceDecision(before, after).action, 'keep-setup-repair');
   }
   assert.equal(repairEvidenceDecision({ suites: {} }, after).action, 'rollback-no-comparison');
+});
+
+test('a repair cannot trade an earlier pass for a larger new gain', () => {
+  const evidence = (status: 'passed' | 'failed') => createCheckEvidence({
+    status, code: 'test_result', phase: 'assertion', startedAtMs: 1, completedAtMs: 2,
+  });
+  const bundle = (a: 'passed' | 'failed', b: 'passed' | 'failed') => ({ suites: {
+    features: { features: [{ id: 'work', criteria: [
+      { id: 'a', stableKey: 'check.a', points: 2, evidence: evidence(a) },
+      { id: 'b', stableKey: 'check.b', points: 3, evidence: evidence(b) },
+    ] }] },
+  } });
+
+  const decision = repairEvidenceDecision(bundle('passed', 'failed'), bundle('failed', 'passed'));
+  assert.equal(decision.action, 'rollback-regression');
+  assert.deepEqual(decision.shared.regressions, ['check.a']);
 });
 
 test('repair rollback restores the accepted grading evidence without another grade', () => {

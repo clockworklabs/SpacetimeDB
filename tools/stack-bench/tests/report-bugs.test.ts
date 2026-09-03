@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -179,6 +179,33 @@ test('dependency repair feedback contains only checks selected for that feature'
   }
 });
 
+test('repair feedback includes failures caused by the rejected prior repair', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-regression-'));
+  try {
+    const app = join(root, 'app');
+    writeGrade(app, 'failed', 'checkout still fails', {
+      feature: 'Checkout', criterion: 'checkout', stableKey: 'check.checkout',
+    });
+    const regression = join(root, 'regression.md');
+    writeFileSync(regression, [
+      '## Behavior', '',
+      '### Bug 1: Accounts', '', '**Expected:** the owner keeps access', '',
+      '**Actual:** the owner was signed out', '',
+    ].join('\n'));
+
+    const reported = spawnSync(process.execPath, [CLI, '--app', app,
+      '--prior-regression', regression], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+    assert.match(repair, /checkout still fails/);
+    assert.match(repair, /Previous repair regression/);
+    assert.match(repair, /Accounts/);
+    assert.match(repair, /owner was signed out/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a vague-only report does not authorize a paid repair', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-vague-repair-'));
   try {
@@ -189,6 +216,21 @@ test('a vague-only report does not authorize a paid repair', () => {
     assert.match(reported.stdout, /No actionable failures/);
     assert.equal(existsSync(join(app, 'BUG_REPORT.md')), false);
     assert.equal(existsSync(join(app, 'stack-bench', 'bug-report-quality.json')), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a vague regression remains visible beside an actionable current failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-vague-regression-'));
+  try {
+    const app = join(root, 'app');
+    writeGrade(app, 'failed', 'the feature could not be reached at all');
+    const out = join(root, 'regression.md');
+    const reported = spawnSync(process.execPath,
+      [CLI, '--app', app, '--out', out, '--regression-context'], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    assert.match(readFileSync(out, 'utf8'), /feature could not be reached at all/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

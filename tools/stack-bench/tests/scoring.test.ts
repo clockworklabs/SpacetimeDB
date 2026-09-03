@@ -10,7 +10,7 @@ import {
 const typedCriterion = (id: string, status: CheckEvidenceStatus, summary: string | null) => {
   const evidence = createCheckEvidence({ status, code: 'test_result', phase: 'assertion', summary,
     startedAtMs: 1, completedAtMs: 2 });
-  return { id, points: 1, evidence };
+  return { id, stableKey: id, points: 1, evidence };
 };
 const criterion = (
   id: string,
@@ -82,6 +82,7 @@ test('a real regression is compared on stable evidence', () => {
   assert.equal(result.before, 1);
   assert.equal(result.after, 0);
   assert.deepEqual(result.lostEvidence, []);
+  assert.deepEqual(result.regressions, ['a']);
 });
 
 test('suite identity prevents unrelated criteria from colliding', () => {

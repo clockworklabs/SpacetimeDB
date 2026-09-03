@@ -1526,6 +1526,8 @@ async function main() {
     const fixSessions = resumedRepair
       ? [runSessionRecord(build, priorRepairRounds + 1)] : [];
     const repairHistory: ReturnType<typeof repairHistoryEntry>[] = [];
+    let priorRegressionReport: string | null = null;
+    let priorRegressionOwner: string | null = null;
     let regressed = false;
     let repairStopReason: string | null = null;
     let repairProgress = repairProgressState(null, bundle);
@@ -1592,6 +1594,7 @@ async function main() {
           '--history-json', JSON.stringify(repairHistory),
           '--archive', join(outputDir, 'repair-reports',
             `bug-report-l${level}-round${fixRounds + 1}.md`),
+          ...(priorRegressionReport ? ['--prior-regression', priorRegressionReport] : []),
           ...repairReportArgs(progressionSelection)], { stdio: 'pipe' });
         return 0;
       } catch (error) {
@@ -1622,6 +1625,13 @@ async function main() {
       let reportReady = false;
       if (args.progression) {
         progressionSelection = bindProgressionAction(level);
+        const repairOwner = progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
+          ? progressionSelection.action.strikes.nodes.map(node => node.nodeId).sort().join('\n')
+          : null;
+        if (repairOwner !== priorRegressionOwner) {
+          priorRegressionReport = null;
+          priorRegressionOwner = repairOwner;
+        }
         trackProgressionBudget(progressionSelection, priorRepairRounds + fixRounds);
         if (progressionSelection && isProgressionWorkRecipeAction(progressionSelection)
           && bundle?.selection?.sha256 !== progressionSelection.grader.selectionSha256) {
@@ -1795,14 +1805,27 @@ async function main() {
           + ` (${before}/${beforeMax} -> ${after}/${afterMax} overall)`);
       }
       if (decision.action === 'rollback-regression') {
-        if (shared.lostEvidence.length) {
+        if (shared.regressions.length) {
+          console.log(`    broke ${shared.regressions.length} earlier passing check(s); rolling back this fix`);
+        } else if (shared.lostEvidence.length) {
           console.log(`    lost conclusive evidence for ${shared.lostEvidence.length} criterion/criteria; rolling back this fix`);
         } else if (shared.definitionChanges.length) {
           console.log('    rubric points changed between grades; rolling back this fix');
         } else {
           console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back this fix`);
         }
-        await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        try {
+          if (shared.regressions.length) {
+            const path = join(outputDir, 'repair-reports',
+              `rejected-regression-l${level}-round${fixRounds}.md`);
+            sh('node', [join(ROOT, 'dist', 'commands', 'report-bugs.js'), '--app', appDir,
+              '--out', path, '--checks-json', JSON.stringify(shared.regressions),
+              '--regression-context'], { stdio: 'pipe' });
+            priorRegressionReport = path;
+          }
+        } finally {
+          await restoreAcceptedRepair(snapshot, gradingSnapshot);
+        }
         bundle = beforeBundle;
         regressed = true;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
@@ -1811,6 +1834,7 @@ async function main() {
         if (pauseForRepeatedFindings()) break;
         continue;
       }
+      priorRegressionReport = null;
       if (shared.after === shared.before) {
         const remaining = displayedRepairBudget - fixRounds;
         console.log(`    ${formatRepairProgress(shared, { before, beforeMax, after, afterMax })}; `

@@ -8,6 +8,7 @@ import {
 
 interface ScoredCriterion {
   id?: string;
+  stableKey?: string;
   points?: number | null;
   evidence?: unknown;
 }
@@ -28,6 +29,7 @@ export interface EvidenceBundle {
 
 interface IndexedCriterion {
   key: string;
+  stableKey: string;
   passed: boolean;
   measured: boolean;
   status: CheckEvidenceStatus;
@@ -42,6 +44,7 @@ export interface CriterionEvidenceComparison {
   lostEvidence: string[];
   definitionChanges: Array<{ key: string; before: number; after: number }>;
   newlyConclusive: string[];
+  regressions: string[];
 }
 
 export interface RepairScores {
@@ -67,6 +70,7 @@ function criterionIndex(bundle: EvidenceBundle | null | undefined): Map<string, 
         const disposition = evidenceDisposition(evidence);
         index.set(key, {
           key,
+          stableKey: criterion.stableKey ?? key,
           passed: disposition.passed,
           measured: disposition.measured,
           status: evidence.status,
@@ -91,6 +95,7 @@ export function compareCriterionEvidence(
   const lostEvidence: string[] = [];
   const definitionChanges: CriterionEvidenceComparison['definitionChanges'] = [];
   const newlyConclusive: string[] = [];
+  const regressions: string[] = [];
 
   for (const [key, was] of previous) {
     const now = current.get(key);
@@ -110,6 +115,7 @@ export function compareCriterionEvidence(
     points += was.points;
     scoreBefore += was.passed ? was.points : 0;
     scoreAfter += now.passed ? now.points : 0;
+    if (was.points > 0 && was.passed && !now.passed) regressions.push(was.stableKey);
   }
 
   return {
@@ -120,6 +126,7 @@ export function compareCriterionEvidence(
     lostEvidence,
     definitionChanges,
     newlyConclusive,
+    regressions,
   };
 }
 

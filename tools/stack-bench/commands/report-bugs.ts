@@ -3,7 +3,7 @@
 // Internal selector mechanics, local topology and raw paths are removed.
 // Public control names remain because the agent already received them.
 
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
@@ -35,6 +35,8 @@ interface ReportBugsArgs {
   history: RepairHistoryEntry[];
   checks: string[] | null;
   controls: string[] | null;
+  priorRegression: string | null;
+  regressionContext: boolean;
 }
 
 interface ParsedArgs {
@@ -116,6 +118,8 @@ export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
     app: { type: 'string' }, out: { type: 'string' }, archive: { type: 'string' },
     'history-json': { type: 'string' }, 'checks-json': { type: 'string' },
     'controls-json': { type: 'string' },
+    'prior-regression': { type: 'string' },
+    'regression-context': { type: 'boolean' },
   } });
   const args: ParsedArgs = { app: values.app, out: values.out, archive: values.archive,
     history: values['history-json'] === undefined ? undefined : JSON.parse(values['history-json']),
@@ -141,7 +145,25 @@ export function parseReportBugsArgs(argv: string[]): ReportBugsArgs {
   }
   return { app: args.app, out: args.out, archive: args.archive,
     history: args.history as RepairHistoryEntry[], checks: args.checks as string[] | null,
-    controls: args.controls as string[] | null };
+    controls: args.controls as string[] | null,
+    priorRegression: values['prior-regression'] ?? null,
+    regressionContext: values['regression-context'] ?? false };
+}
+
+function priorRegressionSection(path: string): string[] {
+  const details = assertAgentVisibleText(readFileSync(resolve(path), 'utf8')).trim()
+    .replace(/^### /gm, '#### ')
+    .replace(/^## /gm, '### ');
+  if (!details) throw new Error('prior regression report has no failure details');
+  return [
+    '## Previous repair regression',
+    '',
+    'The previous repair was rolled back because it broke behavior that already worked.',
+    'Keep this behavior working while you fix the current problems.',
+    '',
+    ...details.split(/\r?\n/),
+    '',
+  ];
 }
 
 const VAGUE = new Set([
@@ -246,10 +268,10 @@ export function createBugReport(args: ReportBugsArgs): number {
     return 3;
   }
 
-  const repairBugs = bugs.filter(bug => !bug.vague);
+  const repairBugs = args.regressionContext ? bugs : bugs.filter(bug => !bug.vague);
   const behavioral = repairBugs.filter(bug => !bug.contract);
   const contractFailures = repairBugs.filter(bug => bug.contract);
-  const lines = [
+  const lines = args.regressionContext ? [] : [
     '# Bug Report',
     '',
     'The application has these problems after a clean database reset and a fresh',
@@ -259,7 +281,7 @@ export function createBugReport(args: ReportBugsArgs): number {
     '',
   ];
 
-  if (args.history.length) {
+  if (!args.regressionContext && args.history.length) {
     lines.push('## Earlier work', '');
     lines.push('Earlier changes did not fix the current problems. Use the current source as',
       'the starting point. Do not repeat an earlier approach only because it appeared',
@@ -291,6 +313,8 @@ export function createBugReport(args: ReportBugsArgs): number {
     });
     lines.push('');
   }
+
+  if (args.priorRegression) lines.push(...priorRegressionSection(args.priorRegression));
 
   const vaguePct = Math.round((vagueBugs / bugs.length) * 100);
   try {
