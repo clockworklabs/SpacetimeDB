@@ -270,12 +270,6 @@ jobs:
           overwrite: true
           retention-days: 14
 
-      - &show-sccache-stats
-        name: Show sccache statistics
-        if: always() && runner.os == 'Linux'
-        shell: bash
-        run: /usr/local/bin/sccache --show-stats
-
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -362,8 +356,6 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 14
-
-      - *show-sccache-stats
 
   smoketest_build_windows:
     needs: [upload-build-artifacts-windows]
@@ -678,8 +670,6 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
-      - *show-sccache-stats
-
   index_scan_bench:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -765,8 +755,6 @@ jobs:
           name: cargo-timings-public-lints
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
-
-      - *show-sccache-stats
 
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
@@ -1598,8 +1586,6 @@ jobs:
           name: cargo-timings-typescript-test
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
-
-      - *show-sccache-stats
 
       # - name: Run quickstart-chat tests
       #   working-directory: examples/quickstart-chat
