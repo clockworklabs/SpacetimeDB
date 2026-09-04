@@ -385,7 +385,7 @@ function gradingNodeIds(state: DependencyState): string[] {
 
 function featureOwners(state: DependencyState): Map<string, string> {
   return new Map(state.definition.nodes.flatMap(node => node.featureRefs.map(reference => [
-    reference.slice(0, reference.lastIndexOf('@')), node.id,
+    reference, node.id,
   ] as const)));
 }
 

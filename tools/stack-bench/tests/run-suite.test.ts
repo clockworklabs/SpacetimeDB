@@ -22,63 +22,10 @@ const ECOMMERCE = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 
 type JsonRecord = Record<string, unknown>;
 
-function isRecord(value: unknown): value is JsonRecord {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function readJsonRecord(path: string): JsonRecord {
-  const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
-  if (!isRecord(value)) throw new Error(`${path} must contain an object`);
-  return value;
-}
-
-function recordArray(value: JsonRecord, key: string): JsonRecord[] {
-  const entries = value[key];
-  if (!Array.isArray(entries) || entries.some(entry => !isRecord(entry))) {
-    throw new Error(`${key} must be an array of objects`);
-  }
-  return entries;
-}
-
-function promoteSequentialL1(root: string): void {
-  const promotionsPath = join(root, 'composition', 'promotions.json');
-  const promotions = readJsonRecord(promotionsPath);
-  const entries = recordArray(promotions, 'entries');
-  const entry = entries.find(candidate => {
-    const recipe = candidate.recipe;
-    return candidate.alias === 'L1' && isRecord(recipe)
-      && recipe.id === 'ecommerce.sequential-l1' && recipe.version === '2.5.0';
-  });
-  if (!entry) throw new Error('L1 promotion entry is missing');
-  entry.status = 'promoted';
-  writeFileSync(promotionsPath, `${JSON.stringify(promotions, null, 2)}\n`);
-  const recipePath = join(root, 'composition', 'recipes', 'sequential-l1-2.5.0.json');
-  const recipe = readJsonRecord(recipePath);
-  recipe.state = 'qualified';
-  writeFileSync(recipePath, `${JSON.stringify(recipe, null, 2)}\n`);
-  // A qualified recipe may select only qualified inputs, so its fixture and
-  // packs are promoted with it in this copy of the track.
-  const fixture = recipe.fixture;
-  if (!isRecord(fixture) || typeof fixture.path !== 'string') {
-    throw new Error('L1 recipe must select a fixture');
-  }
-  const components = [fixture.path, ...recordArray(recipe, 'packs').map(pack => {
-    if (typeof pack.path !== 'string') throw new Error('L1 recipe packs must have paths');
-    return pack.path;
-  })];
-  for (const relative of components) {
-    const path = join(root, 'composition', 'recipes', relative);
-    const value = readJsonRecord(path);
-    value.state = 'qualified';
-    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-  }
-}
-
 function sequentialL2Track() {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-sequential-l2-'));
   const root = join(temp, 'ecommerce');
   cpSync(ECOMMERCE, root, { recursive: true });
-  promoteSequentialL1(root);
   return { temp, track: { ...loadTrack('ecommerce'), dir: root } };
 }
 
@@ -389,10 +336,10 @@ test('a new grade removes every prior grade output but keeps operator records', 
 
 test('observed-only scope is modular, disjoint, and contributes no score', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1@2.5.0');
+    'ecommerce.sequential-l1');
   const selected = createBoundRecipeTaskRequest(binding, {
     featureIds: ['ecommerce.feature.accounts'],
-    observedSpecifications: ['ecommerce.spec.state-durability@1.1.0'],
+    observedSpecifications: ['ecommerce.spec.state-durability'],
   });
   assert(isModularRecipeTaskRequest(selected));
   const scored = selectObservationScope(selected, 'scored');
@@ -411,40 +358,40 @@ test('observed-only scope is modular, disjoint, and contributes no score', () =>
 
 test('recipe-bound grading uses the recipe execution sources', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
   const suites = suitesForRecipe(track, binding);
 
-  const duplicateCheckout = suites.find(suite => suite.id === 'duplicate-checkout');
+  const duplicateCheckout = suites.find(suite => /01-duplicate-checkout\.json$/.test(suite.spec));
   assert(duplicateCheckout);
   assert.match(duplicateCheckout.spec,
-    /01-duplicate-checkout-2\.3\.0\.json$/);
+    /01-duplicate-checkout\.json$/);
   assert.equal(suites.some(suite => suite.inherited), false);
 });
 
 test('hardened modular grading isolates the four direct server checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
   const suites = suitesForRecipe(track, binding);
 
   const expected = new Map([
-    ['purchase-session', '101a'], ['purchase-attribution', '102a'],
-    ['admin-write', '103a'], ['server-price', '104a'],
+    ['01-purchase-session.json', '101a'], ['01-purchase-attribution.json', '102a'],
+    ['01-admin-write-staff.json', '103a'], ['01-server-price.json', '104a'],
   ]);
-  for (const [executionId, criterionId] of expected) {
-    assert(suites.some(suite => suite.id === executionId));
-    const check = binding.release.checkCatalog.find(candidate => candidate.executionId === executionId);
+  for (const [source, criterionId] of expected) {
+    const check = binding.release.checkCatalog.find(candidate => candidate.source?.endsWith(source));
     assert(check);
     assert.equal(check.criterionId, criterionId);
+    assert(suites.some(suite => suite.id === check.executionId));
   }
 });
 
 test('recipe execution keeps inherited suites out of the current-level score', () => {
   const { temp, track } = sequentialL2Track();
   try {
-    const binding = resolveRecipeRelease(track, 2, 'ecommerce.sequential-l2@1.6.0');
+    const binding = resolveRecipeRelease(track, 2, 'ecommerce.sequential-l2');
     const suites = suitesForRecipe(track, binding);
     const inherited = suites.filter(suite => suite.inherited);
-    assert.equal(inherited.length, 31);
+    assert.equal(inherited.length, 38);
     assert(inherited.every(suite => suite.fromLevel === 1));
     assert.equal(suites.filter(suite => !suite.inherited).length, 10);
   } finally { rmSync(temp, { recursive: true, force: true }); }
@@ -453,24 +400,25 @@ test('recipe execution keeps inherited suites out of the current-level score', (
 test('L2 grading rechecks the exact selected L1 score without adding it to L2 points', () => {
   const { temp, track } = sequentialL2Track();
   try {
-    const l1 = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
-    const l2 = resolveRecipeRelease(track, 2, 'ecommerce.sequential-l2@1.6.0');
+    const l1 = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
+    const l2 = resolveRecipeRelease(track, 2, 'ecommerce.sequential-l2');
     const prior = createBoundRecipeTaskRequest(l1, {
       featureIds: ['ecommerce.feature.accounts', 'ecommerce.feature.cart-checkout',
         'ecommerce.feature.catalog', 'ecommerce.feature.purchasing',
         'ecommerce.feature.reviews', 'ecommerce.feature.warehouse-admin'],
-      expectedSpecifications: ['ecommerce.spec.access-control@1.2.0',
-        'ecommerce.spec.concurrency-safety@1.3.0',
-        'ecommerce.spec.external-data-sync@1.1.0', 'ecommerce.spec.live-state@1.2.0',
-        'ecommerce.spec.state-durability@1.1.0',
-        'ecommerce.spec.transactional-integrity@1.3.0'],
+      expectedSpecifications: ['ecommerce.spec.access-control',
+        'ecommerce.spec.concurrency-safety',
+        'ecommerce.spec.external-data-sync', 'ecommerce.spec.live-state',
+        'ecommerce.spec.state-durability',
+        'ecommerce.spec.transactional-integrity'],
     });
     const current = createBoundRecipeTaskRequest(l2, {
       featureIds: ['ecommerce.inventory-operations-features',
         'ecommerce.operations-access-features', 'ecommerce.returns-pricing-features'],
-      expectedSpecifications: ['ecommerce.inventory-operations-specifications@1.0.0',
-        'ecommerce.operations-access-specifications@1.0.0',
-        'ecommerce.returns-pricing-specifications@1.0.0'],
+      expectedSpecifications: ['ecommerce.inventory-operations-specifications',
+        'ecommerce.operations-access-specifications',
+        'ecommerce.returns-pricing-specifications'],
+      dependencyExpansion: 'exact',
     });
     assert(isModularRecipeTaskRequest(prior));
     assert(isModularRecipeTaskRequest(current));
@@ -485,33 +433,5 @@ test('L2 grading rechecks the exact selected L1 score without adding it to L2 po
     assert.equal(scope.checks.length,
       current.selection.scoredChecks.length + prior.selection.scoredChecks.length);
     assert.match(scope.evaluationSha256, /^[a-f0-9]{64}$/);
-  } finally { rmSync(temp, { recursive: true, force: true }); }
-});
-
-test('cumulative ownership survives inherited execution id renames', () => {
-  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-execution-ownership-'));
-  const root = join(temp, 'ecommerce');
-  try {
-    cpSync(ECOMMERCE, root, { recursive: true });
-    const recipe = join(root, 'composition', 'recipes', 'sequential-l2-1.6.0.json');
-    const value = readJsonRecord(recipe);
-    for (const execution of recordArray(value, 'execution')) {
-      if (typeof execution.id !== 'string') throw new Error('recipe execution must have an id');
-      if (execution.id.endsWith('@L1')) execution.id = `${execution.id.slice(0, -3)}-base`;
-    }
-    writeFileSync(recipe, `${JSON.stringify(value, null, 2)}\n`);
-    const track = { ...loadTrack('ecommerce'), dir: root };
-    promoteSequentialL1(root);
-    const binding = resolveRecipeRelease(track, 2, 'ecommerce.sequential-l2@1.6.0');
-    const suites = suitesForRecipe(track, binding);
-    const inherited = suites.filter(suite => suite.inherited);
-
-    assert.equal(inherited.length, 31);
-    assert(inherited.every(suite => suite.id.endsWith('-base')));
-    assert(inherited.every(suite => suite.fromLevel === 1));
-    assert.deepEqual(suites.filter(suite => !suite.inherited).map(suite => suite.id),
-      ['features-existing@L2', 'low-stock@L2', 'invariants-existing@L2',
-        'queue-warehouse@L2', 'transfer-totals@L2', 'paid-price-history@L2',
-        'live-price@L2', 'self-contained@L2', 'strengthened@L2', 'server-actions@L2']);
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });

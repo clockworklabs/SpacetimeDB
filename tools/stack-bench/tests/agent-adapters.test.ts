@@ -69,9 +69,9 @@ test('requests are normalized and unsupported modes fail before launch', () => {
   assert.equal(withSkillIdentity.includes('--skills-json'), false);
   const recipeTask = { schemaVersion: 1, recipe: {}, selection: {}, task: {} };
   const withRecipeTask = agentRequestArgv(deterministic,
-    { ...request, recipe: 'ecommerce.sequential-l1@2.5.0', recipeTask });
+    { ...request, recipe: 'ecommerce.sequential-l1', recipeTask });
   assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe') + 1],
-    'ecommerce.sequential-l1@2.5.0');
+    'ecommerce.sequential-l1');
   assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe-task-json') + 1],
     JSON.stringify(recipeTask));
   assert.equal(agentRequestArgv(deterministic, { ...request, maxBudgetUsd: 12.5 })
@@ -83,14 +83,14 @@ test('requests are normalized and unsupported modes fail before launch', () => {
 
 test('a campaign-bound task supplies the exact recipe when no explicit recipe exists', () => {
   const recipeTask = { schemaVersion: 3,
-    recipe: { id: 'ecommerce.sequential-l1', version: '2.5.0' },
+    recipe: { id: 'ecommerce.sequential-l1' },
     selection: {}, task: {} };
   const recipe = agentRecipeIdentity(null, recipeTask);
-  assert.equal(recipe, 'ecommerce.sequential-l1@2.5.0');
+  assert.equal(recipe, 'ecommerce.sequential-l1');
   const argv = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'),
     { ...request, recipe, recipeTask });
-  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.sequential-l1@2.5.0');
-  assert.throws(() => agentRecipeIdentity('ecommerce.sequential-l2@1.6.0', recipeTask),
+  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.sequential-l1');
+  assert.throws(() => agentRecipeIdentity('ecommerce.sequential-l2', recipeTask),
     /does not match bound task/);
 });
 

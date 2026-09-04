@@ -246,8 +246,7 @@ async function main(): Promise<void> {
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);
   if (!validation.ok) throw new Error(`reference registry is invalid:\n${validation.issues.join('\n')}`);
-  const fixtures = registry.fixtures.filter(fixture => fixture.status !== 'blocked')
-    .filter(fixture => !args.backend || fixture.backend === args.backend)
+  const fixtures = registry.fixtures.filter(fixture => !args.backend || fixture.backend === args.backend)
     .filter(fixture => !args.fixture || fixture.id === args.fixture);
   if (!fixtures.length) throw new Error('no imported fixtures matched');
   for (const fixture of fixtures) {

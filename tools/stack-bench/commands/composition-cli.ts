@@ -29,8 +29,7 @@ interface PackIndexEntry {
 
 interface CalibrationValue {
   id: string;
-  version: string;
-  recipe?: { id?: string; version?: string; contentSha256?: string };
+  recipe?: { id?: string; contentSha256?: string };
 }
 
 type RecipeOptions = TrackRootOptions & RecipeSelectionOptions;
@@ -56,15 +55,12 @@ function packIndex(trackRoot: string): Map<string, PackIndexEntry> {
     const pack = compilePackDefinition(readDefinitionJson(path, 'pack'), {
       source: relative(trackRoot, path).replaceAll('\\', '/'),
     });
-    const ref = `${pack.id}@${pack.version}`;
-    if (byRef.has(ref)) throw new Error(`duplicate pack release ${ref}`);
-    byRef.set(ref, { pack, path: realpathSync(path) });
+    if (byRef.has(pack.id)) throw new Error(`duplicate pack id ${pack.id}`);
+    byRef.set(pack.id, { pack, path: realpathSync(path) });
   }
-  // A pack names dependencies by id; some release of that id must exist.
-  const ids = new Set([...byRef.values()].map(entry => entry.pack.id));
   for (const [ref, { pack }] of byRef) {
     for (const dependency of [...pack.requiresPacks, ...pack.conflictsWith]) {
-      if (!ids.has(dependency)) throw new Error(`${ref} references missing pack ${dependency}`);
+      if (!byRef.has(dependency)) throw new Error(`${ref} references missing pack ${dependency}`);
     }
   }
   return byRef;
@@ -79,11 +75,10 @@ export function validatePackFile(path: string, options: Partial<TrackRootOptions
     source: relative(root, absolute).replaceAll('\\', '/'),
   });
   const packs = packIndex(root);
-  const ownRef = `${pack.id}@${pack.version}`;
-  const indexed = packs.get(ownRef);
-  if (!indexed || indexed.path !== absolute) throw new Error(`${ownRef} is not the indexed source ${absolute}`);
+  const indexed = packs.get(pack.id);
+  if (!indexed || indexed.path !== absolute) throw new Error(`${pack.id} is not the indexed source ${absolute}`);
   for (const ref of [...pack.requiresPacks, ...pack.conflictsWith]) {
-    if (!packs.has(ref)) throw new Error(`${ownRef} references missing pack ${ref}`);
+    if (!packs.has(ref)) throw new Error(`${pack.id} references missing pack ${ref}`);
   }
   const sourceCache = new Map();
   for (const kind of ['requirements', 'contracts'] satisfies RecipeTaskKind[]) {
@@ -106,7 +101,7 @@ export function validatePackFile(path: string, options: Partial<TrackRootOptions
     }
     state.set(ref, 'done');
   };
-  visit(ownRef);
+  visit(pack.id);
   let criteria = 0;
   for (const check of pack.checks) {
     const scenarioPath = contained(root, join(root, check.source), `${pack.id}.${check.id}.source`);
@@ -117,7 +112,7 @@ export function validatePackFile(path: string, options: Partial<TrackRootOptions
     if (!feature) throw new Error(`${pack.id}.${check.id} references missing feature ${check.feature}`);
     criteria += feature.criteria.length;
   }
-  return { id: pack.id, version: pack.version, state: pack.state, path: absolute,
+  return { id: pack.id, path: absolute,
     checkGroups: pack.checks.length, criteria, requiresPacks: pack.requiresPacks };
 }
 
@@ -167,7 +162,7 @@ function scoringView(release: RecipeRelease) {
 }
 
 function metadataView(release: RecipeRelease) {
-  return { id: release.id, version: release.version, state: release.state, title: release.title,
+  return { id: release.id, title: release.title,
     sequence: release.sequence, sourceManifestSha256: release.sourceManifestSha256 };
 }
 
@@ -181,7 +176,6 @@ function matchingCalibrations(trackRoot: string, release: RecipeRelease): Array<
     .map(name => ({ path: join(directory, name),
       value: readDefinitionJson<CalibrationValue>(join(directory, name), 'calibration') }))
     .filter(({ value }) => value.recipe?.id === release.id
-      && value.recipe?.version === release.version
       && value.recipe?.contentSha256 === release.contentSha256);
 }
 
@@ -197,22 +191,20 @@ export function diffRecipeFiles(fromPath: string, toPath: string, options: Parti
     execution: from.executionSha256 !== to.executionSha256,
     metadata: !same(metadataView(from), metadataView(to)),
   };
-  const recipeBindingChanged = from.id !== to.id || from.version !== to.version
+  const recipeBindingChanged = from.id !== to.id
     || from.meaningSha256 !== to.meaningSha256 || from.executionSha256 !== to.executionSha256
     || from.contentSha256 !== to.contentSha256;
   const calibrations = matchingCalibrations(trackRoot, from).map(({ path, value }) => {
     const invalidated = [];
-    const stateChanged = from.state !== to.state;
     if (recipeBindingChanged) invalidated.push('recipe binding');
-    if (stateChanged) invalidated.push('recipe qualification state');
     if (categories.fixtures) invalidated.push('fixture binding');
     if (categories.scoring) invalidated.push('zero-point control policy');
     if (categories.meaning || categories.scoring || categories.execution || categories.fixtures) {
       invalidated.push('reference repetitions', 'mutation repetitions');
     }
     if (categories.meaning || categories.scoring || categories.fixtures) invalidated.push('null repetitions');
-    if (recipeBindingChanged || stateChanged) invalidated.push('promotion decision');
-    return { id: value.id, version: value.version,
+    if (recipeBindingChanged) invalidated.push('selection binding');
+    return { id: value.id,
       path: relative(trackRoot, path).replaceAll('\\', '/'), invalidated: [...new Set(invalidated)] };
   });
   const fragmentDiff = (kind: RecipeTaskKind) => {
@@ -226,9 +218,9 @@ export function diffRecipeFiles(fromPath: string, toPath: string, options: Parti
     };
   };
   return {
-    from: { id: from.id, version: from.version, state: from.state, meaningSha256: from.meaningSha256,
+    from: { id: from.id, meaningSha256: from.meaningSha256,
       executionSha256: from.executionSha256, contentSha256: from.contentSha256 },
-    to: { id: to.id, version: to.version, state: to.state, meaningSha256: to.meaningSha256,
+    to: { id: to.id, meaningSha256: to.meaningSha256,
       executionSha256: to.executionSha256, contentSha256: to.contentSha256 },
     categories,
     taskFragments: {
@@ -300,7 +292,7 @@ function main() {
   else {
     const compiled = validateRecipeFile(firstPath, args);
     result = {
-      id: compiled.release.id, version: compiled.release.version, state: compiled.release.state,
+      id: compiled.release.id,
       packs: compiled.release.components.packs.length, checks: compiled.release.checkCatalog.length,
       points: compiled.release.checkCatalog.reduce((total, check) => total + check.points, 0),
       meaningSha256: compiled.release.meaningSha256,
@@ -309,8 +301,8 @@ function main() {
     };
   }
   if (args.json || args.command === 'show' || args.command === 'diff') console.log(JSON.stringify(result, null, 2));
-  else if ('id' in result && 'version' in result && 'state' in result) {
-    console.log(`${String(result.id)}@${String(result.version)} ${String(result.state)}: valid`);
+  else if ('id' in result) {
+    console.log(`${String(result.id)}: valid`);
   } else throw new Error('validation result has no release identity');
 }
 

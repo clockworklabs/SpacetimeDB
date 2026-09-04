@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.order-returns-features",
+  "stableId": "ecommerce.returns-pricing",
+  "moduleType": "feature",
+  "title": "Returns",
+  "description": "Return shipped items without losing stock or accounting accuracy.",
+  "requiresPacks": [
+    "ecommerce.l3.order-delivery-features",
+    "ecommerce.feature.warehouse-admin"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 60000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.l3.order-returns",
+        "path": "prompts/modular/order-returns.md",
+        "order": 4040,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.l3.order-return-hooks",
+        "path": "contracts/order-returns.md",
+        "order": 4041,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "return-complete",
+      "stableId": "cancellation-and-return",
+      "source": "scenarios/progression-order-return-complete.json",
+      "feature": 330,
+      "criteria": [
+        "3c"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "return-before-shipping",
+      "stableId": "cancellation-and-return",
+      "source": "scenarios/progression-order-return-boundary.json",
+      "feature": 331,
+      "criteria": [
+        "3e"
+      ],
+      "role": "feature"
+    }
+  ]
+}

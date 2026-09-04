@@ -22,9 +22,7 @@ import {
 
 interface BoundIdentity extends Record<string, unknown> {
   id: string;
-  version?: string | null;
-  sha256: string;
-  state?: string;
+  contentSha256: string;
 }
 
 export interface ProgressionOwner {
@@ -192,9 +190,7 @@ const HASH = /^[a-f0-9]{64}$/;
 const hashSchema = z.string().regex(HASH);
 const boundIdentitySchema = z.strictObject({
   id: z.string().min(1),
-  version: z.string().min(1).nullable().optional(),
-  sha256: hashSchema,
-  state: z.string().optional(),
+  contentSha256: hashSchema,
 });
 const progressionOwnerSchema = z.strictObject({
   schemaVersion: z.literal(1),

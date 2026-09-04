@@ -4,7 +4,6 @@ import { dirname, isAbsolute, resolve, sep } from 'node:path';
 import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact, ArtifactIdentity }
   from '../evidence/artifacts.js';
-import { calibrationQualificationIdentity } from './calibration-compiler.js';
 import type { CalibrationPlan } from './calibration-compiler.js';
 import { canonicalDefinitionJson } from './definition-plan.js';
 import { nonNegativeInteger, PACK_RUNTIME_METRIC } from './pack-runtime.js';
@@ -66,7 +65,7 @@ export interface PackBudgetEvidence {
   path: string;
   sha256: string;
   artifact: Artifact<ReferenceQualificationPayload>;
-  runtimeCalibration: Pick<ArtifactIdentity, 'id' | 'version' | 'sha256'> | null;
+  runtimeCalibration: Pick<ArtifactIdentity, 'id' | 'sha256'> | null;
 }
 
 export interface PackRuntimeSample {
@@ -122,7 +121,7 @@ function identityField(value: unknown, field: string): unknown {
 }
 
 function equalIdentity(actual: unknown, expected: unknown, at: string): void {
-  for (const field of ['id', 'version', 'sha256']) {
+  for (const field of ['id', 'sha256']) {
     if ((identityField(actual, field) ?? null) !== (identityField(expected, field) ?? null)) {
       throw new Error(`${at}.${field} does not match the selected qualification scope`);
     }
@@ -147,9 +146,8 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
     throw new Error('pack budget recommendation requires a compiled recipe and calibration');
   }
   if (!Array.isArray(evidence) || evidence.length === 0) throw new Error('reference evidence is required');
-  const calibrationIdentity = calibrationQualificationIdentity(calibration);
-  const expectedStacks = calibration.qualification.stacks
-    .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
+  const calibrationIdentity = { id: calibration.id, sha256: calibration.contentSha256 };
+  const expectedStacks = [...calibration.qualification.stacks].sort();
   const expectedPackCounts = new Map(binding.plan.packs.map(pack => [pack.id,
     binding.release.checkCatalog.filter(check => check.packId === pack.id).length]));
   const stacks = new Set<string>();
@@ -165,11 +163,11 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
     if (!payload.ok || !payload.stable || !payload.sameImage || !payload.sameHarness) {
       throw new Error(`${item.path} is not a passing stable reference qualification`);
     }
-    equalIdentity(artifact.identities.recipe, { id: binding.release.id, version: binding.release.version,
+    equalIdentity(artifact.identities.recipe, { id: binding.release.id,
       sha256: binding.release.contentSha256 }, `${item.path}.identities.recipe`);
     equalIdentity(artifact.identities.calibration, calibrationIdentity,
       `${item.path}.identities.calibration`);
-    equalIdentity(item.runtimeCalibration, { id: calibration.id, version: calibration.version,
+    equalIdentity(item.runtimeCalibration, { id: calibration.id,
       sha256: calibration.contentSha256 }, `${item.path}.retainedRuntimeCalibration`);
     const stack = artifact.identities.stackAdapter?.id;
     if (typeof stack !== 'string' || !expectedStacks.includes(stack)) {
@@ -179,7 +177,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }: {
     stacks.add(stack);
     const expectedReference = calibration.references.entries.find(entry => entry.backend === stack);
     if (!expectedReference) throw new Error(`${item.path} has unexpected stack ${stack}`);
-    equalIdentity(artifact.identities.fixture, { id: expectedReference.id, version: null,
+    equalIdentity(artifact.identities.fixture, { id: expectedReference.id,
       sha256: expectedReference.sourceSha256 }, `${item.path}.identities.fixture`);
     if (payload.fixture !== expectedReference.id || payload.fixtureSha256 !== expectedReference.sourceSha256) {
       throw new Error(`${item.path} fixture does not match the selected ${stack} reference`);
@@ -301,7 +299,7 @@ export function loadPackBudgetEvidence(paths: string[]): PackBudgetEvidence[] {
           `${path} retained run ${run.repetition}.identities.${identity}`);
       }
       equalIdentityFields(bundle.identities.calibration, artifact.identities.calibration,
-        ['id', 'version'], `${path} retained run ${run.repetition}.identities.calibration`);
+        ['id', 'sha256'], `${path} retained run ${run.repetition}.identities.calibration`);
       if (runtimeCalibration === null) runtimeCalibration = bundle.identities.calibration;
       else equalIdentity(bundle.identities.calibration, runtimeCalibration,
         `${path} retained run ${run.repetition}.identities.calibration`);

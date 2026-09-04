@@ -15,7 +15,7 @@ import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.js';
 interface FixtureSelection extends RepairSelection {
   sha256: string;
   scoredPoints: number;
-  recipe: { id: string; version: string };
+  recipe: { id: string };
 }
 
 interface FixtureOverrides {
@@ -36,7 +36,7 @@ function parentFixture(root: string, overrides: FixtureOverrides = {}) {
   const outcome = overrides.outcome ?? { kind: 'app_failure', phase: 'grading', reason: null,
     appFailures: ['feature/failure'], inconclusive: [], harnessFailures: [] };
   const selection = overrides.selection ?? { sha256: 'c'.repeat(64), scoredPoints: 2,
-    recipe: { id: 'ecommerce.sequential-l1', version: '2.5.0' } };
+    recipe: { id: 'ecommerce.sequential-l1' } };
   const identities = overrides.identities ?? emptyArtifactIdentities({
     agentAdapter: { id: 'deterministic', version: '1.0.0', sha256: 'b'.repeat(64) },
     stackAdapter: { id: 'stub', version: '1.0.0' },
@@ -79,7 +79,7 @@ test('a finite grant is derived only from the exact exhausted parent checkpoint'
     assert.equal(resolved.grant.cumulativeRepairsBefore, 3);
     assert.equal(resolved.grant.cumulativeRepairsAfter, 3);
     assert.equal(resolved.configuration.agentAdapter, 'deterministic');
-    assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1@2.5.0');
+    assert.equal(resolved.configuration.recipe, 'ecommerce.sequential-l1');
     assert.equal(resolved.configuration.runIndex, 0);
     assert.equal(resolved.configuration.url, 'http://localhost:1234');
     assert.equal(resolved.grant.cumulativeCostBeforeUsd, 101.5);

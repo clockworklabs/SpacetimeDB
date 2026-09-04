@@ -7,7 +7,7 @@ type UnknownRecord = Record<string, unknown>;
 
 export interface RecipeSelection {
   schemaVersion: number;
-  recipe: { id: string; version: string; contentSha256: string };
+  recipe: { id: string; contentSha256: string };
   requested: {
     packs?: string[];
     checks: string[];
@@ -42,7 +42,7 @@ export type TreatedCheck = RecipeCheck & { treatment: string };
 // pack list or completeness, which only a pack selection can answer.
 export interface ModularRecipeSelection {
   schemaVersion: number;
-  recipe: { id: string; version: string; contentSha256: string };
+  recipe: { id: string; contentSha256: string };
   requested: RecipeSelection['requested'];
   features: string[];
   specifications: Record<string, string[]>;
@@ -125,7 +125,6 @@ export interface RecipeTaskDocument {
 
 export interface ModularRecipePack {
   id: string;
-  version: string;
   stableId?: string;
   moduleType?: string;
   requiresPacks: string[];
@@ -133,7 +132,6 @@ export interface ModularRecipePack {
 
 export interface ModularRecipeRelease {
   id: string;
-  version: string;
   contentSha256: string;
   components: { packs: ModularRecipePack[] };
   checkCatalog: RecipeCheck[];
@@ -159,7 +157,7 @@ export interface ModularRecipeTaskRequestResult {
 
 export interface ModularTaskRequest extends UnknownRecord {
   schemaVersion: 3;
-  recipe: { id: string; version: string; contentSha256: string };
+  recipe: { id: string; contentSha256: string };
   selection: {
     sha256: string;
     requested: RecipeSelection['requested'];
@@ -192,13 +190,10 @@ function unique(values: readonly unknown[], label: string): string[] {
   return normalized;
 }
 
-function exactModuleRef(value: string, label: string):
-  { id: string; version: string; ref: string } {
-  const split = value.lastIndexOf('@');
-  if (split < 1 || split === value.length - 1) {
-    throw new Error(`${label} must use an exact id@version reference`);
-  }
-  return { id: value.slice(0, split), version: value.slice(split + 1), ref: value };
+function moduleId(value: string, label: string): string {
+  const id = value.trim();
+  if (!id || id.includes('@')) throw new Error(`${label} must use a stable module id`);
+  return id;
 }
 
 // Assign each selected specification one exclusive treatment.
@@ -218,7 +213,7 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
   const features = new Map(modules.filter(module => module.moduleType === 'feature')
     .map(module => [module.id, module]));
   const specifications = new Map(modules.filter(module => module.moduleType === 'specification')
-    .map(module => [`${module.id}@${module.version}`, module]));
+    .map(module => [module.id, module]));
   const requestedFeatures = unique(featureIds, 'features');
   const inputTreatments = {
     requested: unique(requestedSpecifications, 'requested specifications'),
@@ -238,37 +233,44 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
       assigned.set(ref, treatment);
     }
   }
+  const requestedFeatureModules = new Set<string>();
   for (const id of requestedFeatures) {
-    if (!features.has(id)) throw new Error(`recipe has no feature module ${id}`);
+    if (features.has(id)) {
+      requestedFeatureModules.add(id);
+      continue;
+    }
+    const family = [...features.values()].filter(feature => feature.stableId === id);
+    if (!family.length) throw new Error(`recipe has no feature module ${id}`);
+    for (const feature of family) requestedFeatureModules.add(feature.id);
   }
   for (const [treatment, refs] of Object.entries(inputTreatments)) {
     for (const value of refs) {
-      const parsed = exactModuleRef(value, `${treatment} specification`);
-      if (!specifications.has(parsed.ref)) {
-        throw new Error(`recipe has no ${treatment} specification ${parsed.ref}`);
+      const id = moduleId(value, `${treatment} specification`);
+      if (!specifications.has(id)) {
+        throw new Error(`recipe has no ${treatment} specification ${id}`);
       }
     }
   }
 
-  const featureSet = new Set(requestedFeatures.length ? requestedFeatures : features.keys());
+  const featureSet = new Set(requestedFeatures.length ? requestedFeatureModules : features.keys());
   const treatmentSets: Record<string, Set<string>> = Object.fromEntries(
     Object.entries(inputTreatments).map(([treatment, refs]) => [treatment, new Set(refs)]));
-  const moduleByRef = new Map(modules.map(module => [`${module.id}@${module.version}`, module]));
+  const moduleById = new Map(modules.map(module => [module.id, module]));
   const visit = (module: ModularRecipePack | undefined, target: string,
     chain: readonly string[] = []): void => {
     if (!module) return;
-    const ref = `${module.id}@${module.version}`;
-    if (chain.includes(ref)) throw new Error(`recipe module dependency cycle: ${[...chain, ref].join(' -> ')}`);
-    for (const requiredRef of module.requiresPacks ?? []) {
-      const required = moduleByRef.get(requiredRef);
-      if (!required) throw new Error(`recipe module ${ref} requires missing ${requiredRef}`);
+    const id = module.id;
+    if (chain.includes(id)) throw new Error(`recipe module dependency cycle: ${[...chain, id].join(' -> ')}`);
+    for (const requiredId of module.requiresPacks ?? []) {
+      const required = moduleById.get(requiredId);
+      if (!required) throw new Error(`recipe module ${id} requires missing ${requiredId}`);
       if (required.moduleType === 'feature' && target === 'feature') featureSet.add(required.id);
       else if (required.moduleType === 'feature') {
-        throw new Error(`specification module ${ref} cannot add feature ${requiredRef}; use check applicability`);
+        throw new Error(`specification module ${id} cannot add feature ${requiredId}; use check applicability`);
       } else if (target === 'feature') {
-        throw new Error(`feature module ${ref} cannot depend on specification ${requiredRef}`);
-      } else treatmentSets[target]?.add(requiredRef);
-      visit(required, required.moduleType === 'feature' ? 'feature' : target, [...chain, ref]);
+        throw new Error(`feature module ${id} cannot depend on specification ${requiredId}`);
+      } else treatmentSets[target]?.add(requiredId);
+      visit(required, required.moduleType === 'feature' ? 'feature' : target, [...chain, id]);
     }
   };
   if (dependencyExpansion === 'recursive') {
@@ -291,7 +293,7 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
   }
 
   const idsFor = (treatment: string): Set<string> => new Set([...treatmentSets[treatment] ?? []]
-    .map(ref => exactModuleRef(ref, `${treatment} specification`).id));
+    .map(id => moduleId(id, `${treatment} specification`)));
   const requestedIds = idsFor('requested');
   const expectedIds = idsFor('expected');
   const observedIds = idsFor('observed');
@@ -320,7 +322,7 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
     observed: observedChecks };
   for (const [treatment, refs] of Object.entries(treatmentSets)) {
     for (const ref of refs) {
-      const id = exactModuleRef(ref, `${treatment} specification`).id;
+      const id = moduleId(ref, `${treatment} specification`);
       if (!checksByTreatment[treatment]?.some(check => check.packId === id)) {
         const observation = treatment === 'requested'
           ? 'prompted evaluation' : 'evaluation without prompting';
@@ -341,7 +343,7 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
     ? allEligibleChecks.filter(check => selectedCheckKeys.includes(check.stableKey)) : allScoredChecks;
   // A prompt can introduce a feature before another graph node makes its checks runnable.
   const deferredFeatureChecks = requestedFeatures.length > 0 && selectedCheckKeys.length === 0
-    && requestedFeatures.every(featureId => release.checkCatalog.some(check =>
+    && [...requestedFeatureModules].every(featureId => release.checkCatalog.some(check =>
       check.packId === featureId && check.points > 0));
   if (!scoredChecks.length && !deferredFeatureChecks) {
     throw new Error('modular selection contains no scored checks');
@@ -373,7 +375,7 @@ export function resolveModularRecipeSelection(release: ModularRecipeRelease, {
   };
   return {
     schemaVersion: 3,
-    recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
+    recipe: { id: release.id, contentSha256: release.contentSha256 },
     requested,
     features: [...featureSet].sort(),
     specifications: identityDocument.specifications,
@@ -413,11 +415,9 @@ export function resolveRecipeSelection(release: RecipeRelease,
       throw new Error(`recipe pack ${id} has no dependency metadata`);
     }
     for (const reference of pack.requiresPacks) {
-      const split = String(reference).lastIndexOf('@');
-      const requiredId = String(reference).slice(0, split);
-      const version = String(reference).slice(split + 1);
+      const requiredId = moduleId(String(reference), `recipe pack ${id} dependency`);
       const required = availablePacks.get(requiredId);
-      if (split < 1 || !required || required.version !== version) {
+      if (!required) {
         throw new Error(`recipe pack ${id} requires missing ${reference}`);
       }
       taskPacks.add(requiredId);
@@ -448,7 +448,7 @@ export function resolveRecipeSelection(release: RecipeRelease,
   };
   return {
     schemaVersion: 1,
-    recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
+    recipe: { id: release.id, contentSha256: release.contentSha256 },
     requested: { packs: [...requestedPacks].sort(), checks: [...requestedChecks].sort() },
     taskPacks: [...taskPacks].sort(),
     sha256: sha256(canonicalDefinitionJson(identityDocument)),
@@ -501,8 +501,7 @@ export function composeSelectedRecipeTask(plan: RecipeTaskPlan,
   }
   const requestedOwners = new Set([
     ...(selection.requested?.features ?? []),
-    ...Object.values(selection.requested?.specifications ?? {}).flat()
-      .map(reference => reference.slice(0, reference.lastIndexOf('@'))),
+    ...Object.values(selection.requested?.specifications ?? {}).flat(),
   ]);
   const select = (fragments: readonly RecipeTaskDocument[]): RecipeTaskDocument[] => {
     const ownersWithCurrentText = new Set(fragments.flatMap(fragment =>
@@ -553,8 +552,7 @@ export function createRecipeTaskRequest(binding: RecipeTaskBinding,
   const task = composeSelectedRecipeTask(binding.plan, selection);
   const request = {
     schemaVersion: 1,
-    recipe: { id: binding.release.id, version: binding.release.version,
-      contentSha256: binding.release.contentSha256 },
+    recipe: { id: binding.release.id, contentSha256: binding.release.contentSha256 },
     selection: { sha256: selection.sha256, requested: selection.requested,
       taskPacks: selection.taskPacks },
     task: { sha256: task.sha256, requirementSha256: task.requirementSha256,
@@ -576,8 +574,7 @@ export function createModularRecipeTaskRequest(binding: ModularRecipeTaskBinding
   });
   const request: ModularTaskRequest = {
     schemaVersion: 3,
-    recipe: { id: binding.release.id, version: binding.release.version,
-      contentSha256: binding.release.contentSha256 },
+    recipe: { id: binding.release.id, contentSha256: binding.release.contentSha256 },
     selection: {
       sha256: selection.sha256,
       requested: selection.requested,

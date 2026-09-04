@@ -178,7 +178,7 @@ export function writeDependencyResults(resultsRoot: string, key: string): void {
         campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
         attempt: { id: claim.attempt.id, track: plan.definition.track, stack: claim.attempt.stack,
           agentAdapter: claim.attempt.agentAdapter, model: claim.attempt.model,
-          conditionSha256: claim.attempt.condition.sha256 },
+          conditionSha256: claim.attempt.condition.contentSha256 },
         workspace: { appDirectory: 'source' } },
       state: dependencyProgressionEvidence(plan, claim.attempt) });
   }

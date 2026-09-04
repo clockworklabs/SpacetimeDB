@@ -33,10 +33,10 @@ test('null qualification can select one exact track and level', () => {
   assert.throws(() => parseNullControlArgs(['node', 'null-control.js',
     '--track', 'ecommerce', '--level', '0']), /positive integer/);
   assert.equal(parseNullControlArgs(['node', 'null-control.js', '--track', 'ecommerce',
-    '--level', '1', '--recipe', 'ecommerce.sequential-l1@2.5.0']).recipe,
-  'ecommerce.sequential-l1@2.5.0');
+    '--level', '1', '--recipe', 'ecommerce.sequential-l1']).recipe,
+  'ecommerce.sequential-l1');
   assert.throws(() => parseNullControlArgs(['node', 'null-control.js', '--track', 'ecommerce',
-    '--recipe', 'ecommerce.sequential-l1@2.5.0']), /requires --level/);
+    '--recipe', 'ecommerce.sequential-l1']), /requires --level/);
   const track = loadTrack('ecommerce');
   assert.deepEqual(nullControlSuites(track, 2).map(suite => suite.level), [2, 2, 2, 2, 2]);
   assert.throws(() => nullControlSuites(track, 4), /not declared/);
@@ -44,7 +44,7 @@ test('null qualification can select one exact track and level', () => {
 
 test('recipe-bound null qualification grades the exact modular execution and checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
   const suites = nullControlSuites(track, 1, binding);
   assert(suites.every(hasChecks));
   const recipeSuites = suites.filter(hasChecks);
@@ -79,7 +79,7 @@ test('recipe-bound null qualification grades the exact modular execution and che
 
 test('recipe-bound null qualification rejects an execution with no mapped checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = structuredClone(resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0'));
+  const binding = structuredClone(resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1'));
   const firstExecution = binding.execution[0];
   assert(firstExecution);
   binding.execution.push({ id: 'empty-execution', source: firstExecution.source,

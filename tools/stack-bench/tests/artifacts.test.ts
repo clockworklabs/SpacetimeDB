@@ -12,8 +12,7 @@ test('run artifacts are atomic and identify the producing run', () => {
   try {
     const path = join(root, 'run.json');
     const mode = { id: 'sequential', version: '1.0.0' };
-    const featureCatalog = { id: 'catalog', version: '1.0.0', sha256: 'a'.repeat(64),
-      state: 'draft' };
+    const featureCatalog = { id: 'catalog', sha256: 'a'.repeat(64) };
     writeRunJson(path, { id: 'run-a', mode, featureCatalog, levels: [] });
     const artifact = readRunJson(path, 'run-a');
     assert.equal(artifact.id, 'run-a');
@@ -66,10 +65,10 @@ test('v2 envelopes preserve exact identities, timestamps, and attempt ancestry',
       attempt: { id: 'grade-child', parentId: 'bundle-parent' },
       timestamps: { startedAt: '2026-08-12T12:00:00.000Z', completedAt: '2026-08-12T12:00:01.000Z' },
       identities: {
-        recipe: { id: 'ecommerce-l1', version: '1.0.0', sha256: digest, state: 'draft' },
-        fixture: { id: 'standard', version: '1.0.0', sha256: digest, state: 'draft' },
-        calibration: { id: 'l1-standard', version: '1.0.0', sha256: digest, state: 'draft' },
-        packs: [{ id: 'auth', version: '1.0.0', sha256: digest, state: 'draft' }],
+        recipe: { id: 'ecommerce-l1', sha256: digest },
+        fixture: { id: 'standard', sha256: digest },
+        calibration: { id: 'l1-standard', sha256: digest },
+        packs: [{ id: 'auth', sha256: digest }],
         stackAdapter: { id: 'postgres', sha256: digest },
       },
       payload: { total: 1, max: 1, features: [] },
@@ -136,11 +135,21 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   const incompleteEngineIdentity = structuredClone(valid);
   const engine = incompleteEngineIdentity.identities.engine;
   assert(engine);
-  delete (engine as Partial<typeof engine>).version;
+  delete (engine as Partial<typeof engine>).sha256;
   assert.throws(() => writeArtifact('unused.json', incompleteEngineIdentity),
-    /identities\.engine\.version is required/);
+    /identities\.engine\.sha256 is required/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x', identities: { engine: null } }),
     /identities\.engine is required/);
+  const retiredIdentityFields = { id: 'old', sha256: 'a'.repeat(64), version: '1.0.0' };
+  for (const identities of [
+    { recipe: retiredIdentityFields },
+    { fixture: retiredIdentityFields },
+    { calibration: retiredIdentityFields },
+    { packs: [retiredIdentityFields] },
+  ]) {
+    assert.throws(() => createArtifact({ kind: 'grade', id: 'x', identities }),
+      /version is unknown/);
+  }
   const observedPayload = { observation: 'observed', source: { sha256: 'a'.repeat(64) },
     suites: {}, totals: {}, selection: { observation: 'observed', scoredPoints: 0,
       observedPoints: 1 } };

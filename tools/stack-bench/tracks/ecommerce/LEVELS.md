@@ -37,15 +37,13 @@ regression stays visible.
 - abandoned-cart cleanup;
 - restart durability and exactly-once execution.
 
-The current sequential aliases and candidate recipes are defined in
-`composition/promotions.json` and `composition/candidates.json`. Use
-`qualification status` for launch and promotion state. This file does not copy
-that changing status.
+The sequential aliases are in `composition/sequential.json`. Dependency aliases
+are in `composition/dependency.json`.
 
 ## Dependency mode
 
 Dependency mode follows the feature graph in
-`progression/ecommerce-2.0.2.json`. A feature opens only after its declared
+`progression/ecommerce.json`. A feature opens only after its declared
 parents pass. Failed branches can stop while unrelated branches continue.
 
 Graph depth is calculated from prerequisites. It is not the same as a sequential

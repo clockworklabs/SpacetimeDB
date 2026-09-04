@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Core business features",
+  "features": [
+    {
+      "id": 620,
+      "name": "Customer profile",
+      "actors": ["owner", "other"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "620a",
+          "desc": "the owner sees the saved profile after reload",
+          "points": 2,
+          "statedBy": "A customer profile persists.",
+          "steps": [
+            { "do": "signUp", "actor": "owner", "name": "profile-owner" },
+            { "do": "click", "actor": "owner", "testid": "profile-link" },
+            { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
+            { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
+            { "do": "click", "actor": "owner", "testid": "profile-save" },
+            { "do": "reload", "actor": "owner", "settleMs": 2500 },
+            { "do": "click", "actor": "owner", "testid": "profile-link" },
+            { "do": "expect", "actor": "owner", "testid": "profile-address-summary", "contains": "14 Market Street" }
+          ]
+        },
+        {
+          "id": "620b",
+          "desc": "another customer cannot see the owner's profile",
+          "points": 2,
+          "statedBy": "Customer profiles are private.",
+          "steps": [
+            { "do": "signUp", "actor": "owner", "name": "profile-private-owner" },
+            { "do": "click", "actor": "owner", "testid": "profile-link" },
+            { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
+            { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
+            { "do": "click", "actor": "owner", "testid": "profile-save" },
+            { "do": "signUp", "actor": "other", "name": "profile-other" },
+            { "do": "click", "actor": "other", "testid": "profile-link" },
+            { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "14 Market Street", "absent": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 621,
+      "name": "Staff roles",
+      "actors": ["admin", "staff"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "621a",
+          "desc": "an administrator can assign a staff role",
+          "points": 2,
+          "statedBy": "Administrators can assign staff roles.",
+          "steps": [
+            { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
+            { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
+            { "do": "expect", "actor": "admin", "testid": "staff-role-row", "contains": "inventory", "within": 10000 }
+          ]
+        },
+        {
+          "id": "621b",
+          "desc": "a staff member cannot assign roles through the UI or a replayed request",
+          "points": 2,
+          "statedBy": "Staff members cannot assign roles.",
+          "steps": [
+            { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
+            { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
+            { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "staff-role-save", "absent": true },
+            { "do": "replayAs", "actor": "staff", "from": "admin", "match": "role", "settleMs": 1500 },
+            { "do": "expectReplayRejected", "actor": "staff" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 622,
+      "name": "Catalog management",
+      "actors": ["admin", "visitor"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-name", "text": "Travel Mug" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-category", "text": "Kitchen" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-price", "text": "24.00" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Black, Silver" },
+        { "do": "click", "actor": "admin", "testid": "catalog-save" },
+        { "do": "reload", "actor": "visitor", "settleMs": 2500 }
+      ],
+      "criteria": [
+        {
+          "id": "622a",
+          "desc": "a new product reaches the public catalog",
+          "points": 2,
+          "statedBy": "Authorized staff can add products.",
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Travel Mug", "within": 10000 }
+          ]
+        },
+        {
+          "id": "622b",
+          "desc": "the product exposes its named variants",
+          "points": 2,
+          "statedBy": "Products can have named variants.",
+          "steps": [
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-variant", "contains": "Black", "equals": 1, "within": 10000 },
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-variant", "contains": "Silver", "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 623,
+      "name": "Payment records",
+      "actors": ["tab1", "tab2", "owner"],
+      "setup": [
+        { "do": "signUp", "actor": "tab1", "name": "payment-record" },
+        { "do": "signIn", "actor": "tab2", "name": "payment-record" },
+        { "do": "signIn", "actor": "owner", "name": "payment-record" },
+        { "do": "click", "actor": "owner", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+        { "do": "click", "actor": "owner", "testid": "cart-toggle" },
+        { "do": "recordNumber", "actor": "owner", "testid": "cart-total", "as": "payment-total" },
+        { "do": "callConcurrently", "actors": ["tab1", "tab2"], "action": "checkout", "settleMs": 5000 },
+        { "do": "expectCallOutcomes", "accepted": 1 },
+        { "do": "click", "actor": "owner", "testid": "orders-toggle" }
+      ],
+      "criteria": [
+        {
+          "id": "623a",
+          "desc": "checkout records the exact paid amount",
+          "points": 3,
+          "statedBy": "Checkout records the amount paid on the order.",
+          "steps": [
+            { "do": "expect", "actor": "owner", "testid": "payment-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "contains": "paid", "within": 10000 },
+            { "do": "expectNumber", "actor": "owner", "testid": "payment-amount", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "relativeTo": "payment-total", "plus": 0 }
+          ]
+        },
+        {
+          "id": "623b",
+          "desc": "one checkout has one payment record",
+          "points": 2,
+          "statedBy": "A checkout does not create duplicate payments.",
+          "steps": [
+            { "do": "expectElementCount", "actor": "owner", "testid": "payment-record", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 624,
+      "name": "Staff activity history",
+      "actors": ["admin", "staff", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "signIn", "actor": "customer", "name": "customer", "password": "stackbench-customer-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-name", "text": "Activity Mug" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-category", "text": "Kitchen" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-price", "text": "43.00" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Green" },
+        { "do": "click", "actor": "admin", "testid": "catalog-save" }
+      ],
+      "criteria": [
+        {
+          "id": "624a",
+          "desc": "an administrative change records its actor and subject",
+          "points": 3,
+          "statedBy": "Administrative changes have an activity history.",
+          "steps": [
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "click", "actor": "staff", "testid": "activity-link" },
+            { "do": "expect", "actor": "staff", "testid": "activity-entry", "contains": "Activity Mug", "within": 10000 },
+            { "do": "expect", "actor": "staff", "testid": "activity-actor", "in": { "testid": "activity-entry", "contains": "Activity Mug" }, "contains": "admin", "within": 10000 }
+          ]
+        },
+        {
+          "id": "624b",
+          "desc": "customers cannot open staff activity history",
+          "points": 2,
+          "statedBy": "Staff activity history is not available to customers.",
+          "steps": [
+            { "do": "expect", "actor": "customer", "testid": "activity-link", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

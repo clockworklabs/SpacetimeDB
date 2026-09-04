@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "fixtures": [
     {
       "id": "ecommerce-reference-mongodb",
@@ -7,15 +7,11 @@
       "track": "ecommerce",
       "level": 6,
       "actionLevels": [1, 2, 3, 4, 5, 6],
-      "status": "candidate",
       "recipes": [
-        "ecommerce.sequential-l1@2.5.0",
-        "ecommerce.sequential-l2@1.6.0",
-        "ecommerce.sequential-l3@1.0.0",
-        "ecommerce.progression-catalog@2.0.2",
-        "ecommerce.progression-depth3@2.0.2",
-        "ecommerce.progression-catalog@2.0.3",
-        "ecommerce.progression-depth3@2.0.3"
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
       ],
       "targetPath": "reference-apps/ecommerce/mongodb",
       "origin": {
@@ -27,7 +23,7 @@
         "sourceSha256": "976181ac6a6de92a2fa269c12b8cef3b514b1b0499771ac6ca770e1df0ff4417"
       },
       "mutationManifests": [
-        "grader/mutations/mongodb-ecommerce-2.0.1.json"
+        "grader/mutations/mongodb-ecommerce.json"
       ]
     },
     {
@@ -36,15 +32,11 @@
       "track": "ecommerce",
       "level": 6,
       "actionLevels": [1, 2, 3, 4, 5, 6],
-      "status": "candidate",
       "recipes": [
-        "ecommerce.sequential-l1@2.5.0",
-        "ecommerce.sequential-l2@1.6.0",
-        "ecommerce.sequential-l3@1.0.0",
-        "ecommerce.progression-catalog@2.0.2",
-        "ecommerce.progression-depth3@2.0.2",
-        "ecommerce.progression-catalog@2.0.3",
-        "ecommerce.progression-depth3@2.0.3"
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
       ],
       "targetPath": "reference-apps/ecommerce/postgres",
       "origin": {
@@ -56,7 +48,7 @@
         "sourceSha256": "7e9e93151044b0f2c9dff5d204b20cde6d2ce22f87d37589bd1fbcebcb5c7dbb"
       },
       "mutationManifests": [
-        "grader/mutations/postgres-ecommerce-2.0.1.json"
+        "grader/mutations/postgres-ecommerce.json"
       ]
     },
     {
@@ -65,15 +57,11 @@
       "track": "ecommerce",
       "level": 6,
       "actionLevels": [1, 2, 3, 4, 5, 6],
-      "status": "candidate",
       "recipes": [
-        "ecommerce.sequential-l1@2.5.0",
-        "ecommerce.sequential-l2@1.6.0",
-        "ecommerce.sequential-l3@1.0.0",
-        "ecommerce.progression-catalog@2.0.2",
-        "ecommerce.progression-depth3@2.0.2",
-        "ecommerce.progression-catalog@2.0.3",
-        "ecommerce.progression-depth3@2.0.3"
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
       ],
       "targetPath": "reference-apps/ecommerce/spacetime",
       "origin": {
@@ -85,7 +73,7 @@
         "sourceSha256": "1e5646458f195196bbbe0acd50c3a822268f151011dc9a86b696362feb1c07a7"
       },
       "mutationManifests": [
-        "grader/mutations/spacetime-ecommerce-2.0.1.json"
+        "grader/mutations/spacetime-ecommerce.json"
       ]
     }
   ]

@@ -188,8 +188,7 @@ async function main() {
         binding = qualification.binding;
       }
       const selectedSuites = nullControlSuites(track, args.level, binding);
-      const resolvedRecipe = binding
-        ? `${binding.release.id}@${binding.release.version}` : args.recipe;
+      const resolvedRecipe = binding?.release.id ?? args.recipe;
       for (let index = 0; index < selectedSuites.length; index += NULL_CONTROL_WORKERS) {
         const reports = await Promise.all(selectedSuites
           .slice(index, index + NULL_CONTROL_WORKERS).map(async suite => {
@@ -222,9 +221,10 @@ async function main() {
       completedAt: new Date().toISOString(),
       parentAttemptId: args.parentAttemptId ?? null,
       identities: qualification ? {
-        recipe: { id: qualification.binding.release.id, version: qualification.binding.release.version,
-          sha256: qualification.binding.release.contentSha256, state: qualification.binding.release.state },
-        calibration: { ...qualification.identity, state: qualification.calibration.state },
+        recipe: { id: qualification.binding.release.id,
+          sha256: qualification.binding.release.contentSha256 },
+        calibration: { id: qualification.identity.id,
+          sha256: qualification.identity.contentSha256 },
       } : undefined,
       durationMs: Date.now() - started,
       runner: controllerRunner(),

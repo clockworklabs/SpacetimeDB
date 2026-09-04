@@ -159,7 +159,7 @@ export function campaignFacts(plan: CompiledCampaignPlan) {
     recipes: (requested ?? []).map(level => ({
       level: level.level,
       id: level.recipe?.id ?? null,
-      version: level.recipe?.version ?? null,
+      contentSha256: level.recipe?.contentSha256 ?? null,
     })),
     runtime: {
       controllerImage: plan.definition.runtime.controllerImage ?? null,

@@ -2,20 +2,20 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 
-import { compilePromotionFile, compileRecipeFile } from './composition-compiler.js';
+import { compileRecipeSelectionFile, compileRecipeFile } from './composition-compiler.js';
 import { compileScenarioDefinition, compileTrackManifest } from './definition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition, readDefinitionJson }
   from './definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import type {
   CompiledOwnedTaskFragment,
-  CompiledPromotionCatalog,
+  CompiledRecipeSelectionCatalog,
   CompiledRecipePlan,
 } from './composition-compiler.js';
 import type { CompiledStep } from './definition-compiler.js';
 import { TRACK_MANIFEST_FILE, type Track } from './tracks.js';
 
-export const RECIPE_RELEASE_SCHEMA_VERSION = 2;
+export const RECIPE_RELEASE_SCHEMA_VERSION = 3;
 
 export interface RecipeCheck {
   stableKey: string;
@@ -23,7 +23,6 @@ export interface RecipeCheck {
   points: number;
   packId?: string;
   stablePackId?: string;
-  packVersion?: string;
   checkGroupId?: string;
   role?: string;
   observations?: string[];
@@ -50,13 +49,11 @@ export interface RecipeTaskFragment {
 
 export interface RecipePackComponent {
   id: string;
-  version: string;
-  state: string;
+  stableId?: string;
   path: string;
   sha256: string;
   includeRoles: string[];
   includeCheckGroups?: string[];
-  stableId?: string;
   moduleType?: string;
   requiresPacks: string[];
 }
@@ -64,8 +61,6 @@ export interface RecipePackComponent {
 export interface RecipeReleaseIdentity extends Record<string, unknown> {
   recipeReleaseSchemaVersion: number;
   id: string;
-  version: string;
-  state: string;
   track: string;
   meaningSha256: string;
   executionSha256: string;
@@ -87,7 +82,7 @@ export interface RecipeRelease extends RecipeReleaseIdentity {
   checkCatalog: RecipeCheck[];
   sourceManifest: RecipeSourceManifestEntry[];
   components: {
-    fixture: { id: string; version: string; state: string; path: string; sha256: string };
+    fixture: { id: string; path: string; sha256: string };
     packs: RecipePackComponent[];
   };
   task: {
@@ -111,28 +106,22 @@ export interface RecipeExecution {
   ownership: RecipeExecutionOwnership;
 }
 
-interface RecipeCatalogIdentity {
-  id: string;
-  version: string;
-  state: string;
-  title: string;
+interface RecipeSelectionIdentity {
   path: string;
   sha256: string;
 }
 
 export interface RecipeBinding {
   alias: string;
-  status: string;
-  catalog: RecipeCatalogIdentity;
+  selection: RecipeSelectionIdentity;
   recipePath: string;
   plan: CompiledRecipePlan;
   release: RecipeRelease;
   execution: RecipeExecution[];
 }
 
-export type ExactRecipeRequest = string | {
+export type RecipeRequest = string | {
   id: string;
-  version: string;
   contentSha256?: string;
 };
 
@@ -145,7 +134,6 @@ interface RecipeTaskDocuments {
 
 interface RecipeCheckDetail extends RecipeCheck {
   packId: string;
-  packVersion: string;
   checkGroupId: string;
   role: string;
   source: string;
@@ -161,20 +149,19 @@ interface RecipeCheckDetail extends RecipeCheck {
   semantics: unknown[];
 }
 
-interface ResolvedExactRecipe {
+interface ResolvedRecipe {
   id: string;
-  version: string;
   contentSha256?: string;
 }
 
 export interface RecipeGradeRelease extends RecipeReleaseIdentity {
-  selection: { alias: string; status: string; catalog: RecipeCatalogIdentity };
+  selection: { alias: string; selection: RecipeSelectionIdentity };
   executionId: string;
   checks: RecipeCheck[];
 }
 
 export interface BundledRecipeRelease extends RecipeRelease {
-  selection: { alias: string; status: string; catalog: RecipeCatalogIdentity };
+  selection: { alias: string; selection: RecipeSelectionIdentity };
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -182,8 +169,6 @@ type UnknownRecord = Record<string, unknown>;
 const recipeReleaseSchema = z.looseObject({
   recipeReleaseSchemaVersion: z.number(),
   id: z.string(),
-  version: z.string(),
-  state: z.string(),
   title: z.string(),
   track: z.string(),
   meaningSha256: z.string(),
@@ -309,7 +294,6 @@ function checkDetails(plan: CompiledRecipePlan): RecipeCheckDetail[] {
           executionId: execution.id,
           packId: group.packId,
           ...(group.stablePackId === undefined ? {} : { stablePackId: group.stablePackId }),
-          packVersion: group.packVersion,
           checkGroupId: group.checkGroupId,
           role: group.role,
           ...(group.observations === undefined ? {} : { observations: group.observations }),
@@ -356,8 +340,6 @@ function releaseIdentity(release: RecipeRelease): RecipeReleaseIdentity {
   return {
     recipeReleaseSchemaVersion: release.recipeReleaseSchemaVersion,
     id: release.id,
-    version: release.version,
-    state: release.state,
     track: release.track,
     meaningSha256: release.meaningSha256,
     executionSha256: release.executionSha256,
@@ -528,8 +510,6 @@ export function buildRecipeRelease(recipePath: string, {
   const release = canonicalizeDefinition({
     recipeReleaseSchemaVersion: RECIPE_RELEASE_SCHEMA_VERSION,
     id: plan.recipe.id,
-    version: plan.recipe.version,
-    state: plan.recipe.state,
     title: plan.recipe.title,
     track: plan.recipe.track,
     sequence: plan.recipe.sequence,
@@ -543,9 +523,9 @@ export function buildRecipeRelease(recipePath: string, {
       composedSha256: sha256(`${documents.requirementText}\n${documents.contractText}`),
     },
     components: {
-      fixture: { id: plan.fixture.id, version: plan.fixture.version, state: plan.fixture.state,
+      fixture: { id: plan.fixture.id,
         path: trackRelative(root, fixturePath), sha256: sha256(readFileSync(fixturePath)) },
-      packs: plan.packs.map(pack => ({ id: pack.id, version: pack.version, state: pack.state,
+      packs: plan.packs.map(pack => ({ id: pack.id,
         ...packSource(pack), includeRoles: [...pack.includeRoles].sort(),
         ...(pack.includeCheckGroups === undefined
           ? {} : { includeCheckGroups: [...pack.includeCheckGroups].sort() }),
@@ -566,7 +546,6 @@ export function buildRecipeRelease(recipePath: string, {
       executionId: detail.executionId,
       packId: detail.packId,
       ...(detail.stablePackId === undefined ? {} : { stablePackId: detail.stablePackId }),
-      packVersion: detail.packVersion,
       checkGroupId: detail.checkGroupId,
       role: detail.role,
       ...(detail.observations === undefined ? {} : { observations: detail.observations }),
@@ -584,10 +563,10 @@ export function buildRecipeRelease(recipePath: string, {
 
 function sequentialBasePlan(plan: CompiledRecipePlan, track: { dir: string }, level: number): CompiledRecipePlan {
   if (plan.recipe.sequence?.level !== Number(level) || Number(level) <= 1) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} is not sequential L${level}`);
+    throw new Error(`${plan.recipe.id} is not sequential L${level}`);
   }
   const base = plan.recipe.task.baseRecipe;
-  if (!base) throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no sequential base recipe`);
+  if (!base) throw new Error(`${plan.recipe.id} has no sequential base recipe`);
   const basePlan = compileRecipeFile(join(track.dir, 'composition', base.path), {
     trackRoot: track.dir,
   });
@@ -595,7 +574,7 @@ function sequentialBasePlan(plan: CompiledRecipePlan, track: { dir: string }, le
   for (const check of basePlan.checks) {
     const carried = candidateByKey.get(check.stableKey);
     if (!carried || canonicalDefinitionJson(carried) !== canonicalDefinitionJson(check)) {
-      throw new Error(`${plan.recipe.id}@${plan.recipe.version} does not carry base check ${check.stableKey} exactly`);
+      throw new Error(`${plan.recipe.id} does not carry base check ${check.stableKey} exactly`);
     }
   }
   return basePlan;
@@ -613,14 +592,14 @@ function sequentialUpgradeExecutionPlan(
   level: number,
 ): RecipeExecution[] {
   const base = plan.recipe.task.baseRecipe;
-  if (!base) throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no sequential base recipe`);
+  if (!base) throw new Error(`${plan.recipe.id} has no sequential base recipe`);
   const basePlan = compileRecipeFile(join(track.dir, 'composition', base.path), {
     trackRoot: track.dir,
   });
   const baseLevel = basePlan.recipe.sequence?.level;
   if (baseLevel === undefined || !Number.isInteger(baseLevel)
       || baseLevel < 1 || baseLevel !== Number(level) - 1) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} must inherit exact L${Number(level) - 1}, `
+    throw new Error(`${plan.recipe.id} must inherit exact L${Number(level) - 1}, `
       + `not L${baseLevel}`);
   }
   const baseExecution = executionPlanForRecipe(basePlan, track, baseLevel);
@@ -643,7 +622,7 @@ function sequentialUpgradeExecutionPlan(
         ownership: { kind: 'current' as const, level: Number(level) } };
     }
     if (inherited.length !== stableKeys.length) {
-      throw new Error(`${plan.recipe.id}@${plan.recipe.version} execution ${execution.id} `
+      throw new Error(`${plan.recipe.id} execution ${execution.id} `
         + 'mixes inherited and current-level checks');
     }
     const origins = new Set<number>();
@@ -653,7 +632,7 @@ function sequentialUpgradeExecutionPlan(
       origins.add(origin);
     }
     if (origins.size !== 1) {
-      throw new Error(`${plan.recipe.id}@${plan.recipe.version} execution ${execution.id} `
+      throw new Error(`${plan.recipe.id} execution ${execution.id} `
         + `mixes checks owned by levels ${[...origins].sort((a, b) => a - b).join(', ')}`);
     }
     return { id: execution.id, source: execution.source,
@@ -668,7 +647,7 @@ export function executionPlanForRecipe(
 ): RecipeExecution[] {
   const sequenceLevel = plan.recipe.sequence?.level;
   if (sequenceLevel !== undefined && sequenceLevel !== Number(level)) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} is sequential L${sequenceLevel}, not L${level}`);
+    throw new Error(`${plan.recipe.id} is sequential L${sequenceLevel}, not L${level}`);
   }
   if (sequenceLevel !== undefined && sequenceLevel > 1) {
     return sequentialUpgradeExecutionPlan(plan, track, level);
@@ -692,200 +671,80 @@ export function executionPlanForRelease(recipePath: string, {
   return executionPlanForRecipe(plan, { dir: root }, Number(level));
 }
 
-function assertInitialSequentialBase(
-  plan: CompiledRecipePlan,
-  promotionCatalog: CompiledPromotionCatalog,
-  track: { dir: string },
-  level: number,
-): void {
-  const numericLevel = Number(level);
-  if (numericLevel <= 1) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} cannot have a base at L${numericLevel}`);
+function assertSequentialBase(plan: CompiledRecipePlan, selection: CompiledRecipeSelectionCatalog,
+  track: Track, level: number): void {
+  if (Number(level) <= 1) return;
+  const base = plan.recipe.task.baseRecipe;
+  const alias = `L${Number(level) - 1}`;
+  const selected = selection.entries.filter(entry => entry.alias === alias);
+  if (!base || selected.length !== 1) throw new Error(`${plan.recipe.id} requires one ${alias} base recipe`);
+  sequentialBasePlan(plan, track, level);
+  const current = selected[0];
+  if (!current || base.id !== current.recipe.id) {
+    throw new Error(`${plan.recipe.id} does not select the current ${alias} recipe`);
   }
-  const lowerAlias = `L${numericLevel - 1}`;
-  const currentBase = promotionCatalog.entries.filter(entry =>
-    entry.alias === lowerAlias && entry.status !== 'retired');
-  if (currentBase.length !== 1) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} sequential L${numericLevel} `
-      + `requires exactly one current ${lowerAlias} base; found ${currentBase.length}`);
-  }
-  const embedded = sequentialBasePlan(plan, track, level);
-  const selected = currentBase[0];
-  if (!selected) throw new Error(`${lowerAlias} base selection disappeared`);
-  if (embedded.recipe.id !== selected.recipe.id || embedded.recipe.version !== selected.recipe.version) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} sequential L${numericLevel} base `
-      + `${embedded.recipe.id}@${embedded.recipe.version} is not current ${lowerAlias} `
-      + `${selected.recipe.id}@${selected.recipe.version}`);
-  }
-  const baseRecipe = plan.recipe.task.baseRecipe;
-  if (!baseRecipe) throw new Error(`${plan.recipe.id}@${plan.recipe.version} lost its base recipe`);
-  const embeddedRelease = buildRecipeRelease(join(track.dir, 'composition', baseRecipe.path), {
-    trackRoot: track.dir,
-  });
-  const currentRelease = buildRecipeRelease(join(track.dir, 'composition', selected.recipe.path), {
-    trackRoot: track.dir,
-  });
-  if (embeddedRelease.contentSha256 !== currentRelease.contentSha256) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} sequential L${numericLevel} `
-      + `does not bind the exact current ${lowerAlias} content`);
+  const embedded = buildRecipeRelease(join(track.dir, 'composition', base.path), { trackRoot: track.dir });
+  const resolved = buildRecipeRelease(join(track.dir, 'composition', current.recipe.path), { trackRoot: track.dir });
+  if (embedded.contentSha256 !== resolved.contentSha256) {
+    throw new Error(`${plan.recipe.id} does not bind the current ${alias} content`);
   }
 }
 
-function assertSequentialContinuity(
-  plan: CompiledRecipePlan,
-  previousPlans: CompiledRecipePlan[],
-  track: Track,
-  level: number,
-): void {
-  if (previousPlans.length === 0) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no sequential L${level} baseline`);
-  }
-  for (const previousPlan of previousPlans) {
-    sequentialBasePlan(previousPlan, track, level);
-  }
-  const basePlan = sequentialBasePlan(plan, track, level);
-  const retainedLevelChecks = previousPlans.flatMap(previousPlan => {
-    const previousBase = previousPlan.recipe.task.baseRecipe;
-    if (!previousBase) {
-      throw new Error(`${previousPlan.recipe.id}@${previousPlan.recipe.version} has no L${level} base recipe`);
-    }
-    const previousBasePlan = compileRecipeFile(join(track.dir, 'composition', previousBase.path), {
-      trackRoot: track.dir,
-    });
-    const previousBaseKeys = new Set(previousBasePlan.checks.map(check => check.stableKey));
-    return previousPlan.checks.filter(check => !previousBaseKeys.has(check.stableKey));
-  });
-  const required = new Set([
-    ...basePlan.checks.map(check => check.stableKey),
-    ...retainedLevelChecks.map(check => check.stableKey),
-  ]);
-  const actual = new Set(plan.checks.map(check => check.stableKey));
-  const missing = [...required].filter(stableKey => !actual.has(stableKey));
-  const added = [...actual].filter(stableKey => !required.has(stableKey));
-  if (missing.length || added.length) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} changes the sequential L${level} check set`);
-  }
-  const candidate = new Map(plan.checks.map(check => [check.stableKey, check]));
-  for (const previous of retainedLevelChecks) {
-    const next = candidate.get(previous.stableKey);
-    if (!next) throw new Error(`${plan.recipe.id}@${plan.recipe.version} lost check ${previous.stableKey}`);
-    if (next.points < previous.points || (previous.points > 0 && next.points !== previous.points)) {
-      throw new Error(`${plan.recipe.id}@${plan.recipe.version} changes the established score for ${previous.stableKey}`);
-    }
-  }
-}
-
-export function validateExactRecipeRequest(requested: unknown): ResolvedExactRecipe | null {
+export function validateRecipeRequest(requested: unknown): ResolvedRecipe | null {
   if (requested === null || requested === undefined) return null;
-  if (typeof requested === 'string') {
-    const separator = requested.lastIndexOf('@');
-    if (separator < 1 || separator === requested.length - 1) {
-      throw new Error('--recipe must be an exact <id>@<version> reference');
-    }
-    return { id: requested.slice(0, separator), version: requested.slice(separator + 1) };
+  if (typeof requested === 'string') return { id: requested };
+  if (!record(requested) || typeof requested.id !== 'string') {
+    throw new Error('recipe selection requires an id');
   }
-  if (!record(requested)
-    || typeof requested.id !== 'string' || typeof requested.version !== 'string') {
-    throw new Error('exact recipe selection requires an id and version');
-  }
-  const fields = new Set(['id', 'version', 'contentSha256']);
-  if (Object.keys(requested).some(field => !fields.has(field))) {
-    throw new Error('exact recipe selection contains an unknown field');
+  if (Object.keys(requested).some(field => !new Set(['id', 'contentSha256']).has(field))) {
+    throw new Error('recipe selection contains an unknown field');
   }
   const contentSha256 = requested.contentSha256;
-  if (contentSha256 !== undefined
-    && (typeof contentSha256 !== 'string' || !SHA256.test(contentSha256))) {
-    throw new Error('exact recipe selection contentSha256 must be a SHA-256 digest');
+  if (contentSha256 !== undefined && (typeof contentSha256 !== 'string' || !SHA256.test(contentSha256))) {
+    throw new Error('recipe selection contentSha256 must be a SHA-256 digest');
   }
-  return { id: requested.id, version: requested.version,
-    ...(contentSha256 !== undefined ? { contentSha256 } : {}) };
+  return { id: requested.id, ...(contentSha256 === undefined ? {} : { contentSha256 }) };
 }
 
-// Resolve either the promoted level alias or an exact catalog release.
-export function resolveRecipeRelease(
-  track: Track,
-  level: number,
-  requested: ExactRecipeRequest | null = null,
-): RecipeBinding | null {
-  const catalogPath = join(track.dir, 'composition', 'promotions.json');
-  if (!existsSync(catalogPath)) return null;
-  let selectedCatalogPath = catalogPath;
-  const promotionCatalog = compilePromotionFile(catalogPath, { trackRoot: track.dir });
-  let catalog = promotionCatalog;
+export function resolveRecipeRelease(track: Track, level: number,
+  requested: RecipeRequest | null = null, mode: 'sequential' | 'dependency' | null = null):
+  RecipeBinding | null {
   const alias = `L${Number(level)}`;
-  const exact = validateExactRecipeRequest(requested);
-  if (!exact && !catalog.entries.some(entry => entry.alias === alias)) return null;
-  const promoted = catalog.entries.filter(entry => entry.alias === alias && entry.status === 'promoted');
-  const candidates = catalog.entries.filter(entry => entry.alias === alias && entry.status === 'candidate');
-  let choices = exact
-    ? catalog.entries.filter(entry => entry.alias === alias && entry.recipe.id === exact.id
-      && entry.recipe.version === exact.version && entry.status !== 'retired')
-    : (promoted.length ? promoted : candidates);
-  const candidateCatalogPath = join(track.dir, 'composition', 'candidates.json');
-  if (exact && choices.length === 0 && existsSync(candidateCatalogPath)) {
-    const candidateCatalog = compilePromotionFile(candidateCatalogPath, { trackRoot: track.dir });
-    choices = candidateCatalog.entries.filter(entry => entry.alias === alias
-      && entry.recipe.id === exact.id && entry.recipe.version === exact.version
-      && entry.status !== 'retired');
-    if (choices.length) {
-      catalog = candidateCatalog;
-      selectedCatalogPath = candidateCatalogPath;
-    }
-  }
-  if (choices.length !== 1) {
-    const kind = exact ? `catalogued ${exact.id}@${exact.version}`
-      : `${promoted.length ? 'promoted' : 'candidate'} recipe`;
-    throw new Error(`${alias} requires exactly one ${kind}; found ${choices.length}`);
-  }
-  const selection = choices[0];
-  if (!selection) throw new Error(`${alias} recipe selection disappeared`);
-  const recipePath = join(track.dir, 'composition', selection.recipe.path);
+  const exact = validateRecipeRequest(requested);
+  const modes = mode ? [mode] : exact ? ['sequential', 'dependency'] as const : ['sequential'] as const;
+  const choices = modes.flatMap(selectionMode => {
+    const path = join(track.dir, 'composition', `${selectionMode}.json`);
+    if (!existsSync(path)) return [];
+    const catalog = compileRecipeSelectionFile(path, { trackRoot: track.dir });
+    return catalog.entries.filter(entry => entry.alias === alias
+      && (!exact || entry.recipe.id === exact.id)).map(entry => ({ catalog, entry, path }));
+  });
+  if (!choices.length && !exact) return null;
+  if (choices.length !== 1) throw new Error(`${alias} requires exactly one selected recipe; found ${choices.length}`);
+  const choice = choices[0];
+  if (!choice) throw new Error(`${alias} recipe selection disappeared`);
+  const { catalog, entry: selected, path: selectionPath } = choice;
+  const recipePath = join(track.dir, 'composition', selected.recipe.path);
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
-  const sequenceLevel = plan.recipe.sequence?.level;
-  if (sequenceLevel !== undefined && sequenceLevel !== Number(level)) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} is sequential L${sequenceLevel}, not ${alias}`);
+  if (plan.recipe.sequence?.level !== undefined && plan.recipe.sequence.level !== Number(level)) {
+    throw new Error(`${plan.recipe.id} is sequential L${plan.recipe.sequence.level}, not ${alias}`);
   }
-  if (sequenceLevel !== undefined && sequenceLevel > 1) {
-    if (selection.status === 'candidate' && promoted.length > 0) {
-      const promotedEntry = promoted[0];
-      if (!promotedEntry) throw new Error(`${alias} promoted recipe selection disappeared`);
-      const promotedPlan = compileRecipeFile(join(track.dir, 'composition', promotedEntry.recipe.path),
-        { trackRoot: track.dir });
-      assertSequentialContinuity(plan, [promotedPlan], track, level);
-    } else {
-      const previousPlans = promotionCatalog.entries
-        .filter(entry => entry.alias === alias && entry.status === 'retired')
-        .map(entry => compileRecipeFile(join(track.dir, 'composition', entry.recipe.path),
-          { trackRoot: track.dir }));
-      if (previousPlans.length === 0) assertInitialSequentialBase(plan, promotionCatalog, track, level);
-      else assertSequentialContinuity(plan, previousPlans, track, level);
-    }
-  } else if (sequenceLevel === undefined && (!plan.packs.length
-    || plan.packs.some(pack => pack.moduleType === undefined
-      || !['feature', 'specification'].includes(pack.moduleType)))) {
-    throw new Error(`${plan.recipe.id}@${plan.recipe.version} is neither sequential nor modular`);
+  if (plan.recipe.sequence?.level && plan.recipe.sequence.level > 1) {
+    assertSequentialBase(plan, catalog, track, level);
   }
   const release = buildRecipeRelease(recipePath, { trackRoot: track.dir });
   if (exact?.contentSha256 && release.contentSha256 !== exact.contentSha256) {
-    throw new Error(`${exact.id}@${exact.version} content changed: expected ${exact.contentSha256}, `
-      + `resolved ${release.contentSha256}`);
+    throw new Error(`${exact.id} content changed: expected ${exact.contentSha256}, resolved ${release.contentSha256}`);
   }
-  return {
-    alias,
-    status: selection.status,
-    catalog: { ...catalog.catalog, path: trackRelative(track.dir, selectedCatalogPath),
-      sha256: sha256(readFileSync(selectedCatalogPath)) },
-    recipePath,
-    plan,
-    execution: executionPlanForRecipe(plan, track, level),
-    release,
-  };
+  return { alias, selection: { path: trackRelative(track.dir, selectionPath),
+    sha256: sha256(readFileSync(selectionPath)) }, recipePath, plan,
+    execution: executionPlanForRecipe(plan, track, level), release };
 }
 
 export function requireRecipeRelease(
   track: Track,
   level: number,
-  requested: ExactRecipeRequest | null = null,
+  requested: RecipeRequest | null = null,
 ): RecipeBinding {
   const binding = resolveRecipeRelease(track, level, requested);
   if (!binding) {
@@ -905,7 +764,7 @@ export function gradeRecipeRelease(
   if (!checks.length) throw new Error(`recipe ${binding.release.id} has no execution ${executionId}`);
   const release = canonicalizeDefinition({
     ...recipeReleaseIdentity(binding.release),
-    selection: { alias: binding.alias, status: binding.status, catalog: binding.catalog },
+    selection: { alias: binding.alias, selection: binding.selection },
     executionId,
     checks,
   });
@@ -918,7 +777,7 @@ export function resolveGradeRecipeArtifactBinding(
   level: number,
   specPath: string,
   featureId: number | null = null,
-  requested: ExactRecipeRequest | null = null,
+  requested: RecipeRequest | null = null,
 ): { release: RecipeGradeRelease; sourceRelease: RecipeRelease } | null {
   const binding = resolveRecipeRelease(track, level, requested);
   if (!binding) return null;
@@ -926,7 +785,7 @@ export function resolveGradeRecipeArtifactBinding(
   const execution = binding.plan.execution.find(candidate =>
     realpathSync(join(track.dir, candidate.source)) === absoluteSpec);
   if (!execution) {
-    throw new Error(`recipe ${binding.release.id}@${binding.release.version} does not select scenario ${specPath}`);
+    throw new Error(`recipe ${binding.release.id} does not select scenario ${specPath}`);
   }
   const gradeRelease = gradeRecipeRelease(binding, execution.id, featureId);
   if (!gradeRelease) throw new Error(`recipe ${binding.release.id} grade release disappeared`);
@@ -941,7 +800,7 @@ export function resolveGradeRecipeRelease(
   level: number,
   specPath: string,
   featureId: number | null = null,
-  requested: ExactRecipeRequest | null = null,
+  requested: RecipeRequest | null = null,
 ): RecipeGradeRelease | null {
   return resolveGradeRecipeArtifactBinding(track, level, specPath, featureId, requested)?.release ?? null;
 }
@@ -950,7 +809,7 @@ export function bundleRecipeRelease(binding: RecipeBinding | null): BundledRecip
   if (!binding) return null;
   const release = canonicalizeDefinition({
     ...binding.release,
-    selection: { alias: binding.alias, status: binding.status, catalog: binding.catalog },
+    selection: { alias: binding.alias, selection: binding.selection },
   });
   assertBundledRecipeRelease(release);
   return release;

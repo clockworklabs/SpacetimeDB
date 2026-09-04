@@ -126,10 +126,9 @@ export function auditReferenceRun(output: string, fixture: ReferenceFixture,
   }
   if (!criteria.length) failures.push('no scenario criteria were recorded');
   if (release) {
-    const expectedRecipe = { id: release.id, version: release.version,
-      contentSha256: release.contentSha256 };
+    const expectedRecipe = { id: release.id, contentSha256: release.contentSha256 };
     const actualRecipe = bundle.selection?.recipe;
-    if (actualRecipe?.id !== expectedRecipe.id || actualRecipe?.version !== expectedRecipe.version
+    if (actualRecipe?.id !== expectedRecipe.id
         || actualRecipe?.contentSha256 !== expectedRecipe.contentSha256) {
       failures.push('grading bundle recipe identity does not match the requested release');
     }

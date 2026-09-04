@@ -1,18 +1,18 @@
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "kind": "campaign-manifest",
   "id": "dependency-model-free-proof",
   "version": "1.0.0",
   "state": "draft",
   "title": "Internal dependency campaign proof",
   "track": "ecommerce",
-  "mode": { "id": "dependency", "version": "4.3.0", "workSelection": "progressive" },
+  "mode": { "id": "dependency", "workSelection": "progressive" },
   "repair": { "selection": "feature", "budget": { "total": 2, "perFeature": 1 } },
   "selection": {
     "levels": [
       {
         "level": 1,
-        "recipe": "ecommerce.sequential-l1@2.5.0"
+        "recipe": "ecommerce.sequential-l1"
       }
     ]
   },
@@ -20,8 +20,6 @@
     "schemaVersion": 1,
     "kind": "feature-catalog",
     "id": "dependency-model-free-proof",
-    "version": "2.0.0",
-    "state": "draft",
     "title": "Internal dependency campaign proof",
     "nodes": [
       {
@@ -29,7 +27,7 @@
         "title": "Accounts",
         "questline": "identity",
         "dependencies": [],
-        "featureRefs": ["ecommerce.feature.accounts@1.1.0"],
+        "featureRefs": ["ecommerce.feature.accounts"],
         "promptModules": [],
         "gradingChecks": [
           {
@@ -44,11 +42,11 @@
         "title": "Catalog",
         "questline": "catalog",
         "dependencies": [],
-        "featureRefs": ["ecommerce.feature.catalog@1.1.0"],
+        "featureRefs": ["ecommerce.feature.catalog-items"],
         "promptModules": [],
         "gradingChecks": [
           {
-            "id": "ecommerce.feature.catalog.catalog.2a",
+            "id": "ecommerce.feature.catalog.catalog-values.2a",
             "points": 1,
             "role": "feature"
           }
@@ -81,9 +79,8 @@
   "conditions": [
     {
       "id": "model-free",
-      "version": "1.0.0",
-      "guidanceProfile": "model-free-stub@1.1.0",
-      "repairPolicy": "scored-only@1.1.0"
+      "guidanceProfile": "model-free-stub",
+      "repairPolicy": "scored-only"
     }
   ],
   "repetitions": 1,

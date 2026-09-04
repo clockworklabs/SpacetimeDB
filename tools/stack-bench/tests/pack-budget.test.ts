@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.js';
 import { parsePackBudgetArgs } from '../commands/pack-budget.js';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, recommendPackBudgets }
@@ -44,12 +44,12 @@ function runtime(stackIndex: number, repetition: number): PackRuntime {
 
 function reference(stack: string, stackIndex: number,
   overrides: Partial<ReferenceQualificationPayload> = {}): Artifact<ReferenceQualificationPayload> {
-  const identity = calibrationQualificationIdentity(calibration);
   const fixture = calibration.references.entries.find(entry => entry.backend === stack);
   assert(fixture);
   return createArtifact({ kind: 'reference_qualification', id: `reference-${stack}`,
     identities: recipeArtifactIdentities(binding.release, {
-      engine: currentEngineIdentity(), calibration: identity, stackAdapter: { id: stack },
+      engine: currentEngineIdentity(), calibration: { id: calibration.id,
+        sha256: calibration.contentSha256 }, stackAdapter: { id: stack },
       fixture: { id: fixture.id, sha256: fixture.sourceSha256 },
     }),
     payload: { fixture: fixture.id, fixtureSha256: fixture.sourceSha256,
@@ -63,7 +63,7 @@ function reference(stack: string, stackIndex: number,
 function exactEvidence(): PackBudgetEvidence[] {
   return ['mongodb', 'postgres', 'spacetime'].map((stack, index) => ({
     path: `${stack}.json`, sha256: String(index).repeat(64), artifact: reference(stack, index),
-    runtimeCalibration: { id: calibration.id, version: calibration.version,
+    runtimeCalibration: { id: calibration.id,
       sha256: calibration.contentSha256 },
   }));
 }
@@ -144,9 +144,9 @@ test('budget CLI parsing requires explicit unique evidence and output', () => {
   assert.equal(parsed.command, 'recommend');
   assert.equal(parsed.evidence.length, 1);
   assert.equal(parsePackBudgetArgs(['node', 'pack-budget.js', 'recommend', '--track', 'ecommerce',
-    '--level', '1', '--recipe', 'ecommerce.sequential-l1@2.5.0',
+    '--level', '1', '--recipe', 'ecommerce.sequential-l1',
     '--evidence', 'mongo.json', '--out', 'budgets.json']).recipe,
-  'ecommerce.sequential-l1@2.5.0');
+  'ecommerce.sequential-l1');
   assert.throws(() => parsePackBudgetArgs(['node', 'pack-budget.js', 'recommend',
     '--track', 'ecommerce', '--level', '1']), /usage/);
 });
@@ -167,7 +167,7 @@ test('budget evidence loader verifies retained raw runs against their summary', 
       writeArtifact(join(output, 'grading', 'bundle.json'), { kind: 'grade_bundle',
         id: `bundle-${run.repetition}`, identities: recipeArtifactIdentities(binding.release, {
           engine: artifact.identities.engine, stackAdapter: artifact.identities.stackAdapter,
-          calibration: { id: calibration.id, version: calibration.version,
+          calibration: { id: calibration.id,
             sha256: calibration.contentSha256 } }),
         payload: { packRuntime: run.packRuntime } });
     }
@@ -183,7 +183,7 @@ test('budget evidence loader verifies retained raw runs against their summary', 
     const changed = createArtifact({ kind: 'grade_bundle', id: 'changed',
       identities: recipeArtifactIdentities(binding.release, {
         engine: artifact.identities.engine, stackAdapter: artifact.identities.stackAdapter,
-        calibration: { id: calibration.id, version: calibration.version,
+        calibration: { id: calibration.id,
           sha256: calibration.contentSha256 } }),
       payload: { packRuntime: runtime(2, 2) } });
     writeArtifact(bundlePath, changed);

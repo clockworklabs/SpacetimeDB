@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "recipe-selection",
+  "entries": [
+    { "alias": "L1", "recipe": { "path": "recipes/progression-catalog.json", "id": "ecommerce.progression-catalog" } },
+    { "alias": "L2", "recipe": { "path": "recipes/progression-catalog.json", "id": "ecommerce.progression-catalog" } },
+    { "alias": "L3", "recipe": { "path": "recipes/progression-catalog.json", "id": "ecommerce.progression-catalog" } },
+    { "alias": "L4", "recipe": { "path": "recipes/progression-catalog.json", "id": "ecommerce.progression-catalog" } },
+    { "alias": "L5", "recipe": { "path": "recipes/progression-catalog.json", "id": "ecommerce.progression-catalog" } },
+    { "alias": "L6", "recipe": { "path": "recipes/progression-catalog.json", "id": "ecommerce.progression-catalog" } }
+  ]
+}

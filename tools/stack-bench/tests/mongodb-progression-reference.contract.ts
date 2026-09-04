@@ -25,10 +25,10 @@ function visit(value: unknown, callback: (item: Record<string, unknown>) => void
 }
 
 test('the MongoDB progression reference exposes every graph testing hook', () => {
-  const graph = compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce-2.0.3.json'));
+  const graph = compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce.json'));
   const packs = new Map(readdirSync(packRoot).filter(name => name.endsWith('.json')).map(name => {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-    return [`${pack.id}@${pack.version}`, pack];
+    return [pack.id, pack];
   }));
   const packRefs = new Set(graph.nodes.flatMap(node => node.featureRefs));
   const testIds = new Set<string>();

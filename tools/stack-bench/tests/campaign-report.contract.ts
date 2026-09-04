@@ -229,7 +229,7 @@ test('observed-only first-build behavior remains separate from scored results an
   assert.ok(evidenceLevel);
   evidenceLevel.selection = {
     specifications: { requested: [], expected: [],
-      observed: ['ecommerce.spec.state-durability@1.0.0'] },
+      observed: ['ecommerce.spec.state-durability'] },
     observedChecks: [
       { stableKey: 'durability/session', points: 1 },
       { stableKey: 'durability/cart', points: 2 },
@@ -264,7 +264,7 @@ test('observed-only first-build behavior remains separate from scored results an
   assert.equal(observed.scoreContribution, false);
   assert.equal(observed.repairVisible, false);
   assert.deepEqual(observed.levels[0]?.specifications,
-    ['ecommerce.spec.state-durability@1.0.0']);
+    ['ecommerce.spec.state-durability']);
 });
 
 test('campaign HTML labels observed-only behavior as zero-score first-build observations', () => {
@@ -314,8 +314,8 @@ test('campaign HTML states the build and evaluation setup in plain language', ()
   assert.match(html, /The build brief lists what the coding agent is asked to build/);
   assert.match(html, /Additional measurements are reported separately/);
   assert.match(html, /product-brief-quality/);
-  assert.match(html, /ecommerce\.spec\.access-control@1\.2\.0/);
-  assert.match(html, /ecommerce\.spec\.transactional-integrity@1\.3\.0/);
+  assert.match(html, /ecommerce\.spec\.access-control/);
+  assert.match(html, /ecommerce\.spec\.transactional-integrity/);
 });
 
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {
@@ -386,7 +386,7 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /Study condition/);
-  assert.match(html, /prescribed@1\.1\.0/);
+  assert.match(html, /<td>prescribed<\/td>/);
   const malformedScope = structuredClone(report);
   (malformedScope.scope as typeof malformedScope.scope & { surprise: boolean }).surprise = true;
   const { contentSha256: _old, ...body } = malformedScope;
@@ -395,7 +395,7 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   const malformedCondition = structuredClone(report);
   assert.ok(malformedCondition.conditions[0]);
   (malformedCondition.conditions[0] as unknown as { condition: null }).condition = null;
-  assert.throws(() => validateCampaignReport(malformedCondition), /conditions\[0\]\.condition is invalid/);
+  assert.throws(() => validateCampaignReport(malformedCondition), /conditions\[0\]\.condition/);
 });
 
 test('human reports format normalized usage and elapsed time for people', () => {

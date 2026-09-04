@@ -3,19 +3,16 @@
 Reference applications validate the grader. They are simple, auditable fixtures,
 not product examples or recommended application designs.
 
-`registry.json` is the source of truth for fixture identity and status:
-
-- `blocked`: no acceptable source and check set exists;
-- `candidate`: exact source is present, but qualification is incomplete;
-- `active`: the exact source passed its required reference and mutation gates.
+`registry.json` is the source of truth for fixture identity, source, and supported
+recipes. Qualification evidence proves whether an exact source is usable.
 
 One cumulative source tree can serve several recipes when each registry entry
 binds the same source hash. Qualification evidence remains separate for each
 recipe and calibration.
 
-## Promotion requirements
+## Qualification requirements
 
-An active fixture must satisfy all of these conditions:
+A fixture must satisfy all of these conditions before it qualifies a run:
 
 1. Dependencies install from committed lockfiles in the benchmark build image.
 2. The app starts in Docker with run-specific ports and database or module names.
@@ -61,8 +58,8 @@ checks the clean baseline, then applies each selected defect through the same
 isolated Docker lifecycle.
 
 During development, select only affected defects with `--mutation-id <id>`.
-Targeted output is diagnostic evidence. The complete set requires
-`--release-candidate` and is used only for release qualification.
+Targeted output is diagnostic evidence. Use `--full-mutations` only when the
+complete defect set is required.
 
 Do not edit a registered reference during qualification. A changed source hash
 requires new evidence.

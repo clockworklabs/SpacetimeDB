@@ -30,8 +30,6 @@ interface FixtureDefinition {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   policy: string;
   repair: RepairPlanInput;
@@ -45,8 +43,8 @@ const node = (id: string, dependencies: string[], questline: string,
   points: number[] = [1], requires: string[] = []): FixtureNode => ({
   id, title: id, questline,
   dependencies: dependencies.map(parent => ({ id: parent, reason: `${id} requires ${parent}` })),
-  featureRefs: [`features.${id}@1.0.0`],
-  promptModules: [`prompt.${id}@1.0.0`],
+  featureRefs: [`features.${id}`],
+  promptModules: [`prompt.${id}`],
   gradingChecks: points.map((value, index) => ({
     id: `check.${id}.${index + 1}`, points: value, role: 'feature',
     ...(requires.length ? { requiresFeatures: requires.map(feature => `features.${feature}`) } : {}),
@@ -64,8 +62,6 @@ const fixture = (): FixtureDefinition => ({
   schemaVersion: 7,
   kind: 'progression-mode',
   id: 'storefront-paths',
-  version: '1.0.0',
-  state: 'draft',
   title: 'Storefront paths',
   policy: 'dependency-graph',
   repair: { selection: 'feature', budget: { total: 4, perFeature: 1 } },
@@ -210,16 +206,16 @@ test('the graph compiles by depth, then declared order, and the order is identit
   });
   const first = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 2 });
   const second = compileDependencyPolicyInput(repair, catalog, { unchangedFailureLimit: 3 });
-  assert.equal(first.definition.version, '4.3.0');
-  assert.notEqual(first.identity.sha256, second.identity.sha256);
+  assert.equal(first.definition.id, 'dependency-graph');
+  assert.notEqual(first.identity.contentSha256, second.identity.contentSha256);
   // Declared order is repair priority, so it is part of the catalog identity
   // that every campaign binds; reordering the catalog is a new identity.
   const { policy: _p, repair: _r, unchangedFailureLimit: _l,
     workSelection: _w, ...declaredCatalog } = declared;
   const declaredIdentity = compileFeatureCatalogInput({
     ...declaredCatalog, schemaVersion: 1, kind: 'feature-catalog',
-  }).identity.sha256;
-  assert.notEqual(declaredIdentity, catalog.identity.sha256);
+  }).identity.contentSha256;
+  assert.notEqual(declaredIdentity, catalog.identity.contentSha256);
 });
 
 test('invalid graphs and repair plans fail before execution', async t => {
@@ -242,7 +238,6 @@ test('invalid graphs and repair plans fail before execution', async t => {
     ['unknown questline', value => { value.nodes[0]!.questline = 'missing'; }, /unknown questline/],
     ['empty questline', value => { value.questlines.push({ id: 'empty', title: 'Empty' }); },
       /owns no nodes/],
-    ['bad version', value => { value.version = 'latest'; }, /exact semantic version/],
     ['no feature check', value => {
       value.nodes[1]!.gradingChecks[0]!.role = 'guarantee';
     }, /at least one feature check/],

@@ -15,19 +15,18 @@ const SOURCE = loadTrack('ecommerce').dir;
 const CLI = compiledEntrypoint('commands', 'composition-cli.js');
 
 interface MutableRecipeFile {
-  state: string;
-  fixture: { path: string; id: string; version: string };
+  fixture: { path: string; id: string };
   packs: Array<{ id: string; [key: string]: unknown }>;
   [key: string]: unknown;
 }
 
 test('pack and recipe validation resolve their full source context without writing', () => {
   const before = hashDirectory(SOURCE);
-  const pack = validatePackFile(join(SOURCE, 'composition', 'packs', 'feature-accounts-1.1.0.json'),
+  const pack = validatePackFile(join(SOURCE, 'composition', 'packs', 'feature-accounts.json'),
     { trackRoot: SOURCE });
   assert.equal(pack.id, 'ecommerce.feature.accounts');
   assert(pack.criteria > 0);
-  const recipe = validateRecipeFile(join(SOURCE, 'composition', 'recipes', 'sequential-l1-2.5.0.json'),
+  const recipe = validateRecipeFile(join(SOURCE, 'composition', 'recipes', 'sequential-l1.json'),
     { trackRoot: SOURCE });
   assert.equal(recipe.release.checkCatalog.length, 48);
   assert.equal(recipe.release.checkCatalog.reduce((total, check) => total + check.points, 0), 58);
@@ -35,7 +34,7 @@ test('pack and recipe validation resolve their full source context without writi
 });
 
 test('the command surface runs without Docker or PATH access', () => {
-  const recipe = join(SOURCE, 'composition', 'recipes', 'sequential-l1-2.5.0.json');
+  const recipe = join(SOURCE, 'composition', 'recipes', 'sequential-l1.json');
   const result = spawnSync(process.execPath,
     [CLI, 'recipe', 'validate', recipe, '--track-root', SOURCE, '--json'], {
       encoding: 'utf8', env: { ...process.env, PATH: '' },
@@ -48,7 +47,7 @@ test('the command surface runs without Docker or PATH access', () => {
 
 test('recipe show gives pack/check selections their own stable scope identity', () => {
   const release = validateRecipeFile(
-    join(SOURCE, 'composition', 'recipes', 'sequential-l1-2.5.0.json'), { trackRoot: SOURCE }).release;
+    join(SOURCE, 'composition', 'recipes', 'sequential-l1.json'), { trackRoot: SOURCE }).release;
   const selected = selectRecipeRelease(release, { packIds: ['ecommerce.feature.accounts'] });
   assert.equal(selected.contentSha256, release.contentSha256);
   assert.equal(selected.selection.recipe.contentSha256, release.contentSha256);
@@ -73,7 +72,7 @@ test('recipe show gives pack/check selections their own stable scope identity', 
   assert(full.checkCatalog.every(check => check.points > 0));
   assert.throws(() => selectRecipeRelease(release, { packIds: ['missing'] }), /no pack/);
 
-  const shown = showRecipeFile(join(SOURCE, 'composition', 'recipes', 'sequential-l1-2.5.0.json'), {
+  const shown = showRecipeFile(join(SOURCE, 'composition', 'recipes', 'sequential-l1.json'), {
     trackRoot: SOURCE, packIds: ['ecommerce.feature.accounts'],
   });
   assert.notEqual(shown.builderTask.sha256, shown.task.composedSha256);
@@ -87,12 +86,10 @@ test('recipe diff separates categories and names exact calibration work invalida
   const root = join(temporary, 'ecommerce');
   try {
     cpSync(SOURCE, root, { recursive: true });
-    const original = join(root, 'composition', 'recipes', 'sequential-l1-2.5.0.json');
+    const original = join(root, 'composition', 'recipes', 'sequential-l1.json');
     const changed = join(root, 'composition', 'recipes', 'l1-fixture-variant.json');
     const value = JSON.parse(readFileSync(original, 'utf8')) as MutableRecipeFile;
-    value.state = 'draft';
-    value.fixture = { path: '../fixtures/operations-1.0.0.json',
-      id: 'ecommerce.operations', version: '1.0.0' };
+    value.fixture = { path: '../fixtures/operations.json', id: 'ecommerce.operations' };
     writeFileSync(changed, `${JSON.stringify(value, null, 2)}\n`);
 
     const diff = diffRecipeFiles(original, changed, { trackRoot: root });
@@ -109,7 +106,7 @@ test('recipe diff separates categories and names exact calibration work invalida
     assert.equal(calibration.id, 'ecommerce.sequential-l1-calibration');
     assert.deepEqual(calibration.invalidated, [
       'recipe binding', 'fixture binding',
-      'reference repetitions', 'mutation repetitions', 'null repetitions', 'promotion decision',
+      'reference repetitions', 'mutation repetitions', 'null repetitions', 'selection binding',
     ]);
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 });
@@ -119,12 +116,12 @@ test('recipe diff names changed task fragments', () => {
   const root = join(temporary, 'ecommerce');
   try {
     cpSync(SOURCE, root, { recursive: true });
-    const original = join(root, 'composition', 'recipes', 'sequential-l1-2.5.0.json');
+    const original = join(root, 'composition', 'recipes', 'sequential-l1.json');
     const changed = join(root, 'composition', 'recipes', 'l1-renamed-framing.json');
     const value = JSON.parse(readFileSync(original, 'utf8')) as MutableRecipeFile;
     const task = value.task as { framing: { requirements: Array<{ id: string; path: string }> } };
     task.framing.requirements[0]!.id = 'ecommerce.sequential-l1.renamed-framing';
-    task.framing.requirements[0]!.path = 'prompts/modular/l1-features.md';
+    task.framing.requirements[0]!.path = 'prompts/modular/accounts.md';
     writeFileSync(changed, `${JSON.stringify(value, null, 2)}\n`);
     const diff = diffRecipeFiles(original, changed, { trackRoot: root });
     assert.deepEqual(diff.taskFragments.requirements.removed, ['ecommerce.sequential-l1.framing']);

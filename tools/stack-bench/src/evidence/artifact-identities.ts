@@ -9,16 +9,14 @@ type UnknownRecord = Record<string, unknown>;
 
 export interface ArtifactIdentity {
   id: string;
-  version: string | null;
   sha256: string | null;
-  state: string | null;
+  version?: string | null;
+  state?: string | null;
 }
 
 export interface EngineArtifactIdentity extends ArtifactIdentity {
   id: 'stack-bench';
-  version: null;
   sha256: string;
-  state: null;
 }
 
 export const ARTIFACT_IDENTITY_KEYS = Object.freeze([
@@ -32,29 +30,25 @@ export type ArtifactIdentities = Record<ArtifactIdentityKey, ArtifactIdentity | 
 };
 
 const HASH = /^[a-f0-9]{64}$/;
-const identityShape = {
+const authoredIdentityShape = {
   id: z.string().min(1),
-  version: z.string().min(1).nullable().optional(),
   sha256: z.string().regex(HASH).nullable().optional(),
-  state: z.string().min(1).nullable().optional(),
 };
-const identitySchema = z.strictObject(identityShape);
-const completeIdentitySchema = z.strictObject({
-  id: identityShape.id,
-  version: identityShape.version.unwrap(),
-  sha256: identityShape.sha256.unwrap(),
-  state: identityShape.state.unwrap(),
+const authoredIdentitySchema = z.strictObject(authoredIdentityShape);
+const runtimeIdentitySchema = z.strictObject({
+  ...authoredIdentityShape,
+  version: z.string().min(1).nullable().optional(),
+  state: z.string().min(1).nullable().optional(),
 });
-const optionalIdentitySchema = identitySchema.nullable().optional();
 const identitiesSchema = z.strictObject({
-  engine: optionalIdentitySchema,
-  recipe: optionalIdentitySchema,
-  fixture: optionalIdentitySchema,
-  calibration: optionalIdentitySchema,
-  experiment: optionalIdentitySchema,
-  agentAdapter: optionalIdentitySchema,
-  stackAdapter: optionalIdentitySchema,
-  packs: z.array(identitySchema).optional(),
+  engine: authoredIdentitySchema.nullable().optional(),
+  recipe: authoredIdentitySchema.nullable().optional(),
+  fixture: authoredIdentitySchema.nullable().optional(),
+  calibration: authoredIdentitySchema.nullable().optional(),
+  experiment: runtimeIdentitySchema.nullable().optional(),
+  agentAdapter: runtimeIdentitySchema.nullable().optional(),
+  stackAdapter: runtimeIdentitySchema.nullable().optional(),
+  packs: z.array(authoredIdentitySchema).optional(),
 });
 let cachedEngineIdentity: EngineArtifactIdentity | null = null;
 
@@ -70,25 +64,32 @@ function asObject(value: unknown, message: string): UnknownRecord {
   return value;
 }
 
-function identity(value: unknown, at: string, requireComplete: boolean): ArtifactIdentity | null {
+function identity(
+  value: unknown,
+  at: string,
+  requireComplete: boolean,
+  schema: typeof authoredIdentitySchema | typeof runtimeIdentitySchema,
+): ArtifactIdentity | null {
   if (value === null) return null;
-  const fields = ['id', 'version', 'sha256', 'state'] as const;
+  const fields = ['id', 'sha256'] as const;
   if (requireComplete) {
     const candidate = asObject(value, `${at} must be an object or null`);
     for (const field of fields) {
       if (!Object.hasOwn(candidate, field)) fail(`${at}.${field} is required`);
     }
   }
-  const parsed = (requireComplete ? completeIdentitySchema : identitySchema).safeParse(value);
+  const parsed = schema.safeParse(value);
   if (!parsed.success) {
     fail(formatZodError(parsed.error, at));
   }
   const candidate = parsed.data;
+  const version = 'version' in candidate ? candidate.version : undefined;
+  const state = 'state' in candidate ? candidate.state : undefined;
   return {
     id: candidate.id,
-    version: candidate.version ?? null,
     sha256: candidate.sha256 ?? null,
-    state: candidate.state ?? null,
+    ...(typeof version === 'string' || version === null ? { version } : {}),
+    ...(typeof state === 'string' || state === null ? { state } : {}),
   };
 }
 
@@ -114,15 +115,23 @@ export function validateArtifactIdentities(
   const candidate = parsed.data;
   const packsValue = candidate.packs ?? [];
   const normalized: ArtifactIdentities = {
-    engine: identity(candidate.engine ?? null, 'identities.engine', requireComplete),
-    recipe: identity(candidate.recipe ?? null, 'identities.recipe', requireComplete),
-    fixture: identity(candidate.fixture ?? null, 'identities.fixture', requireComplete),
-    calibration: identity(candidate.calibration ?? null, 'identities.calibration', requireComplete),
-    experiment: identity(candidate.experiment ?? null, 'identities.experiment', requireComplete),
-    agentAdapter: identity(candidate.agentAdapter ?? null, 'identities.agentAdapter', requireComplete),
-    stackAdapter: identity(candidate.stackAdapter ?? null, 'identities.stackAdapter', requireComplete),
+    engine: identity(candidate.engine ?? null, 'identities.engine', requireComplete,
+      authoredIdentitySchema),
+    recipe: identity(candidate.recipe ?? null, 'identities.recipe', requireComplete,
+      authoredIdentitySchema),
+    fixture: identity(candidate.fixture ?? null, 'identities.fixture', requireComplete,
+      authoredIdentitySchema),
+    calibration: identity(candidate.calibration ?? null, 'identities.calibration', requireComplete,
+      authoredIdentitySchema),
+    experiment: identity(candidate.experiment ?? null, 'identities.experiment', requireComplete,
+      runtimeIdentitySchema),
+    agentAdapter: identity(candidate.agentAdapter ?? null, 'identities.agentAdapter', requireComplete,
+      runtimeIdentitySchema),
+    stackAdapter: identity(candidate.stackAdapter ?? null, 'identities.stackAdapter', requireComplete,
+      runtimeIdentitySchema),
     packs: packsValue.map((item, index) => {
-      const pack = identity(item, `identities.packs[${index}]`, requireComplete);
+      const pack = identity(item, `identities.packs[${index}]`, requireComplete,
+        authoredIdentitySchema);
       if (pack === null) fail(`identities.packs[${index}] must not be null`);
       return pack;
     }),
@@ -130,12 +139,12 @@ export function validateArtifactIdentities(
   if (requireEngine && normalized.engine === null) fail('identities.engine is required');
   const packIds = new Set<string>();
   for (const pack of normalized.packs) {
-    const key = `${pack.id}@${pack.version ?? ''}:${pack.sha256 ?? ''}`;
+    const key = `${pack.id}:${pack.sha256 ?? ''}`;
     if (packIds.has(key)) fail(`identities.packs duplicates ${key}`);
     packIds.add(key);
   }
   if (sortPacks) {
-    normalized.packs.sort((a, b) => `${a.id}@${a.version ?? ''}`.localeCompare(`${b.id}@${b.version ?? ''}`));
+    normalized.packs.sort((a, b) => a.id.localeCompare(b.id));
   }
   return normalized;
 }
@@ -155,7 +164,7 @@ export function currentEngineIdentity(): EngineArtifactIdentity {
     return !(/\.(?:ts|js|json|ya?ml|sh)$/.test(name) || /(?:^|\/)Dockerfile$/.test(name));
   };
   const executable = hashDirectory(STACK_BENCH_ROOT, { exclude });
-  cachedEngineIdentity = { id: 'stack-bench', version: null, sha256: executable.sha256, state: null };
+  cachedEngineIdentity = { id: 'stack-bench', sha256: executable.sha256 };
   return structuredClone(cachedEngineIdentity);
 }
 
@@ -177,17 +186,14 @@ export function recipeArtifactIdentities(
   const packsValue = components.packs ?? [];
   if (!Array.isArray(packsValue)) fail('recipe release packs must be an array');
   return emptyArtifactIdentities({
-    recipe: { id: release.id, version: release.version,
-      sha256: release.contentSha256, state: release.state },
+    recipe: { id: release.id, sha256: release.contentSha256 },
     fixture: fixture ? {
       id: fixture.id,
-      version: fixture.version,
       sha256: fixture.sha256 ?? null,
-      state: fixture.state,
     } : null,
     packs: packsValue.map((value, index) => {
       const pack = asObject(value, `recipe release packs[${index}] must be an object`);
-      return { id: pack.id, version: pack.version, sha256: pack.sha256 ?? null, state: pack.state };
+      return { id: pack.id, sha256: pack.sha256 ?? null };
     }),
     ...overrides,
   });

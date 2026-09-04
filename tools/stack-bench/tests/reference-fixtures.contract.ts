@@ -9,13 +9,11 @@ import { loadReferenceRegistry, inspectImportedReference, selectReferenceFixture
   from '../src/references/reference-fixtures.js';
 import { resolveReferenceSelection } from '../src/references/reference-selection.js';
 
-test('the reference registry binds its current statuses and provenance', () => {
+test('the reference registry binds its current fixtures and provenance', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 0);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 0);
+  assert.equal(registry.fixtures.length, 3);
   const escaped = structuredClone(registry);
   const escapedFixture = escaped.fixtures[0];
   assert(escapedFixture, 'the registry must contain a fixture');
@@ -24,6 +22,9 @@ test('the reference registry binds its current statuses and provenance', () => {
   escapedFixture.source = { basePath: 'reference-apps/old', patchPath: 'reference-apps/old.json' };
   assert(validateReferenceRegistry(escaped).issues.some(issue =>
     issue.includes('source overlays are not supported')));
+  escapedFixture.status = 'candidate';
+  assert(validateReferenceRegistry(escaped).issues.some(issue =>
+    issue.includes('lifecycle fields are not supported')));
 });
 
 test('reference validation contains malformed input and unsafe execution paths', () => {
@@ -42,7 +43,7 @@ test('a recipe-bound full fixture can serve only its declared progression action
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     for (const level of [1, 2, 3, 4, 5, 6]) {
       assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level,
-        recipe: 'ecommerce.progression-catalog@2.0.3' }).id,
+        recipe: 'ecommerce.progression-catalog' }).id,
       `ecommerce-reference-${backend}`);
     }
   }
@@ -65,42 +66,34 @@ test('a recipe-bound full fixture can serve only its declared progression action
 test('reference selection uses only current recipe fixtures', () => {
   const registry = loadReferenceRegistry();
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.sequential-l1@2.5.0' }).id, 'ecommerce-reference-mongodb');
-  const blocked = structuredClone(registry);
-  const blockedFixture = blocked.fixtures
-    .find(fixture => fixture.id === 'ecommerce-reference-mongodb');
-  assert(blockedFixture, 'the current L1 fixture must exist');
-  blockedFixture.status = 'blocked';
-  assert.throws(() => selectReferenceFixture(blocked, { backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.sequential-l1@2.5.0' }), /exactly one/);
+    recipe: 'ecommerce.sequential-l1' }).id, 'ecommerce-reference-mongodb');
 });
 
-test('default reference tooling follows the current candidate recipe', () => {
+test('default reference tooling follows the current recipe', () => {
   const registry = loadReferenceRegistry();
   const selection = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 1,
   });
-  assert.equal(selection.recipe, 'ecommerce.sequential-l1@2.5.0');
-  assert.equal(selection.binding.status, 'candidate');
+  assert.equal(selection.recipe, 'ecommerce.sequential-l1');
   assert.equal(selection.fixture.id, 'ecommerce-reference-mongodb');
 
   const l2 = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 2,
   });
-  assert.equal(l2.recipe, 'ecommerce.sequential-l2@1.6.0');
+  assert.equal(l2.recipe, 'ecommerce.sequential-l2');
   assert.equal(l2.fixture.id, 'ecommerce-reference-mongodb');
 
   assert.throws(() => resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.sequential-l1@0.0.0',
-  }), /requires exactly one catalogued ecommerce\.sequential-l1@0\.0\.0; found 0/);
+    recipe: 'ecommerce.unknown',
+  }), /exactly one/);
 });
 
 test('the L2 recipe selects one current fixture per backend', () => {
   const registry = loadReferenceRegistry();
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
-      recipe: 'ecommerce.sequential-l2@1.6.0' }).id,
+      recipe: 'ecommerce.sequential-l2' }).id,
     `ecommerce-reference-${backend}`);
   }
 });
@@ -121,7 +114,7 @@ test('reference inspection rejects a symlink that the regular-file hash does not
     }));
     const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
       id: 'linked', backend: 'mongodb', track: 'ecommerce',
-      level: 1, status: 'candidate', targetPath: 'reference-apps/linked', imported: {
+      level: 1, targetPath: 'reference-apps/linked', imported: {
       path: 'reference-apps/linked', sourceSha256: hashDirectory(target).sha256,
     } };
     const link = join(target, 'unchecked-link.txt');
@@ -158,7 +151,7 @@ test('imported fixture inspection requires locks and rejects local or generated 
       server: { directory: 'server' }, client: { directory: 'client' } }));
     const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
       id: 'import', backend: 'mongodb', track: 'ecommerce',
-      level: 1, status: 'candidate', targetPath: 'reference-apps/example', imported: {
+      level: 1, targetPath: 'reference-apps/example', imported: {
       path: 'reference-apps/example', sourceSha256: hashDirectory(target).sha256,
     } };
     assert.equal(inspectImportedReference(fixture, { root }).ok, true);
@@ -198,10 +191,10 @@ test('authored references bind checked-in bytes', () => {
     }));
     const fixture: ReferenceFixture & { imported: { path: string; sourceSha256: string } } = {
       id: 'authored', backend: 'mongodb', track: 'ecommerce', level: 2,
-      status: 'candidate', targetPath: 'reference-apps/authored', mutationManifests: [],
+      targetPath: 'reference-apps/authored', mutationManifests: [],
       origin: { kind: 'authored', note: 'Maintained as a benchmark oracle.' },
       imported: { path: 'reference-apps/authored', sourceSha256: hashDirectory(target).sha256 } };
-    const registry: ReferenceRegistry = { schemaVersion: 4, fixtures: [fixture] };
+    const registry: ReferenceRegistry = { schemaVersion: 5, fixtures: [fixture] };
 
     assert.deepEqual(validateReferenceRegistry(registry, { root }).issues, []);
     const reused = structuredClone(fixture);

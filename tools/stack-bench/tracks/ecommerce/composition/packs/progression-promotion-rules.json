@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.promotion-rules",
+  "moduleType": "feature",
+  "title": "Promotion rules",
+  "description": "Staff-managed bounded promotion codes.",
+  "requiresPacks": [
+    "ecommerce.progression.staff-access",
+    "ecommerce.feature.catalog-items"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 45000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.promotion-rules",
+        "path": "prompts/modular/promotion-rules.md",
+        "order": 2200,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.promotion-rules-hooks",
+        "path": "contracts/promotion-rules.md",
+        "order": 2950,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "values",
+      "stableId": "promotion-rule-values",
+      "source": "scenarios/progression-promotion-rules.json",
+      "feature": 620,
+      "criteria": [
+        "620a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

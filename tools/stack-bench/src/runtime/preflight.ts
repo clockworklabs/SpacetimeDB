@@ -304,7 +304,7 @@ export function runPreflight(
           throw new Error('requested scope does not match the preflight track and levels');
         }
         for (const requested of scope.levels) {
-          const recipe = `${requested.recipe.id}@${requested.recipe.version}`;
+          const recipe = requested.recipe.id;
           const binding = resolveRecipeRelease(track, requested.level, recipe);
           if (!binding || binding.release.contentSha256 !== requested.recipe.contentSha256) {
             throw new Error(`L${requested.level} requested recipe ${recipe} changed`);

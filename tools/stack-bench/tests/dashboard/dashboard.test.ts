@@ -171,7 +171,8 @@ test('campaign facts surface the identity an operator otherwise reads plan.json 
   assert.deepEqual(facts.agents, plan.agents.map(agent => ({ adapter: agent.adapter,
     version: agent.adapterVersion, model: agent.model })));
   assert.deepEqual(facts.recipes, plan.attempts[0]?.condition.requested.levels.map(level => ({
-    level: level.level, id: level.recipe?.id ?? null, version: level.recipe?.version ?? null,
+    level: level.level, id: level.recipe?.id ?? null,
+    contentSha256: level.recipe?.contentSha256 ?? null,
   })));
   assert.deepEqual(facts.runtime, {
     controllerImage: plan.definition.runtime.controllerImage,
@@ -205,7 +206,7 @@ test('dashboard reports dependency work from the validated persisted state', t =
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
     attempt: { id: attemptPlan.id, track: plan.definition.track, stack: attemptPlan.stack,
       agentAdapter: attemptPlan.agentAdapter, model: attemptPlan.model,
-      conditionSha256: attemptPlan.condition.sha256 },
+      conditionSha256: attemptPlan.condition.contentSha256 },
     workspace: { appDirectory: 'source' } };
   assert(plan.featureCatalog && plan.dependencyPolicy);
   writeProgressionState(join(output, 'progression-state.json'), { progression,
@@ -785,7 +786,7 @@ test('the sheet reports dependency submodes and questlines in definition order',
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attemptPlan.id, track: plan.definition.track, stack: attemptPlan.stack,
         agentAdapter: attemptPlan.agentAdapter, model: attemptPlan.model,
-        conditionSha256: attemptPlan.condition.sha256 },
+        conditionSha256: attemptPlan.condition.contentSha256 },
       workspace: { appDirectory: 'source' } },
     state: progressionEngine.initialize(compileProgressionInput(dependencyRuntimeDefinition(
       plan.featureCatalog, plan.dependencyPolicy)).definition) });
@@ -1006,7 +1007,7 @@ test('the progression view replays the graph once per stack within its budget', 
         campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
         attempt: { id: claim.attempt.id, track: plan.definition.track,
           stack: claim.attempt.stack, agentAdapter: claim.attempt.agentAdapter,
-          model: claim.attempt.model, conditionSha256: claim.attempt.condition.sha256 },
+          model: claim.attempt.model, conditionSha256: claim.attempt.condition.contentSha256 },
         workspace: { appDirectory: 'source' } },
       state: dependencyProgressionEvidence(plan, claim.attempt) });
   }

@@ -307,7 +307,8 @@ export function inspectRepairParent(parentDirectory: string,
     throw new Error('parent run does not identify its agent adapter');
   }
   const recipe = object(level.selection?.recipe)
-    ? `${level.selection.recipe.id}@${level.selection.recipe.version}` : null;
+    && typeof level.selection.recipe.id === 'string'
+    ? level.selection.recipe.id : null;
   return {
     root,
     parent,

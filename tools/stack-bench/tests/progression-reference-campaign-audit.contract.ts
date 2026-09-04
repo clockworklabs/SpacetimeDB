@@ -66,13 +66,13 @@ test('completed reference campaigns audit exact owners and recipe bindings', () 
           stack: expected.stack,
           agentAdapter: expected.agentAdapter,
           model: expected.model,
-          conditionSha256: expected.condition.sha256,
+          conditionSha256: expected.condition.contentSha256,
         },
         workspace: { appDirectory: 'source' },
       });
       assert.deepEqual([...input.recipeBindings.keys()], [1, 2, 3, 4, 5, 6]);
       assert.equal(input.release.id, 'ecommerce.progression-catalog');
-      assert.equal(input.release.version, '2.0.3');
+      assert.match(input.release.contentSha256, /^[a-f0-9]{64}$/);
       return structuredClone(passingAudit);
     },
   });

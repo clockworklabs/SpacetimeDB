@@ -16,7 +16,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition }
   from '../composition/definition-plan.js';
 import { sha256 } from '../evidence/provenance.js';
 import { compileDependencyMode, compileFeatureCatalog, DEPENDENCY_MODE_POLICY,
-  DEPENDENCY_MODE_VERSION, DEFAULT_UNCHANGED_FAILURE_LIMIT,
+  DEFAULT_UNCHANGED_FAILURE_LIMIT,
   DEFAULT_DEPENDENCY_WORK_SELECTION,
   DEPENDENCY_MODE_SCHEMA_VERSION, FEATURE_CATALOG_SCHEMA_VERSION,
   isDependencyWorkSelection }
@@ -26,8 +26,7 @@ import type { DependencyWorkSelection }
 import { validateRepairPlan } from './repair-plan.js';
 import type { RepairPlan } from './repair-plan.js';
 import { progressionEngine } from './progression-engine.js';
-import { isProgressionIdentifier, parseVersionedProgressionId }
-  from './progression-identifiers.js';
+const PROGRESSION_IDENTIFIER = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 
 export interface CompiledProgressionCheck {
   id: string;
@@ -58,8 +57,6 @@ export interface CompiledProgressionDefinition {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   nodes: CompiledProgressionNode[];
   questlines: CompiledProgressionQuestline[];
@@ -71,8 +68,7 @@ export interface CompiledProgressionDefinition {
 
 export interface DefinitionIdentity {
   id: string;
-  version: string;
-  sha256: string;
+  contentSha256: string;
   policy?: string;
 }
 
@@ -85,7 +81,6 @@ export interface CompiledDependencyPolicyDefinition extends Record<string, unkno
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
   levels: number[];
   repair: RepairPlan;
   // The exact order failed features are repaired in, by depth. Declared
@@ -114,8 +109,6 @@ interface AuthoredProgressionDefinition {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   nodes: AuthoredProgressionNode[];
   questlines: unknown[];
@@ -144,7 +137,7 @@ function nonEmpty(value: unknown, at: string): string {
 
 function identifier(value: unknown, at: string): string {
   const result = nonEmpty(value, at);
-  if (!isProgressionIdentifier(result)) return fail(at, 'must be a lowercase identifier');
+  if (!PROGRESSION_IDENTIFIER.test(result)) return fail(at, 'must be a lowercase identifier');
   return result;
 }
 
@@ -171,7 +164,7 @@ function packCatalog(trackRoot: string): Map<string, CompiledPackDefinition> {
   const packs = new Map<string, CompiledPackDefinition>();
   for (const name of readdirSync(packRoot).filter(item => item.endsWith('.json'))) {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-    const reference = `${pack.id}@${pack.version}`;
+    const reference = pack.id;
     if (packs.has(reference)) fail('packs', `duplicate ${reference}`);
     packs.set(reference, pack);
   }
@@ -267,7 +260,7 @@ export function compileProgressionDefinition(input: unknown,
   if (!trackRoot) throw new Error('progression compilation requires trackRoot');
   const definition = structuredClone(input);
   strictObject(definition, source, new Set([
-    'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes', 'questlines',
+    'schemaVersion', 'kind', 'id', 'title', 'nodes', 'questlines',
   ]));
   if (definition.schemaVersion !== PROGRESSION_DEFINITION_SCHEMA_VERSION) {
     fail(`${source}.schemaVersion`, `must be ${PROGRESSION_DEFINITION_SCHEMA_VERSION}`);
@@ -296,7 +289,7 @@ export function compileProgressionDefinition(input: unknown,
     nonEmpty(node.title, `${at}.title`);
     identifier(node.questline, `${at}.questline`);
     const featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`,
-      reference => parseVersionedProgressionId(reference) !== null).sort();
+      reference => PROGRESSION_IDENTIFIER.test(reference)).sort();
     for (const reference of featureRefs) {
       const pack = packs.get(reference);
       if (!pack) return fail(`${at}.featureRefs`, `missing pack ${reference}`);
@@ -309,7 +302,7 @@ export function compileProgressionDefinition(input: unknown,
     const promptModules = uniqueStrings([
       ...featureRefs,
       ...(node.promptModules ?? []),
-    ], `${at}.promptModules`, reference => parseVersionedProgressionId(reference) !== null).sort();
+    ], `${at}.promptModules`, reference => PROGRESSION_IDENTIFIER.test(reference)).sort();
     for (const reference of promptModules) {
       const pack = packs.get(reference);
       if (!pack) return fail(`${at}.promptModules`, `missing pack ${reference}`);
@@ -329,10 +322,10 @@ export function compileProgressionDefinition(input: unknown,
       & { requiresFeatures: string[] }> = [];
     const gradingChecks = gradingGroups.flatMap((reference, groupIndex) => {
       const split = reference.lastIndexOf('#');
-      if (split < 1) fail(`${at}.gradingGroups[${groupIndex}]`, 'must be pack@version#group');
+      if (split < 1) fail(`${at}.gradingGroups[${groupIndex}]`, 'must be pack#group');
       const packRef = reference.slice(0, split);
       const groupId = reference.slice(split + 1);
-      if (!parseVersionedProgressionId(packRef)) {
+      if (!PROGRESSION_IDENTIFIER.test(packRef)) {
         fail(`${at}.gradingGroups[${groupIndex}]`, 'has an invalid pack reference');
       }
       identifier(groupId, `${at}.gradingGroups[${groupIndex}] group`);
@@ -379,36 +372,10 @@ export function compileProgressionDefinition(input: unknown,
       dependencies: structuredClone(node.dependencies),
     };
   });
-  // Packs name their dependencies by id; this catalog pins the version of
-  // every pack a node names, so each id resolves to exactly one release.
-  const namedRefs = new Set<string>(authored.nodes.flatMap(node => [
-    ...(Array.isArray(node.featureRefs) ? node.featureRefs : []),
-    ...(Array.isArray(node.promptModules) ? node.promptModules : []),
-    ...(Array.isArray(node.gradingGroups)
-      ? node.gradingGroups.map(group => String(group).slice(0, String(group).indexOf('#'))) : []),
-  ].map(String)));
-  const refById = new Map<string, string>();
-  for (const reference of namedRefs) {
-    const pack = packs.get(reference);
-    if (!pack) continue;
-    const existing = refById.get(pack.id);
-    if (existing !== undefined && existing !== reference) {
-      fail(`${source}.nodes`, `${pack.id} is named as both ${existing} and ${reference}`);
-    }
-    refById.set(pack.id, reference);
-  }
-  for (const reference of namedRefs) {
-    const pack = packs.get(reference);
-    if (!pack) continue;
-    pack.requiresPacks = pack.requiresPacks.map(required => refById.get(required)
-      ?? fail(`${source}.nodes`, `${reference} requires ${required}, which no node names`));
-  }
   const compiled = compileFeatureCatalog({
     schemaVersion: FEATURE_CATALOG_SCHEMA_VERSION,
     kind: 'feature-catalog',
     id: authored.id,
-    version: authored.version,
-    state: authored.state,
     title: authored.title,
     nodes,
     questlines: structuredClone(authored.questlines),
@@ -451,8 +418,7 @@ export function compileProgressionDefinition(input: unknown,
         `must equal minimal product dependencies: ${expected.join(', ') || '(none)'}`);
     }
   }
-  const featureRefsById = new Map([...featureOwners.keys()].map(reference =>
-    [reference.slice(0, reference.lastIndexOf('@')), reference]));
+  const featureRefsById = new Map([...featureOwners.keys()].map(reference => [reference, reference]));
   for (const node of compiled.nodes) {
     for (const action of nodeNamedActions.get(node.id) ?? []) {
       const references = [
@@ -517,12 +483,11 @@ export function compileProgressionDefinitionFile(path: string,
 }
 
 function identity(definition: CompiledProgressionDefinition): DefinitionIdentity {
-  const { state: _state, title: _title, ...executable } = definition;
+  const { title: _title, ...executable } = definition;
   return canonicalizeDefinition({
     id: definition.id,
-    version: definition.version,
     ...(definition.policy ? { policy: definition.policy } : {}),
-    sha256: sha256(canonicalDefinitionJson(executable)),
+    contentSha256: sha256(canonicalDefinitionJson(executable)),
   }) as unknown as DefinitionIdentity;
 }
 
@@ -641,7 +606,6 @@ function compileDependencyPolicyForCatalog(repair: unknown, catalog: Progression
     schemaVersion: 1,
     kind: 'dependency-policy',
     id: DEPENDENCY_MODE_POLICY,
-    version: DEPENDENCY_MODE_VERSION,
     levels: selected.levels,
     repair: runtimeDefinition.repair,
     nodeOrder: order,
@@ -650,8 +614,8 @@ function compileDependencyPolicyForCatalog(repair: unknown, catalog: Progression
   }) as CompiledDependencyPolicyDefinition;
   return canonicalizeDefinition({
     definition,
-    identity: { id: definition.id, version: definition.version,
-      sha256: sha256(canonicalDefinitionJson(definition)) },
+    identity: { id: definition.id,
+      contentSha256: sha256(canonicalDefinitionJson(definition)) },
   }) as unknown as ProgressionInput<CompiledDependencyPolicyDefinition>;
 }
 

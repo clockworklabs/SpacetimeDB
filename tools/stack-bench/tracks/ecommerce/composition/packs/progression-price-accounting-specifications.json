@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.price-accounting-specifications",
+  "stableId": "ecommerce.returns-pricing",
+  "moduleType": "specification",
+  "title": "Price accounting",
+  "description": "Later price changes do not rewrite recorded order value.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.progression.price-accounting", "path": "prompts/modular/order-accounting.md", "order": 2110, "from": "## Price accounting", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.price-history-features"] }],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "price-accounting", "stableId": "refund-accounting", "source": "scenarios/02-invariants.json", "feature": 203, "criteria": ["203b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.price-history-features"] }
+  ]
+}

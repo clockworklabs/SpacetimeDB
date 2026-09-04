@@ -5,7 +5,6 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.js';
 import { sha256 } from '../evidence/provenance.js';
 import { validateCredentialAliases } from '../composition/credential-aliases.js';
-import { isExactSemanticVersion, parseVersionedReference } from '../semantic-version.js';
 
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
@@ -20,15 +19,13 @@ export function parseGuidanceMode(value: unknown): GuidanceMode {
   throw new Error(`guidance must be neutral or prescribed, received ${JSON.stringify(value)}`);
 }
 
-const parseConditionReference = (value: unknown): { id: string; version: string } | null =>
-  parseVersionedReference(value, identifier => ID.test(identifier));
+const conditionReference = (value: unknown): value is string =>
+  typeof value === 'string' && ID.test(value);
 
 interface IdentityProfile extends UnknownRecord {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: 'draft' | 'qualified';
 }
 
 interface Catalog {
@@ -54,9 +51,7 @@ export interface ResolvedGuidanceDocument {
 export interface ResolvedSkills { ids: string[]; sha256: string; bytes: number }
 export interface ResolvedGuidanceProfile {
   id: string;
-  version: string;
-  sha256: string;
-  state: 'draft' | 'qualified';
+  contentSha256: string;
   mode: GuidanceMode;
   material: GuidanceProfile['material'];
   documents: Record<string, ResolvedGuidanceDocument>;
@@ -76,7 +71,6 @@ interface ConditionSpecifications {
 
 export interface ConditionReference {
   id: string;
-  version: string;
   guidanceProfile: string;
   repairPolicy: string;
   specifications?: ConditionSpecifications;
@@ -106,7 +100,7 @@ interface RequestedSelection extends UnknownRecord {
 
 interface RequestedLevel extends UnknownRecord {
   level: number;
-  recipe: { id: string; version: string; contentSha256: string;
+  recipe: { id: string; contentSha256: string;
     meaningSha256: string; executionSha256: string };
   selection: RequestedSelection;
   task: UnknownRecord & { mode?: 'fresh' | 'upgrade'; sha256: string;
@@ -118,12 +112,11 @@ export interface RequestedScope { track: string; levels: [RequestedLevel, ...Req
 
 export interface ResolvedStudyCondition {
   id: string;
-  version: string;
+  contentSha256: string;
   requested: RequestedScope;
   guidance: ResolvedGuidanceProfile;
-  repair: { id: string; version: string; sha256: string; state: 'draft' | 'qualified';
+  repair: { id: string; contentSha256: string;
     scoredEvidence: true; observedEvidence: false; scenarioValues: 'withheld' };
-  sha256: string;
 }
 
 const object = (value: unknown): value is UnknownRecord =>
@@ -154,10 +147,8 @@ function json(path: string, at: string): unknown {
   catch (error) { fail(at, `cannot be read: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
-function identity(profile: IdentityProfile, resolved: unknown): {
-  id: string; version: string; sha256: string; state: 'draft' | 'qualified' } {
-  return { id: profile.id, version: profile.version,
-    sha256: sha256(canonicalDefinitionJson({ profile, resolved })), state: profile.state };
+function identity(profile: IdentityProfile, resolved: unknown): { id: string; contentSha256: string } {
+  return { id: profile.id, contentSha256: sha256(canonicalDefinitionJson({ profile, resolved })) };
 }
 
 function validateIdentityFields(value: UnknownRecord, at: string, kind: string,
@@ -167,12 +158,6 @@ function validateIdentityFields(value: UnknownRecord, at: string, kind: string,
   }
   if (value.kind !== kind) fail(`${at}.kind`, `must be ${kind}`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
-  if (!isExactSemanticVersion(value.version)) {
-    fail(`${at}.version`, 'must be a semantic version');
-  }
-  if (typeof value.state !== 'string' || !['draft', 'qualified'].includes(value.state)) {
-    fail(`${at}.state`, 'must be draft or qualified');
-  }
 }
 
 function loadCatalog(path: string = CATALOG): Catalog {
@@ -186,8 +171,8 @@ function loadCatalog(path: string = CATALOG): Catalog {
     const section = value[field];
     if (!object(section)) fail(`catalog.${field}`, 'must be an object');
     for (const [key, pathValue] of Object.entries(section)) {
-      if (!parseConditionReference(key) || typeof pathValue !== 'string' || !pathValue) {
-        fail(`catalog.${field}.${key}`, 'must map an id@version to a path');
+      if (!conditionReference(key) || typeof pathValue !== 'string' || !pathValue) {
+        fail(`catalog.${field}.${key}`, 'must map an id to a path');
       }
     }
   }
@@ -195,14 +180,13 @@ function loadCatalog(path: string = CATALOG): Catalog {
 }
 
 function readProfile(catalog: Catalog, section: keyof Catalog['value'], reference: string): {
-  referenceIdentity: { id: string; version: string }; path: string; profile: unknown } {
-  const referenceIdentity = parseConditionReference(reference);
-  if (!referenceIdentity) fail(reference ?? '<missing>', 'must use id@version');
+  referenceIdentity: string; path: string; profile: unknown } {
+  if (!conditionReference(reference)) fail(reference ?? '<missing>', 'must use an id');
   const rel = catalog.value[section][reference];
   if (!rel) fail(reference, `is not in catalog.${section}`);
   const path = contained(catalog.root, rel, reference);
   const profile = json(path, reference);
-  return { referenceIdentity: referenceIdentity!, path, profile };
+  return { referenceIdentity: reference, path, profile };
 }
 
 function loadProfile<T extends IdentityProfile>(catalog: Catalog,
@@ -212,7 +196,7 @@ function loadProfile<T extends IdentityProfile>(catalog: Catalog,
   strict(profile, reference, fields, optional);
   validateIdentityFields(profile, reference, kind);
   const typed = profile as T;
-  if (typed.id !== referenceIdentity.id || typed.version !== referenceIdentity.version) {
+  if (typed.id !== referenceIdentity) {
     fail(reference, 'does not match the loaded profile identity');
   }
   return { profile: typed, path };
@@ -220,7 +204,7 @@ function loadProfile<T extends IdentityProfile>(catalog: Catalog,
 
 function resolveGuidance(catalog: Catalog, reference: string, stacks: readonly string[],
   stackBenchRoot: string): ResolvedGuidanceProfile {
-  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'mode', 'material',
+  const fields = new Set(['schemaVersion', 'kind', 'id', 'mode', 'material',
     'documents', 'applicationInterfaces', 'skills', 'credentialAliases']);
   const { profile } = loadProfile<GuidanceProfile>(catalog, 'guidanceProfiles', reference,
     'backend-guidance-profile', fields, new Set(['credentialAliases']));
@@ -288,7 +272,7 @@ export function resolveGuidanceProfile(reference: string, stacks: readonly strin
 export function resolveDefaultGuidanceForStack(mode: string,
   stack: string): ResolvedGuidanceProfile | null {
   const reference = parseGuidanceMode(mode) === 'neutral'
-    ? 'neutral@1.8.0' : 'prescribed@1.2.0';
+    ? 'neutral' : 'prescribed';
   const catalog = loadCatalog();
   const { profile } = readProfile(catalog, 'guidanceProfiles', reference);
   if (object(profile) && object(profile.documents) && !Object.hasOwn(profile.documents, stack)) {
@@ -298,7 +282,7 @@ export function resolveDefaultGuidanceForStack(mode: string,
 }
 
 function resolveRepair(catalog: Catalog, reference: string): ResolvedStudyCondition['repair'] {
-  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state',
+  const fields = new Set(['schemaVersion', 'kind', 'id',
     'scoredEvidence', 'observedEvidence', 'scenarioValues']);
   const { profile } = loadProfile<RepairProfile>(catalog, 'repairPolicies', reference,
     'repair-policy', fields);
@@ -321,20 +305,17 @@ function resolveRepair(catalog: Catalog, reference: string): ResolvedStudyCondit
 export function validateConditionReference(input: unknown, at = 'condition'): ConditionReference {
   if (!object(input)) fail(at, 'must be an object');
   const value = structuredClone(input) as UnknownRecord;
-  const fields = new Set(['id', 'version', 'guidanceProfile', 'repairPolicy',
+  const fields = new Set(['id', 'guidanceProfile', 'repairPolicy',
     'specifications']);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
-  for (const key of ['id', 'version', 'guidanceProfile', 'repairPolicy']) {
+  for (const key of ['id', 'guidanceProfile', 'repairPolicy']) {
     if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
   }
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id`, 'is invalid');
-  if (!isExactSemanticVersion(value.version)) {
-    fail(`${at}.version`, 'must be a semantic version');
-  }
   for (const field of ['guidanceProfile', 'repairPolicy'] as const) {
     const reference = value[field];
-    if (!parseConditionReference(reference)) {
-      fail(`${at}.${field}`, 'must use id@version');
+    if (!conditionReference(reference)) {
+      fail(`${at}.${field}`, 'must use an id');
     }
   }
   if (value.specifications !== undefined) {
@@ -353,8 +334,8 @@ export function validateConditionReference(input: unknown, at = 'condition'): Co
       seen.add(entry.level);
       for (const field of ['requested', 'expected', 'observed'] as const) {
         if (!Array.isArray(entry[field]) || new Set(entry[field]).size !== entry[field].length
-          || entry[field].some(reference => !parseConditionReference(reference))) {
-          fail(`${levelAt}.${field}`, 'must contain unique exact id@version references');
+          || entry[field].some(reference => !conditionReference(reference))) {
+          fail(`${levelAt}.${field}`, 'must contain unique ids');
         }
         entry[field] = [...entry[field]].sort();
       }
@@ -386,9 +367,9 @@ function validateRequestedScope(input: unknown): RequestedScope {
     const at = `requested.levels[${index}]`;
     strict(entry, at, new Set(['level', 'recipe', 'selection', 'task']));
     if (!Number.isSafeInteger(entry.level) || entry.level < 1) fail(`${at}.level`, 'must be positive');
-    strict(entry.recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
+    strict(entry.recipe, `${at}.recipe`, new Set(['id', 'contentSha256',
       'meaningSha256', 'executionSha256']));
-    if (!ID.test(entry.recipe.id) || !isExactSemanticVersion(entry.recipe.version)
+    if (!ID.test(entry.recipe.id)
       || (['contentSha256', 'meaningSha256', 'executionSha256'] as const)
         .some(field => !HASH.test(entry.recipe[field]))) {
       fail(`${at}.recipe`, 'has an invalid identity');
@@ -469,9 +450,9 @@ function validateRequestedScope(input: unknown): RequestedScope {
           if (!Array.isArray(specifications[field])
             || new Set(specifications[field]).size !== specifications[field].length
             || specifications[field].some(reference => typeof reference !== 'string'
-              || !parseConditionReference(reference))) {
+              || !conditionReference(reference))) {
             fail(`${at}.selection.specifications.${field}`,
-              'must contain unique exact id@version references');
+              'must contain unique ids');
           }
         }
       }
@@ -502,8 +483,8 @@ function validateRequestedScope(input: unknown): RequestedScope {
 }
 
 export function resolveStudyConditions(inputs: unknown[], stacks: string[],
-  { stackBenchRoot = ROOT, catalogPath = CATALOG, frozen = false, requested }:
-  { stackBenchRoot?: string; catalogPath?: string; frozen?: boolean;
+  { stackBenchRoot = ROOT, catalogPath = CATALOG, requested }:
+  { stackBenchRoot?: string; catalogPath?: string;
     requested?: unknown | ((reference: ConditionReference, index: number) => unknown) }
   = {}): [ResolvedStudyCondition, ...ResolvedStudyCondition[]] {
   if (!Array.isArray(inputs) || inputs.length === 0) fail('conditions', 'must be a non-empty array');
@@ -514,15 +495,11 @@ export function resolveStudyConditions(inputs: unknown[], stacks: string[],
       typeof requested === 'function' ? requested(ref, index) : requested);
     const guidance = resolveGuidance(catalog, ref.guidanceProfile, stacks, resolve(stackBenchRoot));
     const repair = resolveRepair(catalog, ref.repairPolicy);
-    if (frozen && [guidance, repair].some(profile => profile.state !== 'qualified')) {
-      fail(`conditions[${index}]`, 'cannot freeze with a draft component');
-    }
-    const content = { id: ref.id, version: ref.version, requested: requestedScope,
+    const content = { id: ref.id, requested: requestedScope,
       guidance, repair };
-    return { ...content, sha256: sha256(canonicalDefinitionJson(content)) };
+    return { ...content, contentSha256: sha256(canonicalDefinitionJson(content)) };
   });
-  const keys = resolved.map(condition => `${condition.id}@${condition.version}`);
-  if (new Set(keys).size !== keys.length) fail('conditions', 'must not duplicate id@version');
-  return resolved.sort((a, b) => `${a.id}@${a.version}`
-    .localeCompare(`${b.id}@${b.version}`)) as [ResolvedStudyCondition, ...ResolvedStudyCondition[]];
+  const keys = resolved.map(condition => condition.id);
+  if (new Set(keys).size !== keys.length) fail('conditions', 'must not duplicate ids');
+  return resolved.sort((a, b) => a.id.localeCompare(b.id)) as [ResolvedStudyCondition, ...ResolvedStudyCondition[]];
 }

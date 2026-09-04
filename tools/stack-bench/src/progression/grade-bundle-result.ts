@@ -52,7 +52,7 @@ interface GradeBundlePayload {
 interface BenchmarkRunPayload {
   backend?: string;
   model?: string;
-  condition?: { sha256?: string };
+  condition?: { contentSha256?: string };
   progressionOwner?: unknown;
   featureCatalog?: unknown;
   dependencyPolicy?: unknown;
@@ -183,16 +183,16 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     if (changed) ownerMismatches.push(field);
   };
   mismatch(!object(featureCatalogIdentity)
-    || typeof featureCatalogIdentity.sha256 !== 'string'
-    || !HASH.test(featureCatalogIdentity.sha256),
+    || typeof featureCatalogIdentity.contentSha256 !== 'string'
+    || !HASH.test(featureCatalogIdentity.contentSha256),
     'featureCatalogIdentity');
   mismatch(!object(dependencyPolicyIdentity)
-    || typeof dependencyPolicyIdentity.sha256 !== 'string'
-    || !HASH.test(dependencyPolicyIdentity.sha256),
+    || typeof dependencyPolicyIdentity.contentSha256 !== 'string'
+    || !HASH.test(dependencyPolicyIdentity.contentSha256),
     'dependencyPolicyIdentity');
   mismatch(run.payload.backend !== validatedOwner.attempt.stack, 'run.backend');
   mismatch(run.payload.model !== validatedOwner.attempt.model, 'run.model');
-  mismatch(run.payload.condition?.sha256 !== validatedOwner.attempt.conditionSha256, 'run.condition');
+  mismatch(run.payload.condition?.contentSha256 !== validatedOwner.attempt.conditionSha256, 'run.condition');
   mismatch(canonicalDefinitionJson(run.payload.progressionOwner)
     !== canonicalDefinitionJson(campaignOwner), 'run.progressionOwner');
   mismatch(canonicalDefinitionJson(run.payload.featureCatalog)
@@ -210,10 +210,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
     throw new Error(`grade bundle benchmark owner does not match the progression campaign attempt: ${ownerMismatches.join(', ')}`);
   }
   if (!object(recipeIdentity) || typeof recipeIdentity.id !== 'string'
-    || typeof recipeIdentity.version !== 'string'
     || typeof recipeIdentity.sha256 !== 'string' || !HASH.test(recipeIdentity.sha256)
     || gradeRecipe?.id !== recipeIdentity.id
-    || gradeRecipe.version !== recipeIdentity.version
     || gradeRecipe.sha256 !== recipeIdentity.sha256) {
     throw new Error('grade bundle recipe identity does not match the progression grading selection');
   }

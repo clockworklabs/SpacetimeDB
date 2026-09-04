@@ -1030,8 +1030,8 @@ async function main(): Promise<void> {
       attempt: { id: artifactId, parentId: args.parentAttemptId ?? null },
       timestamps: { startedAt, completedAt: new Date().toISOString() },
       identities: recipeArtifactIdentities(recipeIdentityRelease, {
-        calibration: calibration ? { id: calibration.id, version: calibration.version,
-          sha256: calibration.contentSha256, state: calibration.state } : null,
+        calibration: calibration ? { id: calibration.id,
+          sha256: calibration.contentSha256 } : null,
         stackAdapter: args.backend ? { id: args.backend } : null,
       }),
       payload: report,

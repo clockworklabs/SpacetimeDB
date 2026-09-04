@@ -18,7 +18,7 @@ import { compileScenarioDefinition } from '../src/composition/definition-compile
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
-  'sequential-l1-2.5.0.json'));
+  'sequential-l1.json'));
 
 function prepareReferenceSource(args: ReferenceFixtureSelector & { app: string }) {
   const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
@@ -36,19 +36,19 @@ const cases: CandidateCase[] = [
   {
     backend: 'mongodb',
     sourceSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6',
-    manifest: 'mongodb-ecommerce-2.0.1.json',
+    manifest: 'mongodb-ecommerce.json',
     lastUnitMutation: 'last-unit-allows-negative-stock',
   },
   {
     backend: 'postgres',
     sourceSha256: 'e461967ff8b99394c278e6d382e455a7fc3086c88016543fa668baf808baec0d',
-    manifest: 'postgres-ecommerce-2.0.1.json',
+    manifest: 'postgres-ecommerce.json',
     lastUnitMutation: 'oversell-no-row-lock',
   },
   {
     backend: 'spacetime',
     sourceSha256: '58a193d61e02eac8e2c4801dc4cefb78db42468515a452a17e2544f2132148ce',
-    manifest: 'spacetime-ecommerce-2.0.1.json',
+    manifest: 'spacetime-ecommerce.json',
     lastUnitMutation: 'purchase-does-not-reserve-stock-last-unit',
   },
 ];
@@ -69,7 +69,7 @@ test('current L1 has the complete scored concurrency and live-state surface', ()
 });
 
 test('each last-unit score retains the shared purchase race when selected alone', () => {
-  const scenarioPath = join(TRACK, 'scenarios', '01-last-unit-2.3.0.json');
+  const scenarioPath = join(TRACK, 'scenarios', '01-last-unit.json');
   const scenario = compileScenarioDefinition(readJson(scenarioPath), { source: scenarioPath });
   for (const criterionId of ['201a', '201b', '201c']) {
     const key = `ecommerce.spec.concurrency-safety.last-unit.${criterionId}`;
@@ -95,7 +95,7 @@ test('each last-unit score retains the shared purchase race when selected alone'
 });
 
 test('the restock race retains its admin page prerequisite when selected alone', () => {
-  const scenarioPath = join(TRACK, 'scenarios', '01-restock-race-2.3.0.json');
+  const scenarioPath = join(TRACK, 'scenarios', '01-restock-race.json');
   const scenario = compileScenarioDefinition(readJson(scenarioPath), { source: scenarioPath });
   const key = 'ecommerce.spec.concurrency-safety.restock-race.202a';
   const selected = selectScenarioChecks(scenario, { checks: release.checkCatalog }, [key]);
@@ -110,7 +110,7 @@ test('the restock race retains its admin page prerequisite when selected alone',
 });
 
 test('duplicate checkout metadata describes the current cross-stack named action', () => {
-  const scenarioPath = join(TRACK, 'scenarios', '01-duplicate-checkout-2.3.0.json');
+  const scenarioPath = join(TRACK, 'scenarios', '01-duplicate-checkout.json');
   const scenario = compileScenarioDefinition(readJson(scenarioPath), { source: scenarioPath });
   const [feature] = scenario.features;
   assert(feature, 'duplicate checkout must have a feature');
@@ -136,7 +136,7 @@ test(`${entry.backend} binds the current L1 mutation inventory to its effective 
         backend: entry.backend,
         track: 'ecommerce',
         level: 1,
-        recipe: 'ecommerce.sequential-l1@2.5.0',
+        recipe: 'ecommerce.sequential-l1',
         app,
       });
       assert.equal(prepared.sourceSha256, entry.sourceSha256);
@@ -153,12 +153,12 @@ test(`${entry.backend} binds the current L1 mutation inventory to its effective 
       const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
       const lastUnit = requiredMutation(mutations, entry.lastUnitMutation);
       assert.equal(mutationScenario(manifest, lastUnit),
-        'tracks/ecommerce/scenarios/01-last-unit-2.3.1.json');
+        'tracks/ecommerce/scenarios/01-last-unit.json');
       assert.deepEqual(mutationTargetKeys(lastUnit), ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']);
 
       const purchase = requiredMutation(mutations, 'purchase-does-not-reserve-stock-restock-race');
       assert.equal(mutationScenario(manifest, purchase),
-        'tracks/ecommerce/scenarios/01-restock-race-2.3.0.json');
+        'tracks/ecommerce/scenarios/01-restock-race.json');
       assert.deepEqual(mutationTargetKeys(purchase), ['ecommerce.spec.concurrency-safety.restock-race.202a']);
       const releaseKeys = new Set(release.checkCatalog.map(check => check.stableKey));
       for (const mutation of manifest.mutations.filter(candidate =>

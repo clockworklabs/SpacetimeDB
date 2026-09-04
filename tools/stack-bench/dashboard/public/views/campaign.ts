@@ -58,7 +58,7 @@ function facts(sheet: CampaignSheet): string {
     ['Agent', fact.agent ?? DASH, ''], ['Model', fact.model ?? DASH, ''],
     ['Guidance', fact.guidance ?? DASH, ''],
     [fact.recipes.length > 1 ? 'Recipes' : 'Recipe', fact.recipes.map(recipe =>
-      [recipe.id, recipe.version].filter(Boolean).join(' ')).join(' · ') || DASH, ''],
+      [recipe.id, short(recipe.contentSha256)].filter(Boolean).join(' ')).join(' · ') || DASH, ''],
     ['Time limit', `${fact.timeLimitMinutes} min`, ''],
     ['Spend limit', fact.spendLimitUsd === null ? DASH
       : `$${fact.spendLimitUsd} per attempt`, ''],

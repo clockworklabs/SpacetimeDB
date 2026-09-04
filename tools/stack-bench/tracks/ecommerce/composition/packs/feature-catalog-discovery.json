@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.catalog-discovery",
+  "stableId": "ecommerce.feature.catalog",
+  "title": "Catalog discovery",
+  "moduleType": "feature",
+  "description": "Public catalog ranking and full-catalog search.",
+  "requiresPacks": [
+    "ecommerce.feature.catalog-items"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 30000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.catalog-discovery.requirement",
+        "path": "prompts/modular/catalog-discovery.md",
+        "order": 210,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.feature.catalog-discovery.hooks",
+        "path": "contracts/catalog-discovery.md",
+        "order": 2010,
+        "modes": [
+          "fresh",
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "ranking",
+      "stableId": "catalog-ranking",
+      "source": "scenarios/01-catalog-ranking.json",
+      "feature": 2,
+      "criteria": [
+        "2b"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "search",
+      "stableId": "catalog-search",
+      "source": "scenarios/01-catalog-search.json",
+      "feature": 2,
+      "criteria": [
+        "2d"
+      ],
+      "role": "feature"
+    }
+  ]
+}

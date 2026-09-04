@@ -30,10 +30,10 @@ function plan(setup: CompiledStep[] = []): CompiledRecipePlan {
     criteria: Object.entries(criteria).map(([id, steps]) => ({ id, desc: id, points: 1, steps })) };
   return {
     checks: Object.keys(criteria).map(id => ({ stableKey: `pack.feature.${id}`, packId: 'pack',
-      checkGroupId: 'group', criterionId: id, role: 'feature', source: 'scenario.json',
+    checkGroupId: 'group', criterionId: id, role: 'feature', source: 'scenario.json',
       featureId: 1, description: id, sourcePoints: 1, points: 1 })),
     execution: [{ id: 'exec', source: 'scenario.json', checkGroups: [{ packId: 'pack',
-      packVersion: '1.0.0', checkGroupId: 'group', role: 'feature', source: 'scenario.json',
+      checkGroupId: 'group', role: 'feature', source: 'scenario.json',
       feature, actions: [] }] }],
   } as unknown as CompiledRecipePlan;
 }

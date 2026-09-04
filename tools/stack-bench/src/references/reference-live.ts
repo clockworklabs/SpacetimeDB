@@ -67,7 +67,7 @@ export interface ReferenceQualificationArgs {
   recipe?: string;
   featureCatalog?: string;
   out?: string;
-  releaseCandidate?: boolean;
+  fullMutations?: boolean;
   artifactDirectory?: string;
   runsRoot?: string;
   timeoutMs?: number;
@@ -179,7 +179,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     recipe: { type: 'string' }, 'feature-catalog': { type: 'string' },
     repetitions: { type: 'string' }, 'run-index': { type: 'string' },
     'spacetime-port': { type: 'string' }, 'timeout-minutes': { type: 'string' },
-    mutations: { type: 'boolean' }, 'release-candidate': { type: 'boolean' },
+    mutations: { type: 'boolean' }, 'full-mutations': { type: 'boolean' },
     'selected-check': { type: 'string', multiple: true },
     'mutation-id': { type: 'string', multiple: true }, 'mutation-workers': { type: 'string' },
     'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
@@ -197,7 +197,7 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
     spacetimePort: number(values['spacetime-port'], null),
     spacetimePortExplicit: values['spacetime-port'] !== undefined,
     timeoutMinutes: number(values['timeout-minutes'], null),
-    mutations: values.mutations ?? false, releaseCandidate: values['release-candidate'],
+    mutations: values.mutations ?? false, fullMutations: values['full-mutations'],
     selectedCheckKeys: values['selected-check'] ?? [],
     mutationIds: values['mutation-id'] ?? [], mutationWorkers: number(values['mutation-workers'], 1) as number,
     mutationShardIndex: number(values['mutation-shard-index'], null),
@@ -240,8 +240,8 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   if (args.referenceMutationOnly && (!args.mutations || args.mutationWorkers !== 1)) {
     throw new Error('--reference-mutation-only is an internal single-worker option');
   }
-  if (args.releaseCandidate && !args.mutations) {
-    throw new Error('--release-candidate requires --mutations');
+  if (args.fullMutations && !args.mutations) {
+    throw new Error('--full-mutations requires --mutations');
   }
   if (args.mutationIds.some(id => typeof id !== 'string' || !id.trim())
       || new Set(args.mutationIds).size !== args.mutationIds.length) {
@@ -250,15 +250,15 @@ export function parseReferenceQualificationArgs(argv: readonly string[]):
   if (args.mutationIds.length && !args.mutations) {
     throw new Error('--mutation-id requires --mutations');
   }
-  if (args.releaseCandidate && args.mutationIds.length) {
-    throw new Error('--release-candidate cannot select individual mutations');
+  if (args.fullMutations && args.mutationIds.length) {
+    throw new Error('--full-mutations cannot select individual mutations');
   }
   if (args.selectedCheckKeys.length && args.mutations) {
     throw new Error('--selected-check cannot be combined with mutations');
   }
-  if (args.mutations && !args.referenceMutationOnly && !args.releaseCandidate
+  if (args.mutations && !args.referenceMutationOnly && !args.fullMutations
       && args.mutationIds.length === 0) {
-    throw new Error('full mutation qualification requires --release-candidate');
+    throw new Error('full mutation qualification requires --full-mutations');
   }
   if (args.mutationBaselineBundle && !args.referenceMutationOnly) {
     throw new Error('--mutation-baseline-bundle is an internal mutation-worker option');
@@ -321,18 +321,18 @@ export function referenceQualificationContext(fixture: ReferenceFixture,
   const calibration = resolveCalibrationForRelease(binding.release,
     { trackRoot: track.dir, stackBenchRoot: ROOT, alias: `L${level}` });
   if (!calibration) {
-    throw new Error(`${binding.release.id}@${binding.release.version} has no L${level} calibration`);
+    throw new Error(`${binding.release.id} has no L${level} calibration`);
   }
   const reference = calibration.references.entries.find(entry => entry.backend === fixture.backend
     && entry.id === fixture.id && entry.sourceSha256 === fixture.imported?.sourceSha256);
   if (!reference) throw new Error(`${fixture.id} is not selected by calibration ${calibration.id}`);
   const declaredCatalog = calibration.qualification.featureCatalog;
-  const catalogRef = featureCatalog ?? (declaredCatalog
-    ? `${declaredCatalog.id}@${declaredCatalog.version}` : null);
+  const catalogRef = featureCatalog ?? (declaredCatalog?.path ?? null);
   const fullCatalog = catalogRef ? resolveFeatureCatalog(catalogRef, track) : null;
   const catalog = fullCatalog ? selectFeatureCatalogLevels(fullCatalog,
     progressionLevels(fullCatalog).filter(candidate => candidate <= level)) : null;
-  if (declaredCatalog && catalog?.identity.sha256 !== declaredCatalog.sha256) {
+  if (declaredCatalog && (catalog?.identity.id !== declaredCatalog.id
+      || catalog.identity.contentSha256 !== declaredCatalog.contentSha256)) {
     throw new Error(`${calibration.id} feature catalog identity does not match`);
   }
   const progressionSelection = catalog
@@ -360,7 +360,7 @@ export function referenceQualificationSelectionArgs(binding: RecipeBinding | nul
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
   const specifications = selected?.requested.specifications.expected
     ?? binding.release.components.packs.filter(pack => pack.moduleType === 'specification')
-      .map(pack => `${pack.id}@${pack.version}`);
+      .map(pack => pack.id);
   if (!features.length || !specifications.length) {
     throw new Error('modular reference qualification requires feature and specification modules');
   }
@@ -409,16 +409,16 @@ export function companionReferenceArtifactPath(mutationArtifactPath: string): st
   return join(dirname(mutationArtifactPath), `${referenceStem}${extension}`);
 }
 
-export function assertReleaseCandidateRepetitions(args: Pick<ReferenceQualificationArgs,
-  'releaseCandidate' | 'repetitions'>,
+export function assertFullMutationRepetitions(args: Pick<ReferenceQualificationArgs,
+  'fullMutations' | 'repetitions'>,
   calibration: { qualification?: { mutationRepetitions?: number } } | null): void {
-  if (!args.releaseCandidate) return;
+  if (!args.fullMutations) return;
   const required = calibration?.qualification?.mutationRepetitions;
   if (!Number.isInteger(required) || Number(required) < 1) {
-    throw new Error('release calibration has no valid mutation repetition count');
+    throw new Error('calibration has no valid mutation repetition count');
   }
   if (args.repetitions !== required) {
-    throw new Error(`--release-candidate requires exactly ${required} mutation repetition(s)`);
+    throw new Error(`--full-mutations requires exactly ${required} mutation repetition(s)`);
   }
 }
 
@@ -505,7 +505,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(args.level), '--run-index', String(args.runIndex), '--repairs', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--no-media'];
-    benchArgs.push('--recipe', `${context.binding.release.id}@${context.binding.release.version}`);
+    benchArgs.push('--recipe', context.binding.release.id);
     benchArgs.push(...referenceQualificationSelectionArgs(context.binding,
       context.progressionSelection, context.selectedCheckKeys ?? null));
     benchArgs.push('--parent-attempt-id', id);
@@ -528,9 +528,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
       benchArgs.push('--mutation-max-runtime-minutes', String(args.mutationMaxRuntimeMinutes));
       benchArgs.push('--expected-mutation-calibration-json', JSON.stringify({
         id: context.calibration.id,
-        version: context.calibration.version,
         sha256: context.calibration.contentSha256,
-        state: context.calibration.state,
       }));
       if (args.mutationBaselineBundle) {
         benchArgs.push('--mutation-baseline-bundle', String(args.mutationBaselineBundle));
@@ -592,7 +590,7 @@ async function runOnce(fixture: ReferenceFixture, args: ReferenceQualificationAr
 }
 
 export function parallelMutationChildArgv(args: ReferenceQualificationArgs,
-  context: { binding: { release: { id: string; version: string } }; featureCatalogRef?: string | null },
+  context: { binding: { release: { id: string } }; featureCatalogRef?: string | null },
   { artifactPath, baselineBundle, workerIndex, workerCount }: {
     artifactPath: string; baselineBundle: string;
     workerIndex: number; workerCount: number;
@@ -600,7 +598,7 @@ export function parallelMutationChildArgv(args: ReferenceQualificationArgs,
   const runIndex = args.runIndex + workerIndex;
   const argv: string[] = [fileURLToPath(import.meta.url), '--backend', String(args.backend),
     '--track', args.track, '--level', String(args.level), '--recipe',
-    `${context.binding.release.id}@${context.binding.release.version}`,
+    context.binding.release.id,
     '--repetitions', '1', '--run-index', String(runIndex), '--timeout-minutes',
     String(args.timeoutMinutes), '--mutations', '--mutation-shard-index',
     String(workerIndex), '--mutation-shard-count', String(workerCount), '--out', artifactPath];
@@ -647,8 +645,7 @@ export function preflightParallelMutationResources(args: ReferenceQualificationA
 
 function identityKey(identity: unknown): string {
   const value = record(identity) ? identity : {};
-  return JSON.stringify({ id: value.id ?? null, version: value.version ?? null,
-    sha256: value.sha256 ?? null, state: value.state ?? null });
+  return JSON.stringify({ id: value.id ?? null, sha256: value.sha256 ?? null });
 }
 
 export function readParallelMutationWorker(path: string, processResult: {
@@ -934,7 +931,7 @@ async function main(): Promise<void> {
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture, selection.recipe,
     { level: args.level, featureCatalog: args.featureCatalog });
-  assertReleaseCandidateRepetitions(args, context.calibration);
+  assertFullMutationRepetitions(args, context.calibration);
   const selectedManifest = args.mutations
     ? qualificationMutationManifest(fixture, context, args.mutationIds) : null;
   const runContext = args.mutationIds.length && selectedManifest
@@ -951,7 +948,7 @@ async function main(): Promise<void> {
   if (existsSync(paths.runsRoot)) {
     throw new Error(`refusing to reuse existing qualification run directory: ${paths.runsRoot}`);
   }
-  const companionPath = args.releaseCandidate && args.mutations
+  const companionPath = args.fullMutations && args.mutations
     && context.calibration.qualification.referenceRepetitions === args.repetitions
     ? companionReferenceArtifactPath(paths.artifactPath) : null;
   if (companionPath && existsSync(companionPath)) {
@@ -988,11 +985,11 @@ async function main(): Promise<void> {
   const artifact: QualificationArtifact = {
     id, kind: 'reference_qualification', fixture: fixture.id,
     identities: emptyArtifactIdentities({
-      fixture: { id: fixture.id, sha256: fixture.imported?.sourceSha256, state: fixture.status },
-      recipe: { id: context.binding.release.id, version: context.binding.release.version,
-        sha256: context.binding.release.contentSha256, state: context.binding.release.state },
-      calibration: { ...(record(context.identity) ? context.identity : {}),
-        state: context.calibration.state },
+      fixture: { id: fixture.id, sha256: fixture.imported?.sourceSha256 },
+      recipe: { id: context.binding.release.id,
+        sha256: context.binding.release.contentSha256 },
+      calibration: record(context.identity) ? { id: context.identity.id,
+        sha256: context.identity.contentSha256 } : {},
       stackAdapter: { id: fixture.backend },
     }),
     fixtureSha256: fixture.imported?.sourceSha256, requiredRepetitions: args.repetitions,
@@ -1026,7 +1023,7 @@ async function main(): Promise<void> {
       writeRunJson(String(companionPath), companion);
       companionCaptured = true;
     };
-    const run = args.releaseCandidate || args.mutationWorkers > 1
+    const run = args.fullMutations || args.mutationWorkers > 1
       ? await runParallelMutationRepetition(fixture, args, runContext, id, repetition,
         artifactIdentities, captureCompanion)
       : await runOnce(fixture, args, runContext, id, repetition);

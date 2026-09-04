@@ -15,8 +15,8 @@ import type { MutationDefinition } from '../src/evidence/mutation-analysis.js';
 import type { ReferenceFixtureSelector } from '../src/references/reference-fixtures.js';
 
 const ROOT = STACK_BENCH_ROOT;
-const SCENARIO_RELATIVE = 'tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json';
-const MUTATION_SCENARIO = 'tracks/ecommerce/scenarios/progression-open-list-live-1.0.0.json';
+const SCENARIO_RELATIVE = 'tracks/ecommerce/scenarios/01-open-list-live.json';
+const MUTATION_SCENARIO = 'tracks/ecommerce/scenarios/progression-open-list-live.json';
 const SCENARIO = join(ROOT, SCENARIO_RELATIVE);
 const registry = loadReferenceRegistry();
 
@@ -93,7 +93,7 @@ for (const [backend, fixtureSha256] of cases) {
         backend,
         track: 'ecommerce',
         level: 1,
-        recipe: 'ecommerce.sequential-l1@2.5.0',
+        recipe: 'ecommerce.sequential-l1',
         app,
       });
       assert.equal(prepared.sourceSha256, fixtureSha256);

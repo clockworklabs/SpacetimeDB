@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.scheduled-restocks-features",
+  "stableId": "ecommerce.l3.scheduled-restocks",
+  "moduleType": "feature",
+  "title": "Scheduled restocks",
+  "description": "Pending, completed, and cancelled scheduled restocks.",
+  "requiresPacks": [
+    "ecommerce.feature.warehouse-admin"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 90000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.l3.scheduled-restocks",
+        "path": "prompts/modular/scheduled-restocks.md",
+        "order": 3010,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.l3.scheduled-restock-hooks",
+        "path": "contracts/scheduled-restocks.md",
+        "order": 3910,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "pending",
+      "stableId": "scheduled-restocks",
+      "source": "scenarios/03-scheduled-restocks.json",
+      "feature": 302,
+      "role": "feature"
+    },
+    {
+      "id": "applies",
+      "stableId": "scheduled-restocks",
+      "source": "scenarios/03-scheduled-restocks.json",
+      "feature": 305,
+      "role": "feature"
+    },
+    {
+      "id": "cancels",
+      "stableId": "scheduled-restocks",
+      "source": "scenarios/03-scheduled-restocks.json",
+      "feature": 306,
+      "role": "feature"
+    }
+  ]
+}

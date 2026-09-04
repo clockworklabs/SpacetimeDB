@@ -11,32 +11,32 @@ import { loadTrack } from '../src/composition/tracks.js';
 import { STACK_BENCH_ROOT, compiledEntrypoint } from '../src/package-root.js';
 
 test('campaign-bound mutation grading forwards the run level and exact recipe', () => {
-  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce-2.0.1.json');
+  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce.json');
   const recipeTask = { schemaVersion: 3,
-    recipe: { id: 'ecommerce.sequential-l1', version: '2.5.0' },
+    recipe: { id: 'ecommerce.sequential-l1' },
     selection: {}, task: {} };
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
     track: 'ecommerce', levelList: [1], runIndex: 0, parentAttemptId: 'campaign-attempt',
     recipe: null, recipeTasks: new Map([[1, { request: recipeTask }]]) };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
-  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.sequential-l1@2.5.0');
+  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.sequential-l1');
   assert.equal(argv[argv.indexOf('--level') + 1], '1');
   assert.deepEqual(JSON.parse(argv[argv.indexOf('--restart-spec') + 1] ?? ''), {
     backend: 'mongodb', app: 'app', port: 6673, probe: '',
   });
   assert.throws(() => mutationControlArgv({ ...args,
-    recipe: 'ecommerce.sequential-l2@1.6.0' }, 'app', 'http://localhost:5173',
+    recipe: 'ecommerce.sequential-l2' }, 'app', 'http://localhost:5173',
     loadTrack('ecommerce')), /does not match bound task/);
 });
 
 test('mutation grading receives the exact scored checks selected for the run', () => {
-  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce-2.0.1.json');
+  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce.json');
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
     track: 'ecommerce', levelList: [3], runIndex: 0, parentAttemptId: 'selected-attempt',
     recipe: null, recipeTasks: new Map([[3, {
       request: { schemaVersion: 3,
-        recipe: { id: 'ecommerce.progression-catalog', version: '2.0.1' },
+        recipe: { id: 'ecommerce.progression-catalog' },
         selection: {}, task: {} },
       selection: { scoredChecks: [
         { stableKey: 'ecommerce.inventory-operations.warehouse-transfer.2a' },
@@ -69,7 +69,7 @@ test('each mutation grade uses only the remaining batch time', () => {
 });
 
 test('mutation shard coordinates reach the mutation runner together', () => {
-  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce-2.0.1.json');
+  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce.json');
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
     track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'parallel-attempt',
     recipe: null, recipeTasks: new Map(), mutationShardIndex: 2, mutationShardCount: 4 };
@@ -81,14 +81,13 @@ test('mutation shard coordinates reach the mutation runner together', () => {
 });
 
 test('mutation checkpoint controls reach the mutation runner', () => {
-  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce-2.0.1.json');
+  const manifest = join(STACK_BENCH_ROOT, 'grader', 'mutations', 'mongodb-ecommerce.json');
   const args = { out: 'output', mutations: manifest, backend: 'mongodb',
     track: 'ecommerce', levelList: [1], runIndex: 4, parentAttemptId: 'resume-attempt',
     recipe: null, recipeTasks: new Map(), mutationResumeFrom: 'prior.json',
     mutationCheckpointOut: 'next.json', mutationMaxRuntimeMinutes: 30,
     mutationImageId: 'sha256:image', mutationBaselineBundle: 'baseline.json',
-    expectedMutationCalibration: { id: 'calibration', version: '1.0.0',
-      sha256: 'calibration-sha', state: 'qualified' } };
+    expectedMutationCalibration: { id: 'calibration', sha256: 'calibration-sha' } };
   const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
     loadTrack('ecommerce'));
   const after = (flag: string): string => {
@@ -116,7 +115,7 @@ test('a mismatched mutation fixture fails before acquiring any backend resource'
     writeFileSync(join(root, 'source.txt'), 'fixture\n');
     // Use root as the explicit app; the manifest intentionally targets other
     // bytes. No Docker or database lookup should happen before this rejection.
-    writeFileSync(manifest, JSON.stringify({ schemaVersion: 2, status: 'candidate',
+    writeFileSync(manifest, JSON.stringify({ schemaVersion: 3,
       fixtureSha256: '0'.repeat(64), backend: 'mongodb', track: 'ecommerce',
       scenario: 'tracks/ecommerce/scenarios/01-contention.json', mutations: [] }));
     assert.throws(() => execFileSync(process.execPath, [compiledEntrypoint('commands', 'bench.js'),

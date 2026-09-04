@@ -110,6 +110,9 @@ function scenario(step: unknown = { do: 'wait', actor: 'a', ms: 1 }): unknown {
 }
 
 test('unknown actions and action fields fail before runtime', () => {
+  const staleScenario = scenario() as Record<string, unknown>;
+  assert.throws(() => compileScenarioDefinition({ ...staleScenario, status: 'draft' }),
+    /status: unknown field/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'notReal', actor: 'a' })),
     /unknown action "notReal"/);
   assert.throws(() => compileScenarioDefinition(scenario(

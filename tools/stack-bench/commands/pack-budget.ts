@@ -6,8 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { artifactPayload, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.js';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease }
-  from '../src/composition/calibration-compiler.js';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.js';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, recommendPackBudgets }
   from '../src/composition/pack-budget.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
@@ -23,7 +22,7 @@ interface PackBudgetArgs {
 }
 
 const USAGE = 'usage: pack-budget.js recommend --track <name> --level <n> '
-  + '[--recipe <id>@<version>] --evidence <reference.json> [--evidence ...] '
+  + '[--recipe <id>] --evidence <reference.json> [--evidence ...] '
   + '--out <measurement.json>';
 
 export function parsePackBudgetArgs(argv: string[]): PackBudgetArgs {
@@ -52,14 +51,14 @@ function main(): void {
   const binding = resolveRecipeRelease(track, args.level, args.recipe);
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
-  if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);
+  if (!calibration) throw new Error(`${binding.release.id} has no calibration`);
   const loaded = loadPackBudgetEvidence(args.evidence);
   const result = recommendPackBudgets({ binding, calibration, evidence: loaded });
   if (existsSync(args.out)) throw new Error(`refusing to replace existing budget measurement: ${args.out}`);
   const id = `pack-budget-${args.track}-l${args.level}-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;
   const artifact = writeArtifact(args.out, { kind: 'pack_budget_measurement', id,
     identities: recipeArtifactIdentities(binding.release, {
-      calibration: { ...calibrationQualificationIdentity(calibration), state: calibration.state },
+      calibration: { id: calibration.id, sha256: calibration.contentSha256 },
     }),
     payload: { schemaVersion: 1, track: args.track, level: args.level, policy: PACK_BUDGET_POLICY,
       runner: result.measuredRunner,

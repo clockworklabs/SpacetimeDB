@@ -36,7 +36,7 @@ const setupEvidence = () => createCheckEvidence({ status: 'passed', code: 'compl
 
 const track = loadTrack('ecommerce');
 const featureCatalog = compileFeatureCatalogInput(compileProgressionDefinitionFile(
-  join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-2.0.3.json'),
+  join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce.json'),
   { trackRoot: track.dir },
 ));
 const dependencyPolicy = compileDependencyPolicyInput(
@@ -44,7 +44,7 @@ const dependencyPolicy = compileDependencyPolicyInput(
 const progression = compileProgressionInput(dependencyRuntimeDefinition(
   featureCatalog, dependencyPolicy));
 const recipeBindings = new Map([1, 2, 3, 4, 5, 6].map(level => [level,
-  resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.3')]));
+  resolveRecipeRelease(track, level, 'ecommerce.progression-catalog')]));
 const release = recipeBindings.get(6)!.release;
 
 interface ReferenceRunOptions {
@@ -66,7 +66,7 @@ function writeReferenceRun(root: string,
       track: owner.attempt.track,
       backend: owner.attempt.stack,
       model: owner.attempt.model,
-      condition: { sha256: owner.attempt.conditionSha256 },
+      condition: { contentSha256: owner.attempt.conditionSha256 },
       featureCatalog: featureCatalog.identity,
       dependencyPolicy: dependencyPolicy.identity,
       progressionOwner: { schemaVersion: owner.schemaVersion,
@@ -86,14 +86,14 @@ function writeReferenceRun(root: string,
     const checks = selected.grader.selection.scoredChecks;
     const keys = checks.map(check => check.stableKey);
     const max = checks.reduce((total, check) => total + check.points, 0);
-    const sourceSha256 = String(sequence).repeat(64);
+    const sourceSha256 = String(sequence).padStart(64, '0');
     const bundle = writeArtifact(join(root, 'progression',
       `attempt-${String(sequence).padStart(3, '0')}`, 'bundle.json'), {
       kind: 'grade_bundle',
       id: `grade-${sequence}`,
       attempt: { id: `grade-${sequence}`, parentId: runArtifact.id },
       identities: emptyArtifactIdentities({
-        recipe: { id: release.id, version: release.version, sha256: release.contentSha256 },
+        recipe: { id: release.id, sha256: release.contentSha256 },
         stackAdapter: { id: owner.attempt.stack },
       }),
       payload: {
@@ -115,8 +115,7 @@ function writeReferenceRun(root: string,
       dependencyPolicyIdentity: dependencyPolicy.identity,
       selectionSha256: selected.grader.selectionSha256,
       sourceSha256,
-      recipeIdentity: { id: release.id, version: release.version,
-        sha256: release.contentSha256 },
+      recipeIdentity: { id: release.id, sha256: release.contentSha256 },
       sequence,
     });
     if (tamperRecordedResult && sequence === 1) {

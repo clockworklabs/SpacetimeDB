@@ -5,7 +5,6 @@ import type {
   CompiledProgressionNode,
   CompiledProgressionQuestline,
 } from './progression-definition.js';
-import { isProgressionVersion, parseVersionedProgressionId } from './progression-identifiers.js';
 import {
   assertDependencyObject as strictObject,
   dependencyFailure as fail,
@@ -18,7 +17,6 @@ import type { RepairPlan } from './repair-plan.js';
 
 export const DEPENDENCY_MODE_SCHEMA_VERSION = 7;
 export const DEPENDENCY_MODE_POLICY = 'dependency-graph';
-export const DEPENDENCY_MODE_VERSION = '4.3.0';
 export const FEATURE_CATALOG_SCHEMA_VERSION = 1;
 export const DEFAULT_UNCHANGED_FAILURE_LIMIT = 3;
 export const DEFAULT_DEPENDENCY_WORK_SELECTION = 'progressive';
@@ -45,8 +43,6 @@ interface MutableDefinition extends Record<string, unknown> {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   policy?: string;
   repair?: RepairPlan;
@@ -63,14 +59,8 @@ export interface CompiledDependencyDefinition extends CompiledProgressionDefinit
   workSelection: DependencyWorkSelection;
 }
 
-function progressionVersion(value: unknown, at: string): string {
-  const result = nonEmptyString(value, at);
-  if (!isProgressionVersion(result)) return fail(at, 'must be an exact semantic version');
-  return result;
-}
-
 function uniqueStrings(value: unknown, at: string,
-  { exactRefs = false, nonEmpty = true }: { exactRefs?: boolean; nonEmpty?: boolean } = {}): string[] {
+  { nonEmpty = true }: { nonEmpty?: boolean } = {}): string[] {
   if (!Array.isArray(value) || (nonEmpty && value.length === 0)) {
     fail(at, `must be ${nonEmpty ? 'a non-empty' : 'an'} array`);
   }
@@ -79,13 +69,7 @@ function uniqueStrings(value: unknown, at: string,
     const result = nonEmptyString(item, `${at}[${index}]`);
     if (seen.has(result)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(result)}`);
     seen.add(result);
-    if (exactRefs) {
-      if (!parseVersionedProgressionId(result)) {
-        fail(`${at}[${index}]`, 'must be an exact id@semantic-version reference');
-      }
-    } else {
-      identifier(result, `${at}[${index}]`);
-    }
+    identifier(result, `${at}[${index}]`);
     return result;
   });
 }
@@ -110,7 +94,7 @@ function assertAcyclic(nodesById: Map<string, CompiledProgressionNode>): void {
 function compileGraphDefinition(input: unknown,
   { source, catalogOnly }: { source: string; catalogOnly: boolean }): CompiledProgressionDefinition {
   const definition = structuredClone(input) as MutableDefinition;
-  const fields = ['schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'nodes',
+  const fields = ['schemaVersion', 'kind', 'id', 'title', 'nodes',
     'questlines'];
   if (!catalogOnly) fields.push('policy', 'repair', 'unchangedFailureLimit', 'workSelection');
   strictObject(definition, source, new Set(fields));
@@ -121,10 +105,6 @@ function compileGraphDefinition(input: unknown,
   }
   if (definition.kind !== expectedKind) fail(`${source}.kind`, `must be ${JSON.stringify(expectedKind)}`);
   identifier(definition.id, `${source}.id`);
-  progressionVersion(definition.version, `${source}.version`);
-  if (definition.state !== 'draft' && definition.state !== 'qualified') {
-    fail(`${source}.state`, 'must be "draft" or "qualified"');
-  }
   nonEmptyString(definition.title, `${source}.title`);
   if (!catalogOnly && definition.policy !== DEPENDENCY_MODE_POLICY) {
     fail(`${source}.policy`, `must be ${JSON.stringify(DEPENDENCY_MODE_POLICY)}`);
@@ -158,9 +138,9 @@ function compileGraphDefinition(input: unknown,
     nodeIds.add(node.id);
     nonEmptyString(node.title, `${at}.title`);
     identifier(node.questline, `${at}.questline`);
-    node.featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`, { exactRefs: true }).sort();
+    node.featureRefs = uniqueStrings(node.featureRefs, `${at}.featureRefs`).sort();
     node.promptModules = uniqueStrings(node.promptModules, `${at}.promptModules`,
-      { exactRefs: true, nonEmpty: false }).sort();
+      { nonEmpty: false }).sort();
     if (!Array.isArray(node.gradingChecks) || node.gradingChecks.length === 0) {
       fail(`${at}.gradingChecks`, 'must be a non-empty array');
     }
@@ -237,14 +217,12 @@ function compileGraphDefinition(input: unknown,
   const featureOwners = new Map<string, string>();
   for (const node of definition.nodes) {
     for (const reference of node.featureRefs) {
-      const parsed = parseVersionedProgressionId(reference);
-      if (!parsed) return fail(`${source}.nodes.${node.id}.featureRefs`, `invalid reference ${reference}`);
-      const priorOwner = featureOwners.get(parsed.id);
+      const priorOwner = featureOwners.get(reference);
       if (priorOwner !== undefined) {
         fail(`${source}.nodes.${node.id}.featureRefs`,
-          `${parsed.id} is already owned by ${priorOwner}`);
+          `${reference} is already owned by ${priorOwner}`);
       }
-      featureOwners.set(parsed.id, node.id);
+      featureOwners.set(reference, node.id);
     }
   }
   for (const node of definition.nodes) {

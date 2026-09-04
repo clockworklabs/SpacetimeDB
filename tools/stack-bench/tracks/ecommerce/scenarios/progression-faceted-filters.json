@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Faceted search filters",
+  "features": [
+    {
+      "id": 401,
+      "name": "Filters compose",
+      "actors": ["visitor"],
+      "setup": [
+        { "do": "fill", "actor": "visitor", "testid": "category-filter", "text": "Home" },
+        { "do": "fill", "actor": "visitor", "testid": "minimum-price", "text": "50" },
+        { "do": "fill", "actor": "visitor", "testid": "maximum-price", "text": "200" },
+        { "do": "click", "actor": "visitor", "testid": "in-stock-filter" }
+      ],
+      "criteria": [
+        {
+          "id": "401a",
+          "desc": "category, price, and availability filters apply together",
+          "points": 3,
+          "statedBy": "Apply all selected filters together",
+          "steps": [
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Coffee Grinder", "equals": 1, "within": 10000 },
+            { "do": "expectElementCount", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Air Purifier", "equals": 1 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "USB Cable", "absent": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Desk Lamp", "absent": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Espresso Machine", "absent": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "contains": "Gaming Mouse", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

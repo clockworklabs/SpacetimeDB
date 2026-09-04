@@ -46,7 +46,7 @@ const RESET = compiledEntrypoint('commands', 'reset-backend.js');
 type Observation = 'scored' | 'observed';
 type Selection = {
   schemaVersion: number;
-  recipe: { id: string; version: string; contentSha256: string };
+  recipe: { id: string; contentSha256: string };
   requested: RecipeSelection['requested'];
   sha256: string;
   checks: RecipeCheck[];
@@ -62,7 +62,7 @@ type DeclaredSuite = TrackSuite;
 type Failure = Error & { stdout?: string; stderr?: string; status?: number | null; signal?: string | null;
   code?: string };
 type FailureDetail = { message?: unknown; stderr?: unknown } | null;
-type RecipeTaskArgument = { recipe: { id: string; version: string; contentSha256?: string } } & Record<string, unknown>;
+type RecipeTaskArgument = { recipe: { id: string; contentSha256?: string } } & Record<string, unknown>;
 type RunArguments = {
   app: string;
   url: string;
@@ -123,7 +123,7 @@ type BundleSelection = Selection & { attemptedChecks: string[]; reportedChecks: 
 type Bundle = {
   definitionSchemaVersion: number;
   recipeRelease: ReturnType<typeof bundleRecipeRelease>;
-  calibration: { id: string; version: string; state: string; contentSha256: string } | null;
+  calibration: { id: string; contentSha256: string } | null;
   label: string; track: string; backend: string; url: string; app: string; level: number;
   observation: Observation; source?: { sha256: string };
   suites: Record<string, GradePayload | LintPayload | null>;
@@ -687,7 +687,7 @@ async function gradeSuite(args: RunArguments, suite: DeclaredSuite, track: Track
   argv.push('--backend', args.backend, '--track', args.track);
   if (recipeBinding) argv.push('--expected-recipe-sha256', recipeBinding.release.contentSha256);
   const requestedRecipe = args.recipe ?? (args.recipeTask
-    ? `${args.recipeTask.recipe.id}@${args.recipeTask.recipe.version}` : null);
+    ? args.recipeTask.recipe.id : null);
   if (requestedRecipe) argv.push('--recipe', requestedRecipe);
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
   if (args.credentialAliases) {
@@ -797,8 +797,8 @@ async function main() {
   console.log(`  app: ${args.app}`);
   console.log(`  url: ${args.url}`);
   if (recipeBinding && selection) {
-    console.log(`  recipe: ${recipeBinding.alias} -> ${recipeBinding.release.id}@${recipeBinding.release.version} ` +
-      `(${recipeBinding.status}, ${recipeBinding.release.contentSha256.slice(0, 12)})`);
+    console.log(`  recipe: ${recipeBinding.alias} -> ${recipeBinding.release.id} ` +
+      `(${recipeBinding.release.contentSha256.slice(0, 12)})`);
     console.log(args.observation === 'observed'
       ? `  scope: ${selection.checks.length} observed check(s), ${selection.observedPoints} observed point(s), 0 score contribution`
       : `  scope: ${selection.checks.length} check(s), ${selection.scoredPoints} point(s)`);
@@ -812,8 +812,8 @@ async function main() {
   const bundle: Bundle = {
     definitionSchemaVersion: track.schemaVersion,
     recipeRelease: bundleRecipeRelease(recipeBinding),
-    calibration: calibration ? { id: calibration.id, version: calibration.version,
-      state: calibration.state, contentSha256: calibration.contentSha256 } : null,
+    calibration: calibration ? { id: calibration.id,
+      contentSha256: calibration.contentSha256 } : null,
     label: args.label, track: args.track, backend: args.backend, url: args.url, app: args.app,
     level: Number(args.level), observation: args.observation,
     ...(args.sourceSha256 ? { source: { sha256: args.sourceSha256 } } : {}),
@@ -838,8 +838,8 @@ async function main() {
       attempt: { id: bundleArtifactId, parentId: args.parentAttemptId ?? null },
       timestamps: { startedAt, completedAt: new Date().toISOString() },
       identities: recipeArtifactIdentities(recipeBinding?.release ?? null, {
-        calibration: calibration ? { id: calibration.id, version: calibration.version,
-          sha256: calibration.contentSha256, state: calibration.state } : null,
+        calibration: calibration ? { id: calibration.id,
+          sha256: calibration.contentSha256 } : null,
         stackAdapter: { id: args.backend },
       }),
       payload: bundle,

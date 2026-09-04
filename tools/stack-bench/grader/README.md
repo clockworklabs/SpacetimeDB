@@ -74,7 +74,7 @@ Direct `dist/grader/grade.js` execution is for focused scenario authoring only:
 
 ```bash
 node dist/grader/grade.js --url http://localhost:6173 \
-  --spec tracks/ecommerce/scenarios/01-account-create-2.4.0.json \
+  --spec tracks/ecommerce/scenarios/01-account-create.json \
   --label spacetime-l1 --out report.json
 ```
 
@@ -92,8 +92,8 @@ npm run test:null
 npm run check:mutations -- --app <reference-app> --mutations <manifest>
 ```
 
-During development, run only mutations affected by the change. A full mutation
-qualification is a release-candidate gate.
+During development, run only mutations affected by the change. Use the full
+mutation set only when grader or check changes require it.
 
 The mutation runner requires:
 

@@ -1,9 +1,7 @@
 import {
   DEFAULT_DEPENDENCY_WORK_SELECTION,
-  DEPENDENCY_MODE_VERSION,
   isDependencyWorkSelection,
 } from '../progression/dependency-definition.js';
-import { isExactSemanticVersion } from '../semantic-version.js';
 
 export const CAMPAIGN_MODE_SCHEMA_VERSION = 1;
 
@@ -12,7 +10,6 @@ type UnknownRecord = Record<string, unknown>;
 
 export interface CampaignModeInput extends UnknownRecord {
   id: string;
-  version: string;
 }
 
 export interface CampaignModeDefinition extends CampaignModeInput {
@@ -33,9 +30,6 @@ function fail(message: string): never {
 function validateIdentity(value: unknown, at: string): asserts value is CampaignModeInput {
   if (!object(value)) fail(`${at} must be an object`);
   if (typeof value.id !== 'string' || !ID.test(value.id)) fail(`${at}.id is invalid`);
-  if (!isExactSemanticVersion(value.version)) {
-    fail(`${at}.version must be an exact semantic version`);
-  }
 }
 
 export function createCampaignModeRegistry(modes: CampaignModeDefinition[]): CampaignModeRegistry {
@@ -43,18 +37,16 @@ export function createCampaignModeRegistry(modes: CampaignModeDefinition[]): Cam
   const entries = new Map<string, CampaignModeDefinition>();
   for (const mode of modes) {
     validateIdentity(mode, 'registry entry');
-    if (typeof mode.validate !== 'function') fail(`${mode.id}@${mode.version} requires validate()`);
-    const key = `${mode.id}@${mode.version}`;
-    if (entries.has(key)) fail(`registry repeats ${key}`);
-    entries.set(key, Object.freeze({ ...mode }));
+    if (typeof mode.validate !== 'function') fail(`${mode.id} requires validate()`);
+    if (entries.has(mode.id)) fail(`registry repeats ${mode.id}`);
+    entries.set(mode.id, Object.freeze({ ...mode }));
   }
   return Object.freeze({
     ids: Object.freeze([...entries.keys()].sort()),
     validate(input: unknown, { at = 'mode' }: { at?: string } = {}) {
       validateIdentity(input, at);
-      const key = `${input.id}@${input.version}`;
-      const mode = entries.get(key);
-      if (!mode) fail(`${at} selects unknown ${key}; available: ${[...entries.keys()].sort().join(', ')}`);
+      const mode = entries.get(input.id);
+      if (!mode) fail(`${at} selects unknown ${input.id}; available: ${[...entries.keys()].sort().join(', ')}`);
       return mode.validate(structuredClone(input), { at });
     },
   });
@@ -62,21 +54,19 @@ export function createCampaignModeRegistry(modes: CampaignModeDefinition[]): Cam
 
 const sequentialMode = {
   id: 'sequential',
-  version: '1.0.0',
   validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
-    const fields = new Set(['id', 'version']);
+    const fields = new Set(['id']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for sequential mode`);
     }
-    return { id: value.id, version: value.version };
+    return { id: value.id };
   },
 };
 
 const dependencyMode = {
   id: 'dependency',
-  version: DEPENDENCY_MODE_VERSION,
   validate(value: CampaignModeInput, { at }: { at: string }): CampaignModeInput {
-    const fields = new Set(['id', 'version', 'workSelection']);
+    const fields = new Set(['id', 'workSelection']);
     for (const key of Object.keys(value)) {
       if (!fields.has(key)) fail(`${at}.${key} is unknown for dependency mode`);
     }
@@ -84,7 +74,7 @@ const dependencyMode = {
     if (!isDependencyWorkSelection(workSelection)) {
       fail(`${at}.workSelection must be "feature", "progressive", or "all-at-once"`);
     }
-    return { id: value.id, version: value.version, workSelection };
+    return { id: value.id, workSelection };
   },
 };
 

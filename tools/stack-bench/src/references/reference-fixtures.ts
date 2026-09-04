@@ -14,7 +14,6 @@ export interface ReferenceFixture {
   backend: string;
   track: string;
   level: number;
-  status: string;
   recipes?: string[];
   actionLevels?: number[];
   targetPath?: string;
@@ -60,7 +59,6 @@ const errorMessage = (error: unknown): string =>
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
 export const REFERENCE_METADATA_FILE = 'reference.json';
 const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb']);
-const STATUSES = new Set(['blocked', 'candidate', 'active']);
 const FIXTURE_KINDS = new Set(['node-api', 'spacetime']);
 const FORBIDDEN_DIRECTORIES = new Set(['node_modules', 'dist', 'module_bindings', 'stack-bench']);
 const FORBIDDEN_FILES = [/^\.env(?:\..*)?$/i, /\.mutation-backup(?:\..*)?$/i];
@@ -79,9 +77,7 @@ export function selectReferenceFixture(registry: ReferenceRegistry,
   const recipeScoped = recipe
     ? inScope.filter(fixture => fixture.recipes?.includes(recipe))
     : [];
-  const matches = recipeScoped.length
-    ? recipeScoped.filter(fixture => fixture.status !== 'blocked')
-    : inScope.filter(fixture => fixture.status === 'active' && !fixture.recipes?.length);
+  const matches = recipe ? recipeScoped : inScope;
   const [match] = matches;
   if (matches.length !== 1 || !match) {
     throw new Error(`reference source requires exactly one ${track} L${level} ${backend} fixture for ${recipe ?? 'the default recipe'}`);
@@ -93,7 +89,7 @@ export function validateReferenceRegistry(registry: unknown,
   { root = ROOT }: { root?: string } = {}): { ok: boolean; issues: string[] } {
   const issues: string[] = [];
   const candidate = record(registry) ? registry : {};
-  if (candidate.schemaVersion !== 4) issues.push('schemaVersion must be 4');
+  if (candidate.schemaVersion !== 5) issues.push('schemaVersion must be 5');
   const fixtures: unknown[] = Array.isArray(candidate.fixtures) ? candidate.fixtures : [];
   if (fixtures.length === 0) {
     return { ok: false, issues: [...issues, 'fixtures must be a non-empty array'] };
@@ -108,16 +104,18 @@ export function validateReferenceRegistry(registry: unknown,
     }
     const fixture = value as unknown as ReferenceFixture;
     const label = fixture.id ?? '<unnamed>';
+    if ('status' in fixture || 'blockedReason' in fixture) {
+      issues.push(`${label}: authored lifecycle fields are not supported`);
+    }
     if (typeof fixture.id !== 'string' || !fixture.id || ids.has(fixture.id)) issues.push(`${label}: id is missing or duplicated`);
     ids.add(fixture.id);
     if (!BACKENDS.has(fixture.backend)) issues.push(`${label}: invalid backend`);
     if (typeof fixture.track !== 'string' || !fixture.track) issues.push(`${label}: track is required`);
     if (!Number.isInteger(fixture.level) || fixture.level < 1) issues.push(`${label}: level must be a positive integer`);
-    if (!STATUSES.has(fixture.status)) issues.push(`${label}: invalid status`);
     const recipes = fixture.recipes ?? [];
     if (!Array.isArray(recipes) || recipes.some(recipe => typeof recipe !== 'string'
-        || !/^[a-z0-9][a-z0-9._-]*@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.test(recipe))) {
-      issues.push(`${label}: recipes must contain exact recipe identities`);
+        || !/^[a-z0-9][a-z0-9._-]*$/.test(recipe))) {
+      issues.push(`${label}: recipes must contain stable recipe ids`);
     }
     const actionLevels = fixture.actionLevels ?? [fixture.level];
     if (!Array.isArray(actionLevels) || actionLevels.length === 0
@@ -168,30 +166,19 @@ export function validateReferenceRegistry(registry: unknown,
           issues.push(`${label}: ${manifestPath} is not valid JSON: ${errorMessage(error)}`);
         }
         if (!manifest) continue;
-        if (fixture.status === 'active' || fixture.status === 'candidate') {
-          if (manifest.schemaVersion !== 2) {
-            issues.push(`${label}: ${manifestPath} must use mutation schema 2`);
-          }
-          if (manifest.level !== undefined) {
-            issues.push(`${label}: ${manifestPath} must not own a level`);
-          }
+        if (manifest.schemaVersion !== 3) {
+          issues.push(`${label}: ${manifestPath} must use mutation schema 3`);
+        }
+        if (manifest.level !== undefined) {
+          issues.push(`${label}: ${manifestPath} must not own a level`);
         }
         if (manifest.backend !== fixture.backend || manifest.track !== fixture.track) {
           issues.push(`${label}: ${manifestPath} targets a different backend or track`);
         }
-        const expectedStatus = fixture.status === 'active' ? 'active' : 'candidate';
-        if (manifest.status !== expectedStatus) {
-          issues.push(`${label}: ${manifestPath} must be ${expectedStatus} while fixture is ${fixture.status}`);
-        }
-        if (fixture.status !== 'blocked' && manifest.fixtureSha256 !== fixture.imported?.sourceSha256) {
+        if (manifest.fixtureSha256 !== fixture.imported?.sourceSha256) {
           issues.push(`${label}: ${manifestPath} fixtureSha256 must match the imported fixture`);
         }
       }
-    }
-    if (fixture.status === 'blocked') {
-      if (typeof fixture.blockedReason !== 'string' || !fixture.blockedReason) issues.push(`${label}: blockedReason is required`);
-      if (manifests.length) issues.push(`${label}: blocked fixtures cannot own mutation manifests`);
-      continue;
     }
     const origin = fixture.origin ?? {};
     if (origin.kind !== 'authored') {
@@ -401,8 +388,7 @@ function readJsonBytes(bytes: Buffer | undefined, label: string, failures: strin
 async function main(): Promise<void> {
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);
-  const imports = registry.fixtures.filter(fixture => fixture.status !== 'blocked')
-    .map(fixture => inspectImportedReference(fixture));
+  const imports = registry.fixtures.map(fixture => inspectImportedReference(fixture));
   console.log(JSON.stringify({ validation, imports }, null, 2));
   if (!validation.ok || imports.some(item => !item.ok)) process.exitCode = 1;
 }

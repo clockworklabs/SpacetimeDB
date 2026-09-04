@@ -31,12 +31,11 @@ test('dependency campaign scope must match the graph-derived scope', () => {
   assert(declared);
   assert(plan.featureCatalog);
   const featureCatalog = plan.featureCatalog;
-  const binding = resolveRecipeRelease(loadTrack(plan.definition.track), 1,
-    `${declared.recipe.id}@${declared.recipe.version}`);
+  const binding = resolveRecipeRelease(loadTrack(plan.definition.track), 1, declared.recipe.id);
   assert.doesNotThrow(() => validateProgressionCampaignLevelScope(binding,
     featureCatalog, declared, 1));
   const tampered = structuredClone(declared);
-  tampered.selection.sha256 = '0'.repeat(64);
+  tampered.selection.contentSha256 = '0'.repeat(64);
   assert.throws(() => validateProgressionCampaignLevelScope(binding,
     featureCatalog, tampered, 1), /graph-derived scope changed/);
 });

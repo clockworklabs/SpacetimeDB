@@ -26,8 +26,6 @@ interface DefinitionFixture {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   policy: string;
   repair: { selection: 'feature'; budget: { perFeature: number } };
@@ -51,8 +49,6 @@ const definition = (): DefinitionFixture => ({
   schemaVersion: 7,
   kind: 'progression-mode',
   id: 'ecommerce-dependency',
-  version: '1.0.0',
-  state: 'draft',
   title: 'Ecommerce dependency fixture',
   policy: 'dependency-graph',
   repair: { selection: 'feature', budget: { perFeature: 2 } },
@@ -63,7 +59,7 @@ const definition = (): DefinitionFixture => ({
     title: 'Accounts',
     questline: 'identity',
     dependencies: [],
-    featureRefs: ['ecommerce.feature.accounts@1.1.0'],
+    featureRefs: ['ecommerce.feature.accounts'],
     promptModules: [],
     gradingChecks: [
       { id: 'ecommerce.feature.accounts.accounts.1a', points: 1, role: 'feature' },
@@ -78,13 +74,13 @@ test('progression input freezes the compiled graph and rejects a rewritten ident
   assert.deepEqual(progressionLevels(input), [1]);
   assert.deepEqual(validateProgressionInput(input), input);
   const changed = structuredClone(input);
-  changed.identity.sha256 = 'a'.repeat(64);
+  changed.identity.contentSha256 = 'a'.repeat(64);
   assert.throws(() => validateProgressionInput(changed), /identity does not match/);
 });
 
 test('the recipe boundary keeps agent work separate from exact grader checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
   const input = compileProgressionInput(definition());
   validateProgressionRecipeBindings(input, [{ level: 1, binding }]);
   const state = progressionEngine.initialize(input.definition);
@@ -109,23 +105,23 @@ test('the recipe boundary keeps agent work separate from exact grader checks', (
 
 test('dependent feature actions validate graph ancestors without restating their prompts', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
   const value = definition();
   value.nodes = [
     { id: 'accounts', title: 'Accounts', questline: 'account-purchase', dependencies: [],
-      featureRefs: ['ecommerce.feature.accounts@1.1.0'], promptModules: [],
+      featureRefs: ['ecommerce.feature.accounts'], promptModules: [],
       gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1,
         role: 'feature' }] },
     { id: 'catalog', title: 'Catalog', questline: 'catalog-purchase', dependencies: [],
-      featureRefs: ['ecommerce.feature.catalog@1.1.0'], promptModules: [],
-      gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog.2a', points: 1,
+      featureRefs: ['ecommerce.feature.catalog-items'], promptModules: [],
+      gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog-values.2a', points: 1,
         role: 'feature' }] },
     { id: 'purchasing', title: 'Purchasing', questline: 'account-purchase',
       dependencies: [
         { id: 'accounts', reason: 'Purchasing requires an account.' },
         { id: 'catalog', reason: 'Purchasing requires a catalog item.' },
       ],
-      featureRefs: ['ecommerce.feature.purchasing@1.1.0'], promptModules: [],
+      featureRefs: ['ecommerce.feature.purchasing'], promptModules: [],
       gradingChecks: [{ id: 'ecommerce.feature.purchasing.purchase-order.3c', points: 1,
         role: 'feature' }] },
   ];
@@ -141,7 +137,7 @@ test('dependent feature actions validate graph ancestors without restating their
   state = progressionEngine.recordResult(state, {
     attemptId: 'parents', outcome: 'conclusive', nodes: [
       { id: 'accounts', checks: [{ id: 'ecommerce.feature.accounts.accounts.1a', outcome: 'pass' }] },
-      { id: 'catalog', checks: [{ id: 'ecommerce.feature.catalog.catalog.2a', outcome: 'pass' }] },
+      { id: 'catalog', checks: [{ id: 'ecommerce.feature.catalog.catalog-values.2a', outcome: 'pass' }] },
     ],
   });
   const selected = resolveWorkRecipeAction(binding, state);
@@ -166,19 +162,20 @@ test('dependent feature actions validate graph ancestors without restating their
   ];
   assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(malformed), [
     { level: 1, binding }, { level: 2, binding },
-  ]), /requires ecommerce\.feature\.catalog@1\.1\.0 in its node or ancestors/);
+  ]), /requires ecommerce\.feature\.catalog-items in its node or ancestors/);
 });
 
 test('binding validation rejects a check borrowed from a selected sibling', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1@2.5.0');
+    'ecommerce.sequential-l1');
   const value = definition();
   value.nodes.push({ id: 'catalog', title: 'Catalog', questline: 'catalog', dependencies: [],
-    featureRefs: ['ecommerce.feature.catalog@1.1.0'], promptModules: [],
-    gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog.2b', points: 1,
+    featureRefs: ['ecommerce.feature.catalog-items', 'ecommerce.feature.catalog-discovery'],
+    promptModules: [],
+    gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog-ranking.2b', points: 1,
       role: 'feature' }] });
   value.nodes[0]!.gradingChecks = [
-    { id: 'ecommerce.feature.catalog.catalog.2a', points: 1, role: 'feature' },
+    { id: 'ecommerce.feature.catalog.catalog-values.2a', points: 1, role: 'feature' },
   ];
   value.questlines = [
     { id: 'identity', title: 'Identity', nodes: ['accounts'] },
@@ -191,20 +188,20 @@ test('binding validation rejects a check borrowed from a selected sibling', () =
 
 test('binding validation allows grading setup elsewhere in the feature graph', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1@2.5.0');
+    'ecommerce.sequential-l1');
   const value = definition();
   value.nodes[0]!.gradingChecks.push({
     id: 'ecommerce.spec.state-durability.account-state-recovery.105a', points: 1,
     role: 'guarantee',
   });
   value.nodes.push({ id: 'catalog', title: 'Catalog', questline: 'catalog', dependencies: [],
-    featureRefs: ['ecommerce.feature.catalog@1.1.0'], promptModules: [],
-    gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog.2a', points: 1,
+    featureRefs: ['ecommerce.feature.catalog-items'], promptModules: [],
+    gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog-values.2a', points: 1,
       role: 'feature' }] });
   value.nodes.push({ id: 'cart', title: 'Cart', questline: 'cart', dependencies: [
     { id: 'accounts', reason: 'the cart belongs to an account' },
     { id: 'catalog', reason: 'the cart contains catalog items' },
-  ], featureRefs: ['ecommerce.feature.cart-checkout@1.2.0'], promptModules: [],
+  ], featureRefs: ['ecommerce.feature.cart', 'ecommerce.feature.checkout'], promptModules: [],
   gradingChecks: [{ id: 'ecommerce.feature.cart-checkout.cart.4a', points: 1,
     role: 'feature' }] });
   value.questlines = [
@@ -220,11 +217,11 @@ test('binding validation allows grading setup elsewhere in the feature graph', (
 
 test('expected specification dependencies stay in grader scope and out of the agent prompt', () => {
   const binding = structuredClone(resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1@2.5.0'));
+    'ecommerce.sequential-l1'));
   const durability = binding.release.components.packs.find(module =>
     module.id === 'ecommerce.spec.state-durability');
   assert(durability);
-  durability.requiresPacks = ['ecommerce.spec.access-control@1.2.0'];
+  durability.requiresPacks = ['ecommerce.spec.access-control'];
   const accessCheck = binding.release.checkCatalog.find(check =>
     check.packId === 'ecommerce.spec.access-control');
   assert(accessCheck);
@@ -240,8 +237,8 @@ test('expected specification dependencies stay in grader scope and out of the ag
     progressionEngine.initialize(input.definition));
   assert.deepEqual(selected.agent.request.selection.requested.specifications.requested, []);
   assert.deepEqual(selected.grader.request.selection.requested.specifications.expected, [
-    'ecommerce.spec.access-control@1.2.0',
-    'ecommerce.spec.state-durability@1.1.0',
+    'ecommerce.spec.access-control',
+    'ecommerce.spec.state-durability',
   ]);
   assert.deepEqual(selected.grader.checkKeys, [
     'ecommerce.feature.accounts.accounts.1a',
@@ -250,11 +247,11 @@ test('expected specification dependencies stay in grader scope and out of the ag
   ]);
 });
 
-test('the recipe boundary rejects stale module versions, check points, and check owners', () => {
+test('the recipe boundary rejects stale module references, check points, and check owners', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1@2.5.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.sequential-l1');
   const stale = definition();
-  stale.nodes[0]!.featureRefs = ['ecommerce.feature.accounts@1.0.0'];
+  stale.nodes[0]!.featureRefs = ['ecommerce.feature.missing'];
   assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(stale),
     [{ level: 1, binding }]), /outside the selected recipe/);
   const wrongPoints = definition();
@@ -262,7 +259,7 @@ test('the recipe boundary rejects stale module versions, check points, and check
   assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(wrongPoints),
     [{ level: 1, binding }]), /points.*differ/);
   const wrongOwner = definition();
-  wrongOwner.nodes[0]!.gradingChecks[0]!.id = 'ecommerce.feature.catalog.catalog.2a';
+  wrongOwner.nodes[0]!.gradingChecks[0]!.id = 'ecommerce.feature.catalog.catalog-values.2a';
   assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(wrongOwner),
     [{ level: 1, binding }]), /unselected feature/);
 });

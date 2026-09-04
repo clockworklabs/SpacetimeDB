@@ -440,7 +440,7 @@ export function compileActionInput(input: unknown,
 }
 
 const SCENARIO_FIELDS = new Set([
-  'schemaVersion', 'blocked_on', 'features', 'level', 'name', 'note', 'status', 'track',
+  'schemaVersion', 'blocked_on', 'features', 'level', 'name', 'note', 'track',
   'why_it_matters', 'writeUrlPattern',
 ]);
 const FEATURE_FIELDS = new Set(['actors', 'criteria', 'id', 'max', 'name', 'note', 'setup']);

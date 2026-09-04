@@ -397,7 +397,7 @@ test('dependency validation keeps a conclusive grade when its repair session is 
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
         agentAdapter: attempt.agentAdapter, model: attempt.model,
-        conditionSha256: attempt.condition.sha256 },
+        conditionSha256: attempt.condition.contentSha256 },
       workspace: { appDirectory: 'source' } };
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
       plan.featureCatalog!, plan.dependencyPolicy!));
@@ -447,7 +447,7 @@ test('dependency validation requires a matching pre-grade failure attempt', () =
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
         agentAdapter: attempt.agentAdapter, model: attempt.model,
-        conditionSha256: attempt.condition.sha256 },
+        conditionSha256: attempt.condition.contentSha256 },
       workspace: { appDirectory: 'source' } };
     const progression = compileProgressionInput(dependencyRuntimeDefinition(
       plan.featureCatalog!, plan.dependencyPolicy!));
@@ -649,8 +649,8 @@ test('campaign validation binds observed-only evidence to its exact first-build 
     { stableKey: 'durability/session', points: 1, treatment: 'observed' as const },
   ];
   const selectedObservedKeys = observedChecks.map(check => check.stableKey);
-  const specifications = { requested: [], expected: ['authorization@1.0.0'],
-    observed: ['durability@1.0.0'] };
+  const specifications = { requested: [], expected: ['authorization'],
+    observed: ['durability'] };
   const baseAttempt = compiled.attempts[0];
   const baseLevel = baseAttempt.condition.requested.levels[0];
   const requestedLevels: CampaignAttemptPlan['condition']['requested']['levels'] = [{
@@ -659,7 +659,7 @@ test('campaign validation binds observed-only evidence to its exact first-build 
   const condition = { ...baseAttempt.condition, requested: {
     ...baseAttempt.condition.requested, levels: requestedLevels } };
   const plan = { ...compiled, conditions: compiled.conditions.map(item =>
-    item.sha256 === condition.sha256 ? condition : item) } as CompiledCampaignPlan;
+    item.contentSha256 === condition.contentSha256 ? condition : item) } as CompiledCampaignPlan;
   const attempt: CampaignAttemptPlan = { ...baseAttempt, condition };
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter)!;
   const stack = plan.stacks.find(item => item.id === attempt.stack)!;

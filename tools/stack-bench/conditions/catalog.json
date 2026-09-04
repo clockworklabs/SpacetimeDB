@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "kind": "study-condition-catalog",
   "guidanceProfiles": {
-    "model-free-stub@1.1.0": "guidance/model-free-stub.json",
-    "prescribed@1.2.0": "guidance/prescribed.json",
-    "neutral@1.8.0": "guidance/neutral-1.8.0.json"
+    "model-free-stub": "guidance/model-free-stub.json",
+    "prescribed": "guidance/prescribed.json",
+    "neutral": "guidance/neutral.json"
   },
   "repairPolicies": {
-    "scored-only@1.1.0": "repairs/scored-only.json"
+    "scored-only": "repairs/scored-only.json"
   }
 }

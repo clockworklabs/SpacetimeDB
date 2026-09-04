@@ -108,7 +108,7 @@ test('the progression candidate retains the maintained SpacetimeDB build layout'
 
 test('the client implements every graph feature interface', () => {
   const graph = progressionGraph();
-  const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.3.json');
+  const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog.json');
   const packs = recipePackPaths(readJson(catalogPath), catalogPath);
   const interfaceNames: ScenarioInterface = { roles: new Set<string>(), attributes: new Set<string>() };
 
@@ -137,7 +137,7 @@ test('the client implements every graph feature interface', () => {
 });
 
 function progressionGraph() {
-  return compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce-2.0.3.json'), {
+  return compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce.json'), {
     trackRoot,
   });
 }
@@ -169,11 +169,10 @@ function recipePackPaths(value: unknown, catalogPath: string): Map<string, strin
   }
   const packs = new Map<string, string>();
   for (const entry of value.packs) {
-    if (!isRecord(entry) || typeof entry.id !== 'string' || typeof entry.version !== 'string'
-      || typeof entry.path !== 'string') {
+    if (!isRecord(entry) || typeof entry.id !== 'string' || typeof entry.path !== 'string') {
       throw new Error('progression catalog pack is not valid');
     }
-    packs.set(`${entry.id}@${entry.version}`, resolve(dirname(catalogPath), entry.path));
+    packs.set(entry.id, resolve(dirname(catalogPath), entry.path));
   }
   return packs;
 }

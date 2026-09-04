@@ -12,7 +12,7 @@ type TestStack = 'mongodb' | 'postgres';
 
 const digest = (character: string): string => character.repeat(64);
 const release = {
-  id: 'ecommerce.l1', version: '1.0.0', contentSha256: digest('a'), track: 'ecommerce',
+  id: 'ecommerce.l1', contentSha256: digest('a'), track: 'ecommerce',
   checkCatalog: [
     { stableKey: 'check.a', executionId: 'suite', source: 'scenarios/a.json',
       featureId: '1', criterionId: 'a', points: 1 },

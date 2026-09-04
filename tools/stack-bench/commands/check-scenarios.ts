@@ -84,10 +84,6 @@ function hooksByLevel(track: Track): HooksByLevel {
   return byLevel;
 }
 
-function packId(reference: string): string {
-  return reference.slice(0, reference.lastIndexOf('@'));
-}
-
 function ownedFragment(
   fragment: CompiledOwnedTaskFragment,
   owners: ReadonlySet<string>,
@@ -128,7 +124,7 @@ function recipeScenarioScopes(track: Track, recipeFile: string): Map<string, Sce
       const pack = packs.get(id);
       if (pack === undefined) return;
       for (const reference of pack.requiresPacks) {
-        const dependency = packId(reference);
+        const dependency = reference;
         if (found.has(dependency)) continue;
         found.add(dependency);
         visit(dependency);

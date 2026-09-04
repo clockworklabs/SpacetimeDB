@@ -10,7 +10,7 @@ import { parseReferenceQualificationArgs,
   parallelMutationResults, readParallelMutationWorker, referenceQualificationPaths,
   qualificationMutationManifest,
   companionReferenceArtifactPath,
-  assertReleaseCandidateRepetitions,
+  assertFullMutationRepetitions,
   qualificationArtifactsOk,
   referenceQualificationRelease,
   referenceQualificationRunner,
@@ -36,7 +36,6 @@ import type { ReferenceFixture } from '../src/references/reference-fixtures.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 const fixture: ReferenceFixture & { imported: { sourceSha256: string } } = {
   id: 'reference-live-test', backend: 'mongodb', track: 'ecommerce', level: 1,
-  status: 'qualified',
   imported: { sourceSha256: 'a'.repeat(64) } };
 
 function required<T>(value: T | null | undefined, description: string): T {
@@ -56,7 +55,7 @@ function record(value: unknown, description: string): Record<string, unknown> {
 }
 
 test('reference qualification runs only the mutations selected by its check scope', () => {
-  const path = 'grader/mutations/mongodb-ecommerce-2.0.1.json';
+  const path = 'grader/mutations/mongodb-ecommerce.json';
   const source = readMutationManifest(join(STACK_BENCH_ROOT, path));
   const ids = source.mutations.slice(0, 2).map(mutation => mutation.id);
   const context = { calibration: { mutations: [{ backend: 'mongodb', path,
@@ -105,18 +104,18 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.deepEqual(args.selectedCheckKeys, []);
   assert.equal(args.timeoutMinutes, 60);
   const mutationArgs = parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
-    '--mutations', '--release-candidate']);
+    '--mutations', '--full-mutations']);
   assert.equal(mutationArgs.mutations, true);
   assert.equal(mutationArgs.timeoutMinutes, 120);
   assert.equal(mutationArgs.mutationMaxRuntimeMinutes, 60);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--mutations']), /requires --release-candidate/);
+    '--backend', 'postgres', '--mutations']), /requires --full-mutations/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--release-candidate']), /requires --mutations/);
+    '--backend', 'postgres', '--full-mutations']), /requires --mutations/);
   const targeted = parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--mutations', '--mutation-id', 'one-defect']);
   assert.deepEqual(targeted.mutationIds, ['one-defect']);
-  assert.equal(targeted.releaseCandidate, undefined);
+  assert.equal(targeted.fullMutations, undefined);
   const selected = parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
     '--selected-check', 'check.one', '--selected-check', 'check.two']);
   assert.deepEqual(selected.selectedCheckKeys, ['check.one', 'check.two']);
@@ -126,27 +125,27 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--mutation-id', 'one-defect']), /requires --mutations/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--mutations', '--release-candidate', '--mutation-id', 'one-defect']),
+    '--backend', 'postgres', '--mutations', '--full-mutations', '--mutation-id', 'one-defect']),
   /cannot select individual mutations/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
-    '--mutations', '--release-candidate', '--timeout-minutes', '120']).timeoutMinutes, 120);
+    '--mutations', '--full-mutations', '--timeout-minutes', '120']).timeoutMinutes, 120);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js', '--backend', 'postgres',
-    '--mutations', '--release-candidate', '--timeout-minutes', '60', '--mutation-max-runtime-minutes', '30'])
+    '--mutations', '--full-mutations', '--timeout-minutes', '60', '--mutation-max-runtime-minutes', '30'])
     .mutationMaxRuntimeMinutes, 30);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--mutations', '--release-candidate', '--timeout-minutes', '60']), /plus 20 minutes/);
+    '--backend', 'postgres', '--mutations', '--full-mutations', '--timeout-minutes', '60']), /plus 20 minutes/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--mutations', '--release-candidate', '--timeout-minutes', '181']), /through 180/);
+    '--backend', 'postgres', '--mutations', '--full-mutations', '--timeout-minutes', '181']), /through 180/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--feature-catalog', 'ecommerce.questlines@2.0.3'])
-    .featureCatalog, 'ecommerce.questlines@2.0.3');
+    '--backend', 'postgres', '--feature-catalog', 'progression/ecommerce.json'])
+    .featureCatalog, 'progression/ecommerce.json');
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '4']), /declared/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '1',
-    '--recipe', 'ecommerce.sequential-l1@2.5.0']).recipe, 'ecommerce.sequential-l1@2.5.0');
+    '--recipe', 'ecommerce.sequential-l1']).recipe, 'ecommerce.sequential-l1');
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--repetitions', '1']).repetitions, 1);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
@@ -166,22 +165,22 @@ test('parallel Spacetime qualification derives an isolated listener port from th
   assert.notEqual(first.spacetimePort, parallel.spacetimePort);
   assert.equal(explicit.spacetimePort, 4411);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'spacetime', '--mutations', '--release-candidate', '--mutation-workers', '2',
+    '--backend', 'spacetime', '--mutations', '--full-mutations', '--mutation-workers', '2',
     '--spacetime-port', '65535']), /worker offsets/);
 });
 
 test('parallel mutation qualification reserves bounded slots and exact child shards', () => {
   const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'mongodb', '--mutations', '--release-candidate', '--mutation-workers', '4', '--run-index', '8']);
+    '--backend', 'mongodb', '--mutations', '--full-mutations', '--mutation-workers', '4', '--run-index', '8']);
   assert.equal(args.mutationWorkers, 4);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'mongodb', '--mutation-workers', '2']), /requires --mutations/);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'mongodb', '--mutations', '--release-candidate', '--mutation-workers', '2', '--run-index', '20']),
+    '--backend', 'mongodb', '--mutations', '--full-mutations', '--mutation-workers', '2', '--run-index', '20']),
   /run-index cap/);
 
   const argv = parallelMutationChildArgv(args,
-    { binding: { release: { id: 'ecommerce.sequential-l2', version: '1.5.0' } } },
+    { binding: { release: { id: 'ecommerce.sequential-l2' } } },
     { artifactPath: '/results/w3.json', baselineBundle: '/results/clean/bundle.json',
       workerIndex: 2, workerCount: 4 });
   const after = (flag: string) => required(argv[argv.indexOf(flag) + 1], `${flag} value`);
@@ -196,14 +195,14 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
 
   args.mutationIds = ['one-defect'];
   const targetedArgv = parallelMutationChildArgv(args,
-    { binding: { release: { id: 'ecommerce.sequential-l2', version: '1.5.0' } } },
+    { binding: { release: { id: 'ecommerce.sequential-l2' } } },
     { artifactPath: '/results/w3.json', baselineBundle: '/results/clean/bundle.json',
       workerIndex: 2, workerCount: 4 });
   assert.equal(targetedArgv[targetedArgv.indexOf('--mutation-id') + 1], 'one-defect');
 
   args.mutationCheckpointDir = '/results/checkpoints';
   const resumable = parallelMutationChildArgv(args,
-    { binding: { release: { id: 'ecommerce.sequential-l2', version: '1.5.0' } } },
+    { binding: { release: { id: 'ecommerce.sequential-l2' } } },
     { artifactPath: '/results/w3.json', baselineBundle: '/results/clean/bundle.json',
       workerIndex: 2, workerCount: 4 });
   assert.equal(required(resumable[resumable.indexOf('--mutation-checkpoint') + 1], 'mutation checkpoint')
@@ -252,7 +251,7 @@ test('mutation-only worker audit requires Docker, caught defects, and released r
 
 test('parallel mutation preflight covers every worker slot and Spacetime listener', () => {
   const args = parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'spacetime', '--track', 'ecommerce', '--mutations', '--release-candidate',
+    '--backend', 'spacetime', '--track', 'ecommerce', '--mutations', '--full-mutations',
     '--mutation-workers', '3', '--run-index', '8']);
   const keys = parallelMutationResourceLockKeys(args);
   assert.deepEqual(keys, [
@@ -287,9 +286,9 @@ test('parallel worker evidence is read only from its exact contained output', ()
     const output = join(root, 'w1.runs', 'r1');
     mkdirSync(output, { recursive: true });
     const identities = emptyArtifactIdentities({
-      fixture: { id: 'fixture', sha256: 'a'.repeat(64), state: 'candidate' },
-      recipe: { id: 'recipe', version: '1.0.0', sha256: 'b'.repeat(64), state: 'candidate' },
-      calibration: { id: 'calibration', version: '1.0.0', sha256: 'c'.repeat(64), state: 'draft' },
+      fixture: { id: 'fixture', sha256: 'a'.repeat(64) },
+      recipe: { id: 'recipe', sha256: 'b'.repeat(64) },
+      calibration: { id: 'calibration', sha256: 'c'.repeat(64) },
       stackAdapter: { id: 'mongodb' },
     });
     const mutationIds = ['first', 'second'];
@@ -336,9 +335,9 @@ test('parallel mutation accounting keeps the expected assignment when a worker s
     const output = join(root, 'w2.runs', 'r1');
     mkdirSync(output, { recursive: true });
     const identities = emptyArtifactIdentities({
-      fixture: { id: 'fixture', sha256: 'a'.repeat(64), state: 'candidate' },
-      recipe: { id: 'recipe', version: '1.0.0', sha256: 'b'.repeat(64), state: 'candidate' },
-      calibration: { id: 'calibration', version: '1.0.0', sha256: 'c'.repeat(64), state: 'draft' },
+      fixture: { id: 'fixture', sha256: 'a'.repeat(64) },
+      recipe: { id: 'recipe', sha256: 'b'.repeat(64) },
+      calibration: { id: 'calibration', sha256: 'c'.repeat(64) },
       stackAdapter: { id: 'mongodb' },
     });
     const manifest = { mutations: [
@@ -388,21 +387,21 @@ test('reference qualification resolves the exact executable calibration identity
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
     imported: { sourceSha256: '976181ac6a6de92a2fa269c12b8cef3b514b1b0499771ac6ca770e1df0ff4417' } });
   assert.equal(record(context.identity, 'qualification identity').id, 'ecommerce.sequential-l1-calibration');
-  assert.equal(record(context.identity, 'qualification identity').sha256, context.calibration.qualificationSha256);
+  assert.equal(record(context.identity, 'qualification identity').contentSha256,
+    context.calibration.qualificationSha256);
 });
 
 test('reference qualification resolves the current calibration', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
     imported: { sourceSha256: '976181ac6a6de92a2fa269c12b8cef3b514b1b0499771ac6ca770e1df0ff4417' } },
-  'ecommerce.sequential-l1@2.5.0');
-  assert.equal(context.binding.release.version, '2.5.0');
-  assert.equal(context.calibration.version, '2.5.0');
-  assert.equal(context.calibration.state, 'draft');
+  'ecommerce.sequential-l1');
+  assert.equal(context.binding.release.id, 'ecommerce.sequential-l1');
+  assert.equal(context.calibration.id, 'ecommerce.sequential-l1-calibration');
 });
 
 test('modular reference qualification selects every exact check without prescribing specifications', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.sequential-l1@2.5.0');
+    'ecommerce.sequential-l1');
   const argv = referenceQualificationSelectionArgs(binding);
   const featureIds = valuesAfter(argv, '--feature-module');
   const expectedSpecifications = valuesAfter(argv, '--expect-spec');
@@ -422,8 +421,8 @@ test('modular reference qualification selects every exact check without prescrib
 
 test('progression reference qualification follows the catalog check selection', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-depth3@2.0.3');
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.3', track);
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
+  const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
   const selection = resolveProgressionRecipeLevelSelection(binding, catalog, 3,
     { cumulative: true });
   const argv = referenceQualificationSelectionArgs(binding, selection);
@@ -452,7 +451,7 @@ test('reference qualification keeps underlying runs beside the requested artifac
   assert.equal(paths.runsRoot, join(root, 'postgres-reference.runs'));
 });
 
-test('release mutation evidence gives its clean baseline a separate reference path', () => {
+test('full mutation evidence gives its clean baseline a separate reference path', () => {
   const root = join(tmpdir(), 'stack-bench-companion-path-test');
   assert.equal(companionReferenceArtifactPath(join(root, 'ecommerce-l3-postgres-mutation.json')),
     join(root, 'ecommerce-l3-postgres-reference.json'));
@@ -460,17 +459,17 @@ test('release mutation evidence gives its clean baseline a separate reference pa
     join(root, 'custom-reference.json'));
 });
 
-test('release mutation evidence requires the calibrated repetition count', () => {
+test('full mutation evidence requires the calibrated repetition count', () => {
   const calibration = { qualification: { mutationRepetitions: 2 } };
-  assert.doesNotThrow(() => assertReleaseCandidateRepetitions(
-    { releaseCandidate: true, repetitions: 2 }, calibration));
-  assert.throws(() => assertReleaseCandidateRepetitions(
-    { releaseCandidate: true, repetitions: 1 }, calibration), /exactly 2/);
-  assert.doesNotThrow(() => assertReleaseCandidateRepetitions(
-    { releaseCandidate: false, repetitions: 1 }, calibration));
+  assert.doesNotThrow(() => assertFullMutationRepetitions(
+    { fullMutations: true, repetitions: 2 }, calibration));
+  assert.throws(() => assertFullMutationRepetitions(
+    { fullMutations: true, repetitions: 1 }, calibration), /exactly 2/);
+  assert.doesNotThrow(() => assertFullMutationRepetitions(
+    { fullMutations: false, repetitions: 1 }, calibration));
 });
 
-test('release qualification fails when either required artifact fails', () => {
+test('full mutation qualification fails when either required artifact fails', () => {
   assert.equal(qualificationArtifactsOk({ ok: true }, { ok: true }), true);
   assert.equal(qualificationArtifactsOk({ ok: true }, { ok: false }), false);
   assert.equal(qualificationArtifactsOk({ ok: false }, { ok: true }), false);
@@ -510,11 +509,11 @@ function writeEvidence(root: string, { id, points, passed }: {
   passed: boolean;
 }) {
   const stableKey = `test.reference.${id}`;
-  const release = { id: 'test.reference', version: '1.0.0', contentSha256: 'b'.repeat(64),
+  const release = { id: 'test.reference', contentSha256: 'b'.repeat(64),
     checkCatalog: [{ stableKey, points, source: 'scenarios/test.json', executionId: 'systems',
       featureId: 901, criterionId: id, packId: 'test.reference', checkGroupId: 'systems' }] };
-  const identities = emptyArtifactIdentities({ recipe: { id: release.id, version: release.version,
-    sha256: release.contentSha256, state: 'qualified' } });
+  const identities = emptyArtifactIdentities({ recipe: { id: release.id,
+    sha256: release.contentSha256 } });
   mkdirSync(join(root, 'grading'), { recursive: true });
   writeRunJson(join(root, 'run.json'), {
     id: 'reference-run', backend: 'mongodb', track: 'ecommerce',
@@ -534,7 +533,7 @@ function writeEvidence(root: string, { id, points, passed }: {
   writeArtifact(join(root, 'grading', 'bundle.json'), { kind: 'grade_bundle', id: 'reference-bundle',
     identities,
     payload: { recipeRelease: release, selection: {
-      recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
+      recipe: { id: release.id, contentSha256: release.contentSha256 },
       checks: release.checkCatalog, reportedChecks: [stableKey], notRun: [],
     }, suites: {
       lint: { pass: true },

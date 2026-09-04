@@ -115,13 +115,11 @@ function exactRecipeBindings(plan: CompiledCampaignPlan,
   const bindings = new Map<number, RecipeBinding>();
   let release: RecipeRelease | null = null;
   for (const planned of plan.bindings) {
-    const reference = `${planned.recipe.id}@${planned.recipe.version}`;
-    const binding = resolveRelease(track, planned.level, reference);
+    const binding = resolveRelease(track, planned.level, planned.recipe.id);
     if (!binding || binding.release.contentSha256 !== planned.recipe.contentSha256) {
       throw new Error(`reference audit recipe binding for L${planned.level} changed after planning`);
     }
     if (release !== null && (binding.release.id !== release.id
-      || binding.release.version !== release.version
       || binding.release.contentSha256 !== release.contentSha256)) {
       throw new Error('reference audit requires one exact recipe release across all levels');
     }

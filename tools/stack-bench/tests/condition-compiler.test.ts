@@ -7,10 +7,10 @@ import test from 'node:test';
 import { resolveGuidanceProfile, resolveStudyConditions,
   validateConditionReference } from '../src/campaigns/condition-compiler.js';
 
-const prescribed = { id: 'prescribed', version: '1.0.0',
-  guidanceProfile: 'prescribed@1.2.0', repairPolicy: 'scored-only@1.1.0' };
+const prescribed = { id: 'prescribed',
+  guidanceProfile: 'prescribed', repairPolicy: 'scored-only' };
 const requested = { track: 'example', levels: [{ level: 1,
-  recipe: { id: 'example.l1', version: '1.0.0', contentSha256: 'a'.repeat(64),
+  recipe: { id: 'example.l1', contentSha256: 'a'.repeat(64),
     meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64) },
   selection: { sha256: 'd'.repeat(64), completeness: 'full', scoredPoints: 10,
     taskPacks: ['example.core'], requested: { packs: [], checks: [] } },
@@ -21,10 +21,10 @@ const requested = { track: 'example', levels: [{ level: 1,
 const modularRequested = { track: 'example', levels: [{ ...requested.levels[0],
   selection: { schemaVersion: 3, sha256: 'd'.repeat(64), scoredPoints: 2,
     requested: { features: ['example.feature'], specifications: {
-      requested: [], expected: ['example.spec@1.0.0'], observed: [],
+      requested: [], expected: ['example.spec'], observed: [],
     }, checks: [] },
     promptPacks: ['example.feature'], features: ['example.feature'],
-    specifications: { requested: [], expected: ['example.spec@1.0.0'], observed: [] },
+    specifications: { requested: [], expected: ['example.spec'], observed: [] },
     scoredChecks: [
       { stableKey: 'example.feature.check', points: 1, treatment: 'requested' },
       { stableKey: 'example.spec.check', points: 1, treatment: 'expected' },
@@ -39,7 +39,7 @@ const writeJson = (path: string, value: unknown): void => {
 test('the prescribed condition binds independent guidance, repair, and document identities', () => {
   const [condition] = resolveStudyConditions([prescribed], ['mongodb', 'postgres', 'spacetime'],
     { requested });
-  assert.match(condition.sha256, /^[a-f0-9]{64}$/);
+  assert.match(condition.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(condition.guidance.mode, 'prescribed');
   assert.equal(condition.guidance.material.designAdvice, true);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
@@ -66,23 +66,20 @@ test('the prescribed condition binds independent guidance, repair, and document 
     { requested: { ...requested, levels: [{ ...requestedLevel, selection: {
       ...requestedLevel.selection, sha256: 'e'.repeat(64),
     } }] } });
-  assert.notEqual(changed.sha256, condition.sha256);
+  assert.notEqual(changed.contentSha256, condition.contentSha256);
 });
 
 test('packaged neutral guidance exists symmetrically without architecture advice', () => {
-  const neutral = { id: 'neutral', version: '1.0.0', guidanceProfile: 'neutral@1.8.0',
-    repairPolicy: 'scored-only@1.1.0' };
+  const neutral = { id: 'neutral', guidanceProfile: 'neutral', repairPolicy: 'scored-only' };
   const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
     { requested });
-  assert.equal(condition.guidance.state, 'qualified');
   assert.equal(condition.guidance.mode, 'neutral');
   assert.equal(condition.guidance.material.designAdvice, false);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
 });
 
 test('neutral guidance uses current stack documents, skills, and credential aliases', () => {
-  const profile = resolveGuidanceProfile('neutral@1.8.0', ['mongodb', 'postgres', 'spacetime']);
-  assert.equal(profile.state, 'qualified');
+  const profile = resolveGuidanceProfile('neutral', ['mongodb', 'postgres', 'spacetime']);
   assert.equal(profile.material.designAdvice, false);
   assert.deepEqual(Object.keys(profile.documents), ['mongodb', 'postgres', 'spacetime']);
   assert.deepEqual(profile.skills.spacetime?.ids, ['typescript-server', 'typescript-client']);
@@ -94,28 +91,27 @@ test('neutral guidance uses current stack documents, skills, and credential alia
 });
 
 test('expected modular specifications are scored under the ordinary repair policy', () => {
-  const selected = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.8.0',
-    repairPolicy: 'scored-only@1.1.0' };
+  const selected = { id: 'defaults', guidanceProfile: 'neutral', repairPolicy: 'scored-only' };
   const [condition] = resolveStudyConditions([selected], ['mongodb', 'postgres', 'spacetime'],
     { requested: modularRequested });
   const selectedLevel = condition.requested.levels[0];
   assert.ok(selectedLevel?.selection.specifications);
   assert.deepEqual(selectedLevel.selection.specifications.expected,
-    ['example.spec@1.0.0']);
+    ['example.spec']);
   assert.equal(condition.repair.scoredEvidence, true);
 });
 
-test('condition references are strict and versioned', () => {
+test('condition references use stable IDs', () => {
   assert.deepEqual(validateConditionReference(prescribed), prescribed);
   assert.throws(() => validateConditionReference({ ...prescribed, surprise: true }), /surprise.*unknown/);
-  assert.throws(() => validateConditionReference({ ...prescribed, repairPolicy: 'scored-only' }), /id@version/);
+  assert.throws(() => validateConditionReference({ ...prescribed, repairPolicy: 'scored-only@1.1.0' }), /must use an id/);
   assert.throws(() => resolveStudyConditions([prescribed], ['postgres']), /requested/);
 });
 
 test('modular condition references are canonical without mutating caller-owned input', () => {
   const input = { ...prescribed, specifications: { levels: [
-    { level: 2, requested: ['example.spec.second@1.0.0'], expected: [], observed: [] },
-    { level: 1, requested: [], expected: ['example.spec.first@1.0.0'], observed: [] },
+    { level: 2, requested: ['example.spec.second'], expected: [], observed: [] },
+    { level: 1, requested: [], expected: ['example.spec.first'], observed: [] },
   ] } };
   const original = structuredClone(input);
   const validated = validateConditionReference(input);
@@ -123,8 +119,8 @@ test('modular condition references are canonical without mutating caller-owned i
   assert.ok(validated.specifications);
   assert.deepEqual(validated.specifications.levels.map(entry => entry.level), [1, 2]);
   assert.throws(() => validateConditionReference({ ...prescribed, specifications: { levels: [
-    { level: 1, requested: ['example.spec.same@1.0.0'],
-      expected: ['example.spec.same@1.0.0'], observed: [] },
+    { level: 1, requested: ['example.spec.same'],
+      expected: ['example.spec.same'], observed: [] },
   ] } }), /both requested and expected/);
 });
 
@@ -133,18 +129,17 @@ function customCondition({ guidance = {}, repair = {} } = {}) {
   const catalogRoot = join(root, 'conditions');
   writeFileSync(join(root, 'backend.md'), 'connection facts\n');
   writeJson(join(catalogRoot, 'catalog.json'), { schemaVersion: 1, kind: 'study-condition-catalog',
-    guidanceProfiles: { 'neutral@1.4.0': 'guidance.json' },
-    repairPolicies: { 'scored@1.0.0': 'repair.json' } });
+    guidanceProfiles: { neutral: 'guidance.json' },
+    repairPolicies: { scored: 'repair.json' } });
   writeJson(join(catalogRoot, 'guidance.json'), { schemaVersion: 1, kind: 'backend-guidance-profile',
-    id: 'neutral', version: '1.4.0', state: 'qualified', mode: 'neutral',
+    id: 'neutral', mode: 'neutral',
     material: { accessFacts: true, apiReference: true, designAdvice: false },
     documents: { fake: 'backend.md' }, applicationInterfaces: { fake: 'http' },
     skills: { fake: [] }, ...guidance });
   writeJson(join(catalogRoot, 'repair.json'), { schemaVersion: 1, kind: 'repair-policy',
-    id: 'scored', version: '1.0.0', state: 'qualified', scoredEvidence: true,
+    id: 'scored', scoredEvidence: true,
     observedEvidence: false, scenarioValues: 'withheld', ...repair });
-  const ref = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.4.0',
-    repairPolicy: 'scored@1.0.0' };
+  const ref = { id: 'defaults', guidanceProfile: 'neutral', repairPolicy: 'scored' };
   return { root, catalogPath: join(catalogRoot, 'catalog.json'), ref };
 }
 

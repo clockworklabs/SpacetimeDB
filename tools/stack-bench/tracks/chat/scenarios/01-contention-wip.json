@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "level": 1,
-  "status": "under development \u2014 NOT part of the scored suite",
   "note": "These contention criteria do not affect scoring. Browser clicks do not overlap enough to create a reliable race. Activate them only after parallel request replay passes on clean reference apps and detects exact known defects on every supported stack.",
   "features": [
     {

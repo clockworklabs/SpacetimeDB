@@ -6,10 +6,10 @@ import test from 'node:test';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.js';
 const root = STACK_BENCH_ROOT;
-const files = Object.values(resolveGuidanceProfile('neutral@1.8.0',
+const files = Object.values(resolveGuidanceProfile('neutral',
   ['mongodb', 'postgres', 'spacetime']).documents)
   .map(document => resolve(root, document.path));
-const prescribedFiles = Object.values(resolveGuidanceProfile('prescribed@1.2.0',
+const prescribedFiles = Object.values(resolveGuidanceProfile('prescribed',
   ['mongodb', 'postgres', 'spacetime']).documents)
   .map(document => resolve(root, document.path));
 const presentationAdvice = /brand|styling|theme|colour|color|app title/i;

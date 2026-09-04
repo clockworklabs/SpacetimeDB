@@ -1,16 +1,14 @@
 # Ecommerce composition
 
-This directory defines the versioned ecommerce work that Stack Bench can ask
-for and grade.
+This directory defines ecommerce work that Stack Bench can ask for and grade.
 
 ## Ownership
 
 - `packs/` contains selectable product features and specifications. A pack
-  names the packs it depends on by id; the recipe pins every version.
+  names the packs it depends on by stable id.
 - `fixtures/` contains exact starting data.
-- `recipes/` selects pack, fixture, prompt, execution, and scoring versions.
-- `promotions.json` maps public sequential aliases to exact recipes.
-- `candidates.json` lists draft recipes that can be qualified directly.
+- `recipes/` selects pack, fixture, prompt, execution, and scoring content.
+- `sequential.json` and `dependency.json` map mode aliases to recipes.
 - `calibrations/` binds a recipe to reference apps, mutations, null controls,
   repetition policy, and qualification state.
 

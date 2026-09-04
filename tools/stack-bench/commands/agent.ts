@@ -16,7 +16,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { parseGuidanceMode, resolveDefaultGuidanceForStack, type GuidanceMode,
   type ResolvedGuidanceDocument, type ResolvedSkills }
   from '../src/campaigns/condition-compiler.js';
-import type { ExactRecipeRequest, RecipeBinding } from '../src/composition/recipe-release.js';
+import type { RecipeBinding, RecipeRequest } from '../src/composition/recipe-release.js';
 import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from '../src/composition/recipe-selection.js';
 import { agentVisibleContractText, assertAgentVisibleText }
   from '../src/composition/agent-visible-contract.js';
@@ -58,7 +58,7 @@ interface PromptMaterials {
 }
 
 type RecipeTaskRequest = Parameters<typeof resolveBoundRecipeTaskRequest>[1] & {
-  recipe?: Exclude<ExactRecipeRequest, string>;
+  recipe?: Exclude<RecipeRequest, string>;
 };
 
 type AgentMode = 'build' | 'upgrade' | 'fix' | 'resume';
@@ -672,12 +672,11 @@ export function agentScenarioPaths(track: Track, level: number,
 }
 
 export function agentRecipeRequest(explicitRecipe: string | null = null,
-  recipeTask: RecipeTaskRequest | null = null): ExactRecipeRequest | null {
+  recipeTask: RecipeTaskRequest | null = null): RecipeRequest | null {
   const bound = recipeTask?.recipe;
   if (!bound) return explicitRecipe;
-  const identity = `${bound.id}@${bound.version}`;
-  if (explicitRecipe && explicitRecipe !== identity) {
-    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${identity}`);
+  if (explicitRecipe && explicitRecipe !== bound.id) {
+    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${bound.id}`);
   }
   return bound;
 }

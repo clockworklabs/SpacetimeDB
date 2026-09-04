@@ -16,13 +16,11 @@ import type { ProgressionEvent, ProgressionTerminalOutcome } from './progression
 
 interface ExactRecipeIdentity {
   id: string;
-  version: string;
   sha256: string;
 }
 
 interface AuditRecipeRelease {
   id: string;
-  version: string;
   contentSha256: string;
   checkCatalog: RecipeCheck[];
 }
@@ -109,7 +107,7 @@ const HASH = /^[a-f0-9]{64}$/;
 
 function auditRecipeRelease(release: unknown): AuditRecipeRelease {
   if (!object(release) || typeof release.id !== 'string'
-    || typeof release.version !== 'string' || typeof release.contentSha256 !== 'string'
+    || typeof release.contentSha256 !== 'string'
     || !HASH.test(release.contentSha256) || !Array.isArray(release.checkCatalog)) {
     throw new Error('progression reference audit requires an exact recipe release');
   }
@@ -117,7 +115,7 @@ function auditRecipeRelease(release: unknown): AuditRecipeRelease {
 }
 
 function exactRecipeIdentity(release: AuditRecipeRelease): ExactRecipeIdentity {
-  return { id: release.id, version: release.version, sha256: release.contentSha256 };
+  return { id: release.id, sha256: release.contentSha256 };
 }
 
 function bindingAt(recipeBindings: RecipeBindings, level: number): RecipeBinding {

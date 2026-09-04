@@ -22,10 +22,10 @@ const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'
 const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
   .filter(name => name.endsWith('.json')).map(name => {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-    return [`${pack.id}@${pack.version}`, pack];
+    return [pack.id, pack];
   }));
 const definition = compileProgressionDefinitionFile(
-  join(trackRoot, 'progression', 'ecommerce-2.0.3.json'), { trackRoot });
+  join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
 
 function requiredPack(reference: string): CompiledPackDefinition {
   const pack = packs.get(reference);
@@ -69,7 +69,7 @@ test('every feature pack states one whole product request and one interface it c
   const requirementPaths = new Set<string>();
   const contractPaths = new Set<string>();
   for (const { pack } of featurePacks) {
-    const at = `${pack.id}@${pack.version}`;
+    const at = pack.id;
     assert.equal(pack.moduleType, 'feature', at);
     assert.equal(pack.task.requirements.length, 1, `${at} must state one product request`);
     assert.equal(pack.task.contracts.length, 1, `${at} must state one application interface`);
@@ -99,7 +99,7 @@ test('feature requests are implementation-neutral and never name the testing int
     assert(requirement);
     assert.doesNotMatch(fragmentText(requirement),
       /framework|ORM|database|websocket|endpoint|\broutes?\b|reducer|testid|MongoDB|PostgreSQL|SpacetimeDB/i,
-      `${pack.id}@${pack.version} ${requirement.path}`);
+      `${pack.id} ${requirement.path}`);
   }
 });
 
@@ -117,9 +117,9 @@ test('every check selects criteria that exist in its scenario', () => {
 });
 
 test('shopping criteria in one scenario never share a product, so state cannot leak between them', () => {
-  const [quantity, checkout] = requiredPack('ecommerce.feature.cart@2.0.0').checks.length
-    ? selectedCriteria(requiredPack('ecommerce.feature.cart@2.0.0'))
-      .concat(selectedCriteria(requiredPack('ecommerce.feature.checkout@2.0.0')))
+  const [quantity, checkout] = requiredPack('ecommerce.feature.cart').checks.length
+    ? selectedCriteria(requiredPack('ecommerce.feature.cart'))
+      .concat(selectedCriteria(requiredPack('ecommerce.feature.checkout')))
     : [];
   assert(quantity && checkout, 'cart and checkout must each select a criterion');
   const product = (criterion: CompiledCriterion): string => {
@@ -133,7 +133,7 @@ test('shopping criteria in one scenario never share a product, so state cannot l
 test('fulfilment and cancellation keep separate authorization owners', () => {
   // A cross-feature authorization check is graded by exactly one feature, so
   // a failure has one repair owner.
-  const access = requiredPack('ecommerce.progression.operations-access-specifications@1.0.0');
+  const access = requiredPack('ecommerce.progression.operations-access-specifications');
   assert.equal(access.moduleType, 'specification');
   const owners = new Map(access.checks.map(check => [check.id, check.requiresFeatures]));
   assert.deepEqual(owners.get('operator-authorization-direct'),
@@ -182,13 +182,13 @@ test('every replayed request names a declared actor whose request it replays', (
 });
 
 test('privacy checks prove a server or transport boundary, not a hidden control', () => {
-  const review = requiredPack('ecommerce.progression.review-access-specifications@1.0.0');
+  const review = requiredPack('ecommerce.progression.review-access-specifications');
   const [reviewCriterion] = selectedCriteria(review);
   assert(reviewCriterion);
   assert(reviewCriterion.steps.some(step => step.do === 'replayAs'));
   assert(reviewCriterion.steps.some(step => step.do === 'expectReplayRejected'));
 
-  const support = requiredPack('ecommerce.progression.support-privacy-specifications@1.0.0');
+  const support = requiredPack('ecommerce.progression.support-privacy-specifications');
   const [supportCriterion] = selectedCriteria(support);
   assert(supportCriterion);
   // A "not received" veto is only meaningful beside a positive control.
@@ -196,23 +196,23 @@ test('privacy checks prove a server or transport boundary, not a hidden control'
     ['expectReceived', 'expectNotReceived']);
 });
 
-test('promotion rules use values a datetime-local input accepts', () => {
-  const [criterion] = selectedCriteria(requiredPack('ecommerce.progression.promotion-rules@1.0.1'));
+test('promotion rules use values a date input accepts', () => {
+  const [criterion] = selectedCriteria(requiredPack('ecommerce.progression.promotion-rules'));
   assert(criterion);
   const values = criterion.steps
     .filter(step => step.do === 'fill' && typeof step.testid === 'string'
       && ['promotion-start', 'promotion-end'].includes(step.testid))
     .map(step => step.text);
   assert.equal(values.length, 2);
-  for (const value of values) assert.match(String(value), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  for (const value of values) assert.match(String(value), /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test('the sequential L2 recipe runs every source its operations feature packs own', () => {
   const recipe = compileRecipeFile(
-    join(trackRoot, 'composition', 'recipes', 'sequential-l2-1.6.0.json'), { trackRoot });
+    join(trackRoot, 'composition', 'recipes', 'sequential-l2.json'), { trackRoot });
   const sources = new Set(recipe.execution.map(entry => entry.source));
-  for (const name of ['operations-access-features-1.0.0.json',
-    'inventory-operations-features-1.2.0.json', 'returns-pricing-features-1.1.0.json']) {
+  for (const name of ['operations-access-features.json',
+    'inventory-operations-features.json', 'returns-pricing-features.json']) {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
     assert.equal(pack.moduleType, 'feature');
     for (const check of pack.checks) {

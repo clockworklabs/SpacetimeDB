@@ -59,8 +59,7 @@ export interface LoadedMutationDefinition extends MutationDefinition {
 }
 
 export interface LoadedMutationManifest extends MutationManifest {
-  schemaVersion: 2;
-  status: string;
+  schemaVersion: 3;
   fixtureSha256: string;
   backend: string;
   track: string;
@@ -123,22 +122,18 @@ function loadedMutation(value: unknown, at: string): LoadedMutationDefinition {
 export function readMutationManifest(path: string): LoadedMutationManifest {
   const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (!object(value)) throw new Error(`mutation manifest ${path} must be an object`);
-  exact(value, new Set(['schemaVersion', 'status', 'fixtureSha256', 'backend', 'track', 'scenario',
+  exact(value, new Set(['schemaVersion', 'fixtureSha256', 'backend', 'track', 'scenario',
     'note', 'mutations']), `mutation manifest ${path}`);
-  if (value.schemaVersion !== 2) throw new Error(`mutation manifest ${path} must use schema version 2`);
+  if (value.schemaVersion !== 3) throw new Error(`mutation manifest ${path} must use schema version 3`);
   if (!Array.isArray(value.mutations) || value.mutations.length === 0) {
     throw new Error(`mutation manifest ${path}.mutations must be a non-empty array`);
   }
   const scenario = optionalString(value.scenario, `${path}.scenario`);
-  const status = requiredString(value.status, `${path}.status`);
-  if (!['candidate', 'active'].includes(status)) {
-    throw new Error(`mutation manifest ${path}.status must be candidate or active`);
-  }
   const fixtureSha256 = requiredString(value.fixtureSha256, `${path}.fixtureSha256`);
   if (!/^[a-f0-9]{64}$/.test(fixtureSha256)) {
     throw new Error(`mutation manifest ${path}.fixtureSha256 must be 64 lowercase hexadecimal characters`);
   }
-  const loaded = { ...value, schemaVersion: 2 as const, status,
+  const loaded = { ...value, schemaVersion: 3 as const,
     fixtureSha256,
     backend: requiredString(value.backend, `${path}.backend`),
     track: requiredString(value.track, `${path}.track`),
@@ -204,7 +199,6 @@ interface ArtifactIdentityLike {
   id?: unknown;
   version?: unknown;
   sha256?: unknown;
-  state?: unknown;
 }
 
 interface MutationSuite extends MutationReport {
@@ -216,7 +210,7 @@ interface MutationBundle {
   track?: unknown;
   level?: unknown;
   source?: { sha256?: unknown };
-  recipeRelease?: { id?: unknown; version?: unknown; contentSha256?: unknown };
+  recipeRelease?: { id?: unknown; contentSha256?: unknown };
   artifactEnvelope?: { identities?: Record<string, ArtifactIdentityLike | undefined> };
   suites?: Record<string, MutationSuite>;
 }
@@ -226,7 +220,7 @@ interface ExpectedBaseline {
   track: unknown;
   level: unknown;
   fixtureSha256: unknown;
-  recipe: { id: unknown; version: unknown; sha256: unknown };
+  recipe: { id: unknown; sha256: unknown };
   identities?: Record<string, ArtifactIdentityLike | undefined>;
   selectedCheckKeys: Iterable<string>;
 }
@@ -422,7 +416,6 @@ function identityFields(identity: ArtifactIdentityLike | null | undefined): Unkn
     id: identity?.id ?? null,
     version: identity?.version ?? null,
     sha256: identity?.sha256 ?? null,
-    state: identity?.state ?? null,
   };
 }
 
@@ -437,7 +430,7 @@ export function reusableMutationBaseline(
   if (bundle?.track !== expected.track) mismatches.push('track');
   if (Number(bundle?.level) !== Number(expected.level)) mismatches.push('level');
   if (bundle?.source?.sha256 !== expected.fixtureSha256) mismatches.push('fixture');
-  if (release?.id !== expected.recipe.id || release?.version !== expected.recipe.version
+  if (release?.id !== expected.recipe.id
       || release?.contentSha256 !== expected.recipe.sha256) mismatches.push('recipe');
   for (const key of ['engine', 'calibration', 'stackAdapter']) {
     if (JSON.stringify(identityFields(identities[key]))

@@ -5,6 +5,8 @@ import {
   compilePackDefinition,
   type CompiledPackDefinition,
 } from '../composition/composition-compiler.js';
+import { canonicalDefinitionJson } from '../composition/definition-plan.js';
+import { sha256 } from '../evidence/provenance.js';
 import {
   compileProgressionDefinitionFile,
   type CompiledProgressionDefinition,
@@ -18,7 +20,6 @@ export interface ProgressionGraphNode {
   name: string;
   description: string;
   level: number;
-  state: 'draft' | 'qualified';
   parents: string[];
   dependencyReasons: Record<string, string>;
   questline: string;
@@ -29,7 +30,7 @@ export interface ProgressionGraphNode {
 
 export interface ProgressionGraph {
   schemaVersion: 1;
-  definition: { id: string; version: string; state: string };
+  definition: { id: string; contentSha256: string };
   levels: number;
   questlines: Array<{ id: string; title: string }>;
   nodes: ProgressionGraphNode[];
@@ -56,7 +57,7 @@ function packCatalog(trackRoot: string): Map<string, CompiledPackDefinition> {
       .filter(name => name.endsWith('.json'))
       .map(name => {
         const pack = compilePackDefinition(readJson(join(root, name)), { source: name });
-        return [`${pack.id}@${pack.version}`, pack];
+        return [pack.id, pack];
       }),
   );
 }
@@ -118,7 +119,6 @@ export function compileProgressionGraph(
       name: node.title,
       description: selected.map(pack => pack.description).filter(Boolean).join(' '),
       level: node.level,
-      state: selected.every(pack => pack.state === 'qualified') ? 'qualified' : 'draft',
       parents: node.dependencies,
       dependencyReasons: node.dependencyReasons,
       questline: node.questline,
@@ -129,7 +129,9 @@ export function compileProgressionGraph(
   }));
   return {
     schemaVersion: 1,
-    definition: { id: definition.id, version: definition.version, state: definition.state },
+    definition: { id: definition.id, contentSha256: sha256(canonicalDefinitionJson(
+      (({ title: _title, ...executable }) => executable)(definition),
+    )) },
     levels: Math.max(...nodes.map(node => node.level)),
     questlines: definition.questlines.map(({ id, title }) => ({ id, title })),
     nodes,

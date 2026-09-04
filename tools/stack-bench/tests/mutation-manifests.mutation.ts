@@ -38,11 +38,9 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
     const definitions = validateMutationDefinitions(manifest.mutations,
       { defaultScenario: typeof manifest.scenario === 'string' ? manifest.scenario : null, requireScenario: true });
     assert.deepEqual(definitions.issues, [], `${file} has an invalid mutation definition`);
-    assert(typeof manifest.status === 'string');
-    assert.match(manifest.status, /^(active|candidate)$/);
-    assert.equal(manifest.schemaVersion, 2);
+    assert.equal(manifest.schemaVersion, 3);
     assert.deepEqual(Object.keys(manifest).filter(field => !new Set([
-      'schemaVersion', 'status', 'fixtureSha256', 'backend', 'track', 'scenario', 'note', 'mutations',
+      'schemaVersion', 'fixtureSha256', 'backend', 'track', 'scenario', 'note', 'mutations',
     ]).has(field)), [], `${file} has unknown root fields`);
     assert(typeof manifest.backend === 'string');
     assert.match(manifest.backend, /^(spacetime|postgres|mongodb)$/);
@@ -64,8 +62,7 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
 
 test('current mutation anchors match their hash-bound canonical fixture exactly once', () => {
   const registry = loadReferenceRegistry();
-  for (const fixture of registry.fixtures.filter(candidate =>
-    candidate.status === 'candidate' || candidate.status === 'active')) {
+  for (const fixture of registry.fixtures) {
     const manifests = fixture.mutationManifests ?? [];
     if (!manifests.length) continue;
     if ((!fixture.source && !fixture.targetPath) || !fixture.imported?.sourceSha256) {

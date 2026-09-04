@@ -247,8 +247,7 @@
   "schemaVersion": 1,
   "definition": {
     "id": "ecommerce.questlines",
-    "version": "2.0.3",
-    "state": "draft"
+    "contentSha256": "ae14902b74010dd7356a490c8a19224b2192023d07c40a0f0540dcd0af0cf04e"
   },
   "levels": 6,
   "questlines": [
@@ -307,12 +306,11 @@
       "name": "Accounts",
       "description": "Account creation, sign-in, and sign-out.",
       "level": 1,
-      "state": "draft",
       "parents": [],
       "dependencyReasons": {},
       "questline": "identity-profiles",
       "featureRefs": [
-        "ecommerce.feature.accounts@1.3.0"
+        "ecommerce.feature.accounts"
       ],
       "checks": 5,
       "points": 5
@@ -322,12 +320,11 @@
       "name": "Catalog items",
       "description": "Public catalog item values used by shopping features.",
       "level": 1,
-      "state": "qualified",
       "parents": [],
       "dependencyReasons": {},
       "questline": "catalog-discovery",
       "featureRefs": [
-        "ecommerce.feature.catalog-items@1.0.0"
+        "ecommerce.feature.catalog-items"
       ],
       "checks": 1,
       "points": 1
@@ -337,12 +334,11 @@
       "name": "Staff access",
       "description": "Staff and administrator sign-in.",
       "level": 1,
-      "state": "draft",
       "parents": [],
       "dependencyReasons": {},
       "questline": "staff-access",
       "featureRefs": [
-        "ecommerce.progression.staff-access@1.0.0"
+        "ecommerce.progression.staff-access"
       ],
       "checks": 2,
       "points": 4
@@ -352,12 +348,11 @@
       "name": "Support intake",
       "description": "Public support ticket creation and references.",
       "level": 1,
-      "state": "qualified",
       "parents": [],
       "dependencyReasons": {},
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.support-intake@1.0.0"
+        "ecommerce.progression.support-intake"
       ],
       "checks": 1,
       "points": 2
@@ -367,7 +362,6 @@
       "name": "Customer profile",
       "description": "Customer details and shipping address.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "accounts"
       ],
@@ -376,7 +370,7 @@
       },
       "questline": "identity-profiles",
       "featureRefs": [
-        "ecommerce.progression.customer-profile@1.0.0"
+        "ecommerce.progression.customer-profile"
       ],
       "checks": 3,
       "points": 5
@@ -386,7 +380,6 @@
       "name": "Notification preferences",
       "description": "Customer notification choices.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "accounts"
       ],
@@ -395,7 +388,7 @@
       },
       "questline": "notifications",
       "featureRefs": [
-        "ecommerce.progression.notification-preferences@1.0.1"
+        "ecommerce.progression.notification-preferences"
       ],
       "checks": 3,
       "points": 5
@@ -405,7 +398,6 @@
       "name": "Purchasing and orders",
       "description": "Immediate purchase and customer order history.",
       "level": 2,
-      "state": "qualified",
       "parents": [
         "accounts",
         "catalog"
@@ -416,7 +408,7 @@
       },
       "questline": "orders-fulfillment",
       "featureRefs": [
-        "ecommerce.feature.purchasing@1.2.1"
+        "ecommerce.feature.purchasing"
       ],
       "checks": 8,
       "points": 12
@@ -426,7 +418,6 @@
       "name": "Cart",
       "description": "A signed-in customer cart.",
       "level": 2,
-      "state": "qualified",
       "parents": [
         "accounts",
         "catalog"
@@ -437,7 +428,7 @@
       },
       "questline": "shopping-checkout",
       "featureRefs": [
-        "ecommerce.feature.cart@2.0.0"
+        "ecommerce.feature.cart"
       ],
       "checks": 5,
       "points": 7
@@ -447,7 +438,6 @@
       "name": "Catalog discovery",
       "description": "Public catalog ranking and full-catalog search.",
       "level": 2,
-      "state": "qualified",
       "parents": [
         "catalog"
       ],
@@ -456,7 +446,7 @@
       },
       "questline": "catalog-discovery",
       "featureRefs": [
-        "ecommerce.feature.catalog-discovery@1.0.0"
+        "ecommerce.feature.catalog-discovery"
       ],
       "checks": 2,
       "points": 2
@@ -466,7 +456,6 @@
       "name": "Customer support history",
       "description": "Customer support ticket history.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "accounts",
         "support-intake"
@@ -477,7 +466,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.support-history@1.1.0"
+        "ecommerce.progression.support-history"
       ],
       "checks": 4,
       "points": 7
@@ -487,7 +476,6 @@
       "name": "Warehouse administration",
       "description": "Warehouse inventory, restocking, and revenue views.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "catalog",
         "staff-access"
@@ -498,7 +486,7 @@
       },
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.feature.warehouse-admin@1.2.2"
+        "ecommerce.feature.warehouse-admin"
       ],
       "checks": 8,
       "points": 10
@@ -508,7 +496,6 @@
       "name": "Promotion rules",
       "description": "Staff-managed bounded promotion codes.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "catalog",
         "staff-access"
@@ -519,7 +506,7 @@
       },
       "questline": "promotions",
       "featureRefs": [
-        "ecommerce.progression.promotion-rules@1.0.2"
+        "ecommerce.progression.promotion-rules"
       ],
       "checks": 2,
       "points": 4
@@ -529,7 +516,6 @@
       "name": "Staff roles",
       "description": "Role assignment for staff accounts.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "staff-access"
       ],
@@ -538,7 +524,7 @@
       },
       "questline": "staff-access",
       "featureRefs": [
-        "ecommerce.progression.staff-roles@1.0.2"
+        "ecommerce.progression.staff-roles"
       ],
       "checks": 3,
       "points": 5
@@ -548,7 +534,6 @@
       "name": "Support triage",
       "description": "Staff assignment, priority, and status changes.",
       "level": 2,
-      "state": "draft",
       "parents": [
         "staff-access",
         "support-intake"
@@ -559,7 +544,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.support-triage@1.1.0"
+        "ecommerce.progression.support-triage"
       ],
       "checks": 3,
       "points": 3
@@ -569,7 +554,6 @@
       "name": "Sales dashboard",
       "description": "Category totals and best sellers.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "purchasing"
       ],
@@ -578,7 +562,7 @@
       },
       "questline": "business-operations",
       "featureRefs": [
-        "ecommerce.l2.sales-dashboard@2.0.0"
+        "ecommerce.l2.sales-dashboard"
       ],
       "checks": 5,
       "points": 7
@@ -588,7 +572,6 @@
       "name": "Reviews",
       "description": "Item ratings and comments.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "purchasing"
       ],
@@ -597,7 +580,7 @@
       },
       "questline": "reviews",
       "featureRefs": [
-        "ecommerce.feature.reviews@1.2.3"
+        "ecommerce.feature.reviews"
       ],
       "checks": 7,
       "points": 10
@@ -607,7 +590,6 @@
       "name": "Recommendations",
       "description": "Customer recommendations based on purchase activity and cart contents.",
       "level": 3,
-      "state": "qualified",
       "parents": [
         "cart",
         "purchasing"
@@ -618,7 +600,7 @@
       },
       "questline": "recommendations",
       "featureRefs": [
-        "ecommerce.l2.recommendations@2.0.1"
+        "ecommerce.l2.recommendations"
       ],
       "checks": 1,
       "points": 2
@@ -628,7 +610,6 @@
       "name": "Checkout",
       "description": "Turn a cart into an order.",
       "level": 3,
-      "state": "qualified",
       "parents": [
         "cart"
       ],
@@ -637,7 +618,7 @@
       },
       "questline": "shopping-checkout",
       "featureRefs": [
-        "ecommerce.feature.checkout@2.0.0"
+        "ecommerce.feature.checkout"
       ],
       "checks": 5,
       "points": 6
@@ -647,7 +628,6 @@
       "name": "Stock alerts",
       "description": "Customer alerts when stock returns.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "notification-preferences",
         "warehouse-admin"
@@ -658,7 +638,7 @@
       },
       "questline": "notifications",
       "featureRefs": [
-        "ecommerce.progression.stock-alerts@1.0.1"
+        "ecommerce.progression.stock-alerts"
       ],
       "checks": 3,
       "points": 4
@@ -668,7 +648,6 @@
       "name": "Faceted search",
       "description": "Combined catalogue filters with stable pagination.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "catalog-discovery"
       ],
@@ -677,7 +656,7 @@
       },
       "questline": "catalog-discovery",
       "featureRefs": [
-        "ecommerce.progression.faceted-search@1.0.1"
+        "ecommerce.progression.faceted-search"
       ],
       "checks": 2,
       "points": 6
@@ -687,7 +666,6 @@
       "name": "Fulfilment queue",
       "description": "Staff and administrator fulfilment workflows.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "purchasing",
         "warehouse-admin"
@@ -698,7 +676,7 @@
       },
       "questline": "orders-fulfillment",
       "featureRefs": [
-        "ecommerce.progression.fulfilment-queue@1.0.1"
+        "ecommerce.progression.fulfilment-queue"
       ],
       "checks": 9,
       "points": 12
@@ -708,7 +686,6 @@
       "name": "Order cancellation",
       "description": "Cancel pending orders without losing stock or accounting accuracy.",
       "level": 3,
-      "state": "qualified",
       "parents": [
         "purchasing",
         "warehouse-admin"
@@ -719,7 +696,7 @@
       },
       "questline": "orders-fulfillment",
       "featureRefs": [
-        "ecommerce.l2.order-cancellation-features@1.0.1"
+        "ecommerce.l2.order-cancellation-features"
       ],
       "checks": 6,
       "points": 11
@@ -729,7 +706,6 @@
       "name": "Catalog management",
       "description": "Staff-managed products and named variants.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "catalog-discovery",
         "staff-roles"
@@ -740,7 +716,7 @@
       },
       "questline": "business-operations",
       "featureRefs": [
-        "ecommerce.progression.catalog-management@1.0.3"
+        "ecommerce.progression.catalog-management"
       ],
       "checks": 2,
       "points": 4
@@ -750,7 +726,6 @@
       "name": "Inventory dashboard",
       "description": "A low-stock dashboard.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "warehouse-admin"
       ],
@@ -759,7 +734,7 @@
       },
       "questline": "business-operations",
       "featureRefs": [
-        "ecommerce.l2.inventory-dashboard@2.0.0"
+        "ecommerce.l2.inventory-dashboard"
       ],
       "checks": 2,
       "points": 4
@@ -769,7 +744,6 @@
       "name": "Scheduled restocks",
       "description": "Pending, completed, and cancelled scheduled restocks.",
       "level": 3,
-      "state": "qualified",
       "parents": [
         "warehouse-admin"
       ],
@@ -778,7 +752,7 @@
       },
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.l3.scheduled-restocks-features@1.1.1"
+        "ecommerce.l3.scheduled-restocks-features"
       ],
       "checks": 7,
       "points": 20
@@ -788,7 +762,6 @@
       "name": "Stock transfers",
       "description": "Move stock between warehouses without changing the total.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "warehouse-admin"
       ],
@@ -797,7 +770,7 @@
       },
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.l2.stock-transfers-features@1.0.1"
+        "ecommerce.l2.stock-transfers-features"
       ],
       "checks": 6,
       "points": 13
@@ -807,7 +780,6 @@
       "name": "Managed support cases",
       "description": "Customer and staff support case updates.",
       "level": 3,
-      "state": "draft",
       "parents": [
         "support-history",
         "support-triage"
@@ -818,7 +790,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.managed-support@1.0.0"
+        "ecommerce.progression.managed-support"
       ],
       "checks": 3,
       "points": 4
@@ -828,7 +800,6 @@
       "name": "Payment records",
       "description": "Exact and non-duplicated payment records at checkout.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "checkout",
         "purchasing"
@@ -839,7 +810,7 @@
       },
       "questline": "orders-fulfillment",
       "featureRefs": [
-        "ecommerce.progression.payment-records@2.0.0"
+        "ecommerce.progression.payment-records"
       ],
       "checks": 3,
       "points": 7
@@ -849,7 +820,6 @@
       "name": "Reservations",
       "description": "Timed cart reservations, renewal, checkout, and expiry.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "checkout",
         "warehouse-admin"
@@ -860,17 +830,38 @@
       },
       "questline": "shopping-checkout",
       "featureRefs": [
-        "ecommerce.l3.reservations-features@2.0.0"
+        "ecommerce.l3.reservations-features"
       ],
       "checks": 9,
       "points": 23
+    },
+    {
+      "id": "automatic-reorder",
+      "name": "Automatic reorder rules",
+      "description": "Threshold rules schedule one pending restock.",
+      "level": 4,
+      "parents": [
+        "purchasing",
+        "scheduled-restocks",
+        "staff-roles"
+      ],
+      "dependencyReasons": {
+        "purchasing": "Purchases reduce stock and can cross reorder thresholds.",
+        "scheduled-restocks": "Rules create scheduled restocks.",
+        "staff-roles": "Only warehouse staff can manage reorder rules."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.progression.automatic-reorder"
+      ],
+      "checks": 3,
+      "points": 7
     },
     {
       "id": "promotion-checkout",
       "name": "Promotion checkout",
       "description": "Server-calculated discounts recorded on orders.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "checkout",
         "promotion-rules"
@@ -881,7 +872,7 @@
       },
       "questline": "promotions",
       "featureRefs": [
-        "ecommerce.progression.promotion-checkout@2.0.0"
+        "ecommerce.progression.promotion-checkout"
       ],
       "checks": 3,
       "points": 7
@@ -891,7 +882,6 @@
       "name": "Order-linked support",
       "description": "Owned order links that authorized staff can inspect.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "managed-support",
         "purchasing"
@@ -902,7 +892,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.order-support@1.0.1"
+        "ecommerce.progression.order-support"
       ],
       "checks": 2,
       "points": 5
@@ -912,7 +902,6 @@
       "name": "Personalized recommendations",
       "description": "Deterministic recommendations isolated by customer.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "recommendations"
       ],
@@ -921,38 +910,16 @@
       },
       "questline": "recommendations",
       "featureRefs": [
-        "ecommerce.progression.personalized-recommendations@2.0.1"
+        "ecommerce.progression.personalized-recommendations"
       ],
       "checks": 2,
       "points": 6
-    },
-    {
-      "id": "automatic-reorder",
-      "name": "Automatic reorder rules",
-      "description": "Threshold rules schedule one pending restock.",
-      "level": 4,
-      "state": "draft",
-      "parents": [
-        "scheduled-restocks",
-        "staff-roles"
-      ],
-      "dependencyReasons": {
-        "scheduled-restocks": "Rules create scheduled restocks.",
-        "staff-roles": "Only warehouse staff can manage reorder rules."
-      },
-      "questline": "inventory",
-      "featureRefs": [
-        "ecommerce.progression.automatic-reorder@2.0.1"
-      ],
-      "checks": 3,
-      "points": 7
     },
     {
       "id": "order-delivery",
       "name": "Order delivery",
       "description": "Automatic delivery and final cancellation.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "fulfilment-queue",
         "order-cancellation"
@@ -963,7 +930,7 @@
       },
       "questline": "orders-fulfillment",
       "featureRefs": [
-        "ecommerce.l3.order-delivery-features@1.1.1"
+        "ecommerce.l3.order-delivery-features"
       ],
       "checks": 5,
       "points": 13
@@ -973,7 +940,6 @@
       "name": "Staff activity history",
       "description": "Attributable and private history of administrative changes.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "catalog-management"
       ],
@@ -982,7 +948,7 @@
       },
       "questline": "business-operations",
       "featureRefs": [
-        "ecommerce.progression.staff-activity@1.0.3"
+        "ecommerce.progression.staff-activity"
       ],
       "checks": 2,
       "points": 5
@@ -990,9 +956,8 @@
     {
       "id": "price-history",
       "name": "Price history",
-      "description": "Update product prices and retain a history of those changes.",
+      "description": "Administrators update prices and public prices update live.",
       "level": 4,
-      "state": "draft",
       "parents": [
         "catalog-management"
       ],
@@ -1001,7 +966,7 @@
       },
       "questline": "catalog-discovery",
       "featureRefs": [
-        "ecommerce.l2.price-history-features@2.0.2"
+        "ecommerce.l2.price-history-features"
       ],
       "checks": 5,
       "points": 12
@@ -1011,7 +976,6 @@
       "name": "Delivery notifications",
       "description": "Exactly one private notification for a delivered order.",
       "level": 5,
-      "state": "draft",
       "parents": [
         "notification-preferences",
         "order-delivery"
@@ -1022,7 +986,7 @@
       },
       "questline": "notifications",
       "featureRefs": [
-        "ecommerce.progression.delivery-notifications@1.0.1"
+        "ecommerce.progression.delivery-notifications"
       ],
       "checks": 2,
       "points": 5
@@ -1032,7 +996,6 @@
       "name": "Support refunds",
       "description": "Authorized, exact, and single-application support refunds.",
       "level": 5,
-      "state": "draft",
       "parents": [
         "order-cancellation",
         "order-support"
@@ -1043,7 +1006,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.support-refunds@1.0.1"
+        "ecommerce.progression.support-refunds"
       ],
       "checks": 3,
       "points": 4
@@ -1053,7 +1016,6 @@
       "name": "Cart expiration",
       "description": "Inactive carts expire, release stock, and return empty.",
       "level": 5,
-      "state": "draft",
       "parents": [
         "reservations"
       ],
@@ -1062,7 +1024,7 @@
       },
       "questline": "shopping-checkout",
       "featureRefs": [
-        "ecommerce.l3.cart-expiration-features@2.0.0"
+        "ecommerce.l3.cart-expiration-features"
       ],
       "checks": 2,
       "points": 8
@@ -1072,7 +1034,6 @@
       "name": "Promotion reporting",
       "description": "Exact promotion redemptions and revenue.",
       "level": 5,
-      "state": "draft",
       "parents": [
         "promotion-checkout"
       ],
@@ -1081,7 +1042,7 @@
       },
       "questline": "promotions",
       "featureRefs": [
-        "ecommerce.progression.promotion-reporting@2.0.0"
+        "ecommerce.progression.promotion-reporting"
       ],
       "checks": 2,
       "points": 3
@@ -1091,7 +1052,6 @@
       "name": "Recommendation feedback",
       "description": "Durable customer-specific recommendation dismissal.",
       "level": 5,
-      "state": "draft",
       "parents": [
         "personalized-recommendations"
       ],
@@ -1100,7 +1060,7 @@
       },
       "questline": "recommendations",
       "featureRefs": [
-        "ecommerce.progression.recommendation-feedback@2.0.0"
+        "ecommerce.progression.recommendation-feedback"
       ],
       "checks": 2,
       "points": 4
@@ -1110,7 +1070,6 @@
       "name": "Returns",
       "description": "Return shipped items without losing stock or accounting accuracy.",
       "level": 5,
-      "state": "draft",
       "parents": [
         "order-delivery"
       ],
@@ -1119,7 +1078,7 @@
       },
       "questline": "orders-fulfillment",
       "featureRefs": [
-        "ecommerce.l3.order-returns-features@1.1.1"
+        "ecommerce.l3.order-returns-features"
       ],
       "checks": 2,
       "points": 4
@@ -1129,7 +1088,6 @@
       "name": "Cart recovery",
       "description": "Safe restoration of available items from an expired cart.",
       "level": 6,
-      "state": "draft",
       "parents": [
         "cart-expiration"
       ],
@@ -1138,7 +1096,7 @@
       },
       "questline": "shopping-checkout",
       "featureRefs": [
-        "ecommerce.progression.cart-recovery@2.0.0"
+        "ecommerce.progression.cart-recovery"
       ],
       "checks": 2,
       "points": 6

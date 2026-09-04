@@ -3,7 +3,6 @@ import { dirname, relative, resolve, sep } from 'node:path';
 
 import { compileScenarioDefinition } from './definition-compiler.js';
 import { readDefinitionJson } from './definition-plan.js';
-import { isExactSemanticVersion } from '../semantic-version.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -62,8 +61,6 @@ export interface CompiledPackDefinition {
   kind: string;
   id: string;
   stableId?: string;
-  version: string;
-  state: string;
   title: string;
   description?: string;
   moduleType?: string;
@@ -93,8 +90,6 @@ export interface CompiledFixtureDefinition {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   warehouses: string[];
   items: FixtureItem[];
@@ -104,7 +99,6 @@ export interface CompiledFixtureDefinition {
 
 export interface SelectedCheckGroup {
   packId: string;
-  packVersion: string;
   stablePackId?: string;
   moduleType?: string;
   checkGroupId: string;
@@ -136,14 +130,12 @@ export interface CompiledRecipePlan {
   compositionSchemaVersion: number;
   recipe: {
     id: string;
-    version: string;
-    state: string;
     title: string;
     track: string;
     sequence: { level: number } | null;
     task: {
       mode: string;
-      baseRecipe: { id: string; version: string; path: string } | null;
+      baseRecipe: { id: string; path: string } | null;
       requirements: CompiledOwnedTaskFragment[];
       contracts: CompiledOwnedTaskFragment[];
       requirementText: string;
@@ -154,8 +146,6 @@ export interface CompiledRecipePlan {
   packs: Array<{
     id: string;
     stableId?: string;
-    version: string;
-    state: string;
     title: string;
     moduleType?: string;
     path: string;
@@ -174,26 +164,20 @@ export interface CompiledRecipePlan {
   scoring: { mode: string; checks: number; points: number };
 }
 
-export interface PromotionEntry {
+export interface RecipeSelectionEntry {
   alias: string;
-  status: string;
-  recipe: { id: string; version: string; path: string };
+  recipe: { id: string; path: string };
 }
 
-export interface CompiledPromotionDefinition {
+export interface CompiledRecipeSelectionDefinition {
   schemaVersion: number;
   kind: string;
-  id: string;
-  version: string;
-  state: string;
-  title: string;
-  entries: PromotionEntry[];
+  entries: RecipeSelectionEntry[];
 }
 
-export interface CompiledPromotionCatalog {
+export interface CompiledRecipeSelectionCatalog {
   compositionSchemaVersion: number;
-  catalog: { id: string; version: string; state: string; title: string };
-  entries: PromotionEntry[];
+  entries: RecipeSelectionEntry[];
 }
 
 export type CompiledRecipeRelease = CompiledRecipePlan;
@@ -201,7 +185,6 @@ export type CompiledRecipeRelease = CompiledRecipePlan;
 export const COMPOSITION_SCHEMA_VERSION = 1;
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const STATES = new Set(['draft', 'qualified', 'retired']);
 const ROLES = new Set(['feature', 'guarantee', 'control']);
 const MODULE_TYPES = new Set(['feature', 'specification']);
 const BUDGET_STATUSES = new Set(['unmeasured', 'bounded']);
@@ -241,18 +224,9 @@ function id(value: unknown, at: string): string {
   return text;
 }
 
-function version(value: unknown, at: string): string {
-  const text = string(value, at);
-  if (!isExactSemanticVersion(text)) fail(at, 'must be an exact semantic version');
-  return text;
-}
-
-// A pack names the packs it depends on by id. The recipe that selects the
-// pack pins the version of every pack it includes, so one recipe never holds
-// two releases of one id and a dependency resolves to exactly one release.
 function packId(value: unknown, at: string): string {
   const text = string(value, at);
-  if (text.includes('@')) fail(at, 'must be a pack id; the recipe pins its version');
+  if (text.includes('@')) fail(at, 'must be a pack id');
   id(text, at);
   return text;
 }
@@ -275,8 +249,6 @@ function identityFields(value: UnknownRecord, at: string, kind: string): void {
   }
   if (value.kind !== kind) fail(`${at}.kind`, `must be ${JSON.stringify(kind)}`);
   id(value.id, `${at}.id`);
-  version(value.version, `${at}.version`);
-  if (!isMember(STATES, value.state)) fail(`${at}.state`, 'must be draft, qualified, or retired');
   string(value.title, `${at}.title`);
 }
 
@@ -298,7 +270,7 @@ function contained(root: string, from: string, path: unknown,
 }
 
 const PACK_FIELDS = new Set([
-  'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'description',
+  'schemaVersion', 'kind', 'id', 'title', 'description',
   'moduleType', 'stableId', 'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget',
   'task', 'checks',
 ]);
@@ -447,9 +419,6 @@ export function compilePackDefinition(input: unknown,
   } else if (budget.maxRuntimeMs !== undefined) {
     fail(`${source}.budget.maxRuntimeMs`, 'is allowed only for a bounded budget');
   }
-  if (pack.state === 'qualified' && budget.status !== 'bounded') {
-    fail(`${source}.budget`, 'qualified packs require a bounded runtime budget');
-  }
   const task = taskFragmentSet(pack.task, `${source}.task`);
   pack.task = task;
   if (task.requirements.length === 0) {
@@ -532,7 +501,7 @@ export function compilePackDefinition(input: unknown,
 }
 
 const FIXTURE_FIELDS = new Set([
-  'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'warehouses',
+  'schemaVersion', 'kind', 'id', 'title', 'warehouses',
   'items', 'accounts', 'empty',
 ]);
 const ITEM_FIELDS = new Set(['name', 'price', 'category', 'stock']);
@@ -590,25 +559,23 @@ export function compileFixtureDefinition(input: unknown,
 }
 
 const RECIPE_FIELDS = new Set([
-  'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'track',
+  'schemaVersion', 'kind', 'id', 'title', 'track',
   'fixture', 'task', 'packs', 'execution', 'scoring', 'sequence',
 ]);
-const FILE_REF_FIELDS = new Set(['path', 'id', 'version']);
+const FILE_REF_FIELDS = new Set(['path', 'id']);
 const TASK_FIELDS = new Set(['mode', 'baseRecipe', 'framing']);
-const PACK_SELECTION_FIELDS = new Set(['path', 'id', 'version', 'includeRoles',
+const PACK_SELECTION_FIELDS = new Set(['path', 'id', 'includeRoles',
   'includeCheckGroups']);
 const EXECUTION_FIELDS = new Set(['id', 'source']);
 const SCORING_FIELDS = new Set(['mode', 'weights']);
 const SEQUENCE_FIELDS = new Set(['level']);
 
-type FileRef = { path: string; id: string; version: string };
+type FileRef = { path: string; id: string };
 
 type ValidatedRecipe = {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   track: string;
   fixture: FileRef;
@@ -636,7 +603,6 @@ function validateFileRef(ref: unknown, at: string): asserts ref is FileRef {
   strictObject(ref, at, FILE_REF_FIELDS);
   string(ref.path, `${at}.path`);
   id(ref.id, `${at}.id`);
-  version(ref.version, `${at}.version`);
 }
 
 export function compileRecipeDefinition(input: unknown,
@@ -657,9 +623,6 @@ export function compileRecipeDefinition(input: unknown,
     fail(`${source}.task.baseRecipe`, 'is allowed only for upgrade recipes');
   }
   const scoring = recipe.scoring;
-  if (task.mode !== 'action' && recipe.execution === 'all-selected-sources') {
-    fail(source, 'automatic execution requires an action recipe');
-  }
   const framing = taskFragmentSet(task.framing, `${source}.task.framing`);
   task.framing = framing;
   if (framing.requirements.length === 0) {
@@ -671,7 +634,7 @@ export function compileRecipeDefinition(input: unknown,
   packs.forEach((selection: unknown, index: number) => {
     const at = `${source}.packs[${index}]`;
     strictObject(selection, at, PACK_SELECTION_FIELDS);
-    validateFileRef({ path: selection.path, id: selection.id, version: selection.version }, at);
+    validateFileRef({ path: selection.path, id: selection.id }, at);
     if (packIds.has(selection.id)) fail(`${at}.id`, `duplicate selected pack ${selection.id}`);
     packIds.add(selection.id);
     const includeRoles = uniqueStrings(selection.includeRoles, `${at}.includeRoles`);
@@ -759,23 +722,20 @@ export function compileRecipeFile(recipePath: string,
   const fixture = compileFixtureDefinition(readDefinitionJson(fixtureRef.absolute, 'fixture'), {
     source: relative(root, fixtureRef.absolute).replaceAll('\\', '/'),
   });
-  if (fixture.id !== recipe.fixture.id || fixture.version !== recipe.fixture.version) {
-    fail(`${recipeSource}.fixture`, `expected ${recipe.fixture.id}@${recipe.fixture.version}, found ${fixture.id}@${fixture.version}`);
+  if (fixture.id !== recipe.fixture.id) {
+    fail(`${recipeSource}.fixture`, `expected ${recipe.fixture.id}, found ${fixture.id}`);
   }
-  let baseRecipe: { id: string; version: string; path: string } | null = null;
+  let baseRecipe: { id: string; path: string } | null = null;
   if (recipe.task.mode === 'upgrade') {
     const at = `${recipeSource}.task.baseRecipe`;
     const base = recipe.task.baseRecipe;
     const ref = contained(compositionRoot, dirname(absoluteRecipe), base.path, `${at}.path`);
     const plan = compileRecipeFile(ref.absolute, { trackRoot: root, availableCapabilities,
       recipeStack: [...recipeStack, absoluteRecipe] });
-    if (plan.recipe.id !== base.id || plan.recipe.version !== base.version) {
-      fail(at, `expected ${base.id}@${base.version}, found ${plan.recipe.id}@${plan.recipe.version}`);
+    if (plan.recipe.id !== base.id) {
+      fail(at, `expected ${base.id}, found ${plan.recipe.id}`);
     }
-    if (recipe.state === 'qualified' && plan.recipe.state !== 'qualified') {
-      fail(at, `qualified upgrade recipe selects ${plan.recipe.state} base ${plan.recipe.id}@${plan.recipe.version}`);
-    }
-    baseRecipe = { id: plan.recipe.id, version: plan.recipe.version, path: ref.relative };
+    baseRecipe = { id: plan.recipe.id, path: ref.relative };
   }
 
   const selectedPacks: SelectedPack[] = [];
@@ -786,14 +746,13 @@ export function compileRecipeFile(recipePath: string,
     const pack = compilePackDefinition(readDefinitionJson(packRef.absolute, 'pack'), {
       source: relative(root, packRef.absolute).replaceAll('\\', '/'),
     });
-    if (pack.id !== selection.id || pack.version !== selection.version) {
-      fail(at, `expected ${selection.id}@${selection.version}, found ${pack.id}@${pack.version}`);
+    if (pack.id !== selection.id) {
+      fail(at, `expected ${selection.id}, found ${pack.id}`);
     }
-    if (selection.includeRoles.length === 0
-      && (recipe.task.mode !== 'action' || pack.moduleType === undefined)) {
-      fail(`${at}.includeRoles`, 'can be empty only for an action catalog dependency');
+    if (selection.includeRoles.length === 0 && pack.moduleType === undefined) {
+      fail(`${at}.includeRoles`, 'can be empty only for a module dependency');
     }
-    const ref = `${pack.id}@${pack.version}`;
+    const ref = pack.id;
     for (const groupId of selection.includeCheckGroups ?? []) {
       const group = pack.checks.find(check => check.id === groupId);
       if (!group) {
@@ -806,12 +765,11 @@ export function compileRecipeFile(recipePath: string,
     selectedByRef.set(ref, pack);
     selectedPacks.push({ selection, pack, path: packRef.relative });
   }
-  // Resolve every dependency id to the release this recipe selected, so each
-  // later consumer sees exact references.
+  // The recipe selects one direct source for each stable pack id.
   const refById = new Map<string, string>();
   for (const { pack } of selectedPacks) {
     if (refById.has(pack.id)) fail(`${recipeSource}.packs`, `selects ${pack.id} twice`);
-    refById.set(pack.id, `${pack.id}@${pack.version}`);
+    refById.set(pack.id, pack.id);
   }
   for (const { pack } of selectedPacks) {
     pack.requiresPacks = pack.requiresPacks.map(required => refById.get(required)
@@ -842,16 +800,6 @@ export function compileRecipeFile(recipePath: string,
   const omitForScopedSelection = (selection: { includeCheckGroups?: string[] },
     requiresFeatures: readonly string[] | undefined): boolean =>
     selection.includeCheckGroups !== undefined && missingFeatureModules(requiresFeatures).length > 0;
-  if (recipe.state === 'qualified') {
-    if (fixture.state !== 'qualified') {
-      fail(`${recipeSource}.fixture`, `qualified recipe selects ${fixture.state} fixture ${fixture.id}@${fixture.version}`);
-    }
-    for (const { pack } of selectedPacks) {
-      if (pack.state !== 'qualified') {
-        fail(`${recipeSource}.packs`, `qualified recipe selects ${pack.state} pack ${pack.id}@${pack.version}`);
-      }
-    }
-  }
   const visitState = new Map<string, 'visiting' | 'done'>();
   const visit = (ref: string, chain: readonly string[] = []): void => {
     if (visitState.get(ref) === 'done') return;
@@ -915,7 +863,6 @@ export function compileRecipeFile(recipePath: string,
   for (const fragment of recipe.task.framing.requirements) addFragment('requirements', fragment, 'recipe');
   for (const fragment of recipe.task.framing.contracts) addFragment('contracts', fragment, 'recipe');
   for (const { pack, selection } of selectedPacks) {
-    if (selection.includeRoles.length === 0) continue;
     for (const fragment of pack.task.requirements) {
       if (omitForScopedSelection(selection, fragment.requiresFeatures)) continue;
       const missing = missingFeatureModules(fragment.requiresFeatures);
@@ -1005,12 +952,8 @@ export function compileRecipeFile(recipePath: string,
       const selectedFeature = { ...feature, criteria };
       selectedFeatures.push({
         packId: pack.id,
-        packVersion: pack.version,
         ...(pack.stableId === undefined ? {} : { stablePackId: pack.stableId }),
         ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
-        // `id` identifies this source slice inside the pack. `stableId` keeps
-        // its published score keys unchanged when one criterion moves to a
-        // focused, independently versioned scenario.
         checkGroupId: check.stableId ?? check.id,
         role: check.role,
         ...(check.observations === undefined ? {} : { observations: check.observations }),
@@ -1106,8 +1049,6 @@ export function compileRecipeFile(recipePath: string,
     compositionSchemaVersion: COMPOSITION_SCHEMA_VERSION,
     recipe: {
       id: recipe.id,
-      version: recipe.version,
-      state: recipe.state,
       title: recipe.title,
       track: recipe.track,
       sequence: recipe.sequence ?? null,
@@ -1123,8 +1064,6 @@ export function compileRecipeFile(recipePath: string,
     fixture,
     packs: selectedPacks.map(({ selection, pack, path }) => ({
       id: pack.id,
-      version: pack.version,
-      state: pack.state,
       title: pack.title,
       ...(pack.stableId === undefined ? {} : { stableId: pack.stableId }),
       ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
@@ -1156,70 +1095,49 @@ export function compileRecipeFile(recipePath: string,
   };
 }
 
-const PROMOTION_FIELDS = new Set([
-  'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'entries',
-]);
-const PROMOTION_ENTRY_FIELDS = new Set(['alias', 'status', 'recipe']);
+const RECIPE_SELECTION_FIELDS = new Set(['schemaVersion', 'kind', 'entries']);
+const RECIPE_SELECTION_ENTRY_FIELDS = new Set(['alias', 'recipe']);
 
-export function compilePromotionDefinition(input: unknown,
-  { source = '<promotion-catalog>' }: { source?: string } = {}): CompiledPromotionDefinition {
+export function compileRecipeSelectionDefinition(input: unknown,
+  { source = '<recipe-selection>' }: { source?: string } = {}): CompiledRecipeSelectionDefinition {
   const catalog = structuredClone(input);
-  strictObject(catalog, source, PROMOTION_FIELDS);
-  identityFields(catalog, source, 'promotion-catalog');
-  if (!Array.isArray(catalog.entries)) fail(`${source}.entries`, 'must be an array');
-  if (catalog.entries.length === 0 && catalog.state !== 'draft') {
-    fail(`${source}.entries`, 'must be non-empty once the catalog is qualified');
+  strictObject(catalog, source, RECIPE_SELECTION_FIELDS);
+  if (catalog.schemaVersion !== COMPOSITION_SCHEMA_VERSION) {
+    fail(`${source}.schemaVersion`, `must be ${COMPOSITION_SCHEMA_VERSION}`);
   }
-  const activeAliases = new Set<unknown>();
-  const candidates = new Set<string>();
+  if (catalog.kind !== 'recipe-selection') fail(`${source}.kind`, 'must be "recipe-selection"');
+  if (!Array.isArray(catalog.entries) || catalog.entries.length === 0) {
+    fail(`${source}.entries`, 'must be a non-empty array');
+  }
+  const aliases = new Set<string>();
   catalog.entries.forEach((entry, index) => {
     const at = `${source}.entries[${index}]`;
-    strictObject(entry, at, PROMOTION_ENTRY_FIELDS);
+    strictObject(entry, at, RECIPE_SELECTION_ENTRY_FIELDS);
     const alias = string(entry.alias, `${at}.alias`);
     if (!/^L[1-9]\d*$/.test(alias)) fail(`${at}.alias`, 'must look like L1, L2, and so on');
-    if (!isOneOf(entry.status, ['candidate', 'promoted', 'retired'])) {
-      fail(`${at}.status`, 'must be candidate, promoted, or retired');
-    }
+    if (aliases.has(alias)) fail(`${at}.alias`, `duplicate alias ${alias}`);
+    aliases.add(alias);
     validateFileRef(entry.recipe, `${at}.recipe`);
-    if (entry.status === 'promoted') {
-      if (activeAliases.has(entry.alias)) fail(`${at}.alias`, `duplicate promoted alias ${entry.alias}`);
-      activeAliases.add(entry.alias);
-    }
-    const candidate = `${entry.alias}:${entry.recipe.id}@${entry.recipe.version}`;
-    if (candidates.has(candidate)) fail(at, `duplicate alias target ${candidate}`);
-    candidates.add(candidate);
   });
-  return catalog as Validated<CompiledPromotionDefinition>;
+  return catalog as Validated<CompiledRecipeSelectionDefinition>;
 }
 
-export function compilePromotionFile(catalogPath: string,
-  { trackRoot }: { trackRoot?: string } = {}): CompiledPromotionCatalog {
+export function compileRecipeSelectionFile(catalogPath: string,
+  { trackRoot }: { trackRoot?: string } = {}): CompiledRecipeSelectionCatalog {
   const absoluteCatalog = resolve(catalogPath);
   const root = resolve(trackRoot ?? dirname(dirname(absoluteCatalog)));
   const compositionRoot = resolve(root, 'composition');
   const source = relative(root, absoluteCatalog).replaceAll('\\', '/');
-  const catalog = compilePromotionDefinition(
-    readDefinitionJson(absoluteCatalog, 'promotion catalog'), { source });
+  const catalog = compileRecipeSelectionDefinition(
+    readDefinitionJson(absoluteCatalog, 'recipe selection'), { source });
   const entries = catalog.entries.map((entry, index) => {
     const at = `${source}.entries[${index}].recipe`;
     const ref = contained(compositionRoot, dirname(absoluteCatalog), entry.recipe.path, `${at}.path`);
     const plan = compileRecipeFile(ref.absolute, { trackRoot: root });
-    if (plan.recipe.id !== entry.recipe.id || plan.recipe.version !== entry.recipe.version) {
-      fail(at, `expected ${entry.recipe.id}@${entry.recipe.version}, found ${plan.recipe.id}@${plan.recipe.version}`);
+    if (plan.recipe.id !== entry.recipe.id) {
+      fail(at, `expected ${entry.recipe.id}, found ${plan.recipe.id}`);
     }
-    if (entry.status === 'promoted' && plan.recipe.state !== 'qualified') {
-      fail(at, `cannot promote ${plan.recipe.id}@${plan.recipe.version} while it is ${plan.recipe.state}`);
-    }
-    if (entry.status !== 'retired' && plan.recipe.state === 'retired') {
-      fail(at, `cannot use retired recipe ${plan.recipe.id}@${plan.recipe.version} as ${entry.status}`);
-    }
-    return { alias: entry.alias, status: entry.status, recipe: {
-      id: plan.recipe.id, version: plan.recipe.version, path: ref.relative,
-    } };
+    return { alias: entry.alias, recipe: { id: plan.recipe.id, path: ref.relative } };
   });
-  return {
-    compositionSchemaVersion: COMPOSITION_SCHEMA_VERSION,
-    catalog: { id: catalog.id, version: catalog.version, state: catalog.state, title: catalog.title },
-    entries,
-  };
+  return { compositionSchemaVersion: COMPOSITION_SCHEMA_VERSION, entries };
 }

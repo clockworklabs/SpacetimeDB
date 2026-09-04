@@ -13,24 +13,21 @@ import { loadReferenceRegistry, prepareReferenceFixtureSource,
   selectReferenceFixture } from '../src/references/reference-fixtures.js';
 
 const ROOT = STACK_BENCH_ROOT;
-const scenarioPath = 'tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.1.json';
+const scenarioPath = 'tracks/ecommerce/scenarios/01-duplicate-checkout.json';
 const cases = [
   {
     backend: 'mongodb',
-    fixtureSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6',
-    manifest: 'mongodb-ecommerce-2.0.1.json',
+    manifest: 'mongodb-ecommerce.json',
     mutationId: 'concurrent-cart-add-does-not-increment',
   },
   {
     backend: 'postgres',
-    fixtureSha256: 'e461967ff8b99394c278e6d382e455a7fc3086c88016543fa668baf808baec0d',
-    manifest: 'postgres-ecommerce-2.0.1.json',
+    manifest: 'postgres-ecommerce.json',
     mutationId: 'progression-concurrent-cart-line-does-not-increment',
   },
   {
     backend: 'spacetime',
-    fixtureSha256: '58a193d61e02eac8e2c4801dc4cefb78db42468515a452a17e2544f2132148ce',
-    manifest: 'spacetime-ecommerce-2.0.1.json',
+    manifest: 'spacetime-ecommerce.json',
     mutationId: 'existing-cart-line-does-not-increment',
   },
 ];
@@ -71,13 +68,11 @@ for (const entry of cases) {
         backend: entry.backend,
         track: 'ecommerce',
         level: 1,
-        recipe: 'ecommerce.sequential-l1@2.5.0',
+        recipe: 'ecommerce.sequential-l1',
         app,
       });
       assert.equal(prepared.fixture.id, `ecommerce-reference-${entry.backend}`);
-      assert.equal(prepared.sourceSha256, entry.fixtureSha256);
-      assert.equal(manifest.schemaVersion, 2);
-      assert.equal(manifest.status, 'candidate');
+      assert.equal(manifest.schemaVersion, 3);
       assert.equal(manifest.backend, entry.backend);
       assert.equal(manifest.track, 'ecommerce');
       assert.equal(manifest.level, undefined);

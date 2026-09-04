@@ -43,7 +43,7 @@ interface BenchmarkRunPayload extends Record<string, unknown> {
   dependencyPolicy?: unknown;
   backend?: string;
   model?: string;
-  condition?: { sha256?: string };
+  condition?: { contentSha256?: string };
   progressionStatus?: { phase?: string; level?: number; attempts?: number };
   levels?: RunLevelRecord[];
   totals?: RunTotals;
@@ -265,7 +265,7 @@ export function createLiveProgressionExecution(
         !== canonicalDefinitionJson(dependencyPolicyIdentity)
       || artifact.payload.backend !== owner.attempt.stack
       || artifact.payload.model !== owner.attempt.model
-      || artifact.payload.condition?.sha256 !== owner.attempt.conditionSha256
+      || artifact.payload.condition?.contentSha256 !== owner.attempt.conditionSha256
       || artifact.payload.progressionStatus?.phase !== runState.phase
       || artifact.payload.progressionStatus?.level !== runState.level
       || artifact.payload.progressionStatus?.attempts !== runState.attempts.length) {
@@ -443,7 +443,6 @@ export function createLiveProgressionExecution(
           sequence,
           recipeIdentity: {
             id: recipe.id,
-            version: recipe.version,
             sha256: recipe.contentSha256,
           },
         },

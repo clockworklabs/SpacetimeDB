@@ -11,30 +11,24 @@ const BENCH = STACK_BENCH_ROOT;
 const TRACK = join(BENCH, 'tracks', 'ecommerce');
 const BACKENDS = ['mongodb', 'postgres', 'spacetime'];
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
-  'sequential-l1-2.5.0.json'));
-const calibration = compileCalibrationFile('composition/calibrations/sequential-l1-2.5.0.json', {
+  'sequential-l1.json'));
+const calibration = compileCalibrationFile('composition/calibrations/sequential-l1.json', {
   trackRoot: TRACK,
   stackBenchRoot: BENCH,
   release,
 });
 
-test('the sequential L1 release remains available while qualification is pending', () => {
-  assert.equal(release.state, 'draft');
-  assert.equal(calibration.state, 'draft');
-  assert.equal(calibration.promotion.status, 'candidate');
+test('the sequential L1 calibration binds the current recipe and all stacks', () => {
+  assert.equal(release.id, 'ecommerce.sequential-l1');
+  assert.equal(calibration.recipe.id, release.id);
+  assert.equal(calibration.recipe.contentSha256, release.contentSha256);
   assert.deepEqual(calibration.qualification.evidence, []);
-  assert.deepEqual(calibration.qualification.stacks, [
-    { id: 'mongodb', status: 'candidate' },
-    { id: 'postgres', status: 'candidate' },
-    { id: 'spacetime', status: 'candidate' },
-  ]);
+  assert.deepEqual(calibration.qualification.stacks, BACKENDS);
   assert.equal(calibration.references.entries.every(reference =>
-    reference.status === 'candidate'
-      && reference.targetPath === `reference-apps/ecommerce/${reference.backend}`), true);
-  assert.equal(calibration.mutations.every(mutation => mutation.status === 'candidate'), true);
+    reference.id === `ecommerce-reference-${reference.backend}`), true);
 });
 
-test('the candidate registry owns one current L1 mutation set per backend', () => {
+test('the registry owns one current L1 mutation set per backend', () => {
   const registry = loadReferenceRegistry();
   assert.deepEqual(validateReferenceRegistry(registry).issues, []);
   for (const backend of BACKENDS) {
@@ -42,7 +36,7 @@ test('the candidate registry owns one current L1 mutation set per backend', () =
       candidate.id === `ecommerce-reference-${backend}`);
     assert(fixture?.recipes);
     assert(fixture.mutationManifests);
-    assert(fixture.recipes.includes('ecommerce.sequential-l1@2.5.0'));
+    assert(fixture.recipes.includes('ecommerce.sequential-l1'));
     const calibrated = calibration.mutations.find(mutation => mutation.backend === backend);
     assert(calibrated);
     assert.deepEqual(fixture.mutationManifests, [calibrated.path]);

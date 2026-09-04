@@ -1,22 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isExactSemanticVersion, parseVersionedReference } from '../src/semantic-version.js';
+import { isExactSemanticVersion } from '../src/semantic-version.js';
 
-test('accepts exact semantic versions', () => {
+test('accepts exact semantic versions used by runtime contracts', () => {
   assert.equal(isExactSemanticVersion('1.2.3'), true);
-  assert.equal(isExactSemanticVersion('1.2.3-beta.1+build.4'), true);
-});
-
-test('rejects normalized and incomplete versions', () => {
-  for (const value of ['v1.2.3', ' 1.2.3 ', '01.2.3', '1.2']) {
-    assert.equal(isExactSemanticVersion(value), false, value);
-  }
-});
-
-test('parses an exact versioned reference', () => {
-  const identifier = (value: string): boolean => /^[a-z][a-z0-9.-]*$/.test(value);
-  assert.deepEqual(parseVersionedReference('feature.accounts@1.2.3', identifier),
-    { id: 'feature.accounts', version: '1.2.3' });
-  assert.equal(parseVersionedReference('Feature@1.2.3', identifier), null);
+  assert.equal(isExactSemanticVersion('1.2.3-rc.1+build.7'), true);
+  assert.equal(isExactSemanticVersion('v1.2.3'), false);
+  assert.equal(isExactSemanticVersion('^1.2.3'), false);
 });

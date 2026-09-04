@@ -341,6 +341,6 @@ function bindCampaign(args: BenchArguments): void {
       campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
       attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
         agentAdapter: attempt.agentAdapter, model: attempt.model,
-        conditionSha256: attempt.condition.sha256 } };
+        conditionSha256: attempt.condition.contentSha256 } };
   }
 }

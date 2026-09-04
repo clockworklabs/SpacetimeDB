@@ -25,11 +25,9 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
     schemaVersion: 1,
     kind: 'feature-catalog',
     id: 'test.catalog',
-    version: '1.0.0',
-    state: 'draft',
     title: 'Test catalog',
     nodes: [{ id: 'accounts', title: 'Accounts', questline: 'identity',
-      featureRefs: ['feature.accounts@1.0.0'], promptModules: [],
+      featureRefs: ['feature.accounts'], promptModules: [],
       gradingChecks: [{ id: 'accounts.create', points: 1, role: 'feature' }], dependencies: [] }],
     questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
   });
@@ -37,9 +35,9 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
     selection: 'feature', budget: { perFeature: 1 },
   }, featureCatalog);
   const attemptPlan = {
-    id: 'campaign-r1-c1-a1-postgres', mode: { id: 'dependency', version: '4.3.0' },
+    id: 'campaign-r1-c1-a1-postgres', mode: { id: 'dependency' },
     stack: 'postgres', agentAdapter: 'claude-code', model: 'test-model',
-    condition: { sha256: 'c'.repeat(64) },
+    condition: { contentSha256: 'c'.repeat(64) },
   };
   const execution = {
     id: `${attemptPlan.id}-execution1`, status: 'completed',
@@ -48,7 +46,7 @@ function campaignFixture({ marker = null, campaignStatus = 'completed' }:
   };
   const plan = {
     id: 'campaign', version: '1.0.0', contentSha256: 'a'.repeat(64),
-    definition: { mode: { id: 'dependency', version: '4.3.0' }, track: 'ecommerce' },
+    definition: { mode: { id: 'dependency' }, track: 'ecommerce' },
     featureCatalog, dependencyPolicy,
   };
   const state = { status: campaignStatus, attempts: [{ plan: attemptPlan,

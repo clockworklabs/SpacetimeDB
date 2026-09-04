@@ -1,0 +1,1880 @@
+{
+  "schemaVersion": 3,
+  "fixtureSha256": "1e5646458f195196bbbe0acd50c3a822268f151011dc9a86b696362feb1c07a7",
+  "backend": "spacetime",
+  "track": "ecommerce",
+  "note": "Mutation definitions for the SpacetimeDB ecommerce reference.",
+  "mutations": [
+    {
+      "id": "signup-binds-the-new-account-to-the-admin-session",
+      "scenario": "tracks/ecommerce/scenarios/01-account-create.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1a"
+      ],
+      "desc": "Create the requested account but bind the new browser session to the administrator, so account creation no longer signs the visitor in as the account it created.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const acc = ctx.db.account.insert({\n      id: 0n,\n      username: uname,\n      passwordHash: hashPassword(password),\n      isAdmin: false,\n      isStaff: false,\n    });\n\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });\n    }",
+          "replace": "    const acc = ctx.db.account.insert({\n      id: 0n,\n      username: uname,\n      passwordHash: hashPassword(password),\n      isAdmin: false,\n      isStaff: false,\n    });\n\n    const signedInAccount = ctx.db.account.username.find('admin') ?? acc;\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: signedInAccount.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: signedInAccount.id });\n    }"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-signup-is-silently-ignored",
+      "scenario": "tracks/ecommerce/scenarios/01-account-duplicate.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1b"
+      ],
+      "desc": "Return success for a taken username without creating a session or surfacing the required refusal.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (existing) throw new SenderError('That username is already taken.');",
+          "replace": "    if (existing) return; // mutant: duplicate signup is silently accepted"
+        }
+      ]
+    },
+    {
+      "id": "signin-does-not-verify-the-password",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1c"
+      ],
+      "desc": "Accept a known username without comparing the supplied password hash.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (!acc || acc.passwordHash !== hashPassword(password)) {",
+          "replace": "    if (!acc) {"
+        }
+      ]
+    },
+    {
+      "id": "signout-keeps-the-account-session",
+      "scenario": "tracks/ecommerce/scenarios/01-account-signout.json",
+      "targets": [
+        "ecommerce.feature.accounts.accounts.1d"
+      ],
+      "desc": "Leave the current account session in place when the visitor signs out.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (existingSession) ctx.db.session.identity.delete(ctx.sender);",
+          "replace": "  // mutant: sign out keeps the current account session"
+        }
+      ]
+    },
+    {
+      "id": "session-token-is-not-persisted-for-reload",
+      "scenario": "tracks/ecommerce/scenarios/01-account-reload.json",
+      "targets": [
+        "ecommerce.spec.state-durability.session-reload.1e"
+      ],
+      "desc": "Discard the connection token instead of persisting it, so a reload receives a new identity with no account session.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    if (token) localStorage.setItem('auth_token', token);",
+          "replace": "    if (token) localStorage.removeItem('auth_token');"
+        }
+      ]
+    },
+    {
+      "id": "catalog-seeds-the-wrong-air-purifier-price",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-values.2a"
+      ],
+      "desc": "Seed Air Purifier with an incorrect stored price while leaving the rest of the catalog intact.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  ['Air Purifier', 189.0, 60, 40, 'Home'],",
+          "replace": "  ['Air Purifier', 999.0, 60, 40, 'Home'],"
+        }
+      ]
+    },
+    {
+      "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-ranking.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-ranking.2b"
+      ],
+      "desc": "Reverse the specified alphabetical tie-breaker. This necessarily breaks both the initial sequence and the post-purchase sequence in the same scenario.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "      return a.name.localeCompare(b.name);",
+          "replace": "      return b.name.localeCompare(a.name);"
+        }
+      ]
+    },
+    {
+      "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-core",
+      "scenario": "tracks/ecommerce/scenarios/01-core.json",
+      "targets": [
+        "ecommerce.spec.live-state.ranking.2c"
+      ],
+      "desc": "Reverse the specified alphabetical tie-breaker. This necessarily breaks both the initial sequence and the post-purchase sequence in the same scenario.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "      return a.name.localeCompare(b.name);",
+          "replace": "      return b.name.localeCompare(a.name);"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-update-ranking-count",
+      "scenario": "tracks/ecommerce/scenarios/01-core.json",
+      "targets": [
+        "ecommerce.spec.live-state.ranking.2c"
+      ],
+      "desc": "Complete the purchase but leave its popularity count unchanged, so open storefronts cannot rank the purchased item first.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  bumpPurchaseCount(ctx, itemId, 1);",
+          "replace": "  // mutant: buy-now never advances the ranking count"
+        }
+      ]
+    },
+    {
+      "id": "purchase-controls-are-rendered-for-signed-out-visitors",
+      "scenario": "tracks/ecommerce/scenarios/progression-signed-out-purchase.json",
+      "targets": [
+        "ecommerce.spec.access-control.signed-out-purchase.3a"
+      ],
+      "desc": "Render buy and cart controls without requiring an account.",
+      "file": "client/src/components/ItemCard.tsx",
+      "edits": [
+        {
+          "find": "      {isSignedIn && (",
+          "replace": "      {true && ("
+        }
+      ]
+    },
+    {
+      "id": "buy-now-creates-orders-without-reserving-stock--01-buying",
+      "scenario": "tracks/ecommerce/scenarios/01-buying.json",
+      "targets": [
+        "ecommerce.spec.live-state.purchase-stock.3b"
+      ],
+      "desc": "Create purchase orders without reserving inventory. The same defect necessarily breaks live purchase stock and the sell-out portion of the stock-limit check.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
+        }
+      ]
+    },
+    {
+      "id": "buy-now-creates-orders-without-reserving-stock--stock-limit",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-limit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.stock-limit.3d"
+      ],
+      "desc": "Create purchase orders without reserving inventory. The same defect necessarily breaks live purchase stock and the sell-out portion of the stock-limit check.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
+        }
+      ]
+    },
+    {
+      "id": "buy-now-records-the-wrong-order-total",
+      "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
+      "targets": [
+        "ecommerce.feature.purchasing.purchase-order.3c"
+      ],
+      "desc": "Record a completed buy-now order one dollar above the stored item price.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: it.price,\n    status: 'pending',",
+          "replace": "    total: it.price + 1,\n    status: 'pending',"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment-basic-cart",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4a"
+      ],
+      "desc": "Write an existing cart line back without incrementing its quantity.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity + 1 });",
+          "replace": "ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "cart-owner-token-is-not-restored-after-reload",
+      "scenario": "tracks/ecommerce/scenarios/01-cart.json",
+      "targets": [
+        "ecommerce.spec.state-durability.cart-reload.4b"
+      ],
+      "desc": "Build a reload connection without the stored identity token, leaving the durable cart attached to a different session.",
+      "file": "client/src/main.tsx",
+      "edits": [
+        {
+          "find": ".withToken(localStorage.getItem('auth_token') || undefined)",
+          "replace": ".withToken(undefined)"
+        }
+      ]
+    },
+    {
+      "id": "signin-binds-the-second-client-to-a-different-account",
+      "scenario": "tracks/ecommerce/scenarios/01-cart.json",
+      "targets": [
+        "ecommerce.spec.live-state.shared-cart.4c"
+      ],
+      "desc": "Authenticate valid credentials but bind the second connection to the administrator account, so two sessions for one customer do not share the customer's cart.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: acc.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: acc.id });\n    }\n  }\n);\n\nexport const signOut",
+          "replace": "    const wrongAccount = ctx.db.account.username.find('admin') ?? acc;\n    const existingSession = ctx.db.session.identity.find(ctx.sender);\n    if (existingSession) {\n      ctx.db.session.identity.update({ ...existingSession, accountId: wrongAccount.id });\n    } else {\n      ctx.db.session.insert({ identity: ctx.sender, accountId: wrongAccount.id });\n    }\n  }\n);\n\nexport const signOut"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-the-basic-cart",
+      "scenario": "tracks/ecommerce/scenarios/progression-cart-checkout.json",
+      "targets": [
+        "ecommerce.feature.cart-checkout.cart.4d"
+      ],
+      "desc": "Leave completed checkout lines in the durable cart.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const line of lines) ctx.db.cartItem.id.delete(line.id);",
+          "replace": "  // mutant: checked-out cart lines remain"
+        }
+      ]
+    },
+    {
+      "id": "new-review-is-accepted-without-being-stored",
+      "scenario": "tracks/ecommerce/scenarios/01-review-visibility.json",
+      "targets": [
+        "ecommerce.feature.reviews.reviews.6a"
+      ],
+      "desc": "Accept an eligible new review but omit its durable insert, so neither author nor visitor can see it.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.review.insert({\n        id: 0n,\n        itemId,\n        accountId: acc.id,\n        rating,\n        comment,\n        createdAt: ctx.timestamp,\n      });",
+          "replace": "      // mutant: accepted review is not persisted"
+        }
+      ]
+    },
+    {
+      "id": "repeat-review-inserts-a-second-row",
+      "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.unique-review.6b"
+      ],
+      "desc": "Insert a second review row instead of updating the customer's existing item review.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.review.id.update({ ...existing, rating, comment, createdAt: ctx.timestamp });",
+          "replace": "      ctx.db.review.insert({ id: 0n, itemId, accountId: acc.id, rating, comment, createdAt: ctx.timestamp });"
+        }
+      ]
+    },
+    {
+      "id": "review-average-counts-rows-instead-of-ratings",
+      "scenario": "tracks/ecommerce/scenarios/01-review-rating-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.rating.6c"
+      ],
+      "desc": "Compute the live average from a constant per row rather than each stored rating.",
+      "file": "client/src/components/ItemDetail.tsx",
+      "edits": [
+        {
+          "find": "      : reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;",
+          "replace": "      : reviews.reduce((sum) => sum + 1, 0) / reviews.length;"
+        }
+      ]
+    },
+    {
+      "id": "every-signed-in-customer-is-treated-as-an-admin",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "targets": [
+        "ecommerce.spec.access-control.warehouse-area-boundary.7a"
+      ],
+      "desc": "Use account presence instead of the server-provided administrator flag to expose the admin area.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const isAdmin = currentUser?.isAdmin ?? false;",
+          "replace": "  const isAdmin = isSignedIn;"
+        }
+      ]
+    },
+    {
+      "id": "warehouse-view-omits-west",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.warehouse-view.7b"
+      ],
+      "desc": "Filter one real warehouse out of the administrator's inventory view.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "                warehouses={warehouses}",
+          "replace": "                warehouses={warehouses.filter((warehouse) => warehouse.name !== 'West')}"
+        }
+      ]
+    },
+    {
+      "id": "guest-purchase-falls-back-to-the-admin-account",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-session.101a"
+      ],
+      "desc": "Allow an unauthenticated direct purchase by attributing missing sessions to the administrator account, while preserving the authorized control path.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const acc = requireAccount(ctx);",
+          "replace": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const accountId = getAccountId(ctx);\n  const acc = (accountId === null ? null : ctx.db.account.id.find(accountId))\n    ?? ctx.db.account.username.find('admin')!;"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchases-are-attributed-to-the-system-account",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution.json",
+      "targets": [
+        "ecommerce.spec.access-control.purchase-attribution.102a"
+      ],
+      "desc": "Store every buy-now order under the administrator instead of the authenticated caller.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    accountId: acc.id,\n    createdAt: ctx.timestamp,\n    total: it.price,",
+          "replace": "    accountId: (ctx.db.account.username.find('admin') ?? acc).id,\n    createdAt: ctx.timestamp,\n    total: it.price,"
+        }
+      ]
+    },
+    {
+      "id": "direct-restock-does-not-require-an-admin",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-staff.json",
+      "targets": [
+        "ecommerce.feature.warehouse-admin.admin-write.103a"
+      ],
+      "desc": "Remove the server-side administrator check from the restock reducer.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const adminRestock = spacetimedb.reducer(\n  { itemId: t.u64(), warehouseId: t.u64(), quantity: t.u32() },\n  (ctx, { itemId, warehouseId, quantity }) => {\n    requireAdmin(ctx);",
+          "replace": "export const adminRestock = spacetimedb.reducer(\n  { itemId: t.u64(), warehouseId: t.u64(), quantity: t.u32() },\n  (ctx, { itemId, warehouseId, quantity }) => {\n    // mutant: no administrator check"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-ignores-the-stored-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.server-price.104a"
+      ],
+      "desc": "Create the direct purchase order one dollar above the authoritative stored price.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: it.price,\n    status: 'pending',",
+          "replace": "    total: 1,\n    status: 'pending',"
+        }
+      ]
+    },
+    {
+      "id": "account-state-token-is-not-restored-after-reload",
+      "scenario": "tracks/ecommerce/scenarios/progression-account-state-reload.json",
+      "targets": [
+        "ecommerce.spec.state-durability.account-state-recovery.105a"
+      ],
+      "desc": "Build a reload connection without the durable identity token, losing the account and its data.",
+      "file": "client/src/main.tsx",
+      "edits": [
+        {
+          "find": ".withToken(localStorage.getItem('auth_token') || undefined)",
+          "replace": ".withToken(undefined)"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-discards-the-visible-account-state",
+      "scenario": "tracks/ecommerce/scenarios/progression-account-state-reconnect.json",
+      "targets": [
+        "ecommerce.spec.state-durability.account-state-recovery.105b"
+      ],
+      "desc": "Keep normal reload recovery but discard the client account projection when the browser comes back online.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const currentUser = currentUserRows[0] ?? null;",
+          "replace": "  const [discardAccountAfterReconnect, setDiscardAccountAfterReconnect] = useState(false);\n  useEffect(() => {\n    const discardAccount = () => setDiscardAccountAfterReconnect(true);\n    window.addEventListener('online', discardAccount);\n    return () => window.removeEventListener('online', discardAccount);\n  }, []);\n  const currentUser = discardAccountAfterReconnect ? null : currentUserRows[0] ?? null;"
+        }
+      ]
+    },
+    {
+      "id": "order-views-return-every-customers-orders",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership.json",
+      "targets": [
+        "ecommerce.spec.access-control.order-ownership.106a"
+      ],
+      "desc": "Remove account filters from both order views, exposing another customer's order and its line items.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    const rows = [...ctx.db.customerOrder.accountId.filter(accountId)];",
+          "replace": "    const rows = [...ctx.db.customerOrder.iter()];"
+        },
+        {
+          "find": "    for (const o of ctx.db.customerOrder.accountId.filter(accountId)) {",
+          "replace": "    for (const o of ctx.db.customerOrder.iter()) {"
+        }
+      ]
+    },
+    {
+      "id": "admin-revenue-double-counts-every-order",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107a"
+      ],
+      "desc": "Count every completed order twice in the administrator revenue projection.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "        total += li.unitPrice * li.quantity;",
+          "replace": "        total += li.unitPrice * li.quantity * 2;"
+        }
+      ]
+    },
+    {
+      "id": "purchases-do-not-leave-the-warehouses",
+      "scenario": "tracks/ecommerce/scenarios/progression-books-balance.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.books-balance.107b"
+      ],
+      "desc": "Create normal orders and revenue while leaving warehouse stock unchanged.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
+        }
+      ]
+    },
+    {
+      "id": "review-purchase-eligibility-is-not-checked",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "targets": [
+        "ecommerce.spec.access-control.review-eligibility.108a"
+      ],
+      "desc": "Allow a signed-in customer to review an item with no matching purchase.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (!bought) throw new SenderError('You can only review items you have purchased.');",
+          "replace": "    // mutant: purchase eligibility is not checked"
+        }
+      ]
+    },
+    {
+      "id": "eligible-review-is-accepted-without-being-stored",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility.json",
+      "targets": [
+        "ecommerce.spec.access-control.review-eligibility.108b"
+      ],
+      "desc": "Keep the non-buyer refusal but omit the insert for a buyer's eligible new review.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.review.insert({\n        id: 0n,\n        itemId,\n        accountId: acc.id,\n        rating,\n        comment,\n        createdAt: ctx.timestamp,\n      });",
+          "replace": "      // mutant: eligible review is acknowledged but not persisted"
+        }
+      ]
+    },
+    {
+      "id": "cart-line-lookup-ignores-cart-ownership",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.cart-boundary.109a"
+      ],
+      "desc": "Find an existing cart line by item alone, so the same named add action from another customer increments the owner's line instead of that customer's cart.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "function findCartLine(ctx: Ctx, accountId: bigint, itemId: bigint) {\n  for (const row of ctx.db.cartItem.byAccountItem.filter([accountId, itemId])) {\n    return row;\n  }\n  return null;\n}",
+          "replace": "function findCartLine(ctx: Ctx, _accountId: bigint, itemId: bigint) {\n  for (const row of ctx.db.cartItem.iter()) {\n    if (row.itemId === itemId) return row;\n  }\n  return null;\n}"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reserve-stock-last-unit",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.last-unit.201a",
+        "ecommerce.spec.concurrency-safety.last-unit.201b",
+        "ecommerce.spec.concurrency-safety.last-unit.201c"
+      ],
+      "desc": "Create purchase orders without reserving stock, proving the focused last-unit stock, order-count, and revenue consequences.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reserve-stock-restock-race",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.restock-race.202a"
+      ],
+      "desc": "Create purchase orders without reserving stock, so the rush ends at start plus five instead of start plus two.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203a"
+      ],
+      "desc": "Render the old cart quantity after concurrent adds.",
+      "file": "client/src/components/CartPanel.tsx",
+      "edits": [
+        {
+          "find": "                value={line.quantity}",
+          "replace": "                value={1}"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout.json",
+      "targets": [
+        "ecommerce.spec.concurrency-safety.duplicate-checkout.203b"
+      ],
+      "desc": "Keep checked-out cart lines so the next serialized checkout creates a duplicate order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const line of lines) ctx.db.cartItem.id.delete(line.id);",
+          "replace": "  // mutant: checked-out lines remain in the cart"
+        }
+      ]
+    },
+    {
+      "id": "stock-subscription-snapshotted-once",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901a"
+      ],
+      "desc": "Render the first non-empty stock snapshot forever instead of following committed subscription updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+        },
+        {
+          "find": "  const [stocks] = useTable(tables.stock);",
+          "replace": "  const [liveStocks] = useTable(tables.stock);\n  const initialStocks = useRef<typeof liveStocks | null>(null);\n  if (initialStocks.current === null && liveStocks.length > 0) {\n    initialStocks.current = liveStocks;\n  }\n  const stocks = initialStocks.current ?? liveStocks;"
+        }
+      ]
+    },
+    {
+      "id": "stock-view-ignores-update-across-app-server-stop",
+      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901c"
+      ],
+      "desc": "Freeze the already-open stock view at its first complete snapshot. SpacetimeDB durability and app-server independence remain structural; this mutation validates only the scored stale-view oracle.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+        },
+        {
+          "find": "  const [stocks] = useTable(tables.stock);",
+          "replace": "  const [liveStocks] = useTable(tables.stock);\n  const frozenStocks = useRef<typeof liveStocks | null>(null);\n  if (frozenStocks.current === null && liveStocks.length > 0) frozenStocks.current = liveStocks;\n  const stocks = frozenStocks.current ?? liveStocks;"
+        }
+      ]
+    },
+    {
+      "id": "stock-view-keeps-pre-reconnect-snapshot",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync.json",
+      "targets": [
+        "ecommerce.spec.external-data-sync.external-stock.901d"
+      ],
+      "desc": "Continue following stock until the browser goes offline, then retain the last online snapshot after network restoration.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+        },
+        {
+          "find": "  const [stocks] = useTable(tables.stock);",
+          "replace": "  const [liveStocks] = useTable(tables.stock);\n  const [freezeStockAfterOffline, setFreezeStockAfterOffline] = useState(false);\n  const lastOnlineStocks = useRef(liveStocks);\n  useEffect(() => {\n    const freezeStock = () => setFreezeStockAfterOffline(true);\n    window.addEventListener('offline', freezeStock);\n    return () => window.removeEventListener('offline', freezeStock);\n  }, []);\n  if (!freezeStockAfterOffline) {\n    lastOnlineStocks.current = liveStocks;\n  }\n  const stocks = freezeStockAfterOffline ? lastOnlineStocks.current : liveStocks;"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-snapshots-on-selection",
+      "scenario": "tracks/ecommerce/scenarios/progression-open-list-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.open-list.902a"
+      ],
+      "desc": "Snapshot the selected item's reviews when the detail opens instead of following later subscription updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+        },
+        {
+          "find": "  const selectedItemReviews = selectedItemId !== null ? reviewsByItem.get(selectedItemId) ?? [] : [];",
+          "replace": "  const openedReviewItem = useRef<bigint | null>(null);\n  const openedReviews = useRef<(typeof reviews)[number][]>([]);\n  if (selectedItemId !== openedReviewItem.current) {\n    openedReviewItem.current = selectedItemId;\n    openedReviews.current = selectedItemId !== null ? reviewsByItem.get(selectedItemId) ?? [] : [];\n  }\n  const selectedItemReviews = openedReviews.current;"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-renders-each-review-twice",
+      "scenario": "tracks/ecommerce/scenarios/progression-open-list-live.json",
+      "targets": [
+        "ecommerce.spec.live-state.open-list.902a"
+      ],
+      "desc": "Render every committed review twice in the already-open list.",
+      "file": "client/src/components/ItemDetail.tsx",
+      "edits": [
+        {
+          "find": "            {reviews.map((r) => (",
+          "replace": "            {[...reviews, ...reviews].map((r) => ("
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3a"
+      ],
+      "desc": "The serialized cancellation reducer changes order state and purchase counts but skips allocation restoration.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    restoreOrderItemStock(ctx, li);\n    decrementPurchaseCount(ctx, li.itemId, li.quantity);",
+          "replace": "    // mutant: cancellation does not restore its reserved stock\n    decrementPurchaseCount(ctx, li.itemId, li.quantity);"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-fresh-client",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202b",
+        "ecommerce.inventory-operations.stock-conservation.202c"
+      ],
+      "desc": "The serialized cancellation reducer skips allocation restoration, so a fresh client reads the persisted shortfall.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    restoreOrderItemStock(ctx, li);\n    decrementPurchaseCount(ctx, li.itemId, li.quantity);",
+          "replace": "    // mutant: cancellation does not restore its reserved stock\n    decrementPurchaseCount(ctx, li.itemId, li.quantity);"
+        }
+      ]
+    },
+    {
+      "id": "cancel-restores-stock-but-keeps-pending-status",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-history.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3b"
+      ],
+      "desc": "The serialized cancellation reducer restores allocations but writes pending back to order history.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  ctx.db.customerOrder.id.update({ ...order, status: 'cancelled' });",
+          "replace": "  ctx.db.customerOrder.id.update({ ...order, status: 'pending' });"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-order-remains-in-revenue-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-order-cancellation-core.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3a"
+      ],
+      "desc": "The admin revenue view includes cancelled orders even though cancellation otherwise succeeds.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (!isOrderCounted(o)) continue;\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {",
+          "replace": "      // mutant: cancelled orders remain in revenue\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-order-remains-in-revenue-invariant",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        "ecommerce.returns-pricing.refund-accounting.203a"
+      ],
+      "desc": "The admin revenue view includes cancelled orders even though cancellation otherwise succeeds.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (!isOrderCounted(o)) continue;\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {",
+          "replace": "      // mutant: cancelled orders remain in revenue\n      for (const li of ctx.db.orderItem.orderId.filter(o.id)) {"
+        }
+      ]
+    },
+    {
+      "id": "operator-authorization-allows-customer-transfer",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201a"
+      ],
+      "desc": "The transfer reducer drops its administrator role gate.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  (ctx, { itemId, fromWarehouseId, toWarehouseId, quantity }) => {\n    requireAdmin(ctx);",
+          "replace": "  (ctx, { itemId, fromWarehouseId, toWarehouseId, quantity }) => {\n    // mutant: no administrator role check"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-direct-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "The shipping reducer drops its staff role check while retaining pending-state validation.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  requireStaffOrAdmin(ctx);",
+          "replace": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  // mutant: no staff role check"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-foreign-order-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.order-owner.204a"
+      ],
+      "desc": "Cancellation bypasses the owner helper while retaining missing-order and pending-state validation.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const cancelOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  const order = requireOrderOwner(ctx, orderId);",
+          "replace": "export const cancelOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  const order = ctx.db.customerOrder.id.find(orderId);\n  if (!order) throw new SenderError('Order not found.');"
+        }
+      ]
+    },
+    {
+      "id": "queue-depth-lags-one-order",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-live.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1a"
+      ],
+      "desc": "The reactive queue renders every order but its visible depth remains one behind.",
+      "file": "client/src/components/FulfilmentPanel.tsx",
+      "edits": [
+        {
+          "find": "Waiting: <span data-role=\"queue-depth\">{queue.length}</span>",
+          "replace": "Waiting: <span data-role=\"queue-depth\">{Math.max(0, queue.length - 1)}</span>"
+        }
+      ]
+    },
+    {
+      "id": "ship-acknowledges-without-changing-status",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-ship.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1c"
+      ],
+      "desc": "The serialized shipping reducer accepts the call but writes pending back to the order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  ctx.db.customerOrder.id.update({ ...order, status: 'shipped' });",
+          "replace": "  ctx.db.customerOrder.id.update({ ...order, status: 'pending' });"
+        }
+      ]
+    },
+    {
+      "id": "customer-sees-fulfilment-navigation",
+      "scenario": "tracks/ecommerce/scenarios/02-fulfilment-access.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1d"
+      ],
+      "desc": "The fulfilment navigation is shown to every signed-in account instead of only staff and administrators.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {(isStaff || isAdmin) && (\n            <button\n              type=\"button\"\n              className=\"btn btn-ghost btn-sm\"\n              data-role=\"staff-link\"",
+          "replace": "          {isSignedIn && (\n            <button\n              type=\"button\"\n              className=\"btn btn-ghost btn-sm\"\n              data-role=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "operator-authorization-allows-customer-shipping",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201c"
+      ],
+      "desc": "The shipping reducer drops the staff role check while retaining the pending-order guard.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  requireStaffOrAdmin(ctx);",
+          "replace": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  // mutant: no staff role check"
+        }
+      ]
+    },
+    {
+      "id": "transfer-debits-source-without-crediting-existing-destination",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202a",
+        "ecommerce.inventory-operations.warehouse-transfer.2a"
+      ],
+      "desc": "A transfer debits the source row but writes the existing destination quantity back unchanged, violating both directional movement and total conservation inside the serialized reducer.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity + quantity });",
+          "replace": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "transfer-warehouse-totals-omit-destination-credit",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals.json",
+      "targets": [
+        "ecommerce.inventory-operations.warehouse-transfer.2b"
+      ],
+      "desc": "The serialized transfer debits the source but writes the existing destination quantity back unchanged.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity + quantity });",
+          "replace": "      ctx.db.stock.insert({ ...toRow, quantity: toRow.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "transfer-overdraft-guard-removed",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.inventory-operations.warehouse-transfer.2c"
+      ],
+      "desc": "The serialized reducer no longer rejects insufficient source stock and commits negative source quantity.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (available < quantity) {\n      throw new SenderError(`Not enough stock in source warehouse: only ${available} available.`);\n    }",
+          "replace": "    // mutant: insufficient source stock is not rejected"
+        }
+      ]
+    },
+    {
+      "id": "low-stock-excludes-boundary-ten",
+      "scenario": "tracks/ecommerce/scenarios/02-low-stock.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5a"
+      ],
+      "desc": "The reactive low-stock view uses a strict boundary and omits items with exactly ten units.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "        .filter((i) => (stockByItem.get(i.id) ?? 0) <= LOW_STOCK_THRESHOLD)",
+          "replace": "        .filter((i) => (stockByItem.get(i.id) ?? 0) < LOW_STOCK_THRESHOLD)"
+        }
+      ]
+    },
+    {
+      "id": "category-totals-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-category-totals.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5b"
+      ],
+      "desc": "The category totals view includes only shipped orders, so a newly accepted pending purchase is absent.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    for (const order of ctx.db.customerOrder.iter()) {\n      if (!isOrderCounted(order)) continue;",
+          "replace": "    for (const order of ctx.db.customerOrder.iter()) {\n      if (order.status !== 'shipped') continue;"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-recommendations.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5c"
+      ],
+      "desc": "The personal recommendation view derives categories only from shipped orders, so a new pending purchase has no influence.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    for (const order of ctx.db.customerOrder.accountId.filter(accountId)) {\n      if (!isOrderCounted(order)) continue;",
+          "replace": "    for (const order of ctx.db.customerOrder.accountId.filter(accountId)) {\n      if (order.status !== 'shipped') continue;"
+        }
+      ]
+    },
+    {
+      "id": "purchases-do-not-affect-best-sellers",
+      "scenario": "tracks/ecommerce/scenarios/02-operational-best-sellers.json",
+      "targets": [
+        "ecommerce.inventory-operations.operational-views.5d"
+      ],
+      "desc": "Rank signed-out recommendations without purchase counts.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const purchaseCountOf = (id: bigint) => ctx.db.itemStats.itemId.find(id)?.purchaseCount ?? 0;",
+          "replace": "const purchaseCountOf = (_id: bigint) => 0;"
+        }
+      ]
+    },
+    {
+      "id": "queue-warehouse-reports-west",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1b"
+      ],
+      "desc": "The queue renders West for the deterministic Desk Lamp allocation even though the order reserved stock in East.",
+      "file": "client/src/components/FulfilmentPanel.tsx",
+      "edits": [
+        {
+          "find": "{name}: {order.warehouseNames[i]}",
+          "replace": "{name}: West"
+        }
+      ]
+    },
+    {
+      "id": "stock-conservation-view-keeps-the-initial-total",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions.json",
+      "targets": [
+        "ecommerce.inventory-operations.stock-conservation.202d"
+      ],
+      "desc": "Freeze the displayed aggregate stock at the first complete subscription snapshot. This deterministic scenario-bound defect validates the exact starting-total-minus-one oracle after the direct transfer and purchase; it does not model a lost-update interleaving because SpacetimeDB reducer execution is atomically serialized.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState } from 'react';"
+        },
+        {
+          "find": "  const stockByItem = useMemo(() => {\n    const map = new Map<bigint, number>();\n    for (const row of stocks) {",
+          "replace": "  const initialStockRows = useRef(stocks);\n  if (initialStockRows.current.length === 0 && stocks.length > 0) initialStockRows.current = stocks;\n\n  const stockByItem = useMemo(() => {\n    const map = new Map<bigint, number>();\n    for (const row of initialStockRows.current) {"
+        }
+      ]
+    },
+    {
+      "id": "catalog-search-ignores-the-query",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-search.2d"
+      ],
+      "desc": "A non-empty catalog query filters out every product instead of matching names.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".filter(item => !q || item.name.toLowerCase().includes(q))",
+          "replace": ".filter(() => !q) // mutant: non-empty searches return no products"
+        }
+      ]
+    },
+    {
+      "id": "admin-total-stock-is-not-rendered",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
+      "targets": [
+        "ecommerce.spec.live-state.warehouse-stock.7c"
+      ],
+      "desc": "The staff stock total always renders zero after a warehouse restock.",
+      "file": "client/src/components/AdminPanel.tsx",
+      "edits": [
+        {
+          "find": "<td data-role=\"admin-stock\">{totalStockOf(item.id)}</td>",
+          "replace": "<td data-role=\"admin-stock\">{0}</td>"
+        }
+      ]
+    },
+    {
+      "id": "customers-can-schedule-restocks",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-access.json",
+      "targets": [
+        "ecommerce.l3.deferred-access.scheduled-work-access.317a"
+      ],
+      "desc": "Scheduling a restock no longer checks that the caller is an administrator.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  (ctx, input) => {\n    requireAdmin(ctx);\n    const itemName = input.item.trim();\n    const warehouseName = input.warehouse.trim();\n    const item = [...ctx.db.item].find(row => row.name === itemName);\n    const warehouse = [...ctx.db.warehouse].find(row => row.name === warehouseName);",
+          "replace": "  (ctx, input) => {\n    // mutant: any signed-in or anonymous caller can schedule work\n    const itemName = input.item.trim();\n    const warehouseName = input.warehouse.trim();\n    const item = [...ctx.db.item].find(row => row.name === itemName);\n    const warehouse = [...ctx.db.warehouse].find(row => row.name === warehouseName);"
+        }
+      ]
+    },
+    {
+      "id": "scheduled-restock-is-delayed-past-the-durability-window",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.311a"
+      ],
+      "desc": "A scheduled restock is persisted with an extra ten-minute delay.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,",
+          "replace": "dueMicros: nowMicros(ctx) + (BigInt(input.delaySeconds) + 600n) * SECOND,"
+        }
+      ]
+    },
+    {
+      "id": "reservation-is-delayed-past-the-durability-window",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-durability.json",
+      "targets": [
+        "ecommerce.l3.deferred-durability.restart-survival.314a"
+      ],
+      "desc": "A reservation is persisted with a ten-minute lifetime instead of ninety seconds.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const expiresMicros = nowMicros(ctx) + 90n * SECOND;",
+          "replace": "const expiresMicros = nowMicros(ctx) + 600n * SECOND;"
+        }
+      ]
+    },
+    {
+      "id": "completed-restock-remains-pending",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.exactly-once.311a"
+      ],
+      "desc": "A completed restock remains pending and is applied again by later maintenance ticks.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.scheduledRestock.id.update({ ...pending, status: 'complete' });",
+          "replace": "ctx.db.scheduledRestock.id.update({ ...pending, status: 'pending' });"
+        }
+      ]
+    },
+    {
+      "id": "reservation-expiry-restores-stock-twice",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.stock-conservation.313a"
+      ],
+      "desc": "Reservation expiry returns twice the quantity that was reserved.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "restoreStock(ctx, row.itemId, row.warehouseId, row.quantity);\n    ctx.db.reservation.id.update({ ...row, expired: true });",
+          "replace": "restoreStock(ctx, row.itemId, row.warehouseId, row.quantity * 2);\n    ctx.db.reservation.id.update({ ...row, expired: true });"
+        }
+      ]
+    },
+    {
+      "id": "checkout-takes-reserved-stock-again",
+      "scenario": "tracks/ecommerce/scenarios/03-deferred-integrity.json",
+      "targets": [
+        "ecommerce.l3.deferred-integrity.stock-conservation.314a"
+      ],
+      "desc": "Checkout decrements stock after the cart reservation already took it.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const allocations = held.map(row => ({ warehouseId: row.warehouseId, quantity: row.quantity }));\n    const orderItemRow",
+          "replace": "const allocations = decrementStockTracked(ctx, p.itemId, p.quantity);\n    const orderItemRow"
+        }
+      ]
+    },
+    {
+      "id": "reservation-does-not-decrement-stock",
+      "scenario": "tracks/ecommerce/scenarios/03-reservations.json",
+      "targets": [
+        "ecommerce.l3.reservations.reservations.301a"
+      ],
+      "desc": "Creating a reservation leaves the public stock total unchanged.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.stock.insert({ ...row, quantity: row.quantity - allocation.quantity });",
+          "replace": "ctx.db.stock.insert({ ...row, quantity: row.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "reservation-timer-is-static",
+      "scenario": "tracks/ecommerce/scenarios/03-reservations.json",
+      "targets": [
+        "ecommerce.l3.reservations.reservations.305a"
+      ],
+      "desc": "The cart always renders ninety seconds instead of a decreasing reservation timer.",
+      "file": "client/src/components/CartPanel.tsx",
+      "edits": [
+        {
+          "find": "const seconds = Math.max(0, Number((reservation.expiresMicros - BigInt(Date.now()) * 1000n) / 1_000_000n));",
+          "replace": "const seconds = 90;"
+        }
+      ]
+    },
+    {
+      "id": "checkout-leaves-cart-lines",
+      "scenario": "tracks/ecommerce/scenarios/03-reservations.json",
+      "targets": [
+        "ecommerce.l3.reservations.reservations.306a"
+      ],
+      "desc": "Checkout creates an order but leaves the purchased lines in the cart.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "for (const line of lines) ctx.db.cartItem.id.delete(line.id);",
+          "replace": "for (const line of lines) void line;"
+        }
+      ]
+    },
+    {
+      "id": "expired-reservation-is-still-marked-live",
+      "scenario": "tracks/ecommerce/scenarios/03-reservations.json",
+      "targets": [
+        "ecommerce.l3.reservations.reservations.307a"
+      ],
+      "desc": "Expired reservations keep their live flag, so the cart does not mark them expired.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.reservation.id.update({ ...row, expired: true });",
+          "replace": "ctx.db.reservation.id.update({ ...row, expired: false });"
+        }
+      ]
+    },
+    {
+      "id": "renewed-reservation-expires-too-soon",
+      "scenario": "tracks/ecommerce/scenarios/03-reservations.json",
+      "targets": [
+        "ecommerce.l3.reservations.reservations.308a"
+      ],
+      "desc": "Renewed quantities receive only a twenty-second reservation window.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "reserveUnits(ctx, accountId, itemId, quantity);",
+          "replace": "reserveUnits(ctx, accountId, itemId, quantity);\n  for (const renewed of findReservations(ctx, accountId, itemId)) {\n    ctx.db.reservation.id.update({ ...renewed, expiresMicros: nowMicros(ctx) + 20n * SECOND });\n  }"
+        }
+      ]
+    },
+    {
+      "id": "pending-restock-timer-is-static",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.302a"
+      ],
+      "desc": "The pending restock UI always renders ninety seconds instead of the server due time.",
+      "file": "client/src/components/ProgressionWorkbench.tsx",
+      "edits": [
+        {
+          "find": "{Math.max(0, Number((row.dueMicros - BigInt(Date.now()) * 1000n) / 1_000_000n))}",
+          "replace": "{90}"
+        }
+      ]
+    },
+    {
+      "id": "due-restock-omits-ledger-entry",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.305a"
+      ],
+      "desc": "A due restock updates stock but does not create its stock ledger record.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.stockLedger.insert({\n      id: 0n,\n      itemId: pending.itemId,\n      warehouseId: pending.warehouseId,\n      quantity: pending.quantity,\n      createdMicros: now,\n      source: 'scheduled restock',\n    });",
+          "replace": "// mutant: due restocks are not recorded in the ledger"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-restock-remains-pending",
+      "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
+      "targets": [
+        "ecommerce.l3.scheduled-restocks.scheduled-restocks.306a"
+      ],
+      "desc": "Cancelling a restock leaves it pending, so maintenance later applies it.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.scheduledRestock.id.update({ ...row, status: 'cancelled' });",
+          "replace": "ctx.db.scheduledRestock.id.update({ ...row, status: 'pending' });"
+        }
+      ]
+    },
+    {
+      "id": "restart-restock-runs-early",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
+      "targets": [
+        "ecommerce.l3.server-time.server-time.312a"
+      ],
+      "desc": "A scheduled restock ignores its requested delay and becomes due after one second.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "dueMicros: nowMicros(ctx) + BigInt(input.delaySeconds) * SECOND,",
+          "replace": "dueMicros: nowMicros(ctx) + SECOND,"
+        }
+      ]
+    },
+    {
+      "id": "closed-browser-reservation-never-expires",
+      "scenario": "tracks/ecommerce/scenarios/03-server-time.json",
+      "targets": [
+        "ecommerce.l3.server-time.server-time.313a"
+      ],
+      "desc": "Server maintenance skips reservation expiry when no customer browser is present.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "for (const row of [...ctx.db.reservation.iter()]) {\n    if (row.expired || row.expiresMicros > now) continue;",
+          "replace": "for (const row of [...ctx.db.reservation.iter()].filter(() => false)) {\n    if (row.expired || row.expiresMicros > now) continue;"
+        }
+      ]
+    },
+    {
+      "id": "catalog-product-is-not-published",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "targets": [
+        "ecommerce.progression.catalog-management.catalog-management.622a"
+      ],
+      "desc": "The public product card omits the submitted name.",
+      "file": "client/src/components/ItemCard.tsx",
+      "edits": [
+        {
+          "find": "{item.name}",
+          "replace": "{item.name === 'Travel Mug' ? '' : item.name}"
+        }
+      ]
+    },
+    {
+      "id": "catalog-variants-are-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-catalog-management.json",
+      "targets": [
+        "ecommerce.progression.catalog-management.catalog-management.622b"
+      ],
+      "desc": "Catalog management discards every submitted product variant.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "for (const variantName of variants.split(',').map(value => value.trim()).filter(Boolean)) {\n      ctx.db.itemVariant.insert({ id: 0n, itemId: product.id, name: variantName });\n    }",
+          "replace": "void variants; // mutant: submitted variants are discarded"
+        }
+      ]
+    },
+    {
+      "id": "customer-profile-is-not-saved",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.spec.state-durability.customer-profile-reload.620a"
+      ],
+      "desc": "Saving a customer profile does not persist its values.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (existing) ctx.db.customerProfile.accountId.update(row);\n    else ctx.db.customerProfile.insert(row);",
+          "replace": "void existing;\n    void row; // mutant: profile changes are discarded"
+        }
+      ]
+    },
+    {
+      "id": "customer-profile-view-leaks-another-account",
+      "scenario": "tracks/ecommerce/scenarios/progression-customer-profile.json",
+      "targets": [
+        "ecommerce.spec.access-control.customer-profile-privacy.620b"
+      ],
+      "desc": "The customer profile view returns the first stored profile without checking its owner.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "return accountId === null ? undefined : ctx.db.customerProfile.accountId.find(accountId) ?? undefined;",
+          "replace": "return accountId === null ? undefined : [...ctx.db.customerProfile.iter()][0];"
+        }
+      ]
+    },
+    {
+      "id": "faceted-search-ignores-category",
+      "scenario": "tracks/ecommerce/scenarios/progression-faceted-filters.json",
+      "targets": [
+        "ecommerce.progression.faceted-search.faceted-search.401a"
+      ],
+      "desc": "Faceted search applies price and stock filters but ignores the selected category.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": ".filter(item => !categoryFilter || categoryByItem.get(item.id) === categoryFilter)",
+          "replace": ".filter(() => true) // mutant: category filter is ignored"
+        }
+      ]
+    },
+    {
+      "id": "faceted-search-next-page-does-not-advance",
+      "scenario": "tracks/ecommerce/scenarios/progression-faceted-pagination.json",
+      "targets": [
+        "ecommerce.progression.faceted-search.faceted-search.402a"
+      ],
+      "desc": "The next-page control keeps the search on its current page.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "onClick={() => setSearchPage(page => page + 1)}>Next</button>",
+          "replace": "onClick={() => setSearchPage(page => page)}>Next</button>"
+        }
+      ]
+    },
+    {
+      "id": "managed-support-leaks-and-accepts-cross-account-replies",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-privacy.json",
+      "targets": [
+        "ecommerce.spec.access-control.managed-support-privacy.613b"
+      ],
+      "desc": "Managed support tickets are visible across accounts and replayed replies are accepted.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": ".filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||\n        !!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))",
+          "replace": ".filter(() => true)"
+        },
+        {
+          "file": "backend/spacetimedb/src/index.ts",
+          "find": "if (!actor.isAdmin && !actor.isStaff && ticket.accountId !== actor.id) {\n    throw new SenderError('That support ticket is private.');\n  }",
+          "replace": "// mutant: any signed-in account can access any support ticket"
+        }
+      ]
+    },
+    {
+      "id": "managed-support-replies-are-empty",
+      "scenario": "tracks/ecommerce/scenarios/progression-managed-support-shared.json",
+      "targets": [
+        "ecommerce.spec.live-state.managed-support.613a"
+      ],
+      "desc": "Managed support stores replies without their message body.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "body: body.trim(),\n      createdMicros: nowMicros(ctx),",
+          "replace": "body: '',\n      createdMicros: nowMicros(ctx),"
+        }
+      ]
+    },
+    {
+      "id": "notification-preferences-are-not-saved",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.spec.state-durability.notification-preferences-reload.630a"
+      ],
+      "desc": "Saving notification preferences discards the selected values.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (existing) ctx.db.notificationPreference.accountId.update(row);\n    else ctx.db.notificationPreference.insert(row);",
+          "replace": "void existing;\n    void row; // mutant: notification preferences are discarded"
+        }
+      ]
+    },
+    {
+      "id": "notification-preferences-leak-across-accounts",
+      "scenario": "tracks/ecommerce/scenarios/progression-notification-preferences.json",
+      "targets": [
+        "ecommerce.spec.access-control.notification-preferences-privacy.630b"
+      ],
+      "desc": "The preference view returns another account's first stored choice.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const row = ctx.db.notificationPreference.accountId.find(accountId);\n    return row ? { orderEnabled: row.orderEnabled, stockEnabled: row.stockEnabled } : undefined;",
+          "replace": "const row = [...ctx.db.notificationPreference.iter()][0];\n    return row ? { orderEnabled: row.orderEnabled, stockEnabled: row.stockEnabled } : undefined;"
+        }
+      ]
+    },
+    {
+      "id": "checkout-records-zero-payment",
+      "scenario": "tracks/ecommerce/scenarios/progression-core-business.json",
+      "targets": [
+        "ecommerce.progression.payment-records.payment-records.623a"
+      ],
+      "desc": "Checkout records a paid payment with a zero amount.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  if (promo) {",
+          "replace": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: 0, status: 'paid' });\n  if (promo) {"
+        }
+      ]
+    },
+    {
+      "id": "checkout-records-duplicate-payments",
+      "scenario": "tracks/ecommerce/scenarios/progression-core-business.json",
+      "targets": [
+        "ecommerce.progression.payment-records.payment-records.623b"
+      ],
+      "desc": "Checkout inserts two payment records for one order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  if (promo) {",
+          "replace": "ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total, status: 'paid' });\n  ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: order.total + 0.01, status: 'paid' });\n  if (promo) {"
+        }
+      ]
+    },
+    {
+      "id": "active-promotion-does-not-discount-checkout",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-checkout.json",
+      "targets": [
+        "ecommerce.progression.promotion-checkout.promotion-checkout-active.621a"
+      ],
+      "desc": "Checkout ignores an active promotion when it calculates the discount.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const discount = promo ? total * (promo.discountPercent / 100) : 0;",
+          "replace": "const discount = 0;"
+        }
+      ]
+    },
+    {
+      "id": "expired-promotion-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-checkout.json",
+      "targets": [
+        "ecommerce.progression.promotion-checkout.promotion-checkout-expired.621b"
+      ],
+      "desc": "Promotion application does not reject a promotion after its end time.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (!promo || promo.startMicros > now || promo.endMicros < now || promo.redemptions >= promo.usageLimit) {",
+          "replace": "if (!promo || promo.startMicros > now || promo.redemptions >= promo.usageLimit) {"
+        }
+      ]
+    },
+    {
+      "id": "exhausted-promotion-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-checkout.json",
+      "targets": [
+        "ecommerce.progression.promotion-checkout.promotion-checkout-exhausted.621c"
+      ],
+      "desc": "Promotion application does not reject a promotion at its usage limit.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (!promo || promo.startMicros > now || promo.endMicros < now || promo.redemptions >= promo.usageLimit) {",
+          "replace": "if (!promo || promo.startMicros > now || promo.endMicros < now) {"
+        }
+      ]
+    },
+    {
+      "id": "customers-can-create-promotions",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "targets": [
+        "ecommerce.spec.access-control.promotion-management-boundary.620b"
+      ],
+      "desc": "Promotion creation does not require staff access.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  (ctx, input) => {\n    requireStaffOrAdmin(ctx);\n    if (input.discountPercent <= 0 || input.discountPercent > 100) {",
+          "replace": "  (ctx, input) => {\n    if (input.discountPercent <= 0 || input.discountPercent > 100) {"
+        }
+      ]
+    },
+    {
+      "id": "promotion-rule-stores-the-wrong-discount",
+      "scenario": "tracks/ecommerce/scenarios/progression-promotion-rules.json",
+      "targets": [
+        "ecommerce.progression.promotion-rules.promotion-rule-values.620a"
+      ],
+      "desc": "Promotion creation stores a one-percent discount instead of the submitted value.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.promotion.insert({ id: 0n, ...input, code: input.code.trim(), redemptions: 0 });",
+          "replace": "ctx.db.promotion.insert({ id: 0n, ...input, discountPercent: 1, code: input.code.trim(), redemptions: 0 });"
+        }
+      ]
+    },
+    {
+      "id": "staff-cannot-open-staff-tools",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "targets": [
+        "ecommerce.progression.staff-access.staff-access.601a"
+      ],
+      "desc": "The staff navigation link is shown to administrators but not staff members.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(isStaff || isAdmin) && (\n            <button\n              type=\"button\"\n              className=\"btn btn-ghost btn-sm\"\n              data-role=\"staff-link\"",
+          "replace": "{isAdmin && (\n            <button\n              type=\"button\"\n              className=\"btn btn-ghost btn-sm\"\n              data-role=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "customers-can-open-staff-tools",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-access.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-area-boundary.601b"
+      ],
+      "desc": "The staff navigation link is shown to every signed-in customer.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(isStaff || isAdmin) && (\n            <button\n              type=\"button\"\n              className=\"btn btn-ghost btn-sm\"\n              data-role=\"staff-link\"",
+          "replace": "{isSignedIn && (\n            <button\n              type=\"button\"\n              className=\"btn btn-ghost btn-sm\"\n              data-role=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "administrator-role-assignment-is-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.state-durability.staff-role-reload.621a"
+      ],
+      "desc": "Role assignment records activity but does not save the selected role.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "if (existing) ctx.db.staffRole.accountId.update(row);\n    else ctx.db.staffRole.insert(row);",
+          "replace": "void existing;\n    void row; // mutant: the assigned role is discarded"
+        }
+      ]
+    },
+    {
+      "id": "staff-can-assign-roles",
+      "scenario": "tracks/ecommerce/scenarios/progression-staff-roles.json",
+      "targets": [
+        "ecommerce.spec.access-control.staff-role-boundary.621b"
+      ],
+      "desc": "Role assignment accepts staff callers instead of requiring an administrator.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "const actor = requireAdmin(ctx);\n    const target = ctx.db.account.id.find(accountId);",
+          "replace": "const actor = requireStaffOrAdmin(ctx);\n    const target = ctx.db.account.id.find(accountId);"
+        }
+      ]
+    },
+    {
+      "id": "stock-alert-is-sent-after-every-restock",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "targets": [
+        "ecommerce.spec.transactional-integrity.stock-alert-deduplication.631a"
+      ],
+      "desc": "A fulfilled stock alert remains active and is sent again after another restock.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.stockAlert.id.update({ ...alert, fulfilled: true });\n    }\n  }\n);\n\nexport const adminChangePrice",
+          "replace": "ctx.db.stockAlert.id.update({ ...alert, fulfilled: false });\n    }\n  }\n);\n\nexport const adminChangePrice"
+        }
+      ]
+    },
+    {
+      "id": "stock-alerts-are-visible-to-other-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-stock-alerts.json",
+      "targets": [
+        "ecommerce.spec.access-control.stock-alert-privacy.631b"
+      ],
+      "desc": "The notifications view returns alerts for every account.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "return [...ctx.db.notification.accountId.filter(accountId)].map(row => ({",
+          "replace": "return [...ctx.db.notification.iter()].map(row => ({"
+        }
+      ]
+    },
+    {
+      "id": "support-history-disappears-after-reload",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.spec.state-durability.support-history-reload.612a"
+      ],
+      "desc": "The customer support view hides every saved ticket.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "return [...ctx.db.supportTicket.iter()]\n      .filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||",
+          "replace": "return [...ctx.db.supportTicket.iter()]\n      .filter(() => false)\n      .filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||"
+        }
+      ]
+    },
+    {
+      "id": "support-history-leaks-across-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-history.json",
+      "targets": [
+        "ecommerce.spec.access-control.support-history-privacy.612b"
+      ],
+      "desc": "The support history view returns tickets owned by other customers.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": ".filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||\n        !!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))",
+          "replace": ".filter(() => true)"
+        }
+      ]
+    },
+    {
+      "id": "visitor-support-reference-is-hidden",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-intake.json",
+      "targets": [
+        "ecommerce.progression.support-intake.support-intake.610a"
+      ],
+      "desc": "A visitor can create a support ticket but the returned reference is not rendered.",
+      "file": "client/src/components/ProgressionWorkbench.tsx",
+      "edits": [
+        {
+          "find": "<div data-role=\"support-reference\">{supportReference}</div>",
+          "replace": "<div data-role=\"support-reference\"></div>"
+        }
+      ]
+    },
+    {
+      "id": "support-assignment-is-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "targets": [
+        "ecommerce.progression.support-triage.support-assignment.611a"
+      ],
+      "desc": "Support triage saves status and priority but discards the assignee.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });",
+          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: undefined, priority, status });"
+        }
+      ]
+    },
+    {
+      "id": "support-priority-is-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "targets": [
+        "ecommerce.progression.support-triage.support-priority.611b"
+      ],
+      "desc": "Support triage always saves normal priority instead of the submitted value.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });",
+          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority: 'normal', status });"
+        }
+      ]
+    },
+    {
+      "id": "support-status-is-discarded",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-triage.json",
+      "targets": [
+        "ecommerce.progression.support-triage.support-status.611c"
+      ],
+      "desc": "Support triage preserves the old status instead of the submitted value.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status });",
+          "replace": "ctx.db.supportTicket.id.update({ ...ticket, assigneeId: nextAssigneeId, priority, status: ticket.status });"
+        }
+      ]
+    },
+    {
+      "id": "nonpositive-cart-quantity-is-treated-as-removal",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary.json",
+      "targets": [
+        "ecommerce.spec.access-control.cart-boundary.109b"
+      ],
+      "desc": "Accept a negative quantity and remove the cart line instead of refusing the request.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (quantity < 1) throw new SenderError('Quantity must be at least 1.');\n    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });",
+          "replace": "    const existing = findCartLine(ctx, acc.id, itemId);\n    if (!existing) throw new SenderError('That item is not in your cart.');\n    if (quantity < 1) {\n      ctx.db.cartItem.id.delete(existing.id);\n      return;\n    }\n    replaceReservation(ctx, acc.id, itemId, quantity);\n    ctx.db.cartItem.id.update({ ...existing, quantity });"
+        }
+      ]
+    },
+    {
+      "id": "admin-restock-preserves-existing-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-staff.json",
+      "targets": [
+        "ecommerce.spec.live-state.warehouse-stock.7c"
+      ],
+      "desc": "Accept an administrator restock but write the existing quantity back unchanged.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.stock.insert({ ...existing, quantity: existing.quantity + quantity });",
+          "replace": "      ctx.db.stock.insert({ ...existing, quantity: existing.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "operator-authorization-allows-customer-price-change",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.operations-access.operator-authorization.201b"
+      ],
+      "desc": "The price reducer drops its administrator role gate.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  (ctx, { itemId, price }) => {\n    requireAdmin(ctx);",
+          "replace": "  (ctx, { itemId, price }) => {\n    // mutant: no administrator role check"
+        }
+      ]
+    },
+    {
+      "id": "fulfilment-queue-allows-customer-shipping",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained.json",
+      "targets": [
+        "ecommerce.operations-access.fulfilment-queue.1e"
+      ],
+      "desc": "The shipping reducer drops the staff role check while retaining the pending-order guard.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  requireStaffOrAdmin(ctx);",
+          "replace": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  // mutant: no staff role check"
+        }
+      ]
+    },
+    {
+      "id": "catalog-search-keeps-pre-change-price",
+      "scenario": "tracks/ecommerce/scenarios/02-live-price.json",
+      "targets": [
+        "ecommerce.returns-pricing.price-history.4b"
+      ],
+      "desc": "The search result renderer caches each item's first visible price and ignores later live price updates.",
+      "file": "client/src/components/ItemCard.tsx",
+      "edits": [
+        {
+          "find": "import { ItemRow } from '../types';",
+          "replace": "import { useRef } from 'react';\nimport { ItemRow } from '../types';"
+        },
+        {
+          "find": "  const outOfStock = stock <= 0;\n  const lowStock = !outOfStock && stock <= 5;",
+          "replace": "  const outOfStock = stock <= 0;\n  const lowStock = !outOfStock && stock <= 5;\n  // mutant: the card retains the first price it renders\n  const firstPrice = useRef(item.price);"
+        },
+        {
+          "find": "          {formatMoney(item.price)}",
+          "replace": "          {formatMoney(firstPrice.current)}"
+        }
+      ]
+    },
+    {
+      "id": "open-cart-keeps-pre-change-price",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        "ecommerce.returns-pricing.price-history.4c"
+      ],
+      "desc": "The open-cart memo ignores reactive item-table price updates while checkout still reads the current server price.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    [cartRows, items, stockByItem]",
+          "replace": "    [cartRows, stockByItem]"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-rewrites-receipts",
+      "scenario": "tracks/ecommerce/scenarios/02-paid-price-history.json",
+      "targets": [
+        "ecommerce.returns-pricing.price-history.4a"
+      ],
+      "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals inside the reducer transaction.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    ctx.db.item.id.update({ ...it, price });",
+          "replace": "    ctx.db.item.id.update({ ...it, price });\n    const repricedOrderIds = new Set<bigint>();\n    for (const line of ctx.db.orderItem.iter()) {\n      if (line.itemId !== itemId) continue;\n      ctx.db.orderItem.id.update({ ...line, unitPrice: price });\n      repricedOrderIds.add(line.orderId);\n    }\n    for (const orderId of repricedOrderIds) {\n      const historical = ctx.db.customerOrder.id.find(orderId);\n      if (!historical) continue;\n      let total = 0;\n      for (const line of ctx.db.orderItem.orderId.filter(orderId)) total += line.unitPrice * line.quantity;\n      ctx.db.customerOrder.id.update({ ...historical, total });\n    }"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-rewrites-earned-revenue",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        "ecommerce.returns-pricing.refund-accounting.203b"
+      ],
+      "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals and revenue inside the reducer transaction.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    ctx.db.item.id.update({ ...it, price });",
+          "replace": "    ctx.db.item.id.update({ ...it, price });\n    const repricedOrderIds = new Set<bigint>();\n    for (const line of ctx.db.orderItem.iter()) {\n      if (line.itemId !== itemId) continue;\n      ctx.db.orderItem.id.update({ ...line, unitPrice: price });\n      repricedOrderIds.add(line.orderId);\n    }\n    for (const orderId of repricedOrderIds) {\n      const historical = ctx.db.customerOrder.id.find(orderId);\n      if (!historical) continue;\n      let total = 0;\n      for (const line of ctx.db.orderItem.orderId.filter(orderId)) total += line.unitPrice * line.quantity;\n      ctx.db.customerOrder.id.update({ ...historical, total });\n    }"
+        }
+      ]
+    },
+    {
+      "id": "returned-line-marker-omitted",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened.json",
+      "targets": [
+        "ecommerce.returns-pricing.cancellation-and-return.3c"
+      ],
+      "desc": "A returned order line keeps its persisted returned state, restored stock, and adjusted revenue but omits the visible returned marker.",
+      "file": "client/src/components/OrdersPanel.tsx",
+      "edits": [
+        {
+          "find": "{item.returned && <span className=\"badge badge-muted\" style={{ marginLeft: 6 }}>Returned</span>}",
+          "replace": "{false && <span className=\"badge badge-muted\" style={{ marginLeft: 6 }}>Returned</span>}"
+        }
+      ]
+    },
+    {
+      "id": "direct-review-access-is-not-checked",
+      "scenario": "tracks/ecommerce/scenarios/progression-review-access.json",
+      "targets": [
+        "ecommerce.progression.review-access-specifications.review-eligibility-direct.618a"
+      ],
+      "desc": "The direct review action accepts a review from a customer who did not buy the item.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    if (!bought) throw new SenderError('You can only review items you have purchased.');",
+          "replace": "    // mutant: purchase eligibility is not checked"
+        }
+      ]
+    },
+    {
+      "id": "support-messages-are-sent-to-other-customers",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-read-privacy.json",
+      "targets": [
+        "ecommerce.progression.support-privacy-specifications.private-message-delivery.619a"
+      ],
+      "desc": "A customer receives another customer's support message.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": ".filter(row => isTicketCreator(sender, row.creatorIdentity.toHexString()) ||\n        !!actor && (actor.isAdmin || actor.isStaff || row.accountId === accountId))",
+          "replace": ".filter(() => true)"
+        }
+      ]
+    }
+  ]
+}

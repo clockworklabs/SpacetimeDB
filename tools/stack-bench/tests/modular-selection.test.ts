@@ -9,7 +9,7 @@ import type { RecipeCheck } from '../src/composition/recipe-release.js';
 
 const module = (id: string, moduleType: 'feature' | 'specification', requiresPacks: string[] = []):
   ModularRecipePack => ({
-  id, version: '1.0.0', moduleType, requiresPacks,
+  id, moduleType, requiresPacks,
 });
 const check = (packId: string, suffix: string, observations?: string[],
   requiresFeatures?: string[]): RecipeCheck => ({
@@ -18,11 +18,11 @@ const check = (packId: string, suffix: string, observations?: string[],
   ...(requiresFeatures ? { requiresFeatures } : {}),
 });
 const release: ModularRecipeRelease = {
-  id: 'example.modular', version: '1.0.0',
+  id: 'example.modular',
   contentSha256: 'a'.repeat(64),
   components: { packs: [
     module('example.accounts', 'feature'),
-    module('example.cart', 'feature', ['example.accounts@1.0.0']),
+    module('example.cart', 'feature', ['example.accounts']),
     module('example.durability', 'specification'),
     module('example.concurrency', 'specification'),
     module('example.reconnect', 'specification'),
@@ -56,15 +56,15 @@ const binding: ModularRecipeTaskBinding = { release, plan };
 test('requested, expected, and observed specification treatments stay independent', () => {
   const selection = resolveModularRecipeSelection(release, {
     featureIds: ['example.cart'],
-    requestedSpecifications: ['example.durability@1.0.0'],
-    expectedSpecifications: ['example.concurrency@1.0.0'],
-    observedSpecifications: ['example.reconnect@1.0.0'],
+    requestedSpecifications: ['example.durability'],
+    expectedSpecifications: ['example.concurrency'],
+    observedSpecifications: ['example.reconnect'],
   });
   assert.deepEqual(selection.features, ['example.accounts', 'example.cart']);
   assert.deepEqual(selection.specifications, {
-    requested: ['example.durability@1.0.0'],
-    expected: ['example.concurrency@1.0.0'],
-    observed: ['example.reconnect@1.0.0'],
+    requested: ['example.durability'],
+    expected: ['example.concurrency'],
+    observed: ['example.reconnect'],
   });
   assert.deepEqual(selection.promptPacks,
     ['example.accounts', 'example.cart', 'example.durability']);
@@ -87,7 +87,7 @@ test('recursive feature dependencies contribute their stable family', () => {
     components: { packs: [
       { ...module('example.accounts-v1', 'feature'), stableId: 'example.accounts' },
       { ...module('example.accounts-v2', 'feature'), stableId: 'example.accounts' },
-      module('example.cart-v2', 'feature', ['example.accounts-v2@1.0.0']),
+      module('example.cart-v2', 'feature', ['example.accounts-v2']),
     ] },
     checkCatalog: [
       check('example.accounts-v2', 'works'),
@@ -105,49 +105,49 @@ test('recursive feature dependencies contribute their stable family', () => {
 
 test('modular selection rejects overlap, wrong module kinds, and unobservable checks', () => {
   assert.throws(() => resolveModularRecipeSelection(release, {
-    requestedSpecifications: ['example.durability@1.0.0'],
-    expectedSpecifications: ['example.durability@1.0.0'],
+    requestedSpecifications: ['example.durability'],
+    expectedSpecifications: ['example.durability'],
   }), /both requested and expected/);
   assert.throws(() => resolveModularRecipeSelection(release, {
-    requestedSpecifications: ['example.cart@1.0.0'],
+    requestedSpecifications: ['example.cart'],
   }), /no requested specification/);
   const noProbe = structuredClone(release);
   const noProbeCheck = noProbe.checkCatalog.find(item => item.packId === 'example.concurrency');
   assert(noProbeCheck);
   noProbeCheck.observations = ['requested'];
   assert.throws(() => resolveModularRecipeSelection(noProbe, {
-    expectedSpecifications: ['example.concurrency@1.0.0'],
+    expectedSpecifications: ['example.concurrency'],
   }), /has no evaluation without prompting/);
   const noRequested = structuredClone(release);
   const noRequestedCheck = noRequested.checkCatalog.find(item => item.packId === 'example.durability');
   assert(noRequestedCheck);
   noRequestedCheck.observations = ['unmentioned'];
   assert.throws(() => resolveModularRecipeSelection(noRequested, {
-    requestedSpecifications: ['example.durability@1.0.0'],
+    requestedSpecifications: ['example.durability'],
   }), /has no prompted evaluation/);
   assert.throws(() => resolveModularRecipeSelection(release, {
     featureIds: ['example.accounts'],
-    requestedSpecifications: ['example.durability@1.0.0'],
+    requestedSpecifications: ['example.durability'],
   }), /has no prompted evaluation/);
   const featureAddingSpec = structuredClone(release);
   const durabilityPack = featureAddingSpec.components.packs.find(item => item.id === 'example.durability');
   assert(durabilityPack);
-  durabilityPack.requiresPacks = ['example.cart@1.0.0'];
+  durabilityPack.requiresPacks = ['example.cart'];
   assert.throws(() => resolveModularRecipeSelection(featureAddingSpec, {
     featureIds: ['example.accounts'],
-    requestedSpecifications: ['example.durability@1.0.0'],
-  }), /cannot add feature example.cart@1.0.0/);
+    requestedSpecifications: ['example.durability'],
+  }), /cannot add feature example.cart/);
 });
 
 test('scored check filters can select expected checks but cannot reach observed-only scope', () => {
   const expected = resolveModularRecipeSelection(release, {
-    expectedSpecifications: ['example.concurrency@1.0.0'],
+    expectedSpecifications: ['example.concurrency'],
     checkKeys: ['example.concurrency.safe'],
   });
   assert.deepEqual(expected.scoredChecks.map(check => check.stableKey),
     ['example.concurrency.safe']);
   assert.throws(() => resolveModularRecipeSelection(release, {
-    observedSpecifications: ['example.reconnect@1.0.0'],
+    observedSpecifications: ['example.reconnect'],
     checkKeys: ['example.reconnect.catches-up'],
   }), /outside the requested\/expected/);
 });
@@ -155,9 +155,9 @@ test('scored check filters can select expected checks but cannot reach observed-
 test('modular task composition includes requested specs and withholds expected and observed specs', () => {
   const compiled = createModularRecipeTaskRequest(binding, {
     featureIds: ['example.cart'],
-    requestedSpecifications: ['example.durability@1.0.0'],
-    expectedSpecifications: ['example.concurrency@1.0.0'],
-    observedSpecifications: ['example.reconnect@1.0.0'],
+    requestedSpecifications: ['example.durability'],
+    expectedSpecifications: ['example.concurrency'],
+    observedSpecifications: ['example.reconnect'],
   });
   assert.equal(compiled.task.requirementText,
     'Build this product.\n\nSupport accounts.\n\nSupport a cart.\n\nSurvive restarts.\n');
@@ -175,7 +175,7 @@ test('modular task composition includes requested specs and withholds expected a
 
   const requestedOnly = createModularRecipeTaskRequest(binding, {
     featureIds: ['example.cart'],
-    requestedSpecifications: ['example.durability@1.0.0'],
+    requestedSpecifications: ['example.durability'],
   });
   assert.equal(requestedOnly.task.requirementSha256, compiled.task.requirementSha256);
   assert.equal(requestedOnly.task.contractSha256, compiled.task.contractSha256);

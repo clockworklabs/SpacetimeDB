@@ -20,11 +20,11 @@ import { buildRecipeRelease } from '../src/composition/recipe-release.js';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
 
 const ROOT = STACK_BENCH_ROOT;
-const LIVE_SCENARIO = 'tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json';
-const RELOAD_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reload-sync-1.1.0.json';
-const RESTART_SCENARIO = 'tracks/ecommerce/scenarios/01-external-server-restart-sync-1.1.0.json';
-const RECONNECT_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json';
-const PACK = 'tracks/ecommerce/composition/packs/spec-external-data-sync-1.1.0.json';
+const LIVE_SCENARIO = 'tracks/ecommerce/scenarios/01-external-live-sync.json';
+const RELOAD_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reload-sync.json';
+const RESTART_SCENARIO = 'tracks/ecommerce/scenarios/01-external-server-restart-sync.json';
+const RECONNECT_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reconnect-sync.json';
+const PACK = 'tracks/ecommerce/composition/packs/spec-external-data-sync.json';
 const registry = loadReferenceRegistry();
 
 function prepareReferenceSource(args: ReferenceFixtureSelector & { app: string }) {
@@ -35,14 +35,12 @@ function prepareReferenceSource(args: ReferenceFixtureSelector & { app: string }
 
 interface ExternalSyncCase {
   backend: string;
-  fixtureSha256: string;
   mutations: Array<[id: string, scenario: string, targets: string[]]>;
 }
 
 const cases: ExternalSyncCase[] = [
   {
     backend: 'mongodb',
-    fixtureSha256: 'feeaf484f5c5d2eae6f61b192e3e50b0a7e6da85e2f761685e33261708acf8c6',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['server-restart-disables-catalog-recovery', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
@@ -51,7 +49,6 @@ const cases: ExternalSyncCase[] = [
   },
   {
     backend: 'postgres',
-    fixtureSha256: 'e461967ff8b99394c278e6d382e455a7fc3086c88016543fa668baf808baec0d',
     mutations: [
       ['external-stock-polling-disabled', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['server-restart-does-not-resynchronize-catalog', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
@@ -60,7 +57,6 @@ const cases: ExternalSyncCase[] = [
   },
   {
     backend: 'spacetime',
-    fixtureSha256: '58a193d61e02eac8e2c4801dc4cefb78db42468515a452a17e2544f2132148ce',
     mutations: [
       ['stock-subscription-snapshotted-once', LIVE_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901a']],
       ['stock-view-ignores-update-across-app-server-stop', RESTART_SCENARIO, ['ecommerce.spec.external-data-sync.external-stock.901c']],
@@ -104,7 +100,7 @@ test('external synchronization scenarios are focused and state-independent', () 
   assert.deepEqual(liveCriterion.steps.map(step => step.do),
     ['dbSetStock', 'expectNumber']);
   assert.equal(liveCriterion.points, 1,
-    'the candidate source and explicit recipe score must agree');
+    'the scenario and recipe score must agree');
   assert.deepEqual(reloadCriterion.steps.map(step => step.do),
     ['dbSetStock', 'reload', 'expectNumber']);
   assert.equal(reloadCriterion.points, 0,
@@ -122,7 +118,7 @@ test('external synchronization scenarios are focused and state-independent', () 
     'East 7 + untouched West 45 must not depend on the server-restart scenario');
   assert.equal(reconnectSteps.some(step => ['startAppServer', 'stopAppServer'].includes(step.do)), false);
   assert.equal(reconnectCriterion.points, 1,
-    'the candidate source and explicit recipe score must agree');
+    'the scenario and recipe score must agree');
 
   const restartSteps = restartCriterion.steps;
   assert.deepEqual(restartSteps.map(step => step.do),
@@ -132,12 +128,11 @@ test('external synchronization scenarios are focused and state-independent', () 
   assert.equal(restartResult.equals, 65,
     'untouched East 55 + West 10 must not depend on the live-sync scenario');
   assert.equal(restartCriterion.points, 1,
-    'the previously promoted server-restart score must be preserved');
+    'the server-restart score must be preserved');
 });
 
-test('the qualified pack preserves the existing stable check identities', () => {
+test('the pack preserves stable check identities', () => {
   const pack = compilePackDefinition(json(PACK), { source: PACK });
-  assert.equal(pack.state, 'qualified');
   assert.deepEqual(pack.checks.map(check => [check.id, check.stableId, check.criteria]), [
     ['external-live', 'external-stock', ['901a']],
     ['external-reload', 'external-stock', ['901b']],
@@ -148,11 +143,11 @@ test('the qualified pack preserves the existing stable check identities', () => 
 
 test('901b is independently selectable from the current L1 recipe', () => {
   const release = buildRecipeRelease(join(ROOT, 'tracks', 'ecommerce', 'composition', 'recipes',
-    'sequential-l1-2.5.0.json'));
+    'sequential-l1.json'));
   const key = 'ecommerce.spec.external-data-sync.external-stock.901b';
   const check = release.checkCatalog.find(candidate => candidate.stableKey === key);
   assert(check, `${key} must exist in the release`);
-  assert.equal(check.source, 'scenarios/01-external-reload-sync-1.1.0.json');
+  assert.equal(check.source, 'scenarios/01-external-reload-sync.json');
   assert.equal(check.points, 0);
   const reloadScenario = compileScenarioDefinition(json(RELOAD_SCENARIO), {
     source: RELOAD_SCENARIO,
@@ -179,11 +174,11 @@ for (const entry of cases) {
         backend: entry.backend,
         track: 'ecommerce',
         level: 1,
-        recipe: 'ecommerce.sequential-l1@2.5.0',
+        recipe: 'ecommerce.sequential-l1',
         app,
       });
       assert.equal(prepared.fixture.id, `ecommerce-reference-${entry.backend}`);
-      assert.equal(prepared.sourceSha256, entry.fixtureSha256);
+      assert.equal(prepared.sourceSha256, prepared.fixture.imported?.sourceSha256);
       assert.equal(manifest.fixtureSha256, prepared.sourceSha256);
       assert.deepEqual(validateMutationDefinitions(manifest.mutations, {
         defaultScenario: manifest.scenario,

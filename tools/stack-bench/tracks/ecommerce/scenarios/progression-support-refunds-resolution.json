@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Support refund resolution",
+  "features": [
+    {
+      "id": 615,
+      "name": "Support refund resolution",
+      "actors": ["owner", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "refund-resolution-owner" },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Resolution refund case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Please refund my Keyboard order." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "click", "actor": "owner", "testid": "support-order-option", "contains": "Keyboard", "in": { "testid": "support-ticket", "contains": "Resolution refund case" } },
+        { "do": "click", "actor": "owner", "testid": "support-link-order", "in": { "testid": "support-ticket", "contains": "Resolution refund case" } },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" }
+      ],
+      "criteria": [
+        {
+          "id": "615a",
+          "desc": "an authorized refund resolves the case and updates the order",
+          "points": 2,
+          "statedBy": "Authorized staff can refund an order from its support case.",
+          "steps": [
+            { "do": "click", "actor": "staff", "testid": "support-refund", "in": { "testid": "support-ticket", "contains": "Resolution refund case" } },
+            { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Resolution refund case" }, "contains": "resolved", "within": 10000 },
+            { "do": "click", "actor": "owner", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "refunded", "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

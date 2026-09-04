@@ -36,10 +36,9 @@ const evidence = (status: CheckEvidenceStatus): CheckEvidence => createCheckEvid
 const setupEvidence = () => createCheckEvidence({ status: 'passed', code: 'completed',
   phase: 'setup', startedAtMs: 1, completedAtMs: 2 });
 const sourceSha256 = 'c'.repeat(64);
-const recipeIdentity = { id: 'ecommerce-l1', version: '1.0.0', sha256: 'd'.repeat(64) };
-const progressionIdentity = { id: 'dependency', version: '1.0.0',
-  policy: 'dependency-graph', sha256: '8'.repeat(64) };
-const featureCatalogIdentity = { id: 'catalog', version: '1.0.0', sha256: '7'.repeat(64) };
+const recipeIdentity = { id: 'ecommerce-l1', sha256: 'd'.repeat(64) };
+const progressionIdentity = { id: 'dependency-graph', contentSha256: '8'.repeat(64) };
+const featureCatalogIdentity = { id: 'catalog', contentSha256: '7'.repeat(64) };
 const owner = { schemaVersion: 1,
   campaign: { id: 'campaign', version: '1.0.0', sha256: 'e'.repeat(64) },
   attempt: { id: 'campaign-r1', track: 'ecommerce', stack: 'postgres',
@@ -50,7 +49,7 @@ const runArtifact = () => createArtifact({ kind: 'benchmark_run', id: 'run-1',
   identities: emptyArtifactIdentities({ agentAdapter: { id: owner.attempt.agentAdapter },
     stackAdapter: { id: owner.attempt.stack } }),
   payload: { backend: owner.attempt.stack, model: owner.attempt.model,
-    condition: { sha256: owner.attempt.conditionSha256 },
+    condition: { contentSha256: owner.attempt.conditionSha256 },
     featureCatalog: featureCatalogIdentity, dependencyPolicy: progressionIdentity,
     progressionOwner: { schemaVersion: owner.schemaVersion,
       campaign: owner.campaign, attempt: owner.attempt } },

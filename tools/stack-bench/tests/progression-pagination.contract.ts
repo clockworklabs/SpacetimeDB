@@ -16,11 +16,11 @@ const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'
 
 function selectedChecks(): PackCheck[] {
   const source = loadValidatedProgressionSource(
-    join(root, 'progression', 'ecommerce-2.0.3.json'), root);
+    join(root, 'progression', 'ecommerce.json'), root);
   const packRoot = join(root, 'composition', 'packs');
   const packs = new Map(readdirSync(packRoot).filter(name => name.endsWith('.json')).map(name => {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-    return [`${pack.id}@${pack.version}`, pack];
+    return [pack.id, pack];
   }));
 
   return source.definition.nodes.flatMap(node => source.gradingGroups(node.id).flatMap(reference => {
@@ -57,7 +57,7 @@ function inspectSteps(steps: CompiledStep[], navigation: Map<string, { search: s
     const item = step.in?.testid === 'item-card'
       ? step.in.contains
       : (step.testid === 'item-card' ? step.contains : undefined);
-    if (item === undefined || !secondPageItems.has(item)) continue;
+    if (item === undefined || step.absent || !secondPageItems.has(item)) continue;
     for (const actor of actors(step)) {
       const state = navigation.get(actor);
       const foundBySearch = state?.search !== undefined
@@ -69,7 +69,7 @@ function inspectSteps(steps: CompiledStep[], navigation: Map<string, { search: s
 
 test('selected scenarios navigate before using products outside the first catalog page', () => {
   const fixture = compileFixtureDefinition(readJson(join(root, 'composition', 'fixtures',
-    'operations-1.0.0.json')));
+    'operations.json')));
   const secondPageItems = new Set(fixture.items.map(item => item.name).sort().slice(10));
   const failures: string[] = [];
 

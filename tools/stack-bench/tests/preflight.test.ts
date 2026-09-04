@@ -270,7 +270,7 @@ test('preflight validates each sequential catalog level without cumulative scope
       { source: progressionCampaign },
     );
     manifest.id = 'sequential-preflight-proof';
-    manifest.mode = { id: 'sequential', version: '1.0.0' };
+    manifest.mode = { id: 'sequential' };
     manifest.repair = { selection: 'batch', budget: { total: 0 }, order: 'declared' };
     manifest.levels = [1, 2];
     assert.ok(manifest.selection.levels, 'campaign must select progression levels');
@@ -511,10 +511,10 @@ test('preflight argument parsing rejects ambiguous ranges and missing backends',
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'spacetime',
     '--parallelism', '']), /--parallelism/);
   assert.equal(parsePreflightArgs(['node', 'preflight.js', '--backend', 'postgres',
-    '--track', 'ecommerce', '--levels', '1', '--recipe', 'ecommerce.sequential-l1@2.5.0'])
-    .recipe, 'ecommerce.sequential-l1@2.5.0');
+    '--track', 'ecommerce', '--levels', '1', '--recipe', 'ecommerce.sequential-l1'])
+    .recipe, 'ecommerce.sequential-l1');
   assert.throws(() => parsePreflightArgs(['node', 'preflight.js', '--backend', 'postgres',
-    '--track', 'ecommerce', '--levels', '1-2', '--recipe', 'ecommerce.sequential-l1@2.5.0']),
+    '--track', 'ecommerce', '--levels', '1-2', '--recipe', 'ecommerce.sequential-l1']),
   /exactly one/);
 });
 

@@ -14,7 +14,7 @@ const readJson = (...parts: string[]): unknown =>
   JSON.parse(readFileSync(join(ROOT, ...parts), 'utf8'));
 
 function postgresMutationSource(id: string, file: string): string {
-  const manifest = mutationManifest('postgres-ecommerce-2.0.1.json');
+  const manifest = mutationManifest('postgres-ecommerce.json');
   const mutation = manifest.mutations.find(candidate => candidate.id === id);
   assert(mutation, `missing PostgreSQL mutation ${id}`);
   let source = readFileSync(join(ROOT, 'reference-apps', 'ecommerce',
@@ -35,7 +35,7 @@ function criterion(source: unknown, id: string): CompiledCriterion {
 }
 
 test('scheduled-restock access targets the live restock through the named action', () => {
-  const scenario = readJson('tracks', 'ecommerce', 'scenarios', '03-deferred-access-1.0.0.json');
+  const scenario = readJson('tracks', 'ecommerce', 'scenarios', '03-deferred-access.json');
   const compiled = compileScenarioDefinition(scenario);
   const feature = compiled.features[0];
   assert(feature, 'the deferred access scenario must contain a feature');
@@ -57,7 +57,7 @@ test('scheduled-restock access targets the live restock through the named action
 
 test('stock-alert uniqueness waits for the second restock update before counting', () => {
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
-    'progression-stock-alerts-1.0.0.json');
+    'progression-stock-alerts.json');
   const steps = criterion(scenario, '631a').steps;
   const secondRestock = steps.filter(step => step.do === 'click'
     && step.testid === 'restock-submit')[0];
@@ -73,7 +73,7 @@ test('stock-alert uniqueness waits for the second restock update before counting
 
 test('the duplicate-payment mutation remains visible through the payment view', () => {
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
-    'progression-core-business-1.0.0.json');
+    'progression-core-business.json');
   const compiled = compileScenarioDefinition(scenario);
   const feature = compiled.features.find(candidate => candidate.id === 623);
   assert(feature, 'the core business scenario must contain feature 623');
@@ -87,7 +87,7 @@ test('the duplicate-payment mutation remains visible through the payment view', 
   assert.equal(criterion(scenario, '623a').steps.some(step => step.do === 'callConcurrently'), false);
   assert.equal(criterion(scenario, '623b').steps.some(step => step.do === 'callConcurrently'), false);
 
-  const manifest = mutationManifest('spacetime-ecommerce-2.0.1.json');
+  const manifest = mutationManifest('spacetime-ecommerce.json');
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'checkout-records-duplicate-payments');
   assert(mutation);
@@ -99,7 +99,7 @@ test('the duplicate-payment mutation remains visible through the payment view', 
 
 test('cart expiration waits for the durable expiration state after restart', () => {
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
-    '03-deferred-durability-1.0.0.json');
+    '03-deferred-durability.json');
   const steps = criterion(scenario, '316a').steps;
   const [reload, cartToggle, cartCount, expiredNotice, itemStock] = steps;
   assert(reload && cartToggle && cartCount && expiredNotice && itemStock,
@@ -130,7 +130,7 @@ test('PostgreSQL catalog mutations isolate product name and variant failures', (
 });
 
 test('concurrent cart quantity mutations do not change checkout state', () => {
-  const postgres = requiredMutation(mutationManifest('postgres-ecommerce-2.0.1.json')
+  const postgres = requiredMutation(mutationManifest('postgres-ecommerce.json')
     .mutations.find(candidate => candidate.id === 'progression-concurrent-cart-line-does-not-increment'),
   'progression-concurrent-cart-line-does-not-increment');
   assert.equal(postgres.file, 'client/src/App.tsx');
@@ -138,7 +138,7 @@ test('concurrent cart quantity mutations do not change checkout state', () => {
   assert(postgresEdit, 'the PostgreSQL cart mutation must contain an edit');
   assert.equal(postgresEdit.replace.trim(), 'value={1}');
 
-  const spacetime = requiredMutation(mutationManifest('spacetime-ecommerce-2.0.1.json')
+  const spacetime = requiredMutation(mutationManifest('spacetime-ecommerce.json')
     .mutations.find(candidate => candidate.id === 'existing-cart-line-does-not-increment'),
   'existing-cart-line-does-not-increment');
   assert.equal(spacetime.file, 'client/src/components/CartPanel.tsx');
@@ -149,7 +149,7 @@ test('concurrent cart quantity mutations do not change checkout state', () => {
 
 test('staff role check reloads the saved value on each progression reference', () => {
   const scenario = readJson('tracks', 'ecommerce', 'scenarios',
-    'progression-staff-roles-1.0.0.json');
+    'progression-staff-roles.json');
   const steps = criterion(scenario, '621a').steps;
   const reload = steps.at(-4);
   const savedRole = steps.at(-1);

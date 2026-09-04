@@ -122,11 +122,10 @@ export function agentRecipeIdentity(
   const task = object(recipeTask) ? recipeTask : null;
   const bound = task?.recipe;
   if (!bound) return explicitRecipe ?? null;
-  if (!object(bound) || typeof bound.id !== 'string' || !bound.id
-    || typeof bound.version !== 'string' || !bound.version) {
+  if (!object(bound) || typeof bound.id !== 'string' || !bound.id) {
     throw new Error('recipe-bound agent task has an invalid recipe identity');
   }
-  const identity = `${bound.id}@${bound.version}`;
+  const identity = bound.id;
   if (explicitRecipe && explicitRecipe !== identity) {
     throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${identity}`);
   }

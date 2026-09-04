@@ -2,8 +2,6 @@
   "schemaVersion": 1,
   "kind": "backend-guidance-profile",
   "id": "prescribed",
-  "version": "1.2.0",
-  "state": "qualified",
   "mode": "prescribed",
   "material": {
     "accessFacts": true,

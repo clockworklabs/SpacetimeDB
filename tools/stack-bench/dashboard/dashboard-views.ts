@@ -202,7 +202,7 @@ export interface SheetFacts {
   agent: string | null;
   model: string | null;
   guidance: string | null;
-  recipes: Array<{ level: number; id: string | null; version: string | null }>;
+  recipes: Array<{ level: number; id: string | null; contentSha256: string | null }>;
   timeLimitMinutes: number;
   spendLimitUsd: number | null;
   controllerImage: string | null;

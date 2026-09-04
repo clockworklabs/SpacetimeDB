@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Customer support history",
+  "features": [
+    {
+      "id": 612,
+      "name": "Customer support history",
+      "actors": ["owner", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "support-owner" },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "owner@example.com" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Owner ticket" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Private account issue." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+        { "do": "signUp", "actor": "other", "name": "support-other" }
+      ],
+      "criteria": [
+        {
+          "id": "612c",
+          "desc": "the customer can view their support ticket history",
+          "points": 1,
+          "statedBy": "Signed-in customers can see their support ticket history.",
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket" }
+          ]
+        },
+        {
+          "id": "612a",
+          "desc": "the owner sees the ticket after reload",
+          "points": 2,
+          "statedBy": "A customer's support history persists.",
+          "steps": [
+            { "do": "reload", "actor": "owner", "settleMs": 3000 },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-ticket", "contains": "Owner ticket" }
+          ]
+        },
+        {
+          "id": "612b",
+          "desc": "another customer cannot see the ticket",
+          "points": 2,
+          "statedBy": "Customers cannot see another customer's support tickets.",
+          "steps": [
+            { "do": "click", "actor": "other", "testid": "support-link" },
+            { "do": "expect", "actor": "other", "testid": "support-ticket", "contains": "Owner ticket", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

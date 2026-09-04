@@ -33,7 +33,7 @@ Use the root [README](../README.md) for the product summary.
 - [Technical guide](technical-guide.html): current run path
 - [Presentation](stack-bench.html): product presentation
 
-`dependency-graph.html` is generated from the versioned graph with
+`dependency-graph.html` is generated from the current graph with
 `npm run graph`. Do not edit it by hand.
 
 Markdown files under `backends/`, `conditions/`, `tracks/*/prompts`, and

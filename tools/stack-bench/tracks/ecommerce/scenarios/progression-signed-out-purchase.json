@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Progression signed-out purchase access",
+  "features": [
+    {
+      "id": 3,
+      "name": "Buying",
+      "actors": ["visitor"],
+      "setup": [
+        { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" }
+      ],
+      "criteria": [
+        {
+          "id": "3a",
+          "desc": "a signed-out visitor cannot buy an item",
+          "points": 1,
+          "statedBy": "buy actions are unavailable while signed out",
+          "steps": [
+            { "do": "expectUnavailable", "actor": "visitor", "testid": "buy-now" }
+          ]
+        }
+      ]
+    }
+  ]
+}

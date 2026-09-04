@@ -22,7 +22,7 @@ import { resolveProgressionRecipeAction, resolveProgressionRepairTarget,
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
-const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.3.json');
+const definitionPath = join(trackRoot, 'progression', 'ecommerce.json');
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 
 function packChecks(pack: CompiledPackDefinition): string[] {
@@ -102,10 +102,10 @@ test('every progression feature reference and scored check binds to repository d
   const packs: Array<[string, CompiledPackDefinition]> = readdirSync(packRoot)
     .filter(name => name.endsWith('.json')).map(name => {
     const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-      return [`${pack.id}@${pack.version}`, pack];
+      return [pack.id, pack];
   });
   const packByRef = new Map(packs);
-  assert.equal(packByRef.size, packs.length, 'pack id and version pairs must be unique');
+  assert.equal(packByRef.size, packs.length, 'pack ids must be unique');
 
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   for (const node of definition.nodes) {
@@ -121,7 +121,7 @@ test('every progression feature reference and scored check binds to repository d
   }
 
   const recipe = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
-    'progression-catalog-2.0.3.json'), {
+    'progression-catalog.json'), {
     trackRoot,
   });
   const actual = new Map(definition.nodes.flatMap(node => node.gradingChecks)
@@ -139,13 +139,13 @@ test('every progression feature reference and scored check binds to repository d
 
 test('signed-out purchase access does not depend on cart controls', () => {
   const pack = compilePackDefinition(
-    readJson(join(packRoot, 'spec-access-control-2.0.0.json')),
-    { source: 'spec-access-control-2.0.0.json' },
+    readJson(join(packRoot, 'spec-access-control.json')),
+    { source: 'spec-access-control.json' },
   );
   const purchase = pack.checks.find(check => check.id === 'signed-out-purchase');
   assert(purchase, 'access control must include signed-out-purchase');
   assert.deepEqual(purchase.requiresFeatures, ['ecommerce.feature.purchasing']);
-  assert.equal(purchase.source, 'scenarios/progression-signed-out-purchase-1.0.0.json');
+  assert.equal(purchase.source, 'scenarios/progression-signed-out-purchase.json');
 
   const scenario = compileScenarioDefinition(readJson(join(trackRoot, purchase.source)), {
     source: purchase.source,
@@ -164,8 +164,8 @@ test('signed-out purchase access does not depend on cart controls', () => {
 
 test('cart isolation reads the action input from the acting customer', () => {
   const pack = compilePackDefinition(
-    readJson(join(packRoot, 'spec-access-control-2.0.1.json')),
-    { source: 'spec-access-control-2.0.1.json' },
+    readJson(join(packRoot, 'spec-access-control.json')),
+    { source: 'spec-access-control.json' },
   );
   const source = pack.checks.find(check => check.id === 'cart-boundary')?.source;
   assert(source, 'access control must include cart-boundary');
@@ -183,15 +183,12 @@ test('every progression feature is a whole module and every direct graph edge is
     .filter(name => name.endsWith('.json'))
     .map(name => {
       const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
-      return [`${pack.id}@${pack.version}`, pack];
+      return [pack.id, pack];
     }));
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   const nodeById = new Map(definition.nodes.map(node => [node.id, node]));
   const ownerByRef = new Map(definition.nodes
     .flatMap(node => node.featureRefs.map(reference => [reference, node.id])));
-  // Packs read from disk name their dependencies by id.
-  const ownerById = new Map(definition.nodes.flatMap(node => node.featureRefs
-    .map(reference => [reference.slice(0, reference.lastIndexOf('@')), node.id])));
   const ancestors = (nodeId: string): Set<string> => {
     const found = new Set<string>();
     const visit = (id: string): void => requiredNode(nodeById, id).dependencies.forEach(parent => {
@@ -220,7 +217,7 @@ test('every progression feature is a whole module and every direct graph edge is
       }
     }
     const requiredOwners = [...new Set(requiredPacks.flatMap(pack => pack.requiresPacks)
-      .map(reference => ownerByRef.get(reference) ?? ownerById.get(reference))
+      .map(reference => ownerByRef.get(reference))
       .filter((owner): owner is string => typeof owner === 'string' && owner !== node.id))];
     const directRequiredOwners = requiredOwners.filter(owner => !requiredOwners.some(other =>
       other !== owner && ancestors(other).has(owner))).sort();
@@ -235,13 +232,12 @@ test('one progression catalog binds every node and selects only current work', (
   const track = loadTrack('ecommerce');
   const bindings = [1, 2, 3, 4, 5, 6].map(level => ({
     level,
-    binding: resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.3'),
+    binding: resolveRecipeRelease(track, level, 'ecommerce.progression-catalog'),
   }));
   validateProgressionRecipeBindings(input, bindings);
   assert.equal(new Set(bindings.map(item => item.binding.release.contentSha256)).size, 1);
 
-  const allFeatureIds = new Set(definition.nodes.flatMap(node => node.featureRefs)
-    .map(reference => reference.slice(0, reference.lastIndexOf('@'))));
+  const allFeatureIds = new Set(definition.nodes.flatMap(node => node.featureRefs));
   const firstBinding = bindings[0];
   const secondBinding = bindings[1];
   assert(firstBinding && secondBinding, 'progression must bind levels 1 and 2');
@@ -257,8 +253,7 @@ test('one progression catalog binds every node and selects only current work', (
   if (first.action.type === 'terminal') throw new Error('L1 must produce work');
   assert('agent' in first && 'grader' in first, 'L1 must have agent and grader selections');
   const firstFeatures = definition.nodes.filter(node => node.level === 1)
-    .flatMap(node => node.featureRefs).map(reference => reference.slice(0, reference.lastIndexOf('@')))
-    .sort();
+    .flatMap(node => node.featureRefs).sort();
   assert.equal(first.agent.request.task.mode, 'fresh');
   assert.deepEqual(first.agent.request.selection.requested.features, firstFeatures);
   assert.deepEqual([...first.grader.checkKeys].sort(),
@@ -280,8 +275,7 @@ test('one progression catalog binds every node and selects only current work', (
   if (second.action.type === 'terminal') throw new Error('L2 must produce work');
   assert('agent' in second && 'grader' in second, 'L2 must have agent and grader selections');
   const secondFeatures = definition.nodes.filter(node => node.level === 2)
-    .flatMap(node => node.featureRefs).map(reference => reference.slice(0, reference.lastIndexOf('@')))
-    .sort();
+    .flatMap(node => node.featureRefs).sort();
   assert.equal(second.action.level, 2);
   assert.equal(second.agent.request.task.mode, 'upgrade');
   assert.deepEqual(second.agent.request.selection.requested.features, secondFeatures);
@@ -311,7 +305,7 @@ test('one progression catalog binds every node and selects only current work', (
   assert.deepEqual(next.agent.request.selection.requested.features,
     definition.nodes.filter(node => actionPromptNodeIds(next.action).includes(node.id))
       .flatMap(node => node.featureRefs)
-      .map(reference => reference.slice(0, reference.lastIndexOf('@'))).sort());
+      .sort());
   const repairTarget = resolveProgressionRepairTarget(firstBinding.binding, state);
   assert.deepEqual(repairTarget.request.selection.requested.features,
     next.agent.request.selection.requested.features);
@@ -327,13 +321,13 @@ test('all-at-once composes every selected feature into one fresh request', () =>
     catalog, { workSelection: 'all-at-once' });
   const state = progressionEngine.initialize(dependencyRuntimeDefinition(catalog, policy));
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 6,
-    'ecommerce.progression-catalog@2.0.3');
+    'ecommerce.progression-catalog');
   const selected = resolveProgressionRecipeAction(binding, state);
   if (selected.action.type === 'terminal' || !('agent' in selected)) {
     throw new Error('all-at-once must produce one build request');
   }
   const featureIds = definition.nodes.flatMap(node => node.featureRefs)
-    .map(reference => reference.slice(0, reference.lastIndexOf('@'))).sort();
+    .sort();
   assert.equal(selected.action.level, 6);
   assert.equal(selected.agent.request.task.mode, 'fresh');
   assert.deepEqual(selected.agent.request.selection.requested.features, featureIds);
@@ -355,14 +349,12 @@ test('the current campaign binds the full graph to one catalog across six levels
 
 test('every feature and grading check binds to the progression recipe', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
-  const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.3.json');
+  const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog.json');
   const plan = compileRecipeFile(recipePath, { trackRoot });
   const release = buildRecipeRelease(recipePath, { trackRoot });
   const binding: RecipeBinding = {
-    alias: 'ecommerce.progression-catalog@2.0.3',
-    status: 'draft',
-    catalog: { id: plan.recipe.id, version: plan.recipe.version, state: 'draft',
-      title: plan.recipe.title, path: recipePath, sha256: release.contentSha256 },
+    alias: 'ecommerce.progression-catalog',
+    selection: { path: 'composition/dependency.json', sha256: '0'.repeat(64) },
     recipePath, plan, release, execution: [],
   };
   const levels = [...new Set(definition.nodes.map(node => node.level))].sort((a, b) => a - b);
@@ -381,16 +373,15 @@ test('every feature and grading check binds to the progression recipe', () => {
 test('every feature pack declares a bounded, testable product contract', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   const plan = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
-    'progression-catalog-2.0.3.json'), { trackRoot });
+    'progression-catalog.json'), { trackRoot });
   const featurePacks = plan.packs.filter(pack => pack.moduleType === 'feature');
   assert.equal(featurePacks.length, definition.nodes.length,
     'each graph node must own one feature pack');
   for (const pack of featurePacks) {
-    const at = `${pack.id}@${pack.version}`;
-    assert(pack.capabilities.length > 0, `${at} must declare its required capabilities`);
-    assert(pack.evidence.length > 0, `${at} must declare its required evidence`);
-    assert.equal(pack.budget.status, 'bounded', `${at} must have a bounded runtime`);
-    assert(pack.budget.maxRuntimeMs > 0, `${at} must have a positive runtime limit`);
+    assert(pack.capabilities.length > 0, `${pack.id} must declare its required capabilities`);
+    assert(pack.evidence.length > 0, `${pack.id} must declare its required evidence`);
+    assert.equal(pack.budget.status, 'bounded', `${pack.id} must have a bounded runtime`);
+    assert(pack.budget.maxRuntimeMs > 0, `${pack.id} must have a positive runtime limit`);
   }
 });
 
@@ -401,7 +392,7 @@ test('cross-feature grading requirements stay separate from product dependencies
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   const nodes = new Map(definition.nodes.map(node => [node.id, node]));
   const ownerByFeature = new Map(definition.nodes.flatMap(node => node.featureRefs
-    .map(ref => [ref.replace(/@.*$/, ''), node.id] as const)));
+    .map(ref => [ref, node.id] as const)));
   const ancestors = (nodeId: string, found = new Set([nodeId])): Set<string> => {
     for (const dependency of nodes.get(nodeId)?.dependencies ?? []) {
       if (!found.has(dependency)) {
@@ -456,10 +447,10 @@ test('the authored graph rejects test-driven edges, missing packs, and stray own
       reviews.dependencies.push({ id: 'accounts', reason: 'A grading scenario uses a customer.' });
     }, /reviews\.dependencies: must equal minimal product dependencies: purchasing/],
     ['a missing feature pack', input => {
-      input.nodes[0]!.featureRefs = ['ecommerce.missing@1.0.0'];
+      input.nodes[0]!.featureRefs = ['ecommerce.missing'];
     }, /missing pack/],
     ['a missing grading group', input => {
-      input.nodes[0]!.gradingGroups[0] = 'ecommerce.feature.accounts@1.1.0#missing';
+      input.nodes[0]!.gradingGroups[0] = 'ecommerce.feature.accounts#missing';
     }, /missing group/],
     ['feature checks omitted from their owner', input => {
       input.nodes[0]!.gradingGroups = input.nodes[0]!.gradingGroups
@@ -468,11 +459,6 @@ test('the authored graph rejects test-driven edges, missing packs, and stray own
     ['a group owned twice', input => {
       input.nodes[1]!.gradingGroups.push(input.nodes[0]!.gradingGroups[0]!);
     }, /already owned/],
-    ['a feature reference whose version differs from its grading group', input => {
-      const reviews = input.nodes.find(node => node.id === 'reviews');
-      assert.ok(reviews);
-      reviews.featureRefs = ['ecommerce.feature.reviews@1.1.0'];
-    }, /must own feature group ecommerce\.feature\.reviews@1\.1\.0#reviews/],
   ];
   for (const [name, mutate, expected] of cases) {
     await t.test(name, () => {

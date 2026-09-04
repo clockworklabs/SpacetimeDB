@@ -61,10 +61,10 @@ test('the ecommerce reference pilot resolves the exact L1-L6 progression inputs'
   assert(plan.dependencyPolicy);
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5, 6]);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
-  assert.equal(plan.featureCatalog.identity.version, '2.0.3');
+  assert.match(plan.featureCatalog.identity.contentSha256, /^[a-f0-9]{64}$/);
   assert.equal(plan.dependencyPolicy.identity.id, 'dependency-graph');
-  assert.deepEqual(plan.bindings.map(binding => `${binding.recipe.id}@${binding.recipe.version}`),
-    Array(6).fill('ecommerce.progression-catalog@2.0.3'));
+  assert.deepEqual(plan.bindings.map(binding => binding.recipe.id),
+    Array(6).fill('ecommerce.progression-catalog'));
   assert.deepEqual(plan.attempts.map(attempt => attempt.stack).sort(),
     ['mongodb', 'postgres', 'spacetime']);
   assert(plan.attempts.every(attempt => attempt.agentAdapter === 'reference-fixture'));
@@ -76,7 +76,7 @@ test('sequential mode can run a prefix of the same ecommerce feature catalog', (
   try {
     const manifest = JSON.parse(readFileSync(campaignPath, 'utf8'));
     manifest.id = 'ecommerce-sequential-prefix-proof';
-    manifest.mode = { id: 'sequential', version: '1.0.0' };
+    manifest.mode = { id: 'sequential' };
     manifest.repair = { selection: 'batch', budget: { total: 1 } };
     manifest.levels = [1, 2, 3];
     manifest.selection.levels = manifest.selection.levels.slice(0, 3);
@@ -90,7 +90,7 @@ test('sequential mode can run a prefix of the same ecommerce feature catalog', (
     assert(plan.attempts.every(attempt => attempt.dependencyPolicy === undefined));
     assert(plan.attempts.every(attempt => {
       assert(attempt.featureCatalog);
-      return attempt.featureCatalog.sha256 === featureCatalog.identity.sha256;
+      return attempt.featureCatalog.contentSha256 === featureCatalog.identity.contentSha256;
     }));
     assert.deepEqual(condition.requested.levels.map(level => level.level), [1, 2, 3]);
     assert.deepEqual(condition.requested.levels.map(level => {
@@ -159,9 +159,8 @@ test('every campaign level resolves one current reference for each stack', () =>
         backend,
         track: 'ecommerce',
         level,
-        recipe: 'ecommerce.progression-catalog@2.0.3',
+        recipe: 'ecommerce.progression-catalog',
       });
-      assert.equal(fixture.status, 'candidate');
       assert.equal(fixture.targetPath, `reference-apps/ecommerce/${backend}`);
     }
   }
@@ -169,7 +168,7 @@ test('every campaign level resolves one current reference for each stack', () =>
 
 test('every progression action input is exposed by every reference app', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 5, 'ecommerce.progression-catalog@2.0.3');
+  const binding = resolveRecipeRelease(track, 5, 'ecommerce.progression-catalog');
   const attributes = new Set<string>();
   for (const execution of binding.plan.execution) {
     collectInputAttributes(JSON.parse(readFileSync(join(track.dir, execution.source), 'utf8')),
@@ -229,7 +228,7 @@ test('campaign admission sends the exact catalog, mode, and default build image 
     assert(calls.every(call => call.image === DEFAULT_BUILD_IMAGE));
     assert(calls.every(call => {
       assert(call.featureCatalog);
-      return call.featureCatalog.identity.sha256 === featureCatalog.identity.sha256;
+      return call.featureCatalog.identity.contentSha256 === featureCatalog.identity.contentSha256;
     }));
     assert(calls.every(call => call.mode.id === 'dependency'));
   } finally { rmSync(output, { recursive: true, force: true }); }

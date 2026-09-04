@@ -14,8 +14,6 @@ import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 export interface CalibrationCheckResult {
   track: string;
   id: string;
-  version: string;
-  state: string;
   recipe: string;
   controls: number;
   stacks: number;
@@ -43,7 +41,7 @@ export function checkCalibrations(
       const recipePath = resolve(dirname(path), definition.recipe.path);
       const release = buildRecipeRelease(recipePath, { trackRoot });
       const plan = compileCalibrationFile(path, { trackRoot, stackBenchRoot: ROOT, release });
-      results.push({ track: name, id: plan.id, version: plan.version, state: plan.state,
+      results.push({ track: name, id: plan.id,
         recipe: plan.recipe.id, controls: plan.controls.length, stacks: plan.qualification.stacks.length,
         contentSha256: plan.contentSha256 });
     }
@@ -57,7 +55,7 @@ function main() {
   }, strict: true, allowPositionals: false });
   const results = checkCalibrations({ trackName: values.track ?? null });
   for (const result of results) {
-    console.log(`${result.track}: ${result.id}@${result.version} ${result.state}; ` +
+    console.log(`${result.track}: ${result.id}; ` +
       `${result.controls} controls, ${result.stacks} stacks, ${result.contentSha256.slice(0, 12)}`);
   }
 }

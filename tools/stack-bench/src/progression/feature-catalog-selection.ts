@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { compileFeatureCatalogInput, compileProgressionDefinitionFile }
   from './progression-definition.js';
@@ -7,7 +7,6 @@ import type {
   CompiledProgressionDefinition,
   ProgressionInput,
 } from './progression-definition.js';
-import { parseVersionedProgressionId } from './progression-identifiers.js';
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -21,21 +20,18 @@ export interface FeatureCatalogTrack {
 export function resolveFeatureCatalog(input: unknown,
   track: FeatureCatalogTrack): ProgressionInput<CompiledProgressionDefinition> {
   if (typeof input !== 'string') return compileFeatureCatalogInput(input);
-  const reference = parseVersionedProgressionId(input);
-  if (!reference) {
-    throw new Error('feature catalog must be an exact id@version reference using semantic versioning');
+  if (isAbsolute(input)) throw new Error('feature catalog path must be relative to the track');
+  const root = resolve(track.dir);
+  const path = resolve(root, input);
+  const rel = relative(root, path);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error('feature catalog path escapes the track');
   }
-  const { id, version } = reference;
-  const directory = join(track.dir, 'progression');
-  const candidates = readdirSync(directory).filter(name => name.endsWith('.json'))
-    .map(name => join(directory, name)).filter(path => {
-      const value = readJson(path);
-      return object(value) && value.id === id && value.version === version;
-    });
-  if (candidates.length !== 1) {
-    throw new Error(`feature catalog must resolve exactly one ${input} definition in track ${track.name}`);
+  const value = readJson(path);
+  if (!object(value) || typeof value.id !== 'string') {
+    throw new Error(`feature catalog path ${input} has no stable id`);
   }
-  return compileFeatureCatalogInput(compileProgressionDefinitionFile(candidates[0]!, {
+  return compileFeatureCatalogInput(compileProgressionDefinitionFile(path, {
     trackRoot: track.dir,
   }));
 }

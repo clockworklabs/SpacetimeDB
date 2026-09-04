@@ -37,7 +37,7 @@ export function parseQualificationArgs(argv: string[]): QualificationArgs {
   if (args.command !== 'status' || typeof args.track !== 'string' || !args.track
     || positionals.length !== 1 || args.level === null || !Number.isInteger(args.level) || args.level < 1) {
     throw new Error('usage: node dist/commands/qualification-cli.js status --track <name> --level <positive integer> '
-      + '[--recipe <id>@<version>]');
+      + '[--recipe <id>]');
   }
   return args;
 }
@@ -47,8 +47,7 @@ function blocker(code: string, path: string, summary: string): QualificationBloc
 }
 
 function evidencePlan(calibration: CalibrationPlan) {
-  const stacks = calibration.qualification.stacks
-    .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
+  const stacks = [...calibration.qualification.stacks].sort();
   const evidence = [];
   for (const stack of stacks) {
     for (let repetition = 1; repetition <= calibration.qualification.referenceRepetitions; repetition += 1) {
@@ -98,8 +97,7 @@ function defectCheckCoverage(release: RecipeRelease, calibration: CalibrationPla
   const scored = release.checkCatalog.filter(check => check.points > 0
     && (selected === null || selected.has(check.stableKey)));
   const scoredByKey = new Map(scored.map(check => [check.stableKey, check]));
-  const stacks = calibration.qualification.stacks
-    .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
+  const stacks = [...calibration.qualification.stacks].sort();
   return {
     required: 'every scored check has an exact known-defect test on every supported stack',
     totalChecks: scored.length,
@@ -131,29 +129,14 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
   const calibration = resolveCalibrationForRelease(binding.release,
     { trackRoot: track.dir, alias: `L${level}` });
   if (!calibration) {
-    throw new Error(`${binding.release.id}@${binding.release.version} has no L${level} calibration`);
+    throw new Error(`${binding.release.id} has no L${level} calibration`);
   }
   const identity = calibrationQualificationIdentity(calibration);
   const launchBlockers = [];
-  if (binding.release.state === 'retired') {
-    launchBlockers.push(blocker('recipe_retired', 'recipe.state', 'selected recipe is retired'));
-  }
   for (const pack of binding.plan.packs) {
     if (pack.budget.status !== 'bounded') {
       launchBlockers.push(blocker('pack_budget_unbounded', `packs.${pack.id}.budget`,
-        `${pack.id}@${pack.version} needs a measured maxRuntimeMs before qualification`));
-    }
-  }
-  for (const entry of calibration.references.entries) {
-    if (!['candidate', 'active'].includes(String(entry.status))) {
-      launchBlockers.push(blocker('reference_unavailable', `references.${entry.backend}`,
-        `${entry.id} is ${entry.status}`));
-    }
-  }
-  for (const entry of calibration.mutations) {
-    if (!['candidate', 'active'].includes(String(entry.status))) {
-      launchBlockers.push(blocker('mutation_unavailable', `mutations.${entry.backend}`,
-        `${entry.path} is ${entry.status}`));
+        `${pack.id} needs a measured maxRuntimeMs before qualification`));
     }
   }
 
@@ -161,49 +144,34 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
   const defectChecks = defectCheckCoverage(binding.release, calibration);
   const recorded = new Set(calibration.qualification.evidence.map(entry =>
     `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`));
-  const promotionBlockers = [...launchBlockers];
+  const qualificationBlockers = [...launchBlockers];
   for (const coverage of defectChecks.stacks.filter(item => item.missingChecks.length > 0)) {
-    promotionBlockers.push(blocker('defect_check_coverage_incomplete',
+    qualificationBlockers.push(blocker('defect_check_coverage_incomplete',
       `defectChecks.${coverage.stack}`,
       `${coverage.coveredChecks}/${defectChecks.totalChecks} scored checks have exact known-defect tests`));
   }
   for (const item of requiredEvidence) {
     const key = `${item.kind}:${item.stack ?? ''}:${item.repetition}`;
-    if (!recorded.has(key)) promotionBlockers.push(blocker('evidence_missing', `evidence.${key}`,
+    if (!recorded.has(key)) qualificationBlockers.push(blocker('evidence_missing', `evidence.${key}`,
       `${key} has no hash-bound qualification artifact`));
   }
   for (const stale of (calibration.qualificationStaleness ?? []) as {
     kind: string; stack?: string; repetition: number; reason: string;
   }[]) {
     const key = `${stale.kind}:${stale.stack ?? ''}:${stale.repetition}`;
-    promotionBlockers.push(blocker('qualification_evidence_stale', `evidence.${key}`,
+    qualificationBlockers.push(blocker('qualification_evidence_stale', `evidence.${key}`,
       `${key} must be regenerated: ${stale.reason}`));
   }
-  const sourceStates: [string, string][] = [
-    ['recipe.state', binding.release.state],
-    ['fixture.state', binding.release.components.fixture.state],
-    ...binding.release.components.packs.map(pack => [`packs.${pack.id}.state`, pack.state] as [string, string]),
-    ['calibration.state', calibration.state],
-    ['promotion.status', binding.status],
-  ];
-  const governance = sourceStates.map(([path, state]) => ({ path, state,
-    target: path === 'promotion.status' ? 'promoted' : 'qualified' }));
-  governance.push(...calibration.qualification.stacks.map(stack => ({
-    path: `qualification.stacks.${stack.id}`, state: stack.status,
-    target: stack.status === 'unsupported' ? 'unsupported' : 'qualified',
-  })));
-
   const output = join(stackBenchResultsRoot(STACK_BENCH_ROOT), 'qualification');
-  const stacks = calibration.qualification.stacks
-    .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
-  const qualificationLevel = Number(calibration.promotion.alias.slice(1));
+  const stacks = [...calibration.qualification.stacks].sort();
+  const qualificationLevel = level;
   const budgetEvidence = stacks.map(stack =>
     `${output}/budget-input/${trackName}-l${qualificationLevel}-${stack}.json`);
   const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
-  const recipeOption = ` --recipe ${binding.release.id}@${binding.release.version}`;
+  const recipeOption = ` --recipe ${binding.release.id}`;
   const featureCatalog = calibration.qualification.featureCatalog;
   const featureCatalogOption = featureCatalog
-    ? ` --feature-catalog ${featureCatalog.id}@${featureCatalog.version}` : '';
+    ? ` --feature-catalog ${featureCatalog.id}` : '';
   const combinedReferenceEvidence = calibration.qualification.referenceRepetitions
     === calibration.qualification.mutationRepetitions;
   const artifactStem = `${trackName}-l${qualificationLevel}-${binding.release.contentSha256.slice(0, 12)}`;
@@ -234,7 +202,7 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
   return {
     qualificationSchemaVersion: 1,
     scope: { track: trackName, level, recipe: { id: binding.release.id,
-      version: binding.release.version, contentSha256: binding.release.contentSha256 },
+      contentSha256: binding.release.contentSha256 },
     calibration: { ...identity, contentSha256: calibration.contentSha256 },
     runner: calibration.qualification.runner ?? null },
     launch: { ok: launchBlockers.length === 0, blockers: launchBlockers },
@@ -256,12 +224,11 @@ export function qualificationReadiness(trackName: string, level: number, recipe:
         ...(!combinedReferenceEvidence ? [
           `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${artifactPaths.references[stack]}`,
         ] : []),
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --release-candidate${mutationWorkerOption(calibration, stack)} --out ${artifactPaths.mutations[stack]}`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${qualificationLevel}${recipeOption}${featureCatalogOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --full-mutations${mutationWorkerOption(calibration, stack)} --out ${artifactPaths.mutations[stack]}`,
       ]),
       `qualify-null --track ${trackName} --level ${qualificationLevel}${recipeOption} --out ${artifactPaths.null}`,
     ],
-    promotion: { ready: promotionBlockers.length === 0, blockers: promotionBlockers,
-      governance },
+    qualification: { ready: qualificationBlockers.length === 0, blockers: qualificationBlockers },
   };
 }
 

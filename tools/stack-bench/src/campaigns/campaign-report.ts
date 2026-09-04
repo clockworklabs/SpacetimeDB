@@ -17,7 +17,7 @@ import { CAMPAIGN_FILE } from './campaign-path.js';
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
 
-export const CAMPAIGN_REPORT_SCHEMA_VERSION = 5;
+export const CAMPAIGN_REPORT_SCHEMA_VERSION = 6;
 
 interface RunCheck {
   executionId: string;
@@ -128,7 +128,7 @@ interface CampaignReportCondition {
   key: string;
   stack: string;
   agent: { adapter: string; model: string };
-  condition: { id: string; version: string; sha256: string; requested?: {
+  condition: { id: string; contentSha256: string; requested?: {
     levels?: Array<{ level: number; selection?: RunSelection }> } };
   sample: {
     plannedAttempts: number;
@@ -431,7 +431,7 @@ export function campaignRunFirstBuildObservations(
 
 function conditionKey(attempt: CampaignAttemptPlan): string {
   return canonicalDefinitionJson({ stack: attempt.stack, agentAdapter: attempt.agentAdapter,
-    model: attempt.model, condition: attempt.condition?.sha256 }).trim();
+    model: attempt.model, condition: attempt.condition?.contentSha256 }).trim();
 }
 
 function reportMetricNames(policy: CampaignReport['policy']): string[] {
@@ -462,7 +462,11 @@ CampaignReportCondition[] {
       key: sha256(key),
       stack: attempts[0]!.stack,
       agent: { adapter: attempts[0]!.agentAdapter, model: attempts[0]!.model },
-      condition: attempts[0]!.condition,
+      condition: {
+        id: attempts[0]!.condition.id,
+        contentSha256: attempts[0]!.condition.contentSha256,
+        requested: attempts[0]!.condition.requested,
+      },
       sample: { plannedAttempts: attempts.length, completedAttempts: completed.length,
         invalidAttempts: attempts.filter(attempt => attempt.status === 'invalid').length,
         pendingAttempts: attempts.filter(attempt => attempt.status === 'pending').length,
@@ -579,11 +583,12 @@ export function validateCampaignReport(input: unknown): CampaignReport {
     const at = `campaign report.conditions[${index}]`;
     exactFields(row, new Set(['key', 'stack', 'agent', 'condition', 'sample', 'metrics',
       'firstBuildObservations']), at);
+    exactFields(row.condition, new Set(['id', 'contentSha256', 'requested']),
+      `${at}.condition`);
     if (typeof row.stack !== 'string' || !row.stack
       || !row.condition || typeof row.condition !== 'object' || Array.isArray(row.condition)
       || typeof row.condition.id !== 'string' || !row.condition.id
-      || typeof row.condition.version !== 'string' || !row.condition.version
-      || !/^[a-f0-9]{64}$/.test(row.condition.sha256)) {
+      || !/^[a-f0-9]{64}$/.test(row.condition.contentSha256)) {
       throw new Error(`${at}.condition is invalid`);
     }
     if (row.firstBuildObservations !== null) {
@@ -754,7 +759,7 @@ export function renderCampaignHtml(report: CampaignReport,
       ? 'First-build score' : report.policy.primaryMetric;
   const rows = report.conditions.map(condition => `<tr><td>${escape(condition.stack)}</td>`
     + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}</td>`
-    + `<td>${escape(condition.condition.id)}@${escape(condition.condition.version)}</td>`
+    + `<td>${escape(condition.condition.id)}</td>`
     + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}</td>`
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
     + `<td>${escape(formatMetric(report.policy.primaryMetric,
@@ -774,7 +779,7 @@ export function renderCampaignHtml(report: CampaignReport,
         ? level.selection.specifications : null;
       if (!specifications) return [];
       const list = (values: string[]): string => values.length ? values.join(', ') : 'none';
-      return [`<tr><td>${escape(`${condition.id}@${condition.version}`)}</td>`
+      return [`<tr><td>${escape(condition.id)}</td>`
         + `<td>L${escape(level.level)}</td>`
         + `<td>${escape(list(specifications.requested ?? []))}</td>`
         + `<td>${escape(list(specifications.expected ?? []))}</td>`
@@ -788,7 +793,7 @@ export function renderCampaignHtml(report: CampaignReport,
   } => condition.firstBuildObservations !== null)
     .map(condition => `<tr><td>${escape(condition.stack)}</td>`
       + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}</td>`
-      + `<td>${escape(condition.condition.id)}@${escape(condition.condition.version)}</td>`
+      + `<td>${escape(condition.condition.id)}</td>`
       + `<td>${condition.firstBuildObservations.sample.measuredAttempts}/${condition.firstBuildObservations.sample.selectedAttempts}</td>`
       + `<td>${escape(formatRate(condition.firstBuildObservations.metrics.passRate.center))}`
       + `<br><small>${escape(formatRate(condition.firstBuildObservations.metrics.coverageRate.center))} coverage</small></td></tr>`)

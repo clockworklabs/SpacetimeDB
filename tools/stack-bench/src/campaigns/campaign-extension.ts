@@ -21,7 +21,7 @@ function key(attempt: CampaignAttemptPlan): string {
     model: attempt.model,
     agentAdapter: attempt.agentAdapter,
     repetition: attempt.repetition,
-    condition: { id: attempt.condition.id, version: attempt.condition.version,
+    condition: { id: attempt.condition.id,
       guidance: attempt.condition.guidance, repair: attempt.condition.repair },
   });
 }

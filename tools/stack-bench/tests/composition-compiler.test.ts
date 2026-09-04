@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,25 +7,22 @@ import test from 'node:test';
 import {
   compileFixtureDefinition,
   compilePackDefinition,
-  compilePromotionDefinition,
-  compilePromotionFile,
   compileRecipeDefinition,
   compileRecipeFile,
   resolveTaskFragment,
 } from '../src/composition/composition-compiler.js';
-test('source contracts reject unknown fields, malformed versions, duplicate fixture data, and invalid aliases', () => {
+test('source contracts reject unknown fields, malformed references, and duplicate fixture data', () => {
   const pack = {
-    schemaVersion: 1, kind: 'test-pack', id: 'example.pack', version: '1.0.0', state: 'draft',
+    schemaVersion: 1, kind: 'test-pack', id: 'example.pack',
     title: 'Pack', requiresPacks: [], conflictsWith: [], capabilities: ['browser'],
     evidence: ['browser-observation'], budget: { status: 'unmeasured' },
     task: { requirements: [{ id: 'example.requirement', path: 'prompt.md', order: 1 }], contracts: [] },
     checks: [{ id: 'group', source: 'scenarios/01.json', feature: 1, role: 'feature' }],
   };
   assert.throws(() => compilePackDefinition({ ...pack, surprise: true }), /surprise: unknown field/);
-  assert.throws(() => compilePackDefinition({ ...pack, version: 'latest' }), /exact semantic version/);
+  assert.throws(() => compilePackDefinition({ ...pack, version: 'latest' }), /version: unknown field/);
   assert.throws(() => compilePackDefinition({ ...pack, requiresPacks: ['example.other@1.0.0'] }), /pack id/);
-  assert.throws(() => compilePackDefinition({ ...pack, state: 'qualified' }),
-    /qualified packs require a bounded runtime budget/);
+  assert.throws(() => compilePackDefinition({ ...pack, state: 'qualified' }), /state: unknown field/);
   assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'mode' }),
     /moduleType.*feature or specification/);
   assert.throws(() => compilePackDefinition({ ...pack, stableId: 'Published Score' }),
@@ -64,7 +61,7 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   assert.equal(renamed.stableId, 'example.feature');
 
   const fixture = {
-    schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
+    schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture',
     title: 'Fixture', warehouses: ['East'], items: [
       { name: 'Item', price: '1.00', category: 'Test', stock: { East: 1 } },
     ], accounts: [], empty: [],
@@ -72,13 +69,13 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   assert.throws(() => compileFixtureDefinition({ ...fixture, warehouses: ['East', 'East'] }), /duplicates/);
 
   const recipe = {
-    schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe', version: '1.0.0', state: 'draft',
+    schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe',
     title: 'Recipe', track: 'example',
-    fixture: { path: '../fixtures/f.json', id: 'example.fixture', version: '1.0.0' },
+    fixture: { path: '../fixtures/f.json', id: 'example.fixture' },
     task: { mode: 'fresh', framing: { requirements: [
       { id: 'example.framing', path: 'prompt.md', order: 0 },
     ], contracts: [] } },
-    packs: [{ path: '../packs/a.json', id: 'example.a', version: '1.0.0', includeRoles: ['feature'] }],
+    packs: [{ path: '../packs/a.json', id: 'example.a', includeRoles: ['feature'] }],
     execution: [{ id: 'features', source: 'scenarios/01.json' }],
     sequence: { level: 1 },
     scoring: { mode: 'source-points' },
@@ -91,15 +88,6 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   } }), /compatibility: unknown field/);
   assert.throws(() => compileRecipeDefinition({ ...recipe,
     sequence: { level: 2 } }), /sequence levels after 1 must use upgrade mode/);
-  const catalog = {
-    schemaVersion: 1, kind: 'promotion-catalog', id: 'example.recipes', version: '1.0.0',
-    state: 'draft', title: 'Promotions', entries: [{ alias: 'latest', status: 'candidate',
-      recipe: { path: 'recipes/r.json', id: 'example.recipe', version: '1.0.0' } }],
-  };
-  assert.throws(() => compilePromotionDefinition(catalog), /must look like L1/);
-  assert.deepEqual(compilePromotionDefinition({ ...catalog, entries: [] }).entries, []);
-  assert.throws(() => compilePromotionDefinition({ ...catalog, state: 'qualified', entries: [] }),
-    /must be non-empty once the catalog is qualified/);
 });
 
 test('task fragment markers are contained, unique, ordered, and non-empty', () => {
@@ -129,8 +117,6 @@ interface TestPack {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   stableId?: string;
   moduleType?: string;
@@ -161,18 +147,16 @@ interface TestRecipe {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   track: string;
   sequence: { level: number };
-  fixture: { path: string; id: string; version: string };
+  fixture: { path: string; id: string };
   task: {
     mode: string;
     framing: { requirements: TestFragment[]; contracts: TestFragment[] };
-    baseRecipe?: { path: string; id: string; version: string };
+    baseRecipe?: { path: string; id: string };
   };
-  packs: Array<{ path: string; id: string; version: string; includeRoles: string[];
+  packs: Array<{ path: string; id: string; includeRoles: string[];
     includeCheckGroups?: string[] }>;
   execution: Array<{ id: string; source: string }>;
   scoring: TestScoring;
@@ -203,14 +187,14 @@ function sandbox(): CompositionSandbox {
     ] }],
   }));
   const fixture = {
-    schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
+    schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture',
     title: 'Fixture', warehouses: ['East'], items: [
       { name: 'Item', price: '1.00', category: 'Test', stock: { East: 1 } },
     ], accounts: [], empty: [],
   };
   writeFileSync(join(root, 'composition', 'fixtures', 'fixture.json'), JSON.stringify(fixture));
   const makePack = (name: string, extra: Partial<TestPack> = {}): TestPack => ({
-    schemaVersion: 1, kind: 'test-pack', id: `example.${name}`, version: '1.0.0', state: 'draft',
+    schemaVersion: 1, kind: 'test-pack', id: `example.${name}`,
     title: name, requiresPacks: [], conflictsWith: [], capabilities: ['browser'],
     evidence: ['browser-observation'], budget: { status: 'unmeasured' },
     task: { requirements: [{ id: `example.${name}.requirement`, path: 'prompts/task.md', order: 10 }], contracts: [] },
@@ -223,15 +207,15 @@ function sandbox(): CompositionSandbox {
   };
   const makeRecipe = (packs: string[],
     scoring: TestScoring = { mode: 'source-points' }): TestRecipe => ({
-    schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe', version: '1.0.0', state: 'draft',
+    schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe',
     title: 'Recipe', track: 'example',
     sequence: { level: 1 },
-    fixture: { path: '../fixtures/fixture.json', id: 'example.fixture', version: '1.0.0' },
+    fixture: { path: '../fixtures/fixture.json', id: 'example.fixture' },
     task: { mode: 'fresh', framing: { requirements: [
       { id: 'example.framing', path: 'prompts/task.md', order: 0 },
     ], contracts: [{ id: 'example.contract', path: 'contracts/contract.json', order: 0 }] } },
     packs: packs.map(name => ({ path: `../packs/${name}.json`, id: `example.${name}`,
-      version: '1.0.0', includeRoles: ['feature'] })),
+      includeRoles: ['feature'] })),
     execution: [{ id: 'features', source: 'scenarios/01.json' }],
     scoring,
   });
@@ -371,7 +355,7 @@ test('explicit scoring must name every selected stable check exactly once', () =
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
-test('a versioned criterion can move to a focused scenario without changing its stable key', () => {
+test('a criterion can move to a focused scenario without changing its stable key', () => {
   const box = sandbox();
   try {
     writeFileSync(join(box.root, 'scenarios', '02.json'), JSON.stringify({
@@ -486,52 +470,6 @@ test('composition references cannot escape the track or composition roots', () =
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
-test('a promotion catalog cannot point a live alias at a draft recipe', () => {
-  const box = sandbox();
-  try {
-    box.writePack('a');
-    box.writeRecipe(box.makeRecipe(['a']));
-    const catalog = {
-      schemaVersion: 1, kind: 'promotion-catalog', id: 'example.recipes', version: '1.0.0',
-      state: 'draft', title: 'Promotions', entries: [{ alias: 'L1', status: 'promoted',
-        recipe: { path: 'recipes/recipe.json', id: 'example.recipe', version: '1.0.0' } }],
-    };
-    const path = join(box.root, 'composition', 'promotions.json');
-    writeFileSync(path, JSON.stringify(catalog));
-    assert.throws(() => compilePromotionFile(path, { trackRoot: box.root }), /while it is draft/);
-  } finally { rmSync(box.temp, { recursive: true, force: true }); }
-});
-
-test('qualified recipes cannot select draft packs, fixtures, or base recipes', () => {
-  const box = sandbox();
-  try {
-    box.writePack('a');
-    const recipe = box.makeRecipe(['a']);
-    recipe.state = 'qualified';
-    const path = box.writeRecipe(recipe);
-    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
-      /qualified recipe selects draft fixture/);
-    const fixturePath = join(box.root, 'composition', 'fixtures', 'fixture.json');
-    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-    fixture.state = 'qualified';
-    writeFileSync(fixturePath, JSON.stringify(fixture));
-    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
-      /qualified recipe selects draft pack/);
-
-    box.writePack('a', { state: 'qualified', budget: { status: 'bounded', maxRuntimeMs: 1000 } });
-    const base = box.makeRecipe(['a']);
-    base.id = 'example.base';
-    writeFileSync(join(box.root, 'composition', 'recipes', 'base.json'), JSON.stringify(base));
-    recipe.sequence = { level: 2 };
-    recipe.task = { ...recipe.task, mode: 'upgrade', baseRecipe: {
-      path: 'base.json', id: 'example.base', version: '1.0.0',
-    } };
-    box.writeRecipe(recipe);
-    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
-      /qualified upgrade recipe selects draft base/);
-  } finally { rmSync(box.temp, { recursive: true, force: true }); }
-});
-
 test('upgrade recipe references are exact, resolvable, and acyclic', () => {
   const box = sandbox();
   try {
@@ -540,13 +478,13 @@ test('upgrade recipe references are exact, resolvable, and acyclic', () => {
     a.id = 'example.recipe-a';
     a.sequence = { level: 2 };
     a.task = { ...a.task, mode: 'upgrade', baseRecipe: {
-      path: 'recipe-b.json', id: 'example.recipe-b', version: '1.0.0',
+      path: 'recipe-b.json', id: 'example.recipe-b',
     } };
     const b = box.makeRecipe(['a']);
     b.id = 'example.recipe-b';
     b.sequence = { level: 2 };
     b.task = { ...b.task, mode: 'upgrade', baseRecipe: {
-      path: 'recipe-a.json', id: 'example.recipe-a', version: '1.0.0',
+      path: 'recipe-a.json', id: 'example.recipe-a',
     } };
     const aPath = join(box.root, 'composition', 'recipes', 'recipe-a.json');
     const bPath = join(box.root, 'composition', 'recipes', 'recipe-b.json');

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Order cancellation history",
+  "features": [
+    {
+      "id": 3,
+      "name": "Cancellation history",
+      "actors": ["customer"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "cancel-focused" }
+      ],
+      "criteria": [
+        {
+          "id": "3b",
+          "desc": "a cancelled order is shown as cancelled in the customer's history",
+          "points": 1,
+          "statedBy": "a customer can cancel an order that has not shipped",
+          "steps": [
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "settleMs": 2000 },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Coffee Grinder" } },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "contains": "ancel", "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -37,17 +37,16 @@ test('a clean scenario report is reused only for the exact run identity and chec
   const bundle = {
     backend: 'postgres', track: 'ecommerce', level: 3,
     source: { sha256: 'fixture' },
-    recipeRelease: { id: 'recipe', version: '1.0.0', contentSha256: 'recipe-sha' },
+    recipeRelease: { id: 'recipe', contentSha256: 'recipe-sha' },
     artifactEnvelope: { identities: {
-      engine: { id: 'stack-bench', version: null, sha256: 'engine', state: null },
-      calibration: { id: 'calibration', version: '1.0.0', sha256: 'calibration-sha',
-        state: 'qualified' },
-      stackAdapter: { id: 'postgres', version: null, sha256: null, state: null },
+      engine: { id: 'stack-bench', version: null, sha256: 'engine' },
+      calibration: { id: 'calibration', sha256: 'calibration-sha' },
+      stackAdapter: { id: 'postgres', version: null, sha256: null },
     } },
     suites: { scenario, another: { selection: { checks: [{ stableKey: 'check.c' }] } } },
   };
   const expected = { backend: 'postgres', track: 'ecommerce', level: 3,
-    fixtureSha256: 'fixture', recipe: { id: 'recipe', version: '1.0.0', sha256: 'recipe-sha' },
+    fixtureSha256: 'fixture', recipe: { id: 'recipe', sha256: 'recipe-sha' },
     identities: structuredClone(bundle.artifactEnvelope.identities),
     selectedCheckKeys: ['check.b', 'check.a'] };
 
@@ -142,7 +141,7 @@ test('mutation scenarios resolve from the package assets after TypeScript compil
 test('recipe-bound mutation grading selects only checks owned by the scenario', () => {
   const track = loadTrack('ecommerce');
   const release = buildRecipeRelease(join(track.dir, 'composition', 'recipes',
-    'sequential-l2-1.6.0.json'), { trackRoot: track.dir });
+    'sequential-l2.json'), { trackRoot: track.dir });
   const keys = releaseScenarioCheckKeys(release, track.dir,
     join(track.dir, 'scenarios', '02-features.json'));
   assert(keys.includes('ecommerce.operations-access.fulfilment-queue.1a'));
@@ -151,7 +150,7 @@ test('recipe-bound mutation grading selects only checks owned by the scenario', 
   assert(!keys.includes('ecommerce.inventory-operations.operational-views.5a'),
     '5a moved to an isolated scenario and must not share state with the remaining views');
   assert.deepEqual(releaseScenarioCheckKeys(release, track.dir,
-    join(track.dir, 'scenarios', '02-low-stock-1.4.0.json')), [
+    join(track.dir, 'scenarios', '02-low-stock.json')), [
     'ecommerce.inventory-operations.operational-views.5a',
   ]);
   assert.throws(() => releaseScenarioCheckKeys(release, track.dir,
@@ -161,18 +160,18 @@ test('recipe-bound mutation grading selects only checks owned by the scenario', 
 
 test('recipe-bound mutation grading excludes zero-point controls', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@2.0.3');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
   assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
-    join(track.dir, 'scenarios', '01-restock-race-2.3.0.json')), [
+    join(track.dir, 'scenarios', '01-restock-race.json')), [
     'ecommerce.spec.concurrency-safety.restock-race.202a',
   ]);
 });
 
 test('recipe-bound mutation grading keeps only checks selected for the run', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@2.0.3');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog');
   assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
-    join(track.dir, 'scenarios', '02-strengthened-1.4.0.json'), [
+    join(track.dir, 'scenarios', '02-strengthened.json'), [
       'ecommerce.inventory-operations.warehouse-transfer.2a',
     ]), [
     'ecommerce.inventory-operations.warehouse-transfer.2a',

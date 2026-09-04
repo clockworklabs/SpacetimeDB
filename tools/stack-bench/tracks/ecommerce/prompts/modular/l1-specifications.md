@@ -66,7 +66,8 @@ Repeating or racing checkout for the same cart creates only one order.
 
 ## Transactional integrity: reviews
 
-A customer has at most one review per item; another submission updates it.
+A customer has at most one review per item. A later submission must not create
+a duplicate; it may update the existing review or be refused.
 
 ## Transactional integrity: purchasing
 

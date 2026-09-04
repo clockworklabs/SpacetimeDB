@@ -42,7 +42,7 @@ interface GrantAttemptPlan {
   stack: string;
   agentAdapter: string;
   model: string;
-  condition: { sha256: string };
+  condition: { contentSha256: string };
   mode?: { id?: string };
 }
 

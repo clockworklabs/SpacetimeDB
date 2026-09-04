@@ -57,7 +57,6 @@ import type { MutationControlArgs } from '../src/evidence/mutation-control.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
 import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
-import { DEPENDENCY_MODE_VERSION } from '../src/progression/dependency-definition.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
   resolveProgressionRepairTarget, validateProgressionCampaignLevelScope }
   from '../src/progression/progression-recipe-selection.js';
@@ -815,8 +814,8 @@ async function main() {
     const modularSelection = args.selectionRequest.levels?.find(entry => entry.level === level) ?? null;
     if (declared?.selection?.schemaVersion === 3) {
       const expected = args.featureCatalog
-        ? { level, recipe: `${declared.recipe.id}@${declared.recipe.version}` }
-        : { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
+        ? { level, recipe: declared.recipe.id }
+        : { level, recipe: declared.recipe.id,
           features: declared.selection.requested.features,
           checks: declared.selection.requested.checks };
       if (canonicalDefinitionJson(modularSelection) !== canonicalDefinitionJson(expected)) {
@@ -825,8 +824,7 @@ async function main() {
     } else if (modularSelection) {
       throw new Error(`campaign selection declares modular L${level} without a modular condition`);
     }
-    const declaredRecipe = declared
-      ? `${declared.recipe.id}@${declared.recipe.version}` : null;
+    const declaredRecipe = declared?.recipe.id ?? null;
     const binding = resolveRecipeRelease(track, level, declaredRecipe ?? args.recipe);
     if (!binding && (args.packIds.length || args.checkKeys.length)) {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
@@ -881,7 +879,7 @@ async function main() {
     const declared = args.condition?.requested?.levels
       ?.find(entry => entry.level === state.level) ?? null;
     const binding = resolveRecipeRelease(track, state.level,
-      declared ? `${declared.recipe.id}@${declared.recipe.version}` : null);
+      declared?.recipe.id ?? null);
     if (!binding) throw new Error(`L${state.level} has no recipe release`);
     resolveProgressionRecipeAction(binding, state);
     if (!args.progressionOwner) {
@@ -1158,8 +1156,7 @@ async function main() {
       agentAdapter: agentAdapterIdentity(agentAdapter),
       stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
-    mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential',
-      version: args.progression ? DEPENDENCY_MODE_VERSION : '1.0.0' },
+    mode: args.runMode ?? { id: args.progression ? 'dependency' : 'sequential' },
     track: args.track, backend: args.backend, model: args.model,
     pricing: args.pricing,
     guidance: args.guidance, condition: args.condition ?? null,

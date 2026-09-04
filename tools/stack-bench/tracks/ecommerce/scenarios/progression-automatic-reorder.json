@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Automatic reorder rules",
+  "features": [
+    {
+      "id": 502,
+      "name": "Warehouse staff manage automatic reorder rules",
+      "actors": ["staff", "admin", "customer", "buyer-a", "buyer-b", "buyer-c"],
+      "setup": [
+        { "do": "dbSetStock", "item": "Desk Lamp", "warehouse": "East", "quantity": 2, "settleMs": 2000 },
+        { "do": "dbSetStock", "item": "Desk Lamp", "warehouse": "West", "quantity": 1, "settleMs": 2000 },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "expect", "actor": "staff", "testid": "reorder-link", "within": 6000 },
+        { "do": "click", "actor": "staff", "testid": "reorder-link" },
+        { "do": "fill", "actor": "staff", "testid": "reorder-item", "text": "Desk Lamp" },
+        { "do": "fill", "actor": "staff", "testid": "reorder-threshold", "text": "2" },
+        { "do": "fill", "actor": "staff", "testid": "reorder-quantity", "text": "5" },
+        { "do": "click", "actor": "staff", "testid": "reorder-submit" },
+        { "do": "expectElementCount", "actor": "staff", "testid": "reorder-rule-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "signUp", "actor": "customer", "name": "reorder-customer" },
+        { "do": "signUp", "actor": "buyer-a", "name": "reorder-a" },
+        { "do": "signUp", "actor": "buyer-b", "name": "reorder-b" },
+        { "do": "signUp", "actor": "buyer-c", "name": "reorder-c" }
+      ],
+      "criteria": [
+        {
+          "id": "502a",
+          "desc": "crossing the threshold creates one pending restock",
+          "points": 3,
+          "statedBy": "Crossing a reorder threshold schedules a restock.",
+          "steps": [
+            { "do": "click", "actor": "buyer-a", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "click", "actor": "buyer-b", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
+          ]
+        },
+        {
+          "id": "502b",
+          "desc": "more sales do not duplicate a pending restock",
+          "points": 2,
+          "statedBy": "A pending automatic restock is not scheduled twice.",
+          "steps": [
+            { "do": "click", "actor": "buyer-c", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "expectElementCount", "actor": "admin", "testid": "pending-restock-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
+          ]
+        },
+        {
+          "id": "502c",
+          "desc": "a customer cannot see or replay automatic reorder management",
+          "points": 2,
+          "statedBy": "Only warehouse staff can manage automatic reorder rules.",
+          "steps": [
+            { "do": "expect", "actor": "customer", "testid": "reorder-link", "absent": true },
+            { "do": "replayAs", "actor": "customer", "from": "staff", "match": "reorder", "namedAction": { "id": "saveReorderRule", "path": "/api/reorders/{itemId}", "method": "PUT", "reducer": "save_reorder_rule", "args": [0, 2, 5], "params": [{ "name": "itemId", "in": "path", "placeholder": "{itemId}", "wireType": "u64" }, { "name": "threshold", "in": "body" }, { "name": "quantity", "in": "body" }] }, "namedTarget": { "testid": "reorder-rule-item", "contains": "Desk Lamp", "attribute": "data-entity-id", "valueType": "number" }, "settleMs": 1500 },
+            { "do": "expectReplayRejected", "actor": "customer" },
+            { "do": "expectElementCount", "actor": "staff", "testid": "reorder-rule-item", "contains": "Desk Lamp", "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

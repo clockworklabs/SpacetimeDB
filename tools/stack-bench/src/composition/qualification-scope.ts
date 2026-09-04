@@ -7,7 +7,7 @@ import { hashFiles, sha256 } from '../evidence/provenance.js';
 import { stackAdapterVersion } from '../stacks/stack-identities.js';
 import { formatZodError } from '../zod-error.js';
 
-export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 2;
+export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 3;
 
 export type QualificationKind = 'reference' | 'mutation' | 'null';
 
@@ -22,7 +22,6 @@ interface QualificationCheck {
 
 interface QualificationRelease {
   id: string;
-  version: string;
   contentSha256: string;
   track: string;
   checkCatalog: QualificationCheck[];
@@ -50,7 +49,7 @@ interface QualificationScopeDocument {
   executableSha256: string;
   kind: QualificationKind;
   mutationSha256: string | null;
-  recipe: { contentSha256: string; id: string; version: string };
+  recipe: { contentSha256: string; id: string };
   schemaVersion: number;
   stack: QualificationStackIdentity | null;
 }
@@ -75,7 +74,7 @@ const qualificationScopeSchema = z.strictObject({
   kind: z.enum(['reference', 'mutation', 'null']),
   executableSha256: z.string().regex(DIGEST),
   recipe: z.strictObject({
-    id: z.string().min(1), version: z.string().min(1), contentSha256: z.string().regex(DIGEST),
+    id: z.string().min(1), contentSha256: z.string().regex(DIGEST),
   }),
   checksSha256: z.string().regex(DIGEST),
   stack: z.strictObject({
@@ -227,7 +226,7 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
   if (!KINDS.has(kind)) fail(`unknown evidence kind ${JSON.stringify(kind)}`);
   const root = resolve(stackBenchRoot);
   if (!existsSync(root)) fail(`Stack Bench root does not exist: ${root}`);
-  if (!release?.id || !release?.version || !release?.contentSha256 || !release?.track) {
+  if (!release?.id || !release?.contentSha256 || !release?.track) {
     fail('a resolved recipe release is required');
   }
   if (kind === 'null') {
@@ -262,7 +261,7 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
     executableSha256: executable.sha256,
     kind,
     mutationSha256: mutation?.executionSha256 ?? null,
-    recipe: { contentSha256: release.contentSha256, id: release.id, version: release.version },
+    recipe: { contentSha256: release.contentSha256, id: release.id },
     schemaVersion: QUALIFICATION_SCOPE_SCHEMA_VERSION,
     stack: adapter && reference ? { id: adapter.id,
       reference: { id: reference.id, sourceSha256: reference.sourceSha256 },

@@ -22,7 +22,6 @@ import type { ProgressionState } from './progression-state.js';
 
 interface ExactReference {
   id: string;
-  version: string;
   ref: string;
 }
 
@@ -49,7 +48,7 @@ interface ModularRequestSelection extends Record<string, unknown> {
 }
 
 type ModularTaskRequest = ModularRecipeTaskRequestResult['request'] & {
-  recipe: { id: string; version: string; contentSha256: string };
+  recipe: { id: string; contentSha256: string };
   selection: ModularRequestSelection;
 };
 
@@ -136,8 +135,7 @@ const validateCatalog = (input: unknown): ProgressionInput =>
     ? validateFeatureCatalogInput(input) : validateProgressionInput(input);
 
 function exactRef(value: string): ExactReference {
-  const split = value.lastIndexOf('@');
-  return { id: value.slice(0, split), version: value.slice(split + 1), ref: value };
+  return { id: value, ref: value };
 }
 
 function unique(values: string[]): string[] {
@@ -178,7 +176,7 @@ function validateNodeModuleDependencies(binding: RecipeBinding,
   definition: CompiledProgressionDefinition, node: CompiledProgressionNode): void {
   const nodes = new Map(definition.nodes.map(item => [item.id, item]));
   const modules = new Map(binding.release.components.packs
-    .map(module => [`${module.id}@${module.version}`, module]));
+    .map(module => [module.id, module]));
   const ancestorIds = new Set<string>();
   const visitNode = (nodeId: string): void => {
     for (const parentId of getNode(nodes, nodeId).dependencies) {
@@ -224,7 +222,7 @@ function validateNodeModuleDependencies(binding: RecipeBinding,
     }
     const owner = binding.release.components.packs.find(module => module.id === check.packId);
     if (owner?.moduleType === 'specification') {
-      dependencyClosure(modules, [`${owner.id}@${owner.version}`], 'specification', {
+      dependencyClosure(modules, [owner.id], 'specification', {
         label: 'progression expected specification',
       });
     }
@@ -243,7 +241,7 @@ function resolveSelections(binding: RecipeBinding, definition: CompiledProgressi
     validateNodeModuleDependencies(binding, definition, getNode(nodes, nodeId));
   }
   const modules = new Map(binding.release.components.packs
-    .map(module => [`${module.id}@${module.version}`, module]));
+    .map(module => [module.id, module]));
   const checkCatalog = new Map(binding.release.checkCatalog
     .map(check => [check.stableKey, check]));
   const refsFor = (nodeIds: string[], field: 'featureRefs' | 'promptModules'): string[] =>
@@ -291,7 +289,7 @@ function resolveSelections(binding: RecipeBinding, definition: CompiledProgressi
     }
     const owner = binding.release.components.packs.find(module => module.id === check.packId);
     if (!owner) throw new Error(`progression check ${selected.id} has no recipe module owner`);
-    const ownerRef = `${owner.id}@${owner.version}`;
+    const ownerRef = owner.id;
     if (owner.moduleType === 'feature'
       && !gradingFeatures.some(item => item.id === owner.id)) {
       throw new Error(`progression check ${selected.id} belongs to an unselected feature`);

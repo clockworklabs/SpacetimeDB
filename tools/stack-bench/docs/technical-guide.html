@@ -158,8 +158,8 @@
         <div class="card"><h3>Definition plane</h3><ul class="file-list">
           <li><span class="path">tracks/&lt;track&gt;/track.json</span><span>Declares levels, suites, actions, ports, restart probes, and validation status.</span></li>
           <li><span class="path">src/composition/*</span><span>Compiles packs, recipes, task fragments, selected checks, calibration, and release identities.</span></li>
-          <li><span class="path">src/progression/progression-definition.ts</span><span>Compiles feature nodes from versioned packs. It assigns each scored group to one owner.</span></li>
-          <li><span class="path">tracks/ecommerce/progression/ecommerce-2.0.2.json</span><span>Current 43-node dependency catalog.</span></li>
+          <li><span class="path">src/progression/progression-definition.ts</span><span>Compiles feature nodes from packs. It assigns each scored group to one owner.</span></li>
+          <li><span class="path">tracks/ecommerce/progression/ecommerce.json</span><span>Current 43-node dependency catalog.</span></li>
         </ul></div>
       </details>
       <details><summary>Execution</summary>
@@ -190,19 +190,18 @@
 
     <section id="definitions">
       <h2>Definitions and composition</h2>
-      <p class="section-intro">Versioned tracks, packs, recipes, and campaigns define each run.</p>
+      <p class="section-intro">Tracks, packs, recipes, and campaigns define each run.</p>
       <div class="grid three">
         <div class="card"><div class="label">Track</div><h3>Product shape</h3><p>Levels, suites, actions, ports, reset behavior, and validation status.</p></div>
-        <div class="card"><div class="label">Pack</div><h3>Reusable module</h3><p>Prompt fragments, check groups, points, dependencies, and version.</p></div>
+        <div class="card"><div class="label">Pack</div><h3>Reusable module</h3><p>Prompt fragments, check groups, points, and dependencies.</p></div>
         <div class="card"><div class="label">Recipe</div><h3>Selected test plan</h3><p>Fixture, included modules, prompt composition, execution, and scoring.</p></div>
       </div>
-      <details open><summary>Recipe excerpt: independent modules stay separately versioned</summary><pre><code>{
+      <details open><summary>Recipe excerpt: independent modules stay separate</summary><pre><code>{
   "id": "ecommerce.progression-catalog",
-  "version": "2.0.1",
   "packs": [
-    { "id": "ecommerce.feature.accounts", "version": "1.2.0" },
-    { "id": "ecommerce.spec.state-durability", "version": "2.0.1" },
-    { "id": "ecommerce.progression.support-intake", "version": "1.0.0" }
+    { "id": "ecommerce.feature.accounts" },
+    { "id": "ecommerce.spec.state-durability" },
+    { "id": "ecommerce.progression.support-intake" }
   ],
   "execution": "all-selected-sources",
   "scoring": { "mode": "source-points" }
@@ -219,7 +218,7 @@ const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></deta
       <div class="audit">
         <div><span>✓</span><p>Unknown fields and unsupported schema versions fail during compilation.</p></div>
         <div><span>✓</span><p>Exact content hashes detect changed definitions between compile time and execution.</p></div>
-        <div><span>✓</span><p>Exact references and the candidate catalog identify active versions. Older files cannot become launch inputs through filename discovery.</p></div>
+        <div><span>✓</span><p>Direct paths and stable IDs select the current source. Git keeps its history.</p></div>
       </div>
     </section>
 
@@ -232,10 +231,10 @@ const contracts = plan.recipe.task.contracts.filter(applies);</code></pre></deta
   "id": "purchasing",
   "title": "Purchasing and orders",
   "questline": "orders-fulfillment",
-  "featureRefs": ["ecommerce.feature.purchasing@1.2.1"],
+  "featureRefs": ["ecommerce.feature.purchasing"],
   "gradingGroups": [
-    "ecommerce.feature.purchasing@1.2.1#purchase-order",
-    "ecommerce.spec.access-control@2.0.0#order-ownership"
+    "ecommerce.feature.purchasing#purchase-order",
+    "ecommerce.spec.access-control#order-ownership"
   ],
   "dependencies": [
     { "id": "accounts", "reason": "A purchase needs a buyer." },
@@ -279,23 +278,22 @@ function selectedGradingWork(state) {
         <div><span>✓</span><p>Every scored group can have only one owner. Duplicate ownership fails compilation.</p></div>
         <div><span>✓</span><p>Feature pack dependencies must exist in the node or one of its ancestors.</p></div>
         <div><span>✓</span><p>The persisted event history is hash-checked and replayed. A contradictory or corrupted state cannot resume silently.</p></div>
-        <div><span class="risk-mark">!</span><p>The full catalog is draft. Fresh qualification is still required for the current dependency definition.</p></div>
+        <div><span class="risk-mark">!</span><p>Changed definitions require fresh qualification evidence before a paid campaign.</p></div>
       </div>
     </section>
 
     <section id="campaigns">
       <h2>Campaign compilation and scheduling</h2>
-      <p class="section-intro">A compiled campaign fixes the scope, versions, budget, repetitions, and parallelism.</p>
+      <p class="section-intro">A compiled campaign fixes the scope, budget, repetitions, and parallelism.</p>
       <div class="grid two">
-        <div class="card"><h3>Compilation</h3><ol><li>Validate the manifest schema.</li><li>Resolve exact versions.</li><li>Expand all stack, agent, condition, and repetition attempts.</li><li>Hash the definition and engine identity.</li></ol></div>
+        <div class="card"><h3>Compilation</h3><ol><li>Validate the manifest schema.</li><li>Resolve current content and hashes.</li><li>Expand all stack, agent, condition, and repetition attempts.</li><li>Hash the definition and engine identity.</li></ol></div>
         <div class="card"><h3>Execution</h3><ol><li>Run campaign-wide admission checks.</li><li>Claim up to the configured parallel slots.</li><li>Give each slot a distinct run index and resource scope.</li><li>Write attempt state after each completion.</li></ol></div>
       </div>
       <details open><summary>Example campaign excerpt</summary><pre><code>{
-  "mode": { "id": "dependency", "version": "4.0.0",
-    "workSelection": "feature" },
+  "mode": { "id": "dependency", "workSelection": "feature" },
   "repair": { "selection": "feature", "budget": { "perFeature": 1 } },
   "levels": [1, 2, 3, 4, 5, 6],
-  "featureCatalog": "ecommerce.questlines@2.0.2",
+  "featureCatalog": "ecommerce.questlines",
   "stacks": [
     { "id": "mongodb", "adapterVersion": "1.4.0" },
     { "id": "postgres", "adapterVersion": "1.5.0" },
@@ -547,7 +545,7 @@ Grade: bundle, contract lint, actions, check evidence, screenshots</code></pre><
         <div class="card">
           <h3>Move a feature to a later level</h3>
           <ol>
-            <li>Change the node dependencies in <span class="path">progression/ecommerce-2.0.2.json</span>.</li>
+            <li>Change the node dependencies in <span class="path">progression/ecommerce.json</span>.</li>
             <li>Do not edit a numeric level. The compiler recalculates it from dependency depth.</li>
             <li>Keep the same feature pack and grading group IDs if their behavior did not change.</li>
             <li>Compile the graph. Check reachability, cycles, prompt mode, and ownership.</li>

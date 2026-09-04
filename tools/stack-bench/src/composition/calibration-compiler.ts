@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
-import { compilePromotionFile } from './composition-compiler.js';
+import { compileRecipeSelectionFile } from './composition-compiler.js';
 import { canonicalDefinitionJson, canonicalizeDefinition, readDefinitionJson }
   from './definition-plan.js';
 import { mutationTargetKeys, validateMutationDefinitions } from '../evidence/mutation-analysis.js';
@@ -16,7 +16,6 @@ import type { RecipeCheck, RecipeExecution, RecipeRelease } from './recipe-relea
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { progressionLevels, selectFeatureCatalogLevels }
   from '../progression/progression-definition.js';
-import { isExactSemanticVersion } from '../semantic-version.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -25,9 +24,6 @@ type UnknownRecord = Record<string, unknown>;
 // shape it was proven to be.
 type Validated<T> = T & UnknownRecord;
 
-const isMember = (allowed: Set<string>, value: unknown): boolean =>
-  typeof value === 'string' && allowed.has(value);
-
 const isOneOf = (value: unknown, allowed: readonly string[]): boolean =>
   typeof value === 'string' && allowed.includes(value);
 
@@ -35,7 +31,6 @@ export interface CalibrationReference {
   backend: string;
   id: string;
   sourceSha256: string;
-  status?: string;
   targetPath?: string;
 }
 
@@ -44,7 +39,6 @@ export interface CalibrationMutation {
   path: string;
   sha256: string;
   referenceId: string;
-  status?: string;
   executionSha256?: string;
   targets: Array<{ id: string; stableKeys: string[] }>;
 }
@@ -69,19 +63,16 @@ export interface CalibrationDefinition {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   track: string;
   recipe: {
     path: string;
     id: string;
-    version: string;
     meaningSha256: string;
     executionSha256: string;
     contentSha256: string;
   };
-  fixture: { id: string; version: string; sourceSha256: string };
+  fixture: { id: string; sourceSha256: string };
   references: { registryPath: string; entries: CalibrationReference[] };
   mutations: CalibrationMutation[];
   nullControl: { pointBearing: string; zeroPoint: string; repetitions: number };
@@ -91,9 +82,9 @@ export interface CalibrationDefinition {
     referenceRepetitions: number;
     mutationRepetitions: number;
     checks?: string[];
-    featureCatalog?: { id: string; version: string; sha256: string };
+    featureCatalog?: { path: string; id: string; contentSha256: string };
     runner?: { schemaVersion: number; mode: string; platform: string; architecture: string };
-    stacks: Array<{ id: string; status: string }>;
+    stacks: string[];
     evidence: CalibrationEvidence[];
     buildImage?: string;
   };
@@ -104,8 +95,8 @@ export interface CalibrationDefinition {
     evidence: Array<{ path: string; sha256: string }>;
   }>;
   qualificationReuse?: {
-    sourceRecipe: { id: string; version: string; contentSha256: string; executionSha256: string };
-    sourceCalibration: { id: string; version: string; sha256: string };
+    sourceRecipe: { id: string; contentSha256: string; executionSha256: string };
+    sourceCalibration: { id: string; contentSha256: string };
     rationale: string;
     evidence: Array<{ path: string; sha256: string }>;
     scopes: Array<{
@@ -115,12 +106,11 @@ export interface CalibrationDefinition {
       toExecutableSha256: string;
     }>;
   };
-  promotion: {
-    catalogPath: string;
-    catalogSha256: string;
+  selection: {
+    path: string;
+    sha256: string;
     alias: string;
     coveredAliases?: string[];
-    status: string;
   };
 }
 
@@ -152,16 +142,13 @@ export interface CalibrationContext {
 
 export interface CalibrationIdentity {
   id: string;
-  version: string;
-  sha256: string;
+  contentSha256: string;
 }
 
-export const CALIBRATION_SCHEMA_VERSION = 1;
+export const CALIBRATION_SCHEMA_VERSION = 2;
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-const STATES = new Set(['draft', 'qualified', 'retired']);
-const STACK_STATES = new Set(['candidate', 'qualified', 'unsupported']);
 const CONTROL_POLICIES = new Map([
   ['promotion-gate', 'must-pass-reference-and-kill-declared-mutant'],
   ['precondition', 'must-pass-reference'],
@@ -197,11 +184,6 @@ function exactId(value: unknown, at: string): string {
   return text;
 }
 
-function exactVersion(value: unknown, at: string): string {
-  const text = string(value, at);
-  if (!isExactSemanticVersion(text)) fail(at, 'must be an exact semantic version');
-  return text;
-}
 
 function array(value: unknown, at: string,
   { nonEmpty = false }: { nonEmpty?: boolean } = {}): unknown[] {
@@ -227,14 +209,14 @@ function contained(root: string, from: string, path: unknown,
 }
 
 const ROOT_FIELDS = new Set([
-  'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'track', 'recipe',
+  'schemaVersion', 'kind', 'id', 'title', 'track', 'recipe',
   'fixture', 'references', 'mutations', 'nullControl', 'controls', 'qualification',
-  'equivalenceDecisions', 'qualificationReuse', 'promotion',
+  'equivalenceDecisions', 'qualificationReuse', 'selection',
 ]);
 const RECIPE_FIELDS = new Set([
-  'path', 'id', 'version', 'meaningSha256', 'executionSha256', 'contentSha256',
+  'path', 'id', 'meaningSha256', 'executionSha256', 'contentSha256',
 ]);
-const FIXTURE_FIELDS = new Set(['id', 'version', 'sourceSha256']);
+const FIXTURE_FIELDS = new Set(['id', 'sourceSha256']);
 const REFERENCES_FIELDS = new Set(['registryPath', 'entries']);
 const REFERENCE_FIELDS = new Set(['backend', 'id', 'sourceSha256']);
 const MUTATION_FIELDS = new Set(['backend', 'path', 'sha256', 'referenceId']);
@@ -245,9 +227,8 @@ const QUALIFICATION_FIELDS = new Set([
   'featureCatalog', 'runner',
   'stacks', 'evidence',
 ]);
-const FEATURE_CATALOG_FIELDS = new Set(['id', 'version', 'sha256']);
+const FEATURE_CATALOG_FIELDS = new Set(['path', 'id', 'contentSha256']);
 const RUNNER_FIELDS = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
-const STACK_FIELDS = new Set(['id', 'status']);
 const EVIDENCE_FIELDS = new Set(['kind', 'stack', 'repetition', 'path', 'sha256']);
 const EQUIVALENCE_EVIDENCE_FIELDS = new Set(['path', 'sha256']);
 const EQUIVALENCE_FIELDS = new Set([
@@ -257,25 +238,23 @@ const QUALIFICATION_REUSE_FIELDS = new Set([
   'sourceRecipe', 'sourceCalibration', 'rationale', 'evidence', 'scopes',
 ]);
 const QUALIFICATION_REUSE_RECIPE_FIELDS = new Set([
-  'id', 'version', 'contentSha256', 'executionSha256',
+  'id', 'contentSha256', 'executionSha256',
 ]);
-const QUALIFICATION_REUSE_CALIBRATION_FIELDS = new Set(['id', 'version', 'sha256']);
+const QUALIFICATION_REUSE_CALIBRATION_FIELDS = new Set(['id', 'contentSha256']);
 const QUALIFICATION_REUSE_SCOPE_FIELDS = new Set([
   'kind', 'stack', 'fromExecutableSha256', 'toExecutableSha256',
 ]);
-const PROMOTION_FIELDS = new Set([
-  'catalogPath', 'catalogSha256', 'alias', 'coveredAliases', 'status',
+const SELECTION_FIELDS = new Set([
+  'path', 'sha256', 'alias', 'coveredAliases',
 ]);
 
 export function compileCalibrationDefinition(input: unknown,
   { source = '<calibration>' }: { source?: string } = {}): CalibrationDefinition {
   const value = structuredClone(input);
   strictObject(value, source, ROOT_FIELDS);
-  if (value.schemaVersion !== CALIBRATION_SCHEMA_VERSION) fail(`${source}.schemaVersion`, 'must be 1');
+  if (value.schemaVersion !== CALIBRATION_SCHEMA_VERSION) fail(`${source}.schemaVersion`, 'must be 2');
   if (value.kind !== 'calibration-manifest') fail(`${source}.kind`, 'must be "calibration-manifest"');
   exactId(value.id, `${source}.id`);
-  exactVersion(value.version, `${source}.version`);
-  if (!isMember(STATES, value.state)) fail(`${source}.state`, 'must be draft, qualified, or retired');
   string(value.title, `${source}.title`);
   exactId(value.track, `${source}.track`);
 
@@ -283,7 +262,6 @@ export function compileCalibrationDefinition(input: unknown,
   strictObject(recipe, `${source}.recipe`, RECIPE_FIELDS);
   string(recipe.path, `${source}.recipe.path`);
   exactId(recipe.id, `${source}.recipe.id`);
-  exactVersion(recipe.version, `${source}.recipe.version`);
   for (const [field, hash] of [['meaningSha256', recipe.meaningSha256],
     ['executionSha256', recipe.executionSha256],
     ['contentSha256', recipe.contentSha256]] as const) {
@@ -293,7 +271,6 @@ export function compileCalibrationDefinition(input: unknown,
   const fixture = value.fixture;
   strictObject(fixture, `${source}.fixture`, FIXTURE_FIELDS);
   exactId(fixture.id, `${source}.fixture.id`);
-  exactVersion(fixture.version, `${source}.fixture.version`);
   exactHash(fixture.sourceSha256, `${source}.fixture.sourceSha256`);
 
   const references = value.references;
@@ -394,11 +371,9 @@ export function compileCalibrationDefinition(input: unknown,
   if (featureCatalog !== undefined) {
     const at = `${source}.qualification.featureCatalog`;
     strictObject(featureCatalog, at, FEATURE_CATALOG_FIELDS);
+    string(featureCatalog.path, `${at}.path`);
     string(featureCatalog.id, `${at}.id`);
-    if (!isExactSemanticVersion(featureCatalog.version)) {
-      fail(`${at}.version`, 'must be an exact semantic version');
-    }
-    exactHash(featureCatalog.sha256, `${at}.sha256`);
+    exactHash(featureCatalog.contentSha256, `${at}.contentSha256`);
   }
   const runner = qualification.runner;
   if (runner !== undefined) {
@@ -410,16 +385,11 @@ export function compileCalibrationDefinition(input: unknown,
     string(runner.architecture, `${at}.architecture`);
   }
   const stacks = array(qualification.stacks, `${source}.qualification.stacks`, { nonEmpty: true });
-  const stackIds = new Set<unknown>();
+  const stackIds = new Set<string>();
   stacks.forEach((stack: unknown, index: number) => {
-    const at = `${source}.qualification.stacks[${index}]`;
-    strictObject(stack, at, STACK_FIELDS);
-    string(stack.id, `${at}.id`);
-    if (!isMember(STACK_STATES, stack.status)) {
-      fail(`${at}.status`, 'must be candidate, qualified, or unsupported');
-    }
-    if (stackIds.has(stack.id)) fail(`${at}.id`, `duplicates ${stack.id}`);
-    stackIds.add(stack.id);
+    const stackId = string(stack, `${source}.qualification.stacks[${index}]`);
+    if (stackIds.has(stackId)) fail(`${source}.qualification.stacks[${index}]`, `duplicates ${stackId}`);
+    stackIds.add(stackId);
   });
   const evidence = array(qualification.evidence, `${source}.qualification.evidence`);
   evidence.forEach((entry: unknown, index: number) => {
@@ -463,15 +433,13 @@ export function compileCalibrationDefinition(input: unknown,
     const sourceRecipe = reuse.sourceRecipe;
     strictObject(sourceRecipe, `${at}.sourceRecipe`, QUALIFICATION_REUSE_RECIPE_FIELDS);
     exactId(sourceRecipe.id, `${at}.sourceRecipe.id`);
-    exactVersion(sourceRecipe.version, `${at}.sourceRecipe.version`);
     exactHash(sourceRecipe.contentSha256, `${at}.sourceRecipe.contentSha256`);
     exactHash(sourceRecipe.executionSha256, `${at}.sourceRecipe.executionSha256`);
     const sourceCalibration = reuse.sourceCalibration;
     strictObject(sourceCalibration, `${at}.sourceCalibration`,
       QUALIFICATION_REUSE_CALIBRATION_FIELDS);
     exactId(sourceCalibration.id, `${at}.sourceCalibration.id`);
-    exactVersion(sourceCalibration.version, `${at}.sourceCalibration.version`);
-    exactHash(sourceCalibration.sha256, `${at}.sourceCalibration.sha256`);
+    exactHash(sourceCalibration.contentSha256, `${at}.sourceCalibration.contentSha256`);
     string(reuse.rationale, `${at}.rationale`);
     const reuseEvidence = array(reuse.evidence, `${at}.evidence`, { nonEmpty: true });
     reuseEvidence.forEach((entry: unknown, index: number) => {
@@ -502,29 +470,26 @@ export function compileCalibrationDefinition(input: unknown,
     });
   }
 
-  const promotion = value.promotion;
-  strictObject(promotion, `${source}.promotion`, PROMOTION_FIELDS);
-  string(promotion.catalogPath, `${source}.promotion.catalogPath`);
-  exactHash(promotion.catalogSha256, `${source}.promotion.catalogSha256`);
-  const alias = String(promotion.alias);
-  if (!/^L[1-9]\d*$/.test(alias)) fail(`${source}.promotion.alias`, 'must be an L1-style alias');
-  if (promotion.coveredAliases !== undefined) {
-    const coveredAliases = array(promotion.coveredAliases, `${source}.promotion.coveredAliases`,
+  const selection = value.selection;
+  strictObject(selection, `${source}.selection`, SELECTION_FIELDS);
+  string(selection.path, `${source}.selection.path`);
+  exactHash(selection.sha256, `${source}.selection.sha256`);
+  const alias = String(selection.alias);
+  if (!/^L[1-9]\d*$/.test(alias)) fail(`${source}.selection.alias`, 'must be an L1-style alias');
+  if (selection.coveredAliases !== undefined) {
+    const coveredAliases = array(selection.coveredAliases, `${source}.selection.coveredAliases`,
       { nonEmpty: true });
     const covered = new Set<unknown>();
     for (const [index, entry] of coveredAliases.entries()) {
       if (!/^L[1-9]\d*$/.test(String(entry))) {
-        fail(`${source}.promotion.coveredAliases[${index}]`, 'must be an L1-style alias');
+        fail(`${source}.selection.coveredAliases[${index}]`, 'must be an L1-style alias');
       }
-      if (covered.has(entry)) fail(`${source}.promotion.coveredAliases`, `duplicates ${entry}`);
+      if (covered.has(entry)) fail(`${source}.selection.coveredAliases`, `duplicates ${entry}`);
       covered.add(entry);
     }
-    if (!covered.has(promotion.alias)) {
-      fail(`${source}.promotion.coveredAliases`, `must include ${promotion.alias}`);
+    if (!covered.has(selection.alias)) {
+      fail(`${source}.selection.coveredAliases`, `must include ${selection.alias}`);
     }
-  }
-  if (!isOneOf(promotion.status, ['candidate', 'promoted', 'retired'])) {
-    fail(`${source}.promotion.status`, 'must be candidate, promoted, or retired');
   }
   return value as Validated<CalibrationDefinition>;
 }
@@ -570,29 +535,27 @@ const read = (value: unknown, ...path: readonly string[]): unknown => {
 
 function exactEvidenceIdentity(actual: unknown, expected: unknown, at: string): void {
   if (!actual || read(actual, 'id') !== read(expected, 'id')
-    || read(actual, 'version') !== read(expected, 'version')
-    || read(actual, 'sha256') !== read(expected, 'sha256')) {
+    || read(actual, 'contentSha256') !== read(expected, 'contentSha256')) {
     evidenceFailure(at, `has wrong ${at.split('.').at(-1)} identity`);
   }
 }
 
 function evidenceIdentityMatches(actual: unknown, expected: unknown): boolean {
   return read(actual, 'id') === read(expected, 'id')
-    && read(actual, 'version') === read(expected, 'version')
-    && read(actual, 'sha256') === read(expected, 'sha256');
+    && read(actual, 'contentSha256') === read(expected, 'contentSha256');
 }
 
 function qualificationEvidenceOrigin(artifact: UnknownRecord,
   calibration: CalibrationDefinition | CalibrationPlan, qualificationIdentity: CalibrationIdentity,
   release: RecipeRelease, at: string): 'current' | 'reused' {
   const identities = artifact.identities;
-  const currentRecipe = { id: release.id, version: release.version, sha256: release.contentSha256 };
+  const currentRecipe = { id: release.id, contentSha256: release.contentSha256 };
   const current = evidenceIdentityMatches(read(identities, 'recipe'), currentRecipe)
     && evidenceIdentityMatches(read(identities, 'calibration'), qualificationIdentity);
   if (current) return 'current';
   const reuse = calibration.qualificationReuse;
-  const sourceRecipe = reuse && { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
-    sha256: reuse.sourceRecipe.contentSha256 };
+  const sourceRecipe = reuse && { id: reuse.sourceRecipe.id,
+    contentSha256: reuse.sourceRecipe.contentSha256 };
   if (reuse && evidenceIdentityMatches(read(identities, 'recipe'), sourceRecipe)
     && evidenceIdentityMatches(read(identities, 'calibration'), reuse.sourceCalibration)) {
     return 'reused';
@@ -601,8 +564,8 @@ function qualificationEvidenceOrigin(artifact: UnknownRecord,
 }
 
 type ReuseDecision = {
-  sourceRecipe: { id: string; version: string; contentSha256: string; executionSha256: string };
-  sourceCalibration: { id: string; version: string; sha256: string };
+  sourceRecipe: { id: string; contentSha256: string; executionSha256: string };
+  sourceCalibration: { id: string; contentSha256: string };
   scopes: Array<{ kind: string; stack?: string;
     fromExecutableSha256: string; toExecutableSha256: string }>;
 };
@@ -629,10 +592,10 @@ export function canReuseQualificationScope({ actual, expected, artifact, calibra
   const decision = reuse.scopes.find(scope => scope.kind === entry.kind
     && (scope.stack ?? null) === (entry.stack ?? null));
   if (!decision) return false;
-  const sourceScopeRecipe = { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
+  const sourceScopeRecipe = { id: reuse.sourceRecipe.id,
     contentSha256: reuse.sourceRecipe.contentSha256 };
-  const sourceArtifactRecipe = { id: reuse.sourceRecipe.id, version: reuse.sourceRecipe.version,
-    sha256: reuse.sourceRecipe.contentSha256 };
+  const sourceArtifactRecipe = { id: reuse.sourceRecipe.id,
+    contentSha256: reuse.sourceRecipe.contentSha256 };
   const stackInputs = (value: unknown) => isObject(value)
     ? { id: value.id, reference: value.reference } : value;
   return actual.schemaVersion === expected.schemaVersion
@@ -739,7 +702,7 @@ export function validateQualificationEvidenceArtifact(artifact: unknown,
     const expected = new Map(scoredChecks.map(check => [
       `${check.source}:${check.featureId}:${check.criterionId}`, check,
     ]));
-    const qualificationLevel = Number(calibration.promotion.alias.slice(1));
+    const qualificationLevel = Number(calibration.selection.alias.slice(1));
     const results = read(payload, 'criteria') ?? [];
     if (!Array.isArray(results)) evidenceFailure(at, 'has no criteria list');
     for (const result of results) {
@@ -766,7 +729,7 @@ export function validateQualificationEvidenceArtifact(artifact: unknown,
   const reference = references.find(candidate => candidate.backend === entry.stack);
   if (!reference) evidenceFailure(at, `targets undeclared stack ${entry.stack}`);
   exactEvidenceIdentity(read(artifact, 'identities', 'fixture'),
-    { id: reference.id, version: null, sha256: reference.sourceSha256 }, `${at}.fixture`);
+    { id: reference.id, contentSha256: reference.sourceSha256 }, `${at}.fixture`);
   if (read(artifact, 'identities', 'stackAdapter', 'id') !== entry.stack) {
     evidenceFailure(at, 'has wrong stack adapter');
   }
@@ -927,7 +890,7 @@ export function mutationExecutionSha256(manifest: UnknownRecord,
 }
 
 type IdentifiableCalibration = Partial<CalibrationDefinition>
-  & Pick<CalibrationDefinition, 'id' | 'version'>;
+  & Pick<CalibrationDefinition, 'id'>;
 
 export function calibrationQualificationIdentity(
   calibration: IdentifiableCalibration): CalibrationIdentity {
@@ -937,16 +900,14 @@ export function calibrationQualificationIdentity(
   const document = canonicalizeDefinition({
     schemaVersion: CALIBRATION_SCHEMA_VERSION,
     id: calibration.id,
-    version: calibration.version,
     track: calibration.track,
     recipe: {
       id: calibration.recipe?.id,
-      version: calibration.recipe?.version,
       meaningSha256: calibration.recipe?.meaningSha256,
       executionSha256: calibration.recipe?.executionSha256,
       contentSha256: calibration.recipe?.contentSha256,
     },
-    fixture: { id: calibration.fixture?.id, version: calibration.fixture?.version },
+    fixture: { id: calibration.fixture?.id },
     references: (calibration.references?.entries ?? []).map(entry => ({
       backend: entry.backend, id: entry.id, sourceSha256: entry.sourceSha256,
     })).sort((a, b) => a.backend.localeCompare(b.backend)),
@@ -967,15 +928,13 @@ export function calibrationQualificationIdentity(
       ...(calibration.qualification?.featureCatalog
         ? { featureCatalog: calibration.qualification.featureCatalog } : {}),
       ...(calibration.qualification?.runner ? { runner: calibration.qualification.runner } : {}),
-      stacks: (calibration.qualification?.stacks ?? []).map(stack => ({
-        id: stack.id, supported: stack.status !== 'unsupported',
-      })).sort((a, b) => a.id.localeCompare(b.id)),
+      stacks: [...(calibration.qualification?.stacks ?? [])].sort(),
     },
     equivalenceDecisions: calibration.equivalenceDecisions,
     ...(calibration.qualificationReuse ? { qualificationReuse: calibration.qualificationReuse } : {}),
   });
-  return { id: calibration.id, version: calibration.version,
-    sha256: sha256(canonicalDefinitionJson(document)) };
+  return { id: calibration.id,
+    contentSha256: sha256(canonicalDefinitionJson(document)) };
 }
 
 export function calibrationQualificationRelease<
@@ -1015,12 +974,11 @@ export function compileCalibrationFile(calibrationPath: string,
     readDefinitionJson(absolute, 'calibration'), { source });
   if (calibration.track !== release.track) fail(`${source}.track`, `expected ${release.track}`);
   for (const [field, declared] of [['id', calibration.recipe.id],
-    ['version', calibration.recipe.version],
     ['meaningSha256', calibration.recipe.meaningSha256],
     ['executionSha256', calibration.recipe.executionSha256],
     ['contentSha256', calibration.recipe.contentSha256]] as const) {
     if (declared !== release[field]) {
-      fail(`${source}.recipe.${field}`, `does not match resolved recipe ${release.id}@${release.version}`);
+      fail(`${source}.recipe.${field}`, `does not match resolved recipe ${release.id}`);
     }
   }
   const recipeRef = contained(root, dirname(absolute), calibration.recipe.path, `${source}.recipe.path`);
@@ -1029,17 +987,17 @@ export function compileCalibrationFile(calibrationPath: string,
   }
   const execution = executionPlanForRelease(recipeRef.absolute, {
     trackRoot: root,
-    level: Number(calibration.promotion.alias.slice(1)),
+    level: Number(calibration.selection.alias.slice(1)),
   });
   if (calibration.qualification.featureCatalog) {
     const declared = calibration.qualification.featureCatalog;
-    const fullCatalog = resolveFeatureCatalog(`${declared.id}@${declared.version}`,
+    const fullCatalog = resolveFeatureCatalog(declared.path,
       { dir: root, name: release.track });
-    const qualificationLevel = Number(calibration.promotion.alias.slice(1));
+    const qualificationLevel = Number(calibration.selection.alias.slice(1));
     const levels = progressionLevels(fullCatalog).filter(level => level <= qualificationLevel);
     const catalog = selectFeatureCatalogLevels(fullCatalog, levels);
-    if (catalog.identity.sha256 !== declared.sha256) {
-      fail(`${source}.qualification.featureCatalog.sha256`, 'is stale');
+    if (catalog.identity.contentSha256 !== declared.contentSha256) {
+      fail(`${source}.qualification.featureCatalog.contentSha256`, 'is stale');
     }
     const catalogChecks = catalog.definition.nodes
       .flatMap(node => node.gradingChecks.map(check => check.id)).sort();
@@ -1050,8 +1008,7 @@ export function compileCalibrationFile(calibrationPath: string,
   }
   const { release: qualificationRelease, execution: qualificationExecution }
     = calibrationQualificationRelease(calibration, release, execution, { source });
-  if (calibration.fixture.id !== release.components.fixture.id
-    || calibration.fixture.version !== release.components.fixture.version) {
+  if (calibration.fixture.id !== release.components.fixture.id) {
     fail(`${source}.fixture`, 'does not match the resolved fixture identity');
   }
   if (release.components.fixture.sha256 !== calibration.fixture.sourceSha256) {
@@ -1073,11 +1030,7 @@ export function compileCalibrationFile(calibrationPath: string,
     if (read(entry, 'imported', 'sourceSha256') !== selection.sourceSha256) {
       fail(`${at}.sourceSha256`, 'is stale');
     }
-    return {
-      ...selection,
-      status: entry.status,
-      ...(entry.targetPath ? { targetPath: entry.targetPath } : {}),
-    };
+    return { ...selection, ...(entry.targetPath ? { targetPath: entry.targetPath } : {}) };
   });
 
   const releaseStableKeys = new Set(release.checkCatalog.map(check => check.stableKey));
@@ -1091,8 +1044,8 @@ export function compileCalibrationFile(calibrationPath: string,
     if (digest !== selection.sha256) fail(`${at}.sha256`, `stale digest for ${selection.path}`);
     const manifest = readDefinitionJson(ref.absolute, 'mutation manifest');
     if (!isObject(manifest)) fail(at, 'mutation manifest must be an object');
-    if (manifest.schemaVersion !== 2 || manifest.level !== undefined) {
-      fail(at, 'mutation manifest must use schema 2 and must not own a level');
+    if (manifest.schemaVersion !== 3 || manifest.level !== undefined) {
+      fail(at, 'mutation manifest must use schema 3 and must not own a level');
     }
     const reference = references.find(candidate => candidate.id === selection.referenceId);
     if (!reference || reference.backend !== selection.backend) fail(`${at}.referenceId`, 'does not match mutation backend');
@@ -1133,20 +1086,17 @@ export function compileCalibrationFile(calibrationPath: string,
       targets.push({ id: mutation.id, stableKeys: scopedKeys });
     }
     mutationCoverage.set(selection.backend, covered);
-    return { ...selection, path: ref.relative, status: string(manifest.status, `${at}.status`),
+    return { ...selection, path: ref.relative,
       executionSha256: mutationExecutionSha256(manifest, selectedMutations), targets };
   });
 
-  if (calibration.promotion.status !== 'retired') {
-    const scoredKeys = qualificationRelease.checkCatalog.filter(check => check.points > 0)
-      .map(check => check.stableKey);
-    for (const stack of calibration.qualification.stacks.filter(stack =>
-      stack.status !== 'unsupported')) {
-      const covered = mutationCoverage.get(stack.id) ?? new Set();
-      const missing = scoredKeys.filter(key => !covered.has(key));
-      if (missing.length) {
-        fail(`${source}.mutations`, `${stack.id} does not cover scored checks: ${missing.join(', ')}`);
-      }
+  const scoredKeys = qualificationRelease.checkCatalog.filter(check => check.points > 0)
+    .map(check => check.stableKey);
+  for (const stack of calibration.qualification.stacks) {
+    const covered = mutationCoverage.get(stack) ?? new Set();
+    const missing = scoredKeys.filter(key => !covered.has(key));
+    if (missing.length) {
+      fail(`${source}.mutations`, `${stack} does not cover scored checks: ${missing.join(', ')}`);
     }
   }
 
@@ -1208,33 +1158,17 @@ export function compileCalibrationFile(calibrationPath: string,
     ...decision,
     evidence: verifyEvidence(decision.evidence, benchRoot, `${source}.equivalenceDecisions[${index}].evidence`),
   }));
-  const catalogRef = contained(root, root, calibration.promotion.catalogPath,
-    `${source}.promotion.catalogPath`);
-  const catalogDigest = sha256(readFileSync(catalogRef.absolute));
-  if (catalogDigest !== calibration.promotion.catalogSha256) fail(`${source}.promotion.catalogSha256`, 'catalog digest is stale');
-  const catalog = compilePromotionFile(catalogRef.absolute, { trackRoot: root });
-  const aliasEntries = catalog.entries.filter(entry => entry.alias === calibration.promotion.alias
-    && entry.status === calibration.promotion.status);
-  if (!aliasEntries.some(entry => entry.recipe.id === release.id && entry.recipe.version === release.version)) {
-    fail(`${source}.promotion`, 'does not resolve to this recipe at the declared status');
-  }
-  if (calibration.promotion.status === 'promoted' && calibration.state !== 'qualified') {
-    fail(`${source}.promotion.status`, 'a promoted alias requires a qualified calibration');
+  const selectionRef = contained(root, root, calibration.selection.path,
+    `${source}.selection.path`);
+  const selectionDigest = sha256(readFileSync(selectionRef.absolute));
+  if (selectionDigest !== calibration.selection.sha256) fail(`${source}.selection.sha256`, 'selection digest is stale');
+  const selectionCatalog = compileRecipeSelectionFile(selectionRef.absolute, { trackRoot: root });
+  if (!selectionCatalog.entries.some(entry => entry.alias === calibration.selection.alias
+    && entry.recipe.id === release.id)) {
+    fail(`${source}.selection`, 'does not resolve to this recipe');
   }
 
-  if (calibration.state === 'qualified') {
-    if (release.state !== 'qualified') fail(`${source}.state`, 'cannot qualify a draft or retired recipe');
-    if (references.some(entry => entry.status !== 'active')) fail(`${source}.references`, 'qualified calibration requires active references');
-    if (mutations.some(entry => entry.status !== 'active')) fail(`${source}.mutations`, 'qualified calibration requires active mutations');
-    if (calibration.qualification.stacks.some(stack => stack.status !== 'qualified'
-      && stack.status !== 'unsupported')) {
-      fail(`${source}.qualification.stacks`, 'every supported stack must be qualified');
-    }
-    if (evidence.length === 0) fail(`${source}.qualification.evidence`, 'qualified calibration requires evidence');
-  }
-
-  const supportedStacks = new Set(calibration.qualification.stacks
-    .filter(stack => stack.status !== 'unsupported').map(stack => stack.id));
+  const supportedStacks = new Set(calibration.qualification.stacks);
   const referenceStacks = new Set(references.map(entry => entry.backend));
   const mutationStacks = new Set(mutations.map(entry => entry.backend));
   for (const stack of supportedStacks) {
@@ -1247,31 +1181,27 @@ export function compileCalibrationFile(calibrationPath: string,
   for (const stack of mutationStacks) {
     if (!supportedStacks.has(stack)) fail(`${source}.mutations`, `undeclared or unsupported stack ${stack}`);
   }
-  if (calibration.state === 'qualified') {
-    const expectedEvidence = [];
-    for (const stack of supportedStacks) {
-      for (let repetition = 1; repetition <= calibration.qualification.referenceRepetitions; repetition += 1) {
-        expectedEvidence.push(`reference:${stack}:${repetition}`);
-      }
-      for (let repetition = 1; repetition <= calibration.qualification.mutationRepetitions; repetition += 1) {
-        expectedEvidence.push(`mutation:${stack}:${repetition}`);
-      }
+  const expectedEvidence = [];
+  for (const stack of supportedStacks) {
+    for (let repetition = 1; repetition <= calibration.qualification.referenceRepetitions; repetition += 1) {
+      expectedEvidence.push(`reference:${stack}:${repetition}`);
     }
-    for (let repetition = 1; repetition <= calibration.nullControl.repetitions; repetition += 1) {
-      expectedEvidence.push(`null::${repetition}`);
+    for (let repetition = 1; repetition <= calibration.qualification.mutationRepetitions; repetition += 1) {
+      expectedEvidence.push(`mutation:${stack}:${repetition}`);
     }
-    const actualEvidence = evidence.map(entry => `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`);
-    if (new Set(actualEvidence).size !== actualEvidence.length
-      || canonicalDefinitionJson([...actualEvidence].sort()) !== canonicalDefinitionJson(expectedEvidence.sort())) {
-      fail(`${source}.qualification.evidence`, 'must contain exactly the declared reference, mutation, and null repetitions');
-    }
+  }
+  for (let repetition = 1; repetition <= calibration.nullControl.repetitions; repetition += 1) {
+    expectedEvidence.push(`null::${repetition}`);
+  }
+  const actualEvidence = evidence.map(entry => `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`);
+  if (actualEvidence.length > 0 && (new Set(actualEvidence).size !== actualEvidence.length
+    || canonicalDefinitionJson([...actualEvidence].sort()) !== canonicalDefinitionJson(expectedEvidence.sort()))) {
+    fail(`${source}.qualification.evidence`, 'must contain exactly the declared reference, mutation, and null repetitions');
   }
 
   const planInput = {
     calibrationSchemaVersion: CALIBRATION_SCHEMA_VERSION,
     id: calibration.id,
-    version: calibration.version,
-    state: calibration.state,
     title: calibration.title,
     track: calibration.track,
     recipe: { ...calibration.recipe, path: recipeRef.relative },
@@ -1288,7 +1218,7 @@ export function compileCalibrationFile(calibrationPath: string,
       .sort((a, b) => a.stableKey.localeCompare(b.stableKey)),
     qualification: { ...calibration.qualification,
       ...(verifiedEvidence.buildImage ? { buildImage: verifiedEvidence.buildImage } : {}),
-      stacks: [...calibration.qualification.stacks].sort((a, b) => a.id.localeCompare(b.id)),
+      stacks: [...calibration.qualification.stacks].sort(),
       evidence: evidence.sort((a, b) => `${a.kind}:${a.stack ?? ''}:${a.repetition}`
         .localeCompare(`${b.kind}:${b.stack ?? ''}:${b.repetition}`)) },
     equivalenceDecisions: equivalenceDecisions.sort((a, b) =>
@@ -1297,11 +1227,11 @@ export function compileCalibrationFile(calibrationPath: string,
     ...(qualificationReuse ? { qualificationReuse: { ...qualificationReuse,
       scopes: [...qualificationReuse.scopes].sort((a, b) => `${a.kind}:${a.stack ?? ''}`
         .localeCompare(`${b.kind}:${b.stack ?? ''}`)) } } : {}),
-    promotion: { ...calibration.promotion, catalogPath: catalogRef.relative },
+    selection: { ...calibration.selection, path: selectionRef.relative },
   };
   const plan = canonicalizeDefinition(planInput);
   if (!isObject(plan)) fail(source, 'could not be canonicalized');
-  const qualificationSha256 = calibrationQualificationIdentity(planInput).sha256;
+  const qualificationSha256 = calibrationQualificationIdentity(planInput).contentSha256;
   return { ...plan, qualificationSha256,
     contentSha256: sha256(canonicalDefinitionJson({ ...plan, qualificationSha256 })),
     qualificationStaleness: verifiedEvidence.staleness } as CalibrationPlan;
@@ -1309,25 +1239,23 @@ export function compileCalibrationFile(calibrationPath: string,
 
 export function calibrationCoversAlias(calibration: CalibrationPlan,
   release: RecipeRelease, alias: string,
-  { catalog, catalogPath, trackRoot }:
-    { catalog: unknown; catalogPath: string; trackRoot: string }): boolean {
-  const exactAlias = calibration.promotion.alias === alias;
-  const coveredAliases = calibration.promotion.coveredAliases ?? [calibration.promotion.alias];
+  { selection, selectionPath, trackRoot }:
+    { selection: unknown; selectionPath: string; trackRoot: string }): boolean {
+  const exactAlias = calibration.selection.alias === alias;
+  const coveredAliases = calibration.selection.coveredAliases ?? [calibration.selection.alias];
   if (!coveredAliases.includes(alias)) return false;
   if (!exactAlias && !calibration.qualification.featureCatalog) return false;
   const requestedLevel = Number(alias.slice(1));
-  const qualifiedLevel = Number(calibration.promotion.alias.slice(1));
+  const qualifiedLevel = Number(calibration.selection.alias.slice(1));
   if (!Number.isInteger(requestedLevel) || requestedLevel < 1 || requestedLevel > qualifiedLevel) {
     return false;
   }
-  const entries = read(catalog, 'entries');
+  const entries = read(selection, 'entries');
   if (!Array.isArray(entries)) return false;
   return entries.some(entry => read(entry, 'alias') === alias
-    && read(entry, 'status') === calibration.promotion.status
     && read(entry, 'recipe', 'id') === release.id
-    && read(entry, 'recipe', 'version') === release.version
     && calibration.recipe.contentSha256 === release.contentSha256
-    && contained(trackRoot, dirname(catalogPath), read(entry, 'recipe', 'path'),
+    && contained(trackRoot, dirname(selectionPath), read(entry, 'recipe', 'path'),
       `calibration alias ${alias}`).relative === calibration.recipe.path);
 }
 
@@ -1343,19 +1271,18 @@ export function resolveCalibrationForRelease(release: RecipeRelease | null,
     const path = join(directory, name);
     const raw = readDefinitionJson(path, 'calibration');
     if (read(raw, 'recipe', 'id') !== release.id
-      || read(raw, 'recipe', 'version') !== release.version
       || read(raw, 'recipe', 'contentSha256') !== release.contentSha256) continue;
     matches.push(compileCalibrationFile(path, { trackRoot: root, stackBenchRoot, release }));
   }
   const selected = alias === null ? matches : matches.filter(calibration => {
-    const catalogPath = resolve(root, calibration.promotion.catalogPath);
-    const catalog = compilePromotionFile(catalogPath, { trackRoot: root });
+    const selectionPath = resolve(root, calibration.selection.path);
+    const selection = compileRecipeSelectionFile(selectionPath, { trackRoot: root });
     return calibrationCoversAlias(calibration, release, alias,
-      { catalog, catalogPath, trackRoot: root });
+      { selection, selectionPath, trackRoot: root });
   });
   if (selected.length > 1) {
     const scope = alias === null ? '' : ` for ${alias}`;
-    throw new Error(`multiple calibrations match ${release.id}@${release.version}${scope} (${release.contentSha256})`);
+    throw new Error(`multiple calibrations match ${release.id}${scope} (${release.contentSha256})`);
   }
   return selected[0] ?? null;
 }

@@ -53,8 +53,6 @@ interface FixtureDefinition {
   schemaVersion: number;
   kind: string;
   id: string;
-  version: string;
-  state: string;
   title: string;
   policy: string;
   repair: RepairPlanInput;
@@ -99,8 +97,6 @@ const definition = (): FixtureDefinition => ({
   schemaVersion: 7,
   kind: 'progression-mode',
   id: 'live-fixture',
-  version: '1.0.0',
-  state: 'draft',
   title: 'Live fixture',
   policy: 'dependency-graph',
   repair: { selection: 'feature', budget: { perFeature: 2 } },
@@ -110,7 +106,7 @@ const definition = (): FixtureDefinition => ({
     title: 'Accounts',
     questline: 'identity',
     dependencies: [],
-    featureRefs: ['ecommerce.feature.accounts@1.1.0'],
+    featureRefs: ['ecommerce.feature.accounts'],
     promptModules: [],
     gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1,
       role: 'feature' }],
@@ -161,7 +157,7 @@ test('live progression binds and persists one exact accepted action', () => {
     const progression = compileProgressionInput(definition());
     const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-      'ecommerce.sequential-l1@2.5.0');
+      'ecommerce.sequential-l1');
     const owner = {
       schemaVersion: 1,
       campaign: { id: 'campaign', version: '1.0.0', sha256: 'a'.repeat(64) },
@@ -172,7 +168,7 @@ test('live progression binds and persists one exact accepted action', () => {
     const identities = emptyArtifactIdentities({
       experiment: { ...owner.campaign, state: 'draft' },
       agentAdapter: { id: owner.attempt.agentAdapter },
-      stackAdapter: { id: owner.attempt.stack },
+      stackAdapter: { id: owner.attempt.stack, version: null },
     });
     const runArtifact = createArtifact({
       kind: 'benchmark_run',
@@ -180,10 +176,10 @@ test('live progression binds and persists one exact accepted action', () => {
       attempt: { id: 'run-1', parentId: owner.attempt.id },
       identities,
       payload: {
-        mode: { id: 'dependency', version: '3.2.0' },
+        mode: { id: 'dependency' },
         backend: owner.attempt.stack,
         model: owner.attempt.model,
-        condition: { sha256: owner.attempt.conditionSha256 },
+        condition: { contentSha256: owner.attempt.conditionSha256 },
         featureCatalog: split.featureCatalogIdentity,
         dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt },
@@ -231,7 +227,7 @@ test('live progression binds and persists one exact accepted action', () => {
       id: 'grade-1',
       attempt: { id: 'grade-1', parentId: 'run-1' },
       identities: emptyArtifactIdentities({
-        recipe: { id: recipe.id, version: recipe.version, sha256: recipe.contentSha256 },
+        recipe: { id: recipe.id, sha256: recipe.contentSha256 },
         stackAdapter: { id: owner.attempt.stack },
       }),
       payload: grade,
@@ -265,7 +261,7 @@ test('live progression binds and persists one exact accepted action', () => {
 
     const attempt = {
       id: owner.attempt.id,
-      mode: { id: 'dependency', version: '3.2.0' },
+      mode: { id: 'dependency' },
       levels: [1],
       featureCatalog: split.featureCatalogIdentity,
       dependencyPolicy: split.dependencyPolicyIdentity,
@@ -273,7 +269,7 @@ test('live progression binds and persists one exact accepted action', () => {
       agentAdapter: owner.attempt.agentAdapter,
       model: owner.attempt.model,
       guidance: 'neutral',
-      condition: { sha256: owner.attempt.conditionSha256 },
+      condition: { contentSha256: owner.attempt.conditionSha256 },
       skills: [],
     };
     const agentIdentity = identities.agentAdapter;
@@ -296,8 +292,7 @@ test('live progression binds and persists one exact accepted action', () => {
         budgets: { maxCostUsdPerAttempt: null } },
       agents: [{ adapter: owner.attempt.agentAdapter, model: owner.attempt.model,
         costLimit: 'non-billable', identity: agentIdentity }],
-      stacks: [{ id: owner.attempt.stack,
-        version: stackIdentity.version }],
+      stacks: [{ id: owner.attempt.stack, version: null }],
       conditions: [attempt.condition],
       identities: { engine: engineIdentity },
     };
@@ -358,7 +353,7 @@ test('live progression records provider interruptions without consuming a repair
     const progression = compileProgressionInput(definition());
     const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-      'ecommerce.sequential-l1@2.5.0');
+      'ecommerce.sequential-l1');
     const owner = { schemaVersion: 1,
       campaign: { id: 'campaign', version: '1.0.0', sha256: 'a'.repeat(64) },
       attempt: { id: 'campaign-r1', track: 'ecommerce', stack: 'postgres',
@@ -371,7 +366,7 @@ test('live progression records provider interruptions without consuming a repair
     const runArtifact = createArtifact({ kind: 'benchmark_run', id: 'run-1',
       attempt: { id: 'run-1', parentId: owner.attempt.id }, identities,
       payload: { backend: owner.attempt.stack, model: owner.attempt.model,
-        condition: { sha256: owner.attempt.conditionSha256 },
+        condition: { contentSha256: owner.attempt.conditionSha256 },
         featureCatalog: split.featureCatalogIdentity,
         dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt } } });
@@ -417,13 +412,13 @@ test('an interrupted execution restores the saved source and resumes the next gr
     value.nodes = [
       accounts,
       { id: 'catalog', title: 'Catalog', questline: 'catalog', dependencies: [],
-        featureRefs: ['ecommerce.feature.catalog@1.1.0'], promptModules: [],
-        gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog.2a', points: 1,
+        featureRefs: ['ecommerce.feature.catalog-items'], promptModules: [],
+        gradingChecks: [{ id: 'ecommerce.feature.catalog.catalog-values.2a', points: 1,
           role: 'feature' }] },
       { id: 'purchasing', title: 'Purchasing', questline: 'identity', dependencies: [
         { id: 'accounts', reason: 'Purchasing requires an account.' },
         { id: 'catalog', reason: 'Purchasing requires a catalog item.' },
-      ], featureRefs: ['ecommerce.feature.purchasing@1.1.0'], promptModules: [],
+      ], featureRefs: ['ecommerce.feature.purchasing'], promptModules: [],
       gradingChecks: [{ id: 'ecommerce.feature.purchasing.purchase-order.3c', points: 1,
         role: 'feature' }] },
     ];
@@ -434,7 +429,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
     const progression = compileProgressionInput(value);
     const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-      'ecommerce.sequential-l1@2.5.0');
+      'ecommerce.sequential-l1');
     const owner = {
       schemaVersion: 1,
       campaign: { id: 'campaign', version: '1.0.0', sha256: 'a'.repeat(64) },
@@ -450,7 +445,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
       kind: 'benchmark_run', id: 'run-1',
       attempt: { id: 'run-1', parentId: owner.attempt.id }, identities,
       payload: { backend: owner.attempt.stack, model: owner.attempt.model,
-        condition: { sha256: owner.attempt.conditionSha256 },
+        condition: { contentSha256: owner.attempt.conditionSha256 },
         featureCatalog: split.featureCatalogIdentity,
         dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt } },
@@ -480,7 +475,7 @@ test('an interrupted execution restores the saved source and resumes the next gr
     writeArtifact(join(firstApp, 'stack-bench', 'bundle.json'), {
       kind: 'grade_bundle', id: 'grade-1',
       attempt: { id: 'grade-1', parentId: 'run-1' },
-      identities: emptyArtifactIdentities({ recipe: { id: recipe.id, version: recipe.version,
+      identities: emptyArtifactIdentities({ recipe: { id: recipe.id,
         sha256: recipe.contentSha256 }, stackAdapter: { id: owner.attempt.stack } }),
       payload: grade,
     });
@@ -543,7 +538,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
     const progression = compileProgressionInput(input);
     const split = splitIdentities(progression);
     const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-      'ecommerce.sequential-l1@2.5.0');
+      'ecommerce.sequential-l1');
     const owner = { schemaVersion: 1,
       campaign: { id: 'campaign', version: '1.0.0', sha256: 'a'.repeat(64) },
       attempt: { id: 'campaign-r1', track: 'ecommerce', stack: 'postgres',
@@ -556,7 +551,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
     const runArtifact = createArtifact({ kind: 'benchmark_run', id: 'run-1',
       attempt: { id: 'run-1', parentId: owner.attempt.id }, identities,
       payload: { backend: owner.attempt.stack, model: owner.attempt.model,
-        condition: { sha256: owner.attempt.conditionSha256 },
+        condition: { contentSha256: owner.attempt.conditionSha256 },
         featureCatalog: split.featureCatalogIdentity,
         dependencyPolicy: split.dependencyPolicyIdentity,
         progressionOwner: { schemaVersion: 1, campaign: owner.campaign, attempt: owner.attempt } } });
@@ -582,7 +577,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
     writeArtifact(join(firstApp, 'stack-bench', 'bundle.json'), {
       kind: 'grade_bundle', id: 'grade-failed',
       attempt: { id: 'grade-failed', parentId: 'run-1' },
-      identities: emptyArtifactIdentities({ recipe: { id: recipe.id, version: recipe.version,
+      identities: emptyArtifactIdentities({ recipe: { id: recipe.id,
         sha256: recipe.contentSha256 }, stackAdapter: { id: owner.attempt.stack } }),
       payload: grade,
     });
@@ -598,7 +593,7 @@ test('an interrupted repair resumes with its failed evidence and regression feed
       kind: 'grade_bundle', id: 'grade-regression',
       attempt: { id: 'grade-regression', parentId: 'run-1' },
       identities: emptyArtifactIdentities({ recipe: { id: repairRecipe.id,
-        version: repairRecipe.version, sha256: repairRecipe.contentSha256 },
+        sha256: repairRecipe.contentSha256 },
       stackAdapter: { id: owner.attempt.stack } }),
       payload: repairGrade,
     });

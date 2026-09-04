@@ -38,10 +38,10 @@ test('the shared adapter request forwards the exact recipe into reference select
   const command = agentRequestArgv(adapter, {
     mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',
     track: 'ecommerce', runIndex: 0, model: 'reference-fixture',
-    guidance: 'prescribed', recipe: 'ecommerce.sequential-l1@2.5.0',
+    guidance: 'prescribed', recipe: 'ecommerce.sequential-l1',
   });
   const parsed = parseReferenceAgentArgs(['node', ...command]);
-  assert.equal(parsed.recipe, 'ecommerce.sequential-l1@2.5.0');
+  assert.equal(parsed.recipe, 'ecommerce.sequential-l1');
 });
 
 test('the model-free reference builder rejects unsupported modes and malformed scope', () => {
@@ -57,7 +57,7 @@ test('dependency progression seeds once and verifies the same full fixture on la
   try {
     const app = join(root, 'app');
     const common = { mode: 'build', backend: 'mongodb', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.progression-catalog@2.0.3', app };
+      recipe: 'ecommerce.progression-catalog', app };
     const fresh = prepareReferenceSource(common);
     assert.equal(fresh.fixture.id, 'ecommerce-reference-mongodb');
     assert.equal(fresh.seeded, true);
@@ -101,7 +101,7 @@ test('reference deployment restores canonical source while retaining generated b
     const app = join(root, 'app');
     const prepared = prepareReferenceSource({
       mode: 'build', backend: 'spacetime', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.progression-catalog@2.0.3', app,
+      recipe: 'ecommerce.progression-catalog', app,
     });
     const lock = join(app, 'client', 'package-lock.json');
     const canonicalLock = readFileSync(lock, 'utf8');
@@ -177,17 +177,17 @@ test('an unknown recipe-specific reference cannot be launched', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-unknown-'));
   try {
     const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.sequential-l1@0.0.0', app: join(root, 'app') };
+      recipe: 'ecommerce.sequential-l1-missing', app: join(root, 'app') };
     assert.throws(() => prepareReferenceSource(args),
-      /requires exactly one catalogued ecommerce\.sequential-l1@0\.0\.0; found 0/);
+      /L1 requires exactly one selected recipe; found 0/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the candidate L1 2.5 release uses the shared reference fixture', () => {
+test('the L1 recipe uses the shared reference fixture', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l1-shared-'));
   try {
     const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.sequential-l1@2.5.0', app: join(root, 'app') };
+      recipe: 'ecommerce.sequential-l1', app: join(root, 'app') };
     const seeded = prepareReferenceSource(args);
     assert.equal(seeded.fixture.id, 'ecommerce-reference-mongodb');
     assert.equal(seeded.sourceSha256, seeded.fixture.imported?.sourceSha256);
@@ -206,7 +206,7 @@ test('the cumulative L2 fixture source prepares the exact seven action inputs fo
     for (const backend of ['mongodb', 'postgres', 'spacetime']) {
       const app = join(root, backend);
       const fixture = selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
-        recipe: 'ecommerce.sequential-l2@1.6.0' });
+        recipe: 'ecommerce.sequential-l2' });
       assert.equal(fixture.id, `ecommerce-reference-${backend}`);
       assert.equal(prepareReferenceFixtureSource(fixture, app).sha256,
         fixture.imported?.sourceSha256);

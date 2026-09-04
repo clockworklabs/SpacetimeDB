@@ -127,7 +127,8 @@ test('campaign admission receives only the feature catalog levels in the compile
       .every(node => node.level <= 3)));
     assert(plan.featureCatalog);
     const identity = plan.featureCatalog.identity;
-    assert(requests.every(request => request.featureCatalog!.identity.sha256 === identity.sha256));
+    assert(requests.every(request => request.featureCatalog!.identity.contentSha256
+      === identity.contentSha256));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

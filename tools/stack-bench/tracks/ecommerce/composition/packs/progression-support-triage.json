@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.support-triage",
+  "moduleType": "feature",
+  "title": "Support triage",
+  "description": "Staff assignment, priority, and status changes.",
+  "requiresPacks": [
+    "ecommerce.progression.staff-access",
+    "ecommerce.progression.support-intake"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 45000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.support-triage",
+        "path": "prompts/modular/support-triage.md",
+        "order": 2100,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.support-triage-hooks",
+        "path": "contracts/support-triage.md",
+        "order": 2900,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "assignment",
+      "stableId": "support-assignment",
+      "source": "scenarios/progression-support-triage.json",
+      "feature": 611,
+      "criteria": [
+        "611a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "priority",
+      "stableId": "support-priority",
+      "source": "scenarios/progression-support-triage.json",
+      "feature": 611,
+      "criteria": [
+        "611b"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "status",
+      "stableId": "support-status",
+      "source": "scenarios/progression-support-triage.json",
+      "feature": 611,
+      "criteria": [
+        "611c"
+      ],
+      "role": "feature"
+    }
+  ]
+}

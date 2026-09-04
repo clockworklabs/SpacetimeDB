@@ -126,7 +126,7 @@ export function parseMutationArgs(argv: readonly string[]): ParsedMutationArgs {
   if (!a.app || !a.url || !a.mutations || !a.level || !a.recipe) {
     throw new Error(
       "Usage: node dist/grader/mutation-test.js --app <dir> --url <url> --mutations <file> "
-        + "--level <N> --recipe <id@version>",
+        + "--level <N> --recipe <id>",
     );
   }
   let url: URL;
@@ -328,7 +328,6 @@ function recordHarnessFailure(error: unknown): void {
     durationMs: Date.now() - startedAt,
     app: resolve(args.app),
     mutations: resolve(args.mutations),
-    manifestStatus: spec?.status ?? null,
     fixtureSha256: spec?.fixtureSha256 ?? null,
     spec: args.spec ? resolve(args.spec) : null,
     backend: args.backend ?? spec?.backend ?? null,
@@ -378,7 +377,7 @@ async function main(): Promise<void> {
   const track = loadTrack(args.track);
   const binding = resolveRecipeRelease(track, Number(args.level), args.recipe);
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
-  args.recipe = `${binding.release.id}@${binding.release.version}`;
+  args.recipe = binding.release.id;
   args.expectedRecipeSha256 = binding.release.contentSha256;
   const recipeRelease = binding.release;
   args.dbName ??= dbName(track, Number(args.runIndex));
@@ -481,14 +480,12 @@ async function main(): Promise<void> {
       parentAttemptId: args.parentAttemptId ?? null,
       identities: emptyArtifactIdentities({
         fixture: { id: 'source-under-mutation', sha256: spec.fixtureSha256 },
-        recipe: { id: recipeRelease.id, version: recipeRelease.version,
-          sha256: recipeRelease.contentSha256, state: recipeRelease.state },
+        recipe: { id: recipeRelease.id, sha256: recipeRelease.contentSha256 },
         stackAdapter: { id: args.backend },
       }),
       durationMs: Date.now() - startedAt,
       app: resolve(args.app),
       mutations: resolve(args.mutations),
-      manifestStatus: spec.status,
       fixtureSha256: spec.fixtureSha256,
       spec: plans.map(plan => plan.scenario),
       backend: args.backend,
@@ -543,8 +540,7 @@ async function main(): Promise<void> {
         track: args.track,
         level: Number(args.level),
         fixtureSha256: spec.fixtureSha256,
-        recipe: { id: recipeRelease.id, version: recipeRelease.version,
-          sha256: recipeRelease.contentSha256 },
+        recipe: { id: recipeRelease.id, sha256: recipeRelease.contentSha256 },
         identities: {
           engine: currentEngineIdentity(),
           calibration: args.expectedCalibrationIdentity,

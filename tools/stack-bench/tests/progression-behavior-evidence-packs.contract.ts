@@ -17,9 +17,9 @@ const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'
 const readPack = (name: string): CompiledPackDefinition =>
   compilePackDefinition(readJson(join(packRoot, name)), { source: name });
 const packNames = [
-  'progression-automatic-reorder-2.0.0.json',
-  'progression-cart-recovery-2.0.0.json',
-  'progression-personalized-recommendations-2.0.0.json',
+  'progression-automatic-reorder.json',
+  'progression-cart-recovery.json',
+  'progression-personalized-recommendations.json',
 ];
 
 function fragmentText(
@@ -72,7 +72,8 @@ test('the three behavior packs declare exact dependencies and check ownership', 
   const recovery = requiredPack(packs, 'ecommerce.progression.cart-recovery');
   const recommendations = requiredPack(packs, 'ecommerce.progression.personalized-recommendations');
   assert.deepEqual(reorder.requiresPacks,
-    ['ecommerce.l3.scheduled-restocks-features', 'ecommerce.progression.staff-roles']);
+    ['ecommerce.feature.purchasing', 'ecommerce.l3.scheduled-restocks-features',
+      'ecommerce.progression.staff-roles']);
   assert.deepEqual(recovery.requiresPacks, ['ecommerce.l3.cart-expiration-features']);
   assert.deepEqual(recommendations.requiresPacks, ['ecommerce.l2.recommendations']);
 
@@ -155,8 +156,8 @@ test('personalized recommendations prove sales ordering, name ties, and isolatio
     && step.contains === 'Headphones'));
 
   const isolation = criterion(feature, '403b').steps;
-  assert(isolation.some(step => step.do === 'expect' && step.actor === 'audio-customer'
-    && step.contains === 'Headphones' && step.absent === true));
+  assert(isolation.some(step => step.do === 'waitUntilAbsent' && step.actor === 'audio-customer'
+    && step.contains === 'Headphones'));
   assert(isolation.some(step => step.do === 'expectNumber'
     && step.actor === 'home-customer' && step.testid === 'recommendation-rank'
     && step.in?.contains === 'Desk Lamp' && step.equals === 1));
@@ -167,11 +168,11 @@ test('personalized recommendations prove sales ordering, name ties, and isolatio
 
 test('the graph selects every behavior check and required dependency', () => {
   const definition = compileProgressionDefinitionFile(
-    join(trackRoot, 'progression', 'ecommerce-2.0.3.json'), { trackRoot });
+    join(trackRoot, 'progression', 'ecommerce.json'), { trackRoot });
   const byId = new Map(definition.nodes.map(node => [node.id, node]));
 
   assert.deepEqual(requiredNode(byId, 'automatic-reorder').dependencies,
-    ['scheduled-restocks', 'staff-roles']);
+    ['purchasing', 'scheduled-restocks', 'staff-roles']);
   assert.equal(requiredNode(byId, 'automatic-reorder').gradingChecks.length, 3);
   assert.equal(requiredNode(byId, 'cart-recovery').gradingChecks.length, 2);
   assert.equal(requiredNode(byId, 'personalized-recommendations').gradingChecks.length, 2);

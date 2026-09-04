@@ -135,7 +135,7 @@ interface GradeBundle extends UnknownRecord {
 }
 
 interface ValidationCondition {
-  sha256: string;
+  contentSha256: string;
   requested?: CompiledCampaignPlan['conditions'][number]['requested'];
 }
 
@@ -339,7 +339,8 @@ export function validateCampaignRun(plan: CampaignValidationPlan, attempt: Campa
   const run = input as BenchmarkRun;
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
     && item.model === attempt.model);
-  const condition = plan.conditions.find(item => item.sha256 === attempt.condition?.sha256);
+  const condition = plan.conditions.find(item =>
+    item.contentSha256 === attempt.condition?.contentSha256);
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
   const dependencyMode = attempt.mode?.id === 'dependency';

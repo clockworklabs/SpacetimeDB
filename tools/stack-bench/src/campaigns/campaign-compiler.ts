@@ -30,7 +30,6 @@ import type { ProgressionRecipeSelections as ProgressionLevelSelection }
   from '../progression/progression-recipe-selection.js';
 import { resolveFeatureCatalog } from '../progression/feature-catalog-selection.js';
 import { isExactSemanticVersion } from '../semantic-version.js';
-import { parseVersionedProgressionId } from '../progression/progression-identifiers.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import type { StackAdapterIdentity } from '../stacks/stack-adapter-contract.js';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.js';
@@ -133,13 +132,13 @@ export interface CampaignDefinition {
 
 interface Identity {
   id: string;
-  version: string | null;
   sha256: string | null;
+  version?: string | null;
+  state?: string | null;
 }
 
 interface RecipeIdentity extends UnknownRecord {
   id: string;
-  version: string;
   contentSha256: string;
   meaningSha256: string;
   executionSha256: string;
@@ -149,7 +148,7 @@ interface PublicBinding extends UnknownRecord {
   level: number;
   alias: string;
   recipe: RecipeIdentity;
-  fixture: { id: string; version: string };
+  fixture: { id: string };
   calibration: Identity | null;
   selection: {
     schemaVersion: number;
@@ -181,15 +180,13 @@ interface BindingRecord {
 
 interface ResolvedCalibration {
   id: string;
-  version: string;
-  state: string;
   contentSha256: string;
   qualificationSha256: string;
   qualification: {
     buildImage?: string;
-    stacks: Array<{ id: string; status: string }>;
+    stacks: string[];
     checks?: string[];
-    featureCatalog?: { id: string; version: string; sha256: string };
+    featureCatalog?: { path: string; id: string; contentSha256: string };
   };
   qualificationStaleness: unknown[];
 }
@@ -253,7 +250,7 @@ interface ProgressionAttempt {
   stack: string;
   agentAdapter: string;
   model: string;
-  condition: { sha256: string };
+  condition: { contentSha256: string };
 }
 
 export function campaignProgressionOwner(plan: ProgressionCampaign, attempt: ProgressionAttempt,
@@ -267,7 +264,7 @@ export function campaignProgressionOwner(plan: ProgressionCampaign, attempt: Pro
       stack: attempt.stack,
       agentAdapter: attempt.agentAdapter,
       model: attempt.model,
-      conditionSha256: attempt.condition.sha256,
+      conditionSha256: attempt.condition.contentSha256,
     },
     ...(workspace ? { workspace: { appDirectory: 'source' } } : {}),
   };
@@ -326,7 +323,7 @@ interface ValidationOptions {
   recipeResolver?: RecipeResolver;
 }
 
-export const CAMPAIGN_SCHEMA_VERSION = 7;
+export const CAMPAIGN_SCHEMA_VERSION = 8;
 import { STACK_BENCH_ROOT as ROOT } from '../package-root.js';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
@@ -454,9 +451,7 @@ export function validateCampaignDefinition(input: unknown,
   }
   if (value.featureCatalog !== undefined) {
     if (typeof value.featureCatalog === 'string') {
-      if (!parseVersionedProgressionId(value.featureCatalog)) {
-        fail(`${source}.featureCatalog`, 'must be an exact id@version reference');
-      }
+      string(value.featureCatalog, `${source}.featureCatalog`);
       value.levels = exactArray(value.levels, `${source}.levels`,
         (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
     } else {
@@ -495,10 +490,7 @@ export function validateCampaignDefinition(input: unknown,
       (entry, at): CampaignLevelSelection => {
         strict(entry, at, value.featureCatalog ? PROGRESSION_LEVEL_FIELDS : MODULAR_LEVEL_FIELDS);
         integer(entry.level, `${at}.level`, { min: 1 });
-        if (typeof entry.recipe !== 'string'
-          || !/^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*@\d+\.\d+\.\d+$/.test(entry.recipe)) {
-          fail(`${at}.recipe`, 'must be an exact id@version reference');
-        }
+        identifier(entry.recipe, `${at}.recipe`);
         if (!value.featureCatalog) {
           entry.features = exactArray(entry.features, `${at}.features`, string,
             { nonEmpty: true, sort: true });
@@ -672,7 +664,7 @@ function identityForStack(adapter: StackAdapterIdentity): ResolvedStackIdentity 
 }
 
 function calibrationIdentity(value: ResolvedCalibration | null): PublicBinding['calibration'] {
-  return value ? { id: value.id, version: value.version, sha256: value.qualificationSha256 } : null;
+  return value ? { id: value.id, sha256: value.qualificationSha256 } : null;
 }
 
 function imageContentDigest(value: string | null): string | null {
@@ -697,21 +689,20 @@ function validatePublicBinding(input: unknown, expectedLevel: number, index: num
     throw new Error(`${at} has an invalid level or alias`);
   }
   const recipe = input.recipe;
-  strict(recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
+  strict(recipe, `${at}.recipe`, new Set(['id', 'contentSha256',
     'meaningSha256', 'executionSha256']));
-  if (!ID.test(String(recipe.id)) || !isExactSemanticVersion(recipe.version)
+  if (!ID.test(String(recipe.id))
     || ['contentSha256', 'meaningSha256', 'executionSha256']
       .some(field => !HASH.test(String(recipe[field])))) {
     throw new Error(`${at}.recipe is invalid`);
   }
-  strict(input.fixture, `${at}.fixture`, new Set(['id', 'version']));
-  if (!ID.test(String(input.fixture.id)) || !isExactSemanticVersion(input.fixture.version)) {
+  strict(input.fixture, `${at}.fixture`, new Set(['id']));
+  if (!ID.test(String(input.fixture.id))) {
     throw new Error(`${at}.fixture is invalid`);
   }
   if (input.calibration !== null) {
-    strict(input.calibration, `${at}.calibration`, new Set(['id', 'version', 'sha256']));
+    strict(input.calibration, `${at}.calibration`, new Set(['id', 'sha256']));
     if (!ID.test(String(input.calibration.id))
-      || !isExactSemanticVersion(input.calibration.version)
       || !HASH.test(String(input.calibration.sha256))) {
       throw new Error(`${at}.calibration is invalid`);
     }
@@ -749,7 +740,7 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
     (condition, conditionIndex) => stacks.map(stack => ({
       agent, agentIndex, condition, conditionIndex, stack,
       key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model },
-        condition: condition.sha256, stack: stack.id }),
+        condition: condition.contentSha256, stack: stack.id }),
     })))).sort((left, right) => {
     const leftHash = sha256(`${definition.ordering.seed}\0${left.key}`);
     const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
@@ -769,12 +760,10 @@ function expandAttempts(definition: CampaignDefinition, requestedLevels: number[
         model: agent.model,
         pricing: { unit: definition.pricing.unit,
           rates: definition.pricing.models[agent.model]! },
-        condition: { id: condition.id, version: condition.version, sha256: condition.sha256,
-          requested: condition.requested, guidance: condition.guidance,
-          repair: condition.repair },
+        condition,
         guidance: condition.guidance.mode,
         skills: condition.guidance.skills[stack.id]!.ids,
-        mode: { id: definition.mode.id, version: definition.mode.version },
+        mode: definition.mode,
         levels: requestedLevels,
         ...(featureCatalogIdentity ? { featureCatalog: featureCatalogIdentity } : {}),
         ...(dependencyPolicyIdentity ? { dependencyPolicy: dependencyPolicyIdentity } : {}),
@@ -827,13 +816,11 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
       alias: binding.alias,
       recipe: {
         id: binding.release.id,
-        version: binding.release.version,
         contentSha256: binding.release.contentSha256,
         meaningSha256: binding.release.meaningSha256,
         executionSha256: binding.release.executionSha256,
       },
-      fixture: { id: binding.release.components.fixture.id,
-        version: binding.release.components.fixture.version },
+      fixture: { id: binding.release.components.fixture.id },
       calibration: calibrationIdentity(calibration),
       selection: selectedTask ? {
         schemaVersion: selectedTask.selection.schemaVersion,
@@ -860,10 +847,10 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     for (const record of bindingRecords) {
       const qualifiedCatalog = record.calibration?.qualification.featureCatalog;
       if (qualifiedCatalog && (qualifiedCatalog.id !== resolvedFeatureCatalog!.identity.id
-        || qualifiedCatalog.version !== resolvedFeatureCatalog!.identity.version)) {
+        || qualifiedCatalog.contentSha256 !== resolvedFeatureCatalog!.identity.contentSha256)) {
         fail('featureCatalog', `L${record.level} calibration qualifies `
-          + `${qualifiedCatalog.id}@${qualifiedCatalog.version}, not `
-          + `${resolvedFeatureCatalog!.identity.id}@${resolvedFeatureCatalog!.identity.version}`);
+          + `${qualifiedCatalog.id} at ${qualifiedCatalog.contentSha256}, not `
+          + `${resolvedFeatureCatalog!.identity.id} at ${resolvedFeatureCatalog!.identity.contentSha256}`);
       }
     }
   }
@@ -881,14 +868,10 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
       ?? record.binding.release.checkCatalog.map(check => check.stableKey));
     const missingChecks = selected.filter(check => !qualifiedChecks.has(check));
     if (missingChecks.length > 0) reasons.push(`calibration does not cover ${missingChecks.length} selected checks`);
-    if (record.binding.release.state !== 'qualified') reasons.push('recipe is not qualified');
-    if (record.binding.status !== 'promoted') reasons.push('recipe is not promoted');
-    if (record.binding.release.components.fixture.state !== 'qualified') reasons.push('fixture is not qualified');
-    if (record.calibration?.state !== 'qualified') reasons.push('calibration is not qualified');
-    const supported = new Map((record.calibration?.qualification.stacks ?? [])
-      .map(stack => [stack.id, stack.status]));
+    if (!record.calibration) reasons.push('calibration evidence is unavailable');
+    const supported = new Set(record.calibration?.qualification.stacks ?? []);
     for (const stack of definition.stacks) {
-      if (supported.get(stack.id) !== 'qualified') reasons.push(`${stack.id} is not qualified`);
+      if (!supported.has(stack.id)) reasons.push(`${stack.id} is not qualified`);
     }
     const qualifiedImage = record.calibration?.qualification.buildImage;
     if (!qualifiedImage || imageContentDigest(definition.runtime.buildImage) !== qualifiedImage) {
@@ -1021,7 +1004,7 @@ function resolveCampaignInputs(definition: CampaignDefinition, {
     }) };
   };
   const conditions = resolveStudyConditions(definition.conditions, stacks.map(stack => stack.id), {
-    stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen',
+    stackBenchRoot: resolve(stackBenchRoot),
     requested: requestedForCondition,
   });
   const dependencyPolicy = definition.mode.id === 'dependency'
