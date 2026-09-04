@@ -129,17 +129,22 @@ pub enum PendingSchemaChange {
     /// The access of the table with [`TableId`] was changed.
     /// The old access was stored.
     TableAlterAccess(TableId, StAccess),
+    /// The `is_event` flag of the table with [`TableId`] was changed.
+    /// The old value is stored.
+    /// The table was verified to have no resident rows at the time of the change.
+    TableAlterEventFlag(TableId, bool),
     /// The row type of the table with [`TableId`] was changed.
     /// The old column schemas was stored.
     /// Only non-representational row-type changes are allowed here,
     /// so existing rows in the table will be compatible with the new row type.
     TableAlterRowType(TableId, Vec<ColumnSchema>),
-    /// The row type of the event table with [`TableId`] was changed.
+    /// The row type of the empty table with [`TableId`] was changed.
     /// The old column schemas was stored.
     ///
-    /// As event tables never have rows resident across transactions or during automigrations,
-    /// we're fine to allow representational/layout-incompatible changes here.
-    ReschemaEventTable(TableId, Vec<ColumnSchema>),
+    /// The table was verified to have no resident rows at the time of the change
+    /// (event tables are rowless by construction),
+    /// so we're fine to allow representational/layout-incompatible changes here.
+    ReschemaEmptyTable(TableId, Vec<ColumnSchema>),
     /// The primary key of the table with [`TableId`] was changed.
     /// The old primary key was stored.
     TableAlterPrimaryKey(TableId, Option<ColList>),
@@ -170,6 +175,7 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
+            Self::TableAlterEventFlag(table_id, old_is_event) => table_id.heap_usage() + old_is_event.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
             Self::ConstraintRemoved(table_id, constraint_schema, index_ids) => {
@@ -190,7 +196,7 @@ impl MemoryUsage for PendingSchemaChange {
                     + col_id.heap_usage()
                     + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
             }
-            Self::ReschemaEventTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
+            Self::ReschemaEmptyTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
         }
     }
 }

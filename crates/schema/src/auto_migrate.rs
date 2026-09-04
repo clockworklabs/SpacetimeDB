@@ -1,8 +1,7 @@
-use core::{cmp::Ordering, ops::BitOr};
+use core::{cmp::Ordering, fmt, ops::BitOr};
 
 use crate::{
     def::*,
-    error::PrettyAlgebraicType,
     identifier::{Identifier, NamespacePath},
 };
 use formatter::format_plan;
@@ -217,9 +216,13 @@ pub struct AutoMigratePlan<'def> {
     /// The migration steps to perform.
     /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
+    /// For each [`AutoMigratePrecheck::CheckTableEmpty`] in `prechecks`,
+    /// why the migration requires that table to be empty.
+    /// Used to explain the precheck's failure; not itself a check or a step.
+    pub empty_reschema_reasons: Vec<(<TableDef as ModuleDefLookup>::Key<'def>, EmptyReschemaReason<'def>)>,
 }
 
-impl AutoMigratePlan<'_> {
+impl<'def> AutoMigratePlan<'def> {
     fn any_step(&self, f: impl Fn(&AutoMigrateStep<'_>) -> bool) -> bool {
         self.steps.iter().any(f)
     }
@@ -235,6 +238,62 @@ impl AutoMigratePlan<'_> {
             self.steps.push(AutoMigrateStep::DisconnectAllUsers);
         }
     }
+
+    /// Ensures that a [`AutoMigratePrecheck::CheckTableEmpty`] for `table` is present in the plan.
+    /// If it's already there, this is a no-op.
+    fn ensure_check_table_empty(&mut self, table: <TableDef as ModuleDefLookup>::Key<'def>) {
+        let check = AutoMigratePrecheck::CheckTableEmpty(table);
+        if !self.prechecks.contains(&check) {
+            self.prechecks.push(check);
+        }
+    }
+
+    /// Requires `table` to be empty at execution time because of `reason`:
+    /// ensures the [`AutoMigratePrecheck::CheckTableEmpty`] precheck for it
+    /// and records the reason for the precheck's error message.
+    fn require_empty(&mut self, table: <TableDef as ModuleDefLookup>::Key<'def>, reason: EmptyReschemaReason<'def>) {
+        self.ensure_check_table_empty(table);
+        self.empty_reschema_reasons.push((table, reason));
+    }
+}
+
+/// Why a migration requires a table to be empty.
+///
+/// Recorded in [`AutoMigratePlan::empty_reschema_reasons`] alongside each
+/// [`AutoMigratePrecheck::CheckTableEmpty`], and used to explain a failed precheck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmptyReschemaReason<'def> {
+    /// The table itself was removed from the module.
+    TableRemoved,
+    /// The column was removed. A renamed column diffs as a remove and an add.
+    ColumnRemoved(&'def Identifier),
+    /// The column's type changed in a layout-incompatible way.
+    ColumnRetyped(&'def Identifier),
+    /// The column changed position.
+    ColumnMoved(&'def Identifier),
+    /// The column was added without a default value.
+    ColumnAddedWithoutDefault(&'def Identifier),
+    /// The unique constraint changed, e.g. because a column it covers moved.
+    UniqueConstraintChanged(&'def RawIdentifier),
+    /// The table's `is_event` flag changed.
+    EventFlagChanged,
+}
+
+impl fmt::Display for EmptyReschemaReason<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TableRemoved => write!(f, "the table was removed from the module"),
+            Self::ColumnRemoved(col) => write!(f, "column `{col}` was removed (a rename is a remove plus an add)"),
+            Self::ColumnRetyped(col) => write!(f, "column `{col}` changed type incompatibly"),
+            Self::ColumnMoved(col) => write!(f, "column `{col}` changed position"),
+            Self::ColumnAddedWithoutDefault(col) => write!(
+                f,
+                "column `{col}` was added without a default value (adding a default instead migrates without emptying the table)"
+            ),
+            Self::UniqueConstraintChanged(constraint) => write!(f, "unique constraint `{constraint}` changed"),
+            Self::EventFlagChanged => write!(f, "the table's `event` flag changed"),
+        }
+    }
 }
 
 /// Checks that must be performed before performing an automatic migration.
@@ -244,6 +303,14 @@ pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
     CheckAddSequenceRangeValid(<SequenceDef as ModuleDefLookup>::Key<'def>),
+
+    /// Perform a check that the table contains no rows.
+    ///
+    /// Emitted for migration steps that are only valid on an empty table,
+    /// such as [`AutoMigrateStep::RemoveTable`] and [`AutoMigrateStep::ReschemaEmptyTable`].
+    /// The planner cannot see table contents, so the check is performed at execution time,
+    /// before any mutations.
+    CheckTableEmpty(<TableDef as ModuleDefLookup>::Key<'def>),
 }
 
 /// A step in an automatic migration.
@@ -285,7 +352,9 @@ pub enum AutoMigrateStep<'def> {
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
     /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
-    /// Validated at execution time: fails if the table contains data.
+    ///
+    /// Only valid on an empty table; the plan will contain a matching
+    /// [`AutoMigratePrecheck::CheckTableEmpty`], and execution fails if the table contains data.
     RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Change the column types of a table, in a layout compatible way.
@@ -293,6 +362,13 @@ pub enum AutoMigrateStep<'def> {
 
     /// Change the column types of an event table, in a way that may not be layout-compatible.
     ReschemaEventTable(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Change the columns of a table, in a way that may not be layout-compatible
+    /// (e.g. reordering columns).
+    ///
+    /// Only valid on an empty table; the plan will contain a matching
+    /// [`AutoMigratePrecheck::CheckTableEmpty`], and execution fails if the table contains data.
+    ReschemaEmptyTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add columns to a table, in a layout-INCOMPATIBLE way.
     ///
@@ -329,6 +405,14 @@ pub enum AutoMigrateStep<'def> {
     /// Change the access of a table or view.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 
+    /// Toggle the `is_event` flag of a table.
+    ///
+    /// Only valid on an empty table; the plan will contain a matching
+    /// [`AutoMigratePrecheck::CheckTableEmpty`], and execution fails if the table contains data.
+    /// This is a breaking change for subscribed clients (the committed-state semantics of the
+    /// table flip), so this step is always accompanied by a `DisconnectAllUsers`.
+    ChangeEventFlag(<TableDef as ModuleDefLookup>::Key<'def>),
+
     /// Change the primary key of a table.
     ///
     /// This updates the `table_primary_key` field in `st_table` to match the new module definition.
@@ -343,125 +427,15 @@ pub enum AutoMigrateStep<'def> {
     DisconnectAllUsers,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ChangeColumnTypeParts {
-    pub table: Identifier,
-    pub column: Identifier,
-    pub type1: PrettyAlgebraicType,
-    pub type2: PrettyAlgebraicType,
-}
-
 /// Something that might prevent an automatic migration.
 #[derive(thiserror::Error, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AutoMigrateError {
-    #[error("Adding a column {column} to table {table} requires a default value annotation")]
-    AddColumn { table: Identifier, column: Identifier },
-
-    #[error("Removing a column {column} from table {table} requires a manual migration")]
-    RemoveColumn { table: Identifier, column: Identifier },
-
-    #[error("Reordering table {table} requires a manual migration")]
-    ReorderTable { table: Identifier },
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?} requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnType(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?} requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnType(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with fewer variants, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeFewerVariants(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, with fewer variants, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed variant, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeRenamedVariant(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed variant, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeRenamedVariant(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeFewerFields(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeFewerFields(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed field, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeRenamedField(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed field, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeRenamedField(ChangeColumnTypeParts),
-
-    #[error("Adding a unique constraint {constraint} requires a manual migration")]
-    AddUniqueConstraint { constraint: RawIdentifier },
-
-    #[error("Changing a unique constraint {constraint} requires a manual migration")]
-    ChangeUniqueConstraint { constraint: RawIdentifier },
-
     #[error("Changing the table type of table {table} from {type1:?} to {type2:?} requires a manual migration")]
     ChangeTableType {
         table: Identifier,
         type1: TableType,
         type2: TableType,
     },
-
-    #[error("Changing the event flag of table {table} requires a manual migration")]
-    ChangeTableEventFlag { table: Identifier },
 
     #[error(
         "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
@@ -491,6 +465,7 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         new,
         steps: Vec::new(),
         prechecks: Vec::new(),
+        empty_reschema_reasons: Vec::new(),
     };
 
     let views_ok = auto_migrate_views(&mut plan);
@@ -607,9 +582,6 @@ fn auto_migrate_view<'def>(
                     return Any(true);
                 }
                 ensure_old_ty_upgradable_to_new(
-                    false,
-                    &|| old_col.view_name.clone(),
-                    &|| old_col.name.clone(),
                     &WithTypespace::new(old_owning.typespace(), &old_col.ty)
                         .resolve_refs()
                         .expect("valid ViewDefs must have valid type refs"),
@@ -642,9 +614,6 @@ fn auto_migrate_view<'def>(
                     return Any(true);
                 }
                 ensure_old_ty_upgradable_to_new(
-                    false,
-                    &|| old_col.view_name.clone(),
-                    &|| old_col.name.clone(),
                     &WithTypespace::new(old_owning.typespace(), &old_col.ty)
                         .resolve_refs()
                         .expect("valid ViewDefs must have valid type refs"),
@@ -704,6 +673,7 @@ fn auto_migrate_tables<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
 
     for key in old_tables.keys() {
         if !new_tables.contains_key(key) {
+            plan.require_empty(*key, EmptyReschemaReason::TableRemoved);
             plan.steps.push(AutoMigrateStep::RemoveTable(*key));
             plan.ensure_disconnect_all_users();
         }
@@ -755,17 +725,19 @@ fn auto_migrate_table<'def>(
         }
         .into())
     };
-    let event_ok: Result<()> = if old.is_event == new.is_event {
-        Ok(())
-    } else {
-        Err(AutoMigrateError::ChangeTableEventFlag {
-            table: old.name.clone(),
-        }
-        .into())
-    };
+    if old.is_event != new.is_event {
+        // Flipping `is_event` changes the committed-state semantics of the table, which is
+        // only possible when there are no committed rows; emptiness is validated at
+        // execution time. The flip is observable to subscribers, so clients must reconnect.
+        plan.require_empty(key, EmptyReschemaReason::EventFlagChanged);
+        plan.ensure_disconnect_all_users();
+        plan.steps.push(AutoMigrateStep::ChangeEventFlag(key));
+    }
 
-    // Combined with our validation of `event_ok`, `old.is_event` is sufficient to identify this as an event table.
-    let is_event = old.is_event;
+    // Plan column changes with the event-table machinery only when the table is an event
+    // table both before and after. When the flag is flipping, the table is verified empty
+    // at execution time anyway, so column changes ride the empty-reschema machinery.
+    let is_event = old.is_event && new.is_event;
 
     if old.table_access != new.table_access {
         plan.steps.push(AutoMigrateStep::ChangeAccess(key));
@@ -789,105 +761,97 @@ fn auto_migrate_table<'def>(
     let new_col_by_name: HashMap<&Identifier, &ColumnDef> = new.columns.iter().map(|c| (&c.name, c)).collect();
     let old_col_by_name: HashMap<&Identifier, &ColumnDef> = old.columns.iter().map(|c| (&c.name, c)).collect();
 
-    let columns_ok = old
-        .columns
-        .iter()
-        .map(|old_col| -> Result<ArrayMonoid<Any, 3>> {
-            match new_col_by_name.get(&old_col.name) {
-                None => {
-                    if is_event {
-                        // Event tables never have any resident rows, so removing a column is not a
-                        // data migration. However, changing the schema will break clients.
-                        // `row_type_changed`, `columns_added`, `event_schema_changed`
-                        Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
-                    } else {
-                        Err(AutoMigrateError::RemoveColumn {
-                            table: old_col.table_name.clone(),
-                            column: old_col.name.clone(),
-                        }
-                        .into())
-                    }
-                }
-                Some(new_col) => {
-                    let old_ty = WithTypespace::new(old_owning.typespace(), &old_col.ty)
-                        .resolve_refs()
-                        .expect("valid TableDef must have valid type refs");
-                    let new_ty = WithTypespace::new(new_owning.typespace(), &new_col.ty)
-                        .resolve_refs()
-                        .expect("valid TableDef must have valid type refs");
-                    let types_ok = ensure_old_ty_upgradable_to_new(
-                        false,
-                        &|| old_col.table_name.clone(),
-                        &|| old_col.name.clone(),
-                        &old_ty,
-                        &new_ty,
-                    )
-                    .or_else(|err| {
-                        if is_event {
-                            // Event tables have no rows, so layout-incompatible type changes are fine.
-                            Ok(Any(true))
-                        } else {
-                            Err(err)
-                        }
-                    });
-                    // Reject reordering of existing columns (unless it's an event table).
-                    let positions_ok = if old_col.col_id == new_col.col_id {
-                        Ok(Any(false))
-                    } else if is_event {
-                        Ok(Any(true))
-                    } else {
-                        Err(AutoMigrateError::ReorderTable {
-                            table: old_col.table_name.clone(),
-                        }
-                        .into())
-                    };
-                    if old_col.accessor_name != new_col.accessor_name {
-                        plan.steps
-                            .push(AutoMigrateStep::ChangeColumnAccessorName(key, &old_col.name));
-                    }
-                    (types_ok, positions_ok)
-                        .combine_errors()
-                        // `row_type_changed`, `columns_added`, `event_schema_changed`
-                        .map(|(types_changed, positions_changed)| {
-                            if is_event {
-                                ArrayMonoid([Any(false), Any(false), types_changed | positions_changed])
-                            } else {
-                                assert!(!positions_changed.0);
-                                ArrayMonoid([types_changed, Any(false), Any(false)])
-                            }
-                        })
-                }
-            }
-        })
-        .chain(new.columns.iter().map(|new_col| -> Result<ArrayMonoid<Any, 3>> {
-            if old_col_by_name.contains_key(&new_col.name) {
-                Ok(ArrayMonoid([Any(false), Any(false), Any(false)]))
-            } else if is_event {
-                // Event tables never have any resident rows, so adding a column is not a data
-                // migration. However, changing the schema will break clients.
-                // `row_type_changed`, `columns_added`, `event_schema_changed`
-                Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
-            } else if new_col.default_value.is_some() {
-                // `row_type_changed`, `columns_added`, `event_schema_changed`
-                Ok(ArrayMonoid([Any(false), Any(true), Any(false)]))
-            } else {
-                Err(AutoMigrateError::AddColumn {
-                    table: new_col.table_name.clone(),
-                    column: new_col.name.clone(),
-                }
-                .into())
-            }
-        }))
-        .collect_all_errors::<ArrayMonoid<Any, 3>>();
+    // The column diff itself is infallible: changes that used to be errors are
+    // planned as an empty-table reschema, with each contributing change recorded
+    // as an `EmptyReschemaReason` for the precheck's error message.
+    let mut row_type_changed = false;
+    let mut columns_added = false;
+    let mut event_schema_changed = false;
+    let mut reschema_reasons: Vec<EmptyReschemaReason<'def>> = Vec::new();
 
-    let ((), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
-        (type_ok, event_ok, columns_ok).combine_errors()?;
+    for old_col in &old.columns {
+        match new_col_by_name.get(&old_col.name) {
+            None => {
+                if is_event {
+                    // Event tables never have any resident rows, so removing a column is not a
+                    // data migration. However, changing the schema will break clients.
+                    event_schema_changed = true;
+                } else {
+                    // Removing a column is a data migration on a table with rows, but is
+                    // fine on an empty one; emptiness is validated at execution time.
+                    reschema_reasons.push(EmptyReschemaReason::ColumnRemoved(&old_col.name));
+                }
+            }
+            Some(new_col) => {
+                let old_ty = WithTypespace::new(old_owning.typespace(), &old_col.ty)
+                    .resolve_refs()
+                    .expect("valid TableDef must have valid type refs");
+                let new_ty = WithTypespace::new(new_owning.typespace(), &new_col.ty)
+                    .resolve_refs()
+                    .expect("valid TableDef must have valid type refs");
+                // `Some(changed)` = the type change (if any) is layout-compatible and
+                // valid on a table with resident rows; `None` = it would require rewriting
+                // rows, which is only possible when the table is empty.
+                let types_compatible = ensure_old_ty_upgradable_to_new(&old_ty, &new_ty);
+                if old_col.accessor_name != new_col.accessor_name {
+                    plan.steps
+                        .push(AutoMigrateStep::ChangeColumnAccessorName(key, &old_col.name));
+                }
+                // Reordering existing columns changes the row layout, which is only
+                // possible when the table has no resident rows. Event tables are
+                // rowless by construction; other tables get an emptiness precheck.
+                let position_changed = old_col.col_id != new_col.col_id;
+                if is_event {
+                    event_schema_changed |= position_changed || !matches!(types_compatible, Some(Any(false)));
+                } else {
+                    match types_compatible {
+                        Some(Any(changed)) => row_type_changed |= changed,
+                        None => reschema_reasons.push(EmptyReschemaReason::ColumnRetyped(&old_col.name)),
+                    }
+                    if position_changed {
+                        reschema_reasons.push(EmptyReschemaReason::ColumnMoved(&old_col.name));
+                    }
+                }
+            }
+        }
+    }
+    for new_col in &new.columns {
+        if old_col_by_name.contains_key(&new_col.name) {
+            continue;
+        }
+        if is_event {
+            // Event tables never have any resident rows, so adding a column is not a data
+            // migration. However, changing the schema will break clients.
+            event_schema_changed = true;
+        } else if new_col.default_value.is_some() {
+            columns_added = true;
+        } else {
+            // Adding a column without a default value is only possible when there are
+            // no resident rows to fill; emptiness is validated at execution time.
+            reschema_reasons.push(EmptyReschemaReason::ColumnAddedWithoutDefault(&new_col.name));
+        }
+    }
+    type_ok?;
 
     if event_schema_changed {
         // If we're rewriting an event table, there's no data migration to do.
         // But incompatibly changing the schema can break clients.
         plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::ReschemaEventTable(key));
+    } else if !reschema_reasons.is_empty() {
+        // A layout-incompatible change (reordering, removing, renaming, or incompatibly
+        // retyping columns, or adding a column without a default) rewrites the row layout
+        // in place, which is only valid on an empty table. The planner cannot see table
+        // contents, so emptiness is validated at execution time, before any mutations,
+        // with the collected reasons explaining a failure. This subsumes any
+        // `ChangeColumns` or `AddColumns` for the same table: the reschema rebuilds the
+        // full new layout, and with no resident rows there is no data to migrate or
+        // default-fill.
+        for reason in reschema_reasons {
+            plan.require_empty(key, reason);
+        }
+        plan.ensure_disconnect_all_users();
+        plan.steps.push(AutoMigrateStep::ReschemaEmptyTable(key));
     } else if columns_added {
         // If we're adding a column, we'll rewrite the whole table.
         // That makes any `ChangeColumns` moot, so we can skip it.
@@ -917,59 +881,14 @@ impl BitOr for Any {
     }
 }
 
-/// A monoid that allows running a number of `Any`s in parallel.
-struct ArrayMonoid<Monoid, const N: usize>([Monoid; N]);
-
-impl<Monoid, const N: usize> Default for ArrayMonoid<Monoid, N>
-where
-    [Monoid; N]: Default,
-{
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> BitOr for ArrayMonoid<Monoid, N> {
-    type Output = Self;
-
-    fn bitor(mut self, rhs: Self) -> Self::Output {
-        for n in 0..N {
-            self.0[n] = self.0[n] | rhs.0[n]
-        }
-        self
-    }
-}
-
-impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> FromIterator<ArrayMonoid<Monoid, N>>
-    for ArrayMonoid<Monoid, N>
-where
-    ArrayMonoid<Monoid, N>: Default,
-{
-    fn from_iter<T: IntoIterator<Item = ArrayMonoid<Monoid, N>>>(iter: T) -> Self {
-        iter.into_iter().reduce(|p1, p2| p1 | p2).unwrap_or_default()
-    }
-}
-
-fn ensure_old_ty_upgradable_to_new(
-    within: bool,
-    old_container_name: &impl Fn() -> Identifier,
-    old_column_name: &impl Fn() -> Identifier,
-    old_ty: &AlgebraicType,
-    new_ty: &AlgebraicType,
-) -> Result<Any> {
-    use AutoMigrateError::*;
-    // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
-    let ensure =
-        |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old_container_name, old_column_name, old_ty, new_ty);
-
-    // Returns a `ChangeColumnTypeParts` error using the current `old_ty` and `new_ty`.
-    let parts_for_error = || ChangeColumnTypeParts {
-        table: old_container_name(),
-        column: old_column_name(),
-        type1: old_ty.clone().into(),
-        type2: new_ty.clone().into(),
-    };
-
+/// Is `old_ty` upgradable to `new_ty` without rewriting existing rows?
+///
+/// Returns `Some(Any(changed))` when the change (if any) is layout-compatible
+/// and valid on a table with resident rows
+/// (`changed` is whether the types differ at all, e.g. a sum type gained variants),
+/// and `None` when upgrading would require rewriting rows,
+/// which is only possible when the table is empty.
+fn ensure_old_ty_upgradable_to_new(old_ty: &AlgebraicType, new_ty: &AlgebraicType) -> Option<Any> {
     match (old_ty, new_ty) {
         // For sums, we allow the variants in `old_ty` to be a prefix of `new_ty`.
         (AlgebraicType::Sum(old_ty), AlgebraicType::Sum(new_ty)) => {
@@ -977,113 +896,62 @@ fn ensure_old_ty_upgradable_to_new(
             let new_vars = &*new_ty.variants;
 
             // The number of variants in `new_ty` cannot decrease.
-            let var_lens_ok = match old_vars.len().cmp(&new_vars.len()) {
-                Ordering::Less => Ok(Any(true)),
-                Ordering::Equal => Ok(Any(false)),
-                Ordering::Greater if within => Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into()),
-                Ordering::Greater => Err(ChangeColumnTypeFewerVariants(parts_for_error()).into()),
+            let len_changed = match old_vars.len().cmp(&new_vars.len()) {
+                Ordering::Less => Any(true),
+                Ordering::Equal => Any(false),
+                Ordering::Greater => return None,
             };
 
-            // The variants in `old_ty` must be upgradable to those in `old_ty`.
+            // The variants in `old_ty` must be upgradable to those in `new_ty`,
+            // and their names must not change.
             // Strict equality is *not* imposed in the prefix!
-            let prefix_ok = old_vars
-                .iter()
-                .zip(new_vars)
-                .map(|(o, n)| {
-                    // Ensure type compatibility.
-                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
-                    // Ensure name doesn't change.
-                    let res_name = if o.name() == n.name() {
-                        Ok(())
-                    } else if within {
-                        Err(ChangeWithinColumnTypeRenamedVariant(parts_for_error()).into())
-                    } else {
-                        Err(ChangeColumnTypeRenamedVariant(parts_for_error()).into())
-                    };
-                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
-                })
-                .collect_all_errors::<Any>();
+            let mut prefix_changed = Any(false);
+            for (o, n) in old_vars.iter().zip(new_vars) {
+                if o.name() != n.name() {
+                    return None;
+                }
+                prefix_changed =
+                    prefix_changed | ensure_old_ty_upgradable_to_new(&o.algebraic_type, &n.algebraic_type)?;
+            }
 
             // The old and the new sum types must have matching layout sizes and alignments.
-            let old_ty = SumTypeLayout::from(old_ty.clone());
-            let new_ty = SumTypeLayout::from(new_ty.clone());
-            let old_layout = old_ty.layout();
-            let new_layout = new_ty.layout();
-            let size_ok = if old_layout.size == new_layout.size {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeSizeMismatch(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeSizeMismatch(parts_for_error()).into())
-            };
-            let align_ok = if old_layout.align == new_layout.align {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeAlignMismatch(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeAlignMismatch(parts_for_error()).into())
-            };
+            let old_layout_ty = SumTypeLayout::from(old_ty.clone());
+            let new_layout_ty = SumTypeLayout::from(new_ty.clone());
+            let old_layout = old_layout_ty.layout();
+            let new_layout = new_layout_ty.layout();
+            if old_layout.size != new_layout.size || old_layout.align != new_layout.align {
+                return None;
+            }
 
-            let (len_changed, prefix_changed, ..) = (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors()?;
-            Ok(len_changed | prefix_changed)
+            Some(len_changed | prefix_changed)
         }
 
         // For products,
         // we need to check each field's upgradability due to sums,
-        // and there must be as many fields.
-        // Note that we don't care about field names.
+        // there must be as many fields, and their names must not change.
         (AlgebraicType::Product(old_ty), AlgebraicType::Product(new_ty)) => {
-            // The number of variants in `new_ty` cannot decrease.
-            let len_eq_ok = if old_ty.len() == new_ty.len() {
-                Ok(())
-            } else {
-                Err(if within {
-                    ChangeWithinColumnTypeFewerFields(parts_for_error())
-                } else {
-                    ChangeColumnTypeFewerFields(parts_for_error())
+            if old_ty.len() != new_ty.len() {
+                return None;
+            }
+
+            let mut changed = Any(false);
+            for (o, n) in old_ty.iter().zip(new_ty.iter()) {
+                if o.name() != n.name() {
+                    return None;
                 }
-                .into())
-            };
-
-            // The fields in `old_ty` must be upgradable to those in `old_ty`.
-            let fields_ok = old_ty
-                .iter()
-                .zip(new_ty.iter())
-                .map(|(o, n)| {
-                    // Ensure type compatibility.
-                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
-                    // Ensure name doesn't change.
-                    let res_name = if o.name() == n.name() {
-                        Ok(())
-                    } else if within {
-                        Err(ChangeWithinColumnTypeRenamedField(parts_for_error()).into())
-                    } else {
-                        Err(ChangeColumnTypeRenamedField(parts_for_error()).into())
-                    };
-                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
-                })
-                .collect_all_errors::<Any>();
-
-            (len_eq_ok, fields_ok).combine_errors().map(|(_, x)| x)
+                changed = changed | ensure_old_ty_upgradable_to_new(&o.algebraic_type, &n.algebraic_type)?;
+            }
+            Some(changed)
         }
 
-        // For arrays, we need to check each field's upgradability due to sums.
-        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => ensure_old_ty_upgradable_to_new(
-            true,
-            old_container_name,
-            old_column_name,
-            &old_ty.elem_ty,
-            &new_ty.elem_ty,
-        ),
+        // For arrays, we need to check the element type's upgradability due to sums.
+        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => {
+            ensure_old_ty_upgradable_to_new(&old_ty.elem_ty, &new_ty.elem_ty)
+        }
 
         // We only have the simple cases left, and there, no change is good change.
-        (old_ty, new_ty) if old_ty == new_ty => Ok(Any(false)),
-        _ => Err(if within {
-            ChangeWithinColumnType(parts_for_error())
-        } else {
-            ChangeColumnType(parts_for_error())
-        }
-        .into()),
+        (old_ty, new_ty) if old_ty == new_ty => Some(Any(false)),
+        _ => None,
     }
 }
 
@@ -1185,7 +1053,9 @@ fn auto_migrate_sequences<'def>(
     // Added or changed sequences.
     for (sequence_key, (table_key, new_seq)) in &new_seqs {
         if let Some((_, old_seq)) = old_seqs.get(sequence_key) {
-            // we do not need to check column ids, since in an automigrate, column ids are not changed.
+            // Column ids can change in an automigrate (reordering an empty table); since
+            // `SequenceDef` includes the column id, such a sequence diffs as changed here
+            // and is removed and re-added against the new column position.
             if *old_seq != *new_seq {
                 plan.prechecks
                     .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(*sequence_key));
@@ -1224,8 +1094,6 @@ fn auto_migrate_constraints<'def>(
     let old_constraints = constraint_map(old_module);
     let new_constraints = constraint_map(new_module);
 
-    let mut results: Vec<Result<()>> = vec![];
-
     // Added constraints.
     for (constraint_key, (table_key, _new_constraint)) in &new_constraints {
         if !old_constraints.contains_key(constraint_key) && !new_tables.contains(table_key) {
@@ -1243,18 +1111,24 @@ fn auto_migrate_constraints<'def>(
     }
 
     // Changed constraints.
-    for (constraint_key, (_, new_constraint)) in &new_constraints {
+    for (constraint_key, (table_key, new_constraint)) in &new_constraints {
         if let Some((_, old_constraint)) = old_constraints.get(constraint_key)
             && *old_constraint != *new_constraint
         {
-            results.push(Err(AutoMigrateError::ChangeUniqueConstraint {
-                constraint: old_constraint.name.clone(),
-            }
-            .into()));
+            // A changed unique constraint (e.g. one on a reordered column, which keeps its
+            // name but changes its column ids) is removed and re-added against the new
+            // definition. Re-adding is trivially valid on a table with no rows; emptiness
+            // is validated at execution time by the precheck.
+            plan.require_empty(
+                *table_key,
+                EmptyReschemaReason::UniqueConstraintChanged(&new_constraint.name),
+            );
+            plan.steps.push(AutoMigrateStep::RemoveConstraint(*constraint_key));
+            plan.steps.push(AutoMigrateStep::AddConstraint(*constraint_key));
         }
     }
 
-    results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
+    Ok(())
 }
 
 // Because we can refer to many tables and fields on the row level-security query, we need to remove all of them,
@@ -1692,7 +1566,6 @@ mod tests {
             .finish()
             .try_into()
             .expect("old_def should be a valid database definition");
-        let resolve_old = |ty| old_def.typespace().with_type(ty).resolve_refs().unwrap();
 
         let mut new_builder = RawModuleDefV9Builder::new();
 
@@ -1754,209 +1627,16 @@ mod tests {
             .finish()
             .try_into()
             .expect("new_def should be a valid database definition");
-        let resolve_new = |ty| new_def.typespace().with_type(ty).resolve_refs().unwrap();
 
         let result = ponder_auto_migrate(&old_def, &new_def);
 
         let apples = expect_identifier("Apples");
         let _bananas = expect_identifier("Bananas");
 
-        let weight = expect_identifier("weight");
-        let count = expect_identifier("count");
-        let name = expect_identifier("name");
-        let sum1 = expect_identifier("sum1");
-        let prod1 = expect_identifier("prod1");
-
-        expect_error_matching!(
-            result,
-            // This is an error because we didn't set a default value.
-            AutoMigrateError::AddColumn {
-                table,
-                column
-            } => table == &apples && column == &weight
-        );
-
-        expect_error_matching!(
-            result,
-            AutoMigrateError::RemoveColumn {
-                table,
-                column
-            } => table == &apples && column == &count
-        );
-
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ReorderTable { table } => table == &apples
-        );
-
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnType(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &name && type1.0 == AlgebraicType::String && type2.0 == AlgebraicType::U32
-        );
-
-        // Rename variant `foo21`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnTypeRenamedVariant(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
-        );
-
-        // foo22: U32 -> U64.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnType(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == AlgebraicType::U32 && type2.0 == AlgebraicType::U64
-        );
-
-        // Remove variant `foo23`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
-        );
-
-        // Size of inner sum changed.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
-        );
-
-        // Align of inner sum changed.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == foo2_ty && type2.0 == new_foo2_ty
-        );
-
-        // Rename field `foo1`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnTypeRenamedField(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == resolve_old(&foo_ty) && type2.0 == resolve_new(&new_foo_ty)
-        );
-
-        // Remove field `foo3`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeWithinColumnTypeFewerFields(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == resolve_old(&foo_ty) && type2.0 == resolve_new(&new_foo_ty)
-        );
-
-        // Rename variant `bar`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnTypeRenamedVariant(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
-        );
-
-        // Remove variant `bar`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnTypeFewerVariants(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
-        );
-
-        // Size of outer sum changed.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
-        );
-
-        // Align of outer sum changed.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &sum1
-            && type1.0 == resolve_old(&sum1_ty) && type2.0 == resolve_new(&new_sum1_ty)
-        );
-
-        // Rename field `baz`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnTypeRenamedField(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &prod1
-            && type1.0 == prod1_ty && type2.0 == new_prod1_ty
-        );
-
-        // Remove field `qux`.
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeColumnTypeFewerFields(ChangeColumnTypeParts {
-                table,
-                column,
-                type1,
-                type2
-            }) => table == &apples && column == &prod1
-            && type1.0 == prod1_ty && type2.0 == new_prod1_ty
-        );
-
-        // Note: `AddUniqueConstraint` is no longer an error — adding unique constraints
-        // to existing tables is now allowed; duplicate detection happens inside create_constraint.
+        // Note: column additions without defaults, column removals, incompatible column
+        // type changes, and column reorders are no longer plan-time errors — they are
+        // planned as an empty-table reschema, with emptiness validated at execution time.
+        // See `general_schema_changes_of_empty_table` and friends below.
 
         expect_error_matching!(
             result,
@@ -1978,11 +1658,170 @@ mod tests {
             } => &index[..] == apples_id_index && old_accessor.as_ref() == Some(&accessor_old) && new_accessor.as_ref() == Some(&accessor_new)
         );
 
-        // It is not currently possible to test for `ChangeUniqueConstraint`, because unique constraint names are now generated during validation,
-        // and are determined by their columns and table name. So it's impossible to create a unique constraint with the same name
-        // but different columns from an old one.
+        // It is not currently possible to test for `ChangeUniqueConstraint` on a table that isn't
+        // being reschema'd empty, because unique constraint names are now generated during validation,
+        // and are determined by their columns and table name. So it's impossible to create a unique constraint
+        // with the same name but different columns from an old one.
         // We've left the check in, just in case this changes in the future.
     }
+
+    #[test]
+    fn reorder_columns_of_empty_table() {
+        fn points_module(swapped: bool) -> ModuleDef {
+            let mut builder = RawModuleDefV9Builder::new();
+            let (product_type, id_col) = if swapped {
+                (
+                    ProductType::from([("name", AlgebraicType::String), ("id", AlgebraicType::U64)]),
+                    ColId(1),
+                )
+            } else {
+                (
+                    ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]),
+                    ColId(0),
+                )
+            };
+            builder
+                .build_table_with_new_type("Points", product_type, true)
+                .with_column_sequence(id_col)
+                .with_unique_constraint(id_col)
+                .with_index(btree(id_col), "id_index")
+                .with_primary_key(id_col)
+                .finish();
+            builder.finish().try_into().expect("should be a valid module def")
+        }
+
+        let old_def = points_module(false);
+        let new_def = points_module(true);
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("reordering columns should plan an auto-migration");
+
+        let points = key("", "Points");
+        let points_sequence = sub_key("", "Points_id_seq");
+        let points_constraint = sub_key("", "Points_id_key");
+        let points_index = sub_key("", "Points_id_idx_btree");
+
+        // Reordering requires the table to be empty, validated before any mutations.
+        // The re-added sequence also gets its usual range precheck.
+        assert_eq!(
+            &plan.prechecks[..],
+            &[
+                AutoMigratePrecheck::CheckAddSequenceRangeValid(points_sequence),
+                AutoMigratePrecheck::CheckTableEmpty(points),
+            ],
+        );
+
+        // Sub-objects on the moved column are removed and re-added against the new position,
+        // around the `ReschemaEmptyTable` step. There are no `ChangeColumns`/`AddColumns` steps:
+        // the full-layout reschema subsumes them.
+        assert_eq!(
+            &plan.steps[..],
+            &[
+                AutoMigrateStep::RemoveIndex(points_index),
+                AutoMigrateStep::RemoveConstraint(points_constraint),
+                AutoMigrateStep::RemoveSequence(points_sequence),
+                AutoMigrateStep::ReschemaEmptyTable(points),
+                AutoMigrateStep::AddIndex(points_index),
+                AutoMigrateStep::AddConstraint(points_constraint),
+                AutoMigrateStep::AddSequence(points_sequence),
+                AutoMigrateStep::ChangePrimaryKey(points),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
+        );
+    }
+
+    #[test]
+    fn general_schema_changes_of_empty_table() {
+        // Removing a column, incompatibly retyping a column, and adding a column without
+        // a default, all at once, plan as a single empty-table reschema.
+        let old_def: ModuleDef = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([
+                        ("id", AlgebraicType::U64),
+                        ("name", AlgebraicType::String),
+                        ("count", AlgebraicType::U16),
+                    ]),
+                    true,
+                )
+                .finish();
+            builder.finish().try_into().expect("should be a valid module def")
+        };
+        let new_def: ModuleDef = {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([
+                        ("id", AlgebraicType::U64),
+                        ("name", AlgebraicType::U32), // incompatible type change
+                        ("weight", AlgebraicType::U16), // added without a default
+                                                      // `count` removed
+                    ]),
+                    true,
+                )
+                .finish();
+            builder.finish().try_into().expect("should be a valid module def")
+        };
+
+        let plan = ponder_auto_migrate(&old_def, &new_def)
+            .expect("schema changes to a (presumed empty) table should plan an auto-migration");
+
+        let apples = key("", "Apples");
+        assert_eq!(&plan.prechecks[..], &[AutoMigratePrecheck::CheckTableEmpty(apples)]);
+        assert_eq!(
+            &plan.steps[..],
+            &[
+                AutoMigrateStep::ReschemaEmptyTable(apples),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
+        );
+
+        // Each contributing change is recorded for the precheck's error message.
+        let name = expect_identifier("name");
+        let count = expect_identifier("count");
+        let weight = expect_identifier("weight");
+        assert_eq!(
+            &plan.empty_reschema_reasons[..],
+            &[
+                (apples, EmptyReschemaReason::ColumnRetyped(&name)),
+                (apples, EmptyReschemaReason::ColumnRemoved(&count)),
+                (apples, EmptyReschemaReason::ColumnAddedWithoutDefault(&weight)),
+            ],
+        );
+    }
+
+    #[test]
+    fn rename_column_of_empty_table() {
+        // A renamed column diffs as remove+add, which plans as an empty-table reschema.
+        let build = |col_name: &'static str| -> ModuleDef {
+            let mut builder = RawModuleDefV9Builder::new();
+            builder
+                .build_table_with_new_type(
+                    "Points",
+                    ProductType::from([("id", AlgebraicType::U64), (col_name, AlgebraicType::String)]),
+                    true,
+                )
+                .finish();
+            builder.finish().try_into().expect("should be a valid module def")
+        };
+        let old_def = build("name");
+        let new_def = build("label");
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("renaming a column of an empty table should plan");
+
+        let points = key("", "Points");
+        assert_eq!(&plan.prechecks[..], &[AutoMigratePrecheck::CheckTableEmpty(points)]);
+        assert_eq!(
+            &plan.steps[..],
+            &[
+                AutoMigrateStep::ReschemaEmptyTable(points),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
+        );
+    }
+
     #[test]
     fn print_empty_to_populated_schema_migration() {
         // Start with completely empty schema
@@ -2788,32 +2627,36 @@ mod tests {
     }
 
     #[test]
-    fn test_change_event_flag_rejected() {
-        // non-event → event
-        let old = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("Events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .finish();
-        });
-        let new = create_v10_module_def(|builder| {
-            builder
-                .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
-                .with_event(true)
-                .finish();
-        });
-
-        let result = ponder_auto_migrate(&old, &new);
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
-        );
-
-        // event → non-event (reverse direction)
-        let result = ponder_auto_migrate(&new, &old);
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeTableEventFlag { table } => &table[..] == "events"
-        );
+    fn test_change_event_flag_produces_step() {
+        let build = |is_event: bool| {
+            create_v10_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("events", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_event(is_event)
+                    .finish();
+            })
+        };
+        let assert_flip = |old_is_event: bool, new_is_event: bool| {
+            let old = build(old_is_event);
+            let new = build(new_is_event);
+            let events = key("", "events");
+            let plan = ponder_auto_migrate(&old, &new).expect("toggling `is_event` on an empty table should plan");
+            // The flip is only valid on an empty table, validated before any mutations.
+            assert_eq!(&plan.prechecks[..], &[AutoMigratePrecheck::CheckTableEmpty(events)]);
+            assert_eq!(
+                &plan.empty_reschema_reasons[..],
+                &[(events, EmptyReschemaReason::EventFlagChanged)],
+            );
+            assert_eq!(
+                &plan.steps[..],
+                &[
+                    AutoMigrateStep::ChangeEventFlag(events),
+                    AutoMigrateStep::DisconnectAllUsers,
+                ],
+            );
+        };
+        assert_flip(false, true);
+        assert_flip(true, false);
     }
 
     #[test]
