@@ -386,14 +386,14 @@ test('partial parallel mutation accounting preserves completed shard results', (
 
 test('reference qualification resolves the exact executable calibration identity', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
-    imported: { sourceSha256: 'dee3864b71b74517aad7cff8ffc4402465737d6f8fde125f649abae54aa666d5' } });
+    imported: { sourceSha256: '1bd2133c8c412da10df88d5d8c18d3ee11e633702f86500fcf2d18978cb2bf45' } });
   assert.equal(record(context.identity, 'qualification identity').id, 'ecommerce.sequential-l1-calibration');
   assert.equal(record(context.identity, 'qualification identity').sha256, context.calibration.qualificationSha256);
 });
 
 test('reference qualification resolves the current calibration', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-reference-mongodb',
-    imported: { sourceSha256: 'dee3864b71b74517aad7cff8ffc4402465737d6f8fde125f649abae54aa666d5' } },
+    imported: { sourceSha256: '1bd2133c8c412da10df88d5d8c18d3ee11e633702f86500fcf2d18978cb2bf45' } },
   'ecommerce.sequential-l1@2.5.0');
   assert.equal(context.binding.release.version, '2.5.0');
   assert.equal(context.calibration.version, '2.5.0');

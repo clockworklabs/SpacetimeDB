@@ -261,9 +261,9 @@ function StaffTools({ user, state, items, orders, act, onRefreshItems }: any) {
         onChange={event => setPromotion(value => ({ ...value, code: event.target.value }))} />
       <input data-role="promotion-discount" value={promotion.discount} placeholder="Discount"
         onChange={event => setPromotion(value => ({ ...value, discount: event.target.value }))} />
-      <input data-role="promotion-start" type="datetime-local" value={promotion.start}
+      <input data-role="promotion-start" type="date" value={promotion.start}
         onChange={event => setPromotion(value => ({ ...value, start: event.target.value }))} />
-      <input data-role="promotion-end" type="datetime-local" value={promotion.end}
+      <input data-role="promotion-end" type="date" value={promotion.end}
         onChange={event => setPromotion(value => ({ ...value, end: event.target.value }))} />
       <input data-role="promotion-limit" value={promotion.limit} placeholder="Limit"
         onChange={event => setPromotion(value => ({ ...value, limit: event.target.value }))} />

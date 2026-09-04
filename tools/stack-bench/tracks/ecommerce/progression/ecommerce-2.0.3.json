@@ -578,10 +578,10 @@
       "title": "Promotion rules",
       "questline": "promotions",
       "featureRefs": [
-        "ecommerce.progression.promotion-rules@1.0.2"
+        "ecommerce.progression.promotion-rules@1.0.3"
       ],
       "gradingGroups": [
-        "ecommerce.progression.promotion-rules@1.0.2#values",
+        "ecommerce.progression.promotion-rules@1.0.3#values",
         "ecommerce.spec.access-control@2.0.1#promotion-management-boundary"
       ],
       "dependencies": [

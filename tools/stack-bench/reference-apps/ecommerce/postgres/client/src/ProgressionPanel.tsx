@@ -216,8 +216,8 @@ export function ProgressionPanel({
           <h3>Promotions</h3>
           <input data-role="promotion-code" value={promotion.code} onChange={(e) => setPromotion({ ...promotion, code: e.target.value })} />
           <input data-role="promotion-discount" value={promotion.discount} onChange={(e) => setPromotion({ ...promotion, discount: e.target.value })} />
-          <input data-role="promotion-start" type="datetime-local" value={promotion.start} onChange={(e) => setPromotion({ ...promotion, start: e.target.value })} />
-          <input data-role="promotion-end" type="datetime-local" value={promotion.end} onChange={(e) => setPromotion({ ...promotion, end: e.target.value })} />
+          <input data-role="promotion-start" type="date" value={promotion.start} onChange={(e) => setPromotion({ ...promotion, start: e.target.value })} />
+          <input data-role="promotion-end" type="date" value={promotion.end} onChange={(e) => setPromotion({ ...promotion, end: e.target.value })} />
           <input data-role="promotion-limit" value={promotion.limit} onChange={(e) => setPromotion({ ...promotion, limit: e.target.value })} />
           <button data-role="promotion-submit" data-promotion-code={promotion.code} onClick={() => run(() => request("/api/promotions", "POST", promotion))}>Save promotion</button>
           {(state?.promotions ?? []).map((item: any) => <div data-role="promotion-item" key={item.id}>
