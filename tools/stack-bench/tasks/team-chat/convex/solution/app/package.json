@@ -1,0 +1,9 @@
+{
+  "name": "stack-bench-teamchat-convex-oracle",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Reference (oracle) Convex app for the stack-bench team-chat task.",
+  "dependencies": {
+    "convex": "^1.17.0"
+  }
+}

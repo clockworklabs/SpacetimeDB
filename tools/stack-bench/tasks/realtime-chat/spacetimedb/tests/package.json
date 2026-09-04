@@ -1,0 +1,13 @@
+{
+  "name": "stack-bench-verifier-spacetimedb",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "SpacetimeDB verifier: runs the shared behavioral scenario via the SpacetimeDB TS SDK. Versions pinned to match the committed module_bindings (CLI/SDK 2.2.0).",
+  "dependencies": {
+    "spacetimedb": "2.2.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "stack-bench-verifier-teamchat-spacetimedb",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "SpacetimeDB team-chat verifier: runs the shared behavioral scenario via the SpacetimeDB TS SDK. Version pinned to match the committed module_bindings (CLI/SDK 2.5.x).",
+  "dependencies": {
+    "spacetimedb": "2.5.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}
