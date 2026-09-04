@@ -1000,6 +1000,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-sdk-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+ "spacetimedb-testing",
+]
+
+[[package]]
 name = "ci-smoketest-checks"
 version = "0.1.0"
 

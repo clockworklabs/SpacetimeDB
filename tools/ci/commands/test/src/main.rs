@@ -14,10 +14,6 @@ struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();
-    let use_prebuilt_runtime = std::env::var_os("SPACETIME_BIN").is_some();
-    if use_prebuilt_runtime {
-        ci_common::require_runtime()?;
-    }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
@@ -55,50 +51,7 @@ fn main() -> Result<()> {
         "--test-threads=2",
     )
     .run()?;
-    // The SDK test harness uses the same child-process server guard as smoketests,
-    // which expects release CLI/standalone binaries to already exist.
-    if !use_prebuilt_runtime {
-        cmd!(
-            "cargo",
-            "build",
-            "--release",
-            "-p",
-            "spacetimedb-cli",
-            "-p",
-            "spacetimedb-standalone",
-            "--features",
-            "spacetimedb-standalone/allow_loopback_http_for_tests",
-        )
-        .run()?;
-    }
-    // SDK procedure tests intentionally make localhost HTTP requests.
-    cmd!(
-        "cargo",
-        "test",
-        "-p",
-        "spacetimedb-sdk",
-        "--features",
-        "allow_loopback_http_for_tests",
-        "--",
-        "--test-threads=2",
-        "--skip",
-        "unreal"
-    )
-    .run()?;
-    // Run the same SDK suite against wasm/browser test clients.
-    cmd!(
-        "cargo",
-        "test",
-        "-p",
-        "spacetimedb-sdk",
-        "--features",
-        "allow_loopback_http_for_tests,browser",
-        "--",
-        "--test-threads=2",
-        "--skip",
-        "unreal"
-    )
-    .run()?;
+    // SDK tests have their own dedicated, sharded command: `cargo ci sdk-tests`.
     // TODO: This should check for a diff at the start. If there is one, we should alert the user
     // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
     // if they want those checks.
