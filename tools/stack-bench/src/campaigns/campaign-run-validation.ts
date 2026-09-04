@@ -9,7 +9,7 @@ import type { OutcomeBundle, RunOutcome as EvidenceRunOutcome } from '../evidenc
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord }
   from '../evidence/benchmark-run.js';
 import { hashDirectory, sha256 } from '../evidence/provenance.js';
-import { dependencyRepairRecords } from '../progression/dependency-mode.js';
+import { dependencyLevelRepairRecords } from '../progression/dependency-mode.js';
 import { liveProgressionStatus } from '../progression/live-progression.js';
 import { DEPENDENCY_MODE_POLICY } from '../progression/dependency-definition.js';
 import { compileProgressionInput, dependencyRuntimeDefinition }
@@ -210,11 +210,9 @@ function validateDependencyRepairSummary(
   if (level.cumulativeRepairs !== undefined) {
     mismatch(level.cumulativeRepairs !== used, `levels.L${level.level}.cumulativeRepairs`);
   }
-  const repairedNodeIds = repairAttempts.flatMap(attempt => attempt.repair?.nodeIds ?? []);
-  const expectedNodeRepairs = dependencyRepairRecords(
-    state, level.level, repairedNodeIds);
   mismatch(canonicalDefinitionJson(repair.nodeRepairs)
-    !== canonicalDefinitionJson(expectedNodeRepairs), `${at}.nodeRepairs`);
+    !== canonicalDefinitionJson(dependencyLevelRepairRecords(state, level.level)),
+  `${at}.nodeRepairs`);
 }
 
 function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,

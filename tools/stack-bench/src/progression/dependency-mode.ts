@@ -155,6 +155,17 @@ interface DependencyRepairState {
     exhaustedAtLevel: number | null;
     exhaustionReason: string | null;
   }>;
+  attempts: Array<{ repair?: { depth: number; nodeIds: readonly string[] } | null }>;
+}
+
+// The node repair record a run keeps for one level. The run writer and the
+// campaign validator both derive it from the final progression state with
+// this function, so a later level that regrades a node cannot make an
+// earlier level's record disagree with what the validator recomputes.
+export function dependencyLevelRepairRecords(state: DependencyRepairState, level: number) {
+  const repaired = state.attempts.flatMap(attempt =>
+    attempt.repair?.depth === level ? attempt.repair.nodeIds : []);
+  return dependencyRepairRecords(state, level, repaired);
 }
 
 export function dependencyRepairRecords(

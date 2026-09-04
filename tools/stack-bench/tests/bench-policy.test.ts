@@ -21,7 +21,7 @@ import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, sourceBound
   from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource }
   from '../src/runtime/source-materialization.js';
-import { dependencyRepairBudget, dependencyRepairRecords }
+import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
 import { loadTrack } from '../src/composition/tracks.js';
 import { writeArtifact } from '../src/evidence/artifacts.js';
@@ -238,10 +238,25 @@ test('dependency repair accounting uses repairs, not grading observations', () =
       recovery: { repairs: { used: 1 },
         exhaustedAtLevel: null, exhaustionReason: null },
     },
+    attempts: [
+      { repair: { depth: 1, nodeIds: ['accounts', 'recovery'] } },
+      { repair: { depth: 2, nodeIds: ['recovery'] } },
+      { repair: null },
+    ],
   };
   assert.deepEqual(dependencyRepairRecords(state, 1, ['recovery']), [
     { nodeId: 'accounts', used: 1, exhaustionReason: null },
     { nodeId: 'catalog', used: 5, exhaustionReason: 'feature-repairs-exhausted' },
+    { nodeId: 'recovery', used: 1, exhaustionReason: null },
+  ]);
+  // The level record covers the level's own nodes plus the nodes a repair at
+  // that depth touched, and nothing else.
+  assert.deepEqual(dependencyLevelRepairRecords(state, 1), [
+    { nodeId: 'accounts', used: 1, exhaustionReason: null },
+    { nodeId: 'catalog', used: 5, exhaustionReason: 'feature-repairs-exhausted' },
+    { nodeId: 'recovery', used: 1, exhaustionReason: null },
+  ]);
+  assert.deepEqual(dependencyLevelRepairRecords(state, 2), [
     { nodeId: 'recovery', used: 1, exhaustionReason: null },
   ]);
 });

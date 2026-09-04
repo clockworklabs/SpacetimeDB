@@ -55,7 +55,7 @@ import { mutationControlArgv, mutationControlTimeoutMs, pristineMutationBaseline
   from '../src/evidence/mutation-control.js';
 import type { MutationControlArgs } from '../src/evidence/mutation-control.js';
 import { progressionEngine } from '../src/progression/progression-engine.js';
-import { dependencyRepairBudget, dependencyRepairRecords }
+import { dependencyLevelRepairRecords, dependencyRepairBudget, dependencyRepairRecords }
   from '../src/progression/dependency-mode.js';
 import { DEPENDENCY_MODE_VERSION } from '../src/progression/dependency-definition.js';
 import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection,
@@ -2636,6 +2636,16 @@ async function main() {
     }
   }
 
+  // Every level's node repair record is derived from the final progression
+  // state, the same way the campaign validator recomputes it.
+  if (args.progression && progressionExecution?.state) {
+    const finalState = requireProgressionState(progressionExecution.state);
+    for (const level of run.levels) {
+      if (level.repair?.nodeRepairs) {
+        level.repair.nodeRepairs = dependencyLevelRepairRecords(finalState, level.level);
+      }
+    }
+  }
   finalizeRunTotals(run, started, { costComplete: runCostComplete });
   if (args.repairGrant) {
     const continuation = requireContinuation(run);
