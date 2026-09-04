@@ -381,7 +381,8 @@ jobs:
 
   update-mirror-latest-version:
     needs: validate-release-invoker
-    runs-on: spacetimedb-linux
+    # This could move to a custom runner, but it would need to have the AWS cli installed
+    runs-on: ubuntu-latest
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
     steps:
