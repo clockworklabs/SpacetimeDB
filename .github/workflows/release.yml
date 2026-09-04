@@ -81,8 +81,7 @@ jobs:
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
     needs: validate-release-invoker
-    # This compiles only the small release automation binary for downstream jobs.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -154,8 +153,7 @@ jobs:
 
   release-csharp:
     needs: build-cargo-release
-    # This packages the C# SDK and generated DLLs rather than building the core server.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
@@ -291,8 +289,7 @@ jobs:
 
   release-npm:
     needs: build-cargo-release
-    # This installs and publishes the TypeScript SDK with the prebuilt release helper.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always

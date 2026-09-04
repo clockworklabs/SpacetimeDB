@@ -852,8 +852,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    # This reuses prebuilt core binaries and builds only the small module fixture.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -1060,8 +1059,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    # This builds a small CI helper and regenerates documentation, not core server packages.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -1672,8 +1670,7 @@ jobs:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    # This reuses prebuilt core binaries and builds only TypeScript SDK test fixtures.
-    runs-on: spacetimedb-linux-small-staging
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
