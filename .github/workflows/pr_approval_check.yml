@@ -29,7 +29,8 @@ concurrency:
 jobs:
   publish-approval-status:
     name: Set approval status
-    runs-on: spacetimedb-linux
+    # This disabled metadata-only job performs no checkout or build when re-enabled.
+    runs-on: spacetimedb-linux-small-staging
     # Disabled until we can spend some more focus on making this work consistently.
     # See https://github.com/clockworklabs/SpacetimeDB/pull/4673.
     if: false

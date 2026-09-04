@@ -13,7 +13,8 @@ concurrency:
 jobs:
   check_base_ref:
     name: Based on `master`
-    runs-on: spacetimedb-linux
+    # This only evaluates the event base ref and performs no build.
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - id: not_based_on_master
         if: |
@@ -26,7 +27,8 @@ jobs:
   release_dependencies:
     if: ${{ github.event_name == 'pull_request' }}
     name: Check release dependencies
-    runs-on: spacetimedb-linux
+    # This builds a small CI helper and inspects release metadata and git history.
+    runs-on: spacetimedb-linux-small-staging
     permissions:
       contents: read
       pull-requests: read
