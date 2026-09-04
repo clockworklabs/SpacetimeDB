@@ -3,7 +3,7 @@ use super::module_host::{
 };
 use super::{FunctionArgs, ModuleHost};
 use crate::db::relational_db::RelationalDB;
-use crate::host::module_host::{CallProcedureParams, ModuleInfo};
+use crate::host::module_host::{CallProcedureParams, InstancePoolTimeout, ModuleInfo, PooledCallError};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
 use anyhow::anyhow;
@@ -321,6 +321,17 @@ impl ScheduledFunctionParams {
 pub(crate) enum CallScheduledFunctionError {
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error(transparent)]
+    PoolTimeout(#[from] InstancePoolTimeout),
+}
+
+impl From<PooledCallError> for CallScheduledFunctionError {
+    fn from(err: PooledCallError) -> Self {
+        match err {
+            PooledCallError::NoSuchModule(err) => Self::NoSuchModule(err),
+            PooledCallError::PoolTimeout(err) => Self::PoolTimeout(err),
+        }
+    }
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -413,6 +424,19 @@ impl SchedulerActor {
             // If the module already exited, leave the `ScheduledFunction` in
             // the database for when the module restarts.
             Err(CallScheduledFunctionError::NoSuchModule(_)) => {}
+            // No procedure instance freed up in time, so the call never started.
+            // Put the item back rather than silently dropping the schedule.
+            Err(CallScheduledFunctionError::PoolTimeout(err)) => {
+                let function_name: &str = match &item {
+                    QueueItem::Id { function_name, .. } => function_name,
+                    QueueItem::VolatileNonatomicImmediate { function_name, .. } => function_name,
+                };
+                log::warn!("scheduled procedure {function_name} did not start: {err}; retrying");
+                let key = self.queue.insert(item, Duration::ZERO);
+                if let Some(id) = id {
+                    self.key_map.insert(id, key);
+                }
+            }
             Ok(CallScheduledFunctionResult { reschedule: None }) => {
                 // nothing to do
             }

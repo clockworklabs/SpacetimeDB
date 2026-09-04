@@ -531,9 +531,11 @@ mod tests {
 
             [wasm]
             procedure-instance-pool-size = 4
+            procedure-queue-timeout = "10s"
 
             [v8]
             procedure-instance-pool-size = 3
+            procedure-queue-timeout = 0
 
             [v8-heap-policy]
             heap-check-request-interval = 0
@@ -560,6 +562,11 @@ mod tests {
         assert!(!config.common.module_http.enabled);
         assert_eq!(config.common.wasm.procedure_instance_pool_size.get(), 4);
         assert_eq!(config.common.v8.procedure_instance_pool_size.get(), 3);
+        assert_eq!(
+            config.common.wasm.procedure_queue_timeout,
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(config.common.v8.procedure_queue_timeout, None);
         assert_eq!(config.common.v8.heap_policy.heap_check_request_interval, None);
         assert_eq!(
             config.common.v8.heap_policy.heap_check_time_interval,

@@ -171,9 +171,11 @@ impl<'de> serde::Deserialize<'de> for ConfigFile {
             module_http: config.module_http,
             wasm: WasmConfig {
                 procedure_instance_pool_size: config.wasm.procedure_instance_pool_size,
+                procedure_queue_timeout: config.wasm.procedure_queue_timeout,
             },
             v8: V8Config {
                 procedure_instance_pool_size: config.v8.procedure_instance_pool_size,
+                procedure_queue_timeout: config.v8.procedure_queue_timeout,
                 heap_policy: config.v8_heap_policy,
             },
         })
@@ -233,12 +235,16 @@ impl Default for ModuleHttpConfig {
 #[derive(Clone, Copy, Debug)]
 pub struct WasmConfig {
     pub procedure_instance_pool_size: NonZeroUsize,
+    /// How long a call may wait for a free procedure instance before it fails.
+    /// `None` waits forever.
+    pub procedure_queue_timeout: Option<Duration>,
 }
 
 impl Default for WasmConfig {
     fn default() -> Self {
         Self {
             procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+            procedure_queue_timeout: default_procedure_queue_timeout(),
         }
     }
 }
@@ -251,12 +257,15 @@ struct WasmConfigToml {
         deserialize_with = "de_nz_usize"
     )]
     pub procedure_instance_pool_size: NonZeroUsize,
+    #[serde(default = "default_procedure_queue_timeout", deserialize_with = "de_nz_duration")]
+    pub procedure_queue_timeout: Option<Duration>,
 }
 
 impl Default for WasmConfigToml {
     fn default() -> Self {
         Self {
             procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+            procedure_queue_timeout: default_procedure_queue_timeout(),
         }
     }
 }
@@ -264,6 +273,9 @@ impl Default for WasmConfigToml {
 #[derive(Clone, Copy, Debug)]
 pub struct V8Config {
     pub procedure_instance_pool_size: NonZeroUsize,
+    /// How long a call may wait for a free procedure instance before it fails.
+    /// `None` waits forever.
+    pub procedure_queue_timeout: Option<Duration>,
     pub heap_policy: V8HeapPolicyConfig,
 }
 
@@ -271,6 +283,7 @@ impl Default for V8Config {
     fn default() -> Self {
         Self {
             procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+            procedure_queue_timeout: default_procedure_queue_timeout(),
             heap_policy: V8HeapPolicyConfig::default(),
         }
     }
@@ -291,12 +304,15 @@ struct V8ConfigToml {
         deserialize_with = "de_nz_usize"
     )]
     pub procedure_instance_pool_size: NonZeroUsize,
+    #[serde(default = "default_procedure_queue_timeout", deserialize_with = "de_nz_duration")]
+    pub procedure_queue_timeout: Option<Duration>,
 }
 
 impl Default for V8ConfigToml {
     fn default() -> Self {
         Self {
             procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+            procedure_queue_timeout: default_procedure_queue_timeout(),
         }
     }
 }
@@ -380,6 +396,10 @@ fn default_v8_procedure_instance_pool_size() -> NonZeroUsize {
 
 fn default_wasm_procedure_instance_pool_size() -> NonZeroUsize {
     std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
+fn default_procedure_queue_timeout() -> Option<Duration> {
+    Some(Duration::from_secs(30))
 }
 
 fn de_nz_usize<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>

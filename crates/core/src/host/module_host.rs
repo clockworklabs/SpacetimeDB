@@ -392,6 +392,7 @@ pub enum ModuleWithInstance {
         core: AllocatedJobCore,
         init_inst: Box<super::wasmtime::ModuleInstance>,
         procedure_instance_pool_size: NonZeroUsize,
+        procedure_queue_timeout: Option<Duration>,
     },
     Js {
         module: super::v8::JsModule,
@@ -491,18 +492,22 @@ impl WasmtimeModuleHost {
         });
     }
 
-    async fn enqueue_with_procedure_instance<A>(
+    /// Runs `wasm` on the procedure instance held by `lease`,
+    /// which the caller acquires with [`ModuleInstanceManager::get_instance`]
+    /// so that a pool timeout can be reported before any work is enqueued.
+    fn enqueue_with_procedure_instance<A>(
         &self,
         label: &str,
         on_panic: Arc<dyn Fn() + Send + Sync>,
         timer_guard: CallTimerGuard,
+        lease: ModuleInstanceLease<Box<ModuleInstance>>,
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
     ) where
         A: Send + 'static,
     {
         let instance_manager = self.procedure_instances.clone();
-        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+        let ModuleInstanceLease { instance, slot } = lease;
         let label = label.to_owned();
         self.executor.enqueue_async_job(async move || {
             scopeguard::defer_on_unwind!({
@@ -1256,6 +1261,9 @@ struct ModuleInstanceManager<M: GenericModule> {
     module: M,
     metrics: InstanceManagerMetrics,
     instance_slots: Option<Arc<Semaphore>>,
+    /// How long [`Self::get_instance`] waits for a slot in a bounded pool.
+    /// `None` waits forever.
+    slot_timeout: Option<Duration>,
 }
 
 struct ModuleInstanceLease<I> {
@@ -1402,8 +1410,9 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         init_inst: Option<M::Instance>,
         metrics: InstanceManagerMetrics,
         max_instances: NonZeroUsize,
+        slot_timeout: Option<Duration>,
     ) -> Self {
-        Self::new_inner(module, init_inst, metrics, Some(max_instances))
+        Self::new_inner(module, init_inst, metrics, Some(max_instances), slot_timeout)
     }
 
     fn new_inner(
@@ -1411,6 +1420,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         init_inst: Option<M::Instance>,
         metrics: InstanceManagerMetrics,
         max_instances: Option<NonZeroUsize>,
+        slot_timeout: Option<Duration>,
     ) -> Self {
         let mut instances = VecDeque::new();
         instances.extend(init_inst);
@@ -1430,25 +1440,35 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             module,
             metrics,
             instance_slots: max_instances.map(|max_instances| Arc::new(Semaphore::new(max_instances.get()))),
+            slot_timeout,
         }
     }
 
-    async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
-        let ModuleInstanceLease { instance, slot } = self.get_instance().await;
+    async fn with_instance<R>(
+        &self,
+        f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance),
+    ) -> Result<R, InstancePoolTimeout> {
+        let ModuleInstanceLease { instance, slot } = self.get_instance().await?;
         let (res, instance) = f(instance).await;
         self.return_instance(ModuleInstanceLease { instance, slot });
-        res
+        Ok(res)
     }
 
-    async fn get_instance(&self) -> ModuleInstanceLease<M::Instance> {
+    /// Checks out an instance, waiting for a free slot if the pool is bounded.
+    ///
+    /// Fails with [`InstancePoolTimeout`] if no slot frees up within `slot_timeout`,
+    /// in which case nothing was started on behalf of the caller.
+    async fn get_instance(&self) -> Result<ModuleInstanceLease<M::Instance>, InstancePoolTimeout> {
         let slot = if let Some(instance_slots) = &self.instance_slots {
-            Some(
-                instance_slots
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .expect("module instance slot semaphore should not close"),
-            )
+            let acquire = instance_slots.clone().acquire_owned();
+            let permit = match self.slot_timeout {
+                Some(timeout) => match tokio::time::timeout(timeout, acquire).await {
+                    Ok(permit) => permit,
+                    Err(_elapsed) => return Err(InstancePoolTimeout(timeout)),
+                },
+                None => acquire.await,
+            };
+            Some(permit.expect("module instance slot semaphore should not close"))
         } else {
             None
         };
@@ -1467,7 +1487,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             res
         };
 
-        ModuleInstanceLease { instance, slot }
+        Ok(ModuleInstanceLease { instance, slot })
     }
 
     fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
@@ -1651,12 +1671,30 @@ pub enum ViewCallError {
     InternalError(String),
 }
 
+/// No procedure instance became free within the configured `procedure-queue-timeout`.
+///
+/// The call was not started, so it is safe to retry.
+#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[error("Timed out after {0:?} waiting for a free procedure instance; the call was not started")]
+pub struct InstancePoolTimeout(pub Duration);
+
+/// Errors from checking out a pooled procedure instance to run a call on.
+#[derive(thiserror::Error, Debug)]
+pub enum PooledCallError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error(transparent)]
+    PoolTimeout(#[from] InstancePoolTimeout),
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum ProcedureCallError {
     #[error(transparent)]
     Args(#[from] InvalidProcedureArguments),
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error(transparent)]
+    PoolTimeout(#[from] InstancePoolTimeout),
     #[error("No such procedure")]
     NoSuchProcedure,
     #[error("Procedure terminated due to insufficient budget")]
@@ -1665,14 +1703,34 @@ pub enum ProcedureCallError {
     InternalError(String),
 }
 
+impl From<PooledCallError> for ProcedureCallError {
+    fn from(err: PooledCallError) -> Self {
+        match err {
+            PooledCallError::NoSuchModule(err) => Self::NoSuchModule(err),
+            PooledCallError::PoolTimeout(err) => Self::PoolTimeout(err),
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum HttpHandlerCallError {
     #[error(transparent)]
     NoSuchModule(#[from] NoSuchModule),
+    #[error(transparent)]
+    PoolTimeout(#[from] InstancePoolTimeout),
     #[error("no such http handler")]
     NoSuchHandler,
     #[error("The module instance encountered a fatal error: {0}")]
     InternalError(String),
+}
+
+impl From<PooledCallError> for HttpHandlerCallError {
+    fn from(err: PooledCallError) -> Self {
+        match err {
+            PooledCallError::NoSuchModule(err) => Self::NoSuchModule(err),
+            PooledCallError::PoolTimeout(err) => Self::PoolTimeout(err),
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1777,6 +1835,7 @@ impl ModuleHost {
                 core,
                 init_inst,
                 procedure_instance_pool_size,
+                procedure_queue_timeout,
             } => {
                 info = module.info();
                 let module = Arc::new(module);
@@ -1790,6 +1849,7 @@ impl ModuleHost {
                     None,
                     metrics,
                     procedure_instance_pool_size,
+                    procedure_queue_timeout,
                 ));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     module,
@@ -1801,6 +1861,7 @@ impl ModuleHost {
                 info = module.info();
                 let metrics = module.metrics();
                 let procedure_instance_pool_size = module.procedure_instance_pool_size();
+                let procedure_queue_timeout = module.procedure_queue_timeout();
                 let host_module = module.clone();
                 let main_instance = SharedJsMainInstanceManager::new(init_inst, metrics.clone());
                 let procedure_instances = ModuleInstanceManager::new_bounded_with_metrics(
@@ -1808,6 +1869,7 @@ impl ModuleHost {
                     None,
                     metrics,
                     procedure_instance_pool_size,
+                    procedure_queue_timeout,
                 );
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module: host_module,
@@ -1931,7 +1993,7 @@ impl ModuleHost {
         arg: A,
         wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
         js: impl AsyncFnOnce(A, &JsProcedureInstance) -> R,
-    ) -> Result<R, NoSuchModule>
+    ) -> Result<R, PooledCallError>
     where
         R: Send + 'static,
         A: Send + 'static,
@@ -1958,7 +2020,7 @@ impl ModuleHost {
                             })
                             .await
                     })
-                    .await
+                    .await?
             }
             ModuleHostInner::Js(host) => {
                 host.procedure_instances
@@ -1967,7 +2029,7 @@ impl ModuleHost {
                         let res = js(arg, &inst).await;
                         (res, inst)
                     })
-                    .await
+                    .await?
             }
         })
     }
@@ -2653,7 +2715,10 @@ impl ModuleHost {
 
         match &*self.inner {
             ModuleHostInner::Js(host) => {
-                let lease = host.procedure_instances.get_instance().await;
+                let lease = match host.procedure_instances.get_instance().await {
+                    Ok(lease) => lease,
+                    Err(err) => return self.send_procedure_error(&procedure_name, timer, target, err.into()),
+                };
                 let call = lease.instance.enqueue_procedure(params).await;
                 let module = self.clone();
                 tokio::spawn(async move {
@@ -2679,25 +2744,25 @@ impl ModuleHost {
                 let target_for_job = target.clone();
                 let timer_guard = self.start_call_timer(&procedure_name);
                 let on_panic = self.on_panic.clone();
-                wasm_host
-                    .enqueue_with_procedure_instance(
-                        &procedure_name,
-                        on_panic,
-                        timer_guard,
-                        params,
-                        async move |params, inst| {
-                            let ret = inst.call_procedure(params).await;
-                            if let Err(err) = module.log_and_send_procedure_result(
-                                &procedure_name_for_job,
-                                timer,
-                                target_for_job,
-                                ret,
-                            ) {
-                                log::warn!("Procedure call failed: {err:#}");
-                            }
-                        },
-                    )
-                    .await;
+                let lease = match wasm_host.procedure_instances.get_instance().await {
+                    Ok(lease) => lease,
+                    Err(err) => return self.send_procedure_error(&procedure_name, timer, target, err.into()),
+                };
+                wasm_host.enqueue_with_procedure_instance(
+                    &procedure_name,
+                    on_panic,
+                    timer_guard,
+                    lease,
+                    params,
+                    async move |params, inst| {
+                        let ret = inst.call_procedure(params).await;
+                        if let Err(err) =
+                            module.log_and_send_procedure_result(&procedure_name_for_job, timer, target_for_job, ret)
+                        {
+                            log::warn!("Procedure call failed: {err:#}");
+                        }
+                    },
+                );
                 Ok(())
             }
         }
@@ -2867,7 +2932,7 @@ impl ModuleHost {
         &self,
         name: &str,
         params: CallProcedureParams,
-    ) -> Result<CallProcedureReturn, NoSuchModule> {
+    ) -> Result<CallProcedureReturn, PooledCallError> {
         call_pooled_instance!(
             self,
             name,
@@ -3647,12 +3712,16 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{
+        GenericModule, GenericModuleInstance, InstanceManagerMetrics, InstancePoolTimeout, ModuleHost,
+        ModuleInstanceManager,
+    };
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
     };
     use crate::db::relational_db::tests_utils::{insert, with_auto_commit, TestDB};
+    use crate::messages::control_db::HostType;
     use crate::subscription::module_subscription_actor::ModuleSubscriptions;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_lib::identity::AuthCtx;
@@ -3676,6 +3745,46 @@ mod tests {
         let client_id = ClientActorId::for_test(Identity::ZERO);
         let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, v2_client_config(), db.clone());
         (Arc::new(sender), receiver)
+    }
+
+    struct TestModule;
+    struct TestInstance;
+
+    impl GenericModuleInstance for TestInstance {
+        fn trapped(&self) -> bool {
+            false
+        }
+    }
+
+    impl GenericModule for TestModule {
+        type Instance = TestInstance;
+        async fn create_instance(&self) -> TestInstance {
+            TestInstance
+        }
+        fn host_type(&self) -> HostType {
+            HostType::Wasm
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_pool_times_out_waiting_for_a_slot() {
+        let timeout = std::time::Duration::from_millis(20);
+        let pool = ModuleInstanceManager::new_bounded_with_metrics(
+            TestModule,
+            None,
+            InstanceManagerMetrics::new(HostType::Wasm, Identity::ZERO),
+            std::num::NonZeroUsize::new(1).expect("1 is non-zero"),
+            Some(timeout),
+        );
+
+        let held = pool
+            .get_instance()
+            .await
+            .expect("the first checkout gets the only slot");
+        assert_eq!(pool.get_instance().await.err(), Some(InstancePoolTimeout(timeout)));
+
+        pool.return_instance(held);
+        assert!(pool.get_instance().await.is_ok());
     }
 
     #[test]
