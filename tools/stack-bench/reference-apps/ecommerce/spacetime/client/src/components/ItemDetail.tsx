@@ -111,7 +111,7 @@ export default function ItemDetail({
                   if (e.key === 'Enter') submitReview();
                 }}
               />
-              <button type="button" className="btn btn-primary" data-role="review-submit" onClick={submitReview}>
+              <button type="button" className="btn btn-primary" data-role="review-submit" data-review-item-id={String(item.id)} onClick={submitReview}>
                 Submit review
               </button>
               {reviewError && (

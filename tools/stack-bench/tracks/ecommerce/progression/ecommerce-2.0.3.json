@@ -176,11 +176,11 @@
       "title": "Reviews",
       "questline": "reviews",
       "featureRefs": [
-        "ecommerce.feature.reviews@1.2.2"
+        "ecommerce.feature.reviews@1.2.3"
       ],
       "gradingGroups": [
-        "ecommerce.feature.reviews@1.2.2#reviews",
-        "ecommerce.progression.review-access-specifications@1.0.0#review-eligibility-direct",
+        "ecommerce.feature.reviews@1.2.3#reviews",
+        "ecommerce.progression.review-access-specifications@1.0.1#review-eligibility-direct",
         "ecommerce.spec.access-control@2.0.1#review-eligibility",
         "ecommerce.spec.live-state@2.0.0#open-list",
         "ecommerce.spec.live-state@2.0.0#rating",
@@ -332,10 +332,10 @@
       "title": "Recommendations",
       "questline": "recommendations",
       "featureRefs": [
-        "ecommerce.l2.recommendations@2.0.0"
+        "ecommerce.l2.recommendations@2.0.1"
       ],
       "gradingGroups": [
-        "ecommerce.l2.recommendations@2.0.0#recommendations"
+        "ecommerce.l2.recommendations@2.0.1#recommendations"
       ],
       "dependencies": [
         {
@@ -385,7 +385,7 @@
         "ecommerce.l3.order-delivery-features@1.1.1"
       ],
       "gradingGroups": [
-        "ecommerce.progression.cancellation-queue-specifications@1.0.0#queue-removal",
+        "ecommerce.progression.cancellation-queue-specifications@1.0.1#queue-removal",
         "ecommerce.l3.deferred-durability-specifications@1.0.0#delivery-restart",
         "ecommerce.l3.deferred-integrity-specifications@1.0.0#delivery-once",
         "ecommerce.l3.order-delivery-features@1.1.1#automatic-delivery",
@@ -728,11 +728,11 @@
       "title": "Personalized recommendations",
       "questline": "recommendations",
       "featureRefs": [
-        "ecommerce.progression.personalized-recommendations@2.0.0"
+        "ecommerce.progression.personalized-recommendations@2.0.1"
       ],
       "gradingGroups": [
-        "ecommerce.progression.personalized-recommendations@2.0.0#ordering",
-        "ecommerce.progression.personalized-recommendations@2.0.0#isolation"
+        "ecommerce.progression.personalized-recommendations@2.0.1#ordering",
+        "ecommerce.progression.personalized-recommendations@2.0.1#isolation"
       ],
       "dependencies": [
         {

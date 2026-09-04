@@ -962,7 +962,7 @@ function ItemDetailPanel({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
-            <button className="btn btn-primary" data-role="review-submit" type="submit">
+            <button className="btn btn-primary" data-role="review-submit" data-review-item-id={item.id} type="submit">
               Submit review
             </button>
           </form>

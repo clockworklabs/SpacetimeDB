@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.personalized-recommendations",
+  "version": "2.0.1",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Personalized recommendations",
+  "description": "Deterministic recommendations isolated by customer.",
+  "requiresPacks": [
+    "ecommerce.l2.recommendations"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser"
+  ],
+  "evidence": [
+    "browser-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 70000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.progression.personalized-recommendations",
+        "path": "prompts/modular/progression-personalized-recommendations-1.0.0.md",
+        "order": 4010,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.progression.personalized-recommendation-hooks",
+        "path": "contracts/progression-personalized-recommendations-1.0.md",
+        "order": 4910,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "ordering",
+      "stableId": "personalized-recommendations",
+      "source": "scenarios/progression-personalized-recommendations-1.0.1.json",
+      "feature": 403,
+      "criteria": [
+        "403a"
+      ],
+      "role": "feature"
+    },
+    {
+      "id": "isolation",
+      "stableId": "personalized-recommendations",
+      "source": "scenarios/progression-personalized-recommendations-1.0.1.json",
+      "feature": 403,
+      "criteria": [
+        "403b"
+      ],
+      "role": "feature"
+    }
+  ]
+}

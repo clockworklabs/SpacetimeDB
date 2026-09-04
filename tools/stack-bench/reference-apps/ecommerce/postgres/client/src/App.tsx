@@ -914,7 +914,7 @@ function ItemDetailPanel(props: {
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
             />
-            <button className="btn btn-sm" data-role="review-submit" onClick={submit}>
+            <button className="btn btn-sm" data-role="review-submit" data-review-item-id={item.id} onClick={submit}>
               Submit review
             </button>
           </div>

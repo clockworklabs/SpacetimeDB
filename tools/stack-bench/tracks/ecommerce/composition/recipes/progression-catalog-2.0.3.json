@@ -97,9 +97,9 @@
       ]
     },
     {
-      "path": "../packs/feature-reviews-1.2.2.json",
+      "path": "../packs/feature-reviews-1.2.3.json",
       "id": "ecommerce.feature.reviews",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "includeRoles": [
         "feature"
       ]
@@ -137,9 +137,9 @@
       ]
     },
     {
-      "path": "../packs/l2-recommendations-2.0.0.json",
+      "path": "../packs/l2-recommendations-2.0.1.json",
       "id": "ecommerce.l2.recommendations",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "includeRoles": [
         "feature"
       ]
@@ -273,9 +273,9 @@
       ]
     },
     {
-      "path": "../packs/progression-cancellation-queue-specifications-1.0.0.json",
+      "path": "../packs/progression-cancellation-queue-specifications-1.0.1.json",
       "id": "ecommerce.progression.cancellation-queue-specifications",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "includeRoles": [
         "guarantee"
       ]
@@ -353,9 +353,9 @@
       ]
     },
     {
-      "path": "../packs/progression-personalized-recommendations-2.0.0.json",
+      "path": "../packs/progression-personalized-recommendations-2.0.1.json",
       "id": "ecommerce.progression.personalized-recommendations",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "includeRoles": [
         "feature"
       ]
@@ -401,9 +401,9 @@
       ]
     },
     {
-      "path": "../packs/progression-review-access-specifications-1.0.0.json",
+      "path": "../packs/progression-review-access-specifications-1.0.1.json",
       "id": "ecommerce.progression.review-access-specifications",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "includeRoles": [
         "guarantee"
       ]
