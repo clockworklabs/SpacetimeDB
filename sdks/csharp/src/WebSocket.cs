@@ -48,6 +48,7 @@ namespace SpacetimeDB
 #endif
         }
 
+        // TODO: This never has subscriptions
         public event OpenEventHandler? OnConnect;
         public event ConnectErrorEventHandler? OnConnectError;
         public event SendErrorEventHandler? OnSendError;

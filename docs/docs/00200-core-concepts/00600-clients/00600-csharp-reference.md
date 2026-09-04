@@ -42,6 +42,7 @@ Before diving into the reference, you may want to review:
 | [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for subscription error callbacks.                      |
 | [Query Builder API](#query-builder-api)                           | Type-safe query builder for typed subscription queries.                                                  |
 | [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                              |
+| [Configure event dispatch](#configure-event-dispatch)             | Choose native C# events or a custom event listener backend.                                              |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
 | [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                     |
 
@@ -1034,6 +1035,55 @@ class RemoteTableHandle
 The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The handle must have a known primary key for callbacks to be triggered. This includes tables with primary keys, query builder views with inferred primary keys, and procedural views declared with `PrimaryKey`. Newly registered or canceled callbacks do not take effect until the following event.
 
 See [the quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md) for examples of registering and unregistering row callbacks.
+
+### Configure event dispatch
+
+By default, the C# SDK stores table row callbacks as regular native C# events. For most applications, no extra setup is required:
+
+```csharp
+conn.Db.User.OnInsert += OnUserInsert;
+conn.Db.User.OnInsert -= OnUserInsert;
+```
+
+Native events are simple, idiomatic, and should be your default choice unless profiling shows that event subscription management is a problem in your application.
+
+If your client frequently adds and removes many row callbacks, the cost of native multicast delegate updates can become noticeable. For those cases, the SDK can use a custom event listener backend instead:
+
+```csharp
+using SpacetimeDB;
+
+SpacetimeDB.EventHandling.Backend.UseCustomListeners();
+
+var conn = DbConnection.Builder()
+    .WithUri("http://localhost:3000")
+    .WithDatabaseName("my-database")
+    .Build();
+```
+
+Call `Backend.UseCustomListeners()` before creating the generated `DbConnection`. Table handles capture the selected backend when they are constructed, so changing the backend later does not update existing handles.
+
+The default custom backend keeps listeners in an indexed collection. It is useful when you have many listener removals, duplicate subscriptions, or integration code that attaches and detaches callbacks aggressively. Registering and unregistering callbacks still uses the same generated `OnInsert`, `OnDelete`, and `OnUpdate` event APIs.
+
+Reducer result events, such as `conn.Reducers.OnSendMessage`, are always regular C# events.
+
+If your project includes [Sappy](https://github.com/clockworklabs/SappyEvents/), the SDK can use Sappy-backed listener storage:
+
+```csharp
+using SpacetimeDB.SappyIntegration;
+
+SpacetimeDB.EventHandling.Backend.UseCustomListeners(new SappyEventListenersFactory());
+```
+
+Use the Sappy backend only in projects that already reference Sappy. It is intended for applications that have standardized on Sappy's event/listener model; it is not required for normal C# or Unity clients.
+
+For Sappy-backed table callbacks, register and unregister generated Sappy targets through the listener accessors instead of using normal C# event syntax:
+
+```csharp
+conn.Db.User.OnInsertListeners.AddSapTarget(Sappy.OnUserInsert);
+conn.Db.User.OnInsertListeners.RemoveSapTarget(Sappy.OnUserInsert);
+```
+
+Use the matching listener accessor for each row callback: `OnInsertListeners`, `OnDeleteListeners`, and `OnUpdateListeners`. This lets Sappy manage the callback target directly, which is required for the Sappy backend to behave correctly and avoid unnecessary delegate-management overhead.
 
 ### Unique constraint index access
 
