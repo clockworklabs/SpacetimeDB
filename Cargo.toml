@@ -32,6 +32,7 @@ members = [
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
+  "sdks/csharp/test-harness~",
   "sdks/rust",
   "sdks/unreal",
   "crates/snapshot",
