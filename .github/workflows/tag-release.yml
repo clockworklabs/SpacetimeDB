@@ -31,7 +31,7 @@ jobs:
   announce-release:
     name: Announce GitHub release (Internal)
     # This only formats release metadata and posts a Discord notification.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: >-
       ${{
         github.event_name == 'release'
@@ -54,7 +54,7 @@ jobs:
   public-discord-notification:
     name: Announce GitHub release (Public)
     # This only formats release notes and posts them to Discord.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - name: Send Discord notification
         env:

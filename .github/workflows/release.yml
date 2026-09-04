@@ -61,7 +61,7 @@ jobs:
   validate-release-invoker:
     name: Validate release invoker
     # This only validates workflow inputs and the invoking actor.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - name: Reject direct public release invocations
         env:
@@ -82,7 +82,7 @@ jobs:
   build-cargo-release:
     needs: validate-release-invoker
     # This compiles only the small release automation binary for downstream jobs.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -112,7 +112,7 @@ jobs:
   release-crates:
     needs: build-cargo-release
     # This packages and publishes crates with the prebuilt release helper; it does not build the workspace.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: ${{ inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
@@ -155,7 +155,7 @@ jobs:
   release-csharp:
     needs: build-cargo-release
     # This packages the C# SDK and generated DLLs rather than building the core server.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
@@ -235,7 +235,7 @@ jobs:
   release-cpp:
     needs: build-cargo-release
     # This updates and publishes the generated C++ SDK repository without a core build.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: ${{ inputs.release_cpp }}
     env:
       CARGO_TERM_COLOR: always
@@ -292,7 +292,7 @@ jobs:
   release-npm:
     needs: build-cargo-release
     # This installs and publishes the TypeScript SDK with the prebuilt release helper.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
@@ -387,7 +387,7 @@ jobs:
   update-mirror-latest-version:
     needs: validate-release-invoker
     # This only verifies S3 objects and updates the latest-version marker.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
     steps:
@@ -430,7 +430,7 @@ jobs:
       - release-docker
       - update-mirror-latest-version
     # This only publishes existing artifacts and dispatches the release announcement.
-    runs-on: spacetimedb-linux-small
+    runs-on: spacetimedb-linux-small-staging
     if: >-
       ${{
         always()
