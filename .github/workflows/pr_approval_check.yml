@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   group: pr-approval-check-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   publish-approval-status:

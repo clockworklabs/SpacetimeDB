@@ -15,7 +15,7 @@ name: CI
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -93,7 +93,7 @@ jobs:
 
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Upload build artifacts (Linux)
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -310,7 +310,7 @@ jobs:
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
@@ -324,6 +324,7 @@ jobs:
 
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
+    if: false # Temporary small-runner saturation test.
     name: Build smoketests (Linux)
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -391,6 +392,7 @@ jobs:
 
   smoketest_build_windows:
     needs: [upload-build-artifacts-windows]
+    if: false # Temporary small-runner saturation test.
     name: Build smoketests (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
@@ -405,6 +407,7 @@ jobs:
 
   smoketest_partitions_linux:
     needs: [smoketest_build_linux]
+    if: false # Temporary small-runner saturation test.
     name: Smoketests (Linux ${{ matrix.partition }}/1)
     strategy:
       fail-fast: false
@@ -555,6 +558,7 @@ jobs:
 
   smoketest_partitions_windows:
     needs: [smoketest_build_windows]
+    if: false # Temporary small-runner saturation test.
     name: Smoketests (Windows ${{ matrix.partition }}/4)
     strategy:
       fail-fast: false
@@ -593,7 +597,7 @@ jobs:
 
   test:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Test Suite
     runs-on: spacetimedb-linux
 
@@ -763,7 +767,7 @@ jobs:
 
   lints:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Lints
     runs-on: spacetimedb-linux
     env:
@@ -850,7 +854,7 @@ jobs:
 
   module_latest_deps:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Build and test wasm bindings
     runs-on: spacetimedb-linux
     env:
@@ -908,7 +912,7 @@ jobs:
           # The Linux update-flow test uses released artifacts and builds only its small CI driver.
           - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux-small-staging }
           - { target: aarch64-apple-darwin, runner: macos-latest }
-          - { target: x86_64-pc-windows-msvc, runner: windows-latest }
+          # Windows disabled for the temporary small-runner saturation test.
     runs-on: ${{ matrix.runner }}
     env:
       RUST_BACKTRACE: full
@@ -1056,7 +1060,7 @@ jobs:
 
   cli_docs:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Check CLI docs
     permissions: read-all
     runs-on: spacetimedb-linux
@@ -1322,7 +1326,7 @@ jobs:
 
   godot-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     permissions:
       contents: read
     # The .NET packaging, Godot project build, and integration test make this too heavy for a small runner.
@@ -1432,7 +1436,7 @@ jobs:
 
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
     runs-on: spacetimedb-linux
     timeout-minutes: 30
@@ -1632,7 +1636,7 @@ jobs:
 
   docs-build:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: Docs build
     # Building the documentation site nearly saturated a small runner and used substantial memory.
     runs-on: spacetimedb-linux
@@ -1668,7 +1672,7 @@ jobs:
 
   typescript-test:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false # Temporary small-runner saturation test.
     name: TypeScript - Tests
     runs-on: spacetimedb-linux
     env:
