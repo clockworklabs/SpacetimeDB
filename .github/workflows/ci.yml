@@ -1147,10 +1147,10 @@ jobs:
 
       - *show-sccache-stats
 
-  csharp_codegen_check:
+  csharp_tests:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Test Suite - C# Codegen
+    name: Test Suite - C#
     runs-on: spacetimedb-linux
     timeout-minutes: 10
     env:
@@ -1168,34 +1168,6 @@ jobs:
       - name: Check generated C# module definition
         run: cargo ci test csharp-codegen
 
-      - *show-sccache-stats
-
-      - name: Upload timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-timings-csharp-codegen
-          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
-          retention-days: 14
-
-  csharp_bindings_tests:
-    needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Test Suite - C# Bindings
-    runs-on: spacetimedb-linux
-    timeout-minutes: 10
-    env:
-      RUST_BACKTRACE: full
-    steps:
-      - *set-cargo-target-dir
-      - *configure-sccache
-
-      - *find-git-ref
-      - *checkout-sources
-
-      - uses: dsherret/rust-toolchain-file@v1
-      - *set-default-rust-toolchain
-
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
@@ -1204,6 +1176,14 @@ jobs:
         run: cargo ci test csharp
 
       - *show-sccache-stats
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-csharp
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
 
   cpp_compile_tests:
     needs: [merge_queue_noop, lints]
@@ -1250,8 +1230,7 @@ jobs:
         rust_test_build,
         rust_tests,
         rust_serial_tests,
-        csharp_codegen_check,
-        csharp_bindings_tests,
+        csharp_tests,
         cpp_compile_tests,
       ]
     if: ${{ always() }}
@@ -1265,14 +1244,12 @@ jobs:
           RUST_RESULT: ${{ needs.rust_tests.result }}
           RUST_BUILD_RESULT: ${{ needs.rust_test_build.result }}
           RUST_SERIAL_RESULT: ${{ needs.rust_serial_tests.result }}
-          CSHARP_CODEGEN_RESULT: ${{ needs.csharp_codegen_check.result }}
-          CSHARP_RESULT: ${{ needs.csharp_bindings_tests.result }}
+          CSHARP_RESULT: ${{ needs.csharp_tests.result }}
           CPP_RESULT: ${{ needs.cpp_compile_tests.result }}
         run: |
           test "${RUST_BUILD_RESULT}" = success
           test "${RUST_RESULT}" = success
           test "${RUST_SERIAL_RESULT}" = success
-          test "${CSHARP_CODEGEN_RESULT}" = success
           test "${CSHARP_RESULT}" = success
           test "${CPP_RESULT}" = success
 
