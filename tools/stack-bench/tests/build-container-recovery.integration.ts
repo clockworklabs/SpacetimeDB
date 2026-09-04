@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { inspectBuildContainer } from '../container/build-container-inspection.js';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 
@@ -49,8 +50,7 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       STACK_BENCH_LEASE_TOKEN: lease.ownershipToken };
     const build = compiledEntrypoint('container', 'run-build.js');
     const baseArgs = [build, '--prepare-only', '--app', app, '--backend', 'mongodb', '--image',
-      process.env.STACK_BENCH_BUILD_IMAGE
-        ?? 'stack-bench-build@sha256:b404d26138ea16be07a672389981e7e8b89d7740570f9baa3ddd4d0e96336c10'];
+      process.env.STACK_BENCH_BUILD_IMAGE ?? DEFAULT_BUILD_IMAGE];
     const runBuild = (args: readonly string[]) => spawnSync(process.execPath, args,
       { encoding: 'utf8', env, timeout: 180_000 });
 
@@ -72,7 +72,7 @@ test('Docker replaces a stopped leased build container and preserves its app mou
       'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
     assert.equal(inspected.tmpfs['/home/developer/.claude'],
       'rw,nosuid,nodev,uid=10001,gid=10001,mode=0700');
-    assert.equal(inspected.tmpfs['/deps'], 'rw,nosuid,nodev,mode=0755');
+    assert.equal(inspected.tmpfs['/deps'], 'rw,exec,nosuid,nodev,mode=0755');
     assert.equal(inspected.tmpfs['/run/application'], 'rw,nosuid,nodev,mode=0700');
     assert.equal(inspected.tmpfs['/root'], undefined);
     const agentCaps = docker(['exec', '--user', '10001:10001', firstContainerName,
