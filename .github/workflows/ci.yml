@@ -23,10 +23,15 @@ permissions:
 
 jobs:
   merge_queue_noop:
-    name: Detect merge queue no-op
-    runs-on: ubuntu-latest
+    name: Merge queue no-op/reuse
+    runs-on: spacetimedb-linux
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
     outputs:
-      skip: ${{ steps.compare.outputs.skip }}
+      # A reused failure also skips fresh jobs; the final step reports that failure on this commit.
+      skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
@@ -70,18 +75,59 @@ jobs:
             echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
           fi
 
+      # The merge queue coordinator is part of cargo ci and needs the repository's pinned Rust toolchain.
+      - uses: dsherret/rust-toolchain-file@v1
+        if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
+
+      - name: Reuse merge queue run
+        id: reuse
+        if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo ci other-workflows coordinate merge-queue-reuse
+
+      - name: Report merge queue workflow reuse failure on this commit
+        if: ${{ steps.reuse.outputs.failed == 'true' }}
+        run: exit 1
+
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
     steps: &upload-build-artifact-steps
+      - &set-cargo-target-dir
+        name: Set Cargo target directory
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            cargo_target_dir="${HOME}/actions-runner/_work/target"
+          else
+            # Forward slashes keep the Windows path compatible with Cargo,
+            # PowerShell, GitHub Actions, and Git Bash filesystem commands.
+            cargo_target_dir="${GITHUB_WORKSPACE//\\//}/target"
+          fi
+          echo "CARGO_TARGET_DIR=${cargo_target_dir}" >>"${GITHUB_ENV}"
+
+      - &configure-sccache
+        name: Configure sccache
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            # sccache cannot cache incremental compilation artifacts, so
+            # disable Cargo's incremental mode whenever the wrapper is active.
+            echo "CARGO_INCREMENTAL=0" >>"${GITHUB_ENV}"
+            echo "RUSTC_WRAPPER=/usr/local/bin/sccache" >>"${GITHUB_ENV}"
+            echo "SCCACHE_DIR=${HOME}/.cache/sccache" >>"${GITHUB_ENV}"
+            echo "SCCACHE_CACHE_SIZE=20G" >>"${GITHUB_ENV}"
+          fi
+
       - &find-git-ref
         name: Find Git ref
         env:
@@ -120,13 +166,10 @@ jobs:
       # - V8 uses its default features and has profile-specific native output.
       # - OpenSSL is the vendored static build with legacy enabled. Windows uses
       #   NASM, which is represented by a separate cache-key suffix.
-      # - jemalloc is an optimized static PIC build with profiling, stats, and
-      #   its default background-thread support.
-      # - Zstd is an optimized static build with legacy support and dictionary
-      #   APIs. It is reused across Cargo profiles.
       - &set-native-cache-keys
         name: Set native cache keys
         id: native-cache-keys
+        if: runner.os == 'Windows'
         shell: bash
         run: |
           target="$(rustc -vV | sed -n 's/^host: //p')"
@@ -137,15 +180,10 @@ jobs:
           echo "v8-release-key=rusty-v8-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
           echo "v8-debug-key=rusty-v8-debug-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
           echo "openssl-key=openssl-v1-300.5.3+3.5.4-${target}${openssl_suffix}" >>"$GITHUB_OUTPUT"
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            cc="${CC:-cc}"
-            cc_hash="$("$cc" --version | sha256sum | cut -c1-16)"
-            echo "jemalloc-key=jemalloc-v1-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
-            echo "zstd-key=zstd-v1-2.0.16+zstd.1.5.7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
-          fi
 
       - &cache-rusty-v8
         name: Cache rusty_v8
+        if: runner.os == 'Windows'
         uses: actions/cache@v4
         with: &v8-release-cache
           path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
@@ -154,6 +192,7 @@ jobs:
       - &cache-openssl
         name: Cache OpenSSL
         id: cache-openssl
+        if: runner.os == 'Windows'
         uses: actions/cache@v4
         with: &openssl-cache
           path: ${{ github.workspace }}/.ci-cache/openssl
@@ -161,42 +200,12 @@ jobs:
 
       - &configure-cached-openssl
         name: Configure cached OpenSSL
-        if: steps.cache-openssl.outputs.cache-hit == 'true'
+        if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit == 'true'
         shell: bash
         run: |
           # Reuse the cached vendored output as a prebuilt OpenSSL installation.
           echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
           echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
-
-      - name: Cache jemalloc
-        id: cache-jemalloc
-        if: runner.os == 'Linux'
-        uses: actions/cache@v4
-        with: &jemalloc-cache
-          path: ${{ github.workspace }}/.ci-cache/jemalloc
-          key: ${{ steps.native-cache-keys.outputs.jemalloc-key }}
-
-      - &configure-cached-jemalloc
-        name: Configure cached jemalloc
-        if: runner.os == 'Linux' && steps.cache-jemalloc.outputs.cache-hit == 'true'
-        shell: bash
-        run: echo "JEMALLOC_OVERRIDE=${{ github.workspace }}/.ci-cache/jemalloc/libjemalloc_pic.a" >>"$GITHUB_ENV"
-
-      - name: Cache Zstd
-        id: cache-zstd
-        if: runner.os == 'Linux'
-        uses: actions/cache@v4
-        with: &zstd-cache
-          path: ${{ github.workspace }}/.ci-cache/zstd
-          key: ${{ steps.native-cache-keys.outputs.zstd-key }}
-
-      - &configure-cached-zstd
-        name: Configure cached Zstd
-        if: runner.os == 'Linux' && steps.cache-zstd.outputs.cache-hit == 'true'
-        shell: bash
-        run: |
-          echo "ZSTD_SYS_USE_PKG_CONFIG=1" >>"$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=${{ github.workspace }}/.ci-cache/zstd/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >>"$GITHUB_ENV"
 
       - name: Build CLI and standalone
         shell: bash
@@ -208,65 +217,39 @@ jobs:
 
       - &prepare-openssl-cache
         name: Prepare OpenSSL cache
-        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        if: runner.os == 'Windows' && steps.cache-openssl.outputs.cache-hit != 'true'
         shell: bash
         run: |
+          openssl_cache_dir="${PWD}/.ci-cache/openssl"
+          cd "${CARGO_TARGET_DIR}"
           shopt -s nullglob
-          openssl_installs=(target/release/build/openssl-sys-*/out/openssl-build/install)
+          openssl_installs=(release/build/openssl-sys-*/out/openssl-build/install)
           if (( ${#openssl_installs[@]} != 1 )); then
             echo "Expected one vendored OpenSSL installation, found ${#openssl_installs[@]}."
             exit 1
           fi
-          mkdir -p .ci-cache/openssl
-          cp -R "${openssl_installs[0]}/." .ci-cache/openssl/
-
-      - name: Prepare jemalloc cache
-        if: runner.os == 'Linux' && steps.cache-jemalloc.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          shopt -s nullglob
-          jemalloc_archives=(target/release/build/tikv-jemalloc-sys-*/out/lib/libjemalloc_pic.a)
-          if (( ${#jemalloc_archives[@]} != 1 )); then
-            echo "Expected one jemalloc archive, found ${#jemalloc_archives[@]}."
-            exit 1
-          fi
-          mkdir -p .ci-cache/jemalloc
-          cp "${jemalloc_archives[0]}" .ci-cache/jemalloc/
-          echo "JEMALLOC_OVERRIDE=${{ github.workspace }}/.ci-cache/jemalloc/libjemalloc_pic.a" >>"$GITHUB_ENV"
-
-      - name: Prepare Zstd cache
-        if: runner.os == 'Linux' && steps.cache-zstd.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          shopt -s nullglob
-          zstd_outputs=(target/release/build/zstd-sys-*/out)
-          if (( ${#zstd_outputs[@]} != 1 )); then
-            echo "Expected one vendored Zstd build, found ${#zstd_outputs[@]}."
-            exit 1
-          fi
-          mkdir -p .ci-cache/zstd/lib/pkgconfig .ci-cache/zstd/include
-          cp "${zstd_outputs[0]}/libzstd.a" .ci-cache/zstd/lib/
-          cp "${zstd_outputs[0]}"/include/*.h .ci-cache/zstd/include/
-          printf '%s\n' \
-            'prefix=${pcfiledir}/../..' \
-            'libdir=${prefix}/lib' \
-            'includedir=${prefix}/include' \
-            '' \
-            'Name: libzstd' \
-            'Description: Zstandard compression library' \
-            'Version: 1.5.7' \
-            'Libs: -L${libdir} -lzstd' \
-            'Cflags: -I${includedir}' \
-            > .ci-cache/zstd/lib/pkgconfig/libzstd.pc
-          echo "ZSTD_SYS_USE_PKG_CONFIG=1" >>"$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=${{ github.workspace }}/.ci-cache/zstd/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >>"$GITHUB_ENV"
+          mkdir -p "${openssl_cache_dir}"
+          cp -R "${openssl_installs[0]}/." "${openssl_cache_dir}/"
 
       - name: Package build artifacts
         shell: bash
         run: |
-          tar -czf build-support.tar.gz \
-            "target/release/spacetimedb-cli${EXE_SUFFIX}" \
-            "target/release/spacetimedb-standalone${EXE_SUFFIX}"
+          archive_path="${PWD}/build-support.tar.gz"
+          cd "${CARGO_TARGET_DIR}"
+          tar -czf "${archive_path}" \
+            "release/spacetimedb-cli${EXE_SUFFIX}" \
+            "release/spacetimedb-standalone${EXE_SUFFIX}"
+
+      - &show-sccache-stats
+        name: Show sccache statistics
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --show-stats
+          else
+            echo "::notice::sccache is not installed on this Linux runner"
+          fi
 
       - name: Upload Cargo timing reports
         if: always()
@@ -294,7 +277,6 @@ jobs:
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
@@ -304,17 +286,18 @@ jobs:
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
       SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
-      - *find-git-ref
+      - *set-cargo-target-dir
+      - *configure-sccache
 
+      - *find-git-ref
       - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
@@ -325,6 +308,7 @@ jobs:
       - &restore-openssl
         name: Restore OpenSSL
         id: cache-openssl
+        if: runner.os == 'Windows'
         uses: actions/cache/restore@v4
         with: *openssl-cache
       - *configure-cached-openssl
@@ -337,16 +321,20 @@ jobs:
         run: |
           cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
+          archive_path="${PWD}/smoketest-support.tar.gz"
+          cd "${CARGO_TARGET_DIR}"
           shopt -s nullglob
-          precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+          precompiled_modules=(wasm32-unknown-unknown/release/smoketest_module_*.wasm)
           if (( ${#precompiled_modules[@]} == 0 )); then
             echo "No precompiled smoketest modules were produced."
             exit 1
           fi
 
-          tar -czf smoketest-support.tar.gz \
-            "target/debug/ci-smoketests${EXE_SUFFIX}" \
+          tar -czf "${archive_path}" \
+            "debug/ci-smoketests${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
+
+      - *show-sccache-stats
 
       - name: Upload Cargo timing reports
         if: always()
@@ -375,7 +363,6 @@ jobs:
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
@@ -390,17 +377,18 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1]
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 30
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 1
     steps: &smoketest-partition-steps
-      - *find-git-ref
+      - *set-cargo-target-dir
+      - *configure-sccache
 
+      - *find-git-ref
       - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
@@ -472,22 +460,27 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Download build artifacts
+      - &download-build-artifacts
+        name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
           path: build-artifacts
 
-      - name: Extract build artifacts
+      - &extract-build-artifacts
+        name: Extract build artifacts
         shell: bash
         run: |
-          tar -xzf build-artifacts/build-support.tar.gz
+          archive_path="${PWD}/build-artifacts/build-support.tar.gz"
           exe_suffix=""
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             exe_suffix=".exe"
           fi
-          test -f "${CARGO_TARGET_DIR}/release/spacetimedb-cli${exe_suffix}"
-          test -f "${CARGO_TARGET_DIR}/release/spacetimedb-standalone${exe_suffix}"
+          mkdir -p "${CARGO_TARGET_DIR}"
+          cd "${CARGO_TARGET_DIR}"
+          tar -xzf "${archive_path}"
+          test -f "release/spacetimedb-cli${exe_suffix}"
+          test -f "release/spacetimedb-standalone${exe_suffix}"
 
       - name: Download smoketest build
         uses: actions/download-artifact@v4
@@ -496,7 +489,11 @@ jobs:
 
       - name: Extract smoketest support files
         shell: bash
-        run: tar -xzf smoketest-support.tar.gz
+        run: |
+          archive_path="${PWD}/smoketest-support.tar.gz"
+          mkdir -p "${CARGO_TARGET_DIR}"
+          cd "${CARGO_TARGET_DIR}"
+          tar -xzf "${archive_path}"
 
       # Serial execution avoids contention between the C# tests over generated bindings.
       - name: Run smoketest partition (Linux)
@@ -506,7 +503,7 @@ jobs:
           if [ -f ~/emsdk/emsdk_env.sh ]; then
             source ~/emsdk/emsdk_env.sh
           fi
-          ./target/debug/ci-smoketests run-archive \
+          cargo ci smoketests run-archive \
             --archive-file smoketest-nextest.tar.zst \
             -- \
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
@@ -519,7 +516,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          .\target\debug\ci-smoketests.exe run-archive `
+          & "$env:CARGO_TARGET_DIR\debug\ci-smoketests.exe" run-archive `
             --archive-file smoketest-nextest.tar.zst `
             -- `
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
@@ -542,7 +539,6 @@ jobs:
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 30
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
       ARTIFACT_SUFFIX: windows
@@ -564,21 +560,29 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     steps:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
 
   test:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
 
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - &set-spacetime-bin
+        name: Set SpacetimeDB binary path
+        shell: bash
+        run: echo "SPACETIME_BIN=${CARGO_TARGET_DIR}/release/spacetimedb-cli" >>"${GITHUB_ENV}"
+
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -599,33 +603,9 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - *set-native-cache-keys
-      - &restore-jemalloc
-        name: Restore jemalloc
-        id: cache-jemalloc
-        if: runner.os == 'Linux'
-        uses: actions/cache/restore@v4
-        with: *jemalloc-cache
-      - *configure-cached-jemalloc
-      - &restore-zstd
-        name: Restore Zstd
-        id: cache-zstd
-        if: runner.os == 'Linux'
-        uses: actions/cache/restore@v4
-        with: *zstd-cache
-      - *configure-cached-zstd
-      - &restore-rusty-v8-debug
-        name: Restore rusty_v8 (debug)
-        uses: actions/cache/restore@v4
-        with: &v8-debug-cache
-          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
-          key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
-      - &restore-rusty-v8
-        name: Restore rusty_v8
-        uses: actions/cache/restore@v4
-        with: *v8-release-cache
-      - *restore-openssl
-      - *configure-cached-openssl
+
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -680,6 +660,8 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           cargo ci test
 
+      - *show-sccache-stats
+
       - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -698,9 +680,11 @@ jobs:
       queue: max
     timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -722,27 +706,22 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-rusty-v8
-      - *restore-openssl
-      - *configure-cached-openssl
-
       - name: Run index scan benchmark regression check
         run: cargo run --release -p spacetimedb-index-scan-gate
+
+      - *show-sccache-stats
 
   lints:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - name: Checkout sources
         uses: actions/checkout@v3
 
@@ -750,17 +729,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
-
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - name: Cache rusty_v8 (debug)
-        uses: actions/cache@v4
-        with: *v8-debug-cache
-      - *restore-openssl
-      - *configure-cached-openssl
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -778,6 +746,8 @@ jobs:
       - name: Run ci lint
         run: cargo ci lint
 
+      - *show-sccache-stats
+
       - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -789,15 +759,17 @@ jobs:
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     permissions:
       contents: read
       pull-requests: read
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -820,57 +792,46 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
-  wasm_bindings:
-    needs: [merge_queue_noop]
+  module_latest_deps:
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
     steps:
-      - uses: actions/checkout@v3
+      - *set-cargo-target-dir
+      - *configure-sccache
+      - *set-spacetime-bin
+
+      - *find-git-ref
+      - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-openssl
-      - *configure-cached-openssl
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - name: Build module with latest compatible dependencies
+        run: cargo ci module-latest-deps
 
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Run bindgen tests
-        run: cargo ci wasm-bindings
-
-      - name: Upload timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-timings-wasm-bindings
-          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
-          retention-days: 14
+      - *show-sccache-stats
 
   publish_checks:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     permissions: read-all
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - uses: actions/checkout@v3
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -883,7 +844,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-publish-checks
-          path: ${{ github.workspace }}/target/cargo-timings/
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
   update:
@@ -894,24 +855,23 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
+          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-linux }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
     env:
       RUST_BACKTRACE: full
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - *set-native-cache-keys
-      - *restore-zstd
-      - *configure-cached-zstd
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
@@ -921,12 +881,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
 
+      - *show-sccache-stats
+
       - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-update-flow-${{ matrix.target }}
-          path: ${{ github.workspace }}/target/cargo-timings/
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
   # this is a no-op version of the above check with a trivially-passing body.
@@ -943,7 +905,7 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     steps:
       - name: Skip duplicate merge queue update test
         run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
@@ -952,7 +914,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -973,6 +935,9 @@ jobs:
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
       # commits though.
       #      - name: Find Git ref
@@ -1046,11 +1011,13 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1082,17 +1049,11 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-openssl
-      - *configure-cached-openssl
-
       - name: Check for docs change
         run: |
           cargo ci cli-docs
+
+      - *show-sccache-stats
 
       - name: Upload timing reports
         if: always()
@@ -1103,7 +1064,7 @@ jobs:
           retention-days: 14
 
   unity-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
@@ -1113,13 +1074,15 @@ jobs:
     runs-on: spacetimedb-unity-runner
     timeout-minutes: 30
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
       UNITY_VERSION: 2022.3.32f1
     steps:
-      - name: Checkout repository
-        id: checkout-stdb
-        uses: actions/checkout@v4
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
 
       # Keep this before generation/hydration so ignored build outputs do not affect hashFiles.
       - name: Restore Unity Library
@@ -1168,23 +1131,15 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-rusty-v8
-      - *restore-openssl
-      - *configure-cached-openssl
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
-      - name: Install SpacetimeDB CLI from the local checkout
+      - &expose-spacetime-cli
+        name: Expose SpacetimeDB CLI on PATH
+        shell: bash
         run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+          ln -sf spacetimedb-cli "${CARGO_TARGET_DIR}/release/spacetime"
+          echo "${CARGO_TARGET_DIR}/release" >>"${GITHUB_PATH}"
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1246,19 +1201,81 @@ jobs:
           path: demo/Blackholio/client-unity/Library
           key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
-  godot-testsuite:
+  unity-webgl-build:
+    name: Unity WebGL build
     needs: [merge_queue_noop, lints]
+    # Skip if this is an external contribution.
+    # The license secrets will be empty, so the step would fail anyway.
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    permissions:
+      contents: read
+    runs-on: spacetimedb-unity-runner
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      UNITY_VERSION: 2022.3.32f1
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      # Keep this before hydration so ignored build outputs do not affect hashFiles.
+      - name: Restore Unity WebGL Library
+        id: restore-unity-webgl-library
+        uses: actions/cache/restore@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-WebGL-v1-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-WebGL-v1-${{ runner.os }}-${{ env.UNITY_VERSION }}-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Hydrate Unity SDK DLLs
+        run: cargo regen csharp dlls
+
+      - name: Build Unity WebGL player
+        uses: game-ci/unity-builder@v4
+        with:
+          unityVersion: ${{ env.UNITY_VERSION }}
+          projectPath: demo/Blackholio/client-unity
+          targetPlatform: WebGL
+          buildsPath: demo/Blackholio/client-unity/Build
+          versioning: None
+          runAsHostUser: true
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+
+      - name: Save Unity WebGL Library
+        if: ${{ github.ref == 'refs/heads/master' && steps.restore-unity-webgl-library.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: ${{ steps.restore-unity-webgl-library.outputs.cache-primary-key }}
+
+  godot-testsuite:
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      ARTIFACT_SUFFIX: linux
       UseLocalBsatnRuntime: true
     steps:
-      - name: Checkout repository
-        id: checkout-stdb
-        uses: actions/checkout@v4
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1295,23 +1312,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-rusty-v8
-      - *restore-openssl
-      - *configure-cached-openssl
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - *download-build-artifacts
+      - *extract-build-artifacts
+      - *expose-spacetime-cli
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1360,18 +1363,23 @@ jobs:
         working-directory: demo/Blackholio/client-godot
         run: godot --headless --scene res://tests/GodotPlayModeTests.tscn
 
+      - *show-sccache-stats
+
   csharp-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     timeout-minutes: 30
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
     steps:
-      - name: Checkout repository
-        id: checkout-stdb
-        uses: actions/checkout@v4
+      - *set-cargo-target-dir
+      - *configure-sccache
+      - *set-spacetime-bin
+
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1419,24 +1427,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-rusty-v8-debug
-      - *restore-rusty-v8
-      - *restore-openssl
-      - *configure-cached-openssl
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - *download-build-artifacts
+      - *extract-build-artifacts
+      - *expose-spacetime-cli
 
       - name: Check quickstart-chat bindings are up to date
         run: |
@@ -1486,16 +1479,21 @@ jobs:
               exit 1
           }
 
+      - *show-sccache-stats
+
   global_json_policy:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     permissions:
       contents: read
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - name: Find Git ref
         env:
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
@@ -1524,19 +1522,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-global-json-policy
-          path: ${{ github.workspace }}/target/cargo-timings/
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
   smoketests_mod_rs_complete:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     permissions:
       contents: read
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1558,17 +1559,19 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Verify smoketest module lists and suite constraints
-        run: |
-          cargo run -p ci-smoketest-checks
+        run: cargo ci smoketests check-mod-list
 
   docs-build:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       RUST_BACKTRACE: full
     steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -1593,20 +1596,26 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-docs-build
-          path: ${{ github.workspace }}/target/cargo-timings/
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
+      - *show-sccache-stats
+
   typescript-test:
-    needs: [merge_queue_noop]
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - *set-cargo-target-dir
+      - *configure-sccache
+      - *set-spacetime-bin
+
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -1617,65 +1626,25 @@ jobs:
         with:
           run_install: true
 
-      # - name: Extract SpacetimeDB branch name from file
-      #   id: extract-branch
-      #   run: |
-      #     # Define the path to the branch file
-      #     BRANCH_FILE=".github/spacetimedb-branch.txt"
-
-      #     # Default to master if file doesn't exist
-      #     if [ ! -f "$BRANCH_FILE" ]; then
-      #       echo "::notice::No SpacetimeDB branch file found, using 'master'"
-      #       echo "branch=master" >> $GITHUB_OUTPUT
-      #       exit 0
-      #     fi
-
-      #     # Read and trim whitespace from the file
-      #     branch=$(cat "$BRANCH_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-      #     # Fallback to master if empty
-      #     if [ -z "$branch" ]; then
-      #       echo "::warning::SpacetimeDB branch file is empty, using 'master'"
-      #       branch="master"
-      #     fi
-
-      #     echo "branch=$branch" >> $GITHUB_OUTPUT
-      #     echo "Using SpacetimeDB branch from file: $branch"
-
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-rusty-v8-debug
-      - *restore-openssl
-      - *configure-cached-openssl
-
-      # - name: Install SpacetimeDB CLI from the local checkout
-      #   run: |
-      #     export CARGO_HOME="$HOME/.cargo"
-      #     echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-      #     cargo install --force --path crates/cli --locked --message-format=short
-      #     cargo install --force --path crates/standalone --locked --message-format=short
-      #     # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-      #     ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
-      #     # Clear any existing information
-      #     spacetime server clear -y
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
       - name: Run TypeScript tests
         run: cargo ci typescript-test
+
+      - *show-sccache-stats
 
       - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-typescript-test
-          path: ${{ github.workspace }}/target/cargo-timings/
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
       # - name: Run quickstart-chat tests

@@ -14,11 +14,6 @@ public interface IProcedure
     /// Creates a procedure definition for registration with the module system.
     /// </summary>
     RawProcedureDefV10 MakeProcedureDef(ITypeRegistrar registrar);
-
-    /// <summary>
-    /// Invokes the procedure with the given arguments and context.
-    /// </summary>
-    byte[] Invoke(BinaryReader reader, IProcedureContext ctx);
 }
 
 /// <summary>

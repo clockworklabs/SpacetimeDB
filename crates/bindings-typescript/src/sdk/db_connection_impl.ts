@@ -144,6 +144,15 @@ function getClientMessageVariantTag(name: string): number {
   return tag;
 }
 
+// Browser websocket `onerror` handlers receive an `ErrorEvent`, which does
+// not extend `Error`. Normalize before emitting so `onConnectError` and
+// `onDisconnect` callbacks always receive the documented `Error` shape.
+function toError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  const message = (e as ErrorEvent | undefined)?.message || 'WebSocket error';
+  return new Error(message, { cause: e });
+}
+
 const CLIENT_MESSAGE_CALL_REDUCER_TAG =
   getClientMessageVariantTag('CallReducer');
 const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
@@ -172,6 +181,21 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * after an intentional disconnect.
    */
   isDisconnectRequested = false;
+
+  /**
+   * Whether the initial connection handshake completed, i.e. the
+   * `InitialConnection` message was received and `onConnect` was invoked.
+   * Used to route websocket errors on an established connection to the
+   * `disconnect` path instead of `connectError`.
+   */
+  #everConnected = false;
+
+  /**
+   * The websocket error that ended an established connection, if any,
+   * normalized to `Error`. Passed to the `disconnect` emit so `onDisconnect`
+   * callbacks receive the documented `error?: Error` shape.
+   */
+  #connectionError?: Error = undefined;
 
   /**
    * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
@@ -378,11 +402,20 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
         this.ws.onclose = () => {
           this.isActive = false;
-          this.#emitter.emit('disconnect', this);
+          this.#emitter.emit('disconnect', this, this.#connectionError);
         };
         this.ws.onerror = (e: ErrorEvent) => {
           this.isActive = false;
-          this.#emitter.emit('connectError', this, e);
+          if (this.#everConnected) {
+            // An error on an established connection is not a connect
+            // failure. Record it and close the socket so the `onclose` ->
+            // 'disconnect' path handles teardown, per the documented
+            // `onDisconnect` contract.
+            this.#connectionError = toError(e);
+            this.ws?.close();
+            return;
+          }
+          this.#emitter.emit('connectError', this, toError(e));
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
@@ -909,6 +942,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.token = serverMessage.value.token;
         }
         this.#setConnectionId(serverMessage.value.connectionId);
+        this.#everConnected = true;
         this.#emitter.emit('connect', this, this.identity, this.token);
         break;
       }

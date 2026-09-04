@@ -130,6 +130,32 @@ constexpr bool is_range_v = is_range<T>::value;
 template<typename T>
 concept RangeType = is_range_v<T>;
 
+namespace detail {
+
+template<typename T>
+inline constexpr bool is_range_arg_v = is_range_v<std::remove_cvref_t<T>>;
+
+template<typename... Ts>
+inline constexpr bool contains_range_arg_v = (is_range_arg_v<Ts> || ...);
+
+template<typename... Ts>
+struct last_is_range_arg : std::false_type {};
+
+template<typename T, typename... Rest>
+struct last_is_range_arg<T, Rest...> : last_is_range_arg<Rest...> {};
+
+template<typename T>
+struct last_is_range_arg<T> : std::bool_constant<is_range_arg_v<T>> {};
+
+template<typename... Ts>
+inline constexpr bool last_is_range_arg_v = last_is_range_arg<Ts...>::value;
+
+template<typename... Ts>
+inline constexpr bool valid_index_scan_tuple_v =
+    !contains_range_arg_v<Ts...> || last_is_range_arg_v<Ts...>;
+
+} // namespace detail
+
 // =============================================================================
 // Integration with field accessors
 // =============================================================================
