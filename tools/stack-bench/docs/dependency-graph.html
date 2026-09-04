@@ -247,7 +247,7 @@
   "schemaVersion": 1,
   "definition": {
     "id": "ecommerce.questlines",
-    "version": "2.0.2",
+    "version": "2.0.3",
     "state": "draft"
   },
   "levels": 6,
@@ -307,12 +307,12 @@
       "name": "Accounts",
       "description": "Account creation, sign-in, and sign-out.",
       "level": 1,
-      "state": "qualified",
+      "state": "draft",
       "parents": [],
       "dependencyReasons": {},
       "questline": "identity-profiles",
       "featureRefs": [
-        "ecommerce.feature.accounts@1.2.0"
+        "ecommerce.feature.accounts@1.3.0"
       ],
       "checks": 5,
       "points": 5
@@ -395,7 +395,7 @@
       },
       "questline": "notifications",
       "featureRefs": [
-        "ecommerce.progression.notification-preferences@1.0.0"
+        "ecommerce.progression.notification-preferences@1.0.1"
       ],
       "checks": 3,
       "points": 5
@@ -477,7 +477,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.support-history@1.0.0"
+        "ecommerce.progression.support-history@1.1.0"
       ],
       "checks": 4,
       "points": 7
@@ -498,7 +498,7 @@
       },
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.feature.warehouse-admin@1.2.1"
+        "ecommerce.feature.warehouse-admin@1.2.2"
       ],
       "checks": 8,
       "points": 10
@@ -519,7 +519,7 @@
       },
       "questline": "promotions",
       "featureRefs": [
-        "ecommerce.progression.promotion-rules@1.0.1"
+        "ecommerce.progression.promotion-rules@1.0.2"
       ],
       "checks": 2,
       "points": 4
@@ -538,7 +538,7 @@
       },
       "questline": "staff-access",
       "featureRefs": [
-        "ecommerce.progression.staff-roles@1.0.1"
+        "ecommerce.progression.staff-roles@1.0.2"
       ],
       "checks": 3,
       "points": 5
@@ -548,7 +548,7 @@
       "name": "Support triage",
       "description": "Staff assignment, priority, and status changes.",
       "level": 2,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "staff-access",
         "support-intake"
@@ -559,7 +559,7 @@
       },
       "questline": "customer-support",
       "featureRefs": [
-        "ecommerce.progression.support-triage@1.0.0"
+        "ecommerce.progression.support-triage@1.1.0"
       ],
       "checks": 3,
       "points": 3

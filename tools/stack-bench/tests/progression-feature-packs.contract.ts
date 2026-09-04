@@ -25,7 +25,7 @@ const packs = new Map<string, CompiledPackDefinition>(readdirSync(packRoot)
     return [`${pack.id}@${pack.version}`, pack];
   }));
 const definition = compileProgressionDefinitionFile(
-  join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), { trackRoot });
+  join(trackRoot, 'progression', 'ecommerce-2.0.3.json'), { trackRoot });
 
 function requiredPack(reference: string): CompiledPackDefinition {
   const pack = packs.get(reference);

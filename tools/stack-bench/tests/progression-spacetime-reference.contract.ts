@@ -108,7 +108,7 @@ test('the progression candidate retains the maintained SpacetimeDB build layout'
 
 test('the client implements every graph feature interface', () => {
   const graph = progressionGraph();
-  const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.2.json');
+  const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.3.json');
   const packs = recipePackPaths(readJson(catalogPath), catalogPath);
   const interfaceNames: ScenarioInterface = { roles: new Set<string>(), attributes: new Set<string>() };
 
@@ -137,7 +137,7 @@ test('the client implements every graph feature interface', () => {
 });
 
 function progressionGraph() {
-  return compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce-2.0.2.json'), {
+  return compileProgressionDefinitionFile(join(trackRoot, 'progression', 'ecommerce-2.0.3.json'), {
     trackRoot,
   });
 }

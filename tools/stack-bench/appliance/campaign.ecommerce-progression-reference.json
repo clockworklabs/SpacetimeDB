@@ -9,15 +9,15 @@
   "mode": { "id": "dependency", "version": "4.3.0", "workSelection": "progressive" },
   "repair": { "selection": "feature", "budget": { "total": 0 } },
   "levels": [1, 2, 3, 4, 5, 6],
-  "featureCatalog": "ecommerce.questlines@2.0.2",
+  "featureCatalog": "ecommerce.questlines@2.0.3",
   "selection": {
     "levels": [
-      { "level": 1, "recipe": "ecommerce.progression-catalog@2.0.2" },
-      { "level": 2, "recipe": "ecommerce.progression-catalog@2.0.2" },
-      { "level": 3, "recipe": "ecommerce.progression-catalog@2.0.2" },
-      { "level": 4, "recipe": "ecommerce.progression-catalog@2.0.2" },
-      { "level": 5, "recipe": "ecommerce.progression-catalog@2.0.2" },
-      { "level": 6, "recipe": "ecommerce.progression-catalog@2.0.2" }
+      { "level": 1, "recipe": "ecommerce.progression-catalog@2.0.3" },
+      { "level": 2, "recipe": "ecommerce.progression-catalog@2.0.3" },
+      { "level": 3, "recipe": "ecommerce.progression-catalog@2.0.3" },
+      { "level": 4, "recipe": "ecommerce.progression-catalog@2.0.3" },
+      { "level": 5, "recipe": "ecommerce.progression-catalog@2.0.3" },
+      { "level": 6, "recipe": "ecommerce.progression-catalog@2.0.3" }
     ]
   },
   "stacks": [

@@ -57,7 +57,7 @@ test('dependency progression seeds once and verifies the same full fixture on la
   try {
     const app = join(root, 'app');
     const common = { mode: 'build', backend: 'mongodb', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.progression-catalog@2.0.2', app };
+      recipe: 'ecommerce.progression-catalog@2.0.3', app };
     const fresh = prepareReferenceSource(common);
     assert.equal(fresh.fixture.id, 'ecommerce-reference-mongodb');
     assert.equal(fresh.seeded, true);
@@ -101,7 +101,7 @@ test('reference deployment restores canonical source while retaining generated b
     const app = join(root, 'app');
     const prepared = prepareReferenceSource({
       mode: 'build', backend: 'spacetime', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.progression-catalog@2.0.2', app,
+      recipe: 'ecommerce.progression-catalog@2.0.3', app,
     });
     const lock = join(app, 'client', 'package-lock.json');
     const canonicalLock = readFileSync(lock, 'utf8');

@@ -19,9 +19,9 @@ import { loadReferenceRegistry } from '../src/references/reference-fixtures.js';
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const definition = compileProgressionDefinitionFile(
-  join(TRACK, 'progression', 'ecommerce-2.0.2.json'), { trackRoot: TRACK });
+  join(TRACK, 'progression', 'ecommerce-2.0.3.json'), { trackRoot: TRACK });
 const binding = resolveRecipeRelease(loadTrack('ecommerce'), 3,
-  'ecommerce.progression-catalog@2.0.2');
+  'ecommerce.progression-catalog@2.0.3');
 const selection = resolveProgressionRecipeLevelSelection(binding,
   compileFeatureCatalogInput(definition), 3, { cumulative: true });
 const fixtures = new Map(loadReferenceRegistry().fixtures
@@ -85,7 +85,7 @@ test('SpacetimeDB reservation and catalog mutants affect only their owned checks
   assert(fixture, 'missing spacetime progression fixture');
   assert(fixture.targetPath, 'the spacetime fixture must have a target path');
   const manifest = readMutationManifest(join(ROOT, 'grader', 'mutations',
-    'spacetime-ecommerce-2.0.2.json'));
+    'spacetime-ecommerce-2.0.3.json'));
   const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
 
   const renewal = mutations.get('renewed-reservation-expires-too-soon');

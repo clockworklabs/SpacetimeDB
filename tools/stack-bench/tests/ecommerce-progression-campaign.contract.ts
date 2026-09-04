@@ -61,10 +61,10 @@ test('the ecommerce reference pilot resolves the exact L1-L6 progression inputs'
   assert(plan.dependencyPolicy);
   assert.deepEqual(plan.definition.levels, [1, 2, 3, 4, 5, 6]);
   assert.equal(plan.featureCatalog.identity.id, 'ecommerce.questlines');
-  assert.equal(plan.featureCatalog.identity.version, '2.0.2');
+  assert.equal(plan.featureCatalog.identity.version, '2.0.3');
   assert.equal(plan.dependencyPolicy.identity.id, 'dependency-graph');
   assert.deepEqual(plan.bindings.map(binding => `${binding.recipe.id}@${binding.recipe.version}`),
-    Array(6).fill('ecommerce.progression-catalog@2.0.2'));
+    Array(6).fill('ecommerce.progression-catalog@2.0.3'));
   assert.deepEqual(plan.attempts.map(attempt => attempt.stack).sort(),
     ['mongodb', 'postgres', 'spacetime']);
   assert(plan.attempts.every(attempt => attempt.agentAdapter === 'reference-fixture'));
@@ -159,7 +159,7 @@ test('every campaign level resolves one current reference for each stack', () =>
         backend,
         track: 'ecommerce',
         level,
-        recipe: 'ecommerce.progression-catalog@2.0.2',
+        recipe: 'ecommerce.progression-catalog@2.0.3',
       });
       assert.equal(fixture.status, 'candidate');
       assert.equal(fixture.targetPath, `reference-apps/ecommerce/${backend}`);
@@ -169,7 +169,7 @@ test('every campaign level resolves one current reference for each stack', () =>
 
 test('every progression action input is exposed by every reference app', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 5, 'ecommerce.progression-catalog@2.0.2');
+  const binding = resolveRecipeRelease(track, 5, 'ecommerce.progression-catalog@2.0.3');
   const attributes = new Set<string>();
   for (const execution of binding.plan.execution) {
     collectInputAttributes(JSON.parse(readFileSync(join(track.dir, execution.source), 'utf8')),

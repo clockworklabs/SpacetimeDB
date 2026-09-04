@@ -13,7 +13,9 @@
         "ecommerce.sequential-l2@1.6.0",
         "ecommerce.sequential-l3@1.0.0",
         "ecommerce.progression-catalog@2.0.2",
-        "ecommerce.progression-depth3@2.0.2"
+        "ecommerce.progression-depth3@2.0.2",
+        "ecommerce.progression-catalog@2.0.3",
+        "ecommerce.progression-depth3@2.0.3"
       ],
       "targetPath": "reference-apps/ecommerce/mongodb",
       "origin": {
@@ -40,7 +42,9 @@
         "ecommerce.sequential-l2@1.6.0",
         "ecommerce.sequential-l3@1.0.0",
         "ecommerce.progression-catalog@2.0.2",
-        "ecommerce.progression-depth3@2.0.2"
+        "ecommerce.progression-depth3@2.0.2",
+        "ecommerce.progression-catalog@2.0.3",
+        "ecommerce.progression-depth3@2.0.3"
       ],
       "targetPath": "reference-apps/ecommerce/postgres",
       "origin": {
@@ -67,7 +71,9 @@
         "ecommerce.sequential-l2@1.6.0",
         "ecommerce.sequential-l3@1.0.0",
         "ecommerce.progression-catalog@2.0.2",
-        "ecommerce.progression-depth3@2.0.2"
+        "ecommerce.progression-depth3@2.0.2",
+        "ecommerce.progression-catalog@2.0.3",
+        "ecommerce.progression-depth3@2.0.3"
       ],
       "targetPath": "reference-apps/ecommerce/spacetime",
       "origin": {

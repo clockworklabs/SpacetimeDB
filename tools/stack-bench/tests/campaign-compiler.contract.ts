@@ -391,7 +391,7 @@ test('campaign graph version must match its recipe calibration', () => {
     return calibration;
   };
   assert.throws(() => compile(value, { calibrationResolver }),
-    /L1 calibration qualifies ecommerce\.questlines@1\.1\.0, not ecommerce\.questlines@2\.0\.2/);
+    /L1 calibration qualifies ecommerce\.questlines@1\.1\.0, not ecommerce\.questlines@2\.0\.3/);
 });
 
 test('sequential campaigns can use the same feature catalog without dependency gating', () => {

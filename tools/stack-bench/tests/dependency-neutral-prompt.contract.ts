@@ -67,7 +67,7 @@ function renderPrompt({ level, stack, task, guidance }: {
 
 test('neutral dependency prompts include only selected product and stack contracts', () => {
   const track = loadTrack('ecommerce');
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.2', track);
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.3', track);
   const guidance = resolveGuidanceProfile('neutral@1.8.0', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     resolve(STACK_BENCH_ROOT, '..', '..'), guidance.skills.spacetime?.ids ?? []);
@@ -77,7 +77,7 @@ test('neutral dependency prompts include only selected product and stack contrac
   assert.match(spacetimeReference, /clientVisibilityFilter/);
   assert.match(spacetimeReference, /DbConnection\.builder\(\).*withToken.*subscriptionBuilder/s);
   for (const level of [1, 2, 3] as const) {
-    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-depth3@2.0.2');
+    const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-depth3@2.0.3');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
       { cumulative: true });
     assert.deepEqual(selected.agent.request.selection.requested.specifications, {

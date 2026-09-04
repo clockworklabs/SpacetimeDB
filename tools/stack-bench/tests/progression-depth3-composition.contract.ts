@@ -14,8 +14,8 @@ import { loadReferenceRegistry, selectReferenceFixture }
 
 const ROOT = STACK_BENCH_ROOT;
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const RECIPE = join(TRACK, 'composition', 'recipes', 'progression-depth3-2.0.2.json');
-const PROGRESSION = join(TRACK, 'progression', 'ecommerce-2.0.2.json');
+const RECIPE = join(TRACK, 'composition', 'recipes', 'progression-depth3-2.0.3.json');
+const PROGRESSION = join(TRACK, 'progression', 'ecommerce-2.0.3.json');
 
 test('catalog fixtures, warehouse counts, and pagination agree', () => {
   const fixture = JSON.parse(readFileSync(join(TRACK,
@@ -75,7 +75,7 @@ test('the candidate catalog binds the same scoped recipe to L1 through L3', () =
   const track = loadTrack('ecommerce');
   for (const level of [1, 2, 3]) {
     const binding = requireRecipeRelease(track, level,
-      'ecommerce.progression-depth3@2.0.2');
+      'ecommerce.progression-depth3@2.0.3');
     assert.equal(binding.release.id, 'ecommerce.progression-depth3');
     assert.equal(binding.status, 'candidate');
   }
@@ -85,7 +85,7 @@ test('the depth-3 recipe binds one maintained reference per stack', () => {
   const registry = loadReferenceRegistry();
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     const fixture = selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 3,
-      recipe: 'ecommerce.progression-depth3@2.0.2' });
+      recipe: 'ecommerce.progression-depth3@2.0.3' });
     assert.equal(fixture.id, `ecommerce-reference-${backend}`);
   }
 });

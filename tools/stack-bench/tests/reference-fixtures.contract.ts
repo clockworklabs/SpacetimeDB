@@ -42,7 +42,7 @@ test('a recipe-bound full fixture can serve only its declared progression action
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     for (const level of [1, 2, 3, 4, 5, 6]) {
       assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level,
-        recipe: 'ecommerce.progression-catalog@2.0.2' }).id,
+        recipe: 'ecommerce.progression-catalog@2.0.3' }).id,
       `ecommerce-reference-${backend}`);
     }
   }

@@ -161,7 +161,7 @@ test('recipe-bound mutation grading selects only checks owned by the scenario', 
 
 test('recipe-bound mutation grading excludes zero-point controls', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@2.0.2');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@2.0.3');
   assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
     join(track.dir, 'scenarios', '01-restock-race-2.3.0.json')), [
     'ecommerce.spec.concurrency-safety.restock-race.202a',
@@ -170,7 +170,7 @@ test('recipe-bound mutation grading excludes zero-point controls', () => {
 
 test('recipe-bound mutation grading keeps only checks selected for the run', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@2.0.2');
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-catalog@2.0.3');
   assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
     join(track.dir, 'scenarios', '02-strengthened-1.4.0.json'), [
       'ecommerce.inventory-operations.warehouse-transfer.2a',

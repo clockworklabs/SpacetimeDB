@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "kind": "benchmark-recipe",
+  "id": "ecommerce.progression-depth3",
+  "version": "2.0.3",
+  "state": "draft",
+  "title": "Ecommerce progression through depth 3",
+  "track": "ecommerce",
+  "fixture": {
+    "path": "../fixtures/operations-1.0.1.json",
+    "id": "ecommerce.operations",
+    "version": "1.0.1"
+  },
+  "task": {
+    "mode": "action",
+    "framing": {
+      "requirements": [
+        {
+          "id": "ecommerce.progression.fresh",
+          "path": "prompts/modular/progression-framing-1.0.0.md",
+          "order": 0,
+          "until": "## Existing application",
+          "modes": [
+            "fresh"
+          ]
+        },
+        {
+          "id": "ecommerce.progression.upgrade",
+          "path": "prompts/modular/progression-framing-1.0.0.md",
+          "order": 0,
+          "from": "## Existing application",
+          "modes": [
+            "upgrade"
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "id": "ecommerce.application-interface",
+          "path": "contracts/application-interface-1.0.md",
+          "order": 0,
+          "modes": [
+            "fresh",
+            "upgrade"
+          ]
+        }
+      ]
+    }
+  },
+  "packs": [
+    {
+      "path": "../packs/feature-accounts-1.3.0.json",
+      "id": "ecommerce.feature.accounts",
+      "version": "1.3.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-cart-2.0.0.json",
+      "id": "ecommerce.feature.cart",
+      "version": "2.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-checkout-2.0.0.json",
+      "id": "ecommerce.feature.checkout",
+      "version": "2.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-catalog-items-1.0.0.json",
+      "id": "ecommerce.feature.catalog-items",
+      "version": "1.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-catalog-discovery-1.0.0.json",
+      "id": "ecommerce.feature.catalog-discovery",
+      "version": "1.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-purchasing-1.2.1.json",
+      "id": "ecommerce.feature.purchasing",
+      "version": "1.2.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-reviews-1.2.2.json",
+      "id": "ecommerce.feature.reviews",
+      "version": "1.2.2",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/feature-warehouse-admin-1.2.2.json",
+      "id": "ecommerce.feature.warehouse-admin",
+      "version": "1.2.2",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-inventory-conservation-specifications-1.0.0.json",
+      "id": "ecommerce.progression.inventory-conservation-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "stock-conservation-directional",
+        "stock-conservation-cancel",
+        "stock-conservation-fresh-client",
+        "stock-conservation-contention"
+      ]
+    },
+    {
+      "path": "../packs/l2-inventory-dashboard-2.0.0.json",
+      "id": "ecommerce.l2.inventory-dashboard",
+      "version": "2.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/l2-sales-dashboard-2.0.0.json",
+      "id": "ecommerce.l2.sales-dashboard",
+      "version": "2.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/l2-recommendations-2.0.0.json",
+      "id": "ecommerce.l2.recommendations",
+      "version": "2.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/l2-order-cancellation-features-1.0.1.json",
+      "id": "ecommerce.l2.order-cancellation-features",
+      "version": "1.0.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/l2-stock-transfers-features-1.0.1.json",
+      "id": "ecommerce.l2.stock-transfers-features",
+      "version": "1.0.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/l3-deferred-access-specifications-1.0.0.json",
+      "id": "ecommerce.l3.deferred-access-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "customer-refused"
+      ]
+    },
+    {
+      "path": "../packs/l3-deferred-durability-specifications-1.0.0.json",
+      "id": "ecommerce.l3.deferred-durability-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "restock-restart"
+      ]
+    },
+    {
+      "path": "../packs/l3-deferred-integrity-specifications-1.0.0.json",
+      "id": "ecommerce.l3.deferred-integrity-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "restock-once"
+      ]
+    },
+    {
+      "path": "../packs/l3-scheduled-restocks-features-1.1.1.json",
+      "id": "ecommerce.l3.scheduled-restocks-features",
+      "version": "1.1.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/l3-server-time-specifications-1.0.0.json",
+      "id": "ecommerce.l3.server-time-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "not-early"
+      ]
+    },
+    {
+      "path": "../packs/progression-fulfilment-queue-1.0.1.json",
+      "id": "ecommerce.progression.fulfilment-queue",
+      "version": "1.0.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-operations-access-specifications-1.0.0.json",
+      "id": "ecommerce.progression.operations-access-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "operator-transfer-authorization",
+        "operator-authorization-direct",
+        "order-owner-direct"
+      ]
+    },
+    {
+      "path": "../packs/progression-cancellation-accounting-specifications-1.0.0.json",
+      "id": "ecommerce.progression.cancellation-accounting-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "cancellation-accounting"
+      ]
+    },
+    {
+      "path": "../packs/progression-catalog-management-1.0.3.json",
+      "id": "ecommerce.progression.catalog-management",
+      "version": "1.0.3",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-customer-profile-1.0.0.json",
+      "id": "ecommerce.progression.customer-profile",
+      "version": "1.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-faceted-search-1.0.1.json",
+      "id": "ecommerce.progression.faceted-search",
+      "version": "1.0.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-managed-support-1.0.0.json",
+      "id": "ecommerce.progression.managed-support",
+      "version": "1.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-notification-preferences-1.0.1.json",
+      "id": "ecommerce.progression.notification-preferences",
+      "version": "1.0.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-promotion-rules-1.0.2.json",
+      "id": "ecommerce.progression.promotion-rules",
+      "version": "1.0.2",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-review-access-specifications-1.0.0.json",
+      "id": "ecommerce.progression.review-access-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
+      "path": "../packs/progression-staff-access-1.0.0.json",
+      "id": "ecommerce.progression.staff-access",
+      "version": "1.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-staff-roles-1.0.2.json",
+      "id": "ecommerce.progression.staff-roles",
+      "version": "1.0.2",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-stock-alerts-1.0.1.json",
+      "id": "ecommerce.progression.stock-alerts",
+      "version": "1.0.1",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-support-history-1.1.0.json",
+      "id": "ecommerce.progression.support-history",
+      "version": "1.1.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-support-privacy-specifications-1.0.0.json",
+      "id": "ecommerce.progression.support-privacy-specifications",
+      "version": "1.0.0",
+      "includeRoles": [
+        "guarantee"
+      ]
+    },
+    {
+      "path": "../packs/progression-support-intake-1.0.0.json",
+      "id": "ecommerce.progression.support-intake",
+      "version": "1.0.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/progression-support-triage-1.1.0.json",
+      "id": "ecommerce.progression.support-triage",
+      "version": "1.1.0",
+      "includeRoles": [
+        "feature"
+      ]
+    },
+    {
+      "path": "../packs/spec-access-control-2.0.1.json",
+      "id": "ecommerce.spec.access-control",
+      "version": "2.0.1",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "cart-boundary",
+        "customer-profile-privacy",
+        "fulfilment-area-boundary",
+        "managed-support-privacy",
+        "notification-preferences-privacy",
+        "order-ownership",
+        "promotion-management-boundary",
+        "purchase-attribution",
+        "purchase-session",
+        "review-eligibility",
+        "signed-out-purchase",
+        "staff-area-boundary",
+        "staff-role-boundary",
+        "stock-alert-privacy",
+        "support-history-privacy",
+        "warehouse-area-boundary",
+        "warehouse-write-boundary"
+      ]
+    },
+    {
+      "path": "../packs/spec-concurrency-safety-2.0.1.json",
+      "id": "ecommerce.spec.concurrency-safety",
+      "version": "2.0.1",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "duplicate-checkout",
+        "last-unit",
+        "restock-race"
+      ]
+    },
+    {
+      "path": "../packs/spec-external-data-sync-1.2.0.json",
+      "id": "ecommerce.spec.external-data-sync",
+      "version": "1.2.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "external-live",
+        "external-reload",
+        "external-server-restart",
+        "external-reconnect"
+      ]
+    },
+    {
+      "path": "../packs/spec-live-state-2.0.0.json",
+      "id": "ecommerce.spec.live-state",
+      "version": "2.0.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "fulfilment-queue",
+        "inventory-dashboard",
+        "managed-support",
+        "open-list",
+        "purchase-stock",
+        "ranking",
+        "rating",
+        "sales-dashboard",
+        "shared-cart",
+        "stock-transfers",
+        "warehouse-stock"
+      ]
+    },
+    {
+      "path": "../packs/spec-state-durability-2.0.1.json",
+      "id": "ecommerce.spec.state-durability",
+      "version": "2.0.1",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "account-state-reload",
+        "account-state-reconnect",
+        "cart-reload",
+        "customer-profile-reload",
+        "notification-preferences-reload",
+        "session-reload",
+        "staff-role-reload",
+        "support-history-reload"
+      ]
+    },
+    {
+      "path": "../packs/spec-transactional-integrity-1.4.0.json",
+      "id": "ecommerce.spec.transactional-integrity",
+      "version": "1.4.0",
+      "includeRoles": [
+        "guarantee"
+      ],
+      "includeCheckGroups": [
+        "books-balance",
+        "server-price",
+        "stock-alert-deduplication",
+        "stock-transfer-overdraw",
+        "unique-review"
+      ]
+    }
+  ],
+  "execution": "all-selected-sources",
+  "scoring": {
+    "mode": "source-points"
+  }
+}

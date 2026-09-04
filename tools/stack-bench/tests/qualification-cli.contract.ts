@@ -49,7 +49,7 @@ test('qualification status rejects ambiguous or undeclared scope', () => {
     '--track', 'ecommerce', '--level', '1']), { command: 'status', track: 'ecommerce', level: 1 });
   assert.throws(() => qualificationReadiness('ecommerce', 3), /has no L3 calibration/);
   assert.throws(() => qualificationReadiness('ecommerce', 3,
-    'ecommerce.progression-depth3@2.0.2'), /has no L3 calibration/);
+    'ecommerce.progression-depth3@2.0.3'), /has no L3 calibration/);
   assert.throws(() => qualificationReadiness('ecommerce', 4), /not declared/);
   assert.throws(() => parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce']), /usage/);

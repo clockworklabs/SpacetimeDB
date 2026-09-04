@@ -33,7 +33,7 @@ test('every name a scored check requires reaches the coding agent', () => {
   const campaign = compileCampaignFile(reference);
   const catalog = campaign.featureCatalog;
   assert.ok(catalog);
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.progression-catalog@2.0.2');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.progression-catalog@2.0.3');
   assert.ok(binding);
   const { plan } = binding;
 

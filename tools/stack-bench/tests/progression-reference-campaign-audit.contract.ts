@@ -72,7 +72,7 @@ test('completed reference campaigns audit exact owners and recipe bindings', () 
       });
       assert.deepEqual([...input.recipeBindings.keys()], [1, 2, 3, 4, 5, 6]);
       assert.equal(input.release.id, 'ecommerce.progression-catalog');
-      assert.equal(input.release.version, '2.0.2');
+      assert.equal(input.release.version, '2.0.3');
       return structuredClone(passingAudit);
     },
   });

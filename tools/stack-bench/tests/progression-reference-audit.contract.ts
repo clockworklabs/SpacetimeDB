@@ -36,7 +36,7 @@ const setupEvidence = () => createCheckEvidence({ status: 'passed', code: 'compl
 
 const track = loadTrack('ecommerce');
 const featureCatalog = compileFeatureCatalogInput(compileProgressionDefinitionFile(
-  join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-2.0.2.json'),
+  join(STACK_BENCH_ROOT, 'tracks', 'ecommerce', 'progression', 'ecommerce-2.0.3.json'),
   { trackRoot: track.dir },
 ));
 const dependencyPolicy = compileDependencyPolicyInput(
@@ -44,7 +44,7 @@ const dependencyPolicy = compileDependencyPolicyInput(
 const progression = compileProgressionInput(dependencyRuntimeDefinition(
   featureCatalog, dependencyPolicy));
 const recipeBindings = new Map([1, 2, 3, 4, 5, 6].map(level => [level,
-  resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.2')]));
+  resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.3')]));
 const release = recipeBindings.get(6)!.release;
 
 interface ReferenceRunOptions {

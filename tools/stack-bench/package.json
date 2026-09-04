@@ -37,7 +37,7 @@
     "precheck:references": "npm run build --silent",
     "check:references": "node dist/src/references/reference-fixtures.js",
     "pregraph": "npm run build",
-    "graph": "node dist/commands/progression-graph.js tracks/ecommerce/progression/ecommerce-2.0.2.json",
+    "graph": "node dist/commands/progression-graph.js tracks/ecommerce/progression/ecommerce-2.0.3.json",
     "pack": "npm run build --silent && node dist/commands/composition-cli.js pack",
     "recipe": "npm run build --silent && node dist/commands/composition-cli.js recipe",
     "precampaign": "npm run build --silent",

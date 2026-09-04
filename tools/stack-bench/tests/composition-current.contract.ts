@@ -13,7 +13,7 @@ const recipe = (name: string): string => join(ecommerce, 'composition', 'recipes
 test('the current ecommerce composition and sequential chain are valid', () => {
   const [report] = checkCompositions({ trackName: 'ecommerce' });
   assert.equal(report?.track, 'ecommerce');
-  assert(report && report.packs > 0 && report.recipes === 5 && report.checks > 0);
+  assert(report && report.packs > 0 && report.recipes === 7 && report.checks > 0);
 
   const l1 = compileRecipeFile(recipe('sequential-l1-2.5.0.json'), { trackRoot: ecommerce });
   const l2 = compileRecipeFile(recipe('sequential-l2-1.6.0.json'), { trackRoot: ecommerce });

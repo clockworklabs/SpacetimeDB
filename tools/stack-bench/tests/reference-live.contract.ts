@@ -140,8 +140,8 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
-    '--backend', 'postgres', '--feature-catalog', 'ecommerce.questlines@2.0.2'])
-    .featureCatalog, 'ecommerce.questlines@2.0.2');
+    '--backend', 'postgres', '--feature-catalog', 'ecommerce.questlines@2.0.3'])
+    .featureCatalog, 'ecommerce.questlines@2.0.3');
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.js',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '4']), /declared/);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.js',
@@ -422,8 +422,8 @@ test('modular reference qualification selects every exact check without prescrib
 
 test('progression reference qualification follows the catalog check selection', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-depth3@2.0.2');
-  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.2', track);
+  const binding = resolveRecipeRelease(track, 3, 'ecommerce.progression-depth3@2.0.3');
+  const catalog = resolveFeatureCatalog('ecommerce.questlines@2.0.3', track);
   const selection = resolveProgressionRecipeLevelSelection(binding, catalog, 3,
     { cumulative: true });
   const argv = referenceQualificationSelectionArgs(binding, selection);

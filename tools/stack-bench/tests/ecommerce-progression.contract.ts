@@ -22,7 +22,7 @@ import { resolveProgressionRecipeAction, resolveProgressionRepairTarget,
 
 const trackRoot = join(STACK_BENCH_ROOT, 'tracks', 'ecommerce');
 const packRoot = join(trackRoot, 'composition', 'packs');
-const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.2.json');
+const definitionPath = join(trackRoot, 'progression', 'ecommerce-2.0.3.json');
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'));
 
 function packChecks(pack: CompiledPackDefinition): string[] {
@@ -121,7 +121,7 @@ test('every progression feature reference and scored check binds to repository d
   }
 
   const recipe = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
-    'progression-catalog-2.0.2.json'), {
+    'progression-catalog-2.0.3.json'), {
     trackRoot,
   });
   const actual = new Map(definition.nodes.flatMap(node => node.gradingChecks)
@@ -235,7 +235,7 @@ test('one progression catalog binds every node and selects only current work', (
   const track = loadTrack('ecommerce');
   const bindings = [1, 2, 3, 4, 5, 6].map(level => ({
     level,
-    binding: resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.2'),
+    binding: resolveRecipeRelease(track, level, 'ecommerce.progression-catalog@2.0.3'),
   }));
   validateProgressionRecipeBindings(input, bindings);
   assert.equal(new Set(bindings.map(item => item.binding.release.contentSha256)).size, 1);
@@ -327,7 +327,7 @@ test('all-at-once composes every selected feature into one fresh request', () =>
     catalog, { workSelection: 'all-at-once' });
   const state = progressionEngine.initialize(dependencyRuntimeDefinition(catalog, policy));
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 6,
-    'ecommerce.progression-catalog@2.0.2');
+    'ecommerce.progression-catalog@2.0.3');
   const selected = resolveProgressionRecipeAction(binding, state);
   if (selected.action.type === 'terminal' || !('agent' in selected)) {
     throw new Error('all-at-once must produce one build request');
@@ -355,11 +355,11 @@ test('the current campaign binds the full graph to one catalog across six levels
 
 test('every feature and grading check binds to the progression recipe', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
-  const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.2.json');
+  const recipePath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-2.0.3.json');
   const plan = compileRecipeFile(recipePath, { trackRoot });
   const release = buildRecipeRelease(recipePath, { trackRoot });
   const binding: RecipeBinding = {
-    alias: 'ecommerce.progression-catalog@2.0.2',
+    alias: 'ecommerce.progression-catalog@2.0.3',
     status: 'draft',
     catalog: { id: plan.recipe.id, version: plan.recipe.version, state: 'draft',
       title: plan.recipe.title, path: recipePath, sha256: release.contentSha256 },
@@ -381,7 +381,7 @@ test('every feature and grading check binds to the progression recipe', () => {
 test('every feature pack declares a bounded, testable product contract', () => {
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
   const plan = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
-    'progression-catalog-2.0.2.json'), { trackRoot });
+    'progression-catalog-2.0.3.json'), { trackRoot });
   const featurePacks = plan.packs.filter(pack => pack.moduleType === 'feature');
   assert.equal(featurePacks.length, definition.nodes.length,
     'each graph node must own one feature pack');
