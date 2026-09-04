@@ -43,6 +43,8 @@ namespace SpacetimeDB
 
         private readonly List<IDbConnection> activeConnections = new();
 
+        private readonly List<IDbConnection> connectionsToVisit = new();
+
         public bool AddConnection(IDbConnection conn)
         {
             if (activeConnections.Contains(conn))
@@ -61,12 +63,21 @@ namespace SpacetimeDB
         
         private void ForEachConnection(Action<IDbConnection> action)
         {
-            // It's common to call disconnect from Update, which will then modify the ActiveConnections collection,
-            // therefore we must reverse-iterate the list of connections.
-            for (var x = activeConnections.Count - 1; x >= 0; x--)
+            // If `action` calls disconnect on an active connection
+            // activeConnections is modified while we are iterating
+            // causing an out of range exception
+            connectionsToVisit.Clear();
+            connectionsToVisit.AddRange(activeConnections);
+
+            foreach (var conn in connectionsToVisit)
             {
-                action(activeConnections[x]);
+                if (activeConnections.Contains(conn))
+                {
+                    action(conn);
+                }
             }
+
+            connectionsToVisit.Clear();
         }
 
         private void Update() => ForEachConnection(conn => conn.FrameTick());
