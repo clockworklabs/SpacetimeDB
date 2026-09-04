@@ -343,7 +343,7 @@ export function runPreflight(
   }
 
   const nodeMajor = Number(process.versions.node.split('.')[0]);
-  add('host.node', nodeMajor >= 22 ? 'pass' : 'fail', `Node ${process.versions.node}`,
+  add('runner.node', nodeMajor >= 22 ? 'pass' : 'fail', `Node ${process.versions.node}`,
     nodeMajor >= 22 ? null : 'Install Node 22 or newer.');
   const appliance = env.STACK_BENCH_APPLIANCE === '1';
   if (appliance) {
@@ -366,7 +366,7 @@ export function runPreflight(
   const supportedHost = appliance
     ? process.platform === 'linux' && process.arch === 'x64'
     : ['win32', 'linux'].includes(process.platform) && ['x64', 'arm64'].includes(process.arch);
-  add('host.architecture', supportedHost ? 'pass' : 'fail', `${process.platform}/${process.arch}`,
+  add('runner.architecture', supportedHost ? 'pass' : 'fail', `${process.platform}/${process.arch}`,
     supportedHost ? null : appliance
       ? `Run the appliance on its supported ${STACK_BENCH_RUNNER_PLATFORM} dedicated runner.`
       : 'Use a supported x64 or arm64 Windows/Linux host.');
@@ -438,12 +438,12 @@ export function runPreflight(
     try {
       const coResident = run('docker', ['ps', '--format', '{{.Names}}']).split(/\r?\n/)
         .map(name => name.trim()).filter(name => name && !name.startsWith('stack-bench'));
-      add('host.co-resident', coResident.length ? 'warn' : 'pass', coResident.length
+      add('runner.co-resident', coResident.length ? 'warn' : 'pass', coResident.length
         ? `${coResident.length} co-resident container(s): ${coResident.slice(0, 6).join(', ')}`
         : 'no co-resident containers',
       coResident.length ? 'Run paid campaigns on a dedicated runner.' : null);
     } catch (error) {
-      add('host.co-resident', 'warn', `could not list containers: ${errorMessage(error)}`,
+      add('runner.co-resident', 'warn', `could not list containers: ${errorMessage(error)}`,
         'Run paid campaigns on a dedicated runner.');
     }
     const enoughCpu = info.NCPU >= resourceFloors.cpuCount;

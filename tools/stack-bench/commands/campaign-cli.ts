@@ -16,6 +16,7 @@ import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAu
 import type { ReferenceCampaignAudit }
   from '../src/campaigns/progression-reference-campaign-audit.js';
 import { prepareCampaignExtension } from '../src/campaigns/campaign-extension.js';
+import { statusWord } from '../src/evidence/status-words.js';
 
 interface CampaignSummaryPlan {
   id: string;
@@ -89,15 +90,15 @@ export function campaignStateSummary(plan: CampaignSummaryPlan, state: CampaignS
     if (!execution || execution.outcome === null || execution.outcome === 'passed') return [];
     return [{
       attempt: attempt.plan.id,
-      status: attempt.status,
+      status: statusWord(attempt.status),
       execution: execution.id,
-      outcome: execution.outcome,
+      outcome: statusWord(String(execution.outcome)),
       reason: execution.reason,
     }];
   });
   return {
     campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
-    status: state.status,
+    status: statusWord(state.status),
     summary: state.summary,
     failures,
   };

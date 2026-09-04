@@ -68,11 +68,11 @@ test('campaign commands print a compact result and retain failed attempt details
   };
 
   const summary = campaignStateSummary(plan, state);
-  assert.equal(summary.status, 'attention-required');
+  assert.equal(summary.status, 'needs attention');
   assert.deepEqual(summary.summary, state.summary);
   assert.deepEqual(summary.failures.map(failure => [failure.attempt, failure.outcome]), [
-    ['application-failure', 'app_failure'],
-    ['invalid', 'harness_failure'],
+    ['application-failure', 'application failure'],
+    ['invalid', 'harness failure'],
   ]);
   assert.equal(JSON.stringify(summary).includes('passed-execution1'), false);
 });

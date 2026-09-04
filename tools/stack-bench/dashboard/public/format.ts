@@ -2,14 +2,15 @@
 // so a percentage, a duration and a dash look the same on every page.
 
 import type { SheetAttempt } from '../dashboard-views.js';
+import { statusWord } from '../../src/evidence/status-words.js';
 import { stallRounds } from './metrics.js';
+
+export { statusWord };
 
 const SILENCE_MINUTES = 10;
 
 export const STACK_LABEL: Record<string, string> = { spacetime: 'SpacetimeDB',
   postgres: 'PostgreSQL', mongodb: 'MongoDB' };
-const STATUS_WORD: Record<string, string> = { prepared: 'ready', 'attention-required':
-  'needs attention', pending: 'queued', invalid: 'excluded', interrupted: 'interrupted' };
 export const DASH = '—';
 
 export function esc(value: unknown): string {
@@ -19,10 +20,6 @@ export function esc(value: unknown): string {
 
 export function stackLabel(stack: string): string {
   return STACK_LABEL[stack] ?? stack;
-}
-
-export function statusWord(status: string): string {
-  return STATUS_WORD[status] ?? status;
 }
 
 export function pct(value: number | null | undefined): string {

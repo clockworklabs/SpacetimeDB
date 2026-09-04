@@ -925,7 +925,7 @@ async function main() {
     console.error('\nPREFLIGHT FAILED — no model session was started.');
     for (const failure of failures) {
       console.error(`  ${failure.id}: ${failure.summary}`);
-      if (failure.remediation) console.error(`    fix: ${failure.remediation}`);
+      if (failure.remediation) console.error(`    hint: ${failure.remediation}`);
     }
     process.exit(2);
   }
@@ -1322,11 +1322,11 @@ async function main() {
     run.outcome = outcome;
     run.completedAt = new Date().toISOString();
     if (run.contaminated) {
-      console.log(`\n  !! CONTAMINATED at ${whichSession}:`);
+      console.log(`\n  CONTAMINATED at ${whichSession}:`);
       for (const evidence of audit.evidence) console.log(`     ${evidence}`);
       console.log('     Scores from this run must not be quoted.');
     } else {
-      console.log(`\n  !! HARNESS FAILURE at ${whichSession}:`);
+      console.log(`\n  HARNESS FAILURE at ${whichSession}:`);
       for (const evidence of audit.evidence) console.log(`     ${evidence}`);
       console.log('     The audit did not establish a usable result.');
     }
@@ -1767,8 +1767,8 @@ async function main() {
         keepStartLog(error, `${args.backend}-l${level}${featureActionSuffix}`);
       }
       console.log(materializationOutcome
-        ? `  !! ${materializationOutcome.reason}`
-        : `  !! could not bind the first-build source: ${errorMessage(error).split('\n')[0]}`);
+        ? `  application failure: ${materializationOutcome.reason}`
+        : `  harness failure: could not bind the first-build source: ${errorMessage(error).split('\n')[0]}`);
     }
     const firstBuildLabel = `${args.backend}-l${level}${featureActionSuffix}`;
     let bundle = firstBuildSource
@@ -1905,7 +1905,7 @@ async function main() {
       }
     } catch (e) {
       // Never worth losing a run over: the score is already recorded.
-      console.log(`  !! could not keep the first build: ${errorMessage(e).split('\n')[0]}`);
+      console.log(`  harness failure: could not keep the first build: ${errorMessage(e).split('\n')[0]}`);
     }
 
     // A resumed grade settles a repair that was already charged; only a
@@ -2465,7 +2465,7 @@ async function main() {
         });
         console.log(`  kept the L${level} source checkpoint at ${join(args.out, checkpoint.directory)}`);
       } catch (error) {
-        console.log(`  !! could not keep the L${level} source checkpoint: ${errorMessage(error).split('\n')[0]}`);
+        console.log(`  harness failure: could not keep the L${level} source checkpoint: ${errorMessage(error).split('\n')[0]}`);
       }
     }
     if (!graded) {
@@ -2594,7 +2594,7 @@ async function main() {
   } else if (finalAudit.kind === 'contaminated') {
     run.contaminated = true;
     run.contamination = { evidence: finalAudit.evidence, verdict: finalAudit.verdict };
-    console.log('\n  !! CONTAMINATED: this build read the harness that grades it:');
+    console.log('\n  CONTAMINATED: this build read the harness that grades it:');
     for (const evidence of finalAudit.evidence) console.log(`     ${evidence}`);
     console.log('     Scores from this run must not be quoted.');
   } else {
@@ -2603,7 +2603,7 @@ async function main() {
     const reason = finalAudit.evidence.join('; ');
     finalAuditFailure = { kind: 'harness_failure', phase: 'contamination-audit', reason,
       appFailures: [], inconclusive: [], harnessFailures: [reason] };
-    console.log('\n  !! AUDIT DID NOT COMPLETE. Scores from this run must not be quoted.');
+    console.log('\n  HARNESS FAILURE: the contamination audit did not complete. Scores from this run must not be quoted.');
   }
 
   // Keep the transcript evidence outside the provider CLI's prunable store.
@@ -2632,7 +2632,7 @@ async function main() {
       const reason = errorMessage(error).split(/\r?\n/)[0] ?? 'evidence preservation failed';
       run.outcome = { kind: 'harness_failure', phase: 'evidence-preservation', reason,
         appFailures: [], inconclusive: [], harnessFailures: [reason] };
-      console.log(`  !! ${reason}`);
+      console.log(`  stopped: ${reason}`);
     }
   }
 

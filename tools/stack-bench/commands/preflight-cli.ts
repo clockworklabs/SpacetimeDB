@@ -79,7 +79,7 @@ export function printPreflightReport(report: PreflightReport): void {
   for (const check of report.checks) {
     const mark = check.status === 'pass' ? 'PASS' : check.status === 'warn' ? 'WARN' : 'FAIL';
     console.log(`  ${mark.padEnd(4)}  ${check.id.padEnd(28)} ${check.summary}`);
-    if (check.remediation && check.status === 'fail') console.log(`        fix: ${check.remediation}`);
+    if (check.remediation && check.status === 'fail') console.log(`        hint: ${check.remediation}`);
   }
   console.log(`\n${report.summary.passed} passed, ${report.summary.failed} failed, ${report.summary.warnings} warnings`);
 }

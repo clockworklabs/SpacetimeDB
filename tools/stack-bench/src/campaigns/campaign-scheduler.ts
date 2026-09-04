@@ -132,7 +132,7 @@ export interface CampaignExecutionResult {
 const ATTEMPT_STATUSES = new Set<AttemptStatus>(['pending', 'running', 'completed', 'invalid']);
 const TERMINAL_OUTCOMES = new Set<string>(['passed', 'app_failure']);
 const INVALID_OUTCOMES = new Set<string>(['provider_failure', 'harness_failure', 'inconclusive',
-  'ungraded', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted']);
+  'ungraded', 'incomplete', 'contaminated', 'timed_out', 'missing_artifact', 'scheduler_interrupted']);
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const FEATURE_ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const HASH = /^[a-f0-9]{64}$/;
@@ -189,7 +189,7 @@ const executionSchema = z.strictObject({
   completedAt: timestampSchema.nullable(),
   exitCode: z.number().int().nullable(),
   outcome: z.enum(['passed', 'app_failure', 'provider_failure', 'harness_failure',
-    'inconclusive', 'ungraded', 'contaminated', 'timed_out', 'missing_artifact',
+    'inconclusive', 'ungraded', 'incomplete', 'contaminated', 'timed_out', 'missing_artifact',
     'scheduler_interrupted']).nullable(),
   reason: z.string().min(1).nullable(),
   admissionId: z.string().min(1),
@@ -515,7 +515,8 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
   if (INVALID_OUTCOMES.has(outcome)) return { status: 'invalid', outcome: outcome as InvalidOutcome,
     reason: run.outcome?.reason ?? (outcome === 'inconclusive'
       ? 'one or more selected checks did not produce a pass-or-fail result'
-      : `run outcome was ${outcome}`) };
+      : outcome === 'incomplete' ? 'grading stopped before every selected check was measured'
+        : `run outcome was ${outcome}`) };
   return { status: 'invalid', outcome: 'ungraded',
     reason: `unknown run outcome ${outcome}; exit code ${exitCode ?? 'missing'}` };
 }

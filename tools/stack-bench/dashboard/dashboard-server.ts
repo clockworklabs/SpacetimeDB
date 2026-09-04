@@ -35,6 +35,8 @@ const STATIC = new Map<string, readonly [file: string, contentType: string]>([
   ['/format.js', ['format.js', 'text/javascript; charset=utf-8']],
   ['/graph.js', ['graph.js', 'text/javascript; charset=utf-8']],
   ['/metrics.js', ['metrics.js', 'text/javascript; charset=utf-8']],
+  // Shared with the CLI so a state has one name on every surface.
+  ['/src/evidence/status-words.js', ['../../src/evidence/status-words.js', 'text/javascript; charset=utf-8']],
   ['/views/attempt.js', ['views/attempt.js', 'text/javascript; charset=utf-8']],
   ['/views/campaign.js', ['views/campaign.js', 'text/javascript; charset=utf-8']],
   ['/views/campaigns.js', ['views/campaigns.js', 'text/javascript; charset=utf-8']],
