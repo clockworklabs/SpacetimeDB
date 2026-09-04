@@ -4,18 +4,18 @@
   "builderImage": "rust:1.93-slim-bookworm@sha256:8f8609d448e821fbc0e44241bc5ca4ce49663cc6306ff1a17f655a0e2a7cd084",
   "source": {
     "identityScheme": "git-object-content-v1",
-    "revision": "64afb5fd35aa391ccbff423d0bec272cefbd6092",
-    "sha256": "c76824c57bbfee62d707b36c1c6a4bdf1fffb295770931cf0b67f7adb9f88ed3",
-    "files": 2586
+    "revision": "81ab0550c6e07cd24b264a9c32d9240ff4cf2d75",
+    "sha256": "bacff6fdae08ea390eabbfd1fe908b3cf1338a744272c0684d7857c77f630f64",
+    "files": 2599
   },
   "binaries": {
     "spacetimedb-cli": {
-      "sha256": "376fbb1978533b75bc144a7b27cc202ceec5da4d39ad840dc4a88fff59049157",
-      "size": 46986456
+      "sha256": "2f671b85f51beac7ab6d32ccf707f08e3ca936d876fb2bdc874e02e497e5287f",
+      "size": 47642320
     },
     "spacetimedb-standalone": {
-      "sha256": "d53a8cbc4325bb87024748b725d13d5984f85bb0600ace3cea646a7ff6c5dce2",
-      "size": 134334152
+      "sha256": "53df19d77e81ef61426e0bfd154d78e94b4e9a04754647d79777ff4e056163c9",
+      "size": 132331544
     }
   }
 }
