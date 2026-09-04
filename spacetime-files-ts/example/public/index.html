@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A SpacetimeDB file manager example with uploads, folders, visibility controls, previews, and downloads."
+    />
+    <title>SpacetimeDB Vault</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- Icon sprite: stroke-based, viewBox 0 0 24 24 -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol
+          id="i-vault"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <ellipse cx="12" cy="6" rx="8" ry="3" />
+          <path d="M4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6" />
+          <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
+        </symbol>
+        <symbol
+          id="i-folder"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+          />
+        </symbol>
+        <symbol
+          id="i-file"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"
+          />
+          <path d="M14 3v4h4" />
+        </symbol>
+        <symbol
+          id="i-file-image"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"
+          />
+          <path d="M14 3v4h4" />
+          <circle cx="9.5" cy="12.5" r="1.2" />
+          <path d="M7 18l3-2.5 2 1.5 3-3 3 3" />
+        </symbol>
+        <symbol
+          id="i-file-text"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"
+          />
+          <path d="M14 3v4h4" />
+          <path d="M9 13h6M9 16.5h4" />
+        </symbol>
+        <symbol
+          id="i-file-media"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"
+          />
+          <path d="M14 3v4h4" />
+          <path d="M10 11.5v6l5-3z" />
+        </symbol>
+        <symbol
+          id="i-trash"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13h10l1-13M10 11v6M14 11v6"
+          />
+        </symbol>
+        <symbol
+          id="i-pencil"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M4 20h4L20 8l-4-4L4 16z" />
+          <path d="M14 6l4 4" />
+        </symbol>
+        <symbol
+          id="i-move"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M6 9l-3 3 3 3" />
+          <path d="M3 12h13a4 4 0 0 0 4-4V5" />
+        </symbol>
+        <symbol
+          id="i-link"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M9.5 14.5l5-5" />
+          <path d="M11 6.5l1-1a4 4 0 0 1 5.7 5.7l-1 1" />
+          <path d="M13 17.5l-1 1a4 4 0 0 1-5.7-5.7l1-1" />
+        </symbol>
+        <symbol
+          id="i-lock"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="5" y="11" width="14" height="9" rx="2" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+        </symbol>
+        <symbol
+          id="i-globe"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18" />
+          <path d="M12 3c2.5 2.6 2.5 15.4 0 18M12 3c-2.5 2.6-2.5 15.4 0 18" />
+        </symbol>
+        <symbol
+          id="i-plus"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol
+          id="i-close"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M6 6l12 12M18 6L6 18" />
+        </symbol>
+        <symbol
+          id="i-upload"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 15V4M7.5 8.5L12 4l4.5 4.5" />
+          <path d="M4 20h16" />
+        </symbol>
+        <symbol
+          id="i-download"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" />
+          <path d="M4 20h16" />
+        </symbol>
+        <symbol
+          id="i-search"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="M20 20l-4.2-4.2" />
+        </symbol>
+        <symbol
+          id="i-grid"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="4" y="4" width="7" height="7" rx="1.5" />
+          <rect x="13" y="4" width="7" height="7" rx="1.5" />
+          <rect x="4" y="13" width="7" height="7" rx="1.5" />
+          <rect x="13" y="13" width="7" height="7" rx="1.5" />
+        </symbol>
+        <symbol
+          id="i-list"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M9 6h11M9 12h11M9 18h11" />
+          <path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="2.6" />
+        </symbol>
+        <symbol
+          id="i-copy"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+        </symbol>
+        <symbol
+          id="i-eye"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"
+          />
+          <circle cx="12" cy="12" r="2.8" />
+        </symbol>
+        <symbol
+          id="i-tile"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="4.5" y="4.5" width="15" height="15" rx="3" />
+        </symbol>
+        <symbol
+          id="i-info"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5.5" />
+          <path d="M12 7.5h.01" stroke-width="2.4" />
+        </symbol>
+        <symbol
+          id="i-chev-l"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M14.5 5.5L8 12l6.5 6.5" />
+        </symbol>
+        <symbol
+          id="i-chev-r"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M9.5 5.5L16 12l-6.5 6.5" />
+        </symbol>
+        <symbol
+          id="i-folder-up"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+          />
+          <path d="M12 16v-5M9.8 13l2.2-2.2 2.2 2.2" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"
+            ><svg><use href="#i-vault" /></svg
+          ></span>
+          <div class="brand-text">
+            <h1>Vault</h1>
+            <span>File manager</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Folders</h2>
+            <button
+              class="icon"
+              id="new-folder"
+              title="New folder"
+              aria-label="New folder"
+            >
+              <svg class="ico"><use href="#i-plus" /></svg>
+            </button>
+          </div>
+          <div class="panel-body">
+            <ul class="tree-list" id="tree"></ul>
+          </div>
+          <div class="storage" id="storage"></div>
+        </section>
+
+        <section class="panel">
+          <div class="toolbar">
+            <div class="toolbar-main" id="toolbar-main">
+              <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+              <input
+                id="search"
+                class="search"
+                type="search"
+                aria-label="Search files"
+                placeholder="Search files"
+                autocomplete="off"
+              />
+              <div class="actions">
+                <div class="zoom" id="zoom-ctl" title="Tile size" hidden>
+                  <svg class="ico z-sm" aria-hidden="true">
+                    <use href="#i-tile" />
+                  </svg>
+                  <input
+                    type="range"
+                    class="tile-slider"
+                    id="tile-slider"
+                    min="90"
+                    max="260"
+                    step="5"
+                    aria-label="Tile size"
+                  />
+                  <svg class="ico z-lg" aria-hidden="true">
+                    <use href="#i-tile" />
+                  </svg>
+                </div>
+                <button
+                  class="icon"
+                  id="view-toggle"
+                  title="Toggle grid view"
+                  aria-label="Toggle grid view"
+                >
+                  <svg class="ico"><use href="#i-grid" /></svg>
+                </button>
+                <button
+                  class="icon"
+                  id="details-toggle"
+                  title="View details"
+                  aria-label="View details"
+                >
+                  <svg class="ico"><use href="#i-info" /></svg>
+                </button>
+                <input
+                  id="file-input"
+                  type="file"
+                  aria-label="Upload files"
+                  multiple
+                  hidden
+                />
+                <input
+                  id="folder-input"
+                  type="file"
+                  aria-label="Upload folder"
+                  webkitdirectory
+                  hidden
+                />
+                <button id="upload" class="primary">
+                  <svg class="ico"><use href="#i-upload" /></svg
+                  ><span id="upload-label">Upload</span>
+                </button>
+              </div>
+            </div>
+            <div class="bulkbar" id="bulkbar" hidden>
+              <span class="bulk-count" id="bulk-count"></span>
+              <button id="bulk-move">
+                <svg class="ico"><use href="#i-move" /></svg>Move
+              </button>
+              <button id="bulk-download">
+                <svg class="ico"><use href="#i-download" /></svg>Download
+              </button>
+              <button id="bulk-public">
+                <svg class="ico"><use href="#i-globe" /></svg>Make public
+              </button>
+              <button id="bulk-private">
+                <svg class="ico"><use href="#i-lock" /></svg>Make private
+              </button>
+              <button id="bulk-delete" class="danger">
+                <svg class="ico"><use href="#i-trash" /></svg>Delete
+              </button>
+              <span class="spacer"></span>
+              <button
+                class="icon"
+                id="bulk-clear"
+                title="Clear selection"
+                aria-label="Clear selection"
+              >
+                <svg class="ico"><use href="#i-close" /></svg>
+              </button>
+            </div>
+          </div>
+          <div class="list-head" id="list-head">
+            <span class="sel"
+              ><input
+                type="checkbox"
+                id="select-all"
+                aria-label="Select all files"
+                title="Select all"
+            /></span>
+            <button data-sort="name">Name</button>
+            <button data-sort="size" class="meta-col">Size</button>
+            <button data-sort="updated" class="meta-col">Modified</button>
+            <button data-sort="visibility" class="meta-col">Visibility</button>
+            <span></span>
+          </div>
+          <div class="panel-body">
+            <ul class="file-list list" id="list"></ul>
+            <div id="empty" hidden></div>
+          </div>
+        </section>
+
+        <section class="panel details-panel">
+          <div class="panel-head">
+            <h2>Details</h2>
+            <button
+              class="icon"
+              id="details-close"
+              title="Close details"
+              aria-label="Close details"
+            >
+              <svg class="ico"><use href="#i-close" /></svg>
+            </button>
+          </div>
+          <div class="panel-body" id="details-body"></div>
+        </section>
+      </main>
+
+      <footer class="built-on">
+        <span>Built on</span>
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display: inline-flex"
+        >
+          <img src="/assets/brand.svg" alt="SpacetimeDB" />
+        </a>
+      </footer>
+    </div>
+
+    <div class="dialog" id="dialog">
+      <div
+        class="card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dialog-title"
+      >
+        <div class="card-head" id="dialog-title"></div>
+        <div class="card-body" id="dialog-body"></div>
+        <div class="card-actions">
+          <button id="dialog-cancel">Cancel</button>
+          <button id="dialog-alt" hidden></button>
+          <button class="primary" id="dialog-ok">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="drop-hint" id="drop-hint">
+      <svg class="ico"><use href="#i-upload" /></svg
+      ><span>Drop to upload to</span><b id="drop-path">/</b>
+    </div>
+
+    <div class="ctx" id="ctx"></div>
+
+    <div class="lightbox" id="lightbox">
+      <div class="lb-name">
+        <strong id="lb-title"></strong><span id="lb-meta"></span>
+      </div>
+      <div class="lb-controls">
+        <button
+          class="icon"
+          id="lb-prev"
+          title="Previous (←)"
+          aria-label="Previous file"
+        >
+          <svg class="ico"><use href="#i-chev-l" /></svg>
+        </button>
+        <button
+          class="icon"
+          id="lb-next"
+          title="Next (→)"
+          aria-label="Next file"
+        >
+          <svg class="ico"><use href="#i-chev-r" /></svg>
+        </button>
+        <button id="lb-out" title="Zoom out">−</button>
+        <button id="lb-in" title="Zoom in">+</button>
+        <button id="lb-fit" title="Fit to screen">Fit</button>
+        <button id="lb-full" title="Actual size">100%</button>
+        <button
+          class="icon"
+          id="lb-download"
+          title="Download"
+          aria-label="Download"
+        >
+          <svg class="ico"><use href="#i-download" /></svg>
+        </button>
+        <button class="icon" id="lb-close" title="Close" aria-label="Close">
+          <svg class="ico"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <div class="lb-stage" id="lb-stage"></div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

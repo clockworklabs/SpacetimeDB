@@ -1655,3 +1655,38 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  typescript-submodules:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: TypeScript - Submodules
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Build TypeScript SDK
+        run: pnpm --dir crates/bindings-typescript run build
+
+      - name: Install released SpacetimeDB toolchain
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- --root-dir "$RUNNER_TEMP/spacetime" --yes
+          echo "$RUNNER_TEMP/spacetime" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/spacetime/spacetime" version install 2.8.3 --use --yes
+
+      - name: Check submodules
+        run: |
+          pnpm -r -F "./spacetime-*-ts/**" run typecheck
+          pnpm -r -F "./spacetime-*-ts/**" run test
+
+      - name: Build submodule packages and examples
+        run: pnpm -r -F "./spacetime-*-ts/**" run build
