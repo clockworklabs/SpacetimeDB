@@ -75,7 +75,14 @@ impl SimulatorIO {
                     };
                     let erased_buf = buffers.remove(buf_key);
                     let result = match result {
-                        Ok(_written) => Ok(erased_buf),
+                        Ok(written) if written == erased_buf.len() => Ok(erased_buf),
+                        Ok(written) => Err(ErrorWith {
+                            error: Error::ShortWrite {
+                                expected: erased_buf.len(),
+                                written,
+                            },
+                            with: erased_buf,
+                        }),
                         Err(error) => Err(ErrorWith {
                             error,
                             with: erased_buf,
@@ -89,7 +96,14 @@ impl SimulatorIO {
                     };
                     let erased_buf = buffers.remove(buf_key);
                     let result = match result {
-                        Ok(_written) => Ok(erased_buf),
+                        Ok(read) if read == erased_buf.len() => Ok(erased_buf),
+                        Ok(read) => Err(ErrorWith {
+                            error: Error::UnexpectedEof {
+                                expected: erased_buf.len(),
+                                read,
+                            },
+                            with: erased_buf,
+                        }),
                         Err(error) => Err(ErrorWith {
                             error,
                             with: erased_buf,

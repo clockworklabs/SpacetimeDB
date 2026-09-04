@@ -115,6 +115,14 @@ mod boxed {
                 len: self.len,
             }
         }
+
+        pub fn len(&self) -> usize {
+            self.len
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.len == 0
+        }
     }
 
     impl Drop for ErasedBox {
