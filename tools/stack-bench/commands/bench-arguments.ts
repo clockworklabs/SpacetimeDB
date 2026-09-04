@@ -46,6 +46,8 @@ export interface BenchArguments {
   guidance: GuidanceMode;
   guidanceDocument?: unknown;
   condition?: StudyCondition;
+  /** Aliases the grader expects instead of the condition's; `{}` grades with the fixture credentials. */
+  gradingCredentialAliases?: Record<string, string>;
   selectionRequest?: CampaignSelection;
   taskMode?: string;
   packIds: string[];

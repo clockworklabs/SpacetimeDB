@@ -72,6 +72,15 @@ test('campaign agent and grader argv carry aliases only when the condition decla
     track, 'attempt').includes('--credential-aliases-json'), false);
 });
 
+test('a run graded with the fixture credentials keeps its recorded condition', () => {
+  const args = { backend: 'mongodb', track: 'ecommerce', runIndex: 0, media: false,
+    condition: { guidance: { credentialAliases: aliases } }, gradingCredentialAliases: {} };
+  const track = loadTrack('ecommerce');
+  const graderArgs = gradeArgv(args, '/app', 'http://app', 'attempt', 1, track, 'attempt');
+  assert.equal(graderArgs[graderArgs.indexOf('--credential-aliases-json') + 1], '{}');
+  assert.deepEqual(args.condition.guidance.credentialAliases, aliases);
+});
+
 test('model-free scenarios keep their original credentials without aliases', () => {
   const scenario = { features: [{ criteria: [{ actions: [
     { do: 'signIn', password: 'stackbench-admin-2026' },

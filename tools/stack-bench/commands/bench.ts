@@ -564,6 +564,11 @@ interface GradeRecipeTask {
     | { scoredChecks: readonly GradeCheck[]; observedChecks?: readonly GradeCheck[] };
 }
 
+/** The aliases grading expects: the run's own when set, else the condition's. */
+function gradingCredentialAliases(args: GradeArguments): Record<string, unknown> | undefined {
+  return args.gradingCredentialAliases ?? args.condition?.guidance?.credentialAliases;
+}
+
 function checksForGrade(task: GradeRecipeTask | undefined, observation: GradeOptions['observation']):
   readonly GradeCheck[] {
   if (!task) return [];
@@ -578,6 +583,7 @@ type GradeArguments = Pick<BenchArgs, 'backend' | 'track' | 'runIndex' | 'media'
   recipeTasks?: ReadonlyMap<number, GradeRecipeTask>;
   progression?: { identity: { policy?: string } };
   condition?: { guidance?: { credentialAliases?: Record<string, unknown> } };
+  gradingCredentialAliases?: Record<string, unknown>;
 };
 
 export function gradeArgv(
@@ -605,9 +611,8 @@ export function gradeArgv(
     ...(sourceSha256 ? ['--source-sha256', sourceSha256] : []),
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(task ? ['--recipe-task-json', JSON.stringify(task.request)] : []),
-    ...(args.condition?.guidance?.credentialAliases
-      ? ['--credential-aliases-json', JSON.stringify(
-          args.condition.guidance.credentialAliases)] : []),
+    ...(gradingCredentialAliases(args)
+      ? ['--credential-aliases-json', JSON.stringify(gradingCredentialAliases(args))] : []),
     ...(applicationFailure
       ? ['--application-failure-json', JSON.stringify(applicationFailure)] : []),
     ...(observation === 'scored' && args.recipeTasks && !args.progression
@@ -762,10 +767,7 @@ async function main() {
   // Credential aliases keep the fixture passwords out of an agent's prompt,
   // so grading expects the aliases. A reference fixture is the fixture itself,
   // seeded with the real credentials, and is graded with them.
-  if (agentAdapter.gradesWithFixtureCredentials && args.condition?.guidance) {
-    args.condition = { ...args.condition,
-      guidance: { ...args.condition.guidance, credentialAliases: {} } };
-  }
+  if (agentAdapter.gradesWithFixtureCredentials) args.gradingCredentialAliases = {};
   if (process.env.STACK_BENCH_APPLIANCE !== '1' && agentAdapter.costLimit !== 'non-billable') {
     throw new Error(`agent adapter ${agentAdapter.id} requires the Docker appliance`);
   }
