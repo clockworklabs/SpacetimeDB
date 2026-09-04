@@ -289,7 +289,8 @@ jobs:
 
   release-npm:
     needs: build-cargo-release
-    runs-on: spacetimedb-linux
+    # This installs and publishes the TypeScript SDK with the prebuilt release helper.
+    runs-on: spacetimedb-linux-small-staging
     if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
