@@ -222,7 +222,7 @@ function validatePayload(kind: ArtifactKind, input: unknown): UnknownRecord {
     const runner = objectWhenPresent('runner');
     if (runner === undefined) return;
     const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture', 'hostname',
-      'containersRunning',
+      'containersRunning', 'packageRegistry',
       ...RUNNER_OBSERVATION_FIELDS]);
     for (const key of Object.keys(runner)) {
       if (!allowed.has(key)) fail(`${kind} payload.runner.${key} is unknown`);

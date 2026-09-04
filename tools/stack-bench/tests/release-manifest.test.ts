@@ -9,7 +9,7 @@ import { RELEASE_MANIFEST_SCHEMA_VERSION, validateReleaseManifest,
   verifyReleaseBundle } from '../src/releases/release-manifest.js';
 import type { ReleaseFileRole, ReleaseManifest } from '../src/releases/release-manifest.js';
 
-const roles = ['controller', 'build-sandbox', 'postgres', 'mongodb'] as const;
+const roles = ['controller', 'build-sandbox', 'postgres', 'mongodb', 'npm-cache'] as const;
 
 function spdx(role: string, digest: string): string {
   return JSON.stringify({ spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0',
@@ -75,7 +75,7 @@ test('candidate manifest binds files and digest-bearing SPDX without placeholder
     const verified = verifyReleaseBundle(manifest, root);
     assert.equal(verified.ok, true, JSON.stringify(verified.results));
     assert.equal(verified.verificationLevel, 'candidate-file-integrity');
-    assert.equal(verified.results.filter(result => result.check === 'spdx-image-binding').length, 4);
+    assert.equal(verified.results.filter(result => result.check === 'spdx-image-binding').length, 5);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -123,7 +123,7 @@ test('release schema refuses mutable images, incomplete roles, false signing, an
 
     const incomplete = fixture(root);
     incomplete.images.pop();
-    assert.throws(() => validateReleaseManifest(incomplete), /missing mongodb/);
+    assert.throws(() => validateReleaseManifest(incomplete), /missing npm-cache/);
 
     const insecure = fixture(root);
     insecure.outboundDestinations[0]!.url = 'http://registry.npmjs.org';
@@ -166,8 +166,9 @@ test('qualified verification requires the signed disk manifest and an external m
         } });
       assert.equal(verified.ok, true);
       assert.equal(verified.verificationLevel, 'qualified-cryptographic');
-      assert.equal(calls.length, 5);
-      assert.deepEqual(calls.map(call => call.args[0]), ['verify-blob', 'verify', 'verify', 'verify', 'verify']);
+      assert.equal(calls.length, 6);
+      assert.deepEqual(calls.map(call => call.args[0]),
+        ['verify-blob', 'verify', 'verify', 'verify', 'verify', 'verify']);
       assert.ok(calls.every(call => call.executable === 'cosign-test'));
 
       const failed = verifyReleaseBundle(manifest, root, { manifestPath, trustedKeyPath,

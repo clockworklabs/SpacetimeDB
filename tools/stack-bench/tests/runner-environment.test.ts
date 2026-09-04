@@ -43,6 +43,7 @@ test('appliance controllers record Docker daemon observations', () => {
     cpuCount: 8,
     memoryBytes: 16_000_000_000,
     containersRunning: 4,
+    packageRegistry: null,
   });
   assert.deepEqual(missingRunnerObservation(runner), []);
   assert.deepEqual(missingRunnerObservation(null), RUNNER_OBSERVATION_FIELDS);

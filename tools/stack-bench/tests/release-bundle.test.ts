@@ -66,7 +66,7 @@ test('release bundle CLI rejects unknown and duplicate options', () => {
 test('manifest assembly computes file metadata and rejects missing and escaping inputs', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-bundle-'));
   try {
-    const roles = ['controller', 'build-sandbox', 'postgres', 'mongodb'];
+    const roles = ['controller', 'build-sandbox', 'postgres', 'mongodb', 'npm-cache'];
     const files = [['compose.yaml', 'compose'], ['deps', 'dependency'], ['OPERATOR.md', 'operator-guide'],
       ['secrets.example', 'secrets-template'], ['SUPPORT.md', 'support-policy'],
       ...roles.map(role => [`sbom/${role}.json`, 'sbom'])]

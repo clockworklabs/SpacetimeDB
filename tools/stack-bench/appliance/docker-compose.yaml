@@ -30,8 +30,11 @@ services:
         condition: service_healthy
       mongodb:
         condition: service_healthy
+      npm-cache:
+        condition: service_healthy
     environment:
       STACK_BENCH_CONTROLLER_IMAGE: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
+      STACK_BENCH_NPM_REGISTRY: http://127.0.0.1:4873/
       STACK_BENCH_IMAGE: ${STACK_BENCH_BUILD_IMAGE:?set STACK_BENCH_BUILD_IMAGE to the manifest digest reference}
       STACK_BENCH_RELEASE_MANIFEST: ${STACK_BENCH_RELEASE_MANIFEST:-}
       STACK_BENCH_APPLIANCE: "1"
@@ -105,6 +108,63 @@ services:
       timeout: 5s
       retries: 12
 
+  # Pull-through npm registry cache. Coding containers install through it, so a
+  # package reaches the public registry once per appliance, not once per run.
+  npm-cache:
+    image: verdaccio/verdaccio:6@sha256:09b403888c8f73ba9336d7fb3464622f64ea905a64bc46a87c847387c536d4dd
+    platform: linux/amd64
+    container_name: stack-bench-npm-cache
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    ports: ["127.0.0.1:4873:4873"]
+    configs:
+      - source: npm-cache-config
+        target: /verdaccio/conf/config.yaml
+    volumes:
+      - npmcache:/verdaccio/storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4873/-/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+configs:
+  npm-cache-config:
+    content: |
+      storage: /verdaccio/storage/data
+      plugins: /verdaccio/plugins
+      web:
+        enable: false
+      auth:
+        htpasswd:
+          file: /verdaccio/storage/htpasswd
+          max_users: -1
+      uplinks:
+        npmjs:
+          url: https://registry.npmjs.org/
+          cache: true
+          timeout: 60s
+          maxage: 10m
+          max_fails: 4
+          fail_timeout: 2m
+      packages:
+        '@*/*':
+          access: $$all
+          publish: nobody
+          unpublish: nobody
+          proxy: npmjs
+        '**':
+          access: $$all
+          publish: nobody
+          unpublish: nobody
+          proxy: npmjs
+      server:
+        keepAliveTimeout: 60
+      log:
+        type: stdout
+        format: pretty
+        level: warn
+
 volumes:
   release-deps:
     name: stack-bench-release-deps
@@ -112,3 +172,5 @@ volumes:
     name: stack-bench-appliance-pgdata
   mongodata:
     name: stack-bench-appliance-mongodata
+  npmcache:
+    name: stack-bench-appliance-npmcache

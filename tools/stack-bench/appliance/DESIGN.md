@@ -108,7 +108,7 @@ adapter to declare its credential alternatives and outbound HTTPS destinations.
 The delivered bundle must include:
 
 - controller and build-sandbox images by registry digest;
-- PostgreSQL and MongoDB images by registry digest;
+- PostgreSQL, MongoDB, and npm registry cache images by registry digest;
 - every digest names the exact Linux/amd64 platform manifest, not a
   multi-architecture index;
 - the SpacetimeDB runtime, CLI, standalone binary, and TypeScript SDK source by

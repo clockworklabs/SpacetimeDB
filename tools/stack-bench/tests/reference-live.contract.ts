@@ -492,6 +492,7 @@ test('reference qualification records whether its controller is the supported Li
     hostname: 'runner-1',
     dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
     kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000, containersRunning: 3,
+    packageRegistry: null,
   });
   assert.deepEqual(referenceQualificationRunner({ env: {}, platform: 'win32', architecture: 'x64',
     hostname: 'dev-box' }), {

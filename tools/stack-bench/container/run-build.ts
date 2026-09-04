@@ -14,6 +14,7 @@ import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import type { ContainerMount } from '../src/runtime/container-mount.js';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.js';
+import { packageRegistry, packageRegistryEnvironment } from '../src/runtime/package-registry.js';
 import { resolveContainerAuth } from './container-auth.js';
 import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupMemory,
   parsePublishedPorts }
@@ -306,6 +307,11 @@ if (!existing) {
 
   // Publish the track's ports for the host grader.
   if (expectedNetworkMode === 'bridge') for (const p of ports) create.push('-p', `127.0.0.1:${p}:${p}`);
+  // Container-level, so the agent's installs and every later exec share it.
+  for (const [key, value] of Object.entries(
+    packageRegistryEnvironment(packageRegistry(), expectedNetworkMode))) {
+    create.push('-e', `${key}=${value}`);
+  }
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
   // build leaves behind are reparented to `sleep`, which never reaps them.

@@ -22,6 +22,7 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { databaseContainer, isDatabaseContainerBackend } from '../stacks/database-containers.js';
 import { POSTGRES_APPLICATION_IDENTITY } from '../stacks/hosted-database-identity.js';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from '../composition/tracks.js';
+import { packageRegistry } from './package-registry.js';
 import { pidsOnPort } from './platform.js';
 import { agentSkillPaths, selectAgentSkills } from '../agents/agent-materials.js';
 import { STACK_BENCH_RUNNER_PLATFORM } from './runner-environment.js';
@@ -486,6 +487,24 @@ export function runPreflight(
   } else if (!request.smoke) add('outbound.container', 'warn',
     'Container outbound access and result-volume persistence were not exercised',
     'Run the same command with --smoke before a paid campaign.');
+
+  // Package installs in a session and in every clean-source start go through
+  // the cache; without it they depend on the public registry at run time.
+  try {
+    const registry = packageRegistry(env);
+    if (!registry) {
+      add('registry.cache', env.STACK_BENCH_APPLIANCE === '1' ? 'fail' : 'warn',
+        'No package registry cache; installs use the public registry directly',
+        'Start the npm-cache service and set STACK_BENCH_NPM_REGISTRY.');
+    } else {
+      const status = run('curl', ['-sS', '-m', '5', '-o', '/dev/null', '-w', '%{http_code}',
+        `${registry.href}-/ping`]).trim();
+      add('registry.cache', status === '200' ? 'pass' : 'fail', `${registry.href} answered ${status || 'nothing'}`,
+        status === '200' ? null : 'Start the npm-cache service before running.');
+    }
+  } catch (error) {
+    add('registry.cache', 'fail', errorMessage(error), 'Start the npm-cache service before running.');
+  }
 
   const composeText = exists(COMPOSE) ? String(dependencies.readCompose?.() ?? readFileSync(COMPOSE, 'utf8')) : '';
   for (const backend of (track ? request.backends : []).filter(isDatabaseContainerBackend)) {

@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { hostname as osHostname } from 'node:os';
 
+import { packageRegistry } from './package-registry.js';
+
 export const STACK_BENCH_RUNNER_PLATFORM = 'linux/amd64' as const;
 
 export const RUNNER_OBSERVATION_FIELDS = Object.freeze([
@@ -28,6 +30,8 @@ export interface ControllerRunner {
   memoryBytes?: number;
   // Every running container on the daemon, this controller included.
   containersRunning?: number;
+  // The pull-through npm registry cache installs went through, if any.
+  packageRegistry?: string | null;
 }
 
 interface ControllerRunnerOptions {
@@ -101,5 +105,6 @@ export function controllerRunner({ env = process.env, platform = process.platfor
     cpuCount: positiveInteger(info.NCPU, 'NCPU'),
     memoryBytes: positiveInteger(info.MemTotal, 'MemTotal'),
     containersRunning: nonNegativeInteger(info.ContainersRunning, 'ContainersRunning'),
+    packageRegistry: packageRegistry(env)?.href ?? null,
   };
 }

@@ -15,7 +15,7 @@ See [appliance design](DESIGN.md) for the security model and
 
 - `Controller.Dockerfile` builds the controller and grader.
 - `docker-compose.yaml` starts the controller, dependency initializer,
-  PostgreSQL, MongoDB, and optional dashboard.
+  PostgreSQL, MongoDB, the npm registry cache, and optional dashboard.
 - `operator.env.example` lists operator configuration without secret values.
 - the dependency initializer copies the release SDK, CLI, and runtime into a
   checksummed read-only volume.
@@ -23,6 +23,14 @@ See [appliance design](DESIGN.md) for the security model and
 The coding container receives one app workspace, its transcript directory, and
 only the dependencies declared by its stack adapter. It cannot read the
 controller, grader, scenarios, results, or provider credential.
+
+Package installs go through the `npm-cache` service, a pull-through cache of
+the public npm registry on `127.0.0.1:4873`. The controller passes its address
+to every coding container as `NPM_CONFIG_REGISTRY`, so the agent's installs
+and the clean-source start before each grade fetch a package from the public
+registry once per appliance and from local storage after that. The cache
+holds packages only, never application source or results, and is shared by
+every run on the runner. Preflight fails when it does not answer.
 
 ## Prepare the runner
 

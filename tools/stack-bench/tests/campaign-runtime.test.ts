@@ -15,6 +15,7 @@ function frozenRuntime(root: string) {
     'build-sandbox': 'c'.repeat(64),
     postgres: 'd'.repeat(64),
     mongodb: 'e'.repeat(64),
+    'npm-cache': 'f'.repeat(64),
   };
   const images = Object.entries(digests).map(([role, digest]) => ({
     id: `stack-bench-${role}`,

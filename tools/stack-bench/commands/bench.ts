@@ -10,6 +10,7 @@ import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, suitesFor } from '../src/composition/tracks.js';
 import { parseBenchArguments } from './bench-arguments.js';
 import type { BenchArguments } from './bench-arguments.js';
+import { packageRegistry, packageRegistryPort } from '../src/runtime/package-registry.js';
 import { killTree } from '../src/runtime/platform.js';
 import { formatRepairProgress } from '../src/evidence/scoring.js';
 import { ARTIFACT_FILE, emptyArtifactIdentities, readArtifact, readArtifactPayload,
@@ -401,7 +402,8 @@ function runOwnPorts(track: Parameters<typeof portsFor>[0],
   const ports = portsFor(track, args.backend, args.runIndex);
   const stdb = process.env.STACK_BENCH_STDB_URI
     ? Number(new URL(process.env.STACK_BENCH_STDB_URI).port) : null;
-  return [ports.vite, ports.express, ports.dbPort, stdb].filter((port): port is number =>
+  const registry = packageRegistryPort(packageRegistry());
+  return [ports.vite, ports.express, ports.dbPort, stdb, registry].filter((port): port is number =>
     typeof port === 'number' && Number.isInteger(port) && port > 0);
 }
 
