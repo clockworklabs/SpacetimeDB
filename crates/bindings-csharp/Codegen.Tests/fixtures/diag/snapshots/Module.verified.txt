@@ -35,23 +35,6 @@
       }
     },
     {/*
-    [Unique]
-    public int? UniqueField;
-                ^^^^^^^^^^^
-
-*/
-      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0003,
-        Title: Unique fields must be equatable,
-        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
 [SpacetimeDB.Table]
 public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -63,23 +46,6 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
         Id: STDB0006,
         Title: Tables cannot be tagged enums,
         MessageFormat: Table {0} is a tagged enum, which is not allowed.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
-    [Unique]
-    public int? UniqueField;
-                ^^^^^^^^^^^
-
-*/
-      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0003,
-        Title: Unique fields must be equatable,
-        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
