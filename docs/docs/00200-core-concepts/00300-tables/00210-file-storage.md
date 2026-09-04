@@ -765,7 +765,7 @@ const image = table(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "Image", Public = true)]
     public partial struct Image

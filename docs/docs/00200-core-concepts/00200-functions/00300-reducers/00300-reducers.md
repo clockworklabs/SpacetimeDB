@@ -600,7 +600,7 @@ export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }
 #pragma warning disable STDB_UNSTABLE
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
     public partial struct FetchSchedule

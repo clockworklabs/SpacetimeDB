@@ -348,7 +348,7 @@ See the [Procedures documentation](../00200-functions/00400-procedures.md) for m
 
 ## Views - Read-Only Access
 
-[Views](../00200-functions/00500-views.md) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query and iterate tables, but cannot insert, update, or delete rows.
+[Views](../00200-functions/00500-views.md) receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to all tables (both public and private). They can query tables through indexed lookups, but cannot scan full tables or insert, update, or delete rows.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -463,7 +463,7 @@ export const my_messages = spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module 
+public static partial class Module
 {
     // Private table containing all messages
     [SpacetimeDB.Table(Accessor = "Message")]  // Private by default
@@ -490,8 +490,7 @@ public partial class Module
         sent.AddRange(received);
         return sent;
     }
-
-
+}
 ```
 
 </TabItem>
@@ -615,7 +614,7 @@ export const myProfile = spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     // Private table with sensitive data
     [SpacetimeDB.Table(Accessor = "UserAccount")]  // Private by default
@@ -812,7 +811,7 @@ export const my_colleagues = spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     // Private table with all employee data
     [SpacetimeDB.Table(Accessor = "Employee")]
