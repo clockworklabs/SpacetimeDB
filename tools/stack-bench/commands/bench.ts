@@ -759,6 +759,13 @@ async function main() {
   const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const materializeCodingOutput = stackAdapter.id !== 'stub';
   const agentAdapter = AGENT_ADAPTER_REGISTRY.get(args.agentAdapter);
+  // Credential aliases keep the fixture passwords out of an agent's prompt,
+  // so grading expects the aliases. A reference fixture is the fixture itself,
+  // seeded with the real credentials, and is graded with them.
+  if (agentAdapter.gradesWithFixtureCredentials && args.condition?.guidance) {
+    args.condition = { ...args.condition,
+      guidance: { ...args.condition.guidance, credentialAliases: {} } };
+  }
   if (process.env.STACK_BENCH_APPLIANCE !== '1' && agentAdapter.costLimit !== 'non-billable') {
     throw new Error(`agent adapter ${agentAdapter.id} requires the Docker appliance`);
   }

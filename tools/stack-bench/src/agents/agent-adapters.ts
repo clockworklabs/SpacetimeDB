@@ -22,6 +22,7 @@ interface AdapterOptions {
   requiredExecutables?: string[];
   credentialStatusCommand?: string[] | null;
   usesStackSkills?: boolean;
+  gradesWithFixtureCredentials?: boolean;
   costLimit?: AgentCostLimit;
   version?: string;
   deadlineMs?: number;
@@ -41,13 +42,14 @@ const adapter = (id: string, entrypoint: string, defaultModel: string,
   { modes = ['build', 'upgrade', 'resume', 'fix'], apiKeyEnvironmentVariable = null,
     credentialEnvironmentVariables = [], credentialFiles = [], outboundDestinations = [],
     requiredExecutables = [],
-    credentialStatusCommand = null, usesStackSkills = false,
+    credentialStatusCommand = null, usesStackSkills = false, gradesWithFixtureCredentials = false,
     costLimit = 'unsupported', version = '1.0.0',
     deadlineMs = 75 * 60_000 }: AdapterOptions = {}): AgentAdapter => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
   id, version, entrypoint: compiledEntrypoint(...entrypoint.split(sep)), modes, defaultModel,
   apiKeyEnvironmentVariable, credentialEnvironmentVariables, credentialFiles,
-  outboundDestinations, requiredExecutables, credentialStatusCommand, usesStackSkills, costLimit,
+  outboundDestinations, requiredExecutables, credentialStatusCommand, usesStackSkills,
+  gradesWithFixtureCredentials, costLimit,
   deadlineMs,
 });
 
@@ -70,7 +72,8 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
   adapter('fault-injection', join('tests', 'fixtures', 'crash-agent.js'), 'fault-injection',
     { modes: ['build'], costLimit: 'non-billable', version: '1.2.0' }),
   adapter('reference-fixture', join('src', 'references', 'reference-agent.js'), 'reference-fixture',
-    { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', version: '1.4.0' }),
+    { modes: ['build', 'upgrade', 'fix'], costLimit: 'non-billable', gradesWithFixtureCredentials: true,
+      version: '1.4.0' }),
 ]);
 
 export function agentAdapterIdentity(value: AgentAdapter): AgentAdapterIdentity {

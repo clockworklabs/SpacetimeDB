@@ -25,6 +25,9 @@ export interface AgentAdapter {
   readonly requiredExecutables: readonly string[];
   readonly credentialStatusCommand: readonly string[] | null;
   readonly usesStackSkills: boolean;
+  // The adapter's application is the fixture itself, seeded with the fixture
+  // credentials, so grading uses them rather than the aliases a prompt gets.
+  readonly gradesWithFixtureCredentials: boolean;
   readonly costLimit: AgentCostLimit;
 }
 
@@ -76,6 +79,7 @@ const agentAdapterSchema = z.strictObject({
   credentialStatusCommand: z.array(z.string().min(1).refine(item => !/[\r\n\0]/.test(item)))
     .min(1).nullable(),
   usesStackSkills: z.boolean(),
+  gradesWithFixtureCredentials: z.boolean(),
   costLimit: z.enum(['native', 'non-billable', 'unsupported']),
 });
 

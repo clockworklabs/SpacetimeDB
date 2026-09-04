@@ -176,7 +176,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
     credentialEnvironmentVariables: [], credentialFiles: [], outboundDestinations: [],
     requiredExecutables: [],
-    credentialStatusCommand: null, usesStackSkills: false,
+    credentialStatusCommand: null, usesStackSkills: false, gradesWithFixtureCredentials: false,
     costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
   assert.throws(() => createAgentAdapterRegistry([source, source]), /duplicate/);
