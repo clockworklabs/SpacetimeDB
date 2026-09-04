@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Order delivery",
   "description": "Automatic delivery and final cancellation.",
-  "requiresPacks": ["ecommerce.returns-pricing-features@1.1.0"],
+  "requiresPacks": ["ecommerce.returns-pricing-features"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

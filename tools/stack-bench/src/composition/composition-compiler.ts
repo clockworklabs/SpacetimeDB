@@ -247,14 +247,16 @@ function version(value: unknown, at: string): string {
   return text;
 }
 
-function exactRef(value: unknown, at: string): string {
+// A pack names the packs it depends on by id. The recipe that selects the
+// pack pins the version of every pack it includes, so one recipe never holds
+// two releases of one id and a dependency resolves to exactly one release.
+function packId(value: unknown, at: string): string {
   const text = string(value, at);
-  const split = text.lastIndexOf('@');
-  if (split < 1) fail(at, 'must be an exact id@version reference');
-  id(text.slice(0, split), `${at} id`);
-  version(text.slice(split + 1), `${at} version`);
+  if (text.includes('@')) fail(at, 'must be a pack id; the recipe pins its version');
+  id(text, at);
   return text;
 }
+
 
 function uniqueStrings(value: unknown, at: string): string[] {
   if (!Array.isArray(value)) fail(at, 'must be an array');
@@ -425,8 +427,8 @@ export function compilePackDefinition(input: unknown,
   const conflictsWith = uniqueStrings(pack.conflictsWith ?? [], `${source}.conflictsWith`);
   pack.requiresPacks = requiresPacks;
   pack.conflictsWith = conflictsWith;
-  requiresPacks.forEach((ref, index) => exactRef(ref, `${source}.requiresPacks[${index}]`));
-  conflictsWith.forEach((ref, index) => exactRef(ref, `${source}.conflictsWith[${index}]`));
+  requiresPacks.forEach((ref, index) => packId(ref, `${source}.requiresPacks[${index}]`));
+  conflictsWith.forEach((ref, index) => packId(ref, `${source}.conflictsWith[${index}]`));
   const capabilities = uniqueStrings(pack.capabilities ?? [], `${source}.capabilities`);
   pack.capabilities = capabilities;
   if (capabilities.length === 0) fail(`${source}.capabilities`, 'must not be empty');
@@ -803,6 +805,18 @@ export function compileRecipeFile(recipePath: string,
     }
     selectedByRef.set(ref, pack);
     selectedPacks.push({ selection, pack, path: packRef.relative });
+  }
+  // Resolve every dependency id to the release this recipe selected, so each
+  // later consumer sees exact references.
+  const refById = new Map<string, string>();
+  for (const { pack } of selectedPacks) {
+    if (refById.has(pack.id)) fail(`${recipeSource}.packs`, `selects ${pack.id} twice`);
+    refById.set(pack.id, `${pack.id}@${pack.version}`);
+  }
+  for (const { pack } of selectedPacks) {
+    pack.requiresPacks = pack.requiresPacks.map(required => refById.get(required)
+      ?? fail(`${pack.id}.requiresPacks`, `missing ${required}`));
+    pack.conflictsWith = pack.conflictsWith.map(conflict => refById.get(conflict) ?? conflict);
   }
   for (const { pack } of selectedPacks) {
     for (const required of pack.requiresPacks) {

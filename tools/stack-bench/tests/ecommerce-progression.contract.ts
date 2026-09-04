@@ -189,6 +189,9 @@ test('every progression feature is a whole module and every direct graph edge is
   const nodeById = new Map(definition.nodes.map(node => [node.id, node]));
   const ownerByRef = new Map(definition.nodes
     .flatMap(node => node.featureRefs.map(reference => [reference, node.id])));
+  // Packs read from disk name their dependencies by id.
+  const ownerById = new Map(definition.nodes.flatMap(node => node.featureRefs
+    .map(reference => [reference.slice(0, reference.lastIndexOf('@')), node.id])));
   const ancestors = (nodeId: string): Set<string> => {
     const found = new Set<string>();
     const visit = (id: string): void => requiredNode(nodeById, id).dependencies.forEach(parent => {
@@ -217,7 +220,7 @@ test('every progression feature is a whole module and every direct graph edge is
       }
     }
     const requiredOwners = [...new Set(requiredPacks.flatMap(pack => pack.requiresPacks)
-      .map(reference => ownerByRef.get(reference))
+      .map(reference => ownerByRef.get(reference) ?? ownerById.get(reference))
       .filter((owner): owner is string => typeof owner === 'string' && owner !== node.id))];
     const directRequiredOwners = requiredOwners.filter(owner => !requiredOwners.some(other =>
       other !== owner && ancestors(other).has(owner))).sort();

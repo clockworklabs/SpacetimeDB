@@ -8,8 +8,8 @@
   "title": "Managed support cases",
   "description": "Customer and staff support case updates.",
   "requiresPacks": [
-    "ecommerce.progression.support-history@1.0.0",
-    "ecommerce.progression.support-triage@1.0.0"
+    "ecommerce.progression.support-history",
+    "ecommerce.progression.support-triage"
   ],
   "conflictsWith": [],
   "capabilities": ["browser"],

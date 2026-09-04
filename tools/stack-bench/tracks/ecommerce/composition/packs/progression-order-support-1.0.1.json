@@ -8,8 +8,8 @@
   "title": "Order-linked support",
   "description": "Owned order links that authorized staff can inspect.",
   "requiresPacks": [
-    "ecommerce.progression.managed-support@1.0.0",
-    "ecommerce.feature.purchasing@1.2.1"
+    "ecommerce.progression.managed-support",
+    "ecommerce.feature.purchasing"
   ],
   "conflictsWith": [],
   "capabilities": [

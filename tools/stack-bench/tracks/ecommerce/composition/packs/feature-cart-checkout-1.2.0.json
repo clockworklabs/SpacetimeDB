@@ -8,8 +8,8 @@
   "moduleType": "feature",
   "description": "Account cart operations and checkout.",
   "requiresPacks": [
-    "ecommerce.feature.accounts@1.1.0",
-    "ecommerce.feature.catalog@1.1.0"
+    "ecommerce.feature.accounts",
+    "ecommerce.feature.catalog"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -8,8 +8,8 @@
   "title": "Support refunds",
   "description": "Authorized, exact, and single-application support refunds.",
   "requiresPacks": [
-    "ecommerce.progression.order-support@1.0.1",
-    "ecommerce.l2.order-cancellation-features@1.0.1"
+    "ecommerce.progression.order-support",
+    "ecommerce.l2.order-cancellation-features"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -9,7 +9,7 @@
   "title": "Stock transfers",
   "description": "Move stock between warehouses without changing the total.",
   "requiresPacks": [
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -379,6 +379,30 @@ export function compileProgressionDefinition(input: unknown,
       dependencies: structuredClone(node.dependencies),
     };
   });
+  // Packs name their dependencies by id; this catalog pins the version of
+  // every pack a node names, so each id resolves to exactly one release.
+  const namedRefs = new Set<string>(authored.nodes.flatMap(node => [
+    ...(Array.isArray(node.featureRefs) ? node.featureRefs : []),
+    ...(Array.isArray(node.promptModules) ? node.promptModules : []),
+    ...(Array.isArray(node.gradingGroups)
+      ? node.gradingGroups.map(group => String(group).slice(0, String(group).indexOf('#'))) : []),
+  ].map(String)));
+  const refById = new Map<string, string>();
+  for (const reference of namedRefs) {
+    const pack = packs.get(reference);
+    if (!pack) continue;
+    const existing = refById.get(pack.id);
+    if (existing !== undefined && existing !== reference) {
+      fail(`${source}.nodes`, `${pack.id} is named as both ${existing} and ${reference}`);
+    }
+    refById.set(pack.id, reference);
+  }
+  for (const reference of namedRefs) {
+    const pack = packs.get(reference);
+    if (!pack) continue;
+    pack.requiresPacks = pack.requiresPacks.map(required => refById.get(required)
+      ?? fail(`${source}.nodes`, `${reference} requires ${required}, which no node names`));
+  }
   const compiled = compileFeatureCatalog({
     schemaVersion: FEATURE_CATALOG_SCHEMA_VERSION,
     kind: 'feature-catalog',

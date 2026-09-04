@@ -8,7 +8,7 @@
   "title": "Recommendation feedback",
   "description": "Durable customer-specific recommendation dismissal.",
   "requiresPacks": [
-    "ecommerce.progression.personalized-recommendations@2.0.0"
+    "ecommerce.progression.personalized-recommendations"
   ],
   "conflictsWith": [],
   "capabilities": [

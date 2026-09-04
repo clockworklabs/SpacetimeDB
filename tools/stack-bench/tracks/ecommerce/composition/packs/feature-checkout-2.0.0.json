@@ -9,7 +9,7 @@
   "moduleType": "feature",
   "description": "Turn a cart into an order.",
   "requiresPacks": [
-    "ecommerce.feature.cart@2.0.0"
+    "ecommerce.feature.cart"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -8,8 +8,8 @@
   "title": "Staff activity history",
   "description": "Attributable and private history of administrative changes.",
   "requiresPacks": [
-    "ecommerce.progression.staff-roles@1.0.0",
-    "ecommerce.progression.catalog-management@1.0.2"
+    "ecommerce.progression.staff-roles",
+    "ecommerce.progression.catalog-management"
   ],
   "conflictsWith": [],
   "capabilities": [

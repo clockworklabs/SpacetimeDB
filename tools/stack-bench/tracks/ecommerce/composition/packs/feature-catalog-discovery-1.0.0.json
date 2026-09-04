@@ -9,7 +9,7 @@
   "moduleType": "feature",
   "description": "Public catalog ranking and full-catalog search.",
   "requiresPacks": [
-    "ecommerce.feature.catalog-items@1.0.0"
+    "ecommerce.feature.catalog-items"
   ],
   "conflictsWith": [],
   "capabilities": [

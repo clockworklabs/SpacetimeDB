@@ -72,12 +72,9 @@ test('the three behavior packs declare exact dependencies and check ownership', 
   const recovery = requiredPack(packs, 'ecommerce.progression.cart-recovery');
   const recommendations = requiredPack(packs, 'ecommerce.progression.personalized-recommendations');
   assert.deepEqual(reorder.requiresPacks,
-    ['ecommerce.l3.scheduled-restocks-features@1.1.1',
-      'ecommerce.progression.staff-roles@1.0.0']);
-  assert.deepEqual(recovery.requiresPacks,
-    ['ecommerce.l3.cart-expiration-features@2.0.0']);
-  assert.deepEqual(recommendations.requiresPacks,
-    ['ecommerce.l2.recommendations@2.0.0']);
+    ['ecommerce.l3.scheduled-restocks-features', 'ecommerce.progression.staff-roles']);
+  assert.deepEqual(recovery.requiresPacks, ['ecommerce.l3.cart-expiration-features']);
+  assert.deepEqual(recommendations.requiresPacks, ['ecommerce.l2.recommendations']);
 
   assert.deepEqual(reorder.checks
     .map(check => [check.id, check.criteria]),

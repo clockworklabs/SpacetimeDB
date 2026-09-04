@@ -8,8 +8,8 @@
   "title": "Promotion rules",
   "description": "Staff-managed bounded promotion codes.",
   "requiresPacks": [
-    "ecommerce.progression.staff-access@1.0.0",
-    "ecommerce.feature.catalog-items@1.0.0"
+    "ecommerce.progression.staff-access",
+    "ecommerce.feature.catalog-items"
   ],
   "conflictsWith": [],
   "capabilities": [

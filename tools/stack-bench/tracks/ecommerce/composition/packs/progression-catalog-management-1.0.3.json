@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.catalog-management", "version": "1.0.3", "state": "draft", "moduleType": "feature",
   "title": "Catalog management", "description": "Staff-managed products and named variants.",
-  "requiresPacks": ["ecommerce.feature.catalog-discovery@1.0.0", "ecommerce.progression.staff-roles@1.0.1"],
+  "requiresPacks": ["ecommerce.feature.catalog-discovery", "ecommerce.progression.staff-roles"],
   "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {

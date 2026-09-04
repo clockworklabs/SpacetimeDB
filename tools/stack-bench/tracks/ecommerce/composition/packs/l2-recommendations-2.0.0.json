@@ -9,8 +9,8 @@
   "title": "Recommendations",
   "description": "Customer recommendations based on purchase activity and cart contents.",
   "requiresPacks": [
-    "ecommerce.feature.cart@2.0.0",
-    "ecommerce.feature.purchasing@1.2.1"
+    "ecommerce.feature.cart",
+    "ecommerce.feature.purchasing"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.staff-activity", "version": "1.0.3", "state": "draft", "moduleType": "feature",
   "title": "Staff activity history", "description": "Attributable and private history of administrative changes.",
-  "requiresPacks": ["ecommerce.progression.staff-roles@1.0.1", "ecommerce.progression.catalog-management@1.0.3"],
+  "requiresPacks": ["ecommerce.progression.staff-roles", "ecommerce.progression.catalog-management"],
   "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {

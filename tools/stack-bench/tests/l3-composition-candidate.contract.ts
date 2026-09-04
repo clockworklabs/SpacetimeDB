@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -18,9 +18,11 @@ const packNames = candidateRecipe
   .filter((name): name is string => name !== undefined && name.startsWith('l3-'))
   .sort();
 const packs = packNames.map(name => compilePackDefinition(readJson(join(packRoot, name)), { source: name }));
-const allPacks = readdirSync(packRoot).filter(name => name.endsWith('.json'))
-  .map(name => compilePackDefinition(readJson(join(packRoot, name)), { source: name }));
-const packByRef = new Map(allPacks.map(pack => [`${pack.id}@${pack.version}`, pack]));
+const packById = new Map(candidateRecipe.map(pack => {
+  const name = pack.path.split('/').at(-1) ?? '';
+  const compiled = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
+  return [compiled.id, compiled];
+}));
 const selected = packs.flatMap(pack => pack.checks.map(check => ({ pack, check })));
 const scenarioFor = (check: CompiledPackDefinition['checks'][number]) => {
   const source = join(trackRoot, check.source);
@@ -131,7 +133,7 @@ test('L3 dependencies close over real exact pack releases', () => {
     if (seen.has(ref)) return seen;
     seen.add(ref);
     for (const required of pack.requiresPacks) {
-      const dependency = packByRef.get(required);
+      const dependency = packById.get(required);
       assert(dependency, `${ref} requires missing ${required}`);
       visit(dependency, seen);
     }

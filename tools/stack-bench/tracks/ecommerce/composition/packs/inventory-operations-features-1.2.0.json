@@ -9,7 +9,7 @@
   "title": "Inventory operations",
   "description": "Warehouse transfers and live operational views.",
   "requiresPacks": [
-    "ecommerce.returns-pricing-features@1.1.0"
+    "ecommerce.returns-pricing-features"
   ],
   "conflictsWith": [],
   "capabilities": [

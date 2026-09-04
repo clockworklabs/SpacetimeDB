@@ -8,9 +8,9 @@
   "moduleType": "feature",
   "description": "Item ratings and comments.",
   "requiresPacks": [
-    "ecommerce.feature.accounts@1.2.0",
-    "ecommerce.feature.catalog-items@1.0.0",
-    "ecommerce.feature.purchasing@1.2.1"
+    "ecommerce.feature.accounts",
+    "ecommerce.feature.catalog-items",
+    "ecommerce.feature.purchasing"
   ],
   "conflictsWith": [],
   "capabilities": [

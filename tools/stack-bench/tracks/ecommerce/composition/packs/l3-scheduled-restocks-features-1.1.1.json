@@ -9,7 +9,7 @@
   "title": "Scheduled restocks",
   "description": "Pending, completed, and cancelled scheduled restocks.",
   "requiresPacks": [
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [

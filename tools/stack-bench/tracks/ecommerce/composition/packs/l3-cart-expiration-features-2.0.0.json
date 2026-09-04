@@ -9,7 +9,7 @@
   "title": "Cart expiration",
   "description": "Inactive carts expire, release stock, and return empty.",
   "requiresPacks": [
-    "ecommerce.l3.reservations-features@2.0.0"
+    "ecommerce.l3.reservations-features"
   ],
   "conflictsWith": [],
   "capabilities": [

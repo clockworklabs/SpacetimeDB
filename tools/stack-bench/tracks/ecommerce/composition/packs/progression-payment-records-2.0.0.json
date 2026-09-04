@@ -8,8 +8,8 @@
   "title": "Payment records",
   "description": "Exact and non-duplicated payment records at checkout.",
   "requiresPacks": [
-    "ecommerce.feature.checkout@2.0.0",
-    "ecommerce.feature.purchasing@1.2.1"
+    "ecommerce.feature.checkout",
+    "ecommerce.feature.purchasing"
   ],
   "conflictsWith": [],
   "capabilities": [

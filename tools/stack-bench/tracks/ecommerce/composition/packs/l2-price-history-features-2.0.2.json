@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.l2.price-history-features", "stableId": "ecommerce.returns-pricing", "version": "2.0.2", "state": "draft", "moduleType": "feature",
   "title": "Price history", "description": "Update product prices and retain a history of those changes.",
-  "requiresPacks": ["ecommerce.progression.catalog-management@1.0.3"],
+  "requiresPacks": ["ecommerce.progression.catalog-management"],
   "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
   "task": {

@@ -9,7 +9,7 @@
   "title": "Sales dashboard",
   "description": "Category totals and best sellers.",
   "requiresPacks": [
-    "ecommerce.feature.purchasing@1.2.1"
+    "ecommerce.feature.purchasing"
   ],
   "conflictsWith": [],
   "capabilities": [

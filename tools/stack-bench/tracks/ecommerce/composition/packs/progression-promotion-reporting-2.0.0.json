@@ -8,7 +8,7 @@
   "title": "Promotion reporting",
   "description": "Exact promotion redemptions and revenue.",
   "requiresPacks": [
-    "ecommerce.progression.promotion-checkout@2.0.0"
+    "ecommerce.progression.promotion-checkout"
   ],
   "conflictsWith": [],
   "capabilities": [

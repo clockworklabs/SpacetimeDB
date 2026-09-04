@@ -8,8 +8,8 @@
   "title": "Automatic reorder rules",
   "description": "Threshold rules schedule one pending restock.",
   "requiresPacks": [
-    "ecommerce.l3.scheduled-restocks-features@1.1.1",
-    "ecommerce.progression.staff-roles@1.0.0"
+    "ecommerce.l3.scheduled-restocks-features",
+    "ecommerce.progression.staff-roles"
   ],
   "conflictsWith": [],
   "capabilities": [

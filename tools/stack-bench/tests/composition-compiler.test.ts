@@ -23,7 +23,7 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   };
   assert.throws(() => compilePackDefinition({ ...pack, surprise: true }), /surprise: unknown field/);
   assert.throws(() => compilePackDefinition({ ...pack, version: 'latest' }), /exact semantic version/);
-  assert.throws(() => compilePackDefinition({ ...pack, requiresPacks: ['example.other'] }), /id@version/);
+  assert.throws(() => compilePackDefinition({ ...pack, requiresPacks: ['example.other@1.0.0'] }), /pack id/);
   assert.throws(() => compilePackDefinition({ ...pack, state: 'qualified' }),
     /qualified packs require a bounded runtime budget/);
   assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'mode' }),
@@ -246,15 +246,15 @@ function sandbox(): CompositionSandbox {
 test('composition rejects missing dependencies, dependency cycles, conflicts, duplicate ownership, and unsupported capabilities', () => {
   const box = sandbox();
   try {
-    box.writePack('a', { requiresPacks: ['example.b@1.0.0'] });
+    box.writePack('a', { requiresPacks: ['example.b'] });
     let path = box.writeRecipe(box.makeRecipe(['a']));
-    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /missing example.b@1.0.0/);
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /missing example.b/);
 
-    box.writePack('b', { requiresPacks: ['example.a@1.0.0'] });
+    box.writePack('b', { requiresPacks: ['example.a'] });
     path = box.writeRecipe(box.makeRecipe(['a', 'b']));
     assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /dependency cycle/);
 
-    box.writePack('a', { conflictsWith: ['example.b@1.0.0'] });
+    box.writePack('a', { conflictsWith: ['example.b'] });
     box.writePack('b');
     assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /conflicts with selected/);
 

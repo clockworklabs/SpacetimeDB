@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Scheduled restocks",
   "description": "Pending, completed, and cancelled scheduled restocks.",
-  "requiresPacks": ["ecommerce.inventory-operations-features@1.2.0"],
+  "requiresPacks": ["ecommerce.inventory-operations-features"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

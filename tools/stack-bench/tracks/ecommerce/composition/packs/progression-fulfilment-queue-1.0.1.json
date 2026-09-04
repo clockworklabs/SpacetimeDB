@@ -9,8 +9,8 @@
   "title": "Fulfilment queue",
   "description": "Staff and administrator fulfilment workflows.",
   "requiresPacks": [
-    "ecommerce.feature.purchasing@1.2.1",
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.feature.purchasing",
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [

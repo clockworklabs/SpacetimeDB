@@ -9,7 +9,7 @@
   "title": "Price history",
   "description": "Update product prices and retain a history of those changes.",
   "requiresPacks": [
-    "ecommerce.progression.catalog-management@1.0.2"
+    "ecommerce.progression.catalog-management"
   ],
   "conflictsWith": [],
   "capabilities": [

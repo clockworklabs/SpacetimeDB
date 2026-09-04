@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.notification-preferences", "version": "1.0.0", "state": "draft", "moduleType": "feature",
   "title": "Notification preferences", "description": "Customer notification choices.",
-  "requiresPacks": ["ecommerce.feature.accounts@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.feature.accounts"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 40000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.notification-preferences", "path": "prompts/modular/notification-preferences-1.0.0.md", "order": 2300, "modes": ["upgrade"] }],

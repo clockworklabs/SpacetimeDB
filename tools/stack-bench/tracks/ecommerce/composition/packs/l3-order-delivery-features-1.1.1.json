@@ -9,8 +9,8 @@
   "title": "Order delivery",
   "description": "Automatic delivery and final cancellation.",
   "requiresPacks": [
-    "ecommerce.progression.fulfilment-queue@1.0.1",
-    "ecommerce.l2.order-cancellation-features@1.0.1"
+    "ecommerce.progression.fulfilment-queue",
+    "ecommerce.l2.order-cancellation-features"
   ],
   "conflictsWith": [],
   "capabilities": [

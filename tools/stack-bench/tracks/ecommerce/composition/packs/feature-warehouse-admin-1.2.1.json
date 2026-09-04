@@ -8,8 +8,8 @@
   "moduleType": "feature",
   "description": "Warehouse inventory, restocking, and revenue views.",
   "requiresPacks": [
-    "ecommerce.feature.catalog-items@1.0.0",
-    "ecommerce.progression.staff-access@1.0.0"
+    "ecommerce.feature.catalog-items",
+    "ecommerce.progression.staff-access"
   ],
   "conflictsWith": [],
   "capabilities": [

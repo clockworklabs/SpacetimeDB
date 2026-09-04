@@ -8,8 +8,8 @@
   "title": "Promotion checkout",
   "description": "Server-calculated discounts recorded on orders.",
   "requiresPacks": [
-    "ecommerce.progression.promotion-rules@1.0.1",
-    "ecommerce.feature.checkout@2.0.0"
+    "ecommerce.progression.promotion-rules",
+    "ecommerce.feature.checkout"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -9,7 +9,7 @@
   "title": "Returns and pricing",
   "description": "Cancellation, returns, live catalog prices, and immutable receipts.",
   "requiresPacks": [
-    "ecommerce.operations-access-features@1.0.0"
+    "ecommerce.operations-access-features"
   ],
   "conflictsWith": [],
   "capabilities": [

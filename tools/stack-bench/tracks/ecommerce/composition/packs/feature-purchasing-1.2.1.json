@@ -8,8 +8,8 @@
   "moduleType": "feature",
   "description": "Immediate purchase and customer order history.",
   "requiresPacks": [
-    "ecommerce.feature.accounts@1.2.0",
-    "ecommerce.feature.catalog-items@1.0.0"
+    "ecommerce.feature.accounts",
+    "ecommerce.feature.catalog-items"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -8,8 +8,8 @@
   "title": "Stock alerts",
   "description": "Customer alerts when stock returns.",
   "requiresPacks": [
-    "ecommerce.progression.notification-preferences@1.0.0",
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.progression.notification-preferences",
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.support-triage", "version": "1.0.0", "state": "qualified", "moduleType": "feature",
   "title": "Support triage", "description": "Staff assignment, priority, and status changes.",
-  "requiresPacks": ["ecommerce.progression.staff-access@1.0.0", "ecommerce.progression.support-intake@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.progression.staff-access", "ecommerce.progression.support-intake"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 45000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.support-triage", "path": "prompts/modular/support-triage-1.0.0.md", "order": 2100, "modes": ["upgrade"] }],

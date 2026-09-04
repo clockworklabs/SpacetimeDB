@@ -60,9 +60,11 @@ function packIndex(trackRoot: string): Map<string, PackIndexEntry> {
     if (byRef.has(ref)) throw new Error(`duplicate pack release ${ref}`);
     byRef.set(ref, { pack, path: realpathSync(path) });
   }
+  // A pack names dependencies by id; some release of that id must exist.
+  const ids = new Set([...byRef.values()].map(entry => entry.pack.id));
   for (const [ref, { pack }] of byRef) {
     for (const dependency of [...pack.requiresPacks, ...pack.conflictsWith]) {
-      if (!byRef.has(dependency)) throw new Error(`${ref} references missing pack ${dependency}`);
+      if (!ids.has(dependency)) throw new Error(`${ref} references missing pack ${dependency}`);
     }
   }
   return byRef;

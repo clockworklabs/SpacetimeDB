@@ -9,8 +9,8 @@
   "title": "Reservations",
   "description": "Timed cart reservations, renewal, checkout, and expiry.",
   "requiresPacks": [
-    "ecommerce.feature.checkout@2.0.0",
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.feature.checkout",
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [

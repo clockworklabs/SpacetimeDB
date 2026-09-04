@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Reservations",
   "description": "Timed cart reservations, renewal, checkout, and expiry.",
-  "requiresPacks": ["ecommerce.feature.cart-checkout@1.2.0"],
+  "requiresPacks": ["ecommerce.feature.cart-checkout"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

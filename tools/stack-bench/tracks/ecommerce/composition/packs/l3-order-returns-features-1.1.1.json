@@ -9,8 +9,8 @@
   "title": "Returns",
   "description": "Return shipped items without losing stock or accounting accuracy.",
   "requiresPacks": [
-    "ecommerce.l3.order-delivery-features@1.1.1",
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.l3.order-delivery-features",
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [

@@ -9,7 +9,7 @@
   "title": "Inventory dashboard",
   "description": "A low-stock dashboard.",
   "requiresPacks": [
-    "ecommerce.feature.warehouse-admin@1.2.1"
+    "ecommerce.feature.warehouse-admin"
   ],
   "conflictsWith": [],
   "capabilities": [
