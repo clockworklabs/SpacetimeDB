@@ -278,7 +278,7 @@ export default function App() {
   };
 
   const handleSubmitReview = async (itemId: bigint, rating: number, comment: string) => {
-    await conn?.reducers.writeReview({ itemId, rating, comment });
+    await conn?.reducers.submitReview({ itemId, rating, comment });
   };
 
   const handleRestock = async (itemId: bigint, warehouseId: bigint, quantity: number) => {

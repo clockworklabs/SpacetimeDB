@@ -147,18 +147,18 @@ test('progression reference audit replays every action and separates catalog cov
 
   assert.equal(report.ok, false);
   assert.deepEqual(report.actions.map(action => [action.level, action.checks]),
-    [[1, 9], [2, 50], [3, 108], [4, 142], [5, 155], [6, 157]]);
+    [[1, 9], [2, 49], [3, 107], [4, 141], [5, 154], [6, 156]]);
   assert.deepEqual(report.graphOwned, {
-    nodes: 43, checks: 157, points: 294,
-    coveredNodes: 43, coveredChecks: 157,
+    nodes: 43, checks: 156, points: 292,
+    coveredNodes: 43, coveredChecks: 156,
     missingNodes: [], missingChecks: [], complete: true,
   });
   assert.equal(report.finalCatalogAudit.required, true);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
-  assert.equal(report.finalCatalogAudit.checks, 159);
-  assert.equal(report.finalCatalogAudit.points, 294);
+  assert.equal(report.finalCatalogAudit.checks, 158);
+  assert.equal(report.finalCatalogAudit.points, 292);
   assert.equal(report.finalCatalogAudit.zeroPointChecks, 2);
-  assert.equal(report.finalCatalogAudit.checkKeys.length, 159);
+  assert.equal(report.finalCatalogAudit.checkKeys.length, 158);
   assert.equal(report.finalCatalogAudit.additionalChecks.length, 2);
 });
 
@@ -193,6 +193,6 @@ test('progression reference audit reports incomplete graph coverage without hidi
   assert.equal(report.graphOwned.coveredNodes, 4);
   assert.equal(report.graphOwned.coveredChecks, 9);
   assert.equal(report.graphOwned.complete, false);
-  assert.equal(report.finalCatalogAudit.checks, 159);
+  assert.equal(report.finalCatalogAudit.checks, 158);
   assert.equal(report.finalCatalogAudit.status, 'not-run');
 });

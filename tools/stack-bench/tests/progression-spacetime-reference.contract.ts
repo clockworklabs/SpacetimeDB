@@ -48,7 +48,7 @@ const backendMarkers: Record<string, string> = {
   cart: 'export const addToCart',
   checkout: 'export const checkout',
   'warehouse-admin': 'export const adminRestock',
-  reviews: 'export const writeReview',
+  reviews: 'export const submitReview',
   'fulfilment-queue': 'export const shipOrder',
   'stock-transfers': 'export const adminTransferStock',
   'order-cancellation': 'export const cancelOrder',
@@ -85,6 +85,13 @@ const backendMarkers: Record<string, string> = {
   'support-refunds': 'export const supportRefund',
 };
 
+const namedReducerCalls = [
+  ['progression-stock-limit.json', 'buy_now', 'buyNow'],
+  ['progression-staff-roles.json', 'assign_staff_role', 'assignStaffRole'],
+  ['progression-managed-support-privacy.json', 'reply_support', 'replySupport'],
+  ['progression-review-access.json', 'submit_review', 'submitReview'],
+] as const;
+
 test('the SpacetimeDB progression backend covers every graph feature', () => {
   const graph = progressionGraph();
   assert.deepEqual(Object.keys(backendMarkers).sort(), graph.nodes.map(node => node.id).sort());
@@ -95,6 +102,20 @@ test('the SpacetimeDB progression backend covers every graph feature', () => {
     assert(marker, `${node.id} must have an implementation marker`);
     assert(source.includes(marker),
       `${node.id} must have a SpacetimeDB implementation marker`);
+  }
+});
+
+test('named reducer scenarios match the SpacetimeDB reference handlers', () => {
+  const backend = read(join(appRoot, 'backend', 'spacetimedb', 'src', 'index.ts'));
+  const client = filesBelow(join(appRoot, 'client', 'src'))
+    .filter(path => /\.(tsx|ts)$/.test(path) && !path.includes('module_bindings'))
+    .map(read)
+    .join('\n');
+
+  for (const [scenario, reducer, handler] of namedReducerCalls) {
+    assert(read(join(trackRoot, 'scenarios', scenario)).includes(`"reducer": "${reducer}"`));
+    assert(backend.includes(`export const ${handler} = spacetimedb.reducer`));
+    assert.match(client, new RegExp(`\\breducers\\??\\.${handler}\\(`));
   }
 });
 

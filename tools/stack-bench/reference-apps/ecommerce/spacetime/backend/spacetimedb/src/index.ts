@@ -892,7 +892,7 @@ export const checkout = spacetimedb.reducer((ctx) => {
 
 // --- reviews ---
 
-export const writeReview = spacetimedb.reducer(
+export const submitReview = spacetimedb.reducer(
   { itemId: t.u64(), rating: t.u32(), comment: t.string() },
   (ctx, { itemId, rating, comment }) => {
     const acc = requireAccount(ctx);
