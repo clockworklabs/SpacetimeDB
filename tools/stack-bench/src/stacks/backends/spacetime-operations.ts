@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { stockInterfaceError } from '../stock-interface.js';
 
 import { leasedSpacetimeTarget } from '../../runtime/spacetime-target.js';
 import { resolveSpacetimeModuleLayout } from '../../runtime/spacetime-layout.js';
@@ -118,15 +119,24 @@ export function setSpacetimeStock({ item, warehouse, quantity, spacetime,
       ['sql', spacetime.mod, '-s', spacetime.containerUri, sql])],
   { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   const idOf = (table: string, name: string): string => {
-    const output = query(`select id from ${table} where name = ${sqlString(name)}`);
+    const output = guarded(`select id from ${table} where name = ${sqlString(name)}`);
     const match = output.match(/^\s*(\d+)\s*$/m);
-    if (!match?.[1]) throw new Error(`no ${table} named "${name}" — is the schema as the spec requires?`);
+    if (!match?.[1]) throw stockInterfaceError(`no ${table} named "${name}"`);
     return match[1];
+  };
+  // A missing or private table is the application not providing the stock
+  // data interface its contract names, not a harness fault.
+  const guarded = (sql: string): string => {
+    try { return query(sql); } catch (error) {
+      const detail = streams(error, 'stdout', 'stderr', 'message');
+      if (/no such table|marked private|not found/i.test(detail)) throw stockInterfaceError(detail.trim().slice(-300));
+      throw error;
+    }
   };
   const itemId = idOf('item', item);
   const warehouseId = idOf('warehouse', warehouse);
-  query(`update stock set quantity = ${quantity} where item_id = ${itemId} and warehouse_id = ${warehouseId}`);
-  const verified = query(`select quantity from stock where item_id = ${itemId} and warehouse_id = ${warehouseId}`);
+  guarded(`update stock set quantity = ${quantity} where item_id = ${itemId} and warehouse_id = ${warehouseId}`);
+  const verified = guarded(`select quantity from stock where item_id = ${itemId} and warehouse_id = ${warehouseId}`);
   if (!new RegExp(`^\\s*${quantity}\\s*$`, 'm').test(verified)) {
     throw new Error(`stock row for ${item} / ${warehouse} did not update to ${quantity}`);
   }

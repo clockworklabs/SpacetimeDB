@@ -161,7 +161,9 @@ Use the supplied server URI, module name, CLI, SDK package, and web port.
 
 Feature contracts name stable controls or operations when deterministic use
 requires them. They do not prescribe layout, data models, frameworks, or visual
-design.
+design. The one data-shaped item a contract may name is an interoperability
+surface that other systems write to directly, such as the stock tables; the
+behavior expected around that surface stays in the specification.
 
 For example, the account contract names fields such as `signup-username` and
 `signin-submit`. An HTTP stack also exposes the account operations through HTTP.

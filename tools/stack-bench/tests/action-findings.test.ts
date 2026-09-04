@@ -61,6 +61,7 @@ const SAMPLES: { [K in FindingKind]: Finding } = {
   'forgery-accepted': finding('forgery-accepted', { field: 'userId', status: 201 }),
   'forgery-error': finding('forgery-error', { status: null }),
   'message-delivered': finding('message-delivered', { actor: 'other' }),
+  'stock-interface-missing': finding('stock-interface-missing', { detail: DETAIL }),
   'assertion-without-action': finding('assertion-without-action', { action: 'replayAs' }),
   'unknown-action': finding('unknown-action', { action: 'refund' }),
   'action-without-parameters': finding('action-without-parameters', { action: 'refund' }),

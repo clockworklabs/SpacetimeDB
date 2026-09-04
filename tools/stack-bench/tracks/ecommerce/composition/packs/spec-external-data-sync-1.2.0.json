@@ -26,7 +26,7 @@
     "requirements": [
       {
         "id": "ecommerce.spec.external-data-sync.requirement",
-        "path": "prompts/modular/l1-specifications.md",
+        "path": "prompts/modular/l1-specifications-1.2.0.md",
         "order": 1500,
         "from": "## External data synchronization",
         "modes": [

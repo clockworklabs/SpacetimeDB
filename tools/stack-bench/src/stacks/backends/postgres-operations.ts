@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { stockInterfaceError } from '../stock-interface.js';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
@@ -121,7 +122,7 @@ export function setPostgresStock({ item, warehouse, quantity, lease, exec = exec
   if ((output.match(/UPDATE 1\b/g) ?? []).length === 1) {
     return { backend: 'postgres', item, warehouse, quantity };
   }
-  throw new Error(`could not locate one relational stock row for ${item} / ${warehouse}`);
+  throw stockInterfaceError(`could not locate one relational stock row for ${item} / ${warehouse}`);
 }
 
 export function preparePostgresDatabase({ lease, name, expectedName, wipe,

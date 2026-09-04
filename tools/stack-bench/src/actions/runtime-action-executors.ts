@@ -151,6 +151,7 @@ interface ProcessErrorShape {
   readonly status?: unknown;
   readonly stderr?: unknown;
   readonly stdout?: unknown;
+  readonly stockInterface?: unknown;
 }
 
 interface NestedActionEvidence {
@@ -323,6 +324,11 @@ async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetSt
     result = await capabilities['database-write'].setStock(input);
   } catch (error) {
     if (errorShape(error).classification || harnessProcessFailure(error)) throw error;
+    // The contract names the stock tables; an application without them has
+    // failed that interface. Any other write failure is the harness's.
+    if (errorShape(error).stockInterface === true) {
+      fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error) });
+    }
     inconclusive('database-write-failed', { detail: databaseWriteFailureDetail(error) });
   }
   await capabilities.clock.sleep(input.settleMs, signal);

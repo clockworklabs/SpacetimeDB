@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { stockInterfaceError } from '../stock-interface.js';
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
 import type { LeasedDatabase } from '../backend-reset-guard.js';
@@ -83,13 +84,13 @@ export function setMongoDbStock({ item, warehouse, quantity, lease, exec = execF
     { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
   } catch (error) {
     const detail = streams(error, 'stdout', 'stderr').trim().slice(-160);
-    throw new Error('direct stock correction requires singular collections '
+    throw stockInterfaceError('direct stock correction requires singular collections '
       + '`item`, `warehouse`, and `stock`; stock rows must use '
       + `item_id/warehouse_id or itemId/warehouseId: ${detail || streams(error, 'message')}`,
     { cause: error });
   }
   if (!/OK/.test(output)) {
-    throw new Error(`could not find ${item} / ${warehouse} in the required collections `
+    throw stockInterfaceError(`could not find ${item} / ${warehouse} in the required collections `
       + `(${output.trim().slice(0, 80)})`);
   }
   return { backend: 'mongodb', item, warehouse, quantity };

@@ -13,6 +13,12 @@ strings.
 The restock action uses the same administrator, stock, and warehouse rules as the visible
 application.
 
+## Stock data interface
+
+Other systems read and write stock directly in the database, without calling the application.
+Keep singular tables `item(id, name, price)`, `warehouse(id, name)`, and
+`stock(item_id, warehouse_id, quantity)` as the source of truth for that surface.
+
 <!-- interface:http -->
 Expose `POST /api/admin/restock`.
 <!-- /interface -->

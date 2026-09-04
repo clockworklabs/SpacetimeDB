@@ -72,6 +72,7 @@ export interface FailedFindingFields {
   'forgery-accepted': Status & { readonly field: string };
   'forgery-error': Status;
   'message-delivered': Actor;
+  'stock-interface-missing': Detail;
 }
 
 // The harness could not measure. Never repair feedback.
@@ -169,6 +170,7 @@ export const FAILED_FINDINGS: Renderers<FailedFindingFields> = {
   'forgery-accepted': f => `a request with a tampered ${f.field} was accepted (${http(f.status)})`,
   'forgery-error': f => `the tampered request failed with ${http(f.status)} instead of a refusal`,
   'message-delivered': f => `a private message was delivered to ${f.actor}, who is not a participant`,
+  'stock-interface-missing': () => 'the stock data interface (item, warehouse, stock) is not available in the database',
 };
 
 export const INCONCLUSIVE_FINDINGS: Renderers<InconclusiveFindingFields> = {

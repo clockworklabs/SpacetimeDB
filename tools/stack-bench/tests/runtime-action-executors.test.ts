@@ -187,11 +187,12 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     } });
   const failed = await run({ do: 'dbSetStock', item: 'Missing', warehouse: 'Main',
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
-  assert.equal(failed.status, 'inconclusive');
-  assert.match(failed.summary ?? '', /direct database write did not complete/);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.finding?.kind, 'stock-interface-missing');
+  assert.match(String(failed.finding?.fields.detail), /could not locate one relational stock row/);
 });
 
-test('database-write setup limitations are inconclusive and preserve their diagnostic', async () => {
+test('a database without the stock interface is an application failure that keeps its diagnostic', async () => {
   const error = Object.assign(new Error('direct stock correction requires singular collections '
     + '`item`, `warehouse`, and `stock`'), { stdout: 'MISSING\n' });
   assert.match(databaseWriteFailureDetail(error), /singular collections/);
@@ -206,9 +207,11 @@ test('database-write setup limitations are inconclusive and preserve their diagn
     } });
   const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
     quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
-  assert.equal(result.status, 'inconclusive');
-  assert.match(result.summary ?? '', /direct database write did not complete/);
-  assert.equal(result.finding?.kind, 'database-write-failed');
+  // The contract names the stock tables; an app without them has failed the
+  // interface, and the writer's diagnostic travels as detail.
+  assert.equal(result.status, 'failed');
+  assert.equal(result.finding?.kind, 'stock-interface-missing');
+  assert.match(String(result.finding?.fields.detail), /singular collections/);
   assert.match(String(result.finding?.fields.detail), /MISSING/);
 });
 
