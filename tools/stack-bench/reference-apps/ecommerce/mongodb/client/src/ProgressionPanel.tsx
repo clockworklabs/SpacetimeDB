@@ -107,7 +107,7 @@ export function ProgressionPanel({ token, user, items, orders, onSignIn, onRefre
       {user && <button data-role="profile-link" className="btn btn-ghost" onClick={() => setProfileOpen(true)}>Profile</button>}
       <button data-role="support-link" className="btn btn-ghost" onClick={() => setSupportOpen(true)}>Support</button>
       {user && <button data-role="notification-settings" className="btn btn-ghost" onClick={() => setNotificationsOpen(true)}>Notification settings</button>}
-      {user && <button data-role="notifications-toggle" className="btn btn-ghost" onClick={() => setNotificationsOpen(value => !value)}>Notifications</button>}
+      {user && <button data-role="notifications-toggle" className="btn btn-ghost" onClick={() => setNotificationsOpen(true)}>Notifications</button>}
     </nav>
 
     {profileOpen && user && <div className="progression-card">
