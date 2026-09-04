@@ -55,7 +55,7 @@ permissions:
 
 concurrency:
   group: manual-release-${{ inputs.release_tag }}${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validate-release-invoker:
@@ -81,7 +81,6 @@ jobs:
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
     needs: validate-release-invoker
-    if: false # Temporary small-runner saturation test.
     runs-on: spacetimedb-linux
     steps:
       - name: Checkout
@@ -155,7 +154,7 @@ jobs:
   release-csharp:
     needs: build-cargo-release
     runs-on: spacetimedb-linux
-    if: false # Temporary small-runner saturation test.
+    if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -291,7 +290,7 @@ jobs:
   release-npm:
     needs: build-cargo-release
     runs-on: spacetimedb-linux
-    if: false # Temporary small-runner saturation test.
+    if: ${{ inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -344,10 +343,10 @@ jobs:
   release-docker:
     needs: build-cargo-release
     runs-on: spacetimedb-linux
-    if: false # Temporary small-runner saturation test.
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    if: ${{ inputs.release_docker }}
 
     steps:
       - name: Checkout release source
