@@ -117,11 +117,23 @@ jobs:
           FAILED_CHECKS="$(
             gh pr checks "${PR_URL}" \
               --json 'workflow,state,name' |
-              jq '.[]
+              jq -r '
+                def status_emoji(state):
+                  {
+                    SUCCESS: "✅",
+                    FAILURE: "❌",
+                    CANCELLED: "⏹️",
+                    TIMED_OUT: "⏱️",
+                    ACTION_REQUIRED: "⚠️",
+                    PENDING: "⏳",
+                    SKIPPED: "⏭️",
+                    NEUTRAL: "⚪"
+                  }[state] // "❓";
+                .[]
                 | select(.workflow != "Discord notifications")
                 | select(.state != "SUCCESS" and .state != "NEUTRAL" and .state != "SKIPPED")
-              ' |
-              jq -r '"\(.workflow) / \(.name): \(.state)"'
+                | "\(status_emoji(.state)) \(.workflow) / \(.name)"
+              '
           )"
 
           # Lookup PR author's Discord ID from the provided JSON map (if any)
