@@ -6,7 +6,7 @@ use crate::llm::clients::{
     AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient, XaiGrokClient,
 };
 use crate::llm::provider::{LlmProvider, RouterProvider};
-use crate::llm::types::Vendor;
+use crate::llm::types::{ReasoningEffort, Vendor};
 
 fn force_vendor_from_env() -> Option<Vendor> {
     match env::var("LLM_VENDOR").ok().as_deref() {
@@ -34,7 +34,7 @@ fn force_vendor_from_env() -> Option<Vendor> {
 /// When OPENROUTER_API_KEY is set, it acts as a fallback for any vendor that doesn't
 /// have its own direct API key configured. This means you can set just OPENROUTER_API_KEY
 /// to run all models through OpenRouter, or mix direct keys with OpenRouter fallback.
-pub fn make_provider_from_env() -> Result<Arc<dyn LlmProvider>> {
+pub fn make_provider_from_env(reasoning: ReasoningEffort) -> Result<Arc<dyn LlmProvider>> {
     let http = HttpClient::new()?;
 
     // Filter out empty strings so an empty env var falls through to OpenRouter.
@@ -84,6 +84,8 @@ pub fn make_provider_from_env() -> Result<Arc<dyn LlmProvider>> {
     let openrouter = openrouter_key.map(|k| OpenRouterClient::new(http.clone(), k));
 
     let force = force_vendor_from_env();
-    let router = RouterProvider::new(openai, anthropic, google, xai, deepseek, meta, openrouter, force);
+    let router = RouterProvider::new(
+        openai, anthropic, google, xai, deepseek, meta, openrouter, force, reasoning,
+    );
     Ok(Arc::new(router))
 }

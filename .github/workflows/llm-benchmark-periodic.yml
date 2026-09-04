@@ -39,6 +39,16 @@ on:
         description: 'Run benchmarks without uploading results'
         required: false
         default: 'false'
+      skip_task_catalog_upload:
+        description: 'Skip uploading the benchmark task catalog'
+        required: false
+        type: boolean
+        default: false
+      post_discord:
+        description: 'Post the analysis summary to Discord'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -166,7 +176,8 @@ jobs:
           LLM_BENCH_CONCURRENCY: "8"
           LLM_BENCH_RUST_CONCURRENCY: "4"
           LLM_BENCH_CSHARP_CONCURRENCY: "2"
-          LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || '2' }}
+          LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || matrix.lang == 'csharp' && '1' || '2' }}
+          LLM_BENCHMARK_REPORT_DIR: ${{ runner.temp }}/llm-benchmark-reports
           INPUT_LANGUAGE: ${{ matrix.lang }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -174,6 +185,7 @@ jobs:
           INPUT_CATEGORIES: ${{ inputs.categories || '' }}
           INPUT_TASKS: ${{ inputs.tasks || '' }}
           INPUT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          INPUT_SKIP_TASK_CATALOG_UPLOAD: ${{ inputs.skip_task_catalog_upload || 'false' }}
         run: |
           LANG="$INPUT_LANGUAGE"
           MODEL_SET="$INPUT_MODEL_SET"
@@ -182,6 +194,7 @@ jobs:
           CATEGORIES="$INPUT_CATEGORIES"
           TASKS="$INPUT_TASKS"
           DRY_RUN="$INPUT_DRY_RUN"
+          SKIP_TASK_CATALOG_UPLOAD="$INPUT_SKIP_TASK_CATALOG_UPLOAD"
 
           case "$MODEL_SET" in
             website_active)
@@ -219,6 +232,9 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then
             EXTRA_ARGS+=(--dry-run)
           fi
+          if [ "$SKIP_TASK_CATALOG_UPLOAD" = "true" ]; then
+            EXTRA_ARGS+=(--skip-task-catalog-upload)
+          fi
 
           if [ "$MODEL_SET" = "website_active" ]; then
             llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote "${EXTRA_ARGS[@]}"
@@ -227,3 +243,81 @@ jobs:
           else
             llm_benchmark run --lang "$LANG" --modes "$MODES" --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"
           fi
+
+      - name: Upload analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-analysis-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-benchmark-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+  summarize:
+    name: Summarize benchmark analysis
+    if: always()
+    needs: run-benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test Discord formatter
+        run: python3 tools/xtask-llm-benchmark/scripts/test_discord_summary.py
+
+      - name: Download analysis reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: llm-benchmark-analysis-*
+          path: reports
+          merge-multiple: true
+
+      - name: Publish workflow summary
+        run: |
+          echo "# LLM benchmark analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ! -d reports ] || ! find reports -type f -name '*.md' -print -quit | grep -q .; then
+            echo "No analysis reports were produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Full per-model reports are available in the workflow artifacts." >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          find reports -type f -name '*.md' -print | sort | while IFS= read -r report; do
+            awk '/^## Failure patterns/{exit} NR <= 80 {print}' "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "---" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Prepare Discord summary
+        if: github.event_name == 'schedule' || inputs.post_discord
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_LABEL: ${{ github.event_name == 'schedule' && 'Weekly scheduled run' || 'Manual run' }}
+        run: >
+          python3 tools/xtask-llm-benchmark/scripts/discord_summary.py
+          --reports-dir reports
+          --run-url "$RUN_URL"
+          --run-label "$RUN_LABEL"
+          --output discord-payload.json
+
+      - name: Post Discord summary
+        if: github.event_name == 'schedule' || inputs.post_discord
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.LLM_BENCHMARK_DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::warning::LLM_BENCHMARK_DISCORD_WEBHOOK_URL is not configured"
+            exit 0
+          fi
+
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data-binary @discord-payload.json \
+            "$DISCORD_WEBHOOK_URL"

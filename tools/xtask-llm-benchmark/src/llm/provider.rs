@@ -8,7 +8,7 @@ use crate::llm::clients::{
 };
 use crate::llm::model_routes::ModelRoute;
 use crate::llm::prompt::BuiltPrompt;
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
@@ -19,6 +19,7 @@ pub trait LlmProvider: Send + Sync {
 pub struct RouterProvider {
     clients: HashMap<Vendor, Box<dyn LlmClient>>,
     pub force: Option<Vendor>,
+    reasoning: ReasoningEffort,
 }
 
 impl RouterProvider {
@@ -32,6 +33,7 @@ impl RouterProvider {
         meta: Option<MetaLlamaClient>,
         openrouter: Option<OpenRouterClient>,
         force: Option<Vendor>,
+        reasoning: ReasoningEffort,
     ) -> Self {
         let mut clients: HashMap<Vendor, Box<dyn LlmClient>> = HashMap::new();
 
@@ -57,7 +59,11 @@ impl RouterProvider {
             clients.insert(Vendor::OpenRouter, Box::new(client));
         }
 
-        Self { clients, force }
+        Self {
+            clients,
+            force,
+            reasoning,
+        }
     }
 }
 
@@ -105,7 +111,7 @@ impl LlmProvider for RouterProvider {
             );
         }
 
-        resolved.client.generate(&resolved.model, prompt).await
+        resolved.client.generate(&resolved.model, prompt, self.reasoning).await
     }
 }
 

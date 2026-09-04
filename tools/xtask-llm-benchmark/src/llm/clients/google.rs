@@ -8,7 +8,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, gemini_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 /// Google uses API key in the query string rather than Authorization header.
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl GoogleGeminiClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         // ---- Never trim system or dynamic segments ----
         let system = prompt.system.clone();
         let segs: Vec<Segment<'_>> = prompt.segments.clone();
@@ -49,8 +49,22 @@ impl GoogleGeminiClient {
             #[serde(skip_serializing_if = "Option::is_none")]
             system_instruction: Option<SystemInstruction<'a>>,
             contents: Vec<Content<'a>>,
+            #[serde(rename = "generationConfig")]
+            generation_config: GenerationConfig,
             #[serde(skip_serializing_if = "Option::is_none")]
             safety_settings: Option<Vec<SafetySetting>>,
+        }
+
+        #[derive(Serialize)]
+        struct GenerationConfig {
+            #[serde(rename = "thinkingConfig")]
+            thinking_config: ThinkingConfig,
+        }
+
+        #[derive(Serialize)]
+        struct ThinkingConfig {
+            #[serde(rename = "thinkingLevel")]
+            thinking_level: ReasoningEffort,
         }
 
         #[derive(Serialize)]
@@ -100,6 +114,11 @@ impl GoogleGeminiClient {
         let req = Req {
             system_instruction,
             contents,
+            generation_config: GenerationConfig {
+                thinking_config: ThinkingConfig {
+                    thinking_level: reasoning,
+                },
+            },
             safety_settings: None,
         };
 
