@@ -1,0 +1,595 @@
+{
+  "schemaVersion": 1,
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — contention (WITHHELD)",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Candidate checks score zero until qualification proves the reference passes and the declared mutation fails only its own criterion. Setup failure, inconclusive evidence, a different failed criterion, or collateral regressions do not qualify.",
+  "features": [
+    {
+      "id": 201,
+      "name": "The last unit is sold once",
+      "actors": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "c1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "c2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "c3"
+        },
+        {
+          "do": "signUp",
+          "actor": "d",
+          "name": "c4"
+        },
+        {
+          "do": "signUp",
+          "actor": "e",
+          "name": "c5"
+        },
+        {
+          "do": "signUp",
+          "actor": "f",
+          "name": "c6"
+        },
+        {
+          "do": "fill",
+          "actor": "a",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "b",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "c",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "d",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "e",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "f",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        }
+      ],
+      "criteria": [
+        {
+          "id": "201a",
+          "desc": "six customers buy the last three units at once: stock lands on exactly zero, never below",
+          "points": 1,
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "testid": "buy-now",
+              "actors": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f"
+              ],
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              },
+              "settleMs": 6000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              },
+              "equals": 0
+            },
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f"
+              ],
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              },
+              "numeric": true
+            }
+          ],
+          "provenBy": "Candidate backend-specific mutants are declared for this criterion and must pass the live Docker mutation gate before this oracle is called production-validated. PostgreSQL and MongoDB remove an explicit concurrency control; SpacetimeDB omits inventory reservation because reducer transactions make the equivalent interleaving defect inexpressible.",
+          "statedBy": "stock may never go negative, and two customers must never both get the last unit"
+        },
+        {
+          "id": "201b",
+          "desc": "exactly three of the six customers end up with an order, and none is charged twice",
+          "points": 0,
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "testid": "orders-toggle",
+              "actors": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f"
+              ],
+              "settleMs": 2500
+            },
+            {
+              "do": "expectActorsWith",
+              "actors": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f"
+              ],
+              "testid": "order-item",
+              "contains": "Mirrorless Camera",
+              "equals": 3,
+              "maxEach": 1
+            }
+          ],
+          "withheld": "rewritten to count the population instead of one participant: the old phrasing asked actor a for at most one order, which passes when nobody got one. Stays at 0 points until it kills a mutant on a real build.",
+          "statedBy": "two customers must never both get the last unit"
+        },
+        {
+          "id": "201c",
+          "desc": "revenue counts three sales, not six",
+          "points": 0,
+          "withheld": "needs an admin actor; wire once 201a has demonstrably failed somewhere",
+          "steps": [],
+          "statedBy": "stock must never leave a warehouse without a corresponding order"
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "name": "A restock during a rush is not lost",
+      "actors": [
+        "admin",
+        "a",
+        "b",
+        "c"
+      ],
+      "setup": [
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "signUp",
+          "actor": "a",
+          "name": "r1"
+        },
+        {
+          "do": "signUp",
+          "actor": "b",
+          "name": "r2"
+        },
+        {
+          "do": "signUp",
+          "actor": "c",
+          "name": "r3"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "202-control",
+          "points": 0,
+          "withheld": "diagnostic: establishes that a restock is applied and reaches the storefront",
+          "desc": "an uncontended restock of five is stored by the server and shows on the storefront",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-location-qty",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              },
+              "as": "warehouse-before"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "as": "storefront-before"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              },
+              "text": "5"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "restock-submit",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 4000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-location-qty",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "warehouse-before",
+              "plus": 5,
+              "within": 8000
+            },
+            {
+              "do": "pressKey",
+              "actor": "a",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "storefront-before",
+              "plus": 5,
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "202a",
+          "points": 0,
+          "withheld": "A candidate cross-feature mutation now omits purchase inventory reservation and directly makes this read start + 5 instead of start + 2. Keep at zero until that exact target passes the repeated live Docker mutation gate.",
+          "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
+          "steps": [
+            {
+              "do": "recordNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "as": "rush-before"
+            },
+            {
+              "do": "clickConcurrently",
+              "actors": [
+                "a",
+                "b",
+                "c"
+              ],
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "settleMs": 500
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              },
+              "text": "5"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "restock-submit",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Bluetooth Speaker"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 6000
+            },
+            {
+              "do": "pressKey",
+              "actor": "a",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "relativeTo": "rush-before",
+              "plus": 2,
+              "within": 10000
+            }
+          ],
+          "statedBy": "a restock in one warehouse raises the storefront number live"
+        }
+      ],
+      "note": "The rush assertion only means something if a restock works at all, so the control runs first and has to move the number. Without it a restock that never reached the server and a restock lost to a race look identical: both leave stock at start - purchases. The control also separates the two, by reading what the server stored (admin-location-qty) before what the buyer sees (item-stock). Totals are asserted as CHANGES rather than absolute values, because earlier features buy from the same catalogue."
+    },
+    {
+      "id": 203,
+      "name": "One cart, two tabs, one checkout",
+      "actors": [
+        "tab1",
+        "tab2",
+        "filler"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "tab1",
+          "name": "twin"
+        },
+        {
+          "do": "signIn",
+          "actor": "tab2",
+          "name": "twin"
+        },
+        {
+          "do": "signIn",
+          "actor": "filler",
+          "name": "twin"
+        },
+        {
+          "do": "fill",
+          "actor": "tab1",
+          "testid": "search-input",
+          "text": "Gaming Mouse",
+          "enter": true,
+          "settleMs": 1500
+        },
+        {
+          "do": "fill",
+          "actor": "tab2",
+          "testid": "search-input",
+          "text": "Gaming Mouse",
+          "enter": true,
+          "settleMs": 1500
+        }
+      ],
+      "criteria": [
+        {
+          "id": "203a",
+          "desc": "the same item added from two tabs at once becomes one line of two",
+          "points": 0,
+          "withheld": "runs clean (2/2) but no mutant has been attempted against it yet.",
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "testid": "add-to-cart",
+              "actors": [
+                "tab1",
+                "tab2"
+              ],
+              "in": {
+                "testid": "item-card",
+                "contains": "Gaming Mouse"
+              },
+              "settleMs": 4000
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "cart-item",
+              "contains": "Gaming Mouse",
+              "count": 1
+            },
+            {
+              "do": "expectNumber",
+              "actor": "tab1",
+              "testid": "cart-quantity",
+              "in": {
+                "testid": "cart-item",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 2
+            }
+          ],
+          "statedBy": "raises its quantity rather than adding a second line"
+        },
+        {
+          "id": "203b",
+          "desc": "checking the same cart out twice at once produces one order",
+          "points": 1,
+          "steps": [
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "checkout-submit"
+            },
+            {
+              "do": "wait",
+              "actor": "tab1",
+              "ms": 2500
+            },
+            {
+              "do": "fill",
+              "actor": "tab2",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "tab2",
+              "ms": 1200
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "checkout-submit"
+            },
+            {
+              "do": "wait",
+              "actor": "tab2",
+              "ms": 2500
+            },
+            {
+              "do": "fill",
+              "actor": "filler",
+              "testid": "search-input",
+              "text": "Keyboard",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "filler",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "filler",
+              "ms": 2000
+            },
+            {
+              "do": "callConcurrently",
+              "actors": [
+                "tab1",
+                "tab2"
+              ],
+              "action": "checkout",
+              "settleMs": 5000
+            },
+            {
+              "do": "expectCallOutcomes",
+              "accepted": 1
+            },
+            {
+              "do": "click",
+              "actor": "filler",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "filler",
+              "testid": "order-item",
+              "contains": "Keyboard",
+              "count": 1
+            }
+          ],
+          "note": "replayConcurrently replays each actor's LAST POST, so a racing tab must not touch the cart after its checkout is captured — that would overwrite the captured request with an add-to-cart. A third session on the same account fills the cart instead, leaving tab1 and tab2 holding nothing but their checkouts. A checkout carries no JSON body, so it never lands in lastWrites — the replay must select it by URL with the match option, or it silently races the last add-to-cart instead.",
+          "provenBy": "checkout-not-idempotent (postgres-ecom-l1.json): stripping FOR UPDATE from the cart read at checkout made two replayed checkout requests each create an order — the criterion failed on its own assertion (expected exactly 1 order containing Keyboard, found 2). The unmutated app passes, refusing the second checkout with a 400.",
+          "withheld": "uses the spec's named `checkout` action so it can be issued on either stack. It previously replayed a captured HTTP write, which SpacetimeDB never produces — that client writes over WebSocket — so the criterion reported INCONCLUSIVE there and the two backends were scored out of different totals. Points retained: it has already failed a mutant on the stacks that could run it.",
+          "statedBy": "checking out twice must not produce two orders"
+        }
+      ],
+      "note": "Both tabs reach the item by search rather than trusting the storefront: earlier features in this suite buy things, which re-ranks the top ten. Each tab opens its OWN cart — panel state belongs to a browser context, not to the feature."
+    }
+  ]
+}

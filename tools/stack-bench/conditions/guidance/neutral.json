@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "backend-guidance-profile",
+  "id": "neutral",
+  "mode": "neutral",
+  "material": {
+    "accessFacts": true,
+    "apiReference": true,
+    "designAdvice": false
+  },
+  "documents": {
+    "mongodb": "backends/minimal/mongodb.md",
+    "postgres": "backends/minimal/postgres.md",
+    "spacetime": "backends/minimal/spacetime.md"
+  },
+  "applicationInterfaces": {
+    "mongodb": "http",
+    "postgres": "http",
+    "spacetime": "reducer"
+  },
+  "skills": {
+    "mongodb": [],
+    "postgres": [],
+    "spacetime": ["typescript-server", "typescript-client"]
+  },
+  "credentialAliases": {
+    "stackbench-admin-2026": "store-admin-2026",
+    "stackbench-customer-2026": "store-customer-2026",
+    "stackbench-staff-2026": "store-staff-2026"
+  }
+}

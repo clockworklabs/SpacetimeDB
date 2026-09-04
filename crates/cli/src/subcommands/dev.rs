@@ -760,7 +760,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let loaded_config_dir = loaded_config.as_ref().map(|lc| lc.config_dir.clone());
 
     generate_build_and_publish(
-        &config,
+        &mut config,
         &project_dir,
         loaded_config_dir.as_deref(),
         &spacetimedb_dir,
@@ -876,7 +876,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
                 println!("\n{}", "File change detected, rebuilding...".yellow());
                 match generate_build_and_publish(
-                    &config,
+                    &mut config,
                     &project_dir,
                     loaded_config_dir.as_deref(),
                     &spacetimedb_dir,
@@ -1024,7 +1024,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
 
 #[allow(clippy::too_many_arguments)]
 async fn generate_build_and_publish(
-    config: &Config,
+    config: &mut Config,
     project_dir: &Path,
     config_dir: Option<&Path>,
     spacetimedb_dir: &Path,
@@ -1181,7 +1181,8 @@ async fn generate_build_and_publish(
             publish_entry.insert("break-clients".to_string(), json!(true));
         }
 
-        publish::exec_from_entry(config.clone(), publish_entry, config_dir, clear_database, yes).await?;
+        // Preserve a token created during publish for logs and later rebuilds.
+        publish::exec_from_entry(config, publish_entry, config_dir, clear_database, yes).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());

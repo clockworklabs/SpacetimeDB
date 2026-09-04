@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "kind": "repair-policy",
+  "id": "scored-only",
+  "scoredEvidence": true,
+  "observedEvidence": false,
+  "scenarioValues": "withheld"
+}

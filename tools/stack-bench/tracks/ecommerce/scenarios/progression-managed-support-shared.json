@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Shared managed support case",
+  "features": [
+    {
+      "id": 613,
+      "name": "Shared managed support case",
+      "actors": ["owner", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "managed-shared-owner" },
+        { "do": "click", "actor": "owner", "testid": "support-link" },
+        { "do": "fill", "actor": "owner", "testid": "support-email", "text": "managed-shared@example.com" },
+        { "do": "fill", "actor": "owner", "testid": "support-subject", "text": "Shared managed case" },
+        { "do": "fill", "actor": "owner", "testid": "support-message", "text": "Please investigate this case." },
+        { "do": "click", "actor": "owner", "testid": "support-submit" },
+        { "do": "expect", "actor": "owner", "testid": "support-reference", "nonEmpty": true },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" }
+      ],
+      "criteria": [
+        {
+          "id": "613c",
+          "desc": "staff can update a support case and the customer can reply",
+          "points": 1,
+          "statedBy": "Customers and staff can exchange replies and update the status of a support case.",
+          "steps": [
+            { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "in progress" },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "fill", "actor": "staff", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "Case received." },
+            { "do": "click", "actor": "staff", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "reload", "actor": "owner", "settleMs": 2000 },
+            { "do": "click", "actor": "owner", "testid": "support-link" },
+            { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "in progress" },
+            { "do": "expect", "actor": "owner", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Case received." },
+            { "do": "fill", "actor": "owner", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "Thank you." },
+            { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "reload", "actor": "staff", "settleMs": 2000 },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Thank you." }
+          ]
+        },
+        {
+          "id": "613a",
+          "desc": "the customer and staff see the same replies and status live",
+          "points": 2,
+          "statedBy": "Customers and authorized staff use one shared support case.",
+          "steps": [
+            { "do": "fill", "actor": "staff", "testid": "support-status-input", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "in progress" },
+            { "do": "click", "actor": "staff", "testid": "support-update", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "fill", "actor": "staff", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "We are investigating." },
+            { "do": "click", "actor": "staff", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "expect", "actor": "owner", "testid": "support-status", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "in progress", "within": 10000 },
+            { "do": "expect", "actor": "owner", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "We are investigating.", "within": 10000 },
+            { "do": "fill", "actor": "owner", "testid": "support-reply", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "text": "Thank you for the update." },
+            { "do": "click", "actor": "owner", "testid": "support-reply-submit", "in": { "testid": "support-ticket", "contains": "Shared managed case" } },
+            { "do": "expect", "actor": "staff", "testid": "support-reply-item", "in": { "testid": "support-ticket", "contains": "Shared managed case" }, "contains": "Thank you for the update.", "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

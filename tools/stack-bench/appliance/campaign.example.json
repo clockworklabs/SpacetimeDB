@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 8,
+  "kind": "campaign-manifest",
+  "id": "ecommerce-l1-example",
+  "version": "2.0.0",
+  "state": "draft",
+  "title": "Ecommerce L1 model-free example",
+  "track": "ecommerce",
+  "mode": { "id": "sequential" },
+  "repair": { "selection": "batch", "budget": { "total": 3 } },
+  "levels": [1],
+  "selection": {
+    "levels": [
+      {
+        "level": 1,
+        "recipe": "ecommerce.sequential-l1",
+        "features": [
+          "ecommerce.feature.accounts",
+          "ecommerce.feature.cart-checkout",
+          "ecommerce.feature.catalog-items",
+          "ecommerce.feature.catalog-discovery",
+          "ecommerce.feature.purchasing",
+          "ecommerce.feature.reviews",
+          "ecommerce.feature.warehouse-admin"
+        ],
+        "checks": []
+      }
+    ]
+  },
+  "stacks": [
+    { "id": "spacetime", "adapterVersion": "1.3.0" },
+    { "id": "postgres", "adapterVersion": "1.5.0" },
+    { "id": "mongodb", "adapterVersion": "1.4.0" }
+  ],
+  "agents": [
+    {
+      "adapter": "deterministic",
+      "adapterVersion": "1.3.0",
+      "model": "deterministic"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "prescribed",
+      "guidanceProfile": "prescribed",
+      "repairPolicy": "scored-only",
+      "specifications": {
+        "levels": [
+          {
+            "level": 1,
+            "requested": [
+              "ecommerce.spec.access-control",
+              "ecommerce.spec.concurrency-safety",
+              "ecommerce.spec.external-data-sync",
+              "ecommerce.spec.live-state",
+              "ecommerce.spec.state-durability",
+              "ecommerce.spec.transactional-integrity"
+            ],
+            "expected": [],
+            "observed": []
+          }
+        ]
+      }
+    }
+  ],
+  "repetitions": 3,
+  "parallelism": 1,
+  "ordering": {
+    "method": "balanced-rotation",
+    "seed": "replace-before-measurement"
+  },
+  "budgets": {
+    "attemptTimeoutMinutes": 240,
+    "maxCostUsdPerAttempt": null
+  },
+  "attemptPolicy": {
+    "retries": 1,
+    "retryOn": ["provider_failure"],
+    "excludeFromAnalysis": ["contaminated", "harness_failure", "inconclusive", "ungraded"]
+  },
+  "runtime": {
+    "releaseManifestSha256": null,
+    "controllerImage": null,
+    "buildImage": null,
+    "platform": "linux/amd64"
+  },
+  "pricing": {
+    "currency": "USD",
+    "unit": "USD-per-million-tokens",
+    "capturedAt": "2026-08-12T00:00:00.000Z",
+    "source": "deterministic adapter makes no billable provider calls",
+    "models": {
+      "deterministic": {
+        "input": 0,
+        "output": 0,
+        "cacheWrite5m": 0,
+        "cacheWrite1h": 0,
+        "cacheRead": 0
+      }
+    }
+  },
+  "analysis": {
+    "primaryMetric": "firstBuildScoreRate",
+    "secondaryMetrics": [
+      "finalScoreRate",
+      "totalCostUsd",
+      "totalDurationMs",
+      "invalidAttemptRate"
+    ],
+    "dispersion": "median-iqr",
+    "invalidAttempts": "report-separately",
+    "missingData": "no-imputation",
+    "comparisonUnit": "stack-agent-condition-recipe"
+  }
+}

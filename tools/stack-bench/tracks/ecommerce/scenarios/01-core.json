@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Catalog",
+  "note": "Catalog checks assert the exact seeded values and visible ranking order rather than treating mere presence as ordering evidence.",
+  "features": [
+    {
+      "id": 2,
+      "name": "Storefront is public and live",
+      "actors": ["buyer", "visitor", "inspector"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "dov" }
+      ],
+      "criteria": [
+        {
+          "id": "2a",
+          "desc": "a signed-out visitor sees the catalogue with the seeded prices and stock",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "inspector", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "inspector", "testid": "item-card", "contains": "Air Purifier", "in": { "testid": "search-results" } },
+            { "do": "expectNumber", "actor": "inspector", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 189 },
+            { "do": "expectNumber", "actor": "inspector", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 100 }
+          ],
+          "statedBy": "each card shows its name, current price, and total stock"
+        },
+        {
+          "id": "2b",
+          "desc": "the storefront shows the exact alphabetical top ten while nothing has been bought",
+          "points": 1,
+          "steps": [
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-list" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] }
+          ],
+          "statedBy": "the storefront shows the ten most-purchased items, with alphabetical order breaking ties"
+        },
+        {
+          "id": "2c",
+          "desc": "a purchase moves the bought item to the front of the ranking, live",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-list" }, "within": 10000, "equals": ["Coffee Grinder", "Air Purifier", "Bluetooth Speaker", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] },
+            { "do": "expectAgreement", "actors": ["buyer", "visitor"], "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "numeric": true }
+          ],
+          "statedBy": "a purchase immediately changes the ranking for every open client"
+        },
+        {
+          "id": "2d",
+          "desc": "search finds an item that is not on the storefront",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Mirrorless", "enter": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Mirrorless Camera", "in": { "testid": "search-results" } }
+          ],
+          "statedBy": "search matches any part of an item name across the full catalogue"
+        }
+      ]
+    }
+  ]
+}

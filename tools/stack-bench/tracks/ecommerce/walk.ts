@@ -1,0 +1,199 @@
+// This contract walk uses one browser and one customer; scenarios own multi-actor behavior.
+
+import { applyCredentialAliases } from '../../src/composition/credential-aliases.js';
+import type { Locator } from 'playwright';
+import type { LintHook, LintWalkContext } from '../../linter/lint.js';
+
+const ADMIN_USER = 'admin';
+const ADMIN_PASS = 'stackbench-admin-2026';
+
+export const seededAdminPassword = (credentialAliases: unknown): string =>
+  applyCredentialAliases(ADMIN_PASS, credentialAliases);
+
+// SEARCH_ONLY is outside the opening list so search must cover the full catalog.
+const CART_ITEM = 'Headphones';
+const REVIEW_ITEM = 'Air Purifier';
+const SEARCH_ONLY = 'Webcam';
+
+export async function walk({ page, args, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT }: LintWalkContext): Promise<void> {
+  const fail = (h: LintHook, detail: string): void => { results.push({ id: h.id, status: 'FAIL', detail }); };
+  const pass = (h: LintHook): void => { results.push({ id: h.id, status: 'PASS' }); };
+  const click = async (locator: Locator, label: string): Promise<void> => {
+    try {
+      await locator.click({ timeout: CHECK_TIMEOUT });
+    } catch {
+      // A live UI can replace a button while state arrives. Resolve the locator
+      // again once before declaring that the product cannot perform the action.
+      await page.waitForTimeout(200);
+      try {
+        await locator.click({ timeout: CHECK_TIMEOUT });
+      } catch (error: unknown) {
+        throw new Error(`${label}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      }
+    }
+  };
+
+  await page.goto(args.url ?? '', { waitUntil: 'domcontentloaded', timeout: 15000 });
+  const hasStage = (...stages: string[]): boolean => stages.some(stage => byStage(stage).length > 0);
+
+  // Stage: landing — the storefront and its prices are public, so everything
+  // here must resolve before anyone signs in.
+  let ok = true;
+  for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
+
+  if (ok && hasStage('storefront', 'item', 'item-after-review', 'cart',
+    'after-checkout', 'admin', 'operations', 'fulfilment')) {
+    // Use alphanumeric credentials because username character rules are not part of the contract.
+    await page.locator(tid('signup-username')).first().fill(`lint${uniq}`);
+    await page.locator(tid('signup-password')).first().fill(`pwlint${uniq}`);
+    await click(page.locator(tid('signup-submit')).first(), 'submit sign-up');
+  }
+
+  // Stage: storefront — signing up turns the buying controls on.
+  if (ok && byStage('storefront').length) {
+    for (const h of byStage('storefront')) ok = (await checkHook(page, h, results)) && ok;
+  } else blocked('storefront');
+
+  // Reviews are gated on having bought the item, so the walk earns the right
+  // before it exercises the form — otherwise a spec-compliant refusal would
+  // read as a missing hook.
+  if (ok && byStage('item-after-review').length) {
+    await click(page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first()
+      .locator(tid('buy-now')).first(), `buy ${REVIEW_ITEM}`);
+    await page.waitForTimeout(1200);
+  }
+
+  // Stage: search-results — search for an item the storefront is not showing.
+  if (ok && byStage('search-results').length) {
+    const search = page.locator(tid('search-input')).first();
+    await search.fill(SEARCH_ONLY);
+    await search.press('Enter').catch(() => {});
+    for (const h of byStage('search-results')) {
+      if (h.id === 'search-results') {
+        const hit = page.locator(tid('search-results')).first();
+        try {
+          await hit.waitFor({ state: 'attached', timeout: CHECK_TIMEOUT });
+          const card = hit.locator(tid('item-card'), { hasText: SEARCH_ONLY }).first();
+          await card.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
+          pass(h);
+        } catch {
+          fail(h, `searched for "${SEARCH_ONLY}" but no ${tid('item-card')} containing it appeared inside ${tid(h.id)} — search must cover the whole catalogue, not just the items on the storefront`);
+          ok = false;
+        }
+      } else ok = (await checkHook(page, h, results)) && ok;
+    }
+    await search.fill('');
+    await search.press('Enter').catch(() => {});
+  } else blocked('search-results');
+
+  // Stage: item — open one item's detail view from its card.
+  if (ok && byStage('item').length) {
+    const card = page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first();
+    try {
+      await card.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
+      await card.locator(tid('item-name')).first().click();
+    } catch {
+      await card.click().catch(() => {});
+    }
+    for (const h of byStage('item')) ok = (await checkHook(page, h, results)) && ok;
+  } else blocked('item');
+
+  // Stage: item-after-review — the review must arrive without a reload.
+  const probe = `lint review ${uniq}`;
+  if (ok && byStage('item-after-review').length) {
+    const rating = page.locator(tid('review-rating')).first();
+    // A rating control can be a select, a number input or a row of buttons.
+    await rating.selectOption('5')
+      .catch(async () => { await rating.fill('5').catch(async () => { await rating.click().catch(() => {}); }); });
+    await page.locator(tid('review-input')).first().fill(probe);
+    await click(page.locator(tid('review-submit')).first(), 'submit review');
+    for (const h of byStage('item-after-review')) {
+      const loc = page.locator(tid(h.id), { hasText: probe }).first();
+      try {
+        await loc.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
+        pass(h);
+      } catch {
+        fail(h, `submitted review "${probe}" but no ${tid(h.id)} containing it appeared without a reload — expected: ${h.element}`);
+        ok = false;
+      }
+    }
+  } else blocked('item-after-review');
+
+  // Stage: cart — add a known item, then open the cart.
+  if (ok && byStage('cart').length) {
+    // Search reaches the product regardless of ranking or page size.
+    const search = page.locator(tid('search-input')).first();
+    await search.fill(CART_ITEM);
+    await search.press('Enter').catch(() => {});
+    const card = page.locator(tid('search-results')).first()
+      .locator(tid('item-card'), { hasText: CART_ITEM }).first();
+    await card.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
+    await click(card.locator(tid('add-to-cart')).first(), `add ${CART_ITEM} to cart`);
+    await search.fill('');
+    await search.press('Enter').catch(() => {});
+    await click(page.locator(tid('cart-toggle')).first(), 'open cart');
+    for (const h of byStage('cart')) ok = (await checkHook(page, h, results)) && ok;
+  } else blocked('cart');
+
+  // Stage: after-checkout — the order must show the item that was bought.
+  if (ok && byStage('after-checkout').length) {
+    await click(page.locator(tid('checkout-submit')).first(), 'submit checkout');
+    await page.waitForTimeout(1500);
+    const orders = page.locator(tid('orders-toggle')).first();
+    if (await orders.isVisible().catch(() => false)) await orders.click();
+    for (const h of byStage('after-checkout')) {
+      if (h.id === 'order-item') {
+        const loc = page.locator(tid(h.id), { hasText: CART_ITEM }).first();
+        try {
+          await loc.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
+          pass(h);
+        } catch {
+          fail(h, `checked out a cart containing "${CART_ITEM}" but no ${tid(h.id)} naming it appeared — expected: ${h.element}`);
+          ok = false;
+        }
+      } else ok = (await checkHook(page, h, results)) && ok;
+    }
+  } else blocked('after-checkout');
+
+  // Stage: admin — a separate account with its own area. Signing out and back
+  // in as the seeded admin is the only way to reach it.
+  if (ok && hasStage('admin', 'operations', 'fulfilment')) {
+    await click(page.locator(tid('signout')).first(), 'sign out');
+    await page.waitForTimeout(1000);
+    const toggle = page.locator(tid('signin-toggle')).first();
+    if (await toggle.count()) await toggle.click().catch(() => {});
+    await page.locator(tid('signin-username')).first().fill(ADMIN_USER);
+    await page.locator(tid('signin-password')).first().fill(
+      seededAdminPassword(args.credentialAliases));
+    await click(page.locator(tid('signin-submit')).first(), 'submit sign-in');
+    await page.waitForTimeout(1500);
+    const link = page.locator(tid('admin-link')).first();
+    if (await link.isVisible().catch(() => false)) await link.click();
+    for (const h of byStage('admin')) await checkHook(page, h, results); // check all, non-blocking
+
+    // L2 adds controls to the admin panel itself. Check all of them before
+    // navigating to fulfilment so a missing control cannot be hidden by the
+    // later page transition.
+    for (const h of byStage('operations')) await checkHook(page, h, results);
+
+    // The pending order makes fulfillment controls observable.
+    const fulfilmentHooks = byStage('fulfilment');
+    if (fulfilmentHooks.length) {
+      const staffLink = page.locator(tid('staff-link')).first();
+      if (await staffLink.isVisible().catch(() => false)) {
+        await staffLink.click();
+        for (const h of fulfilmentHooks) await checkHook(page, h, results);
+      } else {
+        blocked('fulfilment');
+      }
+    }
+  } else {
+    blocked('admin');
+    blocked('operations');
+    blocked('fulfilment');
+  }
+
+  for (const h of byStage('scenario')) {
+    results.push({ id: h.id, status: 'SCENARIO', detail: h.note });
+  }
+}

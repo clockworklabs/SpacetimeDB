@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+// Enter a partial Docker restart, then fail to test owned-resource cleanup.
+
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { publicBackendLease, readBackendLease } from '../../src/runtime/backend-lease.js';
+import { compiledEntrypoint } from '../../src/package-root.js';
+import { controlSpacetime } from '../../src/stacks/spacetime-lifecycle.js';
+const args: Record<string, string | undefined> = {};
+for (let i = 2; i < process.argv.length; i += 2) {
+  const option = process.argv[i];
+  if (option) args[option.replace(/^--/, '')] = process.argv[i + 1];
+}
+
+const app = args.app;
+const backend = args.backend;
+if (!app || !backend) throw new Error('fault-agent requires --app and --backend');
+if (backend !== 'spacetime') throw new Error('fault-agent supports only the spacetime backend');
+const leasePath = process.env.STACK_BENCH_LEASE ?? '';
+const leaseToken = process.env.STACK_BENCH_LEASE_TOKEN ?? '';
+if (!leasePath || !leaseToken) throw new Error('fault-agent requires an active backend lease');
+mkdirSync(app, { recursive: true });
+// Match the real agent's build-mode pin. Teardown must know that any app
+// watchers live inside Docker before it considers host process cleanup.
+writeFileSync(join(app, '..', '.stack-bench-isolation'), 'container');
+
+execFileSync(process.execPath,
+  [compiledEntrypoint('container', 'run-build.js'), '--app', app,
+    '--backend', backend, '--prepare-only'],
+  { stdio: 'pipe', maxBuffer: 16 * 1024 * 1024 });
+const beforeRestart = readBackendLease(leasePath, {
+  token: leaseToken, backend, active: true,
+});
+
+// Enter the real restart path's most dangerous partial state: the old owned
+// listener is gone, the lease is `restarting`, and the replacement has not yet
+// started. The test hook fails at that exact boundary.
+let restartStopped = false;
+let restartFailure = '';
+process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP = '1';
+try {
+  await controlSpacetime({ lease: beforeRestart });
+} catch (error: unknown) {
+  const failure = error instanceof Error ? error as Error & { code?: string } : null;
+  restartStopped = failure?.code === 'injected_restart_stop_failure';
+  restartFailure = failure?.message ?? String(error);
+} finally {
+  delete process.env.STACK_BENCH_TEST_FAIL_AFTER_RESTART_STOP;
+}
+if (!restartStopped) throw new Error(
+  `restart fault hook did not stop at the expected boundary (${restartFailure || 'restart exited zero'})`);
+const lease = readBackendLease(leasePath, {
+  token: leaseToken, backend,
+});
+if (lease.state !== 'restarting') throw new Error(`expected restarting lease, got ${lease.state}`);
+const marker = join(app, '.fault-ready.json');
+const temporary = `${marker}.${process.pid}.tmp`;
+writeFileSync(temporary, `${JSON.stringify({ phase: 'restart-stopped', leasePath,
+  lease: publicBackendLease(lease) }, null, 2)}\n`);
+renameSync(temporary, marker);
+
+// An ordinary non-zero child exit exercises the same finally/exit cleanup path
+// as an unexpected coding-agent failure and works on Windows, where Node maps
+// SIGTERM to TerminateProcess and cannot run JavaScript signal handlers.
+process.exit(42);

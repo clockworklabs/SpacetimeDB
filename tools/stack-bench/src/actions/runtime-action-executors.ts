@@ -1,0 +1,479 @@
+import { execFileSync } from 'node:child_process';
+
+import { ActionApplicationFailure, ActionInconclusive, actionImplementation } from './action-contract.js';
+import { finding, isFinding } from './action-findings.js';
+import type {
+  ActionImplementation,
+} from './action-contract.js';
+import { actorFor, fail, inconclusive } from './actor-action-runtime.js';
+import { evidenceDisposition } from '../evidence/check-evidence.js';
+import type { CheckEvidenceStatus } from '../evidence/check-evidence.js';
+import { replayHeaders } from './actor-transport-action-executors.js';
+import { browserApplicationBoundary } from './browser-action-executors.js';
+import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.js';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
+import type { LeasedSpacetimeTarget } from '../runtime/spacetime-target.js';
+import type { RuntimeControlMode, RuntimeControlSpec } from '../runtime/backend-control.js';
+import type { TextCommandExecutor } from '../runtime/command-executor.js';
+
+type UnknownRecord = Record<string, unknown>;
+type Sleep = (milliseconds: number, signal: AbortSignal) => Promise<void>;
+type Exec = TextCommandExecutor;
+
+declare const navigator: { readonly onLine: boolean };
+
+interface CapturedWrite {
+  readonly body?: unknown;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly method: string;
+  readonly url: string;
+}
+
+interface Locator {
+  click(options?: unknown): Promise<void>;
+  isEnabled(): Promise<boolean>;
+  waitFor(options?: unknown): Promise<void>;
+}
+
+interface Actor {
+  readonly lastWrite?: CapturedWrite | null;
+  readonly lastWrites?: Readonly<Record<string, CapturedWrite | undefined>>;
+  readonly page: {
+    readonly request: {
+      fetch(url: string, options: UnknownRecord): Promise<{ status(): number }>;
+    };
+    close(): Promise<void>;
+    context(): { setOffline(offline: boolean): Promise<void> };
+    evaluate<Result>(callback: () => Result): Promise<Result>;
+  };
+  readonly writes?: readonly CapturedWrite[];
+  loc(testid: string, options?: unknown): Locator;
+}
+
+interface ActionStep extends UnknownRecord {
+  readonly do: string;
+}
+
+interface ConcurrencyCapability {
+  readonly defaultWithin: number;
+  dispatch(step: ActionStep, signal: AbortSignal): Promise<unknown>;
+  expand(value: string | undefined): string | undefined;
+  sleep: Sleep;
+  testId(id: string): string;
+}
+
+interface LifecycleCapability {
+  operate(mode: 'restart' | 'start' | 'stop', settleMs: number, signal: AbortSignal): Promise<void>;
+}
+
+interface LifecycleConcurrencyCapabilities {
+  readonly actors: { get(name: string): Actor | undefined };
+  readonly 'application-lifecycle': LifecycleCapability;
+  readonly 'backend-lifecycle': LifecycleCapability;
+  readonly 'browser-interaction': {
+    readonly clients: {
+      fresh(actor: Actor, actorName: string): Promise<string>;
+      open(actor: Actor, settleMs: number, signal: AbortSignal): Promise<void>;
+    };
+    sleep: Sleep;
+  };
+  readonly clock: { sleep: Sleep };
+  readonly concurrency: ConcurrencyCapability;
+  readonly 'database-write': {
+    setStock(input: SetStockInput): unknown | Promise<unknown>;
+  };
+}
+
+interface ActionArguments<Input> {
+  readonly input: Input;
+  readonly capabilities: LifecycleConcurrencyCapabilities;
+  readonly signal: AbortSignal;
+}
+
+interface ReplayConcurrentlyInput {
+  readonly actors: readonly string[];
+  readonly match?: string;
+  readonly method?: string;
+  readonly settleMs?: number;
+}
+
+interface LocatorScope {
+  readonly contains?: string;
+  readonly testid: string;
+}
+
+interface ClickTarget {
+  readonly actor: string;
+  readonly in?: LocatorScope;
+}
+
+interface ClickConcurrentlyInput {
+  readonly actors: readonly string[];
+  readonly in?: LocatorScope;
+  readonly readyWithin?: number;
+  readonly settleMs?: number;
+  readonly targets?: readonly ClickTarget[];
+  readonly testid: string;
+  readonly within?: number;
+}
+
+interface RaceInput {
+  readonly branches: readonly (readonly ActionStep[])[];
+  readonly settleMs?: number;
+}
+
+interface ConcurrentSender {
+  readonly actor: string;
+  readonly count: number;
+  readonly delayMs?: number;
+  readonly prefix: string;
+}
+
+interface SendConcurrentlyInput {
+  readonly delayMs?: number;
+  readonly senders: readonly ConcurrentSender[];
+}
+
+interface SettleInput { readonly settleMs?: number }
+interface ActorInput { readonly actor: string; readonly settleMs?: number }
+interface OfflineInput extends ActorInput { readonly offline?: boolean }
+interface SetStockInput {
+  readonly item: string;
+  readonly quantity: number;
+  readonly settleMs: number;
+  readonly warehouse: string;
+}
+
+interface ProcessErrorShape {
+  readonly classification?: unknown;
+  readonly code?: unknown;
+  readonly message?: unknown;
+  readonly status?: unknown;
+  readonly stderr?: unknown;
+  readonly stdout?: unknown;
+  readonly stockInterface?: unknown;
+}
+
+interface NestedActionEvidence {
+  readonly status?: unknown;
+  readonly summary?: string | null;
+  readonly finding?: unknown;
+}
+
+const errorShape = (error: unknown): ProcessErrorShape =>
+  error !== null && typeof error === 'object' ? error as ProcessErrorShape : {};
+const errorEvidence = (error: unknown): NestedActionEvidence | null => {
+  if (error === null || typeof error !== 'object' || !('actionEvidence' in error)) return null;
+  const evidence = error.actionEvidence;
+  return evidence !== null && typeof evidence === 'object' ? evidence as NestedActionEvidence : null;
+};
+
+export function databaseWriteFailureDetail(error: unknown): string {
+  const value = errorShape(error);
+  const details = [value.message, value.stdout, value.stderr]
+    .map(value => Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? ''))
+    .map(value => value.trim()).filter(Boolean)
+    .filter((value, index, all) => all.indexOf(value) === index);
+  return details.join(' | ').slice(-600) || 'unknown database-write failure';
+}
+
+async function dispatchNested(
+  concurrency: ConcurrencyCapability,
+  step: ActionStep,
+  signal: AbortSignal,
+): Promise<unknown> {
+  try {
+    return await concurrency.dispatch(step, signal);
+  } catch (error) {
+    const evidence = errorEvidence(error);
+    const status = evidence?.status;
+    const disposition = typeof status === 'string'
+      ? evidenceDisposition(status as CheckEvidenceStatus)
+      : null;
+    // A nested step's own finding is the finding; the wrapper adds nothing.
+    const nested = isFinding(evidence?.finding) ? evidence.finding : null;
+    if (disposition?.applicationFailure) {
+      throw new ActionApplicationFailure(evidence?.summary ?? `${step.do} failed`,
+        { finding: nested ?? finding('action-failed', { action: step.do }) });
+    }
+    if (disposition?.outcomeKind === 'inconclusive') {
+      throw new ActionInconclusive(evidence?.summary ?? `${step.do} was inconclusive`,
+        { finding: nested ?? finding('invalid-input', { detail: `${step.do} was inconclusive` }) });
+    }
+    throw error;
+  }
+}
+
+async function replayConcurrently(
+  { input, capabilities, signal }: ActionArguments<ReplayConcurrentlyInput>,
+) {
+  const concurrency = capabilities.concurrency;
+  const method = input.method ?? 'POST';
+  const match = input.match;
+  const pick = (actor: Actor): CapturedWrite | undefined | null => {
+    if (match) {
+      return [...(actor.writes ?? [])].reverse()
+        .find(write => write.method === method && write.url.includes(match));
+    }
+    return actor.lastWrites?.[method] ?? actor.lastWrite;
+  };
+  const pending = input.actors.map(name => {
+    const actor = actorFor(capabilities, name);
+    return { actor, write: pick(actor) };
+  }).filter((candidate): candidate is { actor: Actor; write: CapturedWrite } =>
+    candidate.write !== null && candidate.write !== undefined);
+  if (pending.length < 2) {
+    inconclusive('nothing-contended', { detail: `${pending.length} write request(s) captured; `
+      + 'this backend may not write over HTTP, or the request carried no JSON body' });
+  }
+  const replies = await Promise.all(pending.map(({ actor, write }) =>
+    actor.page.request.fetch(write.url, {
+      method: write.method,
+      headers: replayHeaders(write),
+      data: write.body === undefined || write.body === null ? undefined : JSON.stringify(write.body),
+    }).then(response => response.status(), error =>
+      `error: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
+  const answered = replies.filter(status => typeof status === 'number');
+  if (answered.length < 2) {
+    inconclusive('nothing-contended', { detail: `${answered.length} of ${pending.length} replayed requests `
+      + `reached the server (responses: ${replies.join(', ')})` });
+  }
+  await concurrency.sleep(input.settleMs ?? 3000, signal);
+  return { attempted: pending.length, answered: answered.length, replies };
+}
+
+async function clickConcurrently(
+  { input, capabilities, signal }: ActionArguments<ClickConcurrentlyInput>,
+) {
+  const concurrency = capabilities.concurrency;
+  const targets: readonly ClickTarget[] = input.targets ?? input.actors.map(actor => ({ actor }));
+  const resolved = targets.map(target => {
+    const where = target.in ?? input.in;
+    const scope = where
+      ? { testid: where.testid, contains: concurrency.expand(where.contains) }
+      : undefined;
+    return { target, locator: actorFor(capabilities, target.actor).loc(input.testid, { scope }) };
+  });
+  const notReady = (await Promise.all(resolved.map(async ({ target, locator }) => {
+    try {
+      await locator.waitFor({ state: 'visible', timeout: input.readyWithin ?? 15000 });
+      return await locator.isEnabled() ? null : target.actor;
+    } catch (error) {
+      if (harnessBrowserFailure(error)) throw error;
+      return target.actor;
+    }
+  }))).filter(Boolean);
+  if (notReady.length) {
+    fail('control-not-ready', { control: input.testid, actors: notReady.map(String) });
+  }
+  const outcomes = await Promise.all(resolved.map(({ target, locator }) =>
+    locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
+      .then(() => null, error =>
+        `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`)));
+  const failed = outcomes.filter(Boolean);
+  if (failed.length) {
+    fail('clicks-failed', { control: input.testid, failed: failed.length, total: targets.length,
+      detail: failed.join(' | ') });
+  }
+  await concurrency.sleep(input.settleMs ?? 3000, signal);
+  return { dispatched: targets.length };
+}
+
+async function race({ input, capabilities, signal }: ActionArguments<RaceInput>) {
+  const concurrency = capabilities.concurrency;
+  await Promise.all(input.branches.map(async branch => {
+    for (const step of branch) await dispatchNested(concurrency, step, signal);
+  }));
+  await concurrency.sleep(input.settleMs ?? 2000, signal);
+  return { branches: input.branches.length };
+}
+
+async function sendConcurrently(
+  { input, capabilities, signal }: ActionArguments<SendConcurrentlyInput>,
+) {
+  const concurrency = capabilities.concurrency;
+  await Promise.all(input.senders.map(sender => dispatchNested(concurrency, {
+    do: 'sendMany',
+    actor: sender.actor,
+    prefix: sender.prefix,
+    count: sender.count,
+    delayMs: sender.delayMs ?? input.delayMs ?? 0,
+  }, signal)));
+  return { senders: input.senders.length,
+    messages: input.senders.reduce((total, sender) => total + sender.count, 0) };
+}
+
+async function restartBackend({ input, capabilities, signal }: ActionArguments<SettleInput>) {
+  await capabilities['backend-lifecycle'].operate('restart', input.settleMs ?? 10000, signal);
+  return { operation: 'restart' };
+}
+
+async function startAppServer({ input, capabilities, signal }: ActionArguments<SettleInput>) {
+  await capabilities['application-lifecycle'].operate('start', input.settleMs ?? 8000, signal);
+  return { operation: 'start' };
+}
+
+async function stopAppServer({ input, capabilities, signal }: ActionArguments<SettleInput>) {
+  await capabilities['application-lifecycle'].operate('stop', input.settleMs ?? 2000, signal);
+  return { operation: 'stop' };
+}
+
+async function dbSetStock({ input, capabilities, signal }: ActionArguments<SetStockInput>) {
+  let result: unknown;
+  try {
+    result = await capabilities['database-write'].setStock(input);
+  } catch (error) {
+    if (errorShape(error).classification || harnessProcessFailure(error)) throw error;
+    // The contract names the stock tables; an application without them has
+    // failed that interface. Any other write failure is the harness's.
+    if (errorShape(error).stockInterface === true) {
+      fail('stock-interface-missing', { detail: databaseWriteFailureDetail(error) });
+    }
+    inconclusive('database-write-failed', { detail: databaseWriteFailureDetail(error) });
+  }
+  await capabilities.clock.sleep(input.settleMs, signal);
+  return result;
+}
+
+async function setOffline({ input, capabilities, signal }: ActionArguments<OfflineInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = capabilities['browser-interaction'];
+  const offline = input.offline !== false;
+  await actor.page.context().setOffline(offline);
+  await browser.sleep(input.settleMs ?? 500, signal);
+  const browserOnline = await actor.page.evaluate(() => navigator.onLine);
+  if (browserOnline === offline) {
+    throw new Error(`setOffline requested browser network ${offline ? 'offline' : 'online'}, `
+      + `but navigator.onLine remained ${browserOnline}`);
+  }
+  return { offline, browserOnline };
+}
+
+async function closeClient({ input, capabilities }: ActionArguments<ActorInput>) {
+  await actorFor(capabilities, input.actor).page.close();
+  return { closed: true };
+}
+
+async function openClient({ input, capabilities, signal }: ActionArguments<ActorInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  await capabilities['browser-interaction'].clients.open(actor, input.settleMs ?? 4000, signal);
+  return { opened: true };
+}
+
+async function freshClient({ input, capabilities }: ActionArguments<ActorInput>) {
+  const actor = actorFor(capabilities, input.actor);
+  const name = await capabilities['browser-interaction'].clients.fresh(actor, input.actor);
+  return { actor: name };
+}
+
+interface LifecycleCapabilityOptions {
+  readonly target: 'app-server' | 'backend-runtime';
+  readonly control: (
+    restartSpec: RuntimeControlSpec,
+    mode: RuntimeControlMode,
+    options: { readonly signal: AbortSignal },
+  ) => Promise<unknown>;
+  readonly restartSpec?: RuntimeControlSpec;
+  readonly sleep: Sleep;
+  // Called after the control command completes, so the caller knows which
+  // state the harness left the target in.
+  readonly onOperated?: (mode: 'restart' | 'start' | 'stop') => void;
+}
+
+export function createLifecycleCapability({ restartSpec, target,
+  sleep, control, onOperated = () => {},
+}: LifecycleCapabilityOptions): LifecycleCapability {
+  const application = target === 'app-server';
+  return Object.freeze({
+    async operate(mode: 'restart' | 'start' | 'stop', settleMs: number, signal: AbortSignal) {
+      if (!restartSpec) {
+        inconclusive('no-backend-control', { target });
+        return;
+      }
+      try {
+        await control(restartSpec, mode, { signal });
+      } catch (error) {
+        const value = errorShape(error);
+        if (value.status === 3) inconclusive('control-refused', { target });
+        // A generated app which cannot complete its own start/stop operation
+        // has failed the application contract. Backend-control timeouts and
+        // failures to launch the harness command still provide no app evidence.
+        if (harnessProcessFailure(error) && !(application && value.code === 'ETIMEDOUT')) throw error;
+        fail('app-control-failed', { mode, target,
+          detail: String(value.stdout || value.message || '').trim().slice(-200) });
+      }
+      onOperated(mode);
+      await sleep(settleMs, signal);
+    },
+  });
+}
+
+export interface DatabaseWriteLease {
+  readonly resources: {
+    readonly container: { readonly id: string; readonly name: string };
+    readonly database: string;
+  };
+}
+
+interface DatabaseWriteCapabilityOptions {
+  readonly backend?: string | null;
+  readonly databaseLease?: DatabaseWriteLease | null;
+  readonly skip?: boolean;
+  readonly exec?: Exec;
+  readonly expand: (value: string) => string;
+  readonly spacetime?: LeasedSpacetimeTarget | null;
+}
+
+export function createDatabaseWriteCapability({ backend, spacetime, databaseLease, skip = false, expand,
+  exec = execFileSync }: DatabaseWriteCapabilityOptions) {
+  return Object.freeze({
+    setStock(input: SetStockInput): unknown {
+      if (skip) return { skipped: true };
+      const item = expand(input.item);
+      const warehouse = expand(input.warehouse);
+      const quantity = Number(input.quantity);
+      if (!Number.isInteger(quantity)) {
+        inconclusive('invalid-input', { detail: `dbSetStock quantity ${input.quantity} is not a whole number` });
+      }
+      const adapter = backend ? STACK_ADAPTER_REGISTRY.get(backend) : undefined;
+      if (!adapter || !('databaseWrite' in adapter)) {
+        return inconclusive('unsupported-backend', { backend: backend ?? '<unset>' });
+      }
+      if (adapter.id === 'spacetime') {
+        return adapter.databaseWrite.setStock({ item, warehouse, quantity, spacetime: spacetime ?? undefined, exec });
+      }
+      if (!databaseLease) {
+        throw Object.assign(new Error('direct database writes require an authenticated backend lease'),
+          { classification: 'harness_failure' });
+      }
+      return adapter.databaseWrite.setStock({ item, warehouse, quantity, lease: databaseLease, exec });
+    },
+  });
+}
+
+function contractLifecycleAction<Input, Result>(
+  implementation: (arguments_: ActionArguments<Input>) => Result | Promise<Result>,
+): ActionImplementation {
+  return actionImplementation(implementation);
+}
+
+function contractBrowserLifecycleAction<Input, Result>(
+  implementation: (arguments_: ActionArguments<Input>) => Result | Promise<Result>,
+): ActionImplementation {
+  return contractLifecycleAction(browserApplicationBoundary(implementation));
+}
+
+export const RUNTIME_ACTION_IMPLEMENTATIONS = Object.freeze({
+  clickConcurrently: contractLifecycleAction(clickConcurrently),
+  closeClient: contractBrowserLifecycleAction(closeClient),
+  dbSetStock: contractLifecycleAction(dbSetStock),
+  freshClient: contractBrowserLifecycleAction(freshClient),
+  openClient: contractBrowserLifecycleAction(openClient),
+  race: contractLifecycleAction(race),
+  replayConcurrently: contractBrowserLifecycleAction(replayConcurrently),
+  restartBackend: contractLifecycleAction(restartBackend),
+  sendConcurrently: contractLifecycleAction(sendConcurrently),
+  setOffline: contractBrowserLifecycleAction(setOffline),
+  startAppServer: contractLifecycleAction(startAppServer),
+  stopAppServer: contractLifecycleAction(stopAppServer),
+});

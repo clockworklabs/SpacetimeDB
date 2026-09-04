@@ -1,0 +1,739 @@
+#!/usr/bin/env node
+// A valid mutation fails only its declared criterion against a passing baseline.
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { parseArgs as parseNodeArgs } from "node:util";
+import { currentEngineIdentity, emptyArtifactIdentities, readArtifactPayload,
+  writeRunJson } from "../src/evidence/artifacts.js";
+import { controlBackendRuntime, parseRuntimeControlSpec } from "../src/runtime/backend-control.js";
+import type { RuntimeControlSpec } from "../src/runtime/backend-control.js";
+import {
+  classifyMutationResult,
+  groupMutationsByScenario,
+  isRetryableMutationBaseline,
+  isRetryableMutationResult,
+  mutationFileEdits,
+  mutationTargetKeys,
+  readMutationManifest,
+  releaseScenarioCheckKeys,
+  resolveMutationScenarioPath,
+  reusableMutationBaseline,
+  resolveMutationFile,
+  validateMutationBaseline,
+  validateMutationDefinitions,
+} from "../src/evidence/mutation-analysis.js";
+import { dbName, loadTrack, TRACK_MANIFEST_FILE } from "../src/composition/tracks.js";
+import { resolveRecipeRelease } from "../src/composition/recipe-release.js";
+import { resetBackend } from "../src/stacks/backend-reset.js";
+import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.js";
+import { mutationShard } from "../src/evidence/mutation-shards.js";
+import { reusableMutationEvidence } from "../src/evidence/mutation-checkpoint.js";
+import { MUTATION_GRADE_MAX_TIMEOUT_MS, mutationGradeTimeoutMs }
+  from "../src/evidence/mutation-control.js";
+import { assertAppSourceIdentity } from "../src/runtime/source-snapshot.js";
+import type { TextCommandExecutor } from '../src/runtime/command-executor.js';
+import type { LoadedMutationManifest, MutationDefinition } from '../src/evidence/mutation-analysis.js';
+import type { MutationCheckpointBaseline, MutationCheckpointIdentity,
+  MutationCheckpointResult } from '../src/evidence/mutation-checkpoint.js';
+
+type JsonRecord = Record<string, unknown>;
+type MutationSpec = LoadedMutationManifest;
+type MutationArgs = {
+  app?: string; url?: string; mutations?: string; level?: string; spec?: string; backend?: string;
+  track?: string; recipe?: string; selectedCheckKeys?: string[]; dbName?: string; runIndex?: string;
+  restartSpec?: RuntimeControlSpec; out?: string; parentAttemptId?: string;
+  mutationShardIndex?: number; mutationShardCount?: number; resumeFrom?: string; checkpointOut?: string;
+  baselineBundle?: string; expectedCalibrationIdentity?: JsonRecord; maxRuntimeMinutes?: number;
+  imageId?: string; mutationAttemptId?: string; expectedRecipeSha256?: string;
+  reseedOnReset?: boolean;
+};
+type ParsedMutationArgs = MutationArgs & {
+  app: string;
+  url: string;
+  mutations: string;
+  level: string;
+  recipe: string;
+  maxRuntimeMinutes: number;
+  mutationAttemptId: string;
+};
+type GradeReport = { total?: unknown; max?: unknown;
+  features?: Array<{ id?: unknown; score?: unknown;
+    criteria?: Array<{ id?: string; stableKey?: unknown; evidence?: unknown }> }>;
+  [key: string]: unknown };
+type MutationResult = ReturnType<typeof classifyMutationResult> & { id: string; scenario: string; targets: string[] };
+type BaselineEntry = MutationCheckpointBaseline & { total: unknown; max: unknown };
+type MutationFile = { target: string; backup: string; original: string; edits: ReturnType<typeof mutationFileEdits> };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function jsonObject(value: unknown, label: string): JsonRecord {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as JsonRecord;
+}
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const GRADER = join(HERE, "grade.js");
+
+export function parseMutationArgs(argv: readonly string[]): ParsedMutationArgs {
+  const { values } = parseNodeArgs({ args: [...argv.slice(2)], options: {
+    app: { type: 'string' }, url: { type: 'string' }, mutations: { type: 'string' },
+    level: { type: 'string' }, spec: { type: 'string' }, backend: { type: 'string' },
+    track: { type: 'string' }, recipe: { type: 'string' },
+    'selected-check': { type: 'string', multiple: true }, 'db-name': { type: 'string' },
+    'run-index': { type: 'string' },
+    'restart-spec': { type: 'string' }, out: { type: 'string' }, 'parent-attempt-id': { type: 'string' },
+    'mutation-shard-index': { type: 'string' }, 'mutation-shard-count': { type: 'string' },
+    'resume-from': { type: 'string' }, 'checkpoint-out': { type: 'string' },
+    'baseline-bundle': { type: 'string' }, 'expected-calibration-json': { type: 'string' },
+    'max-runtime-minutes': { type: 'string' }, 'image-id': { type: 'string' },
+  } });
+  const a: MutationArgs = { app: values.app, url: values.url, mutations: values.mutations,
+    level: values.level, spec: values.spec, backend: values.backend, track: values.track,
+    recipe: values.recipe, selectedCheckKeys: values['selected-check'], dbName: values['db-name'],
+    runIndex: values['run-index'] ?? '0',
+    restartSpec: values['restart-spec'] === undefined ? undefined
+      : parseRuntimeControlSpec(JSON.parse(values['restart-spec'])),
+    out: values.out, parentAttemptId: values['parent-attempt-id'],
+    mutationShardIndex: values['mutation-shard-index'] === undefined
+      ? undefined : Number(values['mutation-shard-index']),
+    mutationShardCount: values['mutation-shard-count'] === undefined
+      ? undefined : Number(values['mutation-shard-count']),
+    resumeFrom: values['resume-from'] && resolve(values['resume-from']),
+    checkpointOut: values['checkpoint-out'] && resolve(values['checkpoint-out']),
+    baselineBundle: values['baseline-bundle'] && resolve(values['baseline-bundle']),
+    expectedCalibrationIdentity: values['expected-calibration-json'] === undefined
+      ? undefined : JSON.parse(values['expected-calibration-json']) as JsonRecord,
+    maxRuntimeMinutes: values['max-runtime-minutes'] === undefined
+      ? 60 : Number(values['max-runtime-minutes']),
+    imageId: values['image-id'] };
+  if (!a.app || !a.url || !a.mutations || !a.level || !a.recipe) {
+    throw new Error(
+      "Usage: node dist/grader/mutation-test.js --app <dir> --url <url> --mutations <file> "
+        + "--level <N> --recipe <id>",
+    );
+  }
+  let url: URL;
+  try { url = new URL(a.url); }
+  catch { throw new Error('--url must be a valid HTTP or HTTPS URL'); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('--url must use HTTP or HTTPS');
+  }
+  if (!Number.isInteger(Number(a.level)) || Number(a.level) < 1) {
+    throw new Error('--level must be a positive integer');
+  }
+  const shardFields = [a.mutationShardIndex, a.mutationShardCount]
+    .filter(value => value !== undefined);
+  if (shardFields.length === 1) {
+    throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
+  }
+  if (a.mutationShardCount !== undefined
+    && (!Number.isInteger(a.mutationShardIndex) || !Number.isInteger(a.mutationShardCount)
+      || a.mutationShardIndex! < 0 || a.mutationShardCount < 1
+      || a.mutationShardIndex! >= a.mutationShardCount)) {
+    throw new Error('--mutation-shard-index must be within the positive shard count');
+  }
+  a.maxRuntimeMinutes ??= 60;
+  if (!Number.isFinite(a.maxRuntimeMinutes) || a.maxRuntimeMinutes < 1
+      || a.maxRuntimeMinutes > 120) {
+    throw new Error('--max-runtime-minutes must be from 1 through 120');
+  }
+  if (a.resumeFrom && !a.checkpointOut) a.checkpointOut = a.resumeFrom;
+  return { ...a, app: a.app, url: a.url, mutations: a.mutations, level: a.level, recipe: a.recipe,
+    maxRuntimeMinutes: a.maxRuntimeMinutes,
+    mutationAttemptId: `mutation-${new Date().toISOString().replace(/[:.]/g, "-")}` };
+}
+
+class MutationBatchDeadlineError extends Error {}
+
+export function remainingMutationBatchMs(deadlineMs: number, nowMs: number = Date.now()): number {
+  const remaining = Math.floor(deadlineMs - nowMs);
+  if (remaining <= 0) throw new MutationBatchDeadlineError('mutation batch deadline reached');
+  return remaining;
+}
+
+// Reset publishes SpacetimeDB source. Hosted stacks restart once to load source
+// and seed the empty database. A separate source-change restart is redundant.
+async function reset(a: MutationArgs, deadlineMs: number | null): Promise<void> {
+  const exec: TextCommandExecutor = deadlineMs === null ? execFileSync : ((file, commandArgs, options) =>
+    execFileSync(file, commandArgs, { ...options,
+      timeout: Math.min(options.timeout, remainingMutationBatchMs(deadlineMs)) }));
+  try {
+    resetBackend({ backend: a.backend!, app: a.app!, exec });
+    const requiresReseed = STACK_ADAPTER_REGISTRY.get(a.backend!).reset.requiresReseed;
+    if (a.reseedOnReset && requiresReseed) {
+      if (!a.restartSpec) {
+        throw new Error(`track ${a.track} requires a lease-authenticated --restart-spec to reseed after reset`);
+      }
+      const signal = deadlineMs === null ? null
+        : AbortSignal.timeout(remainingMutationBatchMs(deadlineMs));
+      await controlBackendRuntime(a.restartSpec, "restart", { signal, exec });
+    }
+  } catch (error) {
+    if (deadlineMs !== null && Date.now() >= deadlineMs) {
+      throw new MutationBatchDeadlineError('mutation batch deadline reached', { cause: error });
+    }
+    throw error;
+  }
+}
+
+function rebuildClientAfterSourceChange(a: MutationArgs, deadlineMs: number): void {
+  const timeout = deadlineMs - Date.now();
+  if (timeout <= 0) throw new MutationBatchDeadlineError();
+  try {
+    execFileSync('npm', ['run', 'build'], {
+      cwd: join(a.app!, 'client'), stdio: 'pipe', timeout,
+    });
+  } catch (cause) {
+    if (Date.now() >= deadlineMs) throw new MutationBatchDeadlineError();
+    throw new Error('client build failed after source change', { cause });
+  }
+}
+
+async function grade(a: MutationArgs, reportPath: string, deadlineMs: number | null = null): Promise<GradeReport> {
+  await reset(a, deadlineMs);
+  if (existsSync(reportPath)) unlinkSync(reportPath);
+  const gradeArgs: string[] = [
+    GRADER,
+    "--url",
+    a.url!,
+    "--level",
+    a.level!,
+    "--out",
+    reportPath,
+    "--spec",
+    a.spec!,
+    "--backend",
+    a.backend!,
+    "--track",
+    a.track!,
+    "--app",
+    a.app!,
+  ];
+  if (a.dbName) gradeArgs.push("--db-name", a.dbName);
+  if (a.restartSpec) gradeArgs.push("--restart-spec", JSON.stringify(a.restartSpec));
+  if (a.mutationAttemptId) gradeArgs.push("--parent-attempt-id", a.mutationAttemptId);
+  if (a.recipe) gradeArgs.push("--recipe", a.recipe);
+  if (a.expectedRecipeSha256) {
+    gradeArgs.push("--expected-recipe-sha256", a.expectedRecipeSha256);
+  }
+  for (const stableKey of a.selectedCheckKeys ?? []) {
+    gradeArgs.push("--selected-check", stableKey);
+  }
+  const timeout = deadlineMs === null
+    ? MUTATION_GRADE_MAX_TIMEOUT_MS
+    : mutationGradeTimeoutMs(deadlineMs);
+  if (timeout === 0) throw new MutationBatchDeadlineError('mutation batch deadline reached');
+  try {
+    execFileSync(process.execPath, gradeArgs, {
+      stdio: "pipe",
+      encoding: "utf8",
+      timeout,
+    });
+  } catch (error) {
+    if (jsonObject(error, 'grader process error').code === 'ETIMEDOUT' && timeout < MUTATION_GRADE_MAX_TIMEOUT_MS) {
+      throw new MutationBatchDeadlineError('mutation grade reached the remaining batch deadline');
+    }
+    throw error;
+  }
+  if (!existsSync(reportPath)) {
+    throw new Error("grader completed without producing its report");
+  }
+  return readArtifactPayload<GradeReport>(reportPath, { expectedKind: "grade" });
+}
+
+let args: ParsedMutationArgs;
+let startedAt: number;
+let startedIso: string;
+const artifactPath = (id: string) =>
+  resolve(args.out ?? join(HERE, "..", "results", `${id}.json`));
+let spec!: MutationSpec;
+
+function sha256(value: string | Buffer): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function scenarioKey(path: string): string {
+  return relative(resolve(HERE, '..'), path).replaceAll('\\', '/');
+}
+
+function checkpointGroup(path: string, mutations: MutationDefinition[], selectedCheckKeys: readonly string[]):
+  MutationCheckpointIdentity['groups'][number] {
+  const scenario = scenarioKey(path);
+  const scenarioSha256 = sha256(readFileSync(path));
+  const mutationSha256 = sha256(JSON.stringify(mutations));
+  const selectionSha256 = sha256(JSON.stringify([...selectedCheckKeys].sort()));
+  return { scenario, scenarioSha256, mutationSha256, selectionSha256,
+    identitySha256: sha256(JSON.stringify({ scenarioSha256, mutationSha256, selectionSha256 })),
+    mutationIds: mutations.map(mutation => mutation.id as string) };
+}
+
+function checkpointIdentity(groups: MutationCheckpointIdentity['groups'], shard: { index: number; count: number;
+  mutationIds: string[] }, track: ReturnType<typeof loadTrack>): MutationCheckpointIdentity {
+  return {
+    schemaVersion: 1,
+    engineSha256: currentEngineIdentity().sha256,
+    recipeSha256: args.expectedRecipeSha256,
+    fixtureSha256: spec.fixtureSha256,
+    calibrationSha256: args.expectedCalibrationIdentity?.sha256 ?? null,
+    imageId: args.imageId ?? null,
+    backend: args.backend,
+    track: args.track,
+    level: Number(args.level),
+    trackSha256: sha256(readFileSync(join(track.dir, TRACK_MANIFEST_FILE))),
+    shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
+    groups,
+  };
+}
+
+function resumableEvidence(path: string | undefined, identity: MutationCheckpointIdentity):
+  { results: MutationCheckpointResult[]; baselines: MutationCheckpointBaseline[] } {
+  if (!path || !existsSync(path)) return { results: [], baselines: [] };
+  const prior = readArtifactPayload(path, { expectedKind: 'mutation_control' });
+  const { results, baselines } = reusableMutationEvidence(prior, identity);
+  const shard = identity.shard as { mutationIds: string[] };
+  console.log(`Resuming ${results.length}/${shard.mutationIds.length} completed mutations from ${path}`);
+  return { results, baselines };
+}
+
+function recordHarnessFailure(error: unknown): void {
+  const generatedAt = new Date().toISOString();
+  const id = args.mutationAttemptId;
+  const artifact = {
+    id,
+    kind: "mutation_control",
+    startedAt: startedIso,
+    completedAt: generatedAt,
+    parentAttemptId: args.parentAttemptId ?? null,
+    identities: emptyArtifactIdentities({
+      fixture: spec?.fixtureSha256 ? { id: "source-under-mutation", sha256: spec.fixtureSha256 } : null,
+      stackAdapter: (args.backend ?? spec?.backend) ? { id: args.backend ?? spec.backend } : null,
+    }),
+    durationMs: Date.now() - startedAt,
+    app: resolve(args.app),
+    mutations: resolve(args.mutations),
+    fixtureSha256: spec?.fixtureSha256 ?? null,
+    spec: args.spec ? resolve(args.spec) : null,
+    backend: args.backend ?? spec?.backend ?? null,
+    track: args.track ?? spec?.track ?? null,
+    ok: false,
+    outcome: {
+      kind: "harness_failure",
+      phase: "mutation-control",
+      reason: errorMessage(error),
+    },
+  };
+  try {
+    const outputPath = artifactPath(id);
+    writeRunJson(outputPath, artifact);
+    console.error(
+      `mutation harness failure: ${errorMessage(error)}\nartifact: ${outputPath}`,
+    );
+  } catch (artifactError) {
+    console.error(
+      `mutation harness failure: ${errorMessage(error)}\nfailed to write failure artifact: ${errorMessage(artifactError)}`,
+    );
+  }
+  process.exitCode = 2;
+}
+
+async function main(): Promise<void> {
+  spec = readMutationManifest(args.mutations!);
+  const fullMutations = spec.mutations;
+  const shard = args.mutationShardCount === undefined
+    ? { index: 0, count: 1, mutationIds: fullMutations.map(mutation => mutation.id as string),
+      mutations: fullMutations }
+    : mutationShard(fullMutations,
+      { index: args.mutationShardIndex!, count: args.mutationShardCount,
+        defaultScenario: spec.scenario });
+  if (shard.mutations.length === 0) throw new Error('mutation shard has no assigned mutations');
+  spec.mutations = shard.mutations;
+  if (args.backend && args.backend !== spec.backend) {
+    throw new Error(
+      `--backend conflicts with manifest backend ${spec.backend}`,
+    );
+  }
+  if (args.track && args.track !== spec.track) {
+    throw new Error(`--track conflicts with manifest track ${spec.track}`);
+  }
+  args.backend = spec.backend;
+  args.track = spec.track;
+  const track = loadTrack(args.track);
+  const binding = resolveRecipeRelease(track, Number(args.level), args.recipe);
+  if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
+  args.recipe = binding.release.id;
+  args.expectedRecipeSha256 = binding.release.contentSha256;
+  const recipeRelease = binding.release;
+  args.dbName ??= dbName(track, Number(args.runIndex));
+  args.reseedOnReset = track.reseedOnReset;
+  const definitions = validateMutationDefinitions(spec.mutations,
+    { defaultScenario: spec.scenario, requireScenario: true });
+  if (!definitions.ok) {
+    throw new Error(
+      `invalid mutation manifest: ${
+        definitions.issues.map((issue) =>
+          `${issue.mutation ?? "<unnamed>"}:${issue.kind}`
+        ).join(", ")
+      }`,
+    );
+  }
+  const groups = new Map();
+  for (const [scenario, mutations] of groupMutationsByScenario(spec)) {
+    const declaredSpec = resolveMutationScenarioPath(scenario);
+    groups.set(declaredSpec, mutations);
+  }
+  if (args.spec) {
+    const requested = resolve(args.spec);
+    if (groups.size !== 1 || !groups.has(requested)) {
+      throw new Error('--spec conflicts with the mutation manifest scenario selection');
+    }
+  }
+  const work = mkdtempSync(join(tmpdir(), "stack-bench-mutation-"));
+  const reportPath = join(work, "grade.json");
+  // Hosted apps serve this build; development servers compile client source on demand.
+  const clientDist = join(args.app, 'client', 'dist');
+  const cleanClientDist = spec.mutations.some(mutation =>
+    mutationFileEdits(mutation).some(edit => edit.file.replaceAll('\\', '/').startsWith('client/')))
+    && existsSync(clientDist) ? join(work, 'client-dist') : null;
+  if (cleanClientDist) cpSync(clientDist, cleanClientDist, { recursive: true });
+  process.once("exit", () => rmSync(work, { recursive: true, force: true }));
+
+  // Reject backups left by an interrupted run before grading the baseline.
+  for (const m of spec.mutations) {
+    for (const file of new Set(mutationFileEdits(m).map(edit => edit.file))) {
+      const stale = resolveMutationFile(args.app, file) + ".mutation-backup";
+      if (existsSync(stale)) {
+        throw new Error(
+          `${stale} exists; restore the interrupted mutation backup before running again`,
+        );
+      }
+    }
+  }
+
+  // Catch dirty source even when no backup file remains.
+  assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture');
+
+  // Reject missing or ambiguous edit anchors before baseline grading.
+  for (const m of spec.mutations) {
+    for (const edit of mutationFileEdits(m)) {
+      const source = readFileSync(resolveMutationFile(args.app, edit.file), "utf8");
+      const matches = source.split(edit.find).length - 1;
+      if (matches !== 1) {
+        throw new Error(
+          `${m.id} anchor matched ${matches} times in ${edit.file}; expected exactly once`,
+        );
+      }
+    }
+  }
+
+  const plans = [...groups].map(([scenarioPath, mutations]) => {
+    const selectedCheckKeys = releaseScenarioCheckKeys(recipeRelease, track.dir, scenarioPath,
+      args.selectedCheckKeys ?? null);
+    return { scenarioPath, scenario: scenarioKey(scenarioPath), mutations, selectedCheckKeys,
+      checkpoint: checkpointGroup(scenarioPath, mutations, selectedCheckKeys) };
+  });
+  const cleanBaselineBundle = args.baselineBundle
+    ? readArtifactPayload(args.baselineBundle, { expectedKind: 'grade_bundle' })
+    : null;
+  if (cleanBaselineBundle && !args.expectedCalibrationIdentity) {
+    throw new Error('a reusable clean baseline requires its expected calibration identity');
+  }
+  const checkpoint = checkpointIdentity(plans.map(plan => plan.checkpoint), shard, track);
+  const resumed = resumableEvidence(args.resumeFrom, checkpoint);
+  const results: MutationResult[] = [...resumed.results] as MutationResult[];
+  const baselines: BaselineEntry[] = [...resumed.baselines] as BaselineEntry[];
+  const completedIds = new Set(results.map(result => result.id));
+  if (completedIds.size !== results.length) {
+    throw new Error('mutation checkpoint contains duplicate results');
+  }
+  const outputPath = artifactPath(args.mutationAttemptId);
+  const deadline = startedAt + args.maxRuntimeMinutes * 60_000;
+
+  const createControlArtifact = (status: 'running' | 'incomplete' | 'complete', reason: string | null = null) => {
+    const ordered = [...results].sort((left, right) =>
+      shard.mutationIds.indexOf(left.id) - shard.mutationIds.indexOf(right.id));
+    const clean = ordered.filter(result => result.status === 'CAUGHT');
+    const orderedBaselines = plans.map(plan => baselines.find(entry =>
+      entry.scenario === plan.scenario)).filter((entry): entry is BaselineEntry => Boolean(entry));
+    const remaining = shard.mutationIds.filter(id => !completedIds.has(id));
+    return {
+      id: args.mutationAttemptId,
+      kind: 'mutation_control',
+      startedAt: startedIso,
+      completedAt: status === 'running' ? null : new Date().toISOString(),
+      parentAttemptId: args.parentAttemptId ?? null,
+      identities: emptyArtifactIdentities({
+        fixture: { id: 'source-under-mutation', sha256: spec.fixtureSha256 },
+        recipe: { id: recipeRelease.id, sha256: recipeRelease.contentSha256 },
+        stackAdapter: { id: args.backend },
+      }),
+      durationMs: Date.now() - startedAt,
+      app: resolve(args.app),
+      mutations: resolve(args.mutations),
+      fixtureSha256: spec.fixtureSha256,
+      spec: plans.map(plan => plan.scenario),
+      backend: args.backend,
+      track: args.track,
+      shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
+      baseline: {
+        total: orderedBaselines.reduce((sum, entry) => sum + Number(entry.total), 0),
+        max: orderedBaselines.reduce((sum, entry) => sum + Number(entry.max), 0),
+        scenarios: orderedBaselines,
+      },
+      ok: status === 'complete' && clean.length === ordered.length
+        && ordered.length === shard.mutationIds.length,
+      ...(status === 'complete' ? {} : { outcome: { kind: 'incomplete',
+        phase: 'mutation-control', reason: reason ?? 'mutation batch is in progress' } }),
+      summary: { caught: clean.length, completed: ordered.length,
+        total: shard.mutationIds.length, remaining: remaining.length },
+      results: ordered,
+      checkpoint: { ...checkpoint, status, maxRuntimeMinutes: args.maxRuntimeMinutes,
+        updatedAt: new Date().toISOString() },
+    };
+  };
+  const persist = (status: 'running' | 'incomplete' | 'complete', reason: string | null = null) => {
+    assertAppSourceIdentity(args.app, spec.fixtureSha256,
+      'mutation fixture before checkpoint');
+    const artifact = createControlArtifact(status, reason);
+    writeRunJson(outputPath, artifact);
+    if (args.checkpointOut && resolve(args.checkpointOut) !== outputPath) {
+      writeRunJson(args.checkpointOut, artifact);
+    }
+    return artifact;
+  };
+  const stopAtBudget = () => {
+    const artifact = persist('incomplete',
+      `mutation batch reached its ${args.maxRuntimeMinutes} minute limit`);
+    console.log(`\n${artifact.summary.completed}/${artifact.summary.total} mutations completed; `
+      + `${artifact.summary.remaining} remain`);
+    console.log(`checkpoint: ${args.checkpointOut ?? outputPath}`);
+    process.exitCode = 3;
+  };
+
+  for (const plan of plans) {
+    const { scenarioPath, scenario, mutations, selectedCheckKeys } = plan;
+    const pending = mutations.filter((mutation: MutationDefinition) => !completedIds.has(mutation.id as string));
+    if (pending.length === 0) continue;
+    if (Date.now() >= deadline) return stopAtBudget();
+    args.spec = scenarioPath;
+    args.selectedCheckKeys = selectedCheckKeys;
+    let baseline;
+    if (cleanBaselineBundle) {
+      const reused = reusableMutationBaseline(cleanBaselineBundle, {
+        backend: args.backend,
+        track: args.track,
+        level: Number(args.level),
+        fixtureSha256: spec.fixtureSha256,
+        recipe: { id: recipeRelease.id, sha256: recipeRelease.contentSha256 },
+        identities: {
+          engine: currentEngineIdentity(),
+          calibration: args.expectedCalibrationIdentity,
+          stackAdapter: { id: args.backend },
+        },
+        selectedCheckKeys,
+      });
+      if (!reused.ok) {
+        throw new Error(`cannot reuse clean baseline for ${scenarioPath}: ${reused.reason}`);
+      }
+      baseline = reused.report;
+      console.log(`Baseline (verified clean evidence, ${scenarioPath})...`);
+    } else {
+      console.log(`Baseline (unmutated app, ${scenarioPath})...`);
+      try {
+        baseline = await grade(args, reportPath, deadline);
+      } catch (error) {
+        if (error instanceof MutationBatchDeadlineError) return stopAtBudget();
+        throw error;
+      }
+      const validation = validateMutationBaseline(baseline, mutations);
+      if (!validation.ok && isRetryableMutationBaseline(validation.issues)) {
+        console.log('  transient baseline failure; retrying once');
+        try {
+          baseline = await grade(args, reportPath, deadline);
+        } catch (error) {
+          if (error instanceof MutationBatchDeadlineError) return stopAtBudget();
+          throw error;
+        }
+      }
+    }
+    const baselineValidation = validateMutationBaseline(baseline, mutations);
+    if (!baselineValidation.ok) {
+      throw new Error(
+        `reference baseline is not known-good for ${scenarioPath}: ${
+          JSON.stringify(baselineValidation.issues)
+        }`,
+      );
+    }
+    console.log(
+      `  baseline: ${baseline.total}/${baseline.max}  ${
+        (baseline.features ?? []).map((f) => `F${f.id}:${(f as NonNullable<GradeReport['features']>[number]).score}`).join(" ")
+      }\n`,
+    );
+    const baselineEntry = { scenario, identitySha256: plan.checkpoint.identitySha256,
+      total: baseline.total, max: baseline.max };
+    const priorBaseline = baselines.findIndex(entry => entry.scenario === scenario);
+    if (priorBaseline === -1) baselines.push(baselineEntry);
+    else baselines[priorBaseline] = baselineEntry;
+
+    for (const m of pending) {
+      if (Date.now() >= deadline) return stopAtBudget();
+      const byFile = new Map<string, MutationFile>();
+      for (const edit of mutationFileEdits(m)) {
+        const target = resolveMutationFile(args.app, edit.file);
+        if (!byFile.has(target)) {
+          byFile.set(target, {
+            target,
+            backup: `${target}.mutation-backup`,
+            original: readFileSync(target, "utf8"),
+            edits: [],
+          });
+        }
+        byFile.get(target)!.edits.push(edit);
+      }
+      const files = [...byFile.values()];
+      const clientChanged = files.some(file => relative(args.app!, file.target)
+        .split(sep)[0] === 'client');
+      const backedUp: MutationFile[] = [];
+      let r: GradeReport | undefined;
+      let classified: ReturnType<typeof classifyMutationResult> | undefined;
+      let deadlineReached = false;
+      let mutationError: unknown = null;
+      try {
+        for (const file of files) {
+          copyFileSync(file.target, file.backup);
+          backedUp.push(file);
+        }
+        for (const file of files) {
+          writeFileSync(file.target,
+            file.edits.reduce((src, edit) => src.replace(edit.find, edit.replace),
+              file.original));
+        }
+        if (clientChanged) rebuildClientAfterSourceChange(args, deadline);
+        r = await grade(args, reportPath, deadline);
+        classified = classifyMutationResult(
+          baseline as Parameters<typeof classifyMutationResult>[0],
+          r as Parameters<typeof classifyMutationResult>[1],
+          m,
+        );
+        if (isRetryableMutationResult(classified.status)) {
+          console.log(`  ${classified.status} result; retrying once`);
+          r = await grade(args, reportPath, deadline);
+          classified = classifyMutationResult(
+            baseline as Parameters<typeof classifyMutationResult>[0],
+            r as Parameters<typeof classifyMutationResult>[1],
+            m,
+          );
+        }
+      } catch (error) {
+        if (error instanceof MutationBatchDeadlineError) deadlineReached = true;
+        else mutationError = error;
+      }
+
+      const cleanupErrors: Error[] = [];
+      for (const file of backedUp) {
+        try {
+          copyFileSync(file.backup, file.target);
+          unlinkSync(file.backup);
+        } catch (error) {
+          cleanupErrors.push(new Error(`cannot restore ${file.target}: ${errorMessage(error)}`,
+            { cause: error }));
+        }
+      }
+      for (const file of files) {
+        try {
+          if (existsSync(file.backup) || readFileSync(file.target, 'utf8') !== file.original) {
+            cleanupErrors.push(new Error(`restore verification failed for ${file.target}`));
+          }
+        } catch (error) {
+          cleanupErrors.push(new Error(`cannot verify restored source ${file.target}: ${errorMessage(error)}`,
+            { cause: error }));
+        }
+      }
+      if (clientChanged) {
+        try {
+          rmSync(clientDist, { recursive: true, force: true });
+          if (cleanClientDist) cpSync(cleanClientDist, clientDist, { recursive: true });
+        } catch (error) {
+          cleanupErrors.push(new Error(`cannot restore the built client: ${errorMessage(error)}`,
+            { cause: error }));
+        }
+      }
+      // A normal error leaves enough budget to restore the clean runtime. A
+      // deadline stop leaves clean source and lets the lease owner stop it.
+      if (mutationError !== null && cleanupErrors.length === 0) {
+        try {
+          await reset(args, deadline);
+        } catch (error) {
+          cleanupErrors.push(new Error(`cannot restore the clean runtime: ${errorMessage(error)}`,
+            { cause: error }));
+        }
+      }
+      if (cleanupErrors.length > 0) {
+        const errors = mutationError === null ? cleanupErrors : [mutationError, ...cleanupErrors];
+        throw new AggregateError(errors,
+          'mutation cleanup failed; do not reuse this app source');
+      }
+      if (mutationError !== null) throw mutationError;
+      if (deadlineReached) return stopAtBudget();
+      if (!r || !classified) throw new Error('mutation grade completed without a result');
+      results.push({ id: m.id, scenario,
+        targets: mutationTargetKeys(m), ...classified });
+      completedIds.add(m.id);
+      persist('running');
+      console.log(
+        `${classified.status.padEnd(20)} ${m.id} — expected ${
+          classified.targetKeys.join(", ")
+        }`,
+      );
+      if (classified.regressions.length) {
+        console.log(
+          `    failed criteria: ${
+            classified.regressions.map((item) => item.key).join(", ")
+          }`,
+        );
+      }
+    }
+  }
+
+  // Detect any source change outside the files restored above.
+  assertAppSourceIdentity(args.app, spec.fixtureSha256, 'mutation fixture after worker completion');
+  // Restore the clean runtime and database before releasing the worker lease.
+  await reset(args, null);
+
+  rmSync(work, { recursive: true, force: true });
+  const artifact = persist('complete');
+  console.log(`\n${artifact.summary.caught}/${artifact.summary.total} mutations cleanly caught`);
+  console.log(`artifact: ${outputPath}`);
+  if (!artifact.ok) process.exitCode = 1;
+}
+
+function run(): void {
+  try {
+    args = parseMutationArgs(process.argv);
+  } catch (error) {
+    console.error(errorMessage(error));
+    process.exitCode = 2;
+    return;
+  }
+  startedAt = Date.now();
+  startedIso = new Date(startedAt).toISOString();
+  main().catch(recordHarnessFailure);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) run();

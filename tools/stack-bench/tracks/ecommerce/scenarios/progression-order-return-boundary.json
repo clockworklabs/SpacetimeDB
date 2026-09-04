@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Pending order return boundary",
+  "features": [
+    {
+      "id": 331,
+      "name": "Pending order return boundary",
+      "actors": ["customer"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "return-boundary" }
+      ],
+      "criteria": [
+        {
+          "id": "3e",
+          "desc": "an item from a pending order cannot be returned",
+          "points": 1,
+          "statedBy": "An item from a pending order cannot be returned.",
+          "steps": [
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "contains": "ending", "within": 10000 },
+            { "do": "expect", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

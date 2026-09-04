@@ -1,0 +1,56 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { closeActorContexts } from '../grader/grade.js';
+import { harnessBrowserFailure,
+  runBrowserInfrastructureOperation } from '../src/evidence/harness-errors.js';
+
+test('grader context cleanup records browser failures instead of throwing away the report', async () => {
+  const context = {
+    tracing: { stop: async () => { throw new Error('trace target closed'); } },
+    close: async () => { throw new Error('browser context closed unexpectedly'); },
+  };
+  const video = {
+    saveAs: async () => { throw new Error('video unavailable'); },
+    delete: async () => { throw new Error('video already removed'); },
+  };
+  const failures = await closeActorContexts([
+    { context, name: 'buyer', page: { video: () => video } },
+  ], { trace: true, media: '/tmp/media', slug: 'account-create' });
+
+  assert.deepEqual(failures.map(failure => failure.stage),
+    ['trace', 'context-close', 'video-save', 'video-delete']);
+  assert(failures.every(failure => failure.actor === 'buyer'));
+});
+
+test('grader context cleanup stays silent when cleanup succeeds', async () => {
+  const context = { tracing: { stop: async () => {} }, close: async () => {} };
+  const failures = await closeActorContexts([
+    { context, name: 'buyer', page: { video: () => null } },
+  ], { trace: true, media: '/tmp/media', slug: 'account-create' });
+  assert.deepEqual(failures, []);
+});
+
+test('grader context cleanup closes a context when page creation failed', async () => {
+  let closed = false;
+  const context = {
+    tracing: { stop: async () => {} },
+    close: async () => { closed = true; },
+  };
+  const failures = await closeActorContexts([
+    { context, name: 'buyer', page: null },
+  ], { media: '/tmp/media', slug: 'account-create' });
+  assert.equal(closed, true);
+  assert.deepEqual(failures, []);
+});
+
+test('browser setup operations are harness failures but app navigation is not', async () => {
+  let infrastructure: unknown;
+  try {
+    await runBrowserInfrastructureOperation('page creation', async () => {
+      throw new Error('page allocation failed');
+    });
+  } catch (error) { infrastructure = error; }
+  assert.match(harnessBrowserFailure(infrastructure) ?? '', /browser page creation failed/);
+  assert.equal(harnessBrowserFailure(new Error('net::ERR_CONNECTION_REFUSED')), null);
+});

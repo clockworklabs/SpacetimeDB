@@ -1,0 +1,1134 @@
+import { createHash } from 'node:crypto';
+
+import type {
+  CompiledProgressionNode,
+} from './progression-definition.js';
+import {
+  compileDependencyMode,
+  DEPENDENCY_MODE_POLICY,
+  DEPENDENCY_MODE_SCHEMA_VERSION,
+} from './dependency-definition.js';
+import type { CompiledDependencyDefinition } from './dependency-definition.js';
+import {
+  INCONCLUSIVE_CATEGORIES,
+  scoreDependencyState,
+} from './dependency-score.js';
+import type {
+  DependencyScore,
+  InconclusiveCategory,
+} from './dependency-score.js';
+import type {
+  ProgressionAction,
+  ProgressionPolicy,
+} from './progression-engine.js';
+import type {
+  ProgressionEvent,
+  ProgressionRepairGrant,
+  ProgressionNodeState,
+  ProgressionRepairRegression,
+  ProgressionState,
+  ProgressionTerminalOutcome,
+} from './progression-state.js';
+import { dependencyNodeState } from './dependency-state.js';
+import {
+  assertDependencyObject as strictObject,
+  dependencyFailure as fail,
+  dependencyIdentifier as identifier,
+  dependencyNonEmptyString as nonEmptyString,
+  dependencyPositiveInteger as positiveInteger,
+  isDependencyObject as object,
+} from './dependency-validation.js';
+import { REPAIR_EXHAUSTION_REASONS } from './repair-plan.js';
+import type { RepairLimitExhaustion } from './repair-plan.js';
+
+const getNodeState = dependencyNodeState;
+
+const HASH = /^[a-f0-9]{64}$/;
+const NODE_STATUSES = new Set(['locked', 'active', 'working', 'passed', 'failed', 'blocked'] as const);
+const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed'] as const);
+type CheckOutcome = 'pass' | 'fail' | 'not-run';
+// A check that has not been measured yet stays null; an application abort
+// leaves non-current checks at their prior value.
+type StoredCheckOutcome = Exclude<CheckOutcome, 'not-run'> | null;
+
+interface SourceEvidence extends Record<string, unknown> {
+  kind: 'grade_bundle';
+  id: string;
+  sha256: string;
+}
+
+interface ApplicationFailure extends Record<string, unknown> {
+  phase: string;
+  reason: string;
+}
+
+export interface DependencyPromptSelection {
+  nodeIds: string[];
+  featureRefs: string[];
+  promptModules: string[];
+}
+
+export interface DependencyGradingSelection {
+  nodeIds: string[];
+  checks: Array<{ id: string; points: number; nodeId: string }>;
+}
+
+interface ResultCheck extends Record<string, unknown> {
+  id: string;
+  outcome: CheckOutcome;
+}
+
+interface ResultNode extends Record<string, unknown> {
+  id: string;
+  checks: ResultCheck[];
+}
+
+interface ResultBase extends Record<string, unknown> {
+  attemptId: string;
+  runId?: string;
+  sourceSha256?: string;
+  selectionSha256?: string;
+  evidence?: SourceEvidence;
+  repairRegression?: ProgressionRepairRegression;
+  completedRepair?: true;
+}
+
+export interface ConclusiveResult extends ResultBase {
+  outcome: 'conclusive';
+  nodes: ResultNode[];
+  applicationFailure?: ApplicationFailure;
+  category?: never;
+  reason?: never;
+}
+
+interface InconclusiveResult extends ResultBase {
+  outcome: 'inconclusive';
+  category: InconclusiveCategory;
+  reason: string;
+  nodes?: never;
+  applicationFailure?: never;
+}
+
+export type DependencyResult = ConclusiveResult | InconclusiveResult;
+
+export type DependencyRepairGrant = ProgressionRepairGrant;
+
+interface AttemptRecordedEvent extends ProgressionEvent {
+  sequence: number;
+  type: 'attempt-recorded';
+  result: DependencyResult;
+  grant?: never;
+}
+
+interface RepairsGrantedEvent extends ProgressionEvent {
+  sequence: number;
+  type: 'repairs-granted';
+  result?: never;
+  grant: DependencyRepairGrant;
+}
+
+export type DependencyEvent = AttemptRecordedEvent | RepairsGrantedEvent;
+
+export interface DependencyState extends ProgressionState {
+  definition: CompiledDependencyDefinition;
+  events: DependencyEvent[];
+  grants: DependencyRepairGrant[];
+}
+
+export function dependencyRepairBudget(
+  action: unknown,
+  completedRepairs: number,
+): number {
+  if (!object(action) || action.type === 'terminal' || !object(action.repair)
+    || !Number.isSafeInteger(action.repair.remaining)
+    || Number(action.repair.remaining) < 0
+    || !Number.isSafeInteger(completedRepairs) || completedRepairs < 0) {
+    throw new Error('dependency repair budget requires one valid repair action');
+  }
+  return completedRepairs + Number(action.repair.remaining);
+}
+
+interface DependencyRepairState {
+  definition: { nodes: Array<{ id: string; level: number }> };
+  nodes: Record<string, {
+    repairs: { used: number };
+    exhaustedAtLevel: number | null;
+    exhaustionReason: string | null;
+  }>;
+  attempts: Array<{ repair?: { depth: number; nodeIds: readonly string[] } | null }>;
+}
+
+// The node repair record a run keeps for one level. The run writer and the
+// campaign validator both derive it from the final progression state with
+// this function, so a later level that regrades a node cannot make an
+// earlier level's record disagree with what the validator recomputes.
+export function dependencyLevelRepairRecords(state: DependencyRepairState, level: number) {
+  const repaired = state.attempts.flatMap(attempt =>
+    attempt.repair?.depth === level ? attempt.repair.nodeIds : []);
+  return dependencyRepairRecords(state, level, repaired);
+}
+
+export function dependencyRepairRecords(
+  state: DependencyRepairState,
+  level: number,
+  includedNodeIds: ReadonlySet<string> | readonly string[] = [],
+) {
+  const included = new Set(includedNodeIds);
+  return state.definition.nodes
+    .filter(node => node.level === level
+      || state.nodes[node.id]?.exhaustedAtLevel === level
+      || included.has(node.id))
+    .map(node => {
+      const nodeState = state.nodes[node.id];
+      if (!nodeState) throw new Error(`progression state is missing node ${node.id}`);
+      return { nodeId: node.id,
+        used: nodeState.repairs.used,
+        exhaustionReason: nodeState.exhaustionReason };
+    })
+    .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+}
+
+function validateSourceEvidence(value: unknown, at: string): asserts value is SourceEvidence {
+  strictObject(value, at, new Set(['kind', 'id', 'sha256']));
+  if (value.kind !== 'grade_bundle' || typeof value.id !== 'string' || !value.id
+    || typeof value.sha256 !== 'string' || !HASH.test(value.sha256)) {
+    throw new Error(`${at} must identify one grade bundle artifact`);
+  }
+}
+
+function validateApplicationFailure(value: unknown, at: string): asserts value is ApplicationFailure {
+  strictObject(value, at, new Set(['phase', 'reason']));
+  nonEmptyString(value.phase, `${at}.phase`);
+  nonEmptyString(value.reason, `${at}.reason`);
+}
+
+function uniqueStrings(value: unknown, at: string): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    fail(at, 'must be a non-empty array');
+  }
+  const seen = new Set<string>();
+  return (value as unknown[]).map((item, index) => {
+    const result = nonEmptyString(item, `${at}[${index}]`);
+    if (seen.has(result)) fail(`${at}[${index}]`, `duplicates ${JSON.stringify(result)}`);
+    seen.add(result);
+    identifier(result, `${at}[${index}]`);
+    return result;
+  });
+}
+
+function getDefinitionNode(definition: CompiledDependencyDefinition,
+  nodeId: string): CompiledProgressionNode {
+  const node = definition.nodes.find(candidate => candidate.id === nodeId);
+  if (!node) throw new Error(`unknown dependency node ${nodeId}`);
+  return node;
+}
+
+function featureChecksPass(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return node.gradingChecks.filter(check => check.role === 'feature')
+    .every(check => getNodeState(state, node.id).checks[check.id] === 'pass');
+}
+
+function allChecksPass(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return node.gradingChecks.every(check =>
+    getNodeState(state, node.id).checks[check.id] === 'pass');
+}
+
+function hasFailedCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return Object.values(getNodeState(state, node.id).checks).includes('fail');
+}
+
+function hasFailedFeatureCheck(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return node.gradingChecks.some(check => check.role === 'feature'
+    && getNodeState(state, node.id).checks[check.id] === 'fail');
+}
+
+function isUsable(status: ProgressionNodeState['status']): boolean {
+  return status === 'working' || status === 'passed';
+}
+
+interface RepairAllowance {
+  remaining: number;
+  grantId?: string;
+}
+
+// Each configured limit and what it still allows, most specific first, so the
+// first limit with nothing left names why a feature stopped.
+function repairLimits(state: DependencyState, nodeIds: readonly string[], depth: number):
+Array<{ limit: RepairLimitExhaustion; remaining: number }> {
+  const repairs = state.attempts.filter(attempt => attempt.repair && !attempt.repair.grantId);
+  const limits: Array<{ limit: RepairLimitExhaustion; remaining: number }> = [];
+  const budget = state.definition.repair.budget;
+  if (budget.perFeature !== undefined) {
+    for (const nodeId of nodeIds) {
+      limits.push({ limit: 'feature-repairs-exhausted',
+        remaining: budget.perFeature - repairs.filter(attempt =>
+          attempt.repair?.nodeIds.includes(nodeId)).length });
+    }
+  }
+  if (budget.perDepth !== undefined) {
+    const used = repairs.filter(attempt => budget.perDepth?.carry
+      ? (attempt.repair?.depth ?? 0) <= depth
+      : attempt.repair?.depth === depth).length;
+    const available = budget.perDepth.carry
+      ? budget.perDepth.count * new Set(state.definition.nodes
+        .filter(node => node.level <= depth).map(node => node.level)).size
+      : budget.perDepth.count;
+    limits.push({ limit: 'depth-repairs-exhausted', remaining: available - used });
+  }
+  if (budget.total !== undefined) {
+    limits.push({ limit: 'total-repairs-exhausted', remaining: budget.total - repairs.length });
+  }
+  return limits;
+}
+
+function baseRepairRemaining(state: DependencyState, nodeIds: readonly string[], depth: number): number {
+  return Math.max(0, Math.min(...repairLimits(state, nodeIds, depth).map(limit => limit.remaining)));
+}
+
+function exhaustedRepairLimit(state: DependencyState, nodeIds: readonly string[],
+  depth: number): RepairLimitExhaustion {
+  const exhausted = repairLimits(state, nodeIds, depth).find(limit => limit.remaining <= 0);
+  if (!exhausted) throw new Error(`no repair limit is exhausted for ${nodeIds.join(', ')}`);
+  return exhausted.limit;
+}
+
+function repairAllowance(state: DependencyState, nodeIds: readonly string[], depth: number):
+RepairAllowance {
+  const remaining = baseRepairRemaining(state, nodeIds, depth);
+  if (remaining > 0) return { remaining };
+  const grant = state.grants.find(candidate => candidate.level === depth
+    && nodeIds.every(nodeId => candidate.nodeIds.includes(nodeId))
+    && state.attempts.filter(attempt => attempt.repair?.grantId === candidate.grantId).length
+      < candidate.repairs);
+  if (!grant) return { remaining: 0 };
+  const used = state.attempts.filter(attempt => attempt.repair?.grantId === grant.grantId).length;
+  return { remaining: grant.repairs - used, grantId: grant.grantId };
+}
+
+function canRepair(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return repairAllowance(state, [node.id], state.level).remaining > 0
+    && getNodeState(state, node.id).unchangedFailure.count
+      < state.definition.unchangedFailureLimit;
+}
+
+function recordRepair(state: DependencyState,
+  repair: NonNullable<ProgressionState['attempts'][number]['repair']>): void {
+  for (const nodeId of repair.nodeIds) getNodeState(state, nodeId).repairs.used += 1;
+}
+
+function hasRepairableFailure(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return hasFailedCheck(state, node) && canRepair(state, node);
+}
+
+// Compiled node order: dependency depth, then declared catalog order.
+function compiledOrder(state: DependencyState, nodeId: string): number {
+  const index = state.definition.nodes.findIndex(node => node.id === nodeId);
+  if (index < 0) throw new Error(`unknown dependency node ${nodeId}`);
+  return index;
+}
+
+function currentPromptNodeIds(state: DependencyState): string[] {
+  if (state.phase !== 'active') return [];
+  return state.definition.nodes.filter(node =>
+    getNodeState(state, node.id).status === 'active'
+      || (getNodeState(state, node.id).status === 'working'
+        && hasRepairableFailure(state, node)))
+    .map(node => node.id);
+}
+
+function hasConclusiveAttempt(state: DependencyState): boolean {
+  return state.attempts.some(attempt => attempt.outcome === 'conclusive');
+}
+
+function selectedPromptNodeIds(state: DependencyState): string[] {
+  const nodeIds = currentPromptNodeIds(state);
+  const failed = nodeIds.filter(nodeId =>
+    Object.values(getNodeState(state, nodeId).checks).includes('fail'));
+  if (failed.length > 0 && hasConclusiveAttempt(state)) {
+    return state.definition.repair.selection === 'batch' ? failed : [failed[0]!];
+  }
+  const newWork = nodeIds.filter(nodeId => {
+    const node = getNodeState(state, nodeId);
+    return node.status === 'active'
+      && Object.values(node.checks).every(outcome => outcome === null);
+  });
+  if (newWork.length > 0) {
+    return state.definition.workSelection === 'feature' ? [newWork[0]!] : newWork;
+  }
+  return nodeIds;
+}
+
+function gradingNodeIds(state: DependencyState): string[] {
+  if (state.definition.workSelection === 'all-at-once') {
+    return state.definition.nodes.map(node => node.id);
+  }
+  const promptIds = selectedPromptNodeIds(state);
+  const selected = new Set([
+    ...promptIds,
+    ...state.definition.nodes
+      .filter(node => isUsable(getNodeState(state, node.id).status))
+      .map(node => node.id),
+  ]);
+  const nodesById = new Map(state.definition.nodes.map(node => [node.id, node]));
+  const includeDependencies = (nodeId: string): void => {
+    const node = nodesById.get(nodeId);
+    if (!node) return;
+    for (const parentId of node.dependencies) {
+      selected.add(parentId);
+      includeDependencies(parentId);
+    }
+  };
+  promptIds.forEach(includeDependencies);
+  return [...selected].sort((left, right) =>
+    compiledOrder(state, left) - compiledOrder(state, right));
+}
+
+function featureOwners(state: DependencyState): Map<string, string> {
+  return new Map(state.definition.nodes.flatMap(node => node.featureRefs.map(reference => [
+    reference, node.id,
+  ] as const)));
+}
+
+function checkRequirementsAvailable(state: DependencyState,
+  check: CompiledProgressionNode['gradingChecks'][number],
+  promptNodeIds: ReadonlySet<string>): boolean {
+  const owners = featureOwners(state);
+  return (check.requiresFeatures ?? []).every(featureId => {
+    const ownerId = owners.get(featureId);
+    return ownerId !== undefined
+      && (promptNodeIds.has(ownerId) || isUsable(getNodeState(state, ownerId).status));
+  });
+}
+
+function guaranteeRequirementsPass(state: DependencyState,
+  check: CompiledProgressionNode['gradingChecks'][number],
+  actual: ReadonlyMap<string, ReadonlyMap<string, CheckOutcome>>): boolean {
+  const owners = featureOwners(state);
+  return (check.requiresFeatures ?? []).every(featureId => {
+    const ownerId = owners.get(featureId);
+    if (!ownerId) return false;
+    const owner = getDefinitionNode(state.definition, ownerId);
+    const outcomes = actual.get(ownerId);
+    const featureOutcomes = owner.gradingChecks.filter(item => item.role === 'feature')
+      .map(item => outcomes?.get(item.id));
+    if (featureOutcomes.includes('fail')) return false;
+    if (featureOutcomes.every(outcome => outcome === 'pass')) return true;
+    return isUsable(getNodeState(state, ownerId).status);
+  });
+}
+
+function brokenByParents(state: DependencyState, node: CompiledProgressionNode): boolean {
+  return node.dependencies.some(parentId => {
+    const status = getNodeState(state, parentId).status;
+    return status === 'failed' || status === 'blocked';
+  });
+}
+
+function selectionFor(state: DependencyState, nodeIds: string[],
+  field: 'featureRefs' | 'promptModules'): string[] {
+  const selected = new Set(nodeIds);
+  return state.definition.nodes.filter(node => selected.has(node.id)).flatMap(node => node[field]);
+}
+
+function selectedPromptWork(state: DependencyState): DependencyPromptSelection {
+  const nodeIds = selectedPromptNodeIds(state);
+  return {
+    nodeIds,
+    featureRefs: [...new Set(selectionFor(state, nodeIds, 'featureRefs'))].sort(),
+    promptModules: [...new Set(selectionFor(state, nodeIds, 'promptModules'))].sort(),
+  };
+}
+
+function selectedGradingWork(state: DependencyState): DependencyGradingSelection {
+  const selected = new Set(gradingNodeIds(state));
+  const promptNodeIds = new Set(selectedPromptNodeIds(state));
+  const checks = state.definition.nodes.filter(node => selected.has(node.id)).flatMap(node =>
+    node.gradingChecks.filter(check => state.definition.workSelection === 'all-at-once'
+      || checkRequirementsAvailable(state, check, promptNodeIds))
+      .map(check => ({ ...check, nodeId: node.id })));
+  // A node with no check that can run this round is not graded this round.
+  const graded = new Set(checks.map(check => check.nodeId));
+  return {
+    nodeIds: [...selected].filter(nodeId => graded.has(nodeId)),
+    checks,
+  };
+}
+
+export function promptSelection(state: ProgressionState): DependencyPromptSelection {
+  const dependencyState = asDependencyState(state);
+  return selectedPromptWork(dependencyState);
+}
+
+export function gradingSelection(state: ProgressionState): DependencyGradingSelection {
+  const dependencyState = asDependencyState(state);
+  return selectedGradingWork(dependencyState);
+}
+
+function terminalOutcome(state: DependencyState,
+  reason: ProgressionTerminalOutcome['reason'], blockedLevel: number | null = null): ProgressionTerminalOutcome {
+  const statuses = Object.values(state.nodes).map(node => node.status);
+  const passed = statuses.filter(status => status === 'passed').length;
+  const working = statuses.filter(status => status === 'working').length;
+  const kind = passed === statuses.length ? 'passed'
+    : passed + working > 0 ? 'partial' : 'failed';
+  return { kind, reason, level: state.level,
+    ...(blockedLevel === null ? {} : { blockedLevel }) };
+}
+
+function updateNodeStatus(state: DependencyState, node: CompiledProgressionNode): void {
+  const nodeState = getNodeState(state, node.id);
+  if (nodeState.status === 'locked' && Object.values(nodeState.checks).every(value => value === null)) {
+    return;
+  }
+  if (state.definition.workSelection !== 'all-at-once' && brokenByParents(state, node)) {
+    nodeState.status = 'blocked';
+    return;
+  }
+  if (state.definition.workSelection !== 'all-at-once'
+    && node.dependencies.some(parentId => !isUsable(getNodeState(state, parentId).status))) {
+    nodeState.status = 'locked';
+    return;
+  }
+  nodeState.exhaustedAtLevel = null;
+  nodeState.exhaustionReason = null;
+  if (featureChecksPass(state, node)) {
+    nodeState.status = allChecksPass(state, node) ? 'passed' : 'working';
+  } else if (hasFailedFeatureCheck(state, node)
+    && !canRepair(state, node)) {
+    nodeState.status = 'failed';
+    nodeState.exhaustedAtLevel = state.level;
+    nodeState.exhaustionReason = nodeState.unchangedFailure.count
+      >= state.definition.unchangedFailureLimit
+      ? 'repeated-findings' : exhaustedRepairLimit(state, [node.id], state.level);
+  } else {
+    nodeState.status = 'active';
+  }
+}
+
+function blockBrokenDescendants(state: DependencyState): void {
+  if (state.definition.workSelection === 'all-at-once') return;
+  for (const node of state.definition.nodes) {
+    const nodeState = getNodeState(state, node.id);
+    if (nodeState.status === 'failed') continue;
+    if (brokenByParents(state, node)) {
+      nodeState.status = 'blocked';
+      nodeState.exhaustedAtLevel = null;
+      nodeState.exhaustionReason = null;
+    } else if (node.dependencies.some(parentId =>
+      !isUsable(getNodeState(state, parentId).status))) {
+      nodeState.status = 'locked';
+      nodeState.exhaustedAtLevel = null;
+      nodeState.exhaustionReason = null;
+    }
+  }
+}
+
+function openLevel(state: DependencyState, level: number): void {
+  let changed = state.definition.workSelection !== 'all-at-once';
+  while (changed) {
+    changed = false;
+    for (const node of state.definition.nodes) {
+      const nodeState = getNodeState(state, node.id);
+      const dependenciesReady = node.dependencies.every(parentId =>
+        isUsable(getNodeState(state, parentId).status));
+      const dependenciesFailed = brokenByParents(state, node);
+      const before = nodeState.status;
+      if (dependenciesFailed) {
+        nodeState.status = 'blocked';
+      } else if (dependenciesReady
+        && (nodeState.status === 'locked' || nodeState.status === 'blocked')) {
+        if (Object.values(nodeState.checks).every(value => value === null)) {
+          nodeState.status = 'active';
+        } else {
+          updateNodeStatus(state, node);
+        }
+      }
+      if (nodeState.status !== before) changed = true;
+    }
+  }
+  const promptNodes = currentPromptNodeIds(state);
+  if (promptNodes.length > 0) {
+    state.phase = 'active';
+    const selectedNodes = selectedPromptNodeIds(state);
+    state.level = Math.max(...(state.definition.workSelection === 'all-at-once'
+      ? state.definition.nodes.map(node => node.level)
+      : selectedNodes.map(nodeId => getDefinitionNode(state.definition, nodeId).level)));
+    state.terminalOutcome = null;
+    return;
+  }
+  state.phase = 'terminal';
+  const hasPassedNode = state.definition.nodes.some(node =>
+    getNodeState(state, node.id).status === 'passed');
+  state.terminalOutcome = terminalOutcome(state,
+    hasPassedNode ? 'graph-complete' : 'no-unlocked-nodes',
+    hasPassedNode ? null : level);
+}
+
+function initialDependencyState(definition: CompiledDependencyDefinition): DependencyState {
+  const state: DependencyState = {
+    schemaVersion: DEPENDENCY_MODE_SCHEMA_VERSION,
+    policy: DEPENDENCY_MODE_POLICY,
+    definition,
+    phase: 'active',
+    terminalOutcome: null,
+    level: 1,
+    nodes: Object.fromEntries(definition.nodes.map(node => {
+      return [node.id, {
+        status: definition.workSelection === 'all-at-once' ? 'active' : 'locked',
+        exhaustedAtLevel: null,
+        exhaustionReason: null,
+        unchangedFailure: { fingerprint: null, count: 0 },
+        repairs: { used: 0 },
+        checks: Object.fromEntries(node.gradingChecks.map(check => [check.id, null])),
+      }];
+    })),
+    attempts: [],
+    grants: [],
+    events: [],
+  };
+  openLevel(state, 1);
+  return state;
+}
+
+export function initializeDependencyMode(input: unknown): DependencyState {
+  return initialDependencyState(compileDependencyMode(input));
+}
+
+function assertState(input: unknown,
+  compiledDefinition?: CompiledDependencyDefinition): CompiledDependencyDefinition {
+  if (!object(input) || input.schemaVersion !== DEPENDENCY_MODE_SCHEMA_VERSION
+    || input.policy !== DEPENDENCY_MODE_POLICY) {
+    throw new Error('invalid dependency mode state');
+  }
+  const state = input as unknown as DependencyState;
+  const definition = compiledDefinition ?? compileDependencyMode(state.definition);
+  if (!['active', 'terminal'].includes(state.phase)) throw new Error('invalid dependency mode state phase');
+  if (state.phase === 'active' && state.terminalOutcome !== null) {
+    throw new Error('active dependency mode state cannot have a terminal outcome');
+  }
+  if (state.phase === 'terminal'
+    && (!object(state.terminalOutcome) || !TERMINAL_OUTCOMES.has(state.terminalOutcome.kind)
+      || !['graph-complete', 'no-unlocked-nodes'].includes(state.terminalOutcome.reason)
+      || !Number.isInteger(state.terminalOutcome.level)
+      || (state.terminalOutcome.blockedLevel !== undefined
+        && !Number.isInteger(state.terminalOutcome.blockedLevel)))) {
+    throw new Error('terminal dependency mode state requires a valid outcome');
+  }
+  const validLevels = new Set(definition.nodes.map(node => node.level));
+  if (!Number.isInteger(state.level) || !validLevels.has(state.level)) {
+    throw new Error('invalid dependency mode state level');
+  }
+  const expectedNodeIds = new Set(definition.nodes.map(node => node.id));
+  const actualNodeIds = Object.keys(state.nodes ?? {});
+  if (actualNodeIds.length !== expectedNodeIds.size
+    || actualNodeIds.some(nodeId => !expectedNodeIds.has(nodeId))) {
+    throw new Error('invalid dependency mode state node set');
+  }
+  for (const node of definition.nodes) {
+    const nodeState = getNodeState(state, node.id);
+    const unchangedFailure = nodeState?.unchangedFailure;
+    if (!object(nodeState) || !NODE_STATUSES.has(nodeState.status) || !object(nodeState.checks)
+      || !object(unchangedFailure)
+      || !object(nodeState.repairs)
+      || !Number.isSafeInteger(nodeState.repairs.used) || nodeState.repairs.used < 0
+      || !Number.isSafeInteger(unchangedFailure.count) || unchangedFailure.count < 0
+      || (unchangedFailure.fingerprint !== null && !HASH.test(unchangedFailure.fingerprint))
+      || (unchangedFailure.count === 0) !== (unchangedFailure.fingerprint === null)
+      || (nodeState.exhaustionReason !== null
+        && !(REPAIR_EXHAUSTION_REASONS as readonly string[]).includes(nodeState.exhaustionReason))
+      || (nodeState.exhaustedAtLevel !== null
+        && (!Number.isInteger(nodeState.exhaustedAtLevel)
+          || !validLevels.has(nodeState.exhaustedAtLevel)))
+      || (nodeState.status === 'failed') !== (nodeState.exhaustedAtLevel !== null)
+      || (nodeState.status === 'failed') !== (nodeState.exhaustionReason !== null)) {
+      throw new Error(`invalid dependency mode state for node ${node.id}`);
+    }
+    const expectedChecks = new Set(node.gradingChecks.map(check => check.id));
+    const actualChecks = Object.keys(nodeState.checks);
+    if (actualChecks.length !== expectedChecks.size
+      || actualChecks.some(checkId => !expectedChecks.has(checkId))
+      || actualChecks.some(checkId =>
+        ![null, 'pass', 'fail'].includes(nodeState.checks[checkId] ?? null))) {
+      throw new Error(`invalid dependency mode check state for node ${node.id}`);
+    }
+  }
+  if (!Array.isArray(state.attempts)) throw new Error('invalid dependency mode attempt history');
+  const attemptIds = new Set();
+  state.attempts.forEach((attempt, index) => {
+    if (!object(attempt) || typeof attempt.attemptId !== 'string' || !attempt.attemptId
+      || attemptIds.has(attempt.attemptId) || !Number.isInteger(attempt.level)
+      || !validLevels.has(attempt.level)
+      || !['conclusive', 'inconclusive'].includes(attempt.outcome)
+      || (attempt.sourceSha256 !== undefined && !HASH.test(attempt.sourceSha256))
+      || (attempt.selectionSha256 !== undefined && !HASH.test(attempt.selectionSha256))
+      || (attempt.runId !== undefined && (typeof attempt.runId !== 'string' || !attempt.runId))
+      || (attempt.outcome === 'inconclusive'
+        && (typeof attempt.reason !== 'string' || !attempt.reason
+          || typeof attempt.category !== 'string'
+          || !INCONCLUSIVE_CATEGORIES.includes(attempt.category as InconclusiveCategory)))
+      || (attempt.applicationFailure !== undefined
+        && attempt.outcome !== 'conclusive')) {
+      throw new Error(`invalid dependency mode attempt at index ${index}`);
+    }
+    if (attempt.repair !== undefined) {
+      if (!object(attempt.repair) || !Array.isArray(attempt.repair.nodeIds)
+        || attempt.repair.nodeIds.length === 0
+        || new Set(attempt.repair.nodeIds).size !== attempt.repair.nodeIds.length
+        || attempt.repair.nodeIds.some(nodeId => !expectedNodeIds.has(nodeId))
+        || !validLevels.has(attempt.repair.depth)
+        || (attempt.repair.grantId !== undefined
+          && (typeof attempt.repair.grantId !== 'string' || !attempt.repair.grantId))) {
+        throw new Error(`invalid dependency mode repair at attempt ${index}`);
+      }
+    }
+    if (attempt.applicationFailure !== undefined) {
+      validateApplicationFailure(attempt.applicationFailure,
+        `attempts[${index}].applicationFailure`);
+    }
+    if (attempt.evidence !== undefined) validateSourceEvidence(attempt.evidence,
+      `attempts[${index}].evidence`);
+    attemptIds.add(attempt.attemptId);
+  });
+  for (const node of definition.nodes) {
+    const expectedRepairs = state.attempts.filter(attempt =>
+      attempt.repair?.nodeIds.includes(node.id)).length;
+    if (getNodeState(state, node.id).repairs.used !== expectedRepairs) {
+      throw new Error(`dependency mode repair count disagrees for node ${node.id}`);
+    }
+  }
+  if (!Array.isArray(state.grants) || !Array.isArray(state.events)) {
+    throw new Error('invalid dependency mode continuation history');
+  }
+  return definition;
+}
+
+function asDependencyState(input: ProgressionState): DependencyState {
+  if (input.policy !== DEPENDENCY_MODE_POLICY) {
+    throw new Error(`invalid dependency mode state policy ${JSON.stringify(input.policy)}`);
+  }
+  return input as DependencyState;
+}
+
+function validateConclusiveResult(state: DependencyState,
+  result: ConclusiveResult): Map<string, Map<string, CheckOutcome>> {
+  if (!Array.isArray(result.nodes)) throw new Error('conclusive result nodes must be an array');
+  const selected = selectedGradingWork(state);
+  const expectedNodes = new Map(selected.nodeIds.map(nodeId => [nodeId,
+    new Set(selected.checks.filter(check => check.nodeId === nodeId).map(check => check.id))]));
+  const actualNodes = new Map<string, Map<string, CheckOutcome>>();
+  for (const [index, nodeResult] of result.nodes.entries()) {
+    strictObject(nodeResult, `result.nodes[${index}]`, new Set(['id', 'checks']));
+    nonEmptyString(nodeResult.id, `result.nodes[${index}].id`);
+    if (!expectedNodes.has(nodeResult.id)) throw new Error(`result includes unselected node ${nodeResult.id}`);
+    if (actualNodes.has(nodeResult.id)) throw new Error(`result repeats node ${nodeResult.id}`);
+    if (!Array.isArray(nodeResult.checks)) throw new Error(`result node ${nodeResult.id} checks must be an array`);
+    const expectedChecks = expectedNodes.get(nodeResult.id);
+    if (!expectedChecks) throw new Error(`result includes unselected node ${nodeResult.id}`);
+    const checks = new Map<string, CheckOutcome>();
+    for (const [checkIndex, check] of nodeResult.checks.entries()) {
+      strictObject(check, `result.nodes[${index}].checks[${checkIndex}]`, new Set(['id', 'outcome']));
+      nonEmptyString(check.id, `result.nodes[${index}].checks[${checkIndex}].id`);
+      if (!expectedChecks.has(check.id)) {
+        throw new Error(`result includes unselected check ${check.id} for ${nodeResult.id}`);
+      }
+      if (checks.has(check.id)) throw new Error(`result repeats check ${check.id}`);
+      if (!['pass', 'fail', 'not-run'].includes(check.outcome)) {
+        throw new Error(`result check ${check.id} outcome must be pass, fail, or not-run`);
+      }
+      checks.set(check.id, check.outcome);
+    }
+    const missing = [...expectedChecks].filter(checkId => !checks.has(checkId));
+    if (missing.length) throw new Error(`result node ${nodeResult.id} is missing checks: ${missing.join(', ')}`);
+    actualNodes.set(nodeResult.id, checks);
+  }
+  const missingNodes = [...expectedNodes.keys()].filter(nodeId => !actualNodes.has(nodeId));
+  if (missingNodes.length) throw new Error(`result is missing nodes: ${missingNodes.join(', ')}`);
+  const currentNodes = new Set(selectedPromptNodeIds(state));
+  if (result.applicationFailure !== undefined) {
+    validateApplicationFailure(result.applicationFailure, 'result.applicationFailure');
+    for (const [nodeId, checks] of actualNodes) {
+      const expectedOutcome = currentNodes.has(nodeId) ? 'fail' : 'not-run';
+      if ([...checks.values()].some(outcome => outcome !== expectedOutcome)) {
+        throw new Error(`application failure must mark ${nodeId} checks ${expectedOutcome}`);
+      }
+    }
+  }
+  return actualNodes;
+}
+
+function failureFingerprint(state: DependencyState, nodeIds: string[]): string {
+  const failedChecks = nodeIds.map(nodeId => ({
+    nodeId,
+    checks: Object.entries(getNodeState(state, nodeId).checks)
+      .filter(([, outcome]) => outcome === 'fail')
+      .map(([checkId]) => checkId)
+      .sort(),
+  })).filter(node => node.checks.length > 0);
+  return createHash('sha256').update(JSON.stringify(failedChecks)).digest('hex');
+}
+
+// The stall detector counts consecutive repairs that leave a feature's
+// findings unchanged. The first observation of the findings, usually the
+// initial grade, seeds the count; only a completed repair can raise it, so a
+// regrade of unchanged source neither charges the detector nor resets it.
+function observeUnchangedFailures(state: DependencyState, promptedNodeIds: ReadonlySet<string>,
+  repaired: boolean): void {
+  const failed = new Set<string>();
+  const failedNodes = state.definition.nodes.filter(node => {
+    const nodeState = getNodeState(state, node.id);
+    return promptedNodeIds.has(node.id)
+      && ['active', 'working'].includes(nodeState.status)
+      && hasFailedCheck(state, node);
+  });
+  for (const node of failedNodes) {
+    const fingerprint = failureFingerprint(state, [node.id]);
+    const prior = getNodeState(state, node.id).unchangedFailure;
+    const count = prior.fingerprint !== fingerprint ? 1
+      : repaired ? prior.count + 1 : prior.count;
+    getNodeState(state, node.id).unchangedFailure = {
+      fingerprint,
+      count,
+    };
+    if (count >= state.definition.unchangedFailureLimit) {
+      if (hasFailedFeatureCheck(state, node)) failed.add(node.id);
+    }
+  }
+
+  for (const nodeId of failed) {
+    getNodeState(state, nodeId).status = 'failed';
+    getNodeState(state, nodeId).exhaustedAtLevel = state.level;
+    getNodeState(state, nodeId).exhaustionReason = 'repeated-findings';
+  }
+
+  // A dependent feature is blocked by a failed prerequisite. It does not
+  // use repair budget or become eligible for a continuation grant of its own.
+  blockBrokenDescendants(state);
+}
+
+function applyDependencyResult(inputState: DependencyState, inputResult: DependencyResult): DependencyState {
+  if (inputState.phase !== 'active') throw new Error('cannot record a result after progression terminates');
+  const result = structuredClone(inputResult) as DependencyResult;
+  strictObject(result, 'result', new Set([
+    'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
+    'sourceSha256', 'selectionSha256', 'evidence', 'applicationFailure', 'repairRegression',
+    'completedRepair',
+  ]));
+  nonEmptyString(result.attemptId, 'result.attemptId');
+  if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
+    throw new Error('result.sourceSha256 must be a SHA-256 identity');
+  }
+  if (result.selectionSha256 !== undefined && !HASH.test(result.selectionSha256)) {
+    throw new Error('result.selectionSha256 must be a SHA-256 identity');
+  }
+  if (result.runId !== undefined && (typeof result.runId !== 'string' || !result.runId)) {
+    throw new Error('result.runId must be a non-empty string');
+  }
+  if (result.evidence !== undefined) {
+    validateSourceEvidence(result.evidence, 'result.evidence');
+    if (!result.runId
+      || result.attemptId !== `${result.runId}-progression-${inputState.attempts.length + 1}`) {
+      throw new Error('result.attemptId does not match its owned progression sequence');
+    }
+  }
+  if (inputState.attempts.some(attempt => attempt.attemptId === result.attemptId)) {
+    throw new Error(`duplicate attempt id ${result.attemptId}`);
+  }
+  if (!['conclusive', 'inconclusive'].includes(result.outcome)) {
+    throw new Error('result.outcome must be conclusive or inconclusive');
+  }
+  const currentAction = nextDependencyAction(inputState);
+  if (result.completedRepair !== undefined && result.completedRepair !== true) {
+    throw new Error('result.completedRepair must be true when present');
+  }
+  if (result.completedRepair && currentAction.type !== 'repair') {
+    throw new Error('only a repair action can record a completed repair');
+  }
+  const repair = result.completedRepair && currentAction.type === 'repair' ? {
+    nodeIds: [...currentAction.repair.nodeIds],
+    depth: currentAction.level,
+    ...(currentAction.repair.grantId ? { grantId: currentAction.repair.grantId } : {}),
+  } : undefined;
+  if (result.repairRegression !== undefined) {
+    const regression = result.repairRegression;
+    strictObject(regression, 'result.repairRegression', new Set(['ownerNodeIds', 'report']));
+    if (currentAction.type !== 'repair' || result.outcome !== 'conclusive'
+      || !Array.isArray(regression.ownerNodeIds)
+      || regression.ownerNodeIds.length === 0
+      || regression.ownerNodeIds.some(nodeId => typeof nodeId !== 'string' || !nodeId)
+      || new Set(regression.ownerNodeIds).size !== regression.ownerNodeIds.length
+      || typeof regression.report !== 'string' || !regression.report.trim()
+      || regression.report.length > 20_000) {
+      throw new Error('result.repairRegression is invalid');
+    }
+    const expectedOwners = selectedPromptNodeIds(inputState).sort();
+    if (JSON.stringify([...regression.ownerNodeIds].sort()) !== JSON.stringify(expectedOwners)) {
+      throw new Error('result.repairRegression does not belong to the current repair');
+    }
+  }
+  const state = structuredClone(inputState) as DependencyState;
+  if (result.outcome === 'inconclusive') {
+    nonEmptyString(result.reason, 'result.reason');
+    if (!INCONCLUSIVE_CATEGORIES.includes(result.category)) {
+      throw new Error(`result.category must be one of ${[...INCONCLUSIVE_CATEGORIES].join(', ')}`);
+    }
+    if (result.nodes !== undefined || result.applicationFailure !== undefined) {
+      throw new Error('inconclusive results cannot contain node grades or application failures');
+    }
+    state.attempts.push({ attemptId: result.attemptId, level: state.level,
+      outcome: result.outcome, category: result.category, reason: result.reason,
+      ...(result.runId ? { runId: result.runId } : {}),
+      ...(result.evidence ? { evidence: result.evidence } : {}),
+      ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
+      ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
+      ...(repair ? { repair } : {}) });
+    // A completed repair is charged even when its grade did not finish. The
+    // feature keeps its current status: the repaired source is preserved and
+    // graded before any status can change, so a grader failure can never
+    // finalize a feature or open its children.
+    if (repair) recordRepair(state, repair);
+    return state;
+  }
+  if (result.reason !== undefined || result.category !== undefined) {
+    throw new Error('conclusive results cannot contain inconclusive details');
+  }
+
+  const promptedNodeIds = new Set(selectedPromptNodeIds(inputState));
+  const actual = validateConclusiveResult(state, result);
+  const selectedNodeIds = gradingNodeIds(state);
+  for (const nodeId of selectedNodeIds) {
+    const node = getDefinitionNode(state.definition, nodeId);
+    const outcomes = actual.get(nodeId);
+    if (!outcomes) throw new Error(`result is missing node ${nodeId}`);
+    getNodeState(state, nodeId).checks = Object.fromEntries(node.gradingChecks.map(check => {
+      const outcome = outcomes.get(check.id);
+      const prior = getNodeState(state, nodeId).checks[check.id] ?? null;
+      if (outcome === undefined || outcome === 'not-run') return [check.id, prior];
+      if (check.role === 'guarantee' && !guaranteeRequirementsPass(state, check, actual)) {
+        return [check.id, null];
+      }
+      return [check.id, outcome];
+    })) as Record<string, StoredCheckOutcome>;
+  }
+  const failedPromptNodeIds = new Set<string>();
+  for (const nodeId of selectedNodeIds) {
+    if (!promptedNodeIds.has(nodeId)) continue;
+    const outcomes = actual.get(nodeId);
+    if (!outcomes) throw new Error(`result is missing node ${nodeId}`);
+    const nodeState = getNodeState(state, nodeId);
+    const hasFailedCheck = [...outcomes.values()].includes('fail');
+    if (!hasFailedCheck || !['active', 'working', 'passed'].includes(nodeState.status)) continue;
+    failedPromptNodeIds.add(nodeId);
+  }
+  state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome,
+    ...(result.runId ? { runId: result.runId } : {}),
+    ...(result.evidence ? { evidence: result.evidence } : {}),
+    ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
+    ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}),
+    ...(repair ? { repair } : {}),
+    ...(result.repairRegression
+      ? { repairRegression: structuredClone(result.repairRegression) } : {}),
+    ...(result.applicationFailure
+      ? { applicationFailure: structuredClone(result.applicationFailure) } : {}) });
+  if (repair) recordRepair(state, repair);
+  for (const nodeId of selectedNodeIds) {
+    const node = getDefinitionNode(state.definition, nodeId);
+    const outcomes = actual.get(nodeId);
+    if (!outcomes) throw new Error(`result is missing node ${nodeId}`);
+    if ([...outcomes.values()].every(outcome => outcome === 'not-run')) continue;
+    updateNodeStatus(state, node);
+    if (!hasFailedCheck(state, node)) {
+      getNodeState(state, nodeId).unchangedFailure = { fingerprint: null, count: 0 };
+    }
+  }
+  // Repair budget is shared, so a feature that was not graded this time may
+  // have lost its last repair. Finalize it now rather than offering a repair
+  // with nothing left; features already finalized keep their exhaustion level.
+  for (const node of state.definition.nodes) {
+    if (!selectedNodeIds.includes(node.id)
+      && ['active', 'working'].includes(getNodeState(state, node.id).status)
+      && hasFailedFeatureCheck(state, node)) {
+      updateNodeStatus(state, node);
+    }
+  }
+  blockBrokenDescendants(state);
+  observeUnchangedFailures(state, failedPromptNodeIds, repair !== undefined);
+  openLevel(state, state.level);
+  return state;
+}
+
+// True while the most recent completed repair has no conclusive grade.
+function awaitingRepairGrade(state: DependencyState): boolean {
+  for (let index = state.attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = state.attempts[index]!;
+    if (attempt.outcome === 'conclusive') return false;
+    if (attempt.repair) return true;
+  }
+  return false;
+}
+
+function applyRepairGrant(inputState: DependencyState,
+  inputGrant: DependencyRepairGrant): DependencyState {
+  if (inputState.phase !== 'terminal') throw new Error('repairs can be granted only after progression terminates');
+  const grant = structuredClone(inputGrant) as DependencyRepairGrant;
+  strictObject(grant, 'grant', new Set(['grantId', 'level', 'nodeIds', 'repairs']));
+  nonEmptyString(grant.grantId, 'grant.grantId');
+  positiveInteger(grant.level, 'grant.level');
+  grant.nodeIds = uniqueStrings(grant.nodeIds, 'grant.nodeIds').sort();
+  positiveInteger(grant.repairs, 'grant.repairs');
+  if (inputState.grants.some(item => item.grantId === grant.grantId)) {
+    throw new Error(`duplicate grant id ${grant.grantId}`);
+  }
+  const nodesById = new Map(inputState.definition.nodes.map(node => [node.id, node]));
+  const eligible = grant.nodeIds.map(nodeId => nodesById.get(nodeId));
+  if (eligible.some(node => !node
+    || getNodeState(inputState, node.id).status !== 'failed'
+    || getNodeState(inputState, node.id).exhaustedAtLevel !== grant.level)) {
+    throw new Error(`grant level ${grant.level} includes a feature without an exhausted repair budget`);
+  }
+  const grantedNodes = eligible.filter((node): node is CompiledProgressionNode => node !== undefined);
+  const state = structuredClone(inputState) as DependencyState;
+  state.level = grant.level;
+  state.phase = 'active';
+  state.terminalOutcome = null;
+  state.grants.push(grant);
+  const reopenDescendants = new Set<string>();
+  for (const node of grantedNodes) {
+    const nodeState = getNodeState(state, node.id);
+    if (nodeState.status === 'failed') reopenDescendants.add(node.id);
+    nodeState.exhaustedAtLevel = null;
+    nodeState.exhaustionReason = null;
+    nodeState.unchangedFailure = { fingerprint: null, count: 0 };
+    updateNodeStatus(state, node);
+  }
+  const affected = new Set(reopenDescendants);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of state.definition.nodes) {
+      if (!affected.has(node.id) && node.dependencies.some(parentId => affected.has(parentId))) {
+        affected.add(node.id);
+        changed = true;
+      }
+    }
+  }
+  for (const node of state.definition.nodes.filter(node =>
+    !reopenDescendants.has(node.id) && affected.has(node.id))) {
+    const nodeState = getNodeState(state, node.id);
+    nodeState.checks = Object.fromEntries(node.gradingChecks.map(check => [check.id, null]));
+    nodeState.status = 'locked';
+    nodeState.exhaustedAtLevel = null;
+    nodeState.exhaustionReason = null;
+  }
+  blockBrokenDescendants(state);
+  openLevel(state, grant.level);
+  return state;
+}
+
+function validateEvent(event: unknown, index: number): asserts event is DependencyEvent {
+  strictObject(event, `events[${index}]`, new Set(['sequence', 'type', 'result', 'grant']));
+  if (event.sequence !== index + 1) throw new Error(`event sequence ${event.sequence} must be ${index + 1}`);
+  if (event.type === 'attempt-recorded') {
+    if (event.result === undefined || event.grant !== undefined) {
+      throw new Error(`attempt event ${event.sequence} must contain only a result`);
+    }
+  } else if (event.type === 'repairs-granted') {
+    if (event.grant === undefined || event.result !== undefined) {
+      throw new Error(`grant event ${event.sequence} must contain only a grant`);
+    }
+  } else {
+    throw new Error(`unknown dependency mode event ${JSON.stringify(event.type)}`);
+  }
+}
+
+export function replayDependencyMode(inputDefinition: unknown,
+  inputEvents: unknown[] = []): DependencyState {
+  const definition = compileDependencyMode(inputDefinition);
+  if (!Array.isArray(inputEvents)) throw new Error('dependency mode events must be an array');
+  let state = initialDependencyState(definition);
+  inputEvents.forEach((inputEvent, index) => {
+    const event = structuredClone(inputEvent);
+    validateEvent(event, index);
+    state = event.type === 'attempt-recorded'
+      ? applyDependencyResult(state, event.result)
+      : applyRepairGrant(state, event.grant);
+    state.events.push(event);
+  });
+  assertState(state, definition);
+  return state;
+}
+
+export function recordDependencyResult(inputState: ProgressionState,
+  inputResult: unknown): DependencyState {
+  const state = asDependencyState(inputState);
+  const event: DependencyEvent = { sequence: state.events.length + 1,
+    type: 'attempt-recorded', result: structuredClone(inputResult) as DependencyResult };
+  const next = applyDependencyResult(state, event.result);
+  next.events.push(event);
+  return next;
+}
+
+export function grantDependencyRepairs(inputState: ProgressionState,
+  inputGrant: unknown): DependencyState {
+  const state = asDependencyState(inputState);
+  const event: DependencyEvent = { sequence: state.events.length + 1,
+    type: 'repairs-granted', grant: structuredClone(inputGrant) as DependencyRepairGrant };
+  const next = applyRepairGrant(state, event.grant);
+  next.events.push(event);
+  return next;
+}
+
+export function nextDependencyAction(inputState: ProgressionState): ProgressionAction {
+  const state = asDependencyState(inputState);
+  if (state.phase === 'terminal') {
+    if (!state.terminalOutcome) throw new Error('terminal dependency state is missing its outcome');
+    return { type: 'terminal', outcome: { ...state.terminalOutcome } };
+  }
+  const prompt = selectedPromptWork(state);
+  const grading = selectedGradingWork(state);
+  const repairing = prompt.nodeIds.some(nodeId =>
+    Object.values(getNodeState(state, nodeId).checks).includes('fail'));
+  const featureIds = prompt.nodeIds;
+  const actionLevel = repairing || state.definition.workSelection === 'all-at-once' ? state.level
+    : Math.max(...featureIds.map(nodeId => getDefinitionNode(state.definition, nodeId).level));
+  const allowance = repairing
+    ? repairAllowance(state, featureIds, actionLevel)
+    : { remaining: 0 };
+  return {
+    type: repairing ? 'repair' : 'build',
+    level: actionLevel,
+    repair: { nodeIds: repairing ? [...featureIds] : [], ...allowance,
+      ...(repairing && awaitingRepairGrade(state) ? { awaitingGrade: true as const } : {}) },
+    prompt,
+    grading,
+  };
+}
+
+export function activeDependencyNodes(inputState: ProgressionState): string[] {
+  const state = asDependencyState(inputState);
+  return currentPromptNodeIds(state);
+}
+
+export function scoreDependencyMode(inputState: ProgressionState): DependencyScore {
+  const state = asDependencyState(inputState);
+  return scoreDependencyState(state);
+}
+
+export const dependencyModePolicy: Readonly<ProgressionPolicy<
+  CompiledDependencyDefinition,
+  ProgressionState,
+  ProgressionAction,
+  DependencyScore,
+  DependencyGradingSelection
+>> = Object.freeze({
+  id: DEPENDENCY_MODE_POLICY,
+  compile: compileDependencyMode,
+  initialize: initializeDependencyMode,
+  activeNodes: activeDependencyNodes,
+  promptSelection,
+  gradingSelection,
+  recordResult: recordDependencyResult,
+  grantRepairs: grantDependencyRepairs,
+  replay: replayDependencyMode,
+  nextAction: nextDependencyAction,
+  score: scoreDependencyMode,
+});

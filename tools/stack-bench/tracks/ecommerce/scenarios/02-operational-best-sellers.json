@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 signed-out best sellers",
+  "note": "This scenario owns only the signed-out recommendation check.",
+  "features": [
+    {
+      "id": 5,
+      "name": "Signed-out best sellers",
+      "actors": ["buyer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "best-seller-buyer" },
+        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
+        { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
+        { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Gaming Mouse", "within": 10000 }
+      ],
+      "criteria": [
+        {
+          "id": "5d",
+          "desc": "a signed-out visitor sees a best seller in the recommendations list",
+          "points": 1,
+          "statedBy": "Signed-out visitors see best sellers",
+          "steps": [
+            { "do": "reload", "actor": "visitor", "settleMs": 2500 },
+            { "do": "expectNumber", "actor": "visitor", "testid": "recommendation-rank", "in": { "testid": "recommended-item", "contains": "Gaming Mouse" }, "equals": 1, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

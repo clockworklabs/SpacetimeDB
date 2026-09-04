@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Cart and checkout",
+  "features": [
+    {
+      "id": 4,
+      "name": "Account cart and checkout",
+      "actors": ["quantity", "checkout"],
+      "setup": [
+        { "do": "signUp", "actor": "quantity", "name": "cart-quantity" },
+        { "do": "signUp", "actor": "checkout", "name": "cart-checkout" }
+      ],
+      "criteria": [
+        {
+          "id": "4a",
+          "desc": "adding the same item twice raises its quantity instead of adding a second line",
+          "points": 1,
+          "statedBy": "Adding an existing cart item increases its quantity.",
+          "steps": [
+            { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "wait", "actor": "quantity", "ms": 800 },
+            { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "click", "actor": "quantity", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "quantity", "testid": "cart-item", "contains": "Headphones", "count": 1 },
+            { "do": "expectNumber", "actor": "quantity", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Headphones" }, "equals": 2 }
+          ]
+        },
+        {
+          "id": "4d",
+          "desc": "checkout creates one order, reduces stock, and empties the cart",
+          "points": 2,
+          "statedBy": "Checkout creates one order, reduces stock, and empties the cart.",
+          "steps": [
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 100 },
+            { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 1 },
+            { "do": "click", "actor": "checkout", "testid": "cart-toggle" },
+            { "do": "click", "actor": "checkout", "testid": "checkout-submit" },
+            { "do": "wait", "actor": "checkout", "ms": 1500 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 0 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 99 },
+            { "do": "click", "actor": "checkout", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Desk Lamp", "count": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

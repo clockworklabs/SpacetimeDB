@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.deferred-durability-specifications",
+  "stableId": "ecommerce.l3.deferred-durability",
+  "moduleType": "specification",
+  "title": "Deferred-work durability",
+  "description": "Pending work survives a backend restart.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "backend-lifecycle"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 720000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l3.durable-reservations", "path": "prompts/modular/l3-specifications.md", "order": 3100, "from": "## Durable reservations", "until": "## Durable restocks", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.reservations-features"] },
+      { "id": "ecommerce.l3.durable-restocks", "path": "prompts/modular/l3-specifications.md", "order": 3101, "from": "## Durable restocks", "until": "## Durable order delivery", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
+      { "id": "ecommerce.l3.durable-order-delivery", "path": "prompts/modular/l3-specifications.md", "order": 3102, "from": "## Durable order delivery", "until": "## Durable cart expiration", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.order-delivery-features"] },
+      { "id": "ecommerce.l3.durable-cart-expiration", "path": "prompts/modular/l3-specifications.md", "order": 3103, "from": "## Durable cart expiration", "until": "## Exactly-once restocks", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.cart-expiration-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "restock-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 311, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
+    { "id": "reservation-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 314, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.reservations-features"] },
+    { "id": "delivery-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 315, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.order-delivery-features"] },
+    { "id": "cart-restart", "stableId": "restart-survival", "source": "scenarios/03-deferred-durability.json", "feature": 316, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.cart-expiration-features"] }
+  ]
+}

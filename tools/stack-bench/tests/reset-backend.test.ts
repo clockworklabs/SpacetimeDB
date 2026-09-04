@@ -1,0 +1,356 @@
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
+import { resetBackend } from '../src/stacks/backend-reset.js';
+import { proveMongoDbUse } from '../src/stacks/backends/mongodb-operations.js';
+import { provePostgresUse, resetPostgres } from '../src/stacks/backends/postgres-operations.js';
+import { proveSpacetimeUse } from '../src/stacks/backends/spacetime-operations.js';
+import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
+import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout }
+  from '../src/runtime/spacetime-layout.js';
+import type { TextCommandOptions } from '../src/runtime/command-executor.js';
+import type { BackendLeaseContainer } from '../src/runtime/backend-lease.js';
+import { compiledEntrypoint } from '../src/package-root.js';
+
+interface CommandCall {
+  command: string;
+  args: readonly string[];
+  options: TextCommandOptions;
+}
+
+interface ArgvCall {
+  argv: string[];
+  options: TextCommandOptions;
+}
+
+function writeModule(directory: string): void {
+  mkdirSync(join(directory, 'src'), { recursive: true });
+  writeFileSync(join(directory, 'package.json'), JSON.stringify({
+    dependencies: { spacetimedb: 'file:/deps/bindings-typescript' },
+  }));
+  writeFileSync(join(directory, 'src', 'index.ts'),
+    "import { schema } from 'spacetimedb/server';\nexport default schema({});\n");
+}
+
+test('Spacetime container targets follow their recorded network topology', () => {
+  const bridgeLease = { resources: { serverUri: 'http://127.0.0.1:3310',
+    buildContainer: null } };
+  const hostLease: { resources: { serverUri: string;
+    buildContainer: Pick<BackendLeaseContainer, 'networkMode'> } } = {
+      resources: { serverUri: 'http://127.0.0.1:3310',
+        buildContainer: { networkMode: 'host' } },
+    };
+  assert.equal(containerReachableSpacetimeUri(bridgeLease), 'http://host.docker.internal:3310');
+  assert.equal(containerReachableSpacetimeUri(hostLease), 'http://127.0.0.1:3310');
+  assert.throws(() => containerReachableSpacetimeUri(bridgeLease, 'unknown'),
+    /unsupported build container network mode/);
+});
+
+test('the Node reset entrypoint refuses without an authenticated lease', () => {
+  const env = { ...process.env };
+  delete env.STACK_BENCH_LEASE;
+  delete env.STACK_BENCH_LEASE_TOKEN;
+  assert.throws(() => execFileSync(process.execPath,
+    [compiledEntrypoint('commands', 'reset-backend.js'), 'mongodb', '.'], { env, stdio: 'pipe' }),
+  /STACK_BENCH_LEASE is required/);
+});
+
+test('the reset entrypoint reports a generated layout separately from a harness failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reset-layout-exit-'));
+  const app = join(root, 'app');
+  const leasePath = join(root, 'lease.json');
+  mkdirSync(app);
+  const lease = createBackendLease({ runId: 'layout-exit', backend: 'spacetime', track: 'ecommerce',
+    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
+    dataDir: join(root, 'data') });
+  lease.state = 'active';
+  writeBackendLease(leasePath, lease);
+  try {
+    const result = spawnSync(process.execPath,
+      [compiledEntrypoint('commands', 'reset-backend.js'), 'spacetime', app], {
+        encoding: 'utf8',
+        env: { ...process.env, STACK_BENCH_LEASE: leasePath,
+          STACK_BENCH_LEASE_TOKEN: lease.ownershipToken },
+      });
+    assert.equal(result.status, 10);
+    assert.match(result.stderr, /^GENERATED_APP_LAYOUT:/);
+    assert.doesNotMatch(result.stderr, /at file:/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('PostgreSQL per-check reset clears rows without removing the app schema', () => {
+  const lease = {
+    resources: {
+      database: 'app_ecom_run0',
+      container: { name: 'postgres-service', id: 'a'.repeat(64) },
+    },
+  };
+  const calls: CommandCall[] = [];
+  const exec = (command: string, args: readonly string[], options: TextCommandOptions): string => {
+    calls.push({ command, args, options });
+    if (args[0] === 'inspect') return `${lease.resources.container.id}\n`;
+    return '';
+  };
+
+  resetPostgres({ lease, exec });
+  const reset = calls.find(call => call.args.includes('psql'));
+  assert(reset);
+  const sql = reset.args[reset.args.indexOf('-c') + 1];
+  assert(sql);
+  assert.match(sql, /FROM pg_tables WHERE schemaname = 'public'/);
+  assert.match(sql, /TRUNCATE TABLE/);
+  assert.match(sql, /RESTART IDENTITY CASCADE/);
+  assert.doesNotMatch(sql, /DROP SCHEMA/);
+  assert.equal(reset.args[reset.args.indexOf('-v') + 1], 'ON_ERROR_STOP=1');
+  assert.equal(reset.args[reset.args.indexOf('-d') + 1], lease.resources.database);
+});
+
+test('PostgreSQL runtime provenance finds an application marker in the exact leased database', () => {
+  const lease = { resources: { database: 'app_ecom_run0',
+    container: { name: 'postgres-service', id: 'a'.repeat(64) } } };
+  const calls: CommandCall[] = [];
+  const exec = (command: string, args: readonly string[], options: TextCommandOptions): string => {
+    calls.push({ command, args, options });
+    if (args[0] === 'inspect') return `${lease.resources.container.id}\n`;
+    return 'public.account.username\n';
+  };
+
+  assert.deepEqual(provePostgresUse({ lease, marker: "ann'proof", exec }), {
+    ok: true,
+    verified: true,
+    matches: 1,
+    reason: 'the application marker exists in the leased PostgreSQL database',
+  });
+  const proof = calls.at(-1);
+  assert(proof);
+  assert.deepEqual(proof.args.slice(0, 3), ['exec', '-i', 'a'.repeat(64)]);
+  assert.equal(proof.args.includes('ON_ERROR_STOP=1'), true);
+  assert.match(proof.options.input ?? '', /FROM information_schema\.columns/);
+  assert.match(proof.options.input ?? '', /ann''proof/);
+  assert.match(proof.options.input ?? '', /ORDER BY table_name, ordinal_position\n\\gexec/);
+
+  const emptyExec = (_command: string, args: readonly string[], _options: TextCommandOptions): string =>
+    args[0] === 'inspect'
+    ? `${lease.resources.container.id}\n` : '';
+  assert.equal(provePostgresUse({ lease, marker: 'missing', exec: emptyExec }).ok, false);
+  assert.throws(() => provePostgresUse({ lease, marker: '', exec }),
+    /requires a non-empty application marker/);
+});
+
+test('MongoDB runtime provenance finds an application marker in the exact leased database', () => {
+  const lease = { resources: { database: 'app_ecom_run0',
+    container: { name: 'mongodb-service', id: 'b'.repeat(64) } } };
+  const calls: CommandCall[] = [];
+  const execWith = (output: string) =>
+    (command: string, args: readonly string[], options: TextCommandOptions): string => {
+    calls.push({ command, args, options });
+    return args[0] === 'inspect' ? `${lease.resources.container.id}\n` : output;
+  };
+
+  assert.deepEqual(proveMongoDbUse({ lease, marker: 'ann-proof', exec: execWith('2\n') }), {
+    ok: true,
+    verified: true,
+    matches: 2,
+    reason: 'the application marker exists in the leased MongoDB database',
+  });
+  const script = calls.at(-1)?.args.at(-1);
+  assert(script);
+  assert.match(script, /const marker = "ann-proof"/);
+  assert.match(script, /containsMarker/);
+  assert.equal(proveMongoDbUse({ lease, marker: 'missing', exec: execWith('0\n') }).ok, false);
+  assert.throws(() => proveMongoDbUse({ lease, marker: 'proof', exec: execWith('not-a-count\n') }),
+    /invalid count/);
+  assert.throws(() => proveMongoDbUse({ lease, marker: '', exec: execWith('0\n') }),
+    /requires a non-empty application marker/);
+});
+
+test('SpacetimeDB runtime provenance finds an application marker in the exact leased module', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-spacetime-provenance-'));
+  const leasePath = join(root, 'lease.json');
+  const lease = createBackendLease({ runId: 'spacetime-proof', backend: 'spacetime',
+    track: 'ecommerce', runIndex: 0, module: 'app_ecom_run0',
+    serverUri: 'http://127.0.0.1:3210', dataDir: root });
+  lease.state = 'active';
+  lease.resources.buildContainer = { name: 'build', id: 'c'.repeat(64), image: 'stack-bench:test',
+    owned: true, running: true, networkMode: 'host',
+    resourceLimits: { cpuCount: 1, memoryBytes: 1, memorySwapBytes: 1, pids: 1 } };
+  writeBackendLease(leasePath, lease);
+  const previousPath = process.env.STACK_BENCH_LEASE;
+  const previousToken = process.env.STACK_BENCH_LEASE_TOKEN;
+  process.env.STACK_BENCH_LEASE = leasePath;
+  process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  const schema = { sections: [
+    { Typespace: { types: [{ Product: { elements: [
+      { name: { some: 'username' }, algebraic_type: { String: {} } },
+      { name: { some: 'id' }, algebraic_type: { U64: {} } },
+    ] } }] } },
+    { Tables: [{ source_name: 'account', product_type_ref: 0 }] },
+  ] };
+  const exec = (_command: string, args: readonly string[]): string => {
+    if (args[0] === 'inspect') return `${lease.resources.buildContainer?.id}\n`;
+    if (args.includes('describe')) return JSON.stringify(schema);
+    return args.at(-1)?.includes("'proof'") ? ' username\n----------\n "proof"\n' : '';
+  };
+  const proofLease = { resources: { module: 'app_ecom_run0', serverUri: 'http://127.0.0.1:3210' } };
+  try {
+    assert.deepEqual(proveSpacetimeUse({ lease: proofLease, marker: 'proof', exec }), {
+      ok: true,
+      verified: true,
+      matches: 1,
+      reason: 'the application marker exists in the leased SpacetimeDB module',
+    });
+    assert.equal(proveSpacetimeUse({ lease: proofLease, marker: 'missing', exec }).ok, false);
+    assert.throws(() => proveSpacetimeUse({ lease: proofLease, marker: '', exec }),
+      /requires a non-empty application marker/);
+  } finally {
+    if (previousPath === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = previousPath;
+    if (previousToken === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Spacetime reset publishes inside the exact leased build container', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reset-node-'));
+  const app = join(root, 'app');
+  const leasePath = join(root, 'lease.json');
+  writeModule(join(app, 'backend', 'spacetimedb'));
+  const lease = createBackendLease({ runId: 'reset-test', backend: 'spacetime', track: 'ecommerce',
+    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
+    dataDir: join(root, 'data') });
+  lease.state = 'active';
+  lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64), running: true,
+    owned: true, image: `sha256:${'b'.repeat(64)}`,
+    resourceLimits: { cpuCount: 2, memoryBytes: 1024, memorySwapBytes: 1024, pids: 32 } };
+  writeBackendLease(leasePath, lease);
+  const previousLease = process.env.STACK_BENCH_LEASE;
+  const previousToken = process.env.STACK_BENCH_LEASE_TOKEN;
+  process.env.STACK_BENCH_LEASE = leasePath;
+  process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  const buildContainer = lease.resources.buildContainer;
+  assert(buildContainer);
+  const calls: ArgvCall[] = [];
+  const exec = (command: string, args: readonly string[], options: TextCommandOptions): string => {
+    calls.push({ argv: [command, ...args], options });
+    if (args[0] === 'inspect') return `${buildContainer.id}\n`;
+    return '';
+  };
+  try {
+    resetBackend({ backend: 'spacetime', app, exec });
+    const publish = calls.find(call => call.argv.includes('publish'));
+    assert(publish);
+    assert.deepEqual(publish.argv.slice(0, 8), ['docker', 'exec', '--user', '10001:10001',
+      '-e', 'HOME=/home/developer', '-e', 'USER=developer']);
+    assert.equal(publish.argv[publish.argv.indexOf('-w') + 1], '/app/backend/spacetimedb');
+    assert.ok(publish.argv.includes(buildContainer.id));
+    assert.ok(publish.argv.includes('/deps/spacetimedb-cli'));
+    assert.ok(publish.argv.includes('app-ecom-run0'));
+    assert.ok(publish.argv.includes('http://host.docker.internal:3310'));
+    assert.equal(publish.argv.includes(join(app, 'backend', 'spacetimedb')), false);
+    assert.equal(calls.every(call => call.options.timeout === 120_000), true);
+  } finally {
+    if (previousLease === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = previousLease;
+    if (previousToken === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Spacetime reset honors the module path declared by a generated project', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reset-declared-'));
+  const app = join(root, 'app');
+  const leasePath = join(root, 'lease.json');
+  writeModule(join(app, 'server', 'spacetimedb'));
+  writeFileSync(join(app, 'server', 'spacetime.json'), JSON.stringify({
+    server: 'bench', 'module-path': './spacetimedb',
+  }));
+  const lease = createBackendLease({ runId: 'reset-declared', backend: 'spacetime', track: 'ecommerce',
+    runIndex: 0, serverUri: 'http://127.0.0.1:3310', module: 'app-ecom-run0',
+    dataDir: join(root, 'data') });
+  lease.state = 'active';
+  lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64), running: true,
+    owned: true, image: `sha256:${'b'.repeat(64)}`,
+    resourceLimits: { cpuCount: 2, memoryBytes: 1024, memorySwapBytes: 1024, pids: 32 } };
+  writeBackendLease(leasePath, lease);
+  const previousLease = process.env.STACK_BENCH_LEASE;
+  const previousToken = process.env.STACK_BENCH_LEASE_TOKEN;
+  process.env.STACK_BENCH_LEASE = leasePath;
+  process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+  const buildContainer = lease.resources.buildContainer;
+  assert(buildContainer);
+  const calls: ArgvCall[] = [];
+  const exec = (command: string, args: readonly string[], options: TextCommandOptions): string => {
+    calls.push({ argv: [command, ...args], options });
+    if (args[0] === 'inspect') return `${buildContainer.id}\n`;
+    return '';
+  };
+  try {
+    assert.deepEqual(resolveSpacetimeModuleLayout(app), {
+      moduleDirectory: 'server/spacetimedb',
+      hostPath: join(app, 'server', 'spacetimedb'),
+      containerPath: '/app/server/spacetimedb',
+      configPath: 'server/spacetime.json',
+      source: 'spacetime.json',
+    });
+    resetBackend({ backend: 'spacetime', app, exec });
+    const publish = calls.find(call => call.argv.includes('publish'));
+    assert(publish);
+    assert.deepEqual(publish.argv.slice(0, 8), ['docker', 'exec', '--user', '10001:10001',
+      '-e', 'HOME=/home/developer', '-e', 'USER=developer']);
+    assert.equal(publish.argv[publish.argv.indexOf('-w') + 1], '/app/server/spacetimedb');
+    assert.ok(publish.argv.includes(buildContainer.id));
+    assert.ok(publish.argv.includes('/deps/spacetimedb-cli'));
+    assert.equal(publish.argv.filter(value => value === '/app/server/spacetimedb').length, 2);
+  } finally {
+    if (previousLease === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = previousLease;
+    if (previousToken === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = previousToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Spacetime layout resolution rejects missing, escaping, and ambiguous modules', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-layout-invalid-'));
+  try {
+    const missing = join(root, 'missing');
+    mkdirSync(missing);
+    assert.throws(() => resolveSpacetimeModuleLayout(missing), GeneratedAppLayoutError);
+
+    const escaping = join(root, 'escaping');
+    mkdirSync(escaping);
+    writeFileSync(join(escaping, 'spacetime.json'), JSON.stringify({ 'module-path': '..' }));
+    assert.throws(() => resolveSpacetimeModuleLayout(escaping), /escapes the application/);
+
+    const ambiguous = join(root, 'ambiguous');
+    writeModule(join(ambiguous, 'one'));
+    writeModule(join(ambiguous, 'two'));
+    assert.throws(() => resolveSpacetimeModuleLayout(ambiguous), /multiple SpacetimeDB module directories/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Spacetime layout resolution maps container-absolute module paths into the mounted app', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-layout-container-path-'));
+  try {
+    writeModule(join(root, 'backend', 'spacetimedb'));
+    writeFileSync(join(root, 'spacetime.json'), JSON.stringify({
+      'module-path': '/app/backend/spacetimedb',
+    }));
+    const layout = resolveSpacetimeModuleLayout(root);
+    assert.equal(layout.moduleDirectory, 'backend/spacetimedb');
+    assert.equal(layout.containerPath, '/app/backend/spacetimedb');
+    assert.equal(layout.source, 'spacetime.json');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
