@@ -408,6 +408,24 @@ impl ClientConnectionSender {
         self.cancelled.load(Ordering::Relaxed)
     }
 
+    /// Stop this connection's websocket actor.
+    ///
+    /// Used when a newer connection supersedes this one
+    /// (see [`super::ClientSessionIndex`]), and when a client exceeds its
+    /// outgoing queue capacity.
+    ///
+    /// This only stops the actor. The module-side disconnect
+    /// ([`crate::host::ModuleHost::disconnect_client`]) is run separately by
+    /// the actor's teardown, or by the caller when it needs that teardown to
+    /// complete before some other work.
+    pub fn kick(&self, cause: ClientDisconnectCause) {
+        if let Some(metrics) = &self.metrics {
+            metrics.disconnect_recorder.record(cause);
+        }
+        self.abort_handle.abort();
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
     /// Send a message to the client. For data-related messages, you should probably use
     /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
     ///
@@ -455,12 +473,8 @@ impl ClientConnectionSender {
                 );
                 if let Some(metrics) = &self.metrics {
                     metrics.outgoing_queue_disconnects.inc();
-                    metrics
-                        .disconnect_recorder
-                        .record(ClientDisconnectCause::OutgoingQueueFull);
                 }
-                self.abort_handle.abort();
-                self.cancelled.store(true, Ordering::Relaxed);
+                self.kick(ClientDisconnectCause::OutgoingQueueFull);
                 return Err(ClientSendError::Cancelled);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
@@ -1176,6 +1190,16 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         self.module()
             .call_view_add_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
+    }
+
+    pub async fn subscribe_batch(
+        &self,
+        request: ws_v2::SubscribeBatch,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        self.module()
+            .call_view_add_batch_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
     pub async fn subscribe_multi(

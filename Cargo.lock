@@ -211,6 +211,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "assert_cmd"
+version = "2.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2aa3a22042e45de04255c7bf3626e239f450200fd0493c1e382263544b20aea6"
+dependencies = [
+ "anstyle",
+ "bstr",
+ "libc",
+ "predicates",
+ "predicates-core",
+ "predicates-tree",
+ "wait-timeout",
+]
+
+[[package]]
 name = "async-channel"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -631,6 +646,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
 dependencies = [
  "memchr",
+ "regex-automata",
  "serde",
 ]
 
@@ -5816,6 +5832,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "727e462b119fe9c93fd0eb1429a5f7647394014cf3c04ab2c0350eeb09095ffa"
 
 [[package]]
+name = "predicates-tree"
+version = "1.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0de1b847b39c8131db0467e9df1ff60e6d0562ab8e9a16e568ad0fdb372e2f2"
+dependencies = [
+ "predicates-core",
+ "termtree",
+]
+
+[[package]]
 name = "pretty_assertions"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8652,17 +8678,23 @@ name = "spacetimedb-smoketests"
 version = "2.10.0"
 dependencies = [
  "anyhow",
+ "assert_cmd",
  "cargo_metadata",
  "fs_extra",
+ "futures",
  "predicates",
  "regex",
  "reqwest",
  "serde_json",
  "socket2 0.5.10",
+ "spacetimedb-client-api-messages",
+ "spacetimedb-core",
  "spacetimedb-guard",
+ "spacetimedb-lib",
  "tempfile",
  "tokio",
  "tokio-postgres",
+ "tokio-tungstenite 0.27.0",
  "toml 0.8.23",
  "which 8.0.0",
  "xmltree",

@@ -67,12 +67,14 @@ pub enum ClientDisconnectCause {
     WebsocketSendError,
     /// The websocket receive stream ended without a more specific cause.
     WebsocketStreamEnded,
+    /// A newer connection for the same client session superseded this one.
+    ConnectionSuperseded,
     /// The accepted websocket actor ended without a more specific recorded cause.
     Unknown,
 }
 
 impl ClientDisconnectCause {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::ClientClose,
         Self::IdleTimeout,
         Self::IncomingQueueFull,
@@ -94,6 +96,7 @@ impl ClientDisconnectCause {
         Self::WebsocketReceiveHttpFormat,
         Self::WebsocketSendError,
         Self::WebsocketStreamEnded,
+        Self::ConnectionSuperseded,
         Self::Unknown,
     ];
 
@@ -120,6 +123,7 @@ impl ClientDisconnectCause {
             Self::WebsocketReceiveHttpFormat => "websocket_receive_http_format",
             Self::WebsocketSendError => "websocket_send_error",
             Self::WebsocketStreamEnded => "websocket_stream_ended",
+            Self::ConnectionSuperseded => "connection_superseded",
             Self::Unknown => "unknown",
         }
     }
