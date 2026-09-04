@@ -7,6 +7,7 @@ import { createStackAdapterRegistry } from '../src/stacks/stack-adapter-contract
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { stackAdapterVersion } from '../src/stacks/stack-identities.js';
 import { setSpacetimeStock } from '../src/stacks/backends/spacetime-operations.js';
+import { describesMissingStockInterface } from '../src/stacks/stock-interface.js';
 import type { Track } from '../src/composition/tracks.js';
 
 test('built-in adapters preserve the port grid and lease identity', () => {
@@ -106,6 +107,32 @@ test('SpacetimeDB container operations use the isolated agent identity', () => {
     assert.deepEqual(args.slice(0, 8), ['exec', '--user', '10001:10001', '-e',
       'HOME=/home/developer', '-e', 'USER=developer', 'leased-build-id']);
   }
+});
+
+test('a stock write that finds no table, column, or row is the application missing its interface', () => {
+  for (const detail of [
+    'Error: `stock` does not have a field `quantity`',
+    'Error: no such table: stock',
+    'table stock is marked private',
+    'ERROR:  column "quantity" of relation "stock" does not exist',
+    'ERROR:  relation "stock" does not exist',
+  ]) assert.ok(describesMissingStockInterface(detail), detail);
+  for (const detail of [
+    'connection refused', 'ETIMEDOUT', 'HTTP status server error (500 Internal Server Error)',
+  ]) assert.equal(describesMissingStockInterface(detail), false, detail);
+
+  const exec = (_command: string, args: readonly string[]): string => {
+    const sql = args.at(-1) ?? '';
+    if (/select id from item/.test(sql)) return '1\n';
+    if (/select id from warehouse/.test(sql)) return '2\n';
+    throw Object.assign(new Error('exit 1'), { status: 1,
+      stderr: 'Error: `stock` does not have a field `quantity`\n' });
+  };
+  assert.throws(() => setSpacetimeStock({ item: 'widget', warehouse: 'east', quantity: 3,
+    spacetime: { buildContainer: { name: 'leased-build', id: 'leased-build-id' }, mod: 'shop',
+      containerUri: 'http://host.docker.internal:3000' }, exec }),
+  (error: unknown) => error instanceof Error && 'stockInterface' in error
+    && error.stockInterface === true && /does not have a field/.test(error.message));
 });
 
 test('named actions map parameters to HTTP and SpacetimeDB requests', () => {

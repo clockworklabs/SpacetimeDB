@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { stockInterfaceError } from '../stock-interface.js';
+import { describesMissingStockInterface, stockInterfaceError } from '../stock-interface.js';
 
 
 import { assertLeasedContainer } from '../backend-reset-guard.js';
@@ -115,10 +115,21 @@ export function setPostgresStock({ item, warehouse, quantity, lease, exec = exec
   const container = assertLeasedContainer(lease.resources.container, exec, WRITE_TIMEOUT_MS,
     'direct database write');
   const dbName = lease.resources.database;
-  const output = exec('docker', ['exec', '-i', container,
-    'psql', '-U', POSTGRES_USER, '-d', dbName, '-v', 'ON_ERROR_STOP=1', '-At'],
-  { encoding: 'utf8', input: stockUpdateSql(item, warehouse, quantity),
-    stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  let output: string;
+  try {
+    output = exec('docker', ['exec', '-i', container,
+      'psql', '-U', POSTGRES_USER, '-d', dbName, '-v', 'ON_ERROR_STOP=1', '-At'],
+    { encoding: 'utf8', input: stockUpdateSql(item, warehouse, quantity),
+      stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  } catch (error) {
+    // psql refusing the statement over an absent table or column is the
+    // application not providing the interface, not a harness fault.
+    const detail = streams(error, 'stdout', 'stderr', 'message');
+    if (describesMissingStockInterface(detail)) {
+      throw stockInterfaceError(detail.trim().slice(-300), { cause: error });
+    }
+    throw error;
+  }
   if ((output.match(/UPDATE 1\b/g) ?? []).length === 1) {
     return { backend: 'postgres', item, warehouse, quantity };
   }
