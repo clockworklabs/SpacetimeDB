@@ -207,9 +207,48 @@ jobs:
           echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
           echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
 
+      # Temporary diagnostics for the pre-populated Linux runner caches. Remove
+      # this after confirming why unchanged release dependencies are rebuilt.
+      - name: Inspect pre-populated Rust caches
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR}"
+          echo "CARGO_TARGET_DIR resolved to $(readlink -f "${CARGO_TARGET_DIR}")"
+          echo "SCCACHE_DIR=${SCCACHE_DIR}"
+          echo "SCCACHE_DIR resolved to $(readlink -f "${SCCACHE_DIR}")"
+          rustc -vV
+          sccache --version
+          for cache_dir in "${CARGO_TARGET_DIR}" "${SCCACHE_DIR}"; do
+            if [[ -d "${cache_dir}" ]]; then
+              du -sh "${cache_dir}"
+            else
+              echo "Cache directory does not exist: ${cache_dir}"
+            fi
+          done
+          sccache --zero-stats
+
+          fingerprint_dir="${CARGO_TARGET_DIR}/release/.fingerprint"
+          if [[ ! -d "${fingerprint_dir}" ]]; then
+            echo "No release fingerprint directory exists at ${fingerprint_dir}"
+            exit 0
+          fi
+
+          # These dependencies were reused from the pre-populated target during
+          # the cache validation run, but were rebuilt in the latest PR run.
+          for package in wasmtime rolldown prometheus chrono simd-json tracing-subscriber; do
+            echo "Release fingerprints for ${package}:"
+            find "${fingerprint_dir}" -maxdepth 1 -type d -name "${package}-*" -print
+          done
+
       - name: Build CLI and standalone
         shell: bash
         run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            # Explain exactly why Cargo accepts or rejects each pre-populated
+            # fingerprint. This is intentionally verbose and temporary.
+            export CARGO_LOG=cargo::core::compiler::fingerprint=trace
+          fi
           cargo build --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
