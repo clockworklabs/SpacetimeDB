@@ -927,41 +927,183 @@ jobs:
       - name: Skip duplicate merge queue SDK test
         run: echo "Merge queue commit has the same tree as the PR head; SDK tests already ran for the PR."
 
-  test:
+  rust_test_build:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Test Suite
+    name: Test Suite - Rust Build
     runs-on: spacetimedb-linux
-
+    timeout-minutes: 15
     env:
+      # Full test debuginfo makes the nextest archive several GiB. Level 1 keeps
+      # line tables for useful CI backtraces without embedding full DWARF.
+      CARGO_PROFILE_TEST_DEBUG: 1
       RUST_BACKTRACE: full
-      ARTIFACT_SUFFIX: linux
+      RUST_TEST_ARCHIVE: rust-tests-nextest.tar.zst
+      RUST_BINDINGS_TEST_ARCHIVE: rust-bindings-tests-nextest.tar.zst
+      RUST_DURABILITY_TEST_ARCHIVE: rust-durability-tests-nextest.tar.zst
     steps:
       - *set-cargo-target-dir
       - *configure-sccache
 
-      - *set-spacetime-bin
-
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
+      - *find-git-ref
+      - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build Rust test archives
+        run: |
+          cargo nextest archive --timings --workspace \
+            --exclude spacetimedb-smoketests \
+            --exclude spacetimedb-sdk \
+            --exclude spacetimedb \
+            --archive-file "${RUST_TEST_ARCHIVE}"
+          cargo nextest archive --timings -p spacetimedb --features unstable \
+            --archive-file "${RUST_BINDINGS_TEST_ARCHIVE}"
+          cargo nextest archive --timings -p spacetimedb-durability --features fallocate \
+            --archive-file "${RUST_DURABILITY_TEST_ARCHIVE}"
+
+      # Nextest does not run doctests, so run them while the Cargo build is warm.
+      - name: Run Rust doctests
+        run: |
+          cargo test --workspace --doc \
+            --exclude spacetimedb-smoketests \
+            --exclude spacetimedb-sdk \
+            --exclude spacetimedb \
+            -- --test-threads=2 --skip unreal
+          cargo test -p spacetimedb --features unstable --doc -- --test-threads=2
+          cargo test -p spacetimedb-durability --features fallocate --doc -- --test-threads=1
+          bash tools/check-diff.sh
+
+      # Trybuild discovers enabled features from Cargo fingerprint metadata,
+      # which nextest archives do not contain. Keep this target on the build
+      # runner, where that metadata is still available.
+      - name: Run Rust feature UI tests
+        run: |
+          cargo test -p spacetimedb --features unstable --test ui -- --test-threads=2
+          bash tools/check-diff.sh
+
+      - *show-sccache-stats
+
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-rust-test-build
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload Rust workspace test archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-tests-linux
+          path: ${{ env.RUST_TEST_ARCHIVE }}
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload Rust feature test archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-feature-tests-linux
+          path: |
+            ${{ env.RUST_BINDINGS_TEST_ARCHIVE }}
+            ${{ env.RUST_DURABILITY_TEST_ARCHIVE }}
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  rust_tests:
+    needs: [rust_test_build]
+    name: Test Suite - Rust (${{ matrix.partition }}/4)
+    runs-on: spacetimedb-linux
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    env:
+      RUST_BACKTRACE: full
+      RUST_TEST_ARCHIVE: rust-tests-nextest.tar.zst
+      RUST_TEST_PARTITIONS: 4
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download Rust test archive
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-tests-linux
+
+      - name: Run Rust test partition
+        run: |
+          cargo nextest run \
+            --archive-file "${RUST_TEST_ARCHIVE}" \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --partition hash:${{ matrix.partition }}/${RUST_TEST_PARTITIONS} \
+            -E 'not binary(=spacetimedb_bench) & not binary(=codegen) & not binary(=ensure_same_schema) & not binary(=standalone_integration_test) & not test(/unreal/)' \
+            --no-fail-fast \
+            --no-tests pass \
+            -j 2
+          bash tools/check-diff.sh
+
+  rust_serial_tests:
+    needs: [rust_test_build]
+    name: Test Suite - Rust Serial & Features
+    runs-on: spacetimedb-linux
+    timeout-minutes: 10
+    env:
+      RUST_BACKTRACE: full
+      RUST_TEST_ARCHIVE: rust-tests-nextest.tar.zst
+      RUST_BINDINGS_TEST_ARCHIVE: rust-bindings-tests-nextest.tar.zst
+      RUST_DURABILITY_TEST_ARCHIVE: rust-durability-tests-nextest.tar.zst
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download Rust feature test archives
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-feature-tests-linux
+
+      - name: Run feature tests
+        run: |
+          cargo nextest run \
+            --archive-file "${RUST_BINDINGS_TEST_ARCHIVE}" \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            -E 'not binary(=ui)' \
+            --no-fail-fast \
+            --no-tests fail \
+            -j 2
+          cargo nextest run \
+            --archive-file "${RUST_DURABILITY_TEST_ARCHIVE}" \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --no-fail-fast \
+            --no-tests fail \
+            -j 1
+          bash tools/check-diff.sh
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -976,7 +1118,6 @@ jobs:
         with:
           run_install: true
 
-      # Install cmake and emscripten for C++ module compilation tests.
       - name: Install cmake and emscripten
         run: |
           sudo apt-get update
@@ -986,11 +1127,46 @@ jobs:
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
 
-        # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
-      - name: Run tests
+      - name: Download Rust test archive
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-tests-linux
+
+      - name: Run serial integration tests
         run: |
           source ~/emsdk/emsdk_env.sh
-          cargo ci test
+          pnpm --dir crates/bindings-typescript build
+          cargo nextest run \
+            --archive-file "${RUST_TEST_ARCHIVE}" \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            -E 'binary(=spacetimedb_bench) | binary(=codegen) | binary(=ensure_same_schema) | binary(=standalone_integration_test)' \
+            --no-fail-fast \
+            --no-tests fail \
+            -j 1
+          bash tools/check-diff.sh
+
+      - *show-sccache-stats
+
+  csharp_codegen_check:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Test Suite - C# Codegen
+    runs-on: spacetimedb-linux
+    timeout-minutes: 10
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Check generated C# module definition
+        run: cargo ci test csharp-codegen
 
       - *show-sccache-stats
 
@@ -998,9 +1174,111 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cargo-timings-test
+          name: cargo-timings-csharp-codegen
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
+
+  csharp_bindings_tests:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Test Suite - C# Bindings
+    runs-on: spacetimedb-linux
+    timeout-minutes: 10
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Run C# bindings tests
+        run: cargo ci test csharp
+
+      - *show-sccache-stats
+
+  cpp_compile_tests:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Test Suite - C++ Compile (${{ matrix.suite }})
+    runs-on: spacetimedb-linux
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [http-handlers, indexes]
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - *set-cargo-target-dir
+      - *configure-sccache
+
+      - *find-git-ref
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Install cmake and emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Run C++ compile tests
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo ci test cpp --suite "${{ matrix.suite }}"
+
+      - *show-sccache-stats
+
+  test:
+    needs:
+      [
+        merge_queue_noop,
+        rust_test_build,
+        rust_tests,
+        rust_serial_tests,
+        csharp_codegen_check,
+        csharp_bindings_tests,
+        cpp_compile_tests,
+      ]
+    if: ${{ always() }}
+    name: Test Suite
+    runs-on: spacetimedb-linux
+    timeout-minutes: 5
+    steps:
+      - name: Check component results
+        if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+        env:
+          RUST_RESULT: ${{ needs.rust_tests.result }}
+          RUST_BUILD_RESULT: ${{ needs.rust_test_build.result }}
+          RUST_SERIAL_RESULT: ${{ needs.rust_serial_tests.result }}
+          CSHARP_CODEGEN_RESULT: ${{ needs.csharp_codegen_check.result }}
+          CSHARP_RESULT: ${{ needs.csharp_bindings_tests.result }}
+          CPP_RESULT: ${{ needs.cpp_compile_tests.result }}
+        run: |
+          test "${RUST_BUILD_RESULT}" = success
+          test "${RUST_RESULT}" = success
+          test "${RUST_SERIAL_RESULT}" = success
+          test "${CSHARP_CODEGEN_RESULT}" = success
+          test "${CSHARP_RESULT}" = success
+          test "${CPP_RESULT}" = success
+
+      - name: Reuse merge queue result
+        if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+        run: echo "Test Suite already ran for the equivalent PR head."
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
