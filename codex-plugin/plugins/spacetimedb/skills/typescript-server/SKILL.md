@@ -184,7 +184,9 @@ export const onConnect = spacetimedb.clientConnected((ctx) => { ... });
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ```
 
-`ctx.connectionId` is `ConnectionId | null`, including in lifecycle contexts. Guard it before passing it to a helper or using it as a table key.
+Connection hooks run once per connection. The same authenticated principal keeps the same identity (`ctx.sender`) across connections, while each connection has its own connection ID (`ctx.connectionId`). A disconnect ends one connection; it does not end the identity, which returns unchanged on the next connection with the same token. Use connection IDs for presence and other connection-scoped state.
+
+`ctx.connectionId` is typed `ConnectionId | null`. It is present inside connection lifecycle hooks and reducers invoked over a connection, and `null` in `init` and scheduled reducers. Guard it before passing it to a helper or using it as a table key.
 
 ## Reducer Context API
 
